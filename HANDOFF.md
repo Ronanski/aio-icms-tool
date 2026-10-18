@@ -5,11 +5,11 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | v1.0.0, release commit `c22dbbd` |
-| **Tag** | `v1.0.0` exists locally only. The cloud environment blocks tag pushes, so create it on GitHub (Releases → Draft a new release → tag `v1.0.0`, target commit `c22dbbd`). |
+| **Version** | v1.1.0 (previous: v1.0.0 at `c22dbbd`) |
+| **Tags** | `v1.0.0` and `v1.1.0` exist locally only; this cloud environment can't push tags. Create them on GitHub: Releases → Draft a new release → new tag, target the commits named in CHANGELOG / this file. |
 | **Date** | 2026-10-18 |
 | **Branch** | `ccr-d652d569-13gxij` (`main` not created yet; see "Open decisions") |
-| **Tests** | `npm test`: 26 passed, 0 failed |
+| **Tests** | `npm test`: 39 passed, 0 failed (desktop, phone touch, offline PWA) |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
 
 ## How to resume in 2 minutes
@@ -21,7 +21,8 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Architecture in one screen
 ```
 index.html ── loads scripts in order ──►
-  ui.js        UI.modal/form/menu/toast
+  ui.js        UI.modal/form/menu/toast, longPress (touch → context menu), drawer
+  store.js     Store: many projects in localStorage (index + one key each)
   plc.js       PLCcore: parse(addr), INSTR table, Engine (data table, scan, forces)
   ladder.js    Ladder: parseRung/serialize (ASCII), SVG render, editor ops, DataTable
   circuit.js   Circuit: DEFS (component library), solve() net solver
@@ -29,7 +30,10 @@ index.html ── loads scripts in order ──►
   panel.js     PanelView: big operable devices
   hmi.js       HMI: designer + runtime
   examples.js  Examples: EX (projects) + LESSONS
-  app.js       App: project state, persistence, 20 ms tick loop, views, status bar
+  app.js       App: project state, open/save projects, 20 ms tick loop, views, status bar, PWA install
+sw.js          service worker (offline cache; bump CACHE every release)
+manifest.webmanifest + icons/   install metadata
+.github/workflows/  ci.yml (tests on PRs), pages.yml (deploy main to GitHub Pages)
 ```
 **Each tick (20 ms):** `Circuit.solve()` reads `ctx.plcOut` and writes `ctx.plcIn`, then `App.plc.scan(dt)` runs the ladder and updates `physOut`. Rendering runs separately on `requestAnimationFrame` and touches only the visible views.
 
@@ -40,13 +44,14 @@ index.html ── loads scripts in order ──►
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
 
 ## Open decisions (owner: Ronan)
-1. **Create `main` and merge v1.0.0 into it.** The repo has no default branch yet.
+1. **Create `main` and merge into it.** The repo has no default branch yet. After that, enable GitHub Pages (Settings → Pages → Source: GitHub Actions) and the app goes live at `https://ronanski.github.io/aio-icms-tool/`.
 2. **License**: proprietary (to sell) or MIT (open source)?
 3. **Product name and logo** without trademarked words.
-4. **Next target**: PWA + GitHub Pages first (recommended), or the Android APK.
+4. **Next target** after going live: circuit-lesson auto-check, or the Android APK.
 
-## Last session summary
-- Built the full app (ladder, PLC engine, wiring solver, panel, HMI, lessons, examples).
-- Added File → New project (name + template), About with version, and the e2e suite.
-- Added the docs: CHANGELOG, CONTRIBUTING, PROGRESS, HANDOFF and CLAUDE.md.
-- Prepared the v1.0.0 release (commit `c22dbbd`). The tag still has to be created on GitHub.
+## Last session summary (v1.1.0)
+- Mobile and touch layout; PWA (installable, offline); multiple projects; lesson Check my work.
+- Fixed: pending saves are flushed before switching projects; long-press after re-render.
+- Added CI and GitHub Pages workflows. They run once `main` exists.
+- Tests grew from 26 to 39 checks, all passing.
+- The v1.1.0 tag is local only. Create it on GitHub.

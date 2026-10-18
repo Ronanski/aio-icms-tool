@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 1.0.0 (released 2026-10-18)
-**Status:** Stable web app. Every core feature works and is covered by `npm test` (26/26 passing).
+**Current version:** 1.1.0 (released 2026-10-18)
+**Status:** Stable web app that installs on phones, tablets and PCs. Covered by `npm test` (39/39 passing).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -15,26 +15,31 @@
 - [x] End-to-end test suite
 - [x] Docs: README, CHANGELOG, CONTRIBUTING (rules), PROGRESS, HANDOFF
 
-## Next: v1.1.0 (planned)
-- [ ] **PWA**: manifest, service worker, app icon. Installable on Android and Windows, works offline.
-- [ ] Host on GitHub Pages
-- [ ] Mobile and tablet layout: larger touch targets, collapsible side panels
-- [ ] Multiple saved projects in the browser (project list)
-- [ ] Lesson auto-check: verify the student's rung or wiring and show pass/fail
+## Done (v1.1.0)
+- [x] PWA: manifest, service worker, icons, Install app button, works offline
+- [x] Mobile and tablet layout: bottom tabs, drawers, ladder zoom, pinch zoom, long-press menus
+- [x] Multiple saved projects (File → Open project)
+- [x] Lesson auto-check for lessons 1–6
+- [x] CI and GitHub Pages workflows
+
+## Next: v1.2.0 (planned)
+- [ ] Go live on GitHub Pages (needs `main` + Pages enabled; see HANDOFF open decisions)
+- [ ] Final product name and logo, replacing the placeholder icon
+- [ ] Auto-check for the circuit lessons (8–12): verify wiring, not only the ladder
+- [ ] Android APK (Capacitor) and Windows installer (Tauri)
 
 ## Backlog (v1.2+)
-- [ ] Android APK via Capacitor; Windows installer via Tauri or Electron
 - [ ] More instructions: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, BTD, SCP, analog I/O (I:1.0 words)
 - [ ] More devices: VFD, star-delta starter, reversing contactor pair, 3-wire analog level transmitter
 - [ ] Rung drag-and-drop editing; wire dragging and re-routing
 - [ ] Tagalog / English language toggle
 - [ ] Migrate to TypeScript + Vite and add unit tests for `plc.js` and `circuit.js`
-- [ ] Continuous integration running `npm test` on every pull request
 - [ ] Choose a license: proprietary for selling, or MIT
 
 ## Known limitations
-- The layout targets desktop and tablet. Phones work but feel cramped.
+- On phones, wiring large circuits is possible but slow; a tablet or PC is more comfortable.
+- Offline install needs the app served over https (GitHub Pages). Opening `index.html` from disk works, but can't be installed.
 - One PLC per project. Loads in series (e.g. two lamps in series) are not modeled.
 - Wires are routed automatically from waypoints; you can't drag an existing wire.
 - Inside the claude.ai artifact preview, File → Export is blocked. Export works in a normal browser tab.
-- Autosave keeps one project per browser (`localStorage`).
+- Projects are stored per browser (`localStorage`). Use Export to move them to another device.

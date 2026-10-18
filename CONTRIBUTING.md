@@ -35,7 +35,7 @@ The project follows [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`.
 Release checklist:
 1. Run `npm test`. All checks must pass.
 2. Move the `[Unreleased]` notes in `CHANGELOG.md` under the new version and date.
-3. Bump the version in **both** `package.json` and `VERSION` in `js/app.js`.
+3. Bump the version in `package.json`, `VERSION` in `js/app.js`, and `CACHE` in `sw.js` (so installed apps pick up the new files).
 4. Update `PROGRESS.md` and `HANDOFF.md`.
 5. Commit with `chore(release): vX.Y.Z`.
 6. Create an annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`, then `git push origin vX.Y.Z`.
@@ -43,7 +43,7 @@ Release checklist:
 
 ## 4. Code rules
 - **No build step and no runtime dependencies.** Plain HTML, CSS and JS. `index.html` must work when opened directly from disk.
-- Each module is an IIFE that exposes one global (`PLCcore`, `Ladder`, `Circuit`, `Workspace`, `PanelView`, `HMI`, `Examples`, `App`, `UI`). Script order in `index.html` matters.
+- Each module is an IIFE that exposes one global (`UI`, `Store`, `PLCcore`, `Ladder`, `Circuit`, `Workspace`, `PanelView`, `HMI`, `Examples`, `App`). Script order in `index.html` matters.
 - Match the surrounding style: 2-space indent, single quotes, semicolons, small helpers, short comments only where the logic isn't obvious.
 - Colors come from the CSS tokens in `:root`. Every new color needs a dark-mode value.
 - The device drawings in `circuit.js` keep their real-world colors, independent of the theme.
