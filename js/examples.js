@@ -377,5 +377,77 @@ XIO I:0/1 RES C5:0</pre>
     },
   ];
 
-  window.Examples = { EX, LESSONS };
+  /* ---------- Lesson auto-check ----------
+     Each test is a list of steps: hold inputs `in` (I:0 bit → 1) for `t` seconds,
+     then compare outputs `expect` (O:0 bit → 0/1), or count `toggles` of one output. */
+  const STOP = { 1: 1 };   // practice board: S2 STOP is NC, so I:0/1 is ON when not pressed
+  const sealSteps = [
+    { in: STOP, t: 0.1, expect: { 0: 0 }, say: 'Idle: H1 is off' },
+    { in: { 0: 1, 1: 1 }, t: 0.1, expect: { 0: 1 }, say: 'Press S1 START: H1 turns on' },
+    { in: STOP, t: 0.2, expect: { 0: 1 }, say: 'Release START: H1 stays on' },
+    { in: {}, t: 0.1, expect: { 0: 0 }, say: 'Press S2 STOP: H1 turns off' },
+    { in: STOP, t: 0.2, expect: { 0: 0 }, say: 'Release STOP: H1 stays off' },
+  ];
+  const TESTS = {
+    l1: [
+      { in: {}, t: 0.1, expect: { 0: 0 }, say: 'S1 released: H1 is off' },
+      { in: { 0: 1 }, t: 0.1, expect: { 0: 1 }, say: 'Hold S1 START: H1 turns on' },
+      { in: {}, t: 0.1, expect: { 0: 0 }, say: 'Release S1: H1 turns off again' },
+    ],
+    l2: sealSteps,
+    l3: sealSteps,
+    l4: [
+      { in: { 3: 1 }, t: 1.5, expect: { 1: 0, 2: 1 }, say: 'S4 on for 1.5 s: amber H3 on (timing), red H2 still off' },
+      { in: { 3: 1 }, t: 2, expect: { 1: 1, 2: 0 }, say: 'After 3 s: red H2 on, amber H3 off' },
+      { in: {}, t: 0.1, expect: { 1: 0 }, say: 'S4 off: timer resets, H2 off' },
+    ],
+    l5: [
+      { in: { 3: 1 }, t: 3, toggles: { bit: 2, min: 3 }, say: 'S4 on: amber H3 blinks' },
+      { in: {}, t: 1, expect: { 2: 0 }, say: 'S4 off: H3 stays off' },
+    ],
+    l6: [
+      ...Array.from({ length: 4 }, (_, i) => [
+        { in: { 1: 1, 2: 1 }, t: 0.05, say: `Press S3 JOG (${i + 1})` },
+        { in: STOP, t: 0.05, expect: { 3: 0 }, say: `After press ${i + 1}: blue H4 still off` },
+      ]).flat(),
+      { in: { 1: 1, 2: 1 }, t: 0.05, say: 'Press S3 JOG (5)' },
+      { in: STOP, t: 0.05, expect: { 3: 1 }, say: 'After 5 presses: blue H4 on' },
+      { in: {}, t: 0.1, expect: { 3: 0 }, say: 'Press S2 STOP: counter resets, H4 off' },
+    ],
+  };
+  LESSONS.forEach(l => { if (TESTS[l.id]) l.test = TESTS[l.id]; });
+
+  /* Runs the steps against a private PLC engine. Returns [{say, ok, got}] or {error}. */
+  function gradeLesson(lesson, rungTexts) {
+    let rungs;
+    try { rungs = rungTexts.map(t => Ladder.newRung(Ladder.parseRung(t))); }
+    catch (e) { return { error: 'The program could not be read: ' + e.message }; }
+    const plc = new PLCcore.Engine();
+    const v = plc.verify(rungs);
+    if (v.errs.length) return { error: `Fix the program first: rung ${v.errs[0].ri} — ${v.errs[0].msg}` };
+    plc.setProgram(rungs);
+    plc.applyAll(true);
+    plc.setMode('RUN');
+    const DT = 0.01;
+    return lesson.test.map(st => {
+      let w = 0;
+      for (const b in st.in) if (st.in[b]) w |= 1 << b;
+      plc.physIn = w;
+      let toggles = 0, prev = null;
+      for (let n = Math.round(st.t / DT); n > 0; n--) {
+        plc.scan(DT);
+        if (st.toggles) { const b = (plc.physOut >> st.toggles.bit) & 1; if (prev !== null && b !== prev) toggles++; prev = b; }
+      }
+      let ok = true;
+      const got = [];
+      for (const b in (st.expect || {})) {
+        const val = (plc.physOut >> b) & 1;
+        if (val !== st.expect[b]) { ok = false; got.push(`O:0/${b} is ${val ? 'ON' : 'OFF'}`); }
+      }
+      if (st.toggles && toggles < st.toggles.min) { ok = false; got.push(`O:0/${st.toggles.bit} changed ${toggles} time(s)`); }
+      return { say: st.say, ok, got: got.join(', '), check: !!(st.expect || st.toggles) };
+    }).filter(r => r.check);
+  }
+
+  window.Examples = { EX, LESSONS, gradeLesson };
 })();
