@@ -115,6 +115,26 @@ function check(name, cond, info = '') {
   check('short circuit trips breaker', await get('QF1', 'state.tripped'));
   check('PLC loses power', !(await page.evaluate(() => App.plc.powered)));
 
+  console.log('Layouts');
+  await load('plcmotor'); await setMode('RUN');
+  await page.evaluate(() => App.setLayout('bench'));
+  await wait(400);
+  const shown = () => page.evaluate(() => [...document.querySelectorAll('.view.active')].map(v => v.id.replace('view-', '')).join(','));
+  check('Workbench shows ladder, wiring and panel together', (await shown()) === 'ladder,wiring,panel');
+  const pb = await (await page.$('#view-panel .pcard svg [data-part="btn"]')).boundingBox();
+  await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2); await page.mouse.down(); await wait(150); await page.mouse.up();
+  await wait(800);
+  check('panel press runs the motor while all panes are live', await get('KM1', 'state.pulled'));
+  check('ladder pane shows power flow', (await page.$$eval('#view-ladder .w.on', els => els.length)) > 0);
+  check('wiring pane shows live wires', (await page.$$eval('#view-wiring .wl.live', els => els.length)) > 0);
+  await page.evaluate(() => App.setLayout('lw'));
+  await wait(300);
+  check('two-pane layout', (await shown()) === 'ladder,wiring');
+  await page.evaluate(() => App.showView('hmi'));
+  await wait(300);
+  check('opening a view outside the layout shows it alone', (await shown()) === 'hmi');
+  await page.evaluate(() => App.setLayout('single'));
+
   console.log('Projects');
   await page.evaluate(() => { App.openNew(Examples.EX.dol.build()); });
   check('examples open as separate projects', (await page.evaluate(() => Store.list().length)) >= 3);
