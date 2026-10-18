@@ -395,6 +395,25 @@ table.ref { border-collapse: collapse; width: 100%; font-size: 13px; }
 table.ref th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border-strong); padding: 6px 8px; }
 table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
 
+/* ---------- lesson grading ---------- */
+.grade { margin-top: 14px; max-width: 720px; }
+.grade-ok, .grade-bad { font-weight: 600; margin: 0 0 6px; }
+.grade-ok { color: var(--ok); }
+.grade-bad { color: var(--danger); }
+.grade-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.grade-list li { padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
+.grade-list li.bad { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
+.grade-list small { color: var(--muted); }
+
+/* ---------- project list ---------- */
+.proj-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow: auto; }
+.proj-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.proj-row.cur { border-color: var(--accent); background: var(--accent-soft); }
+.proj-row div { min-width: 0; display: flex; flex-direction: column; }
+.proj-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-row small { color: var(--muted); font-size: 11.5px; }
+.danger-txt { color: var(--danger) !important; font-size: 12px !important; width: auto !important; padding: 0 6px; }
+
 /* ---------- modal / menu / toast ---------- */
 .modal-wrap { position: fixed; inset: 0; background: rgba(30, 24, 14, .35); display: grid; place-items: center; z-index: 50; padding: 16px; backdrop-filter: blur(2px); }
 .modal { background: var(--surface); border-radius: 16px; width: min(460px, 100%); box-shadow: var(--shadow-lg); border: 1px solid var(--border); max-height: 90vh; display: flex; flex-direction: column; }

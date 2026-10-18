@@ -2,8 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const KEY = 'plc-trainer.project.v1';
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
 
   const App = {
@@ -12,6 +11,7 @@
     ctx: { plcIn: 0, plcInRaw: 0, plcOut: 0, plcPowered: false, plcId: null, mode: 'PROG', forces: false },
     api: null,
     view: 'ladder',
+    currentId: null,
     split: false,
     dirty: { ladder: true, wiring: true, panel: true, hmi: true },
   };
@@ -60,7 +60,20 @@
   let saveT = null;
   App.save = function () {
     clearTimeout(saveT);
-    saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(App.serialize())); } catch (e) { /* storage unavailable */ } }, 500);
+    saveT = setTimeout(() => Store.save(App.currentId, App.serialize()), 500);
+  };
+  /* open project data as a new saved project (examples, imports, New project) */
+  App.openNew = function (data) {
+    App.currentId = Store.newId();
+    Store.setCurrent(App.currentId);
+    App.loadProject(data);
+  };
+  App.openSaved = function (id) {
+    const data = Store.load(id);
+    if (!data) { UI.toast('That project could not be read', 'danger'); return; }
+    App.currentId = id;
+    Store.setCurrent(id);
+    App.loadProject(data);
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
   App.circuitChanged = function () { App.dirty.panel = true; App.dirty.wiring = true; renderVisible(); App.save(); };
@@ -180,7 +193,8 @@
       <article class="learn-body">
         <div class="kicker">${esc(cur.level)}</div><h2>${esc(cur.title)}</h2>
         <div class="lesson">${cur.body}</div>
-        <div class="btn-row">${ex ? `<button class="btn primary" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
+        <div class="btn-row">${ex ? `<button class="btn primary" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.test ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
+        ${cur.test ? '<div class="grade" data-grade></div>' : ''}
         <h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
         <h3 class="mt">Addressing (SLC 500 / MicroLogix style)</h3>
@@ -200,6 +214,16 @@
       if (b.dataset.lesson) { lessonId = b.dataset.lesson; renderLearn(); el.querySelector('.learn-body').scrollTop = 0; }
       if (b.dataset.load) loadExample(b.dataset.load);
       if (b.dataset.ex) loadExample(b.dataset.ex);
+      if (b.hasAttribute('data-check')) {
+        const res = Examples.gradeLesson(cur, App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)));
+        const box = el.querySelector('[data-grade]');
+        if (res.error) { box.innerHTML = `<p class="grade-bad">${esc(res.error)}</p>`; return; }
+        const pass = res.every(r => r.ok);
+        box.innerHTML = `<p class="${pass ? 'grade-ok' : 'grade-bad'}">${pass ? '✓ All checks passed. Well done!' : `${res.filter(r => r.ok).length} of ${res.length} checks passed. Fix the red ones and check again.`}</p>
+          <ul class="grade-list">${res.map(r => `<li class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${esc(r.say)}${r.ok ? '' : ` <small>(${esc(r.got)})</small>`}</li>`).join('')}</ul>
+          <p class="help">The check runs your current ladder program on a simulated PLC with the inputs pressed for you. Your wiring is not used.</p>`;
+        return;
+      }
       if (b.hasAttribute('data-sol')) {
         UI.confirm('Insert solution', 'Replace the current ladder program with the lesson solution?', () => {
           App.plc.setMode('PROG');
@@ -214,11 +238,9 @@
   }
   function loadExample(k) {
     const ex = Examples.EX[k];
-    UI.confirm('Load example', `Load “${ex.title}”? Your current project will be replaced (export it first if you want to keep it).`, () => {
-      App.loadProject(ex.build());
-      UI.toast(`Loaded: ${ex.title}`, 'ok');
-      App.showView(k === 'blank' ? 'wiring' : App.view === 'learn' ? 'wiring' : App.view);
-    }, 'Load');
+    App.openNew(ex.build());
+    UI.toast(`Opened “${ex.title}” as a new project. Your other projects are in File → Open project.`, 'ok', 4000);
+    App.showView(k === 'blank' ? 'wiring' : App.view === 'learn' ? 'wiring' : App.view);
   }
   App.loadExample = loadExample;
 
@@ -239,6 +261,7 @@
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [
         { label: 'New project…', onClick: newProject },
+        { label: 'Open project…', onClick: openDialog },
         { label: 'Rename project…', onClick: rename },
         { label: 'Export project (.json)', onClick: exportProject },
         { label: 'Import project…', onClick: () => document.getElementById('importFile').click() },
@@ -249,7 +272,7 @@
     });
     document.getElementById('importFile').addEventListener('change', e => {
       const f = e.target.files[0]; if (!f) return;
-      f.text().then(t => { App.loadProject(JSON.parse(t)); UI.toast('Project imported', 'ok'); }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
+      f.text().then(t => { App.openNew(JSON.parse(t)); UI.toast('Project imported as a new project', 'ok'); }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
       e.target.value = '';
     });
     document.querySelector('[data-theme-btn]').addEventListener('click', () => {
@@ -285,10 +308,37 @@
       if (!name) return 'Enter a project name';
       const p = Examples.EX[v.t].build();
       p.name = name;
-      App.loadProject(p);
+      App.openNew(p);
       UI.toast(`Created project “${name}”`, 'ok');
       App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
-    }, '<p class="help">This replaces the open project. Use File → Export first if you want to keep it.</p>');
+    }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project.</p>');
+  }
+  function openDialog() {
+    const fmt = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    const m = UI.modal({
+      title: 'Open project',
+      body: '<div class="proj-list"></div>',
+      buttons: [{ label: 'Close' }],
+    });
+    const box = m.el.querySelector('.proj-list');
+    const draw = () => {
+      const list = Store.list();
+      box.innerHTML = list.length ? list.map(p => `<div class="proj-row${p.id === App.currentId ? ' cur' : ''}">
+          <div><b>${esc(p.name)}</b><small>${p.id === App.currentId ? 'Open now · ' : ''}saved ${fmt(p.updated)}</small></div>
+          <button class="btn" data-open="${p.id}" ${p.id === App.currentId ? 'disabled' : ''}>Open</button>
+          <button class="icon-btn" data-del="${p.id}" title="Delete project" aria-label="Delete ${esc(p.name)}" ${p.id === App.currentId ? 'disabled' : ''}>🗑</button></div>`).join('')
+        : '<p class="help">No saved projects yet.</p>';
+    };
+    draw();
+    box.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.open) { m.close(); App.openSaved(b.dataset.open); UI.toast('Project opened', 'ok'); }
+      if (b.dataset.del) {
+        const p = Store.list().find(x => x.id === b.dataset.del);
+        if (b.dataset.confirm) { Store.remove(b.dataset.del); draw(); UI.toast(`Deleted “${p ? p.name : 'project'}”`); }
+        else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; b.classList.add('danger-txt'); }
+      }
+    };
   }
   function about() {
     UI.modal({
@@ -323,10 +373,13 @@
     HMI.init(document.getElementById('view-hmi'));
     bindChrome();
     setTheme(theme);
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { saved = null; }
-    const first = !saved;
-    App.loadProject(saved || Examples.EX.plcmotor.build());
+    Store.migrate();
+    const cur = Store.current();
+    const saved = cur ? Store.load(cur) : null;
+    const first = !saved && !Store.list().length;
+    if (saved) { App.currentId = cur; App.loadProject(saved); }
+    else if (Store.list().length) App.openSaved(Store.list()[0].id);
+    else App.openNew(Examples.EX.plcmotor.build());
     let v = 'ladder';
     try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); } catch (e) { /* ignore */ }
     if (!VIEWS.includes(v)) v = 'ladder';
