@@ -38,7 +38,9 @@ Installing needs the app served over https; the included GitHub Pages workflow d
   - Overload relay trips on a jammed or single-phasing motor
 - Live voltage overlay, a terminal hover tooltip, and a **multimeter**
 
-**Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable. **Split view** shows it next to the ladder.
+**Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable.
+
+**Workbench layout**: **▦ Layout** shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
 
 **HMI**: a PanelView-style 800×480 screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has Edit and Run modes and binds to PLC tags.
 
@@ -47,7 +49,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 ## Quick start
 1. Open `index.html`. The *PLC motor start/stop + HMI* example loads.
 2. Click **RUN** in the top bar.
-3. Turn on **⧉ Split view**, then press **START** on the panel. The rung goes green, KM1 pulls in and the motor spins.
+3. Pick **▦ Layout → Workbench**, then press **START** on the panel. The rung goes green, KM1 pulls in and the motor spins.
 4. Click **JAM** on the motor. After a few seconds F1 trips and the HMI shows an alarm.
 
 ## Project structure

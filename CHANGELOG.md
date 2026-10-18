@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [1.1.0] - 2026-10-18
 
 ### Added
+- **Workbench layout**: **▦ Layout** shows the ladder, the wiring (control and power circuit) and the Panel & Plant side by side, all live at once. Other layouts pair any two views or add the HMI. Drag the dividers to resize, double-click a divider to reset. Wide screens start on the Workbench.
 - **Phones and tablets**:
   - Bottom tab bar on phones; toolbars become one row that scrolls sideways
   - Data files, the parts palette and the properties panel slide in as drawers
@@ -18,7 +19,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Multiple projects**: File → Open project lists every saved project. New project, examples and imports open as new projects instead of replacing the current one. The v1.0 autosave moves into the list automatically.
 - **Check my work** for lessons 1–6: runs your ladder on a simulated PLC with the buttons pressed for you and reports each expected output.
 - GitHub Actions: CI runs `npm test` on pull requests, and a workflow deploys `main` to GitHub Pages.
-- Tests for projects, lesson grading, phone touch (drawers, long-press, pinch) and offline install (39 checks).
+- Tests for layouts, projects, lesson grading, phone touch (drawers, long-press, pinch) and offline install (45 checks).
+
+### Changed
+- **▦ Layout** replaces the Split view toggle. Inside a pane, the data files, palette and properties open as slide-over panels.
 
 ### Fixed
 - Pending changes are saved before switching to another project.

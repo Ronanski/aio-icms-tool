@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.1.0 (released 2026-10-18)
-**Status:** Stable web app that installs on phones, tablets and PCs. Covered by `npm test` (39/39 passing).
+**Status:** Stable web app that installs on phones, tablets and PCs. Covered by `npm test` (45/45 passing).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -16,6 +16,7 @@
 - [x] Docs: README, CHANGELOG, CONTRIBUTING (rules), PROGRESS, HANDOFF
 
 ## Done (v1.1.0)
+- [x] Workbench layout: ladder + wiring + panel live side by side, resizable panes
 - [x] PWA: manifest, service worker, icons, Install app button, works offline
 - [x] Mobile and tablet layout: bottom tabs, drawers, ladder zoom, pinch zoom, long-press menus
 - [x] Multiple saved projects (File → Open project)
