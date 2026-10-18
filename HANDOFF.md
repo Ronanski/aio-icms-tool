@@ -5,7 +5,8 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | v1.0.0 (git tag `v1.0.0`) |
+| **Version** | v1.0.0, release commit `c22dbbd` |
+| **Tag** | `v1.0.0` exists locally only. The cloud environment blocks tag pushes, so create it on GitHub (Releases → Draft a new release → tag `v1.0.0`, target commit `c22dbbd`). |
 | **Date** | 2026-10-18 |
 | **Branch** | `ccr-d652d569-13gxij` (`main` not created yet; see "Open decisions") |
 | **Tests** | `npm test`: 26 passed, 0 failed |
@@ -48,4 +49,4 @@ index.html ── loads scripts in order ──►
 - Built the full app (ladder, PLC engine, wiring solver, panel, HMI, lessons, examples).
 - Added File → New project (name + template), About with version, and the e2e suite.
 - Added the docs: CHANGELOG, CONTRIBUTING, PROGRESS, HANDOFF and CLAUDE.md.
-- Tagged the v1.0.0 release.
+- Prepared the v1.0.0 release (commit `c22dbbd`). The tag still has to be created on GitHub.
