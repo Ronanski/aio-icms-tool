@@ -1,6 +1,6 @@
 # Progress
 
-**Current version:** 1.1.0 (released 2026-10-18)
+**Current version:** 1.1.0 (released 2026-10-18 from `main`; downloads on GitHub Releases)
 **Status:** Stable web app that installs on phones, tablets and PCs. Covered by `npm test` (45/45 passing).
 
 ## Done (v1.0.0)
@@ -25,6 +25,7 @@
 - [x] Windows installer + portable `.exe` and Android `.apk`, published by the Release workflow
 
 ## Next: v1.2.0 (planned)
+- [ ] Make `main` the default branch so Pages can deploy (owner action)
 - [ ] Android signing key in repo secrets, so updates install over old versions (see RELEASING.md)
 - [ ] Play Store build (`.aab`) and listing
 - [ ] Final product name and logo, replacing the placeholder icon

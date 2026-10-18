@@ -5,12 +5,12 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | v1.1.0 (previous: v1.0.0 at `c22dbbd`) |
-| **Tags** | The Release workflow creates `vX.Y.Z` when it publishes. `v1.0.0` (`c22dbbd`) has no GitHub release; optional. |
+| **Version** | v1.1.0, released from `main` (merge commit `1755aee`, PR #1) |
+| **Tags** | `v1.1.0` created on GitHub by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
-| **Branch** | `ccr-d652d569-13gxij`, merging into `main` through PR #1 |
+| **Branch** | `main` holds released code. Work happens on feature branches and is merged through PRs. |
 | **Tests** | `npm test`: 45 passed, 0 failed (desktop, layouts, phone touch, offline PWA) |
-| **Pull request** | #1 `ccr-d652d569-13gxij` → `main` (v1.1.0). `main` = v1.0.0 (`c22dbbd`). |
+| **Pull request** | #1 merged (v1.1.0). |
 | **Downloads** | GitHub Releases (Windows `.exe`, Android `.apk`, web zip) built by `release.yml`; web app on GitHub Pages |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
 
@@ -48,7 +48,7 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
 
 ## Open decisions (owner: Ronan)
-1. **Merge PR #1 into `main`.** Pages is already set to GitHub Actions, so the web app goes live at `https://ronanski.github.io/aio-icms-tool/`. Then run **Actions → Release → Run workflow** on `main` to publish v1.1.0 with the `.exe` and `.apk`.
+1. **Make `main` the default branch** (Settings → General → Default branch). The `github-pages` environment only deploys from the default branch, so the first Pages deploy from `main` was refused. After switching, re-run **Actions → Deploy to GitHub Pages** (or push to `main`).
 5. **Android signing key**: add the four secrets from `RELEASING.md` before the release you announce, so later updates install over it.
 2. **License**: proprietary (to sell) or MIT (open source)?
 3. **Product name and logo** without trademarked words.
@@ -61,3 +61,4 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 - Created `main` at v1.0.0 and opened PR #1 for v1.1.0.
 - Tests grew from 26 to 45 checks, all passing.
 - Added Windows (.exe) and Android (.apk) builds plus the Release workflow; the PWA is unchanged.
+- Merged PR #1 into `main` and ran the Release workflow on `main` to publish v1.1.0.
