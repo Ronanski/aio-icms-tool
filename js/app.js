@@ -30,22 +30,46 @@
   App.ctx.setMode = m => App.setMode(m);
 
   /* ---------- project ---------- */
-  App.loadProject = function (p) {
-    const rungs = ((p.ladder && p.ladder.rungs) || []).map(r => {
-      try { return Ladder.newRung(Ladder.parseRung(r.text || ''), r.comment || ''); }
-      catch (err) { return Ladder.newRung([], `${r.comment || ''} [could not parse: ${r.text}]`); }
+  /* Build a project from saved or imported data. Files can be hand-edited, so every field is checked:
+     ids, colors and numbers end up in SVG/HTML markup. Throws if the data is not a project at all. */
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const arr = v => (Array.isArray(v) ? v : []);
+  const ID = /^[A-Za-z0-9_-]{1,40}$/;
+  const HEX = /^#[0-9a-fA-F]{3,8}$/;
+  const str = (v, n = 400) => (typeof v === 'string' || typeof v === 'number' ? String(v).slice(0, n) : '');
+  function buildProject(p) {
+    if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
+    const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
+    const rungs = arr(lad.rungs).filter(isObj).map(r => {
+      const text = str(r.text, 20000), comment = str(r.comment);
+      try { return Ladder.newRung(Ladder.parseRung(text), comment); }
+      catch (err) { return Ladder.newRung([], `${comment} [could not parse: ${text}]`); }
     });
-    const comps = ((p.circuit && p.circuit.comps) || []).filter(c => Circuit.DEFS[c.type]).map(c => Circuit.normalize(JSON.parse(JSON.stringify(c))));
+    const desc = {};
+    if (isObj(lad.desc)) for (const k in lad.desc) { const v = str(lad.desc[k], 80); if (v) desc[k] = v; }
+    const comps = arr(cir.comps).filter(c => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && ID.test(c.id))
+      .map(c => Circuit.normalize(JSON.parse(JSON.stringify(c))));
     const ids = new Set(comps.map(c => c.id));
-    const wires = ((p.circuit && p.circuit.wires) || []).filter(w => ids.has(w.a.split(':')[0]) && ids.has(w.b.split(':')[0])).map(w => ({ ...w, pts: w.pts || [] }));
-    const maxNum = arr => arr.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
-    App.project = {
-      name: p.name || 'Untitled',
-      ladder: { rungs, desc: { ...((p.ladder && p.ladder.desc) || {}) } },
-      circuit: { comps, wires, seq: Math.max((p.circuit && p.circuit.seq) || 0, maxNum(comps), maxNum(wires)) },
-      hmi: { objects: ((p.hmi && p.hmi.objects) || []).map(o => ({ ...o })), seq: 0 },
+    const termOk = k => typeof k === 'string' && ids.has(k.split(':')[0]) && Circuit.DEFS[comps.find(c => c.id === k.split(':')[0]).type].terms.some(t => t.id === k.split(':')[1]);
+    const wires = arr(cir.wires).filter(w => isObj(w) && ID.test(w.id) && termOk(w.a) && termOk(w.b)).map(w => ({
+      id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d',
+      pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
+    }));
+    const objects = arr(hm.objects).map(HMI.clean).filter(Boolean);
+    const maxNum = list => list.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
+    const seq = v => (Number.isFinite(v) ? v : 0);
+    return {
+      name: str(p.name, 80).trim() || 'Untitled',
+      ladder: { rungs, desc },
+      circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
+      hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
     };
-    App.project.hmi.seq = Math.max((p.hmi && p.hmi.seq) || 0, maxNum(App.project.hmi.objects));
+  }
+  App.buildProject = buildProject;
+  App.loadProject = function (p) { applyProject(buildProject(p)); };
+  function applyProject(proj) {
+    App.project = proj;
+    const rungs = proj.ladder.rungs;
     const plc = App.plc;
     plc.setMode('PROG');
     plc.resetData();
@@ -58,8 +82,8 @@
     renderVisible();
     document.querySelector('[data-pname]').textContent = App.project.name;
     clearTimeout(saveT); saveT = null;
-    Store.save(App.currentId, App.serialize());
-  };
+    store();
+  }
   App.serialize = function () {
     const p = App.project;
     return {
@@ -69,31 +93,44 @@
       hmi: p.hmi,
     };
   };
-  let saveT = null;
+  let saveT = null, saveFailed = false;
+  /* write the project to browser storage; warn once if it fails (storage full or blocked) */
+  function store() {
+    if (!App.project || !App.currentId) return true;
+    const ok = Store.save(App.currentId, App.serialize());
+    if (!ok && !saveFailed) UI.toast('Could not save: browser storage is full or blocked. Use File → Export project to keep a copy.', 'danger', 7000);
+    saveFailed = !ok;
+    App.lastSave = ok ? Date.now() : App.lastSave;
+    return ok;
+  }
   App.save = function () {
     clearTimeout(saveT);
-    saveT = setTimeout(() => { saveT = null; Store.save(App.currentId, App.serialize()); }, 500);
+    saveT = setTimeout(() => { saveT = null; store(); }, 500);
   };
   /* write any pending change now, before switching to another project */
   App.flushSave = function () {
-    if (saveT === null) return;
+    if (saveT === null) return true;
     clearTimeout(saveT); saveT = null;
-    if (App.project && App.currentId) Store.save(App.currentId, App.serialize());
+    return store();
   };
-  /* open project data as a new saved project (examples, imports, New project) */
+  /* open project data as a new saved project (examples, imports, New project).
+     The data is checked first, so a broken file leaves the current project as it was. */
   App.openNew = function (data) {
+    const proj = buildProject(data);
     App.flushSave();
     App.currentId = Store.newId();
     Store.setCurrent(App.currentId);
-    App.loadProject(data);
+    applyProject(proj);
   };
   App.openSaved = function (id) {
+    let proj = null;
+    try { const data = Store.load(id); if (data) proj = buildProject(data); } catch (err) { proj = null; }
+    if (!proj) { UI.toast('That project could not be read', 'danger'); return false; }
     App.flushSave();
-    const data = Store.load(id);
-    if (!data) { UI.toast('That project could not be read', 'danger'); return; }
     App.currentId = id;
     Store.setCurrent(id);
-    App.loadProject(data);
+    applyProject(proj);
+    return true;
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
   App.circuitChanged = function () { App.dirty.panel = true; App.dirty.wiring = true; renderVisible(); App.save(); };
@@ -108,6 +145,24 @@
   /* ---------- loop ---------- */
   const alertSeen = new Map();
   let last = performance.now();
+  /* App.later(n, fn) runs fn once n more ticks (circuit solve + PLC scan) have passed.
+     Momentary buttons release through it, so even a quick tap is seen by at least one scan. */
+  App.ticks = 0;
+  const pending = [];
+  App.later = function (n, fn) { pending.push({ at: App.ticks + n, fn }); };
+  App.holdTicks = 2;
+  /* call App.hold(key, up) when a momentary button goes down; call the returned function when it is released.
+     up() runs no earlier than App.holdTicks ticks after the press. A newer press on the same key cancels it. */
+  const holds = new Map();
+  App.hold = function (key, up) {
+    const tok = { at: App.ticks };
+    holds.set(key, tok);
+    return () => {
+      const run = () => { if (holds.get(key) === tok) { holds.delete(key); up(); } };
+      const wait = tok.at + App.holdTicks - App.ticks;
+      if (wait <= 0) run(); else App.later(wait, run);
+    };
+  };
   function tick() {
     const now = performance.now();
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -128,6 +183,8 @@
     if (pc) { plc.powered = ctx.plcPowered; plc.physIn = ctx.plcIn; } else { plc.powered = true; plc.physIn = 0; }
     ctx.plcInRaw = ctx.plcIn;
     plc.scan(dt);
+    App.ticks++;
+    for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= App.ticks) pending.splice(i, 1)[0].fn();
   }
   function frame() {
     const vis = visibleViews();
@@ -265,7 +322,7 @@
     let m = '';
     if (!st.nplc) m = 'No PLC in the wiring — ladder runs as a virtual PLC (use forcing to test).';
     else if (!st.pw) m = '⚠ PLC has no power — check QF/L1/N wiring in the Wiring tab.';
-    else if (plc.mode === 'PROG') m = 'Program mode — outputs are off. Switch to RUN to execute.';
+    else if (plc.mode === 'PROG') m = st.force && st.fen ? 'Program mode — outputs are off, but forced outputs stay active. Switch to RUN to execute.' : 'Program mode — outputs are off. Switch to RUN to execute.';
     msg.textContent = m;
     msg.classList.toggle('warn', !!st.nplc && !st.pw);
   }
@@ -288,7 +345,7 @@
         ${cur.test ? '<div class="grade" data-grade></div>' : ''}
         <h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
-        <h3 class="mt">Addressing (SLC 500 / MicroLogix style)</h3>
+        <h3 class="mt">Addressing (file-based style)</h3>
         <table class="ref"><tr><th>Address</th><th>Meaning</th></tr>
           <tr><td><code>I:0/0 … I:0/11</code></td><td>Physical inputs (input image)</td></tr>
           <tr><td><code>O:0/0 … O:0/7</code></td><td>Physical relay outputs</td></tr>
@@ -437,7 +494,7 @@
   function about() {
     UI.modal({
       title: `PLC Trainer v${VERSION}`,
-      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><h4>Install on your device</h4><ul class="tips"><li><b>Android (Chrome)</b>: tap <b>Install app</b> in the top bar, or menu ⋮ → <b>Add to Home screen</b>.</li><li><b>iPhone / iPad (Safari)</b>: tap Share → <b>Add to Home Screen</b>.</li><li><b>Windows / Mac (Chrome or Edge)</b>: click <b>Install app</b>, or the install icon in the address bar.</li></ul><p class="help">Install needs the hosted web address (https). Once installed, the app works offline.</p><p>Windows installer and Android APK: <a href="https://github.com/Ronanski/aio-icms-tool/releases/latest" target="_blank" rel="noopener">download the latest release</a>.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
+      body: `<p>PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><h4>Install on your device</h4><ul class="tips"><li><b>Android (Chrome)</b>: tap <b>Install app</b> in the top bar, or menu ⋮ → <b>Add to Home screen</b>.</li><li><b>iPhone / iPad (Safari)</b>: tap Share → <b>Add to Home Screen</b>.</li><li><b>Windows / Mac (Chrome or Edge)</b>: click <b>Install app</b>, or the install icon in the address bar.</li></ul><p class="help">Install needs the hosted web address (https). Once installed, the app works offline.</p><p>Windows installer and Android APK: <a href="https://github.com/Ronanski/aio-icms-tool/releases/latest" target="_blank" rel="noopener">download the latest release</a>.</p><p class="help">Educational simulator. Not affiliated with any PLC manufacturer. All trademarks belong to their owners.</p>`,
     });
   }
   App.VERSION = VERSION;
@@ -472,9 +529,9 @@
     const cur = Store.current();
     const saved = cur ? Store.load(cur) : null;
     const first = !saved && !Store.list().length;
-    if (saved) { App.currentId = cur; App.loadProject(saved); }
-    else if (Store.list().length) App.openSaved(Store.list()[0].id);
-    else App.openNew(Examples.EX.plcmotor.build());
+    let opened = !!saved && App.openSaved(cur);
+    for (const p of Store.list()) { if (opened) break; opened = App.openSaved(p.id); }
+    if (!opened) App.openNew(Examples.EX.plcmotor.build());
     let v = 'ladder', lay = null;
     try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); lay = localStorage.getItem('plc-trainer.layout'); } catch (e) { /* ignore */ }
     if (!VIEWS.includes(v)) v = 'ladder';
@@ -504,4 +561,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => { boot(); setupPwa(); });
+  // save pending edits when the tab or app is closed or sent to the background
+  window.addEventListener('pagehide', () => App.flushSave());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') App.flushSave(); });
 })();

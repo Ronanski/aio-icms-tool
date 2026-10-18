@@ -1,4 +1,4 @@
-/* HMI: PanelView-style touchscreen designer + runtime bound to PLC tags. */
+/* HMI: operator touchscreen designer + runtime bound to PLC tags. */
 (function () {
   'use strict';
   const esc = UI.esc;
@@ -22,6 +22,26 @@
     shape: 'Shape', units: 'Units', scale: 'Scale ×', dec: 'Decimals', min: 'Min', max: 'Max', size: 'Font size',
   };
   const hmi = () => App.project.hmi;
+  const MODES = ['momentary', 'toggle', 'set', 'reset'], SHAPES = ['box', 'round'];
+  const HEXC = /^#[0-9a-fA-F]{3,8}$/;
+  const col = (v, d = '#888888') => (HEXC.test(v) ? v : d);
+
+  /* check one saved/imported screen object: known type, safe id, numeric geometry, hex colors */
+  HMI.clean = function (o) {
+    if (!o || typeof o !== 'object' || !Object.prototype.hasOwnProperty.call(TYPES, o.type) || !/^[A-Za-z0-9_-]{1,40}$/.test(o.id)) return null;
+    const t = TYPES[o.type];
+    const num = (v, d, lo, hi) => { const x = Number(v); return v !== '' && v != null && Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; };
+    const r = { id: o.id, type: o.type, x: num(o.x, 40, 0, 800), y: num(o.y, 60, 0, 480), w: num(o.w, t.w, 20, 800), h: num(o.h, t.h, 20, 480) };
+    for (const k in t.d) {
+      const d = t.d[k], v = o[k];
+      if (/color/i.test(k)) r[k] = col(v, d);
+      else if (k === 'mode') r[k] = MODES.includes(v) ? v : d;
+      else if (k === 'shape') r[k] = SHAPES.includes(v) ? v : d;
+      else if (typeof d === 'number') r[k] = num(v, d, -1e9, 1e9);
+      else r[k] = typeof v === 'string' || typeof v === 'number' ? String(v).slice(0, 200) : d;
+    }
+    return r;
+  };
 
   HMI.init = function (el) {
     root = el;
@@ -33,7 +53,7 @@
           <div class="hmi-add">${Object.entries(TYPES).map(([k, t]) => `<button class="tbtn" data-add="${k}">${t.name}</button>`).join('')}</div>
         </div>
         <div class="hmi-main">
-          <div class="hmi-stage"><div class="hmi-bezel"><div class="hmi-brand">PanelView‑style · 800×480</div><div class="hmi-screen"></div><div class="hmi-keys"><span></span><span></span><span></span><span></span></div></div></div>
+          <div class="hmi-stage"><div class="hmi-bezel"><div class="hmi-brand">Operator terminal · 800×480</div><div class="hmi-screen"></div><div class="hmi-keys"><span></span><span></span><span></span><span></span></div></div></div>
           <aside class="hmi-props"></aside>
         </div>
       </div>`;
@@ -48,6 +68,7 @@
     screen.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     setMode('run');
     HMI.watchSize();
   };
@@ -89,7 +110,7 @@
     const plc = App.plc;
     if (o.type === 'pb') {
       e.preventDefault();
-      if (o.mode === 'momentary') { plc.write(o.tag, 1); drag = { mom: o }; }
+      if (o.mode === 'momentary') { plc.write(o.tag, 1); const tag = o.tag; drag = { mom: App.hold('hmi:' + tag, () => App.plc.write(tag, 0)) }; }
       else if (o.mode === 'toggle') plc.write(o.tag, plc.read(o.tag) ? 0 : 1);
       else if (o.mode === 'set') plc.write(o.tag, 1);
       else if (o.mode === 'reset') plc.write(o.tag, 0);
@@ -113,7 +134,7 @@
   }
   function onUp() {
     if (!drag) return;
-    if (drag.mom) App.plc.write(drag.mom.tag, 0);
+    if (drag.mom) drag.mom();
     if (drag.o) App.save();
     drag = null;
   }
@@ -127,16 +148,16 @@
 
   function inner(o) {
     switch (o.type) {
-      case 'pb': return `<div class="h-pb" style="--c:${o.color}"><span>${esc(o.label)}</span></div>`;
+      case 'pb': return `<div class="h-pb" style="--c:${col(o.color)}"><span>${esc(o.label)}</span></div>`;
       case 'ind': return `<div class="h-ind ${o.shape === 'round' ? 'round' : ''}"><small>${esc(o.label)}</small><b data-t></b></div>`;
       case 'lamp': return `<div class="h-lamp"><i data-l></i><small>${esc(o.label)}</small></div>`;
       case 'num': return `<div class="h-num"><small>${esc(o.label)}</small><b data-t>0</b></div>`;
       case 'entry': return `<div class="h-num entry"><small>${esc(o.label)} ✎</small><b data-t>0</b></div>`;
-      case 'bar': return `<div class="h-bar"><small>${esc(o.label)}</small><div class="trk"><i data-f style="background:${o.color}"></i></div><b data-t>0</b></div>`;
+      case 'bar': return `<div class="h-bar"><small>${esc(o.label)}</small><div class="trk"><i data-f style="background:${col(o.color)}"></i></div><b data-t>0</b></div>`;
       case 'motor': return `<div class="h-motor"><svg viewBox="-50 -50 100 100"><circle r="44" class="mb"/><g data-r><path d="M0 0 L36 -8 Q40 0 36 8Z"/><path d="M0 0 L36 -8 Q40 0 36 8Z" transform="rotate(120)"/><path d="M0 0 L36 -8 Q40 0 36 8Z" transform="rotate(240)"/></g><circle r="7" class="hub"/></svg><small>${esc(o.label)}</small></div>`;
       case 'tank': return `<div class="h-tank"><small>${esc(o.label)}</small><div class="vessel"><i data-f></i><b data-t>0</b></div></div>`;
       case 'alarm': return `<div class="h-alarm" data-a>⚠ ${esc(o.label)}</div>`;
-      case 'text': return `<div class="h-text" style="font-size:${Number(o.size) || 18}px;color:${o.color}">${esc(o.label)}</div>`;
+      case 'text': return `<div class="h-text" style="font-size:${Number(o.size) || 18}px;color:${col(o.color)}">${esc(o.label)}</div>`;
     }
     return '';
   }
@@ -144,7 +165,7 @@
   HMI.render = function () {
     if (!screen) return;
     const objs = hmi().objects;
-    screen.innerHTML = objs.map(o => `<div class="hobj t-${o.type}${sel === o.id ? ' sel' : ''}" data-id="${o.id}" style="left:${o.x}px;top:${o.y}px;width:${o.w}px;height:${o.h}px">${inner(o)}${mode === 'edit' ? '<span class="rs"></span>' : ''}</div>`).join('') +
+    screen.innerHTML = objs.map(o => `<div class="hobj t-${esc(o.type)}${sel === o.id ? ' sel' : ''}" data-id="${esc(o.id)}" style="left:${Number(o.x) || 0}px;top:${Number(o.y) || 0}px;width:${Number(o.w) || 0}px;height:${Number(o.h) || 0}px">${inner(o)}${mode === 'edit' ? '<span class="rs"></span>' : ''}</div>`).join('') +
       (objs.length ? '' : `<div class="hmi-empty">Empty screen — switch to <b>Edit</b> and add objects.</div>`);
     els = objs.map(o => {
       const el = screen.querySelector(`[data-id="${o.id}"]`);
@@ -213,8 +234,8 @@
     propsEl.innerHTML = `<div class="side-head"><h4>${TYPES[o.type].name}</h4></div><div class="props">${keys.map(k => {
       const v = o[k];
       let input;
-      if (k === 'mode') input = `<select data-k="mode">${['momentary', 'toggle', 'set', 'reset'].map(m => `<option ${v === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
-      else if (k === 'shape') input = `<select data-k="shape">${['box', 'round'].map(m => `<option ${v === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
+      if (k === 'mode') input = `<select data-k="mode">${MODES.map(m => `<option ${v === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
+      else if (k === 'shape') input = `<select data-k="shape">${SHAPES.map(m => `<option ${v === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
       else if (/color/i.test(k)) input = `<div class="swatches">${COLORS.map(c => `<button class="sw${v === c ? ' on' : ''}" data-ck="${k}" data-cv="${c}" style="background:${c}"></button>`).join('')}</div>`;
       else input = `<input data-k="${k}" value="${esc(v)}" ${k === 'tag' ? 'list="hmiTags" spellcheck="false"' : ''}>`;
       return `<label class="field"><span>${PROPS[k] || k}</span>${input}</label>`;

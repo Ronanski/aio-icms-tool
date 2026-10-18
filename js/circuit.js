@@ -152,7 +152,7 @@
     init: () => ({ tripped: false, heat: 0 }),
     conduct: c => [['1', '2'], ['3', '4'], ['5', '6'], c.state.tripped ? ['97', '98'] : ['95', '96']],
     tick(c, api, dt) {
-      const hot = ['2', '4', '6'].some(t => api.over.has(api.root(c, t)));
+      const hot = api.feedsOverload(c);
       const s = c.state;
       s.heat = hot ? s.heat + dt : Math.max(0, s.heat - dt * 0.4);
       if (!s.tripped && s.heat >= (Number(c.props.trip) || 4)) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
@@ -256,10 +256,10 @@
       return s;
     },
   });
-  /* PLC: AB MicroLogix-like. 12 DC inputs, 8 relay outputs in two groups. */
+  /* PLC: compact controller. 12 DC inputs, 8 relay outputs in two groups. */
   const PLC_IN = 12, PLC_OUT = 8;
   def('plc', {
-    name: 'PLC (MicroLogix-style)', cat: 'Control', view: 'cabinet', prefix: 'PLC', w: 440, h: 200, unique: true,
+    name: 'PLC (compact, 12 in / 8 out)', cat: 'Control', view: 'cabinet', prefix: 'PLC', w: 440, h: 200, unique: true,
     info: 'Power L1/N 230 VAC. Built-in 24 VDC sensor supply (+24 / COM). Inputs I:0/0–I:0/11 are 24 VDC, referenced to input COM. Relay outputs: O:0/0–3 switch from VAC-VDC0, O:0/4–7 from VAC-VDC1. Click the key switch to change PROG/RUN.',
     terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'N', x: 40, y: 0, l: 'L2/N' }, { id: 'PE', x: 62, y: 0 }, { id: 'V24', x: 90, y: 0, l: '+24' }, { id: 'C24', x: 112, y: 0, l: 'COM' },
       { id: 'COM', x: 150, y: 0, l: 'COM' }, ...Array.from({ length: PLC_IN }, (_, i) => ({ id: 'I' + i, x: 174 + i * 22, y: 0, l: String(i) })),
@@ -292,7 +292,7 @@
       let s = R(0, 0, 440, 200, 'url(#gPlc)', 6, '#3a3833') + band(0, 440, 22, '#1e1d1a') + band(178, 440, 22, '#1e1d1a');
       s += T(48, 36, 'AC POWER', 'dt light xs') + T(101, 36, '24VDC OUT', 'dt light xs') + T(300, 36, 'INPUTS  I:0/0 – I:0/11  (24 VDC)', 'dt light xs');
       s += T(90, 170, 'RELAY OUT  O:0/0–3', 'dt light xs') + T(225, 170, 'RELAY OUT  O:0/4–7', 'dt light xs');
-      s += T(22, 66, 'PLC-1100', 'dt light brand', 'start') + T(22, 80, 'AB-style controller', 'dt light xs', 'start');
+      s += T(22, 66, 'PLC-20', 'dt light brand', 'start') + T(22, 80, 'Compact controller', 'dt light xs', 'start');
       const st = [['POWER', pw, '#3ddc63'], ['RUN', run, '#3ddc63'], ['FAULT', !!c.state.burnt, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230']];
       st.forEach(([n, on, col], i) => { s += led(28, 98 + i * 15, on, col, 3.6) + T(38, 101 + i * 15, n, 'dt light xs', 'start'); });
       s += R(150, 52, 280, 92, '#24231f', 4, '#111');
@@ -317,6 +317,7 @@
       info: contact === 'NO' ? 'Momentary push button, normally open contact 13-14 (closes while pressed).' : 'Momentary push button, normally closed contact 11-12 (opens while pressed).',
       terms: [{ id: ids[0], x: 15, y: 90 }, { id: ids[1], x: 45, y: 90 }],
       init: () => ({ pressed: false }),
+      transient: ['pressed'],
       conduct: c => (contact === 'NO') === c.state.pressed ? [ids] : null,
       onPart(c, p, ev) { if (p === 'btn') { c.state.pressed = ev === 'down'; return true; } },
       draw(c) {
@@ -455,7 +456,7 @@
   function motorEval(c, api, u, v, w) {
     const { drive, dir } = motorDrive(c, api, u, v, w);
     c.state.drive = drive; c.state.dir = dir;
-    if ((drive === 'run' && c.state.jam) || drive === 'single') [u, v, w].forEach(t => api.over.add(api.root(c, t)));
+    if ((drive === 'run' && c.state.jam) || drive === 'single') api.overM.push({ c, t: [u, v, w] });
     return false;
   }
   function motorTick(c, dt) {
@@ -484,6 +485,7 @@
     info: 'Terminals U1 V1 W1 + PE. Phase sequence L1-L2-L3 → forward; swap any two phases → reverse. Missing a phase → single-phasing (overcurrent). Click JAM to simulate a mechanical jam.',
     terms: [{ id: 'U1', x: 30, y: 0 }, { id: 'V1', x: 50, y: 0 }, { id: 'W1', x: 70, y: 0 }, { id: 'PE', x: 100, y: 0 }],
     init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false }),
+    transient: ['spd', 'drive', 'dir'],
     evaluate: (c, api) => motorEval(c, api, 'U1', 'V1', 'W1'),
     tick: (c, api, dt) => motorTick(c, dt),
     onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
@@ -508,6 +510,7 @@
       { id: 'S1BN', x: 140, y: 0, l: 'BN' }, { id: 'S1BK', x: 160, y: 0, l: 'BK' }, { id: 'S1BU', x: 180, y: 0, l: 'BU' },
       { id: 'S2BN', x: 290, y: 0, l: 'BN' }, { id: 'S2BK', x: 310, y: 0, l: 'BK' }, { id: 'S2BU', x: 330, y: 0, l: 'BU' }],
     init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false, belt: 0, boxes: [], auto: false, ft: 0, count: 0, d1: false, d2: false, a1: false, a2: false }),
+    transient: ['spd', 'drive', 'dir'],
     conduct(c) { const o = []; if (c.state.a1) o.push(['S1BN', 'S1BK']); if (c.state.a2) o.push(['S2BN', 'S2BK']); return o; },
     evaluate(c, api) {
       motorEval(c, api, 'U1', 'V1', 'W1');
@@ -640,7 +643,7 @@
   const V400 = { kind: 'AC', v: 400, label: '400VAC' }, V230 = { kind: 'AC', v: 230, label: '230VAC' };
   const V24 = { kind: 'DC', v: 24, label: '24VDC' }, V24R = { kind: 'DC', v: -24, label: '24VDC', rev: true };
 
-  function build(circ, ctx) {
+  function build(circ, ctx, skip) {
     const idx = new Map(); let n = 0;
     for (const c of circ.comps) { const d = DEFS[c.type]; if (!d) continue; for (const t of d.terms) idx.set(c.id + ':' + t.id, n++); }
     const par = new Int32Array(n);
@@ -650,7 +653,7 @@
     for (const w of circ.wires) uni(idx.get(w.a), idx.get(w.b));
     for (const c of circ.comps) {
       const d = DEFS[c.type];
-      if (d && d.conduct) { const ps = d.conduct(c, ctx); if (ps) for (const [a, b] of ps) uni(idx.get(c.id + ':' + a), idx.get(c.id + ':' + b)); }
+      if (d && d.conduct && c.id !== skip) { const ps = d.conduct(c, ctx); if (ps) for (const [a, b] of ps) uni(idx.get(c.id + ':' + a), idx.get(c.id + ':' + b)); }
     }
     const pots = new Map();
     for (const c of circ.comps) {
@@ -713,7 +716,7 @@
     for (const r of sh.keys()) net.pots.set(r, new Set());
     return net;
   }
-  function makeApi(net, alerts) {
+  function makeApi(net, alerts, circ, ctx) {
     function voltR(ra, rb) {
       if (ra < 0 || rb < 0 || ra === rb) return null;
       const A = net.pots.get(ra), B = net.pots.get(rb);
@@ -732,7 +735,7 @@
     }
     const rootK = k => { const i = net.idx.get(k); return i == null ? -1 : net.find(i); };
     return {
-      net, over: new Set(),
+      net, overM: [],
       rootK,
       root: (c, t) => rootK(c.id + ':' + t),
       potsR: r => net.pots.get(r) || EMPTY,
@@ -741,6 +744,13 @@
       vK(ka, kb) { return voltR(rootK(ka), rootK(kb)); },
       sameNet(ka, kb) { const a = rootK(ka); return a >= 0 && a === rootK(kb); },
       phase(c, t) { for (const p of this.pots(c, t)) if (isPh(p)) return p; return null; },
+      /* does an overloaded motor draw its current through device c? Open c and see whether the motor loses a phase. */
+      feedsOverload(c) {
+        if (!this.overM.length) return false;
+        const n2 = build(circ, ctx, c.id);
+        const ph = k => { const i = n2.idx.get(k); const st = i == null ? null : n2.pots.get(n2.find(i)); if (st) for (const p of st) if (isPh(p)) return p; return null; };
+        return this.overM.some(m => m.t.some(t => { const p = this.phase(m.c, t); return p && ph(m.c.id + ':' + t) !== p; }));
+      },
       alert(msg, kind) { alerts.push({ msg, kind }); },
     };
   }
@@ -750,7 +760,7 @@
     let api = null;
     for (let it = 0; it < 16; it++) {
       const net = solveNet(circ, ctx, alerts);
-      api = makeApi(net, alerts);
+      api = makeApi(net, alerts, circ, ctx);
       let ch = false;
       for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.evaluate && d.evaluate(c, api, ctx)) ch = true; }
       if (!ch) break;
@@ -768,10 +778,33 @@
     let n = 1; while (used.has(d.prefix + n)) n++;
     return { id, type, x: Math.round(x / 10) * 10, y: Math.round(y / 10) * 10, props: { label: d.prefix + n, ...JSON.parse(JSON.stringify(d.props)) }, state: d.init ? d.init() : {} };
   }
+  const okNum = v => typeof v === 'number' && isFinite(v);
+  function cleanVal(v, def) {
+    if (def === undefined) return okNum(v) || typeof v === 'boolean' ? v : undefined;
+    if (Array.isArray(def)) {
+      if (!Array.isArray(v)) return def;
+      // arrays hold small records (conveyor boxes): keep their numeric fields only
+      return v.filter(x => x && typeof x === 'object').map(x => Object.fromEntries(Object.entries(x).filter(([, y]) => okNum(y)))).filter(x => Object.keys(x).length);
+    }
+    if (typeof def === 'number') { const n = Number(v); return (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && isFinite(n) ? n : def; }
+    if (typeof def === 'string') return typeof v === 'string' || okNum(v) ? String(v) : def;
+    return typeof v === typeof def ? v : def;
+  }
   function normalize(c) {
     const d = DEFS[c.type];
-    c.props = { ...JSON.parse(JSON.stringify(d.props)), ...(c.props || {}) };
-    c.state = { ...(d.init ? d.init() : {}), ...(c.state || {}) };
+    const dp = { label: d.prefix, ...JSON.parse(JSON.stringify(d.props)) }, sp = c.props && typeof c.props === 'object' ? c.props : {};
+    c.props = {};
+    for (const k in dp) c.props[k] = cleanVal(k in sp ? sp[k] : dp[k], dp[k]);
+    for (const f of d.pdefs || []) {
+      if (f.opts && !f.opts.includes(c.props[f.k])) c.props[f.k] = dp[f.k];
+      if (f.type === 'number') c.props[f.k] = Number(c.props[f.k]) || 0;
+    }
+    c.props.label = String(c.props.label).slice(0, 40);
+    const ds = d.init ? d.init() : {}, ss = c.state && typeof c.state === 'object' ? c.state : {};
+    c.state = { ...ds };
+    for (const k in ss) { const v = cleanVal(ss[k], ds[k]); if (v !== undefined) c.state[k] = v; }
+    for (const k of d.transient || []) c.state[k] = ds[k];
+    c.x = Number(c.x) || 0; c.y = Number(c.y) || 0;
     return c;
   }
   function part(c, p, ev, ctx) { const d = DEFS[c.type]; return d && d.onPart ? !!d.onPart(c, p, ev, ctx) : false; }

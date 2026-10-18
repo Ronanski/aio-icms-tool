@@ -202,7 +202,7 @@
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touches.size >= 2) {
         // a second finger turns any drag into a pinch zoom
-        if (drag && drag.kind === 'part') Circuit.part(drag.c, drag.part, 'up', App.ctx);
+        if (drag && drag.kind === 'part') drag.rel();
         drag = null; svg.classList.remove('panning');
         try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
         startPinch();
@@ -220,7 +220,12 @@
     }
     if (partEl && compEl && !wiring) {
       const c = byId(compEl.dataset.cid);
-      if (c) { Circuit.part(c, partEl.dataset.part, 'down', App.ctx); drag = { kind: 'part', c, part: partEl.dataset.part }; svg.setPointerCapture(e.pointerId); App.save(); }
+      if (c) {
+        const part = partEl.dataset.part;
+        Circuit.part(c, part, 'down', App.ctx);
+        drag = { kind: 'part', rel: App.hold(c.id + ':' + part, () => { Circuit.part(c, part, 'up', App.ctx); App.save(); }) };
+        svg.setPointerCapture(e.pointerId); App.save();
+      }
       return;
     }
     if (wiring) { wiring.pts.push([snap(pt.x), snap(pt.y)]); renderTemp(); return; }
@@ -268,7 +273,7 @@
       if (pinch) { if (touches.size < 2) { pinch = null; drag = null; } return; }
     }
     if (!drag) return;
-    if (drag.kind === 'part') Circuit.part(drag.c, drag.part, 'up', App.ctx);
+    if (drag.kind === 'part') drag.rel();
     if (drag.kind === 'comp' && drag.moved) App.save();
     svg.classList.remove('panning');
     try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
@@ -369,7 +374,9 @@
       const a = tpos(w.a), b = tpos(w.b);
       if (!a || !b) return;
       const d = pathD(route(a, w.pts || [], b));
-      h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${w.id}"><path class="wh" d="${d}"/><path class="wb" d="${d}" stroke="${w.color || '#1d1d1d'}"/><path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${w.color}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${w.color}"/></g>`);
+      const wc = esc(w.color || '#1d1d1d');
+      // .wo is a thin outline under the wire so black wires show on dark backgrounds (and white ones on light)
+      h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${esc(w.id)}"><path class="wh" d="${d}"/><path class="wo" d="${d}"/><path class="wb" d="${d}" stroke="${wc}"/><path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${wc}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${wc}"/></g>`);
     });
     gWires.innerHTML = h.join('');
     wireEls = [...gWires.querySelectorAll('.wire')].map(g => ({ g, id: g.dataset.wid, l: g.querySelector('.wl'), w: circ().wires.find(w => w.id === g.dataset.wid), cls: null }));

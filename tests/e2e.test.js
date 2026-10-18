@@ -149,6 +149,129 @@ function check(name, cond, info = '') {
     return !good.error && good.every(r => r.ok) && !bad.every(r => r.ok);
   })));
 
+  console.log('Momentary buttons (quick taps)');
+  await load('plcmotor'); await setMode('RUN');
+  await page.evaluate(() => App.showView('hmi'));
+  await wait(300);
+  const hb = await (await page.$('.hmi-screen .t-pb')).boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2); await page.mouse.down(); await page.mouse.up();
+  await wait(500);
+  check('a quick click on an HMI button is seen by the PLC', await get('KM1', 'state.pulled'));
+  check('HMI button bit is released afterwards', (await page.evaluate(() => App.plc.read('B3:0/0'))) === 0);
+  await load('dol');
+  await page.evaluate(() => App.showView('wiring'));
+  await wait(400);
+  const s1 = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id);
+  const wb = await (await page.$(`.comp[data-cid="${s1}"] [data-part="btn"]`)).boundingBox();
+  await page.mouse.move(wb.x + wb.width / 2, wb.y + wb.height / 2); await page.mouse.down(); await page.mouse.up();
+  await wait(500);
+  check('a quick click on a wiring push button is seen by the circuit', await get('KM1', 'state.pulled'));
+  check('the push button releases and is saved released', !(await get('S1', 'state.pressed')));
+
+  console.log('Overload relays');
+  await page.evaluate(() => {
+    const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, x, y, props = {}, state = {}) => { const c = Circuit.create(t, x, y, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };
+    const q0 = add('supply3', 0, 0, { label: 'Q0' }), qf = add('mccb3', 0, 120, { label: 'QF1' }, { on: true });
+    ['L1', 'L2', 'L3'].forEach((p, i) => w(q0, p, qf, String(1 + i * 2)));
+    [1, 2].forEach(n => {
+      const f = add('olr', n * 200, 300, { label: 'F' + n, trip: 1 }), m = add('motor', n * 200, 480, { label: 'M' + n });
+      ['1', '3', '5'].forEach((t, i) => { w(qf, String(2 + i * 2), f, t); w(f, String(2 + i * 2), m, ['U1', 'V1', 'W1'][i]); });
+    });
+    App.openNew({ name: 'Two motors', circuit: circ });
+    App.project.circuit.comps.find(c => c.props.label === 'M1').state.jam = true;
+  });
+  await wait(1800);
+  check('jammed motor trips its own overload relay', await get('F1', 'state.tripped'));
+  check('the other motor\'s overload relay stays ready', !(await get('F2', 'state.tripped')));
+  check('the healthy motor keeps running', (await get('M2', 'state.drive')) === 'run');
+
+  console.log('PLC engine');
+  check('S:1/15 is set again after a power cycle', await page.evaluate(() => {
+    const e = new PLCcore.Engine();
+    e.setProgram([Ladder.newRung(Ladder.parseRung('XIC S:1/15 OTL B3:0/0'))]);
+    e.setMode('RUN'); e.scan(0.02); e.scan(0.02);
+    e.powered = false; e.scan(0.02); e.write('B3:0/0', 0);
+    e.powered = true; e.scan(0.02);
+    return e.read('B3:0/0') === 1 && e.read('S:1') < 0x8000;
+  }));
+  check('non-I/O addresses cannot be forced', await page.evaluate(() => {
+    const e = new PLCcore.Engine();
+    e.setForce('B3:0/0', 1); e.setForce('O:0/1', 1);
+    return e.forceCount() === 1;
+  }));
+  await page.evaluate(() => App.openNew({ name: 'Presets', ladder: { rungs: [{ text: 'XIC I:0/0 TON T4:5 1.0 10 0' }] } }));
+  await page.evaluate(() => { App.showView('ladder'); Ladder.addRung(false); App.plc.data.T4[5].PRE = 0; Ladder.undo(); });
+  check('undo writes the timer preset again', (await page.evaluate(() => App.plc.data.T4[5].PRE)) === 10);
+  await page.click('.rung[data-r="0"] .rung-num', { button: 'right' });
+  await page.click('.ctx-menu button:has-text("Copy rung")');
+  await page.evaluate(() => { App.openNew(Examples.EX.blank.build()); App.showView('ladder'); Ladder.addRung(false); });
+  await wait(200);
+  await page.click('.rung[data-r="0"] .rung-num', { button: 'right' });
+  await page.click('.ctx-menu button:has-text("Paste rung below")');
+  check('a pasted rung brings its timer preset', (await page.evaluate(() => App.plc.data.T4[5].PRE)) === 10);
+  await load('practice');
+  await page.evaluate(() => { App.plc.setMode('PROG'); App.force('O:0/0', 1); });
+  await wait(600);
+  check('PROG mode tells that forced outputs stay active', (await page.textContent('[data-msg]')).includes('forced outputs stay active'));
+  await page.evaluate(() => App.force('O:0/0', null));
+
+  console.log('Import safety');
+  const before = await page.evaluate(() => ({ id: App.currentId, name: App.project.name }));
+  const bad = await page.evaluate(() => [null, 5, '[]'].map(d => { try { App.openNew(d); return 'opened'; } catch (e) { return 'refused'; } }));
+  const after = await page.evaluate(() => ({ id: App.currentId, name: App.project.name }));
+  check('a file that is not a project is refused', bad.every(r => r === 'refused'), bad.join());
+  check('a refused file leaves the open project as it was', before.id === after.id && before.name === after.name);
+  await page.evaluate(() => App.openNew({ name: 'Broken wires', circuit: { comps: [], wires: [{ a: 5 }, null, { id: 'w1', a: 'x:1', b: 'y:2' }] }, ladder: { rungs: [null, { text: 5 }] } }));
+  check('malformed parts of a file are dropped instead of failing', (await page.evaluate(() => App.project.name)) === 'Broken wires');
+  await page.evaluate(() => {
+    const evil = '"><img src=x onerror="window.__x=1">';
+    const circ = { comps: [], wires: [], seq: 0 };
+    const m = Circuit.create('motor', 0, 0, circ), q = Circuit.create('supply3', 0, 200, circ), v = Circuit.create('conveyor', 300, 0, circ);
+    m.state.ang = evil; v.state.boxes = [{ x: evil }]; q.props.label = evil;
+    circ.comps.push(m, q, v);
+    circ.wires.push({ id: 'w9', a: q.id + ':L1', b: m.id + ':U1', pts: [], color: evil });
+    App.openNew({ name: 'Evil', circuit: circ, hmi: { objects: [
+      { id: 'h1', type: 'pb', x: 10, y: 10, w: 100, h: 60, label: 'X', tag: 'B3:0/0', mode: 'momentary', color: evil },
+      { id: 'h2' + evil, type: 'pb', x: 10, y: 10, w: 100, h: 60 },
+      { id: 'h3', type: 'script', x: 10, y: 10 },
+    ] } });
+  });
+  for (const v of ['wiring', 'hmi', 'panel']) { await page.evaluate(v => App.showView(v), v); await wait(250); }
+  check('scripts hidden in an imported file do not run', await page.evaluate(() => window.__x === undefined && !document.querySelector('img[src="x"]')));
+  check('unsafe HMI objects are dropped or cleaned', await page.evaluate(() => App.project.hmi.objects.length === 1 && App.project.hmi.objects[0].color === '#2fa84f'));
+  check('unsafe wire colors are replaced', await page.evaluate(() => App.project.circuit.wires[0].color === '#1d1d1d'));
+  check('saved momentary and bad states are reset on load', await page.evaluate(() => {
+    const a = Circuit.normalize({ type: 'pb_nc', state: { pressed: true }, props: {} });
+    const b = Circuit.normalize({ type: 'lamp', props: { coil: '120VAC', color: 'red' } });
+    return a.state.pressed === false && b.props.coil === '24VDC' && b.props.color === 'red';
+  }));
+
+  console.log('Storage full');
+  await page.evaluate(() => {
+    window.__setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) { if (k.startsWith('plc-trainer.proj.')) throw new Error('QuotaExceededError'); return window.__setItem.call(this, k, v); };
+    App.openNew({ name: 'Too big' });
+  });
+  await wait(200);
+  check('a project that could not be stored is not listed', !(await page.evaluate(() => Store.list().some(p => p.name === 'Too big'))));
+  check('the user is told that saving failed', (await page.textContent('#toast-root')).includes('Could not save'));
+  await page.evaluate(() => { Storage.prototype.setItem = window.__setItem; App.save(); App.flushSave(); });
+  check('saving works again once there is room', await page.evaluate(() => Store.list().some(p => p.name === 'Too big')));
+
+  console.log('Dark mode and naming');
+  await load('dol');
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; App.showView('wiring'); });
+  await wait(300);
+  check('wires have a light outline in dark mode', await page.evaluate(() => {
+    const c = getComputedStyle(document.querySelector('.wire .wo')).stroke.match(/[\d.]+/g).map(Number);
+    return c[0] > 200 && c[1] > 200 && c[2] > 200;
+  }));
+  await page.evaluate(() => { delete document.documentElement.dataset.theme; });
+  for (const v of ['ladder', 'panel', 'hmi', 'learn']) { await page.evaluate(v => App.showView(v), v); await wait(150); }
+  check('no brand names in the app', await page.evaluate(() => !/Allen.?Bradley|Rockwell|RSLogix|MicroLogix|PanelView|SLC 500/i.test(document.documentElement.outerHTML)));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
@@ -183,6 +306,12 @@ function check(name, cond, info = '') {
   const scale = t => Number(/scale\(([\d.]+)\)/.exec(t)[1]);
   const k1 = await phone.evaluate(() => document.querySelector('.ws-svg .vp').getAttribute('transform'));
   check('pinch zooms the wiring canvas', scale(k1) > scale(k0) * 1.5, `${scale(k0)} → ${scale(k1)}`);
+  await phone.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setMode('RUN'); App.showView('hmi'); });
+  await phone.waitForTimeout(400);
+  const hp = await (await phone.$('.hmi-screen .t-pb')).boundingBox();
+  await phone.touchscreen.tap(hp.x + hp.width / 2, hp.y + hp.height / 2);
+  await phone.waitForTimeout(500);
+  check('tapping an HMI button on a phone starts the motor', await phone.evaluate(() => App.plc.read('O:0/0') === 1));
   check('no page errors on phone', perr.length === 0, perr.join(' | '));
 
   console.log('Installable app (PWA)');

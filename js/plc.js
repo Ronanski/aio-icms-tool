@@ -1,4 +1,4 @@
-/* PLC core: Allen-Bradley SLC 500 / MicroLogix style data table, addressing,
+/* PLC core: file-based data table (I, O, B3, T4, C5, N7, S), addressing,
    instruction set and scan engine. */
 (function () {
   'use strict';
@@ -178,7 +178,13 @@
 
     isForceable(a) { return a && a.kind === 'bit' && (a.file === 'I' || a.file === 'O'); }
     setForce(norm, val) {
-      if (val === null || val === undefined) delete this.forces[norm]; else this.forces[norm] = val ? 1 : 0;
+      if (val === null || val === undefined) delete this.forces[norm];
+      else {
+        // only physical I/O bits of the base word can be forced
+        const a = parse(norm);
+        if (!this.isForceable(a) || a.word !== 0) return;
+        this.forces[norm] = val ? 1 : 0;
+      }
       this._fm = { I: [0, 0], O: [0, 0] };
       for (const k in this.forces) {
         const a = parse(k);
@@ -197,6 +203,7 @@
 
     setProgram(rungs) {
       this.rungs = rungs;
+      this.pw = Object.create(null); this.hl = Object.create(null);
       const prep = arr => arr.forEach(e => {
         if (e.t === 'BST') e.legs.forEach(prep);
         else e._p = (e.a || []).map(parse);
@@ -225,11 +232,12 @@
     scan(dt) {
       const t0 = performance.now();
       const d = this.data;
-      if (!this.powered) { this.physOut = 0; for (const k in this.pw) this.pw[k] = false; return; }
+      // no power: the first scan after power returns sets S:1/15 again
+      if (!this.powered) { this.physOut = 0; this.first = true; for (const k in this.pw) this.pw[k] = false; return; }
       d.I[0] = asI16(this.applyForce('I', this.physIn & 0xFFFF));
       this.dt = dt;
       if (this.mode === 'RUN') {
-        if (this.first) d.S[1] |= 1 << 15; else d.S[1] &= ~(1 << 15);
+        d.S[1] = asI16(this.first ? d.S[1] | (1 << 15) : d.S[1] & ~(1 << 15));
         for (const r of this.rungs) { this.pw['r' + r.id] = true; this.seq(r.elems, true); }
         this.first = false;
         this.scans++;

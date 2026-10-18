@@ -22,6 +22,7 @@
   --canvas: #EDE9DF;
   --grid-dot: #CFC6B4;
   --grid-line: #E2DBCB;
+  --wire-halo: rgba(40, 30, 10, .28);
   --shadow: 0 1px 2px rgba(60, 45, 20, .06), 0 4px 16px rgba(60, 45, 20, .06);
   --shadow-lg: 0 10px 40px rgba(40, 30, 10, .18);
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -34,12 +35,14 @@
     --bg: #1E1D1A; --surface: #282723; --surface-2: #302F2A; --surface-3: #3A3832; --border: #3B3933; --border-strong: #514E46;
     --text: #EEEAE1; --muted: #A49E92; --accent-soft: #4A2E24; --lad-bg: #22211D; --lad-wire: #BDB7AA; --lad-on: #3DD16C; --lad-hl: #1E4A2C; --lad-text: #E9E4D8;
     --canvas: #23221E; --grid-dot: #3E3B34; --grid-line: #2D2B26; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25); color-scheme: dark;
+    --wire-halo: rgba(236, 230, 216, .62);
   }
 }
 :root[data-theme="dark"] {
   --bg: #1E1D1A; --surface: #282723; --surface-2: #302F2A; --surface-3: #3A3832; --border: #3B3933; --border-strong: #514E46;
   --text: #EEEAE1; --muted: #A49E92; --accent-soft: #4A2E24; --lad-bg: #22211D; --lad-wire: #BDB7AA; --lad-on: #3DD16C; --lad-hl: #1E4A2C; --lad-text: #E9E4D8;
   --canvas: #23221E; --grid-dot: #3E3B34; --grid-line: #2D2B26; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25); color-scheme: dark;
+  --wire-halo: rgba(236, 230, 216, .62);
 }
 
 * { box-sizing: border-box; }
@@ -275,6 +278,7 @@ table.dt td.num { color: var(--accent-strong); font-weight: 600; }
 .dt.btn-t { font-size: 8px; font-weight: 700; }
 .dt.btn-t.on { fill: #fff; }
 .wire .wh { fill: none; stroke: transparent; stroke-width: 10; cursor: pointer; }
+.wire .wo { fill: none; stroke: var(--wire-halo); stroke-width: 4.2; stroke-linejoin: round; pointer-events: none; }
 .wire .wb { fill: none; stroke-width: 2.2; stroke-linejoin: round; }
 .wire .wl { fill: none; stroke-width: 2.2; stroke-linejoin: round; opacity: 0; pointer-events: none; }
 .wire .wl.live { opacity: .95; stroke-dasharray: 6 8; animation: flow .7s linear infinite; stroke-width: 3.6; }
@@ -306,7 +310,7 @@ table.dt td.num { color: var(--accent-strong); font-weight: 600; }
 .status-box small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .status-box div { font-weight: 600; }
 .legend { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 12px; }
-.legend i { display: inline-block; width: 20px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.legend i { display: inline-block; width: 20px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; box-shadow: 0 0 0 1px var(--wire-halo); }
 .legend i.shortc { background: #ff2d20; }
 .tips { padding-left: 18px; font-size: 12.5px; color: var(--muted); }
 .tips li { margin-bottom: 5px; }

@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- **HMI buttons work on a quick tap.** A tap or fast click used to switch the bit on and off again before the PLC scanned it, so nothing happened, and on phones it never worked. Momentary buttons (HMI, wiring and Panel & Plant) now stay pressed for at least two scans.
+- **Overload relays**: a jammed or single-phasing motor no longer trips every overload relay on the same supply. Only the relay that carries that motor's current heats up.
+- **Imported or hand-edited project files**: script code hidden in HMI colors, wire colors, ids or device states no longer runs. A file that is not a project is refused, and the open project stays as it was. Broken parts of a file are dropped instead of stopping the import.
+- **Storage full**: the app now tells you when a project cannot be saved, and no longer lists a project whose data was not stored.
+- A push button held while the project was saved no longer comes back stuck pressed. Motors no longer coast after opening a project.
+- Edits are saved when the window or app is closed or sent to the background.
+- The first-scan bit `S:1/15` is set again on the first scan after the PLC gets its power back.
+- Undo, redo and pasting a rung write the timer and counter presets again (a pasted TON no longer finishes at once).
+- Only physical I/O bits can be forced, so a stray force can no longer break forcing.
+- In PROG mode the status bar says that forced outputs stay active (they do on real controllers too).
+- Black wires are visible in dark mode: every wire has a thin outline.
+
+### Changed
+- Brand names of real PLC makers are no longer shown anywhere in the app. The PLC is now "PLC (compact, 12 in / 8 out)", the HMI frame is an "Operator terminal".
+
 ## [1.1.0] - 2026-10-18
 
 ### Added

@@ -226,9 +226,15 @@
     if (undo.length > 100) undo.shift();
     redo = [];
   }
+  /* timer/counter presets live in the data table, so rungs that come back (undo, redo, paste) write theirs again */
+  function applyPresets(list) {
+    const walk = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(walk); else App.plc.applyInstr(e, false); });
+    list.forEach(r => walk(r.elems));
+  }
   function restore(s) {
     const data = JSON.parse(s);
     App.project.ladder.rungs = data.map(d => newRung(parseRung(d.t), d.c));
+    applyPresets(App.project.ladder.rungs);
   }
   function changed() { App.programChanged(); Ladder.render(); }
 
@@ -477,8 +483,7 @@
       snapshot();
       assignIds(elems);
       r.elems = elems; r.comment = vals.cm.trim();
-      const walk = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(walk); else App.plc.applyInstr(e, false); });
-      App.plc.setProgram(rungs()); walk(elems);
+      App.plc.setProgram(rungs()); applyPresets([r]);
       SEL = { r: ri, id: null, leg: null };
       changed();
     }, `<p class="help">Example: <code>BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 OTE O:0/0</code><br>BST = branch start, NXB = next branch, BND = branch end.</p>`);
@@ -535,7 +540,7 @@
       { label: 'Insert rung above', onClick: () => Ladder.addRung(true) },
       { label: 'Insert rung below', onClick: () => Ladder.addRung(false) },
       { label: 'Copy rung', onClick: () => { clip = serialize(rungs()[ri].elems); UI.toast('Rung copied'); } },
-      { label: 'Paste rung below', disabled: clip == null, onClick: () => { snapshot(); rungs().splice(ri + 1, 0, newRung(parseRung(clip))); SEL = { r: ri + 1, id: null, leg: null }; changed(); } },
+      { label: 'Paste rung below', disabled: clip == null, onClick: () => { snapshot(); const r = newRung(parseRung(clip)); rungs().splice(ri + 1, 0, r); applyPresets([r]); SEL = { r: ri + 1, id: null, leg: null }; changed(); } },
       { label: 'Delete rung', danger: true, onClick: () => { SEL = { r: ri, id: null, leg: null }; Ladder.del(); } },
     ]);
   }
