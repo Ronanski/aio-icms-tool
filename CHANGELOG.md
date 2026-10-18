@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Ladder: drag and drop.** Drag an instruction with the mouse to move it before or after another instruction, into an empty branch leg, or onto another rung. Undo works as usual.
+- **Ladder: Change to…** Right-click an instruction to swap it for a similar one with the same operands: XIC ↔ XIO ↔ ONS, OTE ↔ OTL ↔ OTU, TON ↔ TOF ↔ RTO, CTU ↔ CTD, EQU ↔ NEQ ↔ LES ↔ LEQ ↔ GRT ↔ GEQ, ADD ↔ SUB ↔ MUL ↔ DIV.
+- **N.O. / N.C. contact type** for push buttons and 2-position selectors, in the properties panel and the right-click menu. Wires move to the new terminals (13-14 ↔ 11-12). New part: *Selector Switch 2-Pos (NC)*.
+- **Event log** (📋 Events in the status bar, or File → Event log): mode changes, forces, trips and alarms, PLC power, HMI and device operations, each with a timestamp. Filter by type, export to CSV. A red badge counts new alarms.
+- **HMI zoom**: 🔍−, Fit and 🔍＋ buttons and Ctrl + scroll.
+- **Save, Save as, Open** in the File menu with Ctrl+S, Ctrl+Shift+S and Ctrl+O, and a *Saved / Saving… / Not saved* label next to the project name.
+- Parts list groups fold open and closed, with Collapse all / Expand all. The folded groups are remembered.
+
+### Changed
+- Zoom controls in the ladder and wiring toolbars are labelled **Zoom** with 🔍 buttons and show the zoom level; click the level to go back to 100%. Ctrl + scroll zooms the ladder.
+- **Ctrl+S now saves the project.** Before, it downloaded the project file; that is now File → Export to file.
+- File → Export project / Import project are renamed *Export to file* / *Import from file*.
+- Brand names of real PLC makers are no longer shown anywhere in the app. The PLC is now "PLC (compact, 12 in / 8 out)", the HMI frame is an "Operator terminal".
+
 ### Fixed
 - **HMI buttons work on a quick tap.** A tap or fast click used to switch the bit on and off again before the PLC scanned it, so nothing happened, and on phones it never worked. Momentary buttons (HMI, wiring and Panel & Plant) now stay pressed for at least two scans.
 - **Overload relays**: a jammed or single-phasing motor no longer trips every overload relay on the same supply. Only the relay that carries that motor's current heats up.
@@ -15,11 +30,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The first-scan bit `S:1/15` is set again on the first scan after the PLC gets its power back.
 - Undo, redo and pasting a rung write the timer and counter presets again (a pasted TON no longer finishes at once).
 - Only physical I/O bits can be forced, so a stray force can no longer break forcing.
-- In PROG mode the status bar says that forced outputs stay active (they do on real controllers too).
+- In PROG mode the status bar now says that forced outputs stay active, instead of saying that all outputs are off.
 - Black wires are visible in dark mode: every wire has a thin outline.
-
-### Changed
-- Brand names of real PLC makers are no longer shown anywhere in the app. The PLC is now "PLC (compact, 12 in / 8 out)", the HMI frame is an "Operator terminal".
 
 ## [1.1.0] - 2026-10-18
 
