@@ -5,22 +5,26 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | v1.0.0 (git tag `v1.0.0`) |
+| **Version** | v1.1.0 (previous: v1.0.0 at `c22dbbd`) |
+| **Tags** | The Release workflow creates `vX.Y.Z` when it publishes. `v1.0.0` (`c22dbbd`) has no GitHub release; optional. |
 | **Date** | 2026-10-18 |
-| **Branch** | `ccr-d652d569-13gxij` (`main` not created yet; see "Open decisions") |
-| **Tests** | `npm test`: 26 passed, 0 failed |
+| **Branch** | `ccr-d652d569-13gxij`, merging into `main` through PR #1 |
+| **Tests** | `npm test`: 45 passed, 0 failed (desktop, layouts, phone touch, offline PWA) |
+| **Pull request** | #1 `ccr-d652d569-13gxij` → `main` (v1.1.0). `main` = v1.0.0 (`c22dbbd`). |
+| **Downloads** | GitHub Releases (Windows `.exe`, Android `.apk`, web zip) built by `release.yml`; web app on GitHub Pages |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
 
 ## How to resume in 2 minutes
 1. `git checkout <branch>` and `git pull`
 2. Open `index.html` in Chrome, or run `npm start` and go to http://localhost:8080
-3. Run `npm install`, then `npm test`. All 26 checks should pass before you change anything.
+3. Run `npm install`, then `npm test`. All 45 checks should pass before you change anything.
 4. Read `CONTRIBUTING.md` (rules), then `PROGRESS.md` (what's next).
 
 ## Architecture in one screen
 ```
 index.html ── loads scripts in order ──►
-  ui.js        UI.modal/form/menu/toast
+  ui.js        UI.modal/form/menu/toast, longPress (touch → context menu), drawer
+  store.js     Store: many projects in localStorage (index + one key each)
   plc.js       PLCcore: parse(addr), INSTR table, Engine (data table, scan, forces)
   ladder.js    Ladder: parseRung/serialize (ASCII), SVG render, editor ops, DataTable
   circuit.js   Circuit: DEFS (component library), solve() net solver
@@ -28,7 +32,12 @@ index.html ── loads scripts in order ──►
   panel.js     PanelView: big operable devices
   hmi.js       HMI: designer + runtime
   examples.js  Examples: EX (projects) + LESSONS
-  app.js       App: project state, persistence, 20 ms tick loop, views, status bar
+  app.js       App: project state, open/save projects, 20 ms tick loop, views + LAYOUTS (multi-pane grid, gutters), status bar, PWA install
+sw.js          service worker (offline cache; bump CACHE every release)
+manifest.webmanifest + icons/   install metadata
+.github/workflows/  ci.yml (tests on PRs), pages.yml (deploy main to Pages), release.yml (build .exe/.apk/zip; publish release)
+scripts/copy-web.sh  the one list of files that make up the app
+desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper → Android APK
 ```
 **Each tick (20 ms):** `Circuit.solve()` reads `ctx.plcOut` and writes `ctx.plcIn`, then `App.plc.scan(dt)` runs the ladder and updates `physOut`. Rendering runs separately on `requestAnimationFrame` and touches only the visible views.
 
@@ -39,13 +48,16 @@ index.html ── loads scripts in order ──►
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
 
 ## Open decisions (owner: Ronan)
-1. **Create `main` and merge v1.0.0 into it.** The repo has no default branch yet.
+1. **Merge PR #1 into `main`.** Pages is already set to GitHub Actions, so the web app goes live at `https://ronanski.github.io/aio-icms-tool/`. Then run **Actions → Release → Run workflow** on `main` to publish v1.1.0 with the `.exe` and `.apk`.
+5. **Android signing key**: add the four secrets from `RELEASING.md` before the release you announce, so later updates install over it.
 2. **License**: proprietary (to sell) or MIT (open source)?
 3. **Product name and logo** without trademarked words.
-4. **Next target**: PWA + GitHub Pages first (recommended), or the Android APK.
+4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
-## Last session summary
-- Built the full app (ladder, PLC engine, wiring solver, panel, HMI, lessons, examples).
-- Added File → New project (name + template), About with version, and the e2e suite.
-- Added the docs: CHANGELOG, CONTRIBUTING, PROGRESS, HANDOFF and CLAUDE.md.
-- Tagged the v1.0.0 release.
+## Last session summary (v1.1.0)
+- Workbench layout (ladder + wiring + panel at once); mobile and touch layout; PWA (installable, offline); multiple projects; lesson Check my work.
+- Fixed: pending saves are flushed before switching projects; long-press after re-render.
+- Added CI and GitHub Pages workflows. They run once `main` exists.
+- Created `main` at v1.0.0 and opened PR #1 for v1.1.0.
+- Tests grew from 26 to 45 checks, all passing.
+- Added Windows (.exe) and Android (.apk) builds plus the Release workflow; the PWA is unchanged.

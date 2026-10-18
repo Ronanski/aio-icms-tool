@@ -5,6 +5,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
+### Added
+- **Installers**: a Windows installer and portable `.exe` (Electron) and an Android `.apk` (Capacitor), built from the same app files and attached to every GitHub Release. The PWA and the web version stay as they are.
+- **Release workflow** (`release.yml`): builds the `.exe`, `.apk` and a web zip on every pull request. Run it manually on `main` to tag the version and publish the GitHub Release with notes from this changelog.
+- **Workbench layout**: **▦ Layout** shows the ladder, the wiring (control and power circuit) and the Panel & Plant side by side, all live at once. Other layouts pair any two views or add the HMI. Drag the dividers to resize, double-click a divider to reset. Wide screens start on the Workbench.
+- **Phones and tablets**:
+  - Bottom tab bar on phones; toolbars become one row that scrolls sideways
+  - Data files, the parts palette and the properties panel slide in as drawers
+  - Ladder zoom buttons, pinch zoom on the wiring canvas
+  - Long-press opens the same menus as right-click (Force, Edit, Delete, Duplicate)
+  - Larger touch targets and terminal hit areas
+- **Installable app (PWA)**: manifest, app icons, offline cache through a service worker, an **Install app** button, and install steps for Android, iPhone and Windows in File → About.
+- **Multiple projects**: File → Open project lists every saved project. New project, examples and imports open as new projects instead of replacing the current one. The v1.0 autosave moves into the list automatically.
+- **Check my work** for lessons 1–6: runs your ladder on a simulated PLC with the buttons pressed for you and reports each expected output.
+- GitHub Actions: CI runs `npm test` on pull requests, and a workflow deploys `main` to GitHub Pages.
+- Tests for layouts, projects, lesson grading, phone touch (drawers, long-press, pinch) and offline install (45 checks).
+
+### Changed
+- **▦ Layout** replaces the Split view toggle. Inside a pane, the data files, palette and properties open as slide-over panels.
+
+### Fixed
+- Pending changes are saved before switching to another project.
+- The long-press menu opened on nothing when the ladder re-rendered under the finger.
+
 ## [1.0.0] - 2026-10-18
 
 The first public release.
@@ -35,5 +60,6 @@ The first public release.
 - Light and dark themes.
 - End-to-end regression suite (`npm test`, 26 checks).
 
-[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.0.0

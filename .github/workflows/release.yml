@@ -1,0 +1,143 @@
+name: Release
+# Builds the Windows installer, the Android APK and a web zip from the same app files.
+# - pull_request: build only, so every PR proves the installers still build
+# - workflow_dispatch / tag push: build, then publish a GitHub Release v<package.json version>
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the GitHub Release (creates tag v<version> on this commit)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+  web:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip the web app
+        run: |
+          bash scripts/copy-web.sh "PLC-Trainer-${{ needs.version.outputs.version }}-web"
+          zip -qr "PLC-Trainer-${{ needs.version.outputs.version }}-web.zip" "PLC-Trainer-${{ needs.version.outputs.version }}-web"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: PLC-Trainer-*-web.zip
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm pkg set version=${{ needs.version.outputs.version }}
+      - run: npm install
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/dist/*.exe
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm pkg set version=$VERSION
+      - run: npm install
+      - name: Create the Android project, icons and splash
+        run: npm run android
+      - name: Set app version
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$VERSION\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+      - name: Build APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release.keystore" \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/PLC-Trainer-$VERSION-android.apk"
+          else
+            echo "::warning::No signing key in secrets: building a debug-signed APK. See RELEASING.md."
+            ./gradlew assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/PLC-Trainer-$VERSION-android.apk"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: PLC-Trainer-*-android.apk
+
+  publish:
+    needs: [version, web, windows, android]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v="${{ needs.version.outputs.version }}"
+          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md
+          {
+            echo ""
+            echo "## Downloads"
+            echo "- **Windows**: \`PLC-Trainer-Setup-$v.exe\` (installer) or \`PLC-Trainer-$v-portable.exe\` (no install)"
+            echo "- **Android**: \`PLC-Trainer-$v-android.apk\` (allow installing from this source when asked)"
+            echo "- **Web / any device**: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ (installable as an app)"
+          } >> notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: PLC Trainer v${{ needs.version.outputs.version }}
+          body_path: notes.md
+          files: dist/*
+          make_latest: true

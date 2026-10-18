@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.ronanski.plctrainer",
+  "appName": "PLC Trainer",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#F3F0E8"
+  }
+}

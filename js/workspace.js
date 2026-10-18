@@ -17,6 +17,9 @@
   let showLive = true;
   const compEls = new Map();
   let wireEls = [];
+  let palDrawer = null;
+  const touches = new Map();   // active touch points, for pinch zoom
+  let pinch = null;
 
   const circ = () => App.project.circuit;
   const byId = id => circ().comps.find(c => c.id === id);
@@ -69,6 +72,7 @@
         </aside>
         <div class="ws-center">
           <div class="ws-toolbar">
+            <button class="tbtn mobile-only" data-drawer="pal">＋ Parts</button>
             <div class="seg"><button class="on" data-tool="select" title="Select / move / operate (S)">✥ Select</button><button data-tool="meter" title="Multimeter: click two terminals (M)">⎓ Meter</button></div>
             <span class="tb-lbl">Wire</span>
             <div class="swatches">${WIRE_COLORS.map(([v, n, bg]) => `<button class="sw${v === wireColor ? ' on' : ''}" data-wc="${v}" title="${n}" style="background:${bg || v}"></button>`).join('')}</div>
@@ -76,6 +80,7 @@
             <span class="spacer"></span>
             <button class="tbtn" data-zoom="-1" title="Zoom out">−</button><span class="zoomv" data-z>100%</span><button class="tbtn" data-zoom="1" title="Zoom in">＋</button>
             <button class="tbtn" data-fit title="Fit all">⤢ Fit</button>
+            <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           </div>
           <div class="ws-canvas">
             <svg class="ws-svg">
@@ -95,6 +100,9 @@
     gView = svg.querySelector(".vp");
     gWires = svg.querySelector('.wires'); gComps = svg.querySelector('.comps'); gOver = svg.querySelector('.over');
     propsEl = el.querySelector('.ws-props'); meterEl = el.querySelector('.meter-read'); tipEl = el.querySelector('.ws-tip'); bannerEl = el.querySelector('.ws-banner');
+    palDrawer = UI.drawer(el.querySelector('[data-drawer="pal"]'), el.querySelector('.ws-palette'));
+    UI.drawer(el.querySelector('[data-drawer="props"]'), propsEl);
+    UI.longPress(svg);
     buildPalette('');
     el.querySelector('.ws-search').addEventListener('input', e => buildPalette(e.target.value));
     el.querySelector('.ws-toolbar').addEventListener('click', e => {
@@ -140,6 +148,7 @@
         const r = svg.getBoundingClientRect(), d = DEFS[b.dataset.type];
         const n = circ().comps.length % 6;
         addComp(b.dataset.type, (r.width / 2 - view.x) / view.k - d.w / 2 + n * 20, (r.height / 2 - view.y) / view.k - d.h / 2 + n * 20);
+        if (palDrawer) palDrawer.close();
       });
     });
   }
@@ -182,8 +191,24 @@
   };
 
   /* ---------- pointer handling ---------- */
+  function startPinch() {
+    const [a, b] = [...touches.values()];
+    const r = svg.getBoundingClientRect();
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: view.k, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, vx: view.x, vy: view.y };
+  }
   function onDown(e) {
     UI.closeMenu();
+    if (e.pointerType === 'touch') {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size >= 2) {
+        // a second finger turns any drag into a pinch zoom
+        if (drag && drag.kind === 'part') Circuit.part(drag.c, drag.part, 'up', App.ctx);
+        drag = null; svg.classList.remove('panning');
+        try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        startPinch();
+        return;
+      }
+    }
     if (e.button === 2) return;
     if (e.button === 1) { startPan(e); return; }
     const pt = toWorld(e);
@@ -212,6 +237,18 @@
   }
   function startPan(e) { drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(e.pointerId); svg.classList.add('panning'); }
   function onMove(e) {
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size >= 2) {
+        const [a, b] = [...touches.values()];
+        const r = svg.getBoundingClientRect();
+        const k = Math.max(0.25, Math.min(3, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+        const wx = (pinch.mx - pinch.vx) / pinch.k, wy = (pinch.my - pinch.vy) / pinch.k;
+        view.k = k; view.x = (a.x + b.x) / 2 - r.left - wx * k; view.y = (a.y + b.y) / 2 - r.top - wy * k;
+        applyView();
+        return;
+      }
+    }
     const pt = toWorld(e);
     if (wiring) { wiring.cur = [pt.x, pt.y]; renderTemp(); }
     if (drag) {
@@ -226,6 +263,10 @@
     if (termEl && compEl) showTip(e, compEl.dataset.cid + ':' + termEl.dataset.term); else tipEl.classList.add('hidden');
   }
   function onUp(e) {
+    if (e.pointerType === 'touch') {
+      touches.delete(e.pointerId);
+      if (pinch) { if (touches.size < 2) { pinch = null; drag = null; } return; }
+    }
     if (!drag) return;
     if (drag.kind === 'part') Circuit.part(drag.c, drag.part, 'up', App.ctx);
     if (drag.kind === 'comp' && drag.moved) App.save();
@@ -471,6 +512,7 @@
   }
 
   WS.onShow = function () { if (!WS._fitted) { WS._fitted = true; requestAnimationFrame(() => WS.fit()); } };
+  WS.refit = () => { WS._fitted = false; };
   WS.resetView = function () { WS._fitted = false; sel = null; wiring = null; probes = { a: null, b: null, next: 'a' }; compEls.forEach(e => e.g.remove()); compEls.clear(); };
   window.Workspace = WS;
 })();

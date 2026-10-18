@@ -2,9 +2,19 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const KEY = 'plc-trainer.project.v1';
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
+  /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
+  const LAYOUTS = [
+    { key: 'single', label: 'Single view', panes: null },
+    { key: 'bench', label: 'Workbench: Ladder + Wiring + Panel & Plant', short: 'Workbench', panes: ['ladder', 'wiring', 'panel'] },
+    { key: 'lwh', label: 'Ladder + Wiring + HMI', short: 'Ladder · Wiring · HMI', panes: ['ladder', 'wiring', 'hmi'] },
+    { key: 'lw', label: 'Ladder + Wiring', short: 'Ladder · Wiring', panes: ['ladder', 'wiring'] },
+    { key: 'lp', label: 'Ladder + Panel & Plant', short: 'Ladder · Panel', panes: ['ladder', 'panel'] },
+    { key: 'wp', label: 'Wiring + Panel & Plant', short: 'Wiring · Panel', panes: ['wiring', 'panel'] },
+    { key: 'lh', label: 'Ladder + HMI', short: 'Ladder · HMI', panes: ['ladder', 'hmi'] },
+  ];
+  const NARROW = 760;
 
   const App = {
     project: null,
@@ -12,7 +22,8 @@
     ctx: { plcIn: 0, plcInRaw: 0, plcOut: 0, plcPowered: false, plcId: null, mode: 'PROG', forces: false },
     api: null,
     view: 'ladder',
-    split: false,
+    currentId: null,
+    layout: 'single',
     dirty: { ladder: true, wiring: true, panel: true, hmi: true },
   };
   window.App = App;
@@ -46,7 +57,8 @@
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
     renderVisible();
     document.querySelector('[data-pname]').textContent = App.project.name;
-    App.save();
+    clearTimeout(saveT); saveT = null;
+    Store.save(App.currentId, App.serialize());
   };
   App.serialize = function () {
     const p = App.project;
@@ -60,7 +72,28 @@
   let saveT = null;
   App.save = function () {
     clearTimeout(saveT);
-    saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(App.serialize())); } catch (e) { /* storage unavailable */ } }, 500);
+    saveT = setTimeout(() => { saveT = null; Store.save(App.currentId, App.serialize()); }, 500);
+  };
+  /* write any pending change now, before switching to another project */
+  App.flushSave = function () {
+    if (saveT === null) return;
+    clearTimeout(saveT); saveT = null;
+    if (App.project && App.currentId) Store.save(App.currentId, App.serialize());
+  };
+  /* open project data as a new saved project (examples, imports, New project) */
+  App.openNew = function (data) {
+    App.flushSave();
+    App.currentId = Store.newId();
+    Store.setCurrent(App.currentId);
+    App.loadProject(data);
+  };
+  App.openSaved = function (id) {
+    App.flushSave();
+    const data = Store.load(id);
+    if (!data) { UI.toast('That project could not be read', 'danger'); return; }
+    App.currentId = id;
+    Store.setCurrent(id);
+    App.loadProject(data);
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
   App.circuitChanged = function () { App.dirty.panel = true; App.dirty.wiring = true; renderVisible(); App.save(); };
@@ -107,9 +140,11 @@
   }
 
   /* ---------- views ---------- */
+  const layoutOf = k => LAYOUTS.find(l => l.key === k) || LAYOUTS[0];
   function visibleViews() {
-    if (!App.split || App.view === 'learn') return [App.view];
-    return [App.view, App.view === 'panel' ? 'ladder' : 'panel'];
+    const L = layoutOf(App.layout);
+    if (!L.panes || App.view === 'learn' || innerWidth <= NARROW || !L.panes.includes(App.view)) return [App.view];
+    return L.panes;
   }
   function renderView(v) {
     App.dirty[v] = false;
@@ -121,18 +156,87 @@
   }
   function renderVisible() { visibleViews().forEach(v => { if (App.dirty[v] !== false || v === 'learn') renderView(v); }); }
   App.showView = function (v) {
+    const L = layoutOf(App.layout);
+    // a view outside the current layout opens on its own; Learn always does
+    if (L.panes && v !== 'learn' && !L.panes.includes(v)) App.layout = 'single';
     App.view = v;
     const vis = visibleViews();
     VIEWS.forEach(k => {
       const el = document.getElementById('view-' + k);
-      el.classList.toggle('active', vis[0] === k);
-      el.classList.toggle('secondary', vis[1] === k);
+      const i = vis.indexOf(k);
+      el.classList.toggle('active', i >= 0);
+      el.classList.toggle('focus', vis.length > 1 && k === v);
+      el.style.gridArea = i >= 0 ? 'abc'[i] : '';
     });
-    document.getElementById('main').classList.toggle('split', vis.length > 1);
-    document.querySelectorAll('.tabs [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    const main = document.getElementById('main');
+    main.classList.remove('panes-1', 'panes-2', 'panes-3');
+    main.classList.add('panes-' + vis.length);
+    main.classList.toggle('multi', vis.length > 1);
+    document.querySelectorAll('.tabs [data-view]').forEach(b => {
+      b.classList.toggle('on', b.dataset.view === v);
+      b.classList.toggle('shown', vis.length > 1 && vis.includes(b.dataset.view));
+    });
+    const lb = document.querySelector('[data-layout]');
+    const cur = layoutOf(App.layout);
+    lb.textContent = '▦ ' + (cur.panes ? cur.short : 'Layout');
+    lb.classList.toggle('on', !!cur.panes);
     vis.forEach(k => renderView(k));
-    try { localStorage.setItem('plc-trainer.view', v); } catch (e) { /* ignore */ }
+    try { localStorage.setItem('plc-trainer.view', v); localStorage.setItem('plc-trainer.layout', App.layout); } catch (e) { /* ignore */ }
   };
+  App.setLayout = function (k) {
+    const L = layoutOf(k);
+    App.layout = L.key;
+    Workspace.refit();
+    App.showView(L.panes ? (L.panes.includes(App.view) ? App.view : L.panes[0]) : App.view);
+  };
+
+  /* draggable dividers between panes */
+  function bindGutters() {
+    const main = document.getElementById('main');
+    try {
+      const sz = JSON.parse(localStorage.getItem('plc-trainer.panes') || '{}');
+      if (sz.c1) main.style.setProperty('--c1', sz.c1);
+      if (sz.r1) main.style.setProperty('--r1', sz.r1);
+    } catch (e) { /* ignore */ }
+    main.querySelectorAll('.gutter').forEach(g => {
+      g.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        g.setPointerCapture(e.pointerId);
+        g.classList.add('drag');
+        const move = ev => {
+          const r = main.getBoundingClientRect();
+          if (g.dataset.g === 'v') main.style.setProperty('--c1', Math.max(20, Math.min(80, (ev.clientX - r.left) / r.width * 100)).toFixed(1) + '%');
+          else main.style.setProperty('--r1', Math.max(15, Math.min(85, (ev.clientY - r.top) / r.height * 100)).toFixed(1) + '%');
+        };
+        const up = () => {
+          g.classList.remove('drag');
+          g.removeEventListener('pointermove', move);
+          g.removeEventListener('pointerup', up);
+          try { localStorage.setItem('plc-trainer.panes', JSON.stringify({ c1: main.style.getPropertyValue('--c1'), r1: main.style.getPropertyValue('--r1') })); } catch (err) { /* ignore */ }
+          window.dispatchEvent(new Event('resize'));
+        };
+        g.addEventListener('pointermove', move);
+        g.addEventListener('pointerup', up);
+      });
+      g.addEventListener('dblclick', () => { main.style.removeProperty(g.dataset.g === 'v' ? '--c1' : '--r1'); window.dispatchEvent(new Event('resize')); });
+    });
+    // keyboard shortcuts go to the pane the user last touched
+    main.addEventListener('pointerdown', e => {
+      const v = e.target.closest('.view');
+      if (!v || !main.classList.contains('multi')) return;
+      const k = v.id.replace('view-', '');
+      if (k !== App.view) {
+        App.view = k;
+        VIEWS.forEach(x => document.getElementById('view-' + x).classList.toggle('focus', x === k));
+        document.querySelectorAll('.tabs [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === k));
+      }
+    }, true);
+    let wasNarrow = innerWidth <= NARROW;
+    window.addEventListener('resize', () => {
+      const n = innerWidth <= NARROW;
+      if (n !== wasNarrow) { wasNarrow = n; App.showView(App.view); }
+    });
+  }
 
   /* ---------- status bar ---------- */
   let barCache = {};
@@ -180,7 +284,8 @@
       <article class="learn-body">
         <div class="kicker">${esc(cur.level)}</div><h2>${esc(cur.title)}</h2>
         <div class="lesson">${cur.body}</div>
-        <div class="btn-row">${ex ? `<button class="btn primary" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
+        <div class="btn-row">${ex ? `<button class="btn primary" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.test ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
+        ${cur.test ? '<div class="grade" data-grade></div>' : ''}
         <h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
         <h3 class="mt">Addressing (SLC 500 / MicroLogix style)</h3>
@@ -200,6 +305,16 @@
       if (b.dataset.lesson) { lessonId = b.dataset.lesson; renderLearn(); el.querySelector('.learn-body').scrollTop = 0; }
       if (b.dataset.load) loadExample(b.dataset.load);
       if (b.dataset.ex) loadExample(b.dataset.ex);
+      if (b.hasAttribute('data-check')) {
+        const res = Examples.gradeLesson(cur, App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)));
+        const box = el.querySelector('[data-grade]');
+        if (res.error) { box.innerHTML = `<p class="grade-bad">${esc(res.error)}</p>`; return; }
+        const pass = res.every(r => r.ok);
+        box.innerHTML = `<p class="${pass ? 'grade-ok' : 'grade-bad'}">${pass ? '✓ All checks passed. Well done!' : `${res.filter(r => r.ok).length} of ${res.length} checks passed. Fix the red ones and check again.`}</p>
+          <ul class="grade-list">${res.map(r => `<li class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${esc(r.say)}${r.ok ? '' : ` <small>(${esc(r.got)})</small>`}</li>`).join('')}</ul>
+          <p class="help">The check runs your current ladder program on a simulated PLC with the inputs pressed for you. Your wiring is not used.</p>`;
+        return;
+      }
       if (b.hasAttribute('data-sol')) {
         UI.confirm('Insert solution', 'Replace the current ladder program with the lesson solution?', () => {
           App.plc.setMode('PROG');
@@ -214,11 +329,9 @@
   }
   function loadExample(k) {
     const ex = Examples.EX[k];
-    UI.confirm('Load example', `Load “${ex.title}”? Your current project will be replaced (export it first if you want to keep it).`, () => {
-      App.loadProject(ex.build());
-      UI.toast(`Loaded: ${ex.title}`, 'ok');
-      App.showView(k === 'blank' ? 'wiring' : App.view === 'learn' ? 'wiring' : App.view);
-    }, 'Load');
+    App.openNew(ex.build());
+    UI.toast(`Opened “${ex.title}” as a new project. Your other projects are in File → Open project.`, 'ok', 4000);
+    App.showView(k === 'blank' ? 'wiring' : App.view === 'learn' ? 'wiring' : App.view);
   }
   App.loadExample = loadExample;
 
@@ -229,7 +342,10 @@
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.mode) App.setMode(b.dataset.mode);
       if (b.hasAttribute('data-forces')) { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); }
-      if (b.hasAttribute('data-split')) { App.split = !App.split; b.classList.toggle('on', App.split); App.showView(App.view); }
+      if (b.hasAttribute('data-layout')) {
+        const r = b.getBoundingClientRect();
+        UI.menu(r.left, r.bottom + 4, [{ head: 'Show side by side' }, ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) }))]);
+      }
     });
     document.querySelector('[data-examples]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
@@ -239,6 +355,7 @@
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [
         { label: 'New project…', onClick: newProject },
+        { label: 'Open project…', onClick: openDialog },
         { label: 'Rename project…', onClick: rename },
         { label: 'Export project (.json)', onClick: exportProject },
         { label: 'Import project…', onClick: () => document.getElementById('importFile').click() },
@@ -249,7 +366,7 @@
     });
     document.getElementById('importFile').addEventListener('change', e => {
       const f = e.target.files[0]; if (!f) return;
-      f.text().then(t => { App.loadProject(JSON.parse(t)); UI.toast('Project imported', 'ok'); }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
+      f.text().then(t => { App.openNew(JSON.parse(t)); UI.toast('Project imported as a new project', 'ok'); }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
       e.target.value = '';
     });
     document.querySelector('[data-theme-btn]').addEventListener('click', () => {
@@ -285,15 +402,42 @@
       if (!name) return 'Enter a project name';
       const p = Examples.EX[v.t].build();
       p.name = name;
-      App.loadProject(p);
+      App.openNew(p);
       UI.toast(`Created project “${name}”`, 'ok');
       App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
-    }, '<p class="help">This replaces the open project. Use File → Export first if you want to keep it.</p>');
+    }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project.</p>');
+  }
+  function openDialog() {
+    const fmt = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    const m = UI.modal({
+      title: 'Open project',
+      body: '<div class="proj-list"></div>',
+      buttons: [{ label: 'Close' }],
+    });
+    const box = m.el.querySelector('.proj-list');
+    const draw = () => {
+      const list = Store.list();
+      box.innerHTML = list.length ? list.map(p => `<div class="proj-row${p.id === App.currentId ? ' cur' : ''}">
+          <div><b>${esc(p.name)}</b><small>${p.id === App.currentId ? 'Open now · ' : ''}saved ${fmt(p.updated)}</small></div>
+          <button class="btn" data-open="${p.id}" ${p.id === App.currentId ? 'disabled' : ''}>Open</button>
+          <button class="icon-btn" data-del="${p.id}" title="Delete project" aria-label="Delete ${esc(p.name)}" ${p.id === App.currentId ? 'disabled' : ''}>🗑</button></div>`).join('')
+        : '<p class="help">No saved projects yet.</p>';
+    };
+    draw();
+    box.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.open) { m.close(); App.openSaved(b.dataset.open); UI.toast('Project opened', 'ok'); }
+      if (b.dataset.del) {
+        const p = Store.list().find(x => x.id === b.dataset.del);
+        if (b.dataset.confirm) { Store.remove(b.dataset.del); draw(); UI.toast(`Deleted “${p ? p.name : 'project'}”`); }
+        else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; b.classList.add('danger-txt'); }
+      }
+    };
   }
   function about() {
     UI.modal({
       title: `PLC Trainer v${VERSION}`,
-      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
+      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><h4>Install on your device</h4><ul class="tips"><li><b>Android (Chrome)</b>: tap <b>Install app</b> in the top bar, or menu ⋮ → <b>Add to Home screen</b>.</li><li><b>iPhone / iPad (Safari)</b>: tap Share → <b>Add to Home Screen</b>.</li><li><b>Windows / Mac (Chrome or Edge)</b>: click <b>Install app</b>, or the install icon in the address bar.</li></ul><p class="help">Install needs the hosted web address (https). Once installed, the app works offline.</p><p>Windows installer and Android APK: <a href="https://github.com/Ronanski/aio-icms-tool/releases/latest" target="_blank" rel="noopener">download the latest release</a>.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
     });
   }
   App.VERSION = VERSION;
@@ -322,18 +466,42 @@
     PanelView.init(document.getElementById('view-panel'));
     HMI.init(document.getElementById('view-hmi'));
     bindChrome();
+    bindGutters();
     setTheme(theme);
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { saved = null; }
-    const first = !saved;
-    App.loadProject(saved || Examples.EX.plcmotor.build());
-    let v = 'ladder';
-    try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); } catch (e) { /* ignore */ }
+    Store.migrate();
+    const cur = Store.current();
+    const saved = cur ? Store.load(cur) : null;
+    const first = !saved && !Store.list().length;
+    if (saved) { App.currentId = cur; App.loadProject(saved); }
+    else if (Store.list().length) App.openSaved(Store.list()[0].id);
+    else App.openNew(Examples.EX.plcmotor.build());
+    let v = 'ladder', lay = null;
+    try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); lay = localStorage.getItem('plc-trainer.layout'); } catch (e) { /* ignore */ }
     if (!VIEWS.includes(v)) v = 'ladder';
+    // wide screens start on the Workbench (ladder + wiring + panel) until the user picks something else
+    App.layout = layoutOf(lay || (innerWidth >= 1200 ? 'bench' : 'single')).key;
     App.showView(v);
     setInterval(tick, 20);
     requestAnimationFrame(frame);
     if (first) UI.toast('Welcome! A PLC motor-control example is loaded. Start with the lessons or press RUN.', 'ok', 6000);
   }
-  document.addEventListener('DOMContentLoaded', boot);
+  /* ---------- install as an app (PWA) ---------- */
+  let installEvt = null;
+  function setupPwa() {
+    const btn = document.querySelector('[data-install]');
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; btn.hidden = false; });
+    window.addEventListener('appinstalled', () => { btn.hidden = true; installEvt = null; UI.toast('PLC Trainer installed', 'ok'); });
+    btn.addEventListener('click', async () => {
+      if (!installEvt) return;
+      installEvt.prompt();
+      await installEvt.userChoice.catch(() => null);
+      installEvt = null; btn.hidden = true;
+    });
+    // service workers need http(s); opening index.html from disk still works, just without offline install
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* blocked in sandboxed previews */ });
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { boot(); setupPwa(); });
 })();

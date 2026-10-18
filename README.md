@@ -1,10 +1,22 @@
 # PLC Trainer
 
-**Version 1.0.0** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
+**Version 1.1.0** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
 
 An Allen-Bradley–style PLC trainer that runs in the browser. Write ladder logic, wire real-looking power and control circuits, operate the panel, build an HMI, and watch the equipment respond.
 
-No install and no build step: open `index.html` in Chrome, Edge or Firefox. Everything runs locally, and your project is saved automatically in the browser.
+No build step. It runs in any modern browser on Windows, Mac, Android, iPhone and iPad, and installs as an app that works offline.
+
+## Download and install
+**Web app:** https://ronanski.github.io/aio-icms-tool/ · **Installers:** [latest release](https://github.com/Ronanski/aio-icms-tool/releases/latest)
+
+| Device | Option 1: installer file | Option 2: install from the web |
+|---|---|---|
+| **Windows** | `PLC-Trainer-Setup-X.Y.Z.exe`, or the `portable.exe` that needs no install. If SmartScreen appears, click *More info → Run anyway*. | Open the web app in Chrome or Edge and click **⤓ Install app** |
+| **Android** | `PLC-Trainer-X.Y.Z-android.apk`. Allow *install unknown apps* when asked. | Open the web app in Chrome and tap **Install app** |
+| **iPhone / iPad** | (none) | Open the web app in Safari → Share → **Add to Home Screen** |
+| **Mac / Linux** | (none) | Open the web app in Chrome or Edge and click **⤓ Install app** |
+
+Installing needs the app served over https; the included GitHub Pages workflow does that once `main` exists and Pages is enabled. On phones the side panels open from the **▤ Data**, **＋ Parts** and **⚙ Props** buttons. Long-press works as right-click, and you can pinch to zoom the wiring.
 
 ## Features
 
@@ -29,23 +41,26 @@ No install and no build step: open `index.html` in Chrome, Edge or Firefox. Ever
   - Overload relay trips on a jammed or single-phasing motor
 - Live voltage overlay, a terminal hover tooltip, and a **multimeter**
 
-**Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable. **Split view** shows it next to the ladder.
+**Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable.
+
+**Workbench layout**: **▦ Layout** shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
 
 **HMI**: a PanelView-style 800×480 screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has Edit and Run modes and binds to PLC tags.
 
-**Learn**: 12 guided lessons (first rung, seal-in, latch, timers, flasher, counters, forcing, DOL starter, PLC motor control, conveyor, tank, a forward/reverse challenge), an instruction reference, and 6 example projects.
+**Learn**: 12 guided lessons (lessons 1–6 have **Check my work** auto-grading) (first rung, seal-in, latch, timers, flasher, counters, forcing, DOL starter, PLC motor control, conveyor, tank, a forward/reverse challenge), an instruction reference, and 6 example projects.
 
 ## Quick start
 1. Open `index.html`. The *PLC motor start/stop + HMI* example loads.
 2. Click **RUN** in the top bar.
-3. Turn on **⧉ Split view**, then press **START** on the panel. The rung goes green, KM1 pulls in and the motor spins.
+3. Pick **▦ Layout → Workbench**, then press **START** on the panel. The rung goes green, KM1 pulls in and the motor spins.
 4. Click **JAM** on the motor. After a few seconds F1 trips and the HMI shows an alarm.
 
 ## Project structure
 ```
 index.html        app shell
 css/style.css     styles (light/dark)
-js/ui.js          dialogs, menus, toasts
+js/ui.js          dialogs, menus, toasts, touch helpers
+js/store.js       saved projects (browser storage)
 js/plc.js         addressing, instruction set, scan engine, forcing
 js/ladder.js      ladder renderer/editor + data table
 js/circuit.js     component library + electrical solver
@@ -53,17 +68,22 @@ js/workspace.js   wiring canvas
 js/panel.js       Panel & Plant view
 js/hmi.js         HMI designer/runtime
 js/examples.js    example projects + lessons
-js/app.js         app state, scan loop, persistence
+js/app.js         app state, scan loop, projects, install
+sw.js             offline cache (service worker)
+manifest.webmanifest, icons/   app install metadata
+scripts/copy-web.sh            copies the app for Pages, Windows and Android builds
+desktop/          Windows app (Electron wrapper)
+mobile/           Android app (Capacitor wrapper)
 ```
 
-Use **File ▾ → New project…** to start a project from a blank sheet or from any example. Projects can be exported and imported as `.plc.json`.
+Use **File ▾ → New project…** to start from a blank sheet or any example, and **File ▾ → Open project…** to switch between saved projects. Projects can be exported and imported as `.plc.json`.
 
 ## Development
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 26 end-to-end checks in headless Chromium
+npm test                                 # 45 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 
 *This is an educational simulator. It is not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.*

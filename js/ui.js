@@ -115,6 +115,49 @@
     document.removeEventListener('pointerdown', UI._menuAway, true);
   };
 
+  /* Touch: a long press acts as right-click (opens the same context menus).
+     Device controls ([data-part]) are excluded so buttons can be held down. */
+  UI.longPress = function (root) {
+    let timer = null, sx = 0, sy = 0, target = null, fingers = 0;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    root.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      fingers++;
+      if (fingers > 1 || e.target.closest('[data-part]')) { cancel(); return; }
+      sx = e.clientX; sy = e.clientY; target = e.target;
+      timer = setTimeout(() => {
+        timer = null;
+        try { if (navigator.vibrate) navigator.vibrate(15); } catch (err) { /* not supported */ }
+        // the view may have re-rendered since touchdown, so look up what is under the finger now
+        const el = document.elementFromPoint(sx, sy) || target;
+        el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: sx, clientY: sy }));
+      }, 550);
+    });
+    root.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
+    const up = e => { if (e.pointerType === 'touch') fingers = Math.max(0, fingers - 1); cancel(); };
+    root.addEventListener('pointerup', up);
+    root.addEventListener('pointercancel', up);
+    // the browser's own long-press menu event (Android) replaces ours
+    root.addEventListener('contextmenu', e => { if (e.isTrusted) cancel(); }, true);
+  };
+
+  /* Narrow screens: a side panel slides in over the content when its button is tapped. */
+  UI.drawer = function (btn, panel) {
+    const away = e => {
+      if (!panel.contains(e.target) && !btn.contains(e.target) && !e.target.closest('.modal-wrap, .ctx-menu')) close();
+    };
+    function close() {
+      panel.classList.remove('open'); btn.classList.remove('on');
+      document.removeEventListener('pointerdown', away, true);
+    }
+    btn.addEventListener('click', () => {
+      if (panel.classList.contains('open')) { close(); return; }
+      panel.classList.add('open'); btn.classList.add('on');
+      setTimeout(() => document.addEventListener('pointerdown', away, true), 0);
+    });
+    return { close };
+  };
+
   UI.isTyping = () => {
     const a = document.activeElement;
     return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);

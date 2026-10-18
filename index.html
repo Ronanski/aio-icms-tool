@@ -2,13 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>PLC Trainer</title>
   <meta name="description" content="Allen-Bradley style PLC trainer: ladder logic editor, power & control circuit wiring simulator, HMI, forcing and live equipment.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#D97757">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="PLC Trainer">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23D97757'/%3E%3Cpath d='M9 8v16M23 8v16M9 16h4M19 16h4M13 12v8M19 12v8' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -50,6 +57,7 @@
       <button data-view="learn"><span class="ti">✦</span>Learn</button>
     </nav>
     <div class="top-actions">
+      <button class="btn primary" data-install hidden>⤓ Install app</button>
       <button class="btn ghost" data-examples>Examples ▾</button>
       <button class="btn ghost" data-file>File ▾</button>
       <button class="icon-btn" data-theme-btn title="Theme">◐</button>
@@ -67,7 +75,7 @@
     <span class="scan" data-scan></span>
     <span class="bar-msg" data-msg></span>
     <span class="spacer"></span>
-    <button class="tbtn sm" data-split title="Show Panel & Plant side by side">⧉ Split view</button>
+    <button class="tbtn sm" data-layout title="Show ladder, wiring and panel side by side">▦ Layout</button>
   </div>
 
   <main id="main">
@@ -76,12 +84,15 @@
     <section class="view" id="view-panel"></section>
     <section class="view" id="view-hmi"></section>
     <section class="view" id="view-learn"></section>
+    <div class="gutter gv" data-g="v" title="Drag to resize · double-click to reset"></div>
+    <div class="gutter gh" data-g="h" title="Drag to resize · double-click to reset"></div>
   </main>
 
   <div id="modal-root"></div>
   <div id="toast-root"></div>
 
   <script src="js/ui.js"></script>
+  <script src="js/store.js"></script>
   <script src="js/plc.js"></script>
   <script src="js/ladder.js"></script>
   <script src="js/circuit.js"></script>
