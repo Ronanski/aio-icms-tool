@@ -65,6 +65,11 @@ desktop/  Electron wrapper â†’ Windows installer   mobile/  Capacitor wrapper â†
 3. **Product name and logo** without trademarked words.
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
+## Start of next session (read first)
+- The owner found **more gaps and bugs in v1.2** while using it. Ask for that list first, merge it with the audit list in `PROGRESS.md`, and propose one v1.2.1 plan (table) before coding.
+- PR #4 (docs only) is open and waits for the owner's "GO merge PR #4". Nothing for v1.2.1 is coded yet.
+- Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.
+
 ## Last session summary (audit, PR #2, release v1.2.0)
 - Post-release audit of v1.2.0 done; findings and the proposed v1.2.1 list are in `PROGRESS.md` (two High items reproduced: ladder drag stays armed, Workbench toolbars cut off). Nothing fixed yet: waiting for the owner's GO.
 - Released v1.2.0 from `main` with all four assets; the APK is release-signed with the new key (verified against the keystore fingerprint).
