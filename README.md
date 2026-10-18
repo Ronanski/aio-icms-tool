@@ -1,5 +1,7 @@
 # PLC Trainer
 
+**Version 1.0.0** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
+
 An Allen-Bradley–style PLC trainer that runs in the browser. Write ladder logic, wire real-looking power and control circuits, operate the panel, build an HMI, and watch the equipment respond.
 
 No install and no build step: open `index.html` in Chrome, Edge or Firefox. Everything runs locally, and your project is saved automatically in the browser.
@@ -54,6 +56,14 @@ js/examples.js    example projects + lessons
 js/app.js         app state, scan loop, persistence
 ```
 
-Projects can be exported and imported as `.plc.json` from **File ▾**.
+Use **File ▾ → New project…** to start a project from a blank sheet or from any example. Projects can be exported and imported as `.plc.json`.
+
+## Development
+```bash
+npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
+npm install && npx playwright install chromium
+npm test                                 # 26 end-to-end checks in headless Chromium
+```
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules.
 
 *This is an educational simulator. It is not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.*
