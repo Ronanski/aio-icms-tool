@@ -296,7 +296,7 @@
       body: `<p>Inputs are read into the <b>input image</b> (<code>I:0/x</code>), the ladder is solved left to right, top to bottom, and the <b>output image</b> (<code>O:0/x</code>) is written to the relay outputs. That cycle is the <b>scan</b>.</p>
       <ol><li>Go to <b>Ladder</b>. Click <b>＋ Rung</b>, then the <code>XIC</code> button and set the address to <code>I:0/0</code>.</li>
       <li>Click <code>OTE</code> and set it to <code>O:0/0</code>.</li>
-      <li>Switch the PLC to <b>RUN</b> (top bar). Open <b>Panel &amp; Plant</b> (or turn on <b>Split</b>) and hold <b>S1 START</b>. Lamp H1 lights — and the instructions turn green.</li></ol>`,
+      <li>Switch the PLC to <b>RUN</b> (top bar). Open <b>Panel &amp; Plant</b> (or pick <b>▦ Layout → Workbench</b> to see ladder, wiring and panel together) and hold <b>S1 START</b>. Lamp H1 lights — and the instructions turn green.</li></ol>`,
       solution: ['XIC I:0/0 OTE O:0/0'],
     },
     {

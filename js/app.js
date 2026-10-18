@@ -4,6 +4,17 @@
   const esc = UI.esc;
   const VERSION = '1.1.0';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
+  /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
+  const LAYOUTS = [
+    { key: 'single', label: 'Single view', panes: null },
+    { key: 'bench', label: 'Workbench: Ladder + Wiring + Panel & Plant', short: 'Workbench', panes: ['ladder', 'wiring', 'panel'] },
+    { key: 'lwh', label: 'Ladder + Wiring + HMI', short: 'Ladder · Wiring · HMI', panes: ['ladder', 'wiring', 'hmi'] },
+    { key: 'lw', label: 'Ladder + Wiring', short: 'Ladder · Wiring', panes: ['ladder', 'wiring'] },
+    { key: 'lp', label: 'Ladder + Panel & Plant', short: 'Ladder · Panel', panes: ['ladder', 'panel'] },
+    { key: 'wp', label: 'Wiring + Panel & Plant', short: 'Wiring · Panel', panes: ['wiring', 'panel'] },
+    { key: 'lh', label: 'Ladder + HMI', short: 'Ladder · HMI', panes: ['ladder', 'hmi'] },
+  ];
+  const NARROW = 760;
 
   const App = {
     project: null,
@@ -12,7 +23,7 @@
     api: null,
     view: 'ladder',
     currentId: null,
-    split: false,
+    layout: 'single',
     dirty: { ladder: true, wiring: true, panel: true, hmi: true },
   };
   window.App = App;
@@ -129,9 +140,11 @@
   }
 
   /* ---------- views ---------- */
+  const layoutOf = k => LAYOUTS.find(l => l.key === k) || LAYOUTS[0];
   function visibleViews() {
-    if (!App.split || App.view === 'learn') return [App.view];
-    return [App.view, App.view === 'panel' ? 'ladder' : 'panel'];
+    const L = layoutOf(App.layout);
+    if (!L.panes || App.view === 'learn' || innerWidth <= NARROW || !L.panes.includes(App.view)) return [App.view];
+    return L.panes;
   }
   function renderView(v) {
     App.dirty[v] = false;
@@ -143,18 +156,87 @@
   }
   function renderVisible() { visibleViews().forEach(v => { if (App.dirty[v] !== false || v === 'learn') renderView(v); }); }
   App.showView = function (v) {
+    const L = layoutOf(App.layout);
+    // a view outside the current layout opens on its own; Learn always does
+    if (L.panes && v !== 'learn' && !L.panes.includes(v)) App.layout = 'single';
     App.view = v;
     const vis = visibleViews();
     VIEWS.forEach(k => {
       const el = document.getElementById('view-' + k);
-      el.classList.toggle('active', vis[0] === k);
-      el.classList.toggle('secondary', vis[1] === k);
+      const i = vis.indexOf(k);
+      el.classList.toggle('active', i >= 0);
+      el.classList.toggle('focus', vis.length > 1 && k === v);
+      el.style.gridArea = i >= 0 ? 'abc'[i] : '';
     });
-    document.getElementById('main').classList.toggle('split', vis.length > 1);
-    document.querySelectorAll('.tabs [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    const main = document.getElementById('main');
+    main.classList.remove('panes-1', 'panes-2', 'panes-3');
+    main.classList.add('panes-' + vis.length);
+    main.classList.toggle('multi', vis.length > 1);
+    document.querySelectorAll('.tabs [data-view]').forEach(b => {
+      b.classList.toggle('on', b.dataset.view === v);
+      b.classList.toggle('shown', vis.length > 1 && vis.includes(b.dataset.view));
+    });
+    const lb = document.querySelector('[data-layout]');
+    const cur = layoutOf(App.layout);
+    lb.textContent = '▦ ' + (cur.panes ? cur.short : 'Layout');
+    lb.classList.toggle('on', !!cur.panes);
     vis.forEach(k => renderView(k));
-    try { localStorage.setItem('plc-trainer.view', v); } catch (e) { /* ignore */ }
+    try { localStorage.setItem('plc-trainer.view', v); localStorage.setItem('plc-trainer.layout', App.layout); } catch (e) { /* ignore */ }
   };
+  App.setLayout = function (k) {
+    const L = layoutOf(k);
+    App.layout = L.key;
+    Workspace.refit();
+    App.showView(L.panes ? (L.panes.includes(App.view) ? App.view : L.panes[0]) : App.view);
+  };
+
+  /* draggable dividers between panes */
+  function bindGutters() {
+    const main = document.getElementById('main');
+    try {
+      const sz = JSON.parse(localStorage.getItem('plc-trainer.panes') || '{}');
+      if (sz.c1) main.style.setProperty('--c1', sz.c1);
+      if (sz.r1) main.style.setProperty('--r1', sz.r1);
+    } catch (e) { /* ignore */ }
+    main.querySelectorAll('.gutter').forEach(g => {
+      g.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        g.setPointerCapture(e.pointerId);
+        g.classList.add('drag');
+        const move = ev => {
+          const r = main.getBoundingClientRect();
+          if (g.dataset.g === 'v') main.style.setProperty('--c1', Math.max(20, Math.min(80, (ev.clientX - r.left) / r.width * 100)).toFixed(1) + '%');
+          else main.style.setProperty('--r1', Math.max(15, Math.min(85, (ev.clientY - r.top) / r.height * 100)).toFixed(1) + '%');
+        };
+        const up = () => {
+          g.classList.remove('drag');
+          g.removeEventListener('pointermove', move);
+          g.removeEventListener('pointerup', up);
+          try { localStorage.setItem('plc-trainer.panes', JSON.stringify({ c1: main.style.getPropertyValue('--c1'), r1: main.style.getPropertyValue('--r1') })); } catch (err) { /* ignore */ }
+          window.dispatchEvent(new Event('resize'));
+        };
+        g.addEventListener('pointermove', move);
+        g.addEventListener('pointerup', up);
+      });
+      g.addEventListener('dblclick', () => { main.style.removeProperty(g.dataset.g === 'v' ? '--c1' : '--r1'); window.dispatchEvent(new Event('resize')); });
+    });
+    // keyboard shortcuts go to the pane the user last touched
+    main.addEventListener('pointerdown', e => {
+      const v = e.target.closest('.view');
+      if (!v || !main.classList.contains('multi')) return;
+      const k = v.id.replace('view-', '');
+      if (k !== App.view) {
+        App.view = k;
+        VIEWS.forEach(x => document.getElementById('view-' + x).classList.toggle('focus', x === k));
+        document.querySelectorAll('.tabs [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === k));
+      }
+    }, true);
+    let wasNarrow = innerWidth <= NARROW;
+    window.addEventListener('resize', () => {
+      const n = innerWidth <= NARROW;
+      if (n !== wasNarrow) { wasNarrow = n; App.showView(App.view); }
+    });
+  }
 
   /* ---------- status bar ---------- */
   let barCache = {};
@@ -260,7 +342,10 @@
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.mode) App.setMode(b.dataset.mode);
       if (b.hasAttribute('data-forces')) { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); }
-      if (b.hasAttribute('data-split')) { App.split = !App.split; b.classList.toggle('on', App.split); App.showView(App.view); }
+      if (b.hasAttribute('data-layout')) {
+        const r = b.getBoundingClientRect();
+        UI.menu(r.left, r.bottom + 4, [{ head: 'Show side by side' }, ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) }))]);
+      }
     });
     document.querySelector('[data-examples]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
@@ -381,6 +466,7 @@
     PanelView.init(document.getElementById('view-panel'));
     HMI.init(document.getElementById('view-hmi'));
     bindChrome();
+    bindGutters();
     setTheme(theme);
     Store.migrate();
     const cur = Store.current();
@@ -389,9 +475,11 @@
     if (saved) { App.currentId = cur; App.loadProject(saved); }
     else if (Store.list().length) App.openSaved(Store.list()[0].id);
     else App.openNew(Examples.EX.plcmotor.build());
-    let v = 'ladder';
-    try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); } catch (e) { /* ignore */ }
+    let v = 'ladder', lay = null;
+    try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); lay = localStorage.getItem('plc-trainer.layout'); } catch (e) { /* ignore */ }
     if (!VIEWS.includes(v)) v = 'ladder';
+    // wide screens start on the Workbench (ladder + wiring + panel) until the user picks something else
+    App.layout = layoutOf(lay || (innerWidth >= 1200 ? 'bench' : 'single')).key;
     App.showView(v);
     setInterval(tick, 20);
     requestAnimationFrame(frame);

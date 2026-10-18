@@ -38,7 +38,7 @@
       return `<section class="psec psec-${key}"><header><h3>${title}</h3><p>${sub}</p></header><div class="pgrid">${list.map(c => {
         const d = DEFS[c.type], k = SCALE[key];
         return `<div class="pcard" data-cid="${c.id}"><div class="pcard-head"><b>${esc(c.props.label)}</b><span>${esc(d.name)}</span></div>
-          <svg viewBox="-4 -4 ${d.w + 8} ${d.h + 8}" style="width:${Math.round((d.w + 8) * k)}px;max-width:100%"></svg>
+          <svg viewBox="-4 -4 ${d.w + 8} ${d.h + 8}" style="--pw:${Math.round((d.w + 8) * k)}px"></svg>
           <div class="pcard-foot" data-st></div></div>`;
       }).join('')}</div></section>`;
     }).join('');

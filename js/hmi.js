@@ -49,6 +49,7 @@
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     setMode('run');
+    HMI.watchSize();
   };
 
   function setMode(m) {
@@ -161,6 +162,8 @@
     bez.style.setProperty('--k', k);
   }
   HMI.onShow = () => requestAnimationFrame(fitScreen);
+  let hmiRO = null;
+  HMI.watchSize = () => { if (!hmiRO && root) { hmiRO = new ResizeObserver(() => { if (root.offsetParent) fitScreen(); }); hmiRO.observe(root.querySelector('.hmi-stage')); } };
   window.addEventListener('resize', () => { if (root && root.offsetParent) fitScreen(); });
 
   HMI.update = function () {
