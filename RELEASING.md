@@ -16,6 +16,19 @@ One version of the app ships four ways. All four are built from the same files b
 
 Every pull request also runs the build jobs without publishing, so a broken installer shows up before merging. The files of a PR build can be downloaded from the run's **Artifacts**.
 
+## Beta releases
+1. Set a pre-release version everywhere the checklist says (`package.json`, `VERSION` in `js/app.js`, `CACHE` in `sw.js`), e.g. `1.3.0-beta.1`.
+2. Run **Actions → Release → Run workflow** on the branch to test (it does not have to be `main`).
+3. The workflow publishes `v1.3.0-beta.1` as a **pre-release**, with notes from `[Unreleased]` in `CHANGELOG.md`.
+4. Apps on the **Beta** update channel (File → Updates…) are offered it the next time they are online. Apps on **Stable** ignore it.
+
+For the next beta, raise the number (`-beta.2`). The final release drops the suffix (`1.3.0`), which every app sees.
+
+GitHub Pages always serves `main` (stable). Beta testers use the Windows or Android installer, or the web zip.
+
+## In-app updates
+The app reads `https://api.github.com/repos/Ronanski/aio-icms-tool/releases` when online. It compares the tags with its own `VERSION`, so **`VERSION` in `js/app.js` must match the release tag**. Downloads pick the release asset by name: `Setup-*.exe` for Windows and `*-android.apk` for Android. The Android update installs over the old app only if both are signed with the same key (see below).
+
 ## Android signing key (do this once)
 Without a key, the workflow builds a **debug-signed** APK. It installs fine, but each release is signed with a different key. Users then have to uninstall the old version before installing a new one, which also deletes their saved projects. To sign properly:
 

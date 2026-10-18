@@ -68,6 +68,7 @@
       <div class="ws">
         <aside class="ws-palette">
           <input class="ws-search" type="search" placeholder="Search components…">
+          <div class="pal-tools"><button class="tbtn sm" data-pal="close" title="Collapse all groups">⊟ Collapse all</button><button class="tbtn sm" data-pal="open" title="Expand all groups">⊞ Expand all</button></div>
           <div class="pal-list"></div>
         </aside>
         <div class="ws-center">
@@ -78,7 +79,7 @@
             <div class="swatches">${WIRE_COLORS.map(([v, n, bg]) => `<button class="sw${v === wireColor ? ' on' : ''}" data-wc="${v}" title="${n}" style="background:${bg || v}"></button>`).join('')}</div>
             <label class="chk"><input type="checkbox" data-live checked> Live voltage</label>
             <span class="spacer"></span>
-            <button class="tbtn" data-zoom="-1" title="Zoom out">−</button><span class="zoomv" data-z>100%</span><button class="tbtn" data-zoom="1" title="Zoom in">＋</button>
+            <span class="tb-lbl">Zoom</span><button class="tbtn" data-zoom="-1" title="Zoom out (scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-z data-zoom="0" title="Reset zoom to 100%">100%</button><button class="tbtn" data-zoom="1" title="Zoom in (scroll)" aria-label="Zoom in">🔍＋</button>
             <button class="tbtn" data-fit title="Fit all">⤢ Fit</button>
             <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           </div>
@@ -105,11 +106,18 @@
     UI.longPress(svg);
     buildPalette('');
     el.querySelector('.ws-search').addEventListener('input', e => buildPalette(e.target.value));
+    el.querySelector('.pal-tools').addEventListener('click', e => {
+      const b = e.target.closest('[data-pal]'); if (!b) return;
+      const open = b.dataset.pal === 'open';
+      root.querySelectorAll('.pal-cat').forEach(d => { d.open = open; });
+      palClosed = open ? [] : Object.values(DEFS).map(d => d.cat).filter((c, i, a) => a.indexOf(c) === i);
+      savePal();
+    });
     el.querySelector('.ws-toolbar').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.tool) setTool(b.dataset.tool);
       if (b.dataset.wc) { wireColor = b.dataset.wc; el.querySelectorAll('.sw').forEach(s => s.classList.toggle('on', s === b)); if (sel && sel.kind === 'wire' && wireColor !== 'auto') { const w = circ().wires.find(w => w.id === sel.id); if (w) { w.color = wireColor; renderWires(); App.save(); } } }
-      if (b.dataset.zoom) zoomAt(Number(b.dataset.zoom) > 0 ? 1.2 : 1 / 1.2);
+      if (b.dataset.zoom) { const z = Number(b.dataset.zoom); zoomAt(z > 0 ? 1.2 : z < 0 ? 1 / 1.2 : 1 / view.k); }
       if (b.hasAttribute('data-fit')) WS.fit();
     });
     el.querySelector('[data-live]').addEventListener('change', e => { showLive = e.target.checked; wireEls.forEach(w => { w.cls = null; }); });
@@ -131,17 +139,28 @@
     applyView();
   };
 
+  /* palette groups fold open/closed; the closed ones are remembered in this browser */
+  let palClosed = [];
+  try { palClosed = JSON.parse(localStorage.getItem('plc-trainer.palClosed') || '[]'); } catch (e) { palClosed = []; }
+  if (!Array.isArray(palClosed)) palClosed = [];
+  const savePal = () => { try { localStorage.setItem('plc-trainer.palClosed', JSON.stringify(palClosed)); } catch (e) { /* ignore */ } };
   function buildPalette(q) {
     q = q.trim().toLowerCase();
     const cats = {};
     Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
     const list = root.querySelector('.pal-list');
-    list.innerHTML = Object.entries(cats).map(([cat, types]) => `<div class="pal-cat"><h5>${cat}</h5><div class="pal-grid">${types.map(t => {
+    list.innerHTML = Object.entries(cats).map(([cat, types]) => `<details class="pal-cat" data-cat="${esc(cat)}"${q || !palClosed.includes(cat) ? ' open' : ''}><summary>${esc(cat)} <small>${types.length}</small></summary><div class="pal-grid">${types.map(t => {
       const d = DEFS[t];
       const sample = { id: 'pal', type: t, x: 0, y: 0, props: { label: d.prefix, ...d.props }, state: d.init ? d.init() : {} };
       const pad = 8;
       return `<button class="pal-item" draggable="true" data-type="${t}" title="${esc(d.name)} — ${esc(d.info || '')}"><svg viewBox="${-pad} ${-pad} ${d.w + pad * 2} ${d.h + pad * 2}">${Circuit.draw(sample, null)}${Circuit.drawTerms(d)}</svg><span>${esc(d.name)}</span></button>`;
-    }).join('')}</div></div>`).join('') || '<p class="help">No match.</p>';
+    }).join('')}</div></details>`).join('') || '<p class="help">No match.</p>';
+    list.querySelectorAll('.pal-cat').forEach(d => d.addEventListener('toggle', () => {
+      if (q) return;
+      palClosed = palClosed.filter(c => c !== d.dataset.cat);
+      if (!d.open) palClosed.push(d.dataset.cat);
+      savePal();
+    }));
     list.querySelectorAll('.pal-item').forEach(b => {
       b.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plc-comp', b.dataset.type); e.dataTransfer.effectAllowed = 'copy'; });
       b.addEventListener('click', () => {
@@ -202,7 +221,7 @@
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touches.size >= 2) {
         // a second finger turns any drag into a pinch zoom
-        if (drag && drag.kind === 'part') Circuit.part(drag.c, drag.part, 'up', App.ctx);
+        if (drag && drag.kind === 'part') drag.rel();
         drag = null; svg.classList.remove('panning');
         try { svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
         startPinch();
@@ -220,7 +239,10 @@
     }
     if (partEl && compEl && !wiring) {
       const c = byId(compEl.dataset.cid);
-      if (c) { Circuit.part(c, partEl.dataset.part, 'down', App.ctx); drag = { kind: 'part', c, part: partEl.dataset.part }; svg.setPointerCapture(e.pointerId); App.save(); }
+      if (c) {
+        drag = { kind: 'part', rel: App.operate(c, partEl.dataset.part) };
+        svg.setPointerCapture(e.pointerId);
+      }
       return;
     }
     if (wiring) { wiring.pts.push([snap(pt.x), snap(pt.y)]); renderTemp(); return; }
@@ -268,7 +290,7 @@
       if (pinch) { if (touches.size < 2) { pinch = null; drag = null; } return; }
     }
     if (!drag) return;
-    if (drag.kind === 'part') Circuit.part(drag.c, drag.part, 'up', App.ctx);
+    if (drag.kind === 'part') drag.rel();
     if (drag.kind === 'comp' && drag.moved) App.save();
     svg.classList.remove('panning');
     try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
@@ -311,6 +333,7 @@
       UI.menu(e.clientX, e.clientY, [
         { head: `${c.props.label} · ${d.name}` },
         { label: 'Duplicate', onClick: () => duplicate(c) },
+        ...Object.entries(d.variant ? d.variant.of : {}).filter(([, t]) => t !== c.type).map(([k, t]) => ({ label: `Change contact to ${k}`, onClick: () => retype(c, t) })),
         { label: 'Repair / replace device', onClick: () => { Circuit.repair(c); App.save(); }, disabled: !c.state.burnt && !(c.state.tripped && !d.breaker) },
         { label: 'Remove all wires on this device', onClick: () => { circ().wires = circ().wires.filter(w => !w.a.startsWith(c.id + ':') && !w.b.startsWith(c.id + ':')); App.circuitChanged(); } },
         { label: 'Delete', danger: true, onClick: () => delSel() },
@@ -319,6 +342,11 @@
       select({ kind: 'wire', id: wireEl.dataset.wid });
       UI.menu(e.clientX, e.clientY, [{ label: 'Straighten (remove bends)', onClick: () => { const w = circ().wires.find(w => w.id === sel.id); if (w) { w.pts = []; App.circuitChanged(); } } }, { label: 'Delete wire', danger: true, onClick: () => delSel() }]);
     }
+  }
+  function retype(c, type) {
+    Circuit.retype(c, type, circ());
+    App.circuitChanged();
+    UI.toast(`${c.props.label} is now ${DEFS[type].name}`, 'ok');
   }
   function duplicate(c) {
     const n = Circuit.create(c.type, c.x + 30, c.y + 30, circ());
@@ -369,7 +397,9 @@
       const a = tpos(w.a), b = tpos(w.b);
       if (!a || !b) return;
       const d = pathD(route(a, w.pts || [], b));
-      h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${w.id}"><path class="wh" d="${d}"/><path class="wb" d="${d}" stroke="${w.color || '#1d1d1d'}"/><path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${w.color}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${w.color}"/></g>`);
+      const wc = esc(w.color || '#1d1d1d');
+      // .wo is a thin outline under the wire so black wires show on dark backgrounds (and white ones on light)
+      h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${esc(w.id)}"><path class="wh" d="${d}"/><path class="wo" d="${d}"/><path class="wb" d="${d}" stroke="${wc}"/><path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${wc}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${wc}"/></g>`);
     });
     gWires.innerHTML = h.join('');
     wireEls = [...gWires.querySelectorAll('.wire')].map(g => ({ g, id: g.dataset.wid, l: g.querySelector('.wl'), w: circ().wires.find(w => w.id === g.dataset.wid), cls: null }));
@@ -474,8 +504,9 @@
       const c = byId(sel.id); if (!c) { propsEl.innerHTML = ''; return; }
       const d = DEFS[c.type];
       const fields = [{ k: 'label', n: 'Tag / label' }, ...(d.pdefs || [])];
+      const vr = d.variant ? `<label class="field"><span>${esc(d.variant.n)}</span><select data-variant>${Object.entries(d.variant.of).map(([k, t]) => `<option value="${t}" ${t === c.type ? 'selected' : ''}>${k === 'NO' ? 'N.O. (normally open)' : k === 'NC' ? 'N.C. (normally closed)' : esc(k)}</option>`).join('')}</select></label>` : '';
       propsEl.innerHTML = `<div class="side-head"><h4>${esc(d.name)}</h4></div>
-        <div class="props">${fields.map(f => `<label class="field"><span>${esc(f.n)}</span>${f.opts ? `<select data-pk="${f.k}">${f.opts.map(o => `<option ${String(c.props[f.k]) === o ? 'selected' : ''}>${o}</option>`).join('')}</select>` : `<input data-pk="${f.k}" type="${f.type || 'text'}" value="${esc(c.props[f.k] ?? '')}">`}</label>`).join('')}
+        <div class="props">${vr}${fields.map(f => `<label class="field"><span>${esc(f.n)}</span>${f.opts ? `<select data-pk="${f.k}">${f.opts.map(o => `<option ${String(c.props[f.k]) === o ? 'selected' : ''}>${o}</option>`).join('')}</select>` : `<input data-pk="${f.k}" type="${f.type || 'text'}" value="${esc(c.props[f.k] ?? '')}">`}</label>`).join('')}
         <div class="status-box"><small>Status</small><div data-status>${esc(Circuit.status(c, App.ctx))}</div></div>
         <p class="help">${esc(d.info || '')}</p>
         <div class="btn-row"><button class="btn" data-dup>Duplicate</button><button class="btn" data-rep ${c.state.burnt ? '' : 'disabled'}>Repair</button><button class="btn danger" data-del>Delete</button></div></div>`;
@@ -484,6 +515,8 @@
         c.props[k] = i.type === 'number' ? Number(i.value) : i.value;
         App.save();
       }));
+      const vs = propsEl.querySelector('[data-variant]');
+      if (vs) vs.onchange = () => retype(c, vs.value);
       propsEl.querySelector('[data-del]').onclick = delSel;
       propsEl.querySelector('[data-dup]').onclick = () => duplicate(c);
       propsEl.querySelector('[data-rep]').onclick = () => { Circuit.repair(c); renderProps(); App.save(); };

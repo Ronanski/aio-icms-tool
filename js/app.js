@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
   const LAYOUTS = [
@@ -30,27 +30,52 @@
   App.ctx.setMode = m => App.setMode(m);
 
   /* ---------- project ---------- */
-  App.loadProject = function (p) {
-    const rungs = ((p.ladder && p.ladder.rungs) || []).map(r => {
-      try { return Ladder.newRung(Ladder.parseRung(r.text || ''), r.comment || ''); }
-      catch (err) { return Ladder.newRung([], `${r.comment || ''} [could not parse: ${r.text}]`); }
+  /* Build a project from saved or imported data. Files can be hand-edited, so every field is checked:
+     ids, colors and numbers end up in SVG/HTML markup. Throws if the data is not a project at all. */
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const arr = v => (Array.isArray(v) ? v : []);
+  const ID = /^[A-Za-z0-9_-]{1,40}$/;
+  const HEX = /^#[0-9a-fA-F]{3,8}$/;
+  const str = (v, n = 400) => (typeof v === 'string' || typeof v === 'number' ? String(v).slice(0, n) : '');
+  function buildProject(p) {
+    if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
+    const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
+    const rungs = arr(lad.rungs).filter(isObj).map(r => {
+      const text = str(r.text, 20000), comment = str(r.comment);
+      try { return Ladder.newRung(Ladder.parseRung(text), comment); }
+      catch (err) { return Ladder.newRung([], `${comment} [could not parse: ${text}]`); }
     });
-    const comps = ((p.circuit && p.circuit.comps) || []).filter(c => Circuit.DEFS[c.type]).map(c => Circuit.normalize(JSON.parse(JSON.stringify(c))));
+    const desc = {};
+    if (isObj(lad.desc)) for (const k in lad.desc) { const v = str(lad.desc[k], 80); if (v) desc[k] = v; }
+    const comps = arr(cir.comps).filter(c => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && ID.test(c.id))
+      .map(c => Circuit.normalize(JSON.parse(JSON.stringify(c))));
     const ids = new Set(comps.map(c => c.id));
-    const wires = ((p.circuit && p.circuit.wires) || []).filter(w => ids.has(w.a.split(':')[0]) && ids.has(w.b.split(':')[0])).map(w => ({ ...w, pts: w.pts || [] }));
-    const maxNum = arr => arr.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
-    App.project = {
-      name: p.name || 'Untitled',
-      ladder: { rungs, desc: { ...((p.ladder && p.ladder.desc) || {}) } },
-      circuit: { comps, wires, seq: Math.max((p.circuit && p.circuit.seq) || 0, maxNum(comps), maxNum(wires)) },
-      hmi: { objects: ((p.hmi && p.hmi.objects) || []).map(o => ({ ...o })), seq: 0 },
+    const termOk = k => typeof k === 'string' && ids.has(k.split(':')[0]) && Circuit.DEFS[comps.find(c => c.id === k.split(':')[0]).type].terms.some(t => t.id === k.split(':')[1]);
+    const wires = arr(cir.wires).filter(w => isObj(w) && ID.test(w.id) && termOk(w.a) && termOk(w.b)).map(w => ({
+      id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d',
+      pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
+    }));
+    const objects = arr(hm.objects).map(HMI.clean).filter(Boolean);
+    const maxNum = list => list.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
+    const seq = v => (Number.isFinite(v) ? v : 0);
+    return {
+      name: str(p.name, 80).trim() || 'Untitled',
+      ladder: { rungs, desc },
+      circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
+      hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
     };
-    App.project.hmi.seq = Math.max((p.hmi && p.hmi.seq) || 0, maxNum(App.project.hmi.objects));
+  }
+  App.buildProject = buildProject;
+  App.loadProject = function (p) { applyProject(buildProject(p)); };
+  function applyProject(proj) {
+    App.project = proj;
+    const rungs = proj.ladder.rungs;
     const plc = App.plc;
     plc.setMode('PROG');
     plc.resetData();
     Object.keys(plc.forces).forEach(k => plc.setForce(k, null));
     plc.forcesEnabled = true;
+    lastForces = {}; lastFen = true;
     plc.setProgram(rungs);
     plc.applyAll(true);
     Ladder.resetSel(); Workspace.resetView(); HMI.resetSel();
@@ -58,8 +83,9 @@
     renderVisible();
     document.querySelector('[data-pname]').textContent = App.project.name;
     clearTimeout(saveT); saveT = null;
-    Store.save(App.currentId, App.serialize());
-  };
+    store();
+    App.log('system', `Opened project “${App.project.name}”`);
+  }
   App.serialize = function () {
     const p = App.project;
     return {
@@ -69,45 +95,149 @@
       hmi: p.hmi,
     };
   };
-  let saveT = null;
+  let saveT = null, saveFailed = false;
+  /* write the project to browser storage; warn once if it fails (storage full or blocked) */
+  function store() {
+    if (!App.project || !App.currentId) return true;
+    const ok = Store.save(App.currentId, App.serialize());
+    if (!ok && !saveFailed) {
+      UI.toast('Could not save: browser storage is full or blocked. Use File → Export to file to keep a copy.', 'danger', 7000);
+      App.log('alarm', 'Project could not be saved (browser storage full or blocked)');
+    }
+    saveFailed = !ok;
+    App.lastSave = ok ? Date.now() : App.lastSave;
+    saveState(ok ? 'saved' : 'failed');
+    return ok;
+  }
+  function saveState(st) {
+    const el = document.querySelector('[data-saved]');
+    if (!el) return;
+    el.textContent = st === 'saved' ? 'Saved' : st === 'pending' ? 'Saving…' : 'Not saved';
+    el.className = 'save-st ' + st;
+  }
   App.save = function () {
     clearTimeout(saveT);
-    saveT = setTimeout(() => { saveT = null; Store.save(App.currentId, App.serialize()); }, 500);
+    saveState('pending');
+    saveT = setTimeout(() => { saveT = null; store(); }, 500);
   };
   /* write any pending change now, before switching to another project */
   App.flushSave = function () {
-    if (saveT === null) return;
+    if (saveT === null) return true;
     clearTimeout(saveT); saveT = null;
-    if (App.project && App.currentId) Store.save(App.currentId, App.serialize());
+    return store();
   };
-  /* open project data as a new saved project (examples, imports, New project) */
+  /* open project data as a new saved project (examples, imports, New project).
+     The data is checked first, so a broken file leaves the current project as it was. */
   App.openNew = function (data) {
+    const proj = buildProject(data);
     App.flushSave();
     App.currentId = Store.newId();
     Store.setCurrent(App.currentId);
-    App.loadProject(data);
+    applyProject(proj);
   };
   App.openSaved = function (id) {
+    let proj = null;
+    try { const data = Store.load(id); if (data) proj = buildProject(data); } catch (err) { proj = null; }
+    if (!proj) { UI.toast('That project could not be read', 'danger'); return false; }
     App.flushSave();
-    const data = Store.load(id);
-    if (!data) { UI.toast('That project could not be read', 'danger'); return; }
     App.currentId = id;
     Store.setCurrent(id);
-    App.loadProject(data);
+    applyProject(proj);
+    return true;
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
   App.circuitChanged = function () { App.dirty.panel = true; App.dirty.wiring = true; renderVisible(); App.save(); };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
-  App.forcesChanged = function () { Ladder.DataTable.render(); updateBar(true); };
+  /* compare with the last known forces so every change is logged, whichever control made it */
+  let lastForces = {}, lastFen = true;
+  App.forcesChanged = function () {
+    const plc = App.plc, now = plc.forces;
+    for (const k in now) if (lastForces[k] !== now[k]) App.log('force', `Force ${now[k] ? 'ON' : 'OFF'} installed on ${k}`);
+    for (const k in lastForces) if (!(k in now)) App.log('force', `Force removed from ${k}`);
+    if (plc.forcesEnabled !== lastFen) App.log('force', `Forces ${plc.forcesEnabled ? 'enabled' : 'disabled'}`);
+    lastForces = { ...now }; lastFen = plc.forcesEnabled;
+    Ladder.DataTable.render(); updateBar(true);
+  };
   App.setMode = function (m) {
-    if (m === 'RUN' && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); Ladder.verify(false); return; }
+    if (m === 'RUN' && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
+    if (App.plc.mode !== m) App.log('mode', `Controller mode changed to ${m}`);
     App.plc.setMode(m);
     updateBar(true);
   };
+  /* operate a device part (button, breaker handle, selector…) from the wiring or panel view.
+     Returns the release function for momentary parts (see App.hold). */
+  const PART_NAMES = { btn: 'button', h: 'handle', sw: 'main switch', knob: 'selector', l: 'selector (left)', r: 'selector (right)', lever: 'lever', tgt: 'target', jam: 'JAM', reset: 'RESET', test: 'TEST', add: '+ BOX', auto: 'AUTO', clr: 'CLEAR', use: 'USE', mode: 'key switch' };
+  App.operate = function (c, part) {
+    Circuit.part(c, part, 'down', App.ctx);
+    const st = Circuit.status(c, App.ctx);
+    App.log('operator', `${c.props.label}: ${PART_NAMES[part] || part} operated${st ? ' → ' + st : ''}`);
+    App.save();
+    return App.hold(c.id + ':' + part, () => { Circuit.part(c, part, 'up', App.ctx); App.save(); });
+  };
+
+  /* ---------- event log (this session, newest last) ---------- */
+  const LOG = [], LOG_MAX = 500;
+  const KINDS = { alarm: 'Alarm', mode: 'Mode', force: 'Force', operator: 'Operator', system: 'System' };
+  let unseen = 0, logView = null;
+  App.log = function (kind, msg) {
+    LOG.push({ t: Date.now(), kind, msg: String(msg) });
+    if (LOG.length > LOG_MAX) LOG.shift();
+    if (kind === 'alarm') unseen++;
+    const b = document.querySelector('[data-evbadge]');
+    if (b) { b.textContent = unseen; b.hidden = !unseen; }
+    if (logView) logView();
+  };
+  App.events = () => LOG.slice();
+  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour12: false }) + '.' + String(t % 1000).padStart(3, '0');
+  function eventLog() {
+    unseen = 0;
+    const b = document.querySelector('[data-evbadge]'); if (b) b.hidden = true;
+    let filter = 'all';
+    const m = UI.modal({
+      title: 'Event log', wide: true,
+      body: `<div class="ev-tools"><select data-evf><option value="all">All events</option>${Object.entries(KINDS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
+        <span class="spacer"></span><button class="btn" data-evx>⤓ Export CSV</button><button class="btn" data-evc>Clear</button></div>
+        <div class="ev-list"></div><p class="help">Events of this session, newest first (up to ${LOG_MAX}). The log is not saved with the project.</p>`,
+    });
+    const list = m.el.querySelector('.ev-list');
+    logView = () => {
+      if (!document.body.contains(list)) { logView = null; return; }
+      const rows = LOG.filter(e => filter === 'all' || e.kind === filter).slice().reverse();
+      list.innerHTML = rows.length ? `<table class="ev"><tr><th>Time</th><th>Type</th><th>Event</th></tr>${rows.map(e => `<tr class="k-${e.kind}"><td>${fmtTime(e.t)}</td><td><span class="evk">${KINDS[e.kind] || esc(e.kind)}</span></td><td>${esc(e.msg)}</td></tr>`).join('')}</table>` : '<p class="help">No events yet.</p>';
+    };
+    logView();
+    m.el.querySelector('[data-evf]').onchange = e => { filter = e.target.value; logView(); };
+    m.el.querySelector('[data-evc]').onclick = () => { LOG.length = 0; logView(); };
+    m.el.querySelector('[data-evx]').onclick = () => {
+      const q = v => `"${String(v).replace(/"/g, '""')}"`;
+      const csv = 'time,type,event\n' + LOG.map(e => [new Date(e.t).toISOString(), KINDS[e.kind] || e.kind, e.msg].map(q).join(',')).join('\n');
+      download(new Blob([csv], { type: 'text/csv' }), (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '-events.csv');
+    };
+  }
+  App.eventLog = eventLog;
 
   /* ---------- loop ---------- */
   const alertSeen = new Map();
   let last = performance.now();
+  /* App.later(n, fn) runs fn once n more ticks (circuit solve + PLC scan) have passed.
+     Momentary buttons release through it, so even a quick tap is seen by at least one scan. */
+  App.ticks = 0;
+  const pending = [];
+  App.later = function (n, fn) { pending.push({ at: App.ticks + n, fn }); };
+  App.holdTicks = 2;
+  let lastPw = true;
+  /* call App.hold(key, up) when a momentary button goes down; call the returned function when it is released.
+     up() runs no earlier than App.holdTicks ticks after the press. A newer press on the same key cancels it. */
+  const holds = new Map();
+  App.hold = function (key, up) {
+    const tok = { at: App.ticks };
+    holds.set(key, tok);
+    return () => {
+      const run = () => { if (holds.get(key) === tok) { holds.delete(key); up(); } };
+      const wait = tok.at + App.holdTicks - App.ticks;
+      if (wait <= 0) run(); else App.later(wait, run);
+    };
+  };
   function tick() {
     const now = performance.now();
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -121,13 +251,17 @@
     App.api = r.api;
     for (const a of r.alerts) {
       const t = alertSeen.get(a.msg) || 0;
-      if (now - t > 4000) { UI.toast(a.msg, a.kind || 'warn', 4200); }
+      if (now - t > 4000) { UI.toast(a.msg, a.kind || 'warn', 4200); App.log('alarm', a.msg); }
       alertSeen.set(a.msg, now);
     }
     if (r.alerts.length) App.save();
     if (pc) { plc.powered = ctx.plcPowered; plc.physIn = ctx.plcIn; } else { plc.powered = true; plc.physIn = 0; }
+    if (pc && plc.powered !== lastPw && App.ticks > 0) App.log(plc.powered ? 'system' : 'alarm', plc.powered ? 'PLC power restored' : 'PLC lost its power');
+    lastPw = plc.powered;
     ctx.plcInRaw = ctx.plcIn;
     plc.scan(dt);
+    App.ticks++;
+    for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= App.ticks) pending.splice(i, 1)[0].fn();
   }
   function frame() {
     const vis = visibleViews();
@@ -265,7 +399,7 @@
     let m = '';
     if (!st.nplc) m = 'No PLC in the wiring — ladder runs as a virtual PLC (use forcing to test).';
     else if (!st.pw) m = '⚠ PLC has no power — check QF/L1/N wiring in the Wiring tab.';
-    else if (plc.mode === 'PROG') m = 'Program mode — outputs are off. Switch to RUN to execute.';
+    else if (plc.mode === 'PROG') m = st.force && st.fen ? 'Program mode — outputs are off, but forced outputs stay active. Switch to RUN to execute.' : 'Program mode — outputs are off. Switch to RUN to execute.';
     msg.textContent = m;
     msg.classList.toggle('warn', !!st.nplc && !st.pw);
   }
@@ -288,7 +422,7 @@
         ${cur.test ? '<div class="grade" data-grade></div>' : ''}
         <h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
-        <h3 class="mt">Addressing (SLC 500 / MicroLogix style)</h3>
+        <h3 class="mt">Addressing (file-based style)</h3>
         <table class="ref"><tr><th>Address</th><th>Meaning</th></tr>
           <tr><td><code>I:0/0 … I:0/11</code></td><td>Physical inputs (input image)</td></tr>
           <tr><td><code>O:0/0 … O:0/7</code></td><td>Physical relay outputs</td></tr>
@@ -298,7 +432,7 @@
           <tr><td><code>N7:0</code></td><td>16-bit signed integer</td></tr>
           <tr><td><code>S:1/15</code></td><td>First-scan bit</td></tr></table>
         <h3 class="mt">Keyboard</h3>
-        <table class="ref"><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>
+        <table class="ref"><tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save · Save as · Open project</td></tr><tr><td><kbd>Ctrl</kbd>+scroll</td><td>Zoom the ladder or the HMI (scroll alone zooms the wiring)</td></tr><tr><td>Drag an instruction</td><td>Move it to another place or rung (mouse). Right-click → Change to… swaps XIC ↔ XIO, TON ↔ TOF and so on.</td></tr><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>
       </article></div>`;
     el.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -342,6 +476,7 @@
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.mode) App.setMode(b.dataset.mode);
       if (b.hasAttribute('data-forces')) { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); }
+      if (b.hasAttribute('data-events')) eventLog();
       if (b.hasAttribute('data-layout')) {
         const r = b.getBoundingClientRect();
         UI.menu(r.left, r.bottom + 4, [{ head: 'Show side by side' }, ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) }))]);
@@ -355,12 +490,17 @@
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [
         { label: 'New project…', onClick: newProject },
-        { label: 'Open project…', onClick: openDialog },
+        { label: 'Open project…\u2003Ctrl+O', onClick: openDialog },
+        { label: 'Save\u2003Ctrl+S', onClick: saveNow },
+        { label: 'Save as…\u2003Ctrl+Shift+S', onClick: saveAs },
         { label: 'Rename project…', onClick: rename },
-        { label: 'Export project (.json)', onClick: exportProject },
-        { label: 'Import project…', onClick: () => document.getElementById('importFile').click() },
         { sep: true },
-        { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); } },
+        { label: 'Export to file (.plc.json)', onClick: exportProject },
+        { label: 'Import from file…', onClick: () => document.getElementById('importFile').click() },
+        { sep: true },
+        { label: 'Event log', onClick: eventLog },
+        { label: 'Updates…', onClick: () => Updater.dialog() },
+        { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); App.log('system', 'PLC data table cleared'); } },
         { label: `About PLC Trainer v${VERSION}`, onClick: about },
       ]);
     });
@@ -377,7 +517,9 @@
     document.querySelector('[data-pname]').addEventListener('dblclick', rename);
     document.addEventListener('keydown', e => {
       if (UI.isTyping() || document.querySelector('.modal-wrap')) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); exportProject(); return; }
+      const ctl = e.ctrlKey || e.metaKey, key = e.key.toLowerCase();
+      if (ctl && key === 's') { e.preventDefault(); if (e.shiftKey) saveAs(); else saveNow(); return; }
+      if (ctl && key === 'o') { e.preventDefault(); openDialog(); return; }
       const v = App.view;
       if (v === 'ladder') Ladder.onKey(e);
       else if (v === 'wiring') Workspace.onKey(e);
@@ -437,7 +579,7 @@
   function about() {
     UI.modal({
       title: `PLC Trainer v${VERSION}`,
-      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><h4>Install on your device</h4><ul class="tips"><li><b>Android (Chrome)</b>: tap <b>Install app</b> in the top bar, or menu ⋮ → <b>Add to Home screen</b>.</li><li><b>iPhone / iPad (Safari)</b>: tap Share → <b>Add to Home Screen</b>.</li><li><b>Windows / Mac (Chrome or Edge)</b>: click <b>Install app</b>, or the install icon in the address bar.</li></ul><p class="help">Install needs the hosted web address (https). Once installed, the app works offline.</p><p>Windows installer and Android APK: <a href="https://github.com/Ronanski/aio-icms-tool/releases/latest" target="_blank" rel="noopener">download the latest release</a>.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
+      body: `<p>PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><h4>Install on your device</h4><ul class="tips"><li><b>Android (Chrome)</b>: tap <b>Install app</b> in the top bar, or menu ⋮ → <b>Add to Home screen</b>.</li><li><b>iPhone / iPad (Safari)</b>: tap Share → <b>Add to Home Screen</b>.</li><li><b>Windows / Mac (Chrome or Edge)</b>: click <b>Install app</b>, or the install icon in the address bar.</li></ul><p class="help">Install needs the hosted web address (https). Once installed, the app works offline.</p><p>Windows installer and Android APK: <a href="https://github.com/Ronanski/aio-icms-tool/releases/latest" target="_blank" rel="noopener">download the latest release</a>.</p><p class="help">Educational simulator. Not affiliated with any PLC manufacturer. All trademarks belong to their owners.</p>`,
     });
   }
   App.VERSION = VERSION;
@@ -448,14 +590,33 @@
       App.save();
     });
   }
-  function exportProject() {
-    const blob = new Blob([JSON.stringify(App.serialize(), null, 1)], { type: 'application/json' });
+  function download(blob, name) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '.plc.json';
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
+  function exportProject() {
+    download(new Blob([JSON.stringify(App.serialize(), null, 1)], { type: 'application/json' }), (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '.plc.json');
+  }
+  /* projects save themselves; Save writes now and confirms */
+  function saveNow() {
+    clearTimeout(saveT); saveT = null;
+    if (store()) { UI.toast(`Saved “${App.project.name}”`, 'ok', 1800); App.log('system', `Saved project “${App.project.name}”`); }
+  }
+  App.saveNow = saveNow;
+  function saveAs() {
+    UI.form('Save as', [{ key: 'n', label: 'New project name', value: App.project.name + ' (copy)' }], v => {
+      const name = v.n.trim();
+      if (!name) return 'Enter a project name';
+      const data = App.serialize();
+      data.name = name;
+      App.openNew(data);
+      UI.toast(`Saved as “${name}”. The original project is still in File → Open project.`, 'ok', 3500);
+    });
+  }
+  App.saveAs = saveAs;
 
   /* ---------- boot ---------- */
   function boot() {
@@ -472,9 +633,9 @@
     const cur = Store.current();
     const saved = cur ? Store.load(cur) : null;
     const first = !saved && !Store.list().length;
-    if (saved) { App.currentId = cur; App.loadProject(saved); }
-    else if (Store.list().length) App.openSaved(Store.list()[0].id);
-    else App.openNew(Examples.EX.plcmotor.build());
+    let opened = !!saved && App.openSaved(cur);
+    for (const p of Store.list()) { if (opened) break; opened = App.openSaved(p.id); }
+    if (!opened) App.openNew(Examples.EX.plcmotor.build());
     let v = 'ladder', lay = null;
     try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); lay = localStorage.getItem('plc-trainer.layout'); } catch (e) { /* ignore */ }
     if (!VIEWS.includes(v)) v = 'ladder';
@@ -483,6 +644,7 @@
     App.showView(v);
     setInterval(tick, 20);
     requestAnimationFrame(frame);
+    Updater.init();
     if (first) UI.toast('Welcome! A PLC motor-control example is loaded. Start with the lessons or press RUN.', 'ok', 6000);
   }
   /* ---------- install as an app (PWA) ---------- */
@@ -504,4 +666,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => { boot(); setupPwa(); });
+  // save pending edits when the tab or app is closed or sent to the background
+  window.addEventListener('pagehide', () => App.flushSave());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') App.flushSave(); });
 })();

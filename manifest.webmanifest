@@ -1,7 +1,7 @@
 {
   "name": "PLC Trainer",
   "short_name": "PLC Trainer",
-  "description": "Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.",
+  "description": "PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

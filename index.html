@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>PLC Trainer</title>
-  <meta name="description" content="Allen-Bradley style PLC trainer: ladder logic editor, power & control circuit wiring simulator, HMI, forcing and live equipment.">
+  <meta name="description" content="PLC trainer: ladder logic editor, power & control circuit wiring simulator, HMI, forcing and live equipment.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
@@ -46,7 +46,7 @@
       </svg>
       <div>
         <div class="brand-title">PLC Trainer</div>
-        <div class="brand-sub"><span data-pname title="Double-click to rename">Untitled</span></div>
+        <div class="brand-sub"><span data-pname title="Double-click to rename">Untitled</span> <span class="save-st" data-saved title="Projects save automatically in this browser. Ctrl+S saves now.">Saved</span></div>
       </div>
     </div>
     <nav class="tabs" aria-label="Views">
@@ -75,6 +75,7 @@
     <span class="scan" data-scan></span>
     <span class="bar-msg" data-msg></span>
     <span class="spacer"></span>
+    <button class="tbtn sm" data-events title="Event log: mode changes, forces, trips, alarms and operator actions">📋 Events <b class="badge" data-evbadge hidden>0</b></button>
     <button class="tbtn sm" data-layout title="Show ladder, wiring and panel side by side">▦ Layout</button>
   </div>
 
@@ -100,6 +101,7 @@
   <script src="js/panel.js"></script>
   <script src="js/hmi.js"></script>
   <script src="js/examples.js"></script>
+  <script src="js/update.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

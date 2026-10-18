@@ -2,6 +2,8 @@ name: Release
 # Builds the Windows installer, the Android APK and a web zip from the same app files.
 # - pull_request: build only, so every PR proves the installers still build
 # - workflow_dispatch / tag push: build, then publish a GitHub Release v<package.json version>
+# - a version with a suffix (1.3.0-beta.1) is published as a pre-release: apps on the Beta channel see it,
+#   apps on the Stable channel ignore it. A plain version (1.3.0) is a normal (stable) release.
 on:
   pull_request:
   push:
@@ -125,6 +127,9 @@ jobs:
         run: |
           v="${{ needs.version.outputs.version }}"
           awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md
+          # a beta usually has no CHANGELOG section of its own yet: use [Unreleased]
+          if [ ! -s notes.md ]; then awk '/^## \[Unreleased\]/ {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md; fi
+          case "$v" in *-*) printf '> **Beta (pre-release).** For testing. Apps on the Beta update channel are offered this version.\n\n' | cat - notes.md > n && mv n notes.md;; esac
           {
             echo ""
             echo "## Downloads"
@@ -140,4 +145,5 @@ jobs:
           name: PLC Trainer v${{ needs.version.outputs.version }}
           body_path: notes.md
           files: dist/*
-          make_latest: true
+          prerelease: ${{ contains(needs.version.outputs.version, '-') }}
+          make_latest: ${{ !contains(needs.version.outputs.version, '-') }}

@@ -22,11 +22,12 @@
       const c = App.project.circuit.comps.find(c => c.id === card.dataset.cid);
       if (!c) return;
       e.preventDefault();
-      Circuit.part(c, p.dataset.part, 'down', App.ctx);
-      active = { c, part: p.dataset.part };
-      App.save();
+      if (active) active();
+      active = App.operate(c, p.dataset.part);
     });
-    window.addEventListener('pointerup', () => { if (active) { Circuit.part(active.c, active.part, 'up', App.ctx); active = null; } });
+    const up = () => { if (active) { active(); active = null; } };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   PV.render = function () {

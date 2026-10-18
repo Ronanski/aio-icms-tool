@@ -19,11 +19,11 @@
     load(id) { try { return JSON.parse(get(PREFIX + id) || 'null'); } catch (e) { return null; } },
     save(id, data) {
       if (!id) return false;
-      const ok = set(PREFIX + id, JSON.stringify(data));
+      if (!set(PREFIX + id, JSON.stringify(data))) return false;
+      // the index lists a project only once its data is really stored
       const list = readIdx().filter(p => p.id !== id);
       list.push({ id, name: data.name || 'Untitled', updated: Date.now() });
-      writeIdx(list);
-      return ok;
+      return writeIdx(list);
     },
     remove(id) { del(PREFIX + id); writeIdx(readIdx().filter(p => p.id !== id)); },
     current: () => get(CUR),

@@ -1,10 +1,10 @@
 /* Service worker: caches the app shell so the trainer works offline once installed.
    Bump CACHE with every release so returning users get the new files. */
-const CACHE = 'plc-trainer-v1.1.0';
+const CACHE = 'plc-trainer-v1.2.0';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/ui.js', 'js/store.js', 'js/plc.js', 'js/ladder.js', 'js/circuit.js', 'js/workspace.js',
-  'js/panel.js', 'js/hmi.js', 'js/examples.js', 'js/app.js',
+  'js/panel.js', 'js/hmi.js', 'js/examples.js', 'js/update.js', 'js/app.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
 ];
 

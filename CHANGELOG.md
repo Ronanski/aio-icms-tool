@@ -5,6 +5,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-18
+
+### Added
+- **In-app updates with Stable and Beta channels.** When online, the app checks the GitHub Releases (at start, at most once an hour, and every 6 hours) and shows a bar when a newer version is out, with *What's new*, *Download update* / *Reload to update* and *Later*. File → **Updates…** picks the channel and checks now. Stable sees normal releases only; Beta also sees pre-releases (`vX.Y.Z-beta.N`). Offline the check is skipped and the app works as usual. Windows and Android download the new installer (`.exe` / `.apk`); the web app reloads to update.
+- Release workflow: a version with a suffix (e.g. `1.3.0-beta.1`) is published as a **pre-release**. Notes come from `[Unreleased]` when the beta has no CHANGELOG section of its own.
+- **Ladder: drag and drop.** Drag an instruction with the mouse to move it before or after another instruction, into an empty branch leg, or onto another rung. Undo works as usual.
+- **Ladder: Change to…** Right-click an instruction to swap it for a similar one with the same operands: XIC ↔ XIO ↔ ONS, OTE ↔ OTL ↔ OTU, TON ↔ TOF ↔ RTO, CTU ↔ CTD, EQU ↔ NEQ ↔ LES ↔ LEQ ↔ GRT ↔ GEQ, ADD ↔ SUB ↔ MUL ↔ DIV.
+- **N.O. / N.C. contact type** for push buttons and 2-position selectors, in the properties panel and the right-click menu. Wires move to the new terminals (13-14 ↔ 11-12). New part: *Selector Switch 2-Pos (NC)*.
+- **Event log** (📋 Events in the status bar, or File → Event log): mode changes, forces, trips and alarms, PLC power, HMI and device operations, each with a timestamp. Filter by type, export to CSV. A red badge counts new alarms.
+- **HMI zoom**: 🔍−, Fit and 🔍＋ buttons and Ctrl + scroll.
+- **Save, Save as, Open** in the File menu with Ctrl+S, Ctrl+Shift+S and Ctrl+O, and a *Saved / Saving… / Not saved* label next to the project name.
+- Parts list groups fold open and closed, with Collapse all / Expand all. The folded groups are remembered.
+
+### Changed
+- Zoom controls in the ladder and wiring toolbars are labelled **Zoom** with 🔍 buttons and show the zoom level; click the level to go back to 100%. Ctrl + scroll zooms the ladder.
+- **Ctrl+S now saves the project.** Before, it downloaded the project file; that is now File → Export to file.
+- File → Export project / Import project are renamed *Export to file* / *Import from file*.
+- Brand names of real PLC makers are no longer shown anywhere in the app. The PLC is now "PLC (compact, 12 in / 8 out)", the HMI frame is an "Operator terminal".
+
+### Fixed
+- **HMI buttons work on a quick tap.** A tap or fast click used to switch the bit on and off again before the PLC scanned it, so nothing happened, and on phones it never worked. Momentary buttons (HMI, wiring and Panel & Plant) now stay pressed for at least two scans.
+- **Overload relays**: a jammed or single-phasing motor no longer trips every overload relay on the same supply. Only the relay that carries that motor's current heats up.
+- **Imported or hand-edited project files**: script code hidden in HMI colors, wire colors, ids or device states no longer runs. A file that is not a project is refused, and the open project stays as it was. Broken parts of a file are dropped instead of stopping the import.
+- **Storage full**: the app now tells you when a project cannot be saved, and no longer lists a project whose data was not stored.
+- A push button held while the project was saved no longer comes back stuck pressed. Motors no longer coast after opening a project.
+- Edits are saved when the window or app is closed or sent to the background.
+- The first-scan bit `S:1/15` is set again on the first scan after the PLC gets its power back.
+- Undo, redo and pasting a rung write the timer and counter presets again (a pasted TON no longer finishes at once).
+- Only physical I/O bits can be forced, so a stray force can no longer break forcing.
+- In PROG mode the status bar now says that forced outputs stay active, instead of saying that all outputs are off.
+- Black wires are visible in dark mode: every wire has a thin outline.
+
 ## [1.1.0] - 2026-10-18
 
 ### Added
@@ -60,6 +92,7 @@ The first public release.
 - Light and dark themes.
 - End-to-end regression suite (`npm test`, 26 checks).
 
-[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.0.0
