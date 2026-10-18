@@ -9,7 +9,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 | **Tags** | `v1.1.0` created on GitHub by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
 | **Branch** | `main` holds released code. PR #2 comes from `claude/focused-archimedes-12aqro`: the audit fixes (planned as v1.1.1) and the QoL features (planned as v1.2.0). Version not bumped yet. |
-| **Tests** | `npm test`: 96 passed, 0 failed on the PR branch (45 on `main`) |
+| **Tests** | `npm test`: 107 passed, 0 failed on the PR branch (45 on `main`). CI on PR #2 was green before the update-checker commit; re-check it on the latest head. |
 | **Pull request** | #1 merged (v1.1.0). #2 open: https://github.com/Ronanski/aio-icms-tool/pull/2. Merge and release only with the owner's explicit authorization. |
 | **Downloads** | GitHub Releases (Windows `.exe`, Android `.apk`, web zip) built by `release.yml`; web app on GitHub Pages |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
@@ -32,6 +32,7 @@ index.html ── loads scripts in order ──►
   panel.js     PanelView: big operable devices
   hmi.js       HMI: designer + runtime
   examples.js  Examples: EX (projects) + LESSONS
+  update.js    Updater: GitHub Releases check, Stable/Beta channel, update bar, File → Updates…
   app.js       App: project state, open/save projects, 20 ms tick loop, views + LAYOUTS (multi-pane grid, gutters), status bar, PWA install
 sw.js          service worker (offline cache; bump CACHE every release)
 manifest.webmanifest + icons/   install metadata
@@ -51,6 +52,8 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 
 **Loading projects:** `App.buildProject(data)` checks every field (ids, hex colors, numbers, states, HMI objects via `HMI.clean`) and throws on non-project data; `App.openNew` builds first, then switches project. `Circuit.normalize` keeps only saved values with the default's type and resets `transient` state (e.g. `pressed`).
 
+**Updates:** `Updater.check(manual)` fetches the repo's releases when online (auto: 3 s after start, then every 6 h, min 1 h apart), `pick()` chooses the newest for the channel (`plc-trainer.channel`: stable | beta; beta includes pre-releases) newer than `App.VERSION`. Windows downloads `Setup-*.exe`, Android `*-android.apk`, web reloads. Tests mock `api.github.com`. A release is a beta when its version has a suffix (`1.3.0-beta.1`); `release.yml` then publishes a pre-release.
+
 **Contact variants:** a component def can have `variant: { n, of: { NO: type, NC: type } }`. `Circuit.retype(c, type, circ)` changes the type and moves wires by terminal position.
 
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
@@ -69,6 +72,8 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 - Root cause of "HMI buttons don't work": a tap shorter than one 20 ms scan was never seen (always on phones). Fixed with `App.hold`.
 - Not changed on purpose: forced outputs still act in PROG (as on real controllers); only the status text was corrected.
 - Not tested on a real phone, the Windows `.exe` or the Android `.apk`.
+- Owner asked for in-app updates (Stable/Beta channels, works offline) and approved adding it to PR #2: notify + download for `.exe` and `.apk`; beta releases are pre-releases seen by apps on the Beta channel. Done in `js/update.js` + `release.yml`. Not tested against the real GitHub API from an installed app yet (tests use a mock).
+- Android updates install over the old app only with the signing key in secrets (open decision 5).
 
 ## Previous session summary (v1.1.0)
 - Workbench layout (ladder + wiring + panel at once); mobile and touch layout; PWA (installable, offline); multiple projects; lesson Check my work.

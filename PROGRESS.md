@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.1.0 (released 2026-10-18 from `main`; downloads on GitHub Releases)
-**Status:** Stable web app that installs on phones, tablets and PCs. PR #2 (fixes + QoL features) is open and waiting for the owner's merge/release authorization. `npm test`: 96/96 on the PR branch.
+**Status:** Stable web app that installs on phones, tablets and PCs. PR #2 (fixes + QoL features) is open and waiting for the owner's merge/release authorization. `npm test`: 107/107 on the PR branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -40,6 +40,7 @@
 - [x] HMI zoom
 - [x] Event log with filter and CSV export
 - [x] Save / Save as / Open with shortcuts and a saved indicator
+- [x] In-app updates: Stable / Beta channel, update bar, download installer, works offline; beta = pre-release in the Release workflow
 
 ## Owner actions
 - [ ] Authorize merge of PR #2 and the release (number: v1.2.0 suggested)
