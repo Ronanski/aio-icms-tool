@@ -22,12 +22,13 @@
 - [x] Multiple saved projects (File → Open project)
 - [x] Lesson auto-check for lessons 1–6
 - [x] CI and GitHub Pages workflows
+- [x] Windows installer + portable `.exe` and Android `.apk`, published by the Release workflow
 
 ## Next: v1.2.0 (planned)
-- [ ] Go live on GitHub Pages (needs `main` + Pages enabled; see HANDOFF open decisions)
+- [ ] Android signing key in repo secrets, so updates install over old versions (see RELEASING.md)
+- [ ] Play Store build (`.aab`) and listing
 - [ ] Final product name and logo, replacing the placeholder icon
 - [ ] Auto-check for the circuit lessons (8–12): verify wiring, not only the ladder
-- [ ] Android APK (Capacitor) and Windows installer (Tauri)
 
 ## Backlog (v1.2+)
 - [ ] More instructions: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, BTD, SCP, analog I/O (I:1.0 words)
@@ -39,7 +40,9 @@
 
 ## Known limitations
 - On phones, wiring large circuits is possible but slow; a tablet or PC is more comfortable.
-- Offline install needs the app served over https (GitHub Pages). Opening `index.html` from disk works, but can't be installed.
+- Offline install of the PWA needs https (GitHub Pages). The `.exe` and `.apk` work offline as they are.
+- The Windows `.exe` is not code-signed, so SmartScreen warns on first run.
+- File → Export does not download inside the Android app yet.
 - One PLC per project. Loads in series (e.g. two lamps in series) are not modeled.
 - Wires are routed automatically from waypoints; you can't drag an existing wire.
 - Inside the claude.ai artifact preview, File → Export is blocked. Export works in a normal browser tab.

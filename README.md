@@ -6,12 +6,15 @@ An Allen-Bradley–style PLC trainer that runs in the browser. Write ladder logi
 
 No build step. It runs in any modern browser on Windows, Mac, Android, iPhone and iPad, and installs as an app that works offline.
 
-## Use it on your devices
-| Device | How |
-|---|---|
-| **Windows / Mac** | Open the hosted link in Chrome or Edge and click **⤓ Install app**. Or open `index.html` from a download. |
-| **Android** | Open the hosted link in Chrome, tap **Install app** (or ⋮ → Add to Home screen). |
-| **iPhone / iPad** | Open the hosted link in Safari → Share → **Add to Home Screen**. |
+## Download and install
+**Web app:** https://ronanski.github.io/aio-icms-tool/ · **Installers:** [latest release](https://github.com/Ronanski/aio-icms-tool/releases/latest)
+
+| Device | Option 1: installer file | Option 2: install from the web |
+|---|---|---|
+| **Windows** | `PLC-Trainer-Setup-X.Y.Z.exe`, or the `portable.exe` that needs no install. If SmartScreen appears, click *More info → Run anyway*. | Open the web app in Chrome or Edge and click **⤓ Install app** |
+| **Android** | `PLC-Trainer-X.Y.Z-android.apk`. Allow *install unknown apps* when asked. | Open the web app in Chrome and tap **Install app** |
+| **iPhone / iPad** | (none) | Open the web app in Safari → Share → **Add to Home Screen** |
+| **Mac / Linux** | (none) | Open the web app in Chrome or Edge and click **⤓ Install app** |
 
 Installing needs the app served over https; the included GitHub Pages workflow does that once `main` exists and Pages is enabled. On phones the side panels open from the **▤ Data**, **＋ Parts** and **⚙ Props** buttons. Long-press works as right-click, and you can pinch to zoom the wiring.
 
@@ -68,6 +71,9 @@ js/examples.js    example projects + lessons
 js/app.js         app state, scan loop, projects, install
 sw.js             offline cache (service worker)
 manifest.webmanifest, icons/   app install metadata
+scripts/copy-web.sh            copies the app for Pages, Windows and Android builds
+desktop/          Windows app (Electron wrapper)
+mobile/           Android app (Capacitor wrapper)
 ```
 
 Use **File ▾ → New project…** to start from a blank sheet or any example, and **File ▾ → Open project…** to switch between saved projects. Projects can be exported and imported as `.plc.json`.
@@ -76,8 +82,8 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 39 end-to-end checks (desktop, phone touch, offline)
+npm test                                 # 45 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 
 *This is an educational simulator. It is not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.*
