@@ -8,9 +8,9 @@ Read this first when you resume work, whether you're a person or an AI agent.
 | **Version** | **v1.2.0 released** 2026-10-18 from `main` (squash commit `45fc1e3`, PR #2), owner's GO STABLE v1.2.0. Release: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.2.0 |
 | **Tags** | `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
-| **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` is obsolete (its content is in `main`); the owner deletes it from the Branches page. |
+| **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
 | **Tests** | `npm test`: 107 passed, 0 failed. CI green on `main`. |
-| **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch). |
+| **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch), #4 open (docs: savepoint + v1.2.0 audit). |
 | **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
@@ -60,12 +60,13 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
 
 ## Open decisions (owner: Ronan)
-1. **Clean-up (owner, optional)**: delete branch `ccr-d652d569-13gxij` on the Branches page and its rule in Settings → Environments → github-pages. The agent session was not allowed to delete branches.
+1. **Clean-up (owner, optional)**: remove the `ccr-…` rule in Settings → Environments → github-pages (the branch itself is already deleted).
 2. **License**: proprietary (to sell) or MIT (open source)?
 3. **Product name and logo** without trademarked words.
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
 ## Last session summary (audit, PR #2, release v1.2.0)
+- Post-release audit of v1.2.0 done; findings and the proposed v1.2.1 list are in `PROGRESS.md` (two High items reproduced: ladder drag stays armed, Workbench toolbars cut off). Nothing fixed yet: waiting for the owner's GO.
 - Released v1.2.0 from `main` with all four assets; the APK is release-signed with the new key (verified against the keystore fingerprint).
 - `main` is now the default branch. The `github-pages` environment needed a deployment rule for `main` (Settings → Environments → github-pages); after that, Pages deployed v1.2.0.
 - First release run failed in the Android job ("keystore password was incorrect", empty alias) because only the base64 secret was set; it published nothing. After the owner added the other three secrets, the rerun passed.
