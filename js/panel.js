@@ -22,11 +22,8 @@
       const c = App.project.circuit.comps.find(c => c.id === card.dataset.cid);
       if (!c) return;
       e.preventDefault();
-      const part = p.dataset.part;
-      Circuit.part(c, part, 'down', App.ctx);
       if (active) active();
-      active = App.hold(c.id + ':' + part, () => { Circuit.part(c, part, 'up', App.ctx); App.save(); });
-      App.save();
+      active = App.operate(c, p.dataset.part);
     });
     const up = () => { if (active) { active(); active = null; } };
     window.addEventListener('pointerup', up);

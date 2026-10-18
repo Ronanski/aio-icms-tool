@@ -75,6 +75,7 @@
     plc.resetData();
     Object.keys(plc.forces).forEach(k => plc.setForce(k, null));
     plc.forcesEnabled = true;
+    lastForces = {}; lastFen = true;
     plc.setProgram(rungs);
     plc.applyAll(true);
     Ladder.resetSel(); Workspace.resetView(); HMI.resetSel();
@@ -83,6 +84,7 @@
     document.querySelector('[data-pname]').textContent = App.project.name;
     clearTimeout(saveT); saveT = null;
     store();
+    App.log('system', `Opened project “${App.project.name}”`);
   }
   App.serialize = function () {
     const p = App.project;
@@ -98,13 +100,24 @@
   function store() {
     if (!App.project || !App.currentId) return true;
     const ok = Store.save(App.currentId, App.serialize());
-    if (!ok && !saveFailed) UI.toast('Could not save: browser storage is full or blocked. Use File → Export project to keep a copy.', 'danger', 7000);
+    if (!ok && !saveFailed) {
+      UI.toast('Could not save: browser storage is full or blocked. Use File → Export to file to keep a copy.', 'danger', 7000);
+      App.log('alarm', 'Project could not be saved (browser storage full or blocked)');
+    }
     saveFailed = !ok;
     App.lastSave = ok ? Date.now() : App.lastSave;
+    saveState(ok ? 'saved' : 'failed');
     return ok;
+  }
+  function saveState(st) {
+    const el = document.querySelector('[data-saved]');
+    if (!el) return;
+    el.textContent = st === 'saved' ? 'Saved' : st === 'pending' ? 'Saving…' : 'Not saved';
+    el.className = 'save-st ' + st;
   }
   App.save = function () {
     clearTimeout(saveT);
+    saveState('pending');
     saveT = setTimeout(() => { saveT = null; store(); }, 500);
   };
   /* write any pending change now, before switching to another project */
@@ -135,12 +148,73 @@
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
   App.circuitChanged = function () { App.dirty.panel = true; App.dirty.wiring = true; renderVisible(); App.save(); };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
-  App.forcesChanged = function () { Ladder.DataTable.render(); updateBar(true); };
+  /* compare with the last known forces so every change is logged, whichever control made it */
+  let lastForces = {}, lastFen = true;
+  App.forcesChanged = function () {
+    const plc = App.plc, now = plc.forces;
+    for (const k in now) if (lastForces[k] !== now[k]) App.log('force', `Force ${now[k] ? 'ON' : 'OFF'} installed on ${k}`);
+    for (const k in lastForces) if (!(k in now)) App.log('force', `Force removed from ${k}`);
+    if (plc.forcesEnabled !== lastFen) App.log('force', `Forces ${plc.forcesEnabled ? 'enabled' : 'disabled'}`);
+    lastForces = { ...now }; lastFen = plc.forcesEnabled;
+    Ladder.DataTable.render(); updateBar(true);
+  };
   App.setMode = function (m) {
-    if (m === 'RUN' && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); Ladder.verify(false); return; }
+    if (m === 'RUN' && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
+    if (App.plc.mode !== m) App.log('mode', `Controller mode changed to ${m}`);
     App.plc.setMode(m);
     updateBar(true);
   };
+  /* operate a device part (button, breaker handle, selector…) from the wiring or panel view.
+     Returns the release function for momentary parts (see App.hold). */
+  const PART_NAMES = { btn: 'button', h: 'handle', sw: 'main switch', knob: 'selector', l: 'selector (left)', r: 'selector (right)', lever: 'lever', tgt: 'target', jam: 'JAM', reset: 'RESET', test: 'TEST', add: '+ BOX', auto: 'AUTO', clr: 'CLEAR', use: 'USE', mode: 'key switch' };
+  App.operate = function (c, part) {
+    Circuit.part(c, part, 'down', App.ctx);
+    const st = Circuit.status(c, App.ctx);
+    App.log('operator', `${c.props.label}: ${PART_NAMES[part] || part} operated${st ? ' → ' + st : ''}`);
+    App.save();
+    return App.hold(c.id + ':' + part, () => { Circuit.part(c, part, 'up', App.ctx); App.save(); });
+  };
+
+  /* ---------- event log (this session, newest last) ---------- */
+  const LOG = [], LOG_MAX = 500;
+  const KINDS = { alarm: 'Alarm', mode: 'Mode', force: 'Force', operator: 'Operator', system: 'System' };
+  let unseen = 0, logView = null;
+  App.log = function (kind, msg) {
+    LOG.push({ t: Date.now(), kind, msg: String(msg) });
+    if (LOG.length > LOG_MAX) LOG.shift();
+    if (kind === 'alarm') unseen++;
+    const b = document.querySelector('[data-evbadge]');
+    if (b) { b.textContent = unseen; b.hidden = !unseen; }
+    if (logView) logView();
+  };
+  App.events = () => LOG.slice();
+  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour12: false }) + '.' + String(t % 1000).padStart(3, '0');
+  function eventLog() {
+    unseen = 0;
+    const b = document.querySelector('[data-evbadge]'); if (b) b.hidden = true;
+    let filter = 'all';
+    const m = UI.modal({
+      title: 'Event log', wide: true,
+      body: `<div class="ev-tools"><select data-evf><option value="all">All events</option>${Object.entries(KINDS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
+        <span class="spacer"></span><button class="btn" data-evx>⤓ Export CSV</button><button class="btn" data-evc>Clear</button></div>
+        <div class="ev-list"></div><p class="help">Events of this session, newest first (up to ${LOG_MAX}). The log is not saved with the project.</p>`,
+    });
+    const list = m.el.querySelector('.ev-list');
+    logView = () => {
+      if (!document.body.contains(list)) { logView = null; return; }
+      const rows = LOG.filter(e => filter === 'all' || e.kind === filter).slice().reverse();
+      list.innerHTML = rows.length ? `<table class="ev"><tr><th>Time</th><th>Type</th><th>Event</th></tr>${rows.map(e => `<tr class="k-${e.kind}"><td>${fmtTime(e.t)}</td><td><span class="evk">${KINDS[e.kind] || esc(e.kind)}</span></td><td>${esc(e.msg)}</td></tr>`).join('')}</table>` : '<p class="help">No events yet.</p>';
+    };
+    logView();
+    m.el.querySelector('[data-evf]').onchange = e => { filter = e.target.value; logView(); };
+    m.el.querySelector('[data-evc]').onclick = () => { LOG.length = 0; logView(); };
+    m.el.querySelector('[data-evx]').onclick = () => {
+      const q = v => `"${String(v).replace(/"/g, '""')}"`;
+      const csv = 'time,type,event\n' + LOG.map(e => [new Date(e.t).toISOString(), KINDS[e.kind] || e.kind, e.msg].map(q).join(',')).join('\n');
+      download(new Blob([csv], { type: 'text/csv' }), (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '-events.csv');
+    };
+  }
+  App.eventLog = eventLog;
 
   /* ---------- loop ---------- */
   const alertSeen = new Map();
@@ -151,6 +225,7 @@
   const pending = [];
   App.later = function (n, fn) { pending.push({ at: App.ticks + n, fn }); };
   App.holdTicks = 2;
+  let lastPw = true;
   /* call App.hold(key, up) when a momentary button goes down; call the returned function when it is released.
      up() runs no earlier than App.holdTicks ticks after the press. A newer press on the same key cancels it. */
   const holds = new Map();
@@ -176,11 +251,13 @@
     App.api = r.api;
     for (const a of r.alerts) {
       const t = alertSeen.get(a.msg) || 0;
-      if (now - t > 4000) { UI.toast(a.msg, a.kind || 'warn', 4200); }
+      if (now - t > 4000) { UI.toast(a.msg, a.kind || 'warn', 4200); App.log('alarm', a.msg); }
       alertSeen.set(a.msg, now);
     }
     if (r.alerts.length) App.save();
     if (pc) { plc.powered = ctx.plcPowered; plc.physIn = ctx.plcIn; } else { plc.powered = true; plc.physIn = 0; }
+    if (pc && plc.powered !== lastPw && App.ticks > 0) App.log(plc.powered ? 'system' : 'alarm', plc.powered ? 'PLC power restored' : 'PLC lost its power');
+    lastPw = plc.powered;
     ctx.plcInRaw = ctx.plcIn;
     plc.scan(dt);
     App.ticks++;
@@ -355,7 +432,7 @@
           <tr><td><code>N7:0</code></td><td>16-bit signed integer</td></tr>
           <tr><td><code>S:1/15</code></td><td>First-scan bit</td></tr></table>
         <h3 class="mt">Keyboard</h3>
-        <table class="ref"><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>
+        <table class="ref"><tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save · Save as · Open project</td></tr><tr><td><kbd>Ctrl</kbd>+scroll</td><td>Zoom the ladder or the HMI (scroll alone zooms the wiring)</td></tr><tr><td>Drag an instruction</td><td>Move it to another place or rung (mouse). Right-click → Change to… swaps XIC ↔ XIO, TON ↔ TOF and so on.</td></tr><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>
       </article></div>`;
     el.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -399,6 +476,7 @@
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.mode) App.setMode(b.dataset.mode);
       if (b.hasAttribute('data-forces')) { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); }
+      if (b.hasAttribute('data-events')) eventLog();
       if (b.hasAttribute('data-layout')) {
         const r = b.getBoundingClientRect();
         UI.menu(r.left, r.bottom + 4, [{ head: 'Show side by side' }, ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) }))]);
@@ -412,12 +490,16 @@
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [
         { label: 'New project…', onClick: newProject },
-        { label: 'Open project…', onClick: openDialog },
+        { label: 'Open project…\u2003Ctrl+O', onClick: openDialog },
+        { label: 'Save\u2003Ctrl+S', onClick: saveNow },
+        { label: 'Save as…\u2003Ctrl+Shift+S', onClick: saveAs },
         { label: 'Rename project…', onClick: rename },
-        { label: 'Export project (.json)', onClick: exportProject },
-        { label: 'Import project…', onClick: () => document.getElementById('importFile').click() },
         { sep: true },
-        { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); } },
+        { label: 'Export to file (.plc.json)', onClick: exportProject },
+        { label: 'Import from file…', onClick: () => document.getElementById('importFile').click() },
+        { sep: true },
+        { label: 'Event log', onClick: eventLog },
+        { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); App.log('system', 'PLC data table cleared'); } },
         { label: `About PLC Trainer v${VERSION}`, onClick: about },
       ]);
     });
@@ -434,7 +516,9 @@
     document.querySelector('[data-pname]').addEventListener('dblclick', rename);
     document.addEventListener('keydown', e => {
       if (UI.isTyping() || document.querySelector('.modal-wrap')) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); exportProject(); return; }
+      const ctl = e.ctrlKey || e.metaKey, key = e.key.toLowerCase();
+      if (ctl && key === 's') { e.preventDefault(); if (e.shiftKey) saveAs(); else saveNow(); return; }
+      if (ctl && key === 'o') { e.preventDefault(); openDialog(); return; }
       const v = App.view;
       if (v === 'ladder') Ladder.onKey(e);
       else if (v === 'wiring') Workspace.onKey(e);
@@ -505,14 +589,33 @@
       App.save();
     });
   }
-  function exportProject() {
-    const blob = new Blob([JSON.stringify(App.serialize(), null, 1)], { type: 'application/json' });
+  function download(blob, name) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '.plc.json';
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
+  function exportProject() {
+    download(new Blob([JSON.stringify(App.serialize(), null, 1)], { type: 'application/json' }), (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '.plc.json');
+  }
+  /* projects save themselves; Save writes now and confirms */
+  function saveNow() {
+    clearTimeout(saveT); saveT = null;
+    if (store()) { UI.toast(`Saved “${App.project.name}”`, 'ok', 1800); App.log('system', `Saved project “${App.project.name}”`); }
+  }
+  App.saveNow = saveNow;
+  function saveAs() {
+    UI.form('Save as', [{ key: 'n', label: 'New project name', value: App.project.name + ' (copy)' }], v => {
+      const name = v.n.trim();
+      if (!name) return 'Enter a project name';
+      const data = App.serialize();
+      data.name = name;
+      App.openNew(data);
+      UI.toast(`Saved as “${name}”. The original project is still in File → Open project.`, 'ok', 3500);
+    });
+  }
+  App.saveAs = saveAs;
 
   /* ---------- boot ---------- */
   function boot() {

@@ -50,6 +50,7 @@
         <div class="hmi-toolbar">
           <div class="seg"><button data-mode="run" class="on">▶ Run</button><button data-mode="edit">✎ Edit</button></div>
           <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
+          <div class="hmi-zoom"><span class="tb-lbl">Zoom</span><button class="tbtn" data-hz="-1" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-hz="fit" data-hzv title="Fit the screen to the window">Fit</button><button class="tbtn" data-hz="1" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button></div>
           <div class="hmi-add">${Object.entries(TYPES).map(([k, t]) => `<button class="tbtn" data-add="${k}">${t.name}</button>`).join('')}</div>
         </div>
         <div class="hmi-main">
@@ -64,7 +65,9 @@
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.mode) setMode(b.dataset.mode);
       if (b.dataset.add) add(b.dataset.add);
+      if (b.dataset.hz) setZoom(b.dataset.hz === 'fit' ? 'fit' : (zoomK() * (b.dataset.hz > 0 ? 1.15 : 1 / 1.15)));
     });
+    root.querySelector('.hmi-stage').addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); setZoom(zoomK() * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }, { passive: false });
     screen.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -114,12 +117,14 @@
       else if (o.mode === 'toggle') plc.write(o.tag, plc.read(o.tag) ? 0 : 1);
       else if (o.mode === 'set') plc.write(o.tag, 1);
       else if (o.mode === 'reset') plc.write(o.tag, 0);
+      App.log('operator', `HMI button “${o.label}” pressed (${o.mode}, ${o.tag} = ${plc.read(o.tag)})`);
     } else if (o.type === 'entry') {
       UI.form(`Enter value — ${o.label}`, [{ key: 'v', label: `${o.tag} (${o.min} … ${o.max})`, value: plc.read(o.tag), type: 'number' }], v => {
         const n = Number(v.v);
         if (!Number.isFinite(n)) return 'Enter a number';
         if (n < Number(o.min) || n > Number(o.max)) return `Value must be between ${o.min} and ${o.max}`;
         plc.write(o.tag, n);
+        App.log('operator', `HMI entry “${o.label}”: ${o.tag} set to ${plc.read(o.tag)}`);
       });
     }
   }
@@ -175,12 +180,26 @@
     renderProps();
     HMI.update();
   };
-  function fitScreen() {
+  /* zoom: 'fit' follows the window size; a number is a fixed scale. Remembered in this browser. */
+  let hz = 'fit';
+  try { const z = localStorage.getItem('plc-trainer.hz'); hz = z && z !== 'fit' && Number(z) ? Number(z) : 'fit'; } catch (e) { hz = 'fit'; }
+  function fitK() {
     const stage = root.querySelector('.hmi-stage');
-    const bez = root.querySelector('.hmi-bezel');
-    const avail = stage.clientWidth - 40;
-    const k = Math.max(0.35, Math.min(1.25, avail / 860));
-    bez.style.setProperty('--k', k);
+    return Math.max(0.35, Math.min(1.25, (stage.clientWidth - 40) / 860));
+  }
+  const zoomK = () => (hz === 'fit' ? fitK() : hz);
+  function setZoom(z) {
+    hz = z === 'fit' ? 'fit' : Math.max(0.25, Math.min(3, Math.round(z * 100) / 100));
+    try { localStorage.setItem('plc-trainer.hz', String(hz)); } catch (e) { /* ignore */ }
+    fitScreen();
+  }
+  HMI.setZoom = setZoom;
+  function fitScreen() {
+    const k = zoomK();
+    root.querySelector('.hmi-bezel').style.setProperty('--k', k);
+    const v = root.querySelector('[data-hzv]');
+    v.textContent = hz === 'fit' ? `Fit · ${Math.round(k * 100)}%` : Math.round(k * 100) + '%';
+    v.classList.toggle('on', hz === 'fit');
   }
   HMI.onShow = () => requestAnimationFrame(fitScreen);
   let hmiRO = null;

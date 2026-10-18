@@ -355,6 +355,47 @@
     changed();
   };
 
+  /* instructions that can replace each other keep their operands: same kind, output role and operand types */
+  const sig = t => { const d = INSTR[t]; return `${d.k}|${!!d.out}|${d.args.map(a => a.ty).join(',')}`; };
+  Ladder.alternatives = t => (INSTR[t] ? Object.keys(INSTR).filter(k => k !== t && sig(k) === sig(t)) : []);
+  Ladder.changeTo = function (id, t) {
+    const f = find(id);
+    if (!f || f.e.t === 'BST' || !Ladder.alternatives(f.e.t).includes(t)) return;
+    snapshot();
+    f.e.t = t;
+    App.plc.applyInstr(f.e, false);
+    SEL = { r: f.ri, id, leg: null };
+    changed();
+  };
+
+  /* move an instruction to another place: before/after another instruction, into an empty branch leg, or onto a rung */
+  Ladder.moveTo = function (id, target) {
+    const f = find(id);
+    if (!f || f.e.t === 'BST') return false;
+    if (target.id === id) return false;
+    const e = f.e, isO = !!(INSTR[e.t] && INSTR[e.t].out);
+    snapshot();
+    f.arr.splice(f.idx, 1);
+    let ri = f.ri;
+    if (target.id != null) {
+      const g = find(target.id);
+      if (!g) { f.arr.splice(f.idx, 0, e); undo.pop(); return false; }
+      g.arr.splice(g.idx + (target.after ? 1 : 0), 0, e); ri = g.ri;
+    } else if (target.leg) {
+      const [bid, li] = target.leg.split(':').map(Number);
+      const g = find(bid);
+      if (!g || !g.e.legs[li]) { f.arr.splice(f.idx, 0, e); undo.pop(); return false; }
+      g.e.legs[li].push(e); ri = g.ri;
+    } else if (target.r != null && rungs()[target.r]) {
+      const arr = rungs()[target.r].elems;
+      if (isO) arr.push(e); else arr.splice(outIdx(arr), 0, e);
+      ri = target.r;
+    } else { f.arr.splice(f.idx, 0, e); undo.pop(); return false; }
+    SEL = { r: ri, id, leg: null };
+    changed();
+    return true;
+  };
+
   Ladder.move = function (dir) {
     if (!SEL.id) return;
     const f = find(SEL.id);
@@ -519,7 +560,11 @@
     const f = find(id); if (!f) return;
     const e = f.e;
     const items = [];
-    if (e.t !== 'BST') items.push({ label: 'Edit instruction…', onClick: () => Ladder.edit(id) });
+    if (e.t !== 'BST') {
+      items.push({ label: 'Edit instruction…', onClick: () => Ladder.edit(id) });
+      const alt = Ladder.alternatives(e.t);
+      if (alt.length) items.push({ sep: true }, { head: 'Change to' }, ...alt.map(t => ({ label: `${t} — ${INSTR[t].name}`, onClick: () => Ladder.changeTo(id, t) })), { sep: true });
+    }
     else items.push({ label: 'Add branch leg', onClick: () => Ladder.branch() }, { label: 'Extend branch ←', onClick: () => Ladder.extend(-1) }, { label: 'Extend branch →', onClick: () => Ladder.extend(1) });
     items.push({ label: 'Move left', onClick: () => Ladder.move(-1) }, { label: 'Move right', onClick: () => Ladder.move(1) });
     if (e.t !== 'BST') items.push({ label: 'Branch around this', onClick: () => Ladder.branch() });
@@ -562,7 +607,6 @@
       <div class="lad-toolbar">
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-act="data" title="Data files and forces">▤ Data</button>
-          <button class="tbtn" data-act="zout" title="Zoom out">−</button><button class="tbtn" data-act="zin" title="Zoom in">＋</button>
           <button class="tbtn" data-act="rung" title="New rung (Ctrl+R)">＋ Rung</button>
           <button class="tbtn" data-act="branch" title="Branch (BST) around selection / add leg">⑂ Branch</button>
           <button class="tbtn" data-act="extl" title="Extend branch left">⇤</button>
@@ -574,6 +618,11 @@
           <button class="tbtn" data-act="redo" title="Redo (Ctrl+Y)">↷</button>
           <button class="tbtn" data-act="ascii" title="Edit selected rung as text">ASCII</button>
           <button class="tbtn accent" data-act="verify" title="Verify project">✓ Verify</button>
+        </div>
+        <div class="tb-group zoom-group"><span class="tb-lbl">Zoom</span>
+          <button class="tbtn" data-act="zout" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button>
+          <button class="tbtn zoomv" data-act="zreset" data-lz title="Reset zoom to 100%">100%</button>
+          <button class="tbtn" data-act="zin" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button>
         </div>
         ${TB.map(([g, list]) => `<div class="tb-group"><span class="tb-lbl">${g}</span>${list.map(t => `<button class="tbtn ins-btn" data-ins="${t}" title="${esc(INSTR[t].name)} — ${esc(INSTR[t].help)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`).join('')}</div>`).join('')}
       </div>
@@ -590,7 +639,7 @@
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
         ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false),
-        zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15),
+        zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
     });
     rungsEl.addEventListener('pointerdown', ev => {
@@ -619,7 +668,78 @@
     UI.drawer(el.querySelector('[data-act="data"]'), sideEl);
     UI.longPress(rungsEl);
     new ResizeObserver(() => { if (root.offsetParent) Ladder.render(); }).observe(rungsEl);
+    rungsEl.addEventListener('wheel', ev => { if (!ev.ctrlKey) return; ev.preventDefault(); setZoom(ev.deltaY < 0 ? LZ * 1.1 : LZ / 1.1); }, { passive: false });
+    bindDrag();
   };
+
+  /* drag an instruction with the mouse to move it (touch uses the menu or ◀ ▶) */
+  let dnd = null;
+  function dropTarget(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el || !rungsEl.contains(el)) return null;
+    const rEl = el.closest('.rung');
+    if (!rEl || rEl.classList.contains('end')) return null;
+    const lg = el.closest('[data-leg]');
+    if (lg) return { leg: lg.dataset.leg, box: lg.getBoundingClientRect() };
+    const u = el.closest('.el[data-uid]');
+    if (u) {
+      const id = Number(u.dataset.uid);
+      if (id === dnd.id) return null;
+      const b = u.querySelector('.hit').getBoundingClientRect();
+      const after = x > b.left + b.width / 2;
+      return { id, after, box: b, edge: after ? b.right : b.left };
+    }
+    return { r: Number(rEl.dataset.r), box: rEl.querySelector('.rung-svg').getBoundingClientRect() };
+  }
+  function showDrop(t) {
+    let m = rungsEl.querySelector('.lad-drop');
+    if (!t) { if (m) m.remove(); return; }
+    if (!m) { m = document.createElement('div'); m.className = 'lad-drop'; rungsEl.appendChild(m); }
+    const o = rungsEl.getBoundingClientRect();
+    const sx = rungsEl.scrollLeft - o.left, sy = rungsEl.scrollTop - o.top;
+    if (t.edge != null) Object.assign(m.style, { left: (t.edge + sx - 2) + 'px', top: (t.box.top + sy) + 'px', width: '4px', height: t.box.height + 'px' });
+    else Object.assign(m.style, { left: (t.box.left + sx) + 'px', top: (t.box.top + sy) + 'px', width: t.box.width + 'px', height: t.box.height + 'px' });
+    m.classList.toggle('area', t.edge == null);
+  }
+  function bindDrag() {
+    rungsEl.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'touch' || ev.button !== 0) return;
+      const u = ev.target.closest('.el[data-uid]');
+      if (!u) return;
+      dnd = { id: Number(u.dataset.uid), sx: ev.clientX, sy: ev.clientY, on: false, pid: ev.pointerId };
+    });
+    rungsEl.addEventListener('pointermove', ev => {
+      if (!dnd || ev.pointerId !== dnd.pid) return;
+      if (!dnd.on) {
+        if (Math.hypot(ev.clientX - dnd.sx, ev.clientY - dnd.sy) < 6) return;
+        dnd.on = true;
+        try { rungsEl.setPointerCapture(ev.pointerId); } catch (err) { /* ignore */ }
+        rungsEl.classList.add('dragging');
+        const f = find(dnd.id);
+        dnd.ghost = document.createElement('div');
+        dnd.ghost.className = 'lad-ghost';
+        dnd.ghost.textContent = f ? `${f.e.t} ${f.e.a[0] || ''}` : '';
+        document.body.appendChild(dnd.ghost);
+        const g = rungsEl.querySelector(`.el[data-uid="${dnd.id}"]`);
+        if (g) g.classList.add('dragged');
+      }
+      Object.assign(dnd.ghost.style, { left: (ev.clientX + 12) + 'px', top: (ev.clientY + 10) + 'px' });
+      dnd.t = dropTarget(ev.clientX, ev.clientY);
+      showDrop(dnd.t);
+    });
+    const end = ev => {
+      if (!dnd) return;
+      const d = dnd; dnd = null;
+      if (!d.on) return;
+      showDrop(null);
+      d.ghost.remove();
+      rungsEl.classList.remove('dragging');
+      try { rungsEl.releasePointerCapture(ev.pointerId); } catch (err) { /* ignore */ }
+      if (ev.type === 'pointerup' && d.t) Ladder.moveTo(d.id, d.t); else Ladder.render();
+    };
+    rungsEl.addEventListener('pointerup', end);
+    rungsEl.addEventListener('pointercancel', end);
+  }
 
   Ladder.onKey = function (ev) {
     const k = ev.key, c = ev.ctrlKey || ev.metaKey;
@@ -636,12 +756,16 @@
   try { LZ = Number(localStorage.getItem('plc-trainer.lz')) || (innerWidth < 760 ? 0.7 : 1); } catch (e) { LZ = innerWidth < 760 ? 0.7 : 1; }
   function setZoom(z) {
     LZ = Math.max(0.45, Math.min(1.8, Math.round(z * 100) / 100));
+    const zl = root && root.querySelector('[data-lz]');
+    if (zl) zl.textContent = Math.round(LZ * 100) + '%';
     try { localStorage.setItem('plc-trainer.lz', String(LZ)); } catch (e) { /* ignore */ }
     Ladder.render();
   }
 
   Ladder.render = function () {
     if (!rungsEl) return;
+    const zl = root.querySelector('[data-lz]');
+    if (zl) zl.textContent = Math.round(LZ * 100) + '%';
     const list = rungs();
     const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;

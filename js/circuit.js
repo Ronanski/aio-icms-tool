@@ -313,6 +313,7 @@
     def(type, {
       name, cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 60, h: 90,
       props: { color, text },
+      variant: { n: 'Contact type', of: { NO: 'pb_no', NC: 'pb_nc' } },
       pdefs: [{ k: 'color', n: 'Color', opts: Object.keys(COLORS) }, { k: 'text', n: 'Legend' }],
       info: contact === 'NO' ? 'Momentary push button, normally open contact 13-14 (closes while pressed).' : 'Momentary push button, normally closed contact 11-12 (opens while pressed).',
       terms: [{ id: ids[0], x: 15, y: 90 }, { id: ids[1], x: 45, y: 90 }],
@@ -346,23 +347,29 @@
     },
     status: c => c.state.latched ? 'LATCHED — click to release' : 'Released',
   });
-  def('sel2', {
-    name: 'Selector Switch 2-Pos', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 60, h: 90,
-    props: { text: 'OFF  ON' },
-    pdefs: [{ k: 'text', n: 'Legend' }],
-    info: 'Maintained 2-position selector. Contact 13-14 closes in position I (right).',
-    terms: [{ id: '13', x: 15, y: 90 }, { id: '14', x: 45, y: 90 }],
-    init: () => ({ pos: 0 }),
-    conduct: c => c.state.pos ? [['13', '14']] : null,
-    onPart(c, p, ev) { if (p === 'knob' && ev === 'down') { c.state.pos = c.state.pos ? 0 : 1; return true; } },
-    draw(c) {
-      const a = c.state.pos ? 45 : -45;
-      return R(0, 0, 60, 90, '#2b2a28', 6, '#111') + R(6, 4, 48, 13, '#f2efe6', 2, '#999') + T(30, 13.5, c.props.text || '', 'dt xs') +
-        `<g class="part" data-part="knob"><circle cx="30" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="30" cy="42" r="15" fill="#222"/><rect x="26" y="26" width="8" height="32" rx="3" fill="#e9e5dc" transform="rotate(${a} 30 42)"/></g>` +
-        R(12, 66, 36, 12, '#d7d3ca', 2, '#777') + T(30, 75, c.state.pos ? 'I' : '0', 'dt xs');
-    },
-    status: c => c.state.pos ? 'Position I (13-14 closed)' : 'Position 0',
-  });
+  function sel2(type, contact) {
+    const ids = contact === 'NO' ? ['13', '14'] : ['11', '12'];
+    def(type, {
+      name: contact === 'NO' ? 'Selector Switch 2-Pos' : 'Selector Switch 2-Pos (NC)', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 60, h: 90,
+      props: { text: 'OFF  ON' },
+      pdefs: [{ k: 'text', n: 'Legend' }],
+      variant: { n: 'Contact type', of: { NO: 'sel2', NC: 'sel2_nc' } },
+      info: contact === 'NO' ? 'Maintained 2-position selector. Contact 13-14 closes in position I (right).' : 'Maintained 2-position selector. Contact 11-12 is closed in position 0 and opens in position I (right).',
+      terms: [{ id: ids[0], x: 15, y: 90 }, { id: ids[1], x: 45, y: 90 }],
+      init: () => ({ pos: 0 }),
+      conduct: c => (contact === 'NO') === !!c.state.pos ? [ids] : null,
+      onPart(c, p, ev) { if (p === 'knob' && ev === 'down') { c.state.pos = c.state.pos ? 0 : 1; return true; } },
+      draw(c) {
+        const a = c.state.pos ? 45 : -45;
+        return R(0, 0, 60, 90, '#2b2a28', 6, '#111') + R(6, 4, 48, 13, '#f2efe6', 2, '#999') + T(30, 13.5, c.props.text || '', 'dt xs') +
+          `<g class="part" data-part="knob"><circle cx="30" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="30" cy="42" r="15" fill="#222"/><rect x="26" y="26" width="8" height="32" rx="3" fill="#e9e5dc" transform="rotate(${a} 30 42)"/></g>` +
+          R(12, 66, 36, 12, '#d7d3ca', 2, '#777') + T(30, 75, (c.state.pos ? 'I' : '0') + ' · ' + contact, 'dt xs');
+      },
+      status: c => c.state.pos ? `Position I (${ids.join('-')} ${contact === 'NO' ? 'closed' : 'open'})` : `Position 0 (${ids.join('-')} ${contact === 'NO' ? 'open' : 'closed'})`,
+    });
+  }
+  sel2('sel2', 'NO');
+  sel2('sel2_nc', 'NC');
   def('sel3', {
     name: 'Selector H-O-A 3-Pos', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 80, h: 90,
     info: 'HAND-OFF-AUTO. 13-14 closes in HAND (left), 23-24 closes in AUTO (right). Click left/right half to turn.',
@@ -807,6 +814,16 @@
     c.x = Number(c.x) || 0; c.y = Number(c.y) || 0;
     return c;
   }
+  function retype(c, type, circ) {
+    const a = DEFS[c.type].terms, b = DEFS[type].terms;
+    const map = Object.fromEntries(a.map((t, i) => [t.id, b[i] ? b[i].id : null]));
+    for (const w of circ.wires) for (const k of ['a', 'b']) {
+      const [cid, tid] = w[k].split(':');
+      if (cid === c.id && map[tid]) w[k] = cid + ':' + map[tid];
+    }
+    c.type = type;
+    c.state = DEFS[type].init ? DEFS[type].init() : {};
+  }
   function part(c, p, ev, ctx) { const d = DEFS[c.type]; return d && d.onPart ? !!d.onPart(c, p, ev, ctx) : false; }
   function drawTerms(d) {
     return d.terms.map(t => {
@@ -815,7 +832,7 @@
     }).join('');
   }
   function sig(c, ctx) {
-    let s = JSON.stringify(c.state) + JSON.stringify(c.props);
+    let s = c.type + JSON.stringify(c.state) + JSON.stringify(c.props);
     if (c.type === 'plc' && ctx) s += `|${ctx.plcId}|${ctx.plcInRaw}|${ctx.plcOut}|${ctx.mode}|${ctx.forces}`;
     return s;
   }
@@ -841,5 +858,5 @@
     return out.join(', ');
   }
 
-  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, part, draw, drawTerms, sig, status, repair, potClass, potText };
+  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, drawTerms, sig, status, repair, potClass, potText };
 })();
