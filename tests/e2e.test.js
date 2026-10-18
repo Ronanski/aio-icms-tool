@@ -2,6 +2,7 @@
    Usage: npm test   (needs the `playwright` package and a Chromium build) */
 'use strict';
 const path = require('path');
+const fs = require('fs');
 const { chromium } = require('playwright');
 
 const URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
@@ -163,6 +164,36 @@ function check(name, cond, info = '') {
   const k1 = await phone.evaluate(() => document.querySelector('.ws-svg .vp').getAttribute('transform'));
   check('pinch zooms the wiring canvas', scale(k1) > scale(k0) * 1.5, `${scale(k0)} → ${scale(k1)}`);
   check('no page errors on phone', perr.length === 0, perr.join(' | '));
+
+  console.log('Installable app (PWA)');
+  const root = path.resolve(__dirname, '..');
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
+  const server = require('http').createServer((req, res) => {
+    const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    const file = path.join(root, rel);
+    if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' });
+    fs.createReadStream(file).pipe(res);
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const ctx = await browser.newContext();
+  const web = await ctx.newPage();
+  await web.goto(base);
+  const swOk = await web.evaluate(async () => { const r = await navigator.serviceWorker.ready; return !!r.active; });
+  check('service worker active', swOk);
+  const man = await web.evaluate(async () => (await fetch(document.querySelector('link[rel=manifest]').href)).json());
+  check('manifest has name, start_url and 192/512 icons', man.name && man.start_url && ['192x192', '512x512'].every(sz => man.icons.some(i => i.sizes === sz)));
+  const iconsOk = await web.evaluate(async icons => (await Promise.all(icons.map(i => fetch(i.src)))).every(r => r.ok), man.icons);
+  check('manifest icons load', iconsOk);
+  await web.reload();
+  await web.waitForTimeout(400);
+  await ctx.setOffline(true);
+  await web.reload();
+  await web.waitForTimeout(600);
+  check('app loads offline from cache', await web.evaluate(() => !!(window.App && App.project && document.querySelector('.rung'))));
+  await ctx.setOffline(false);
+  server.close();
   await browser.close();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

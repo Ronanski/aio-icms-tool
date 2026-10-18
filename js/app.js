@@ -352,7 +352,7 @@
   function about() {
     UI.modal({
       title: `PLC Trainer v${VERSION}`,
-      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
+      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><h4>Install on your device</h4><ul class="tips"><li><b>Android (Chrome)</b>: tap <b>Install app</b> in the top bar, or menu ⋮ → <b>Add to Home screen</b>.</li><li><b>iPhone / iPad (Safari)</b>: tap Share → <b>Add to Home Screen</b>.</li><li><b>Windows / Mac (Chrome or Edge)</b>: click <b>Install app</b>, or the install icon in the address bar.</li></ul><p class="help">Install needs the hosted web address (https). Once installed, the app works offline.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
     });
   }
   App.VERSION = VERSION;
@@ -397,5 +397,23 @@
     requestAnimationFrame(frame);
     if (first) UI.toast('Welcome! A PLC motor-control example is loaded. Start with the lessons or press RUN.', 'ok', 6000);
   }
-  document.addEventListener('DOMContentLoaded', boot);
+  /* ---------- install as an app (PWA) ---------- */
+  let installEvt = null;
+  function setupPwa() {
+    const btn = document.querySelector('[data-install]');
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; btn.hidden = false; });
+    window.addEventListener('appinstalled', () => { btn.hidden = true; installEvt = null; UI.toast('PLC Trainer installed', 'ok'); });
+    btn.addEventListener('click', async () => {
+      if (!installEvt) return;
+      installEvt.prompt();
+      await installEvt.userChoice.catch(() => null);
+      installEvt = null; btn.hidden = true;
+    });
+    // service workers need http(s); opening index.html from disk still works, just without offline install
+    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* blocked in sandboxed previews */ });
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { boot(); setupPwa(); });
 })();
