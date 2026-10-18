@@ -5,19 +5,20 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | v1.2.0 prepared in PR #2 (`chore(release): v1.2.0`); owner gave GO STABLE v1.2.0 on 2026-10-18. v1.1.0 is the previous release (PR #1). |
-| **Tags** | `v1.1.0` created on GitHub by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
+| **Version** | **v1.2.0 released** 2026-10-18 from `main` (squash commit `45fc1e3`, PR #2), owner's GO STABLE v1.2.0. Release: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.2.0 |
+| **Tags** | `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
-| **Branch** | `main` holds released code. PR #2 comes from `claude/focused-archimedes-12aqro`: the audit fixes (planned as v1.1.1) and the QoL features (planned as v1.2.0). Version not bumped yet. |
-| **Tests** | `npm test`: 107 passed, 0 failed on the PR branch (45 on `main`). CI on PR #2 was green before the update-checker commit; re-check it on the latest head. |
-| **Pull request** | #1 merged (v1.1.0). #2 open: https://github.com/Ronanski/aio-icms-tool/pull/2. Merge and release only with the owner's explicit authorization. |
-| **Downloads** | GitHub Releases (Windows `.exe`, Android `.apk`, web zip) built by `release.yml`; web app on GitHub Pages |
+| **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` is obsolete (its content is in `main`); the owner deletes it from the Branches page. |
+| **Tests** | `npm test`: 107 passed, 0 failed. CI green on `main`. |
+| **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch). |
+| **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
+| **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
 
 ## How to resume in 2 minutes
 1. `git checkout <branch>` and `git pull`
 2. Open `index.html` in Chrome, or run `npm start` and go to http://localhost:8080
-3. Run `npm install`, then `npm test`. All 45 checks should pass before you change anything.
+3. Run `npm install`, then `npm test`. All 107 checks should pass before you change anything.
 4. Read `CONTRIBUTING.md` (rules), then `PROGRESS.md` (what's next).
 
 ## Architecture in one screen
@@ -59,14 +60,16 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
 
 ## Open decisions (owner: Ronan)
-0. **Release v1.2.0** (authorized): merge PR #2, then run the Release workflow on `main` once the Android signing secrets are in, so v1.2.0 is the first properly signed APK and later in-app updates install over it.
-1. **Make `main` the default branch** (Settings → General → Default branch). The `github-pages` environment only deploys from the default branch, so the first Pages deploy from `main` was refused. After switching, re-run **Actions → Deploy to GitHub Pages** (or push to `main`).
-5. **Android signing key**: add the four secrets from `RELEASING.md` before the release you announce, so later updates install over it.
+1. **Clean-up (owner, optional)**: delete branch `ccr-d652d569-13gxij` on the Branches page and its rule in Settings → Environments → github-pages. The agent session was not allowed to delete branches.
 2. **License**: proprietary (to sell) or MIT (open source)?
 3. **Product name and logo** without trademarked words.
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
-## Last session summary (audit + PR #2)
+## Last session summary (audit, PR #2, release v1.2.0)
+- Released v1.2.0 from `main` with all four assets; the APK is release-signed with the new key (verified against the keystore fingerprint).
+- `main` is now the default branch. The `github-pages` environment needed a deployment rule for `main` (Settings → Environments → github-pages); after that, Pages deployed v1.2.0.
+- First release run failed in the Android job ("keystore password was incorrect", empty alias) because only the base64 secret was set; it published nothing. After the owner added the other three secrets, the rerun passed.
+- v1.1.0 Android users must uninstall once (v1.1.0 was debug-signed); from v1.2.0 on, updates install over the app.
 - Full audit of the repo (3 reviewers: PLC engine, circuit solver, app/CI). Findings and the roadmap agreed with the owner are in `PROGRESS.md`.
 - Owner approved "GO v1.1.1" and "GO v1.2.0". Both are implemented in PR #2; nothing merged or released.
 - Root cause of "HMI buttons don't work": a tap shorter than one 20 ms scan was never seen (always on phones). Fixed with `App.hold`.
