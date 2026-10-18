@@ -43,7 +43,7 @@
 - [x] In-app updates: Stable / Beta channel, update bar, download installer, works offline; beta = pre-release in the Release workflow
 
 ## Owner actions
-- [ ] Authorize merge of PR #2 and the release (number: v1.2.0 suggested)
+- [x] Authorize merge of PR #2 and the release v1.2.0 (GO STABLE v1.2.0)
 - [ ] Make `main` the default branch so Pages can deploy
 - [ ] Android signing key in repo secrets, so updates install over old versions (see RELEASING.md)
 

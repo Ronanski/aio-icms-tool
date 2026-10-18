@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-18
+
 ### Added
 - **In-app updates with Stable and Beta channels.** When online, the app checks the GitHub Releases (at start, at most once an hour, and every 6 hours) and shows a bar when a newer version is out, with *What's new*, *Download update* / *Reload to update* and *Later*. File → **Updates…** picks the channel and checks now. Stable sees normal releases only; Beta also sees pre-releases (`vX.Y.Z-beta.N`). Offline the check is skipped and the app works as usual. Windows and Android download the new installer (`.exe` / `.apk`); the web app reloads to update.
 - Release workflow: a version with a suffix (e.g. `1.3.0-beta.1`) is published as a **pre-release**. Notes come from `[Unreleased]` when the beta has no CHANGELOG section of its own.
@@ -90,6 +92,7 @@ The first public release.
 - Light and dark themes.
 - End-to-end regression suite (`npm test`, 26 checks).
 
-[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.0.0

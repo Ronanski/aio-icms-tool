@@ -5,7 +5,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | v1.1.0 released from `main` (merge commit `1755aee`, PR #1). Unreleased fixes and features wait in PR #2. |
+| **Version** | v1.2.0 prepared in PR #2 (`chore(release): v1.2.0`); owner gave GO STABLE v1.2.0 on 2026-10-18. v1.1.0 is the previous release (PR #1). |
 | **Tags** | `v1.1.0` created on GitHub by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
 | **Branch** | `main` holds released code. PR #2 comes from `claude/focused-archimedes-12aqro`: the audit fixes (planned as v1.1.1) and the QoL features (planned as v1.2.0). Version not bumped yet. |
@@ -59,7 +59,7 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
 
 ## Open decisions (owner: Ronan)
-0. **PR #2 release number**: both phases are in one PR, so the next release would be **v1.2.0** (fixes included). Releasing v1.1.1 separately would need a separate branch. Decide, then authorize merge + release.
+0. **Release v1.2.0** (authorized): merge PR #2, then run the Release workflow on `main` once the Android signing secrets are in, so v1.2.0 is the first properly signed APK and later in-app updates install over it.
 1. **Make `main` the default branch** (Settings → General → Default branch). The `github-pages` environment only deploys from the default branch, so the first Pages deploy from `main` was refused. After switching, re-run **Actions → Deploy to GitHub Pages** (or push to `main`).
 5. **Android signing key**: add the four secrets from `RELEASING.md` before the release you announce, so later updates install over it.
 2. **License**: proprietary (to sell) or MIT (open source)?

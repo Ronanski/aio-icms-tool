@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
   const LAYOUTS = [
