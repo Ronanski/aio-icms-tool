@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PLC Trainer</title>
+  <meta name="description" content="Allen-Bradley style PLC trainer: ladder logic editor, power & control circuit wiring simulator, HMI, forcing and live equipment.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23D97757'/%3E%3Cpath d='M9 8v16M23 8v16M9 16h4M19 16h4M13 12v8M19 12v8' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+  <!-- shared gradients/filters for device drawings (must not be display:none) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="gPlastic" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3f1ec"/><stop offset="1" stop-color="#d9d5cc"/></linearGradient>
+      <linearGradient id="gDark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4843"/><stop offset="1" stop-color="#2c2b28"/></linearGradient>
+      <linearGradient id="gPlc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a5a58"/><stop offset=".5" stop-color="#454543"/><stop offset="1" stop-color="#383836"/></linearGradient>
+      <linearGradient id="gMetal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2e5e8"/><stop offset=".5" stop-color="#b9bec4"/><stop offset="1" stop-color="#9aa0a7"/></linearGradient>
+      <radialGradient id="gChrome" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#f4f4f4"/><stop offset=".6" stop-color="#a9adb2"/><stop offset="1" stop-color="#6c7076"/></radialGradient>
+      <radialGradient id="gMotor" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#7c8a97"/><stop offset="1" stop-color="#3f4a55"/></radialGradient>
+      <linearGradient id="gWater" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6cc0f0"/><stop offset="1" stop-color="#2a7bbf"/></linearGradient>
+      <linearGradient id="gBox" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d8a868"/><stop offset="1" stop-color="#b9864a"/></linearGradient>
+      <filter id="fGlow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <filter id="fGlowBig" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 40 40" aria-hidden="true">
+        <g fill="#D97757">
+          <rect x="18.2" y="2" width="3.6" height="14" rx="1.8"/><rect x="18.2" y="24" width="3.6" height="14" rx="1.8"/>
+          <rect x="18.2" y="2" width="3.6" height="14" rx="1.8" transform="rotate(60 20 20)"/><rect x="18.2" y="24" width="3.6" height="14" rx="1.8" transform="rotate(60 20 20)"/>
+          <rect x="18.2" y="2" width="3.6" height="14" rx="1.8" transform="rotate(120 20 20)"/><rect x="18.2" y="24" width="3.6" height="14" rx="1.8" transform="rotate(120 20 20)"/>
+        </g>
+      </svg>
+      <div>
+        <div class="brand-title">PLC Trainer</div>
+        <div class="brand-sub"><span data-pname title="Double-click to rename">Untitled</span></div>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <button data-view="ladder"><span class="ti">⊢⊣</span>Ladder</button>
+      <button data-view="wiring"><span class="ti">⌁</span>Wiring</button>
+      <button data-view="panel"><span class="ti">◉</span>Panel &amp; Plant</button>
+      <button data-view="hmi"><span class="ti">▭</span>HMI</button>
+      <button data-view="learn"><span class="ti">✦</span>Learn</button>
+    </nav>
+    <div class="top-actions">
+      <button class="btn ghost" data-examples>Examples ▾</button>
+      <button class="btn ghost" data-file>File ▾</button>
+      <button class="icon-btn" data-theme-btn title="Theme">◐</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <div class="plcbar">
+    <div class="seg mode" role="group" aria-label="PLC mode"><button data-mode="PROG">PROG</button><button data-mode="RUN">RUN</button></div>
+    <div class="leds">
+      <span class="led" data-led="pw">POWER</span><span class="led" data-led="run">RUN</span><span class="led amber" data-led="force">FORCE</span><span class="led red" data-led="fault">FAULT</span>
+    </div>
+    <button class="tbtn sm" data-forces>Forces: Enabled (0)</button>
+    <div class="io-strip" data-io></div>
+    <span class="scan" data-scan></span>
+    <span class="bar-msg" data-msg></span>
+    <span class="spacer"></span>
+    <button class="tbtn sm" data-split title="Show Panel & Plant side by side">⧉ Split view</button>
+  </div>
+
+  <main id="main">
+    <section class="view" id="view-ladder"></section>
+    <section class="view" id="view-wiring"></section>
+    <section class="view" id="view-panel"></section>
+    <section class="view" id="view-hmi"></section>
+    <section class="view" id="view-learn"></section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/ui.js"></script>
+  <script src="js/plc.js"></script>
+  <script src="js/ladder.js"></script>
+  <script src="js/circuit.js"></script>
+  <script src="js/workspace.js"></script>
+  <script src="js/panel.js"></script>
+  <script src="js/hmi.js"></script>
+  <script src="js/examples.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
