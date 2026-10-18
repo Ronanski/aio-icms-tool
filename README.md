@@ -51,6 +51,8 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 
 **HMI**: an 800×480 operator terminal screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has Edit and Run modes, zoom (🔍−, Fit, 🔍＋ or Ctrl + scroll) and binds to PLC tags. Momentary buttons stay on for at least two PLC scans, so a quick tap always registers.
 
+**Updates**: when online, the app tells you about a new version (File → **Updates…**: Stable or Beta channel) and downloads the installer for your device. Offline it works as usual.
+
 **Event log**: **📋 Events** lists mode changes, forces, trips and alarms, PLC power and operator actions with a timestamp. Filter by type and export to CSV.
 
 **Learn**: 12 guided lessons (lessons 1–6 have **Check my work** auto-grading) (first rung, seal-in, latch, timers, flasher, counters, forcing, DOL starter, PLC motor control, conveyor, tank, a forward/reverse challenge), an instruction reference, and 6 example projects.
@@ -88,7 +90,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 96 end-to-end checks (desktop, layouts, phone touch, offline)
+npm test                                 # 107 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

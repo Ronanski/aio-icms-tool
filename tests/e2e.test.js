@@ -14,7 +14,11 @@ function check(name, cond, info = '') {
 
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+  // the update check asks GitHub for releases: tests answer with a fixed list instead of the network
+  let releases = [];
+  const mockGitHub = target => target.route('https://api.github.com/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(releases) }));
   const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
+  await mockGitHub(page);
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)/.test(m.text())) errors.push(m.text()); });
@@ -375,10 +379,51 @@ function check(name, cond, info = '') {
   check('Ctrl+O opens the project list', (await page.textContent('.modal-head h3')) === 'Open project');
   await page.keyboard.press('Escape');
 
+  console.log('Updates');
+  check('versions compare like semver (beta < release)', await page.evaluate(() => {
+    const c = Updater.compare;
+    return c('1.2.0', '1.1.0') > 0 && c('1.3.0-beta.1', '1.2.0') > 0 && c('1.3.0-beta.1', '1.3.0') < 0 && c('1.3.0-beta.2', '1.3.0-beta.10') < 0 && c('v1.2.0', '1.2.0') === 0;
+  }));
+  const ver = await page.evaluate(() => App.VERSION);
+  const [maj, min] = ver.split('.').map(Number);
+  const stableTag = `v${maj}.${min + 1}.0`, betaTag = `v${maj}.${min + 2}.0-beta.1`;
+  const asset = n => ({ name: n, browser_download_url: 'https://github.com/x/' + n });
+  releases = [
+    { tag_name: betaTag, prerelease: true, draft: false, html_url: 'https://github.com/x/beta', body: '### Added\n- **Beta** thing <script>', assets: [asset('PLC-Trainer-Setup-b.exe'), asset('PLC-Trainer-b-android.apk')] },
+    { tag_name: stableTag, prerelease: false, draft: false, html_url: 'https://github.com/x/stable', body: '- Stable fix', assets: [asset('PLC-Trainer-Setup-s.exe')] },
+    { tag_name: 'v99.0.0', prerelease: false, draft: true, html_url: '', body: '', assets: [] },
+  ];
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); localStorage.removeItem('plc-trainer.updateSkip'); });
+  let st = await page.evaluate(() => Updater.check(true).then(s => s.release && s.release.tag_name));
+  check('stable channel finds the newest stable release (not beta, not draft)', st === stableTag, st);
+  check('an update bar shows the new version', (await page.textContent('.update-bar')).includes(stableTag));
+  await page.click('.update-bar [data-u="notes"]');
+  check('release notes show as text, never as HTML', await page.evaluate(() => !!document.querySelector('.rel-notes li') && !document.querySelector('.rel-notes script')));
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => localStorage.setItem('plc-trainer.channel', 'beta'));
+  st = await page.evaluate(() => Updater.check(true).then(s => s.release && s.release.tag_name));
+  check('beta channel finds the newer beta release', st === betaTag, st);
+  check('the bar marks it as BETA', (await page.textContent('.update-bar')).includes('BETA'));
+  await page.click('.update-bar [data-u="later"]');
+  check('Later hides the bar', !(await page.$('.update-bar')));
+  await page.evaluate(() => Updater.check(false).catch(() => null));
+  check('a skipped version does not come back on automatic checks', !(await page.$('.update-bar')));
+  releases = [{ tag_name: 'v' + ver, prerelease: false, draft: false, html_url: '', body: '', assets: [] }];
+  st = await page.evaluate(() => Updater.check(true).then(s => s.status));
+  check('no update when this is the newest version', st === 'current', st);
+  await page.context().setOffline(true);
+  st = await page.evaluate(() => Updater.check(true).then(s => s.status));
+  check('offline: no check, no error, app keeps working', st === 'offline' && !!(await page.evaluate(() => App.project && document.querySelector('.rung'))), st);
+  await page.context().setOffline(false);
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); Updater.dialog(); });
+  check('File → Updates shows the channel choice', await page.isChecked('[name="uch"][value="stable"]'));
+  await page.keyboard.press('Escape');
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await mockGitHub(phone);
   const perr = [];
   phone.on('pageerror', e => perr.push(e.message));
   await phone.goto(URL);
@@ -430,6 +475,7 @@ function check(name, cond, info = '') {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}/`;
   const ctx = await browser.newContext();
+  await mockGitHub(ctx);
   const web = await ctx.newPage();
   await web.goto(base);
   const swOk = await web.evaluate(async () => { const r = await navigator.serviceWorker.ready; return !!r.active; });

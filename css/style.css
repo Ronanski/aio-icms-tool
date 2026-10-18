@@ -68,6 +68,13 @@ pre { background: var(--surface-2); border: 1px solid var(--border); padding: 10
 .save-st.saved::before { content: '✓ '; color: var(--ok); }
 .save-st.pending { color: var(--warn); }
 .save-st.failed { background: var(--danger); color: #fff; }
+.update-bar { position: fixed; z-index: 55; left: 50%; top: 64px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); padding: 8px 10px 8px 14px; background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; box-shadow: var(--shadow-lg); font-size: 13px; }
+.beta-tag { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--warn); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+label.radio { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; font-size: 13px; cursor: pointer; }
+.rel-notes { max-height: 55vh; overflow: auto; }
+.rel-notes h4 { margin: 12px 0 4px; }
+.rel-notes li { margin-left: 18px; }
+.rel-notes p { margin: 4px 0; }
 .badge { display: inline-block; min-width: 16px; padding: 0 4px; margin-left: 2px; border-radius: 8px; background: var(--danger); color: #fff; font-size: 10px; line-height: 16px; text-align: center; }
 .badge[hidden] { display: none; }
 .ev-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }

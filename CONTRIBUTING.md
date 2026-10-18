@@ -35,7 +35,7 @@ The project follows [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`.
 Release checklist:
 1. Run `npm test`. All checks must pass.
 2. Move the `[Unreleased]` notes in `CHANGELOG.md` under the new version and date.
-3. Bump the version in `package.json`, `VERSION` in `js/app.js`, and `CACHE` in `sw.js` (so installed apps pick up the new files).
+3. Bump the version in `package.json`, `VERSION` in `js/app.js`, and `CACHE` in `sw.js` (so installed apps pick up the new files). The in-app update check compares release tags with `VERSION`, so they must match. A beta uses a suffix: `1.3.0-beta.1` (see `RELEASING.md`).
 4. Update `PROGRESS.md` and `HANDOFF.md`.
 5. Commit with `chore(release): vX.Y.Z`.
 6. Merge into `main`.

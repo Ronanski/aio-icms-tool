@@ -499,6 +499,7 @@
         { label: 'Import from file…', onClick: () => document.getElementById('importFile').click() },
         { sep: true },
         { label: 'Event log', onClick: eventLog },
+        { label: 'Updates…', onClick: () => Updater.dialog() },
         { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); App.log('system', 'PLC data table cleared'); } },
         { label: `About PLC Trainer v${VERSION}`, onClick: about },
       ]);
@@ -643,6 +644,7 @@
     App.showView(v);
     setInterval(tick, 20);
     requestAnimationFrame(frame);
+    Updater.init();
     if (first) UI.toast('Welcome! A PLC motor-control example is loaded. Start with the lessons or press RUN.', 'ok', 6000);
   }
   /* ---------- install as an app (PWA) ---------- */
