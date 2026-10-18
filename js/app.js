@@ -3,6 +3,7 @@
   'use strict';
   const esc = UI.esc;
   const KEY = 'plc-trainer.project.v1';
+  const VERSION = '1.0.0';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
 
   const App = {
@@ -237,12 +238,13 @@
     document.querySelector('[data-file]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [
+        { label: 'New project…', onClick: newProject },
         { label: 'Rename project…', onClick: rename },
         { label: 'Export project (.json)', onClick: exportProject },
         { label: 'Import project…', onClick: () => document.getElementById('importFile').click() },
         { sep: true },
         { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); } },
-        { label: 'New empty project', danger: true, onClick: () => loadExample('blank') },
+        { label: `About PLC Trainer v${VERSION}`, onClick: about },
       ]);
     });
     document.getElementById('importFile').addEventListener('change', e => {
@@ -272,6 +274,29 @@
     document.querySelector('[data-theme-btn]').title = 'Theme: ' + t;
     try { localStorage.setItem('plc-trainer.theme', t); } catch (e) { /* ignore */ }
   }
+  function newProject() {
+    const opts = Object.entries(Examples.EX).map(([k, x]) => ({ v: k, l: x.title }));
+    opts.sort((a, b) => (a.v === 'blank' ? -1 : b.v === 'blank' ? 1 : 0));
+    UI.form('New project', [
+      { key: 'n', label: 'Project name', value: 'My project' },
+      { key: 't', label: 'Start from', value: 'blank', options: opts },
+    ], v => {
+      const name = v.n.trim();
+      if (!name) return 'Enter a project name';
+      const p = Examples.EX[v.t].build();
+      p.name = name;
+      App.loadProject(p);
+      UI.toast(`Created project “${name}”`, 'ok');
+      App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
+    }, '<p class="help">This replaces the open project. Use File → Export first if you want to keep it.</p>');
+  }
+  function about() {
+    UI.modal({
+      title: `PLC Trainer v${VERSION}`,
+      body: `<p>Allen-Bradley style PLC trainer: ladder logic, power and control wiring, forcing, HMI and live equipment.</p><p class="help">Educational simulator. Not affiliated with Rockwell Automation; Allen-Bradley, RSLogix, MicroLogix and PanelView are trademarks of their owners.</p>`,
+    });
+  }
+  App.VERSION = VERSION;
   function rename() {
     UI.form('Rename project', [{ key: 'n', label: 'Project name', value: App.project.name }], v => {
       App.project.name = v.n.trim() || 'Untitled';
