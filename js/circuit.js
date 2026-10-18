@@ -778,7 +778,7 @@
   function drawTerms(d) {
     return d.terms.map(t => {
       const ly = t.y === 0 ? 13 : t.y - 7;
-      return `<g class="term" data-term="${esc(t.id)}"><circle cx="${t.x}" cy="${t.y}" r="4.6"/><line x1="${t.x - 2.6}" y1="${t.y - 2.6}" x2="${t.x + 2.6}" y2="${t.y + 2.6}"/><text class="tlbl" x="${t.x}" y="${ly}">${esc(t.l)}</text></g>`;
+      return `<g class="term" data-term="${esc(t.id)}"><circle class="thit" cx="${t.x}" cy="${t.y}" r="9"/><circle cx="${t.x}" cy="${t.y}" r="4.6"/><line x1="${t.x - 2.6}" y1="${t.y - 2.6}" x2="${t.x + 2.6}" y2="${t.y + 2.6}"/><text class="tlbl" x="${t.x}" y="${ly}">${esc(t.l)}</text></g>`;
     }).join('');
   }
   function sig(c, ctx) {

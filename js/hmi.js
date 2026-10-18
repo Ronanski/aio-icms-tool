@@ -29,6 +29,7 @@
       <div class="hmi">
         <div class="hmi-toolbar">
           <div class="seg"><button data-mode="run" class="on">▶ Run</button><button data-mode="edit">✎ Edit</button></div>
+          <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           <div class="hmi-add">${Object.entries(TYPES).map(([k, t]) => `<button class="tbtn" data-add="${k}">${t.name}</button>`).join('')}</div>
         </div>
         <div class="hmi-main">
@@ -38,6 +39,7 @@
       </div>`;
     screen = el.querySelector('.hmi-screen');
     propsEl = el.querySelector('.hmi-props');
+    UI.drawer(el.querySelector('[data-drawer="props"]'), propsEl);
     el.querySelector('.hmi-toolbar').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.mode) setMode(b.dataset.mode);

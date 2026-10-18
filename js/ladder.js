@@ -556,6 +556,8 @@
     el.innerHTML = `
       <div class="lad-toolbar">
         <div class="tb-group"><span class="tb-lbl">Rung</span>
+          <button class="tbtn mobile-only" data-act="data" title="Data files and forces">▤ Data</button>
+          <button class="tbtn" data-act="zout" title="Zoom out">−</button><button class="tbtn" data-act="zin" title="Zoom in">＋</button>
           <button class="tbtn" data-act="rung" title="New rung (Ctrl+R)">＋ Rung</button>
           <button class="tbtn" data-act="branch" title="Branch (BST) around selection / add leg">⑂ Branch</button>
           <button class="tbtn" data-act="extl" title="Extend branch left">⇤</button>
@@ -583,6 +585,7 @@
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
         ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false),
+        zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15),
       })[b.dataset.act]?.();
     });
     rungsEl.addEventListener('pointerdown', ev => {
@@ -608,6 +611,8 @@
       else { SEL = { r: ri, id: null, leg: null }; Ladder.render(); rungMenu(ev.clientX, ev.clientY, ri); }
     });
     DataTable.init(sideEl);
+    UI.drawer(el.querySelector('[data-act="data"]'), sideEl);
+    UI.longPress(rungsEl);
     new ResizeObserver(() => { if (root.offsetParent) Ladder.render(); }).observe(rungsEl);
   };
 
@@ -621,20 +626,29 @@
     else if (k === 'Escape') { SEL = { r: -1, id: null, leg: null }; Ladder.render(); }
   };
 
+  /* ladder zoom: phones start smaller so a whole rung fits */
+  let LZ = 1;
+  try { LZ = Number(localStorage.getItem('plc-trainer.lz')) || (innerWidth < 760 ? 0.7 : 1); } catch (e) { LZ = innerWidth < 760 ? 0.7 : 1; }
+  function setZoom(z) {
+    LZ = Math.max(0.45, Math.min(1.8, Math.round(z * 100) / 100));
+    try { localStorage.setItem('plc-trainer.lz', String(LZ)); } catch (e) { /* ignore */ }
+    Ladder.render();
+  }
+
   Ladder.render = function () {
     if (!rungsEl) return;
     const list = rungs();
-    const avail = Math.max(600, rungsEl.clientWidth - 70);
+    const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
     list.forEach(r => { W = Math.max(W, rungLayout(r).need); });
     const html = list.map((r, i) => {
       const { svg, h } = renderRung(r, W);
       const err = JSON.stringify(r.elems).includes('"id":') && [...ERR_IDS].some(id => find(id)?.ri === i);
       return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}" data-r="${i}">
-        <div class="rung-num" title="Double-click to edit rung text; right-click for rung menu">${String(i).padStart(4, '0')}</div>
+        <div class="rung-num" style="padding-top:${Math.round(50 * LZ)}px" title="Double-click to edit rung text; right-click (long-press on touch) for the rung menu">${String(i).padStart(4, '0')}</div>
         <div class="rung-body">${r.comment ? `<div class="rung-comment">${esc(r.comment)}</div>` : ''}
-        <svg class="rung-svg" width="${W}" height="${h}" viewBox="0 0 ${W} ${h}">${svg}</svg></div></div>`;
-    }).join('') + `<div class="rung end"><div class="rung-num">${String(list.length).padStart(4, '0')}</div><div class="rung-body"><svg class="rung-svg" width="${W}" height="34"><line class="rail" x1="3" y1="0" x2="3" y2="34"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="34"/><line class="w" x1="3" y1="17" x2="${W / 2 - 30}" y2="17"/><line class="w" x1="${W / 2 + 30}" y1="17" x2="${W - 3}" y2="17"/><text class="endt" x="${W / 2}" y="21">(END)</text></svg></div></div>`;
+        <svg class="rung-svg" width="${Math.round(W * LZ)}" height="${Math.round(h * LZ)}" viewBox="0 0 ${W} ${h}">${svg}</svg></div></div>`;
+    }).join('') + `<div class="rung end"><div class="rung-num">${String(list.length).padStart(4, '0')}</div><div class="rung-body"><svg class="rung-svg" width="${Math.round(W * LZ)}" height="${Math.round(34 * LZ)}" viewBox="0 0 ${W} 34"><line class="rail" x1="3" y1="0" x2="3" y2="34"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="34"/><line class="w" x1="3" y1="17" x2="${W / 2 - 30}" y2="17"/><line class="w" x1="${W / 2 + 30}" y1="17" x2="${W - 3}" y2="17"/><text class="endt" x="${W / 2}" y="21">(END)</text></svg></div></div>`;
     const st = rungsEl.scrollTop, sl = rungsEl.scrollLeft;
     rungsEl.innerHTML = html;
     rungsEl.scrollTop = st; rungsEl.scrollLeft = sl;
