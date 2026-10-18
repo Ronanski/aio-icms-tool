@@ -46,7 +46,8 @@
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
     renderVisible();
     document.querySelector('[data-pname]').textContent = App.project.name;
-    App.save();
+    clearTimeout(saveT); saveT = null;
+    Store.save(App.currentId, App.serialize());
   };
   App.serialize = function () {
     const p = App.project;
@@ -60,15 +61,23 @@
   let saveT = null;
   App.save = function () {
     clearTimeout(saveT);
-    saveT = setTimeout(() => Store.save(App.currentId, App.serialize()), 500);
+    saveT = setTimeout(() => { saveT = null; Store.save(App.currentId, App.serialize()); }, 500);
+  };
+  /* write any pending change now, before switching to another project */
+  App.flushSave = function () {
+    if (saveT === null) return;
+    clearTimeout(saveT); saveT = null;
+    if (App.project && App.currentId) Store.save(App.currentId, App.serialize());
   };
   /* open project data as a new saved project (examples, imports, New project) */
   App.openNew = function (data) {
+    App.flushSave();
     App.currentId = Store.newId();
     Store.setCurrent(App.currentId);
     App.loadProject(data);
   };
   App.openSaved = function (id) {
+    App.flushSave();
     const data = Store.load(id);
     if (!data) { UI.toast('That project could not be read', 'danger'); return; }
     App.currentId = id;
