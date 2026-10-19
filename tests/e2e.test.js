@@ -594,6 +594,73 @@ function check(name, cond, info = '') {
   await page.evaluate(() => App.showView('hmi'));
   check('HMI modes are named Operate / Design (not Run)', (await page.textContent('.hmi-toolbar .seg')).includes('Operate') && !(await page.textContent('.hmi-toolbar .seg')).includes('Run'));
 
+  console.log('v1.3 wiring and windows');
+  await load('practice');
+  await page.evaluate(() => { App.setLayout('single'); App.showView('ladder'); });
+  await page.click('[data-layout]');
+  await page.click('.ctx-menu button:has-text("☐ HMI")');
+  await wait(300);
+  check('View menu: ticking HMI shows Ladder and HMI side by side', (await shown()) === 'ladder,hmi');
+  for (const n of ['Wiring', 'Panel & Plant']) { await page.click('[data-layout]'); await page.click(`.ctx-menu button:has-text("☐ ${n}")`); await wait(200); }
+  check('View menu: no more than 3 windows at once', (await shown()).split(',').length === 3 && (await page.textContent('#toast-root')).includes('Up to 3 windows'));
+  await page.click('[data-layout]'); await page.click('.ctx-menu button:has-text("☑ HMI")'); await wait(200);
+  check('View menu: unticking hides a window', (await shown()) === 'ladder,wiring');
+  await page.evaluate(() => { App.setLayout('single'); App.showView('wiring'); Workspace.fit(); });
+  await wait(400);
+  const termPt = (label, t) => page.evaluate(([l, t]) => {
+    const c = App.project.circuit.comps.find(x => x.props.label === l);
+    const r = document.querySelector(`.comp[data-cid="${c.id}"] .term[data-term="${t}"] .thit`).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, [label, t]);
+  const wirePt = (a, b) => page.evaluate(([a, b]) => {
+    const w = App.project.circuit.wires.find(x => (x.a.endsWith(a) && x.b.endsWith(b)) || (x.a.endsWith(b) && x.b.endsWith(a)));
+    const path = document.querySelector(`.wire[data-wid="${w.id}"] .wb`);
+    const L = path.getTotalLength(), q = path.getPointAtLength(L * 0.6), m = path.getScreenCTM();
+    return { x: q.x * m.a + q.y * m.c + m.e, y: q.x * m.b + q.y * m.d + m.f, id: w.id };
+  }, [a, b]);
+  const plcId = await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'plc').id);
+  const s1Id = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id);
+  await setMode('RUN');
+  const i9 = await termPt('PLC', 'I9');
+  await page.mouse.click(i9.x, i9.y);
+  const wp = await wirePt(plcId + ':V24', s1Id + ':13');
+  await page.mouse.click(wp.x, wp.y);
+  await wait(300);
+  check('clicking an existing wire while wiring ends the new wire on a junction dot', await page.evaluate(() => {
+    const c = App.project.circuit, j = c.comps.find(x => x.type === 'jct');
+    return !!j && c.wires.filter(w => w.a === j.id + ':J' || w.b === j.id + ':J').length === 3 && !!document.querySelector('.comp.jct .jdot');
+  }));
+  check('the junction really connects: +24 V reaches input I:0/9', await page.evaluate(() => (App.plc.physIn >> 9) & 1) === 1);
+  check('the split wires keep their route (no new bends at the junction)', await page.evaluate(() => {
+    const c = App.project.circuit, j = c.comps.find(x => x.type === 'jct');
+    return c.wires.filter(w => w.a === j.id + ':J' || w.b === j.id + ':J').every(w => w.pts.length <= 4);
+  }));
+  const bw = await page.evaluate(() => App.project.circuit.wires.find(w => (w.pts || []).length).id);
+  await page.evaluate(id => { document.querySelector(`.wire[data-wid="${id}"] .wh`).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1 })); }, bw);
+  await page.evaluate(() => document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })));
+  await wait(150);
+  const bh = await page.$('.bend');
+  check('a selected wire shows handles on its bends', !!bh);
+  const p0 = await page.evaluate(id => JSON.stringify(App.project.circuit.wires.find(w => w.id === id).pts[0]), bw);
+  const bb = await bh.boundingBox();
+  await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await page.mouse.down();
+  await page.mouse.move(bb.x + 40, bb.y + 30, { steps: 5 }); await page.mouse.up();
+  await wait(150);
+  const p1 = await page.evaluate(id => App.project.circuit.wires.find(w => w.id === id).pts[0], bw);
+  check('dragging a bend moves it (snapped to the grid)', JSON.stringify(p1) !== p0 && p1[0] % 10 === 0 && p1[1] % 10 === 0, `${p0} → ${JSON.stringify(p1)}`);
+  await page.evaluate(() => { App.openNew(Examples.EX.practice.build()); App.showView('wiring'); Workspace.fit(); });
+  await wait(400);
+  const k = await page.evaluate(() => Number(/scale\(([\d.]+)\)/.exec(document.querySelector('.ws-svg .vp').getAttribute('transform'))[1]));
+  const fr = await (await page.$(`.comp[data-cid="${await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id)}"] .frame`)).boundingBox();
+  await page.mouse.move(fr.x + 4, fr.y + 4); await page.mouse.down();
+  await page.mouse.move(fr.x + 4 - 82 * k, fr.y + 4, { steps: 8 });
+  check('a guide line shows while a terminal lines up', !!(await page.$('.guide')));
+  await page.mouse.up();
+  check('smart alignment: S1:13 snaps straight under PLC +24 V', (await get('S1', 'x')) === 135, String(await get('S1', 'x')));
+  check('no guide line is left after the drop', !(await page.$('.guide')));
+  await page.evaluate(() => { App.log('system', 'remember me'); App.saveNow(); App.openSaved(App.currentId); });
+  check('the event log is saved with the project', await page.evaluate(() => App.events().some(e => e.msg === 'remember me')));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

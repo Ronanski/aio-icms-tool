@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 1.2.0 (released 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 130/130 on the v1.2.1 branch.
+**Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 142/142 on the v1.3 branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -64,6 +64,14 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] 24 VDC PSU: output short → DC OK off + alarm; overload trip delay 0 s trips at once; workflow permissions least-privilege
 - [ ] Still open (low): DIV rounding of negative halves (needs a check against the instruction manual); earth-leakage teaching case (L-PE feed)
 - [ ] Owner's own list of v1.2 bugs/gaps (not received yet)
+
+## In progress: v1.3.0 builder overhaul, part 1 (owner: "gawin na ang mga pwedeng gawin na")
+- [x] View menu with checkboxes (pick up to 3 windows)
+- [x] Tap an existing wire → junction dot; start a wire from a wire
+- [x] Drag/add/remove wire bends
+- [x] Smart alignment while dragging devices (straight wires), with a guide line
+- [x] Event log saved with the project
+- [ ] Next: schematic mode (rails/rungs), same-size resizable devices with full properties, more components, docked/floating windows
 
 ## Roadmap agreed with the owner
 **v1.3.0 — builder overhaul**

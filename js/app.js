@@ -63,12 +63,14 @@
       ladder: { rungs, desc },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
+      events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && KINDS[e.kind]).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
     };
   }
   App.buildProject = buildProject;
   App.loadProject = function (p) { applyProject(buildProject(p)); };
   function applyProject(proj) {
     App.project = proj;
+    LOG.length = 0; LOG.push(...proj.events); unseen = 0;
     const rungs = proj.ladder.rungs;
     const plc = App.plc;
     plc.setMode('PROG');
@@ -93,6 +95,7 @@
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc },
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
+      events: LOG.slice(-LOG_KEEP),
     };
   };
   let saveT = null, saveFailed = false;
@@ -175,8 +178,8 @@
     return App.hold(c.id + ':' + part, () => { Circuit.part(c, part, 'up', App.ctx); App.save(); });
   };
 
-  /* ---------- event log (this session, newest last) ---------- */
-  const LOG = [], LOG_MAX = 500;
+  /* ---------- event log (newest last; the last LOG_KEEP events are saved with the project) ---------- */
+  const LOG = [], LOG_MAX = 500, LOG_KEEP = 200;
   const KINDS = { alarm: 'Alarm', mode: 'Mode', force: 'Force', operator: 'Operator', system: 'System' };
   let unseen = 0, logView = null;
   App.log = function (kind, msg) {
@@ -197,7 +200,7 @@
       title: 'Event log', wide: true,
       body: `<div class="ev-tools"><select data-evf><option value="all">All events</option>${Object.entries(KINDS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
         <span class="spacer"></span><button class="btn" data-evx>⤓ Export CSV</button><button class="btn" data-evc>Clear</button></div>
-        <div class="ev-list"></div><p class="help">Events of this session, newest first (up to ${LOG_MAX}). The log is not saved with the project.</p>`,
+        <div class="ev-list"></div><p class="help">Newest first (up to ${LOG_MAX} in this session). The last ${LOG_KEEP} events are saved with the project.</p>`,
     });
     const list = m.el.querySelector('.ev-list');
     logView = () => {
@@ -275,7 +278,26 @@
   }
 
   /* ---------- views ---------- */
-  const layoutOf = k => LAYOUTS.find(l => l.key === k) || LAYOUTS[0];
+  /* 'custom' is the set of windows ticked in the View menu (1 to 3, kept in VIEWS order) */
+  const VNAME = { ladder: 'Ladder', wiring: 'Wiring', panel: 'Panel & Plant', hmi: 'HMI' };
+  let customPanes = ['ladder', 'wiring'];
+  try { const c = JSON.parse(localStorage.getItem('plc-trainer.customPanes') || 'null'); if (Array.isArray(c) && c.length && c.every(v => VNAME[v])) customPanes = c.slice(0, 3); } catch (e) { /* ignore */ }
+  const layoutOf = k => (k === 'custom'
+    ? { key: 'custom', label: 'Custom', short: customPanes.map(v => VNAME[v]).join(' · '), panes: customPanes.length > 1 ? customPanes : null }
+    : LAYOUTS.find(l => l.key === k) || LAYOUTS[0]);
+  /* tick or untick a window in the View menu */
+  App.toggleWindow = function (v) {
+    const cur = visibleViews().filter(x => VNAME[x]);
+    let next = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
+    if (!next.length) return;
+    if (next.length > 3) { UI.toast('Up to 3 windows side by side. Untick one first.', 'warn'); return; }
+    customPanes = Object.keys(VNAME).filter(x => next.includes(x));
+    try { localStorage.setItem('plc-trainer.customPanes', JSON.stringify(customPanes)); } catch (e) { /* ignore */ }
+    App.layout = 'custom';
+    Workspace.refit();
+    App.view = customPanes.includes(App.view) ? App.view : customPanes[0];
+    App.showView(App.view);
+  };
   function visibleViews() {
     const L = layoutOf(App.layout);
     if (!L.panes || App.view === 'learn' || innerWidth <= NARROW || !L.panes.includes(App.view)) return [App.view];
@@ -313,7 +335,7 @@
     });
     const lb = document.querySelector('[data-layout]');
     const cur = layoutOf(App.layout);
-    lb.textContent = '▦ ' + (cur.panes ? cur.short : 'Layout');
+    lb.textContent = '▦ ' + (cur.panes ? cur.short : 'View');
     lb.classList.toggle('on', !!cur.panes);
     vis.forEach(k => renderView(k));
     try { localStorage.setItem('plc-trainer.view', v); localStorage.setItem('plc-trainer.layout', App.layout); } catch (e) { /* ignore */ }
@@ -481,7 +503,13 @@
       if (b.hasAttribute('data-events')) eventLog();
       if (b.hasAttribute('data-layout')) {
         const r = b.getBoundingClientRect();
-        UI.menu(r.left, r.bottom + 4, [{ head: 'Show side by side' }, ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) }))]);
+        const vis = visibleViews();
+        UI.menu(r.left, r.bottom + 4, [
+          { head: 'Show windows (up to 3)' },
+          ...Object.entries(VNAME).map(([k, n]) => ({ label: (vis.includes(k) ? '☑ ' : '☐ ') + n, onClick: () => App.toggleWindow(k) })),
+          { sep: true }, { head: 'Ready-made layouts' },
+          ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) })),
+        ]);
       }
     });
     document.querySelector('[data-examples]').addEventListener('click', e => {
