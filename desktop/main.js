@@ -36,6 +36,10 @@ function createWindow() {
   win.webContents.on('did-fail-load', (e, code, desc, url, isMain) => {
     if (isMain && url.startsWith(PAGES) && code !== -3) win.loadFile(LOCAL, { query: { local: '1' } });
   });
+  // the hosted copy answered with an error page (e.g. the Beta copy is not deployed yet): use the built-in copy
+  win.webContents.on('did-navigate', (e, url, code) => {
+    if (url.startsWith(PAGES) && code >= 400) win.loadFile(LOCAL, { query: { local: '1' } });
+  });
   win.loadFile(LOCAL);
 }
 
