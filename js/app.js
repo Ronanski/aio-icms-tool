@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '1.2.0';
+  const VERSION = '1.2.1';
   const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
   const LAYOUTS = [
@@ -209,7 +209,8 @@
     m.el.querySelector('[data-evf]').onchange = e => { filter = e.target.value; logView(); };
     m.el.querySelector('[data-evc]').onclick = () => { LOG.length = 0; logView(); };
     m.el.querySelector('[data-evx]').onclick = () => {
-      const q = v => `"${String(v).replace(/"/g, '""')}"`;
+      // quote every field; a leading = + - @ would be run as a formula by spreadsheets, so prefix it with '
+      const q = v => { let t = String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""')}"`; };
       const csv = 'time,type,event\n' + LOG.map(e => [new Date(e.t).toISOString(), KINDS[e.kind] || e.kind, e.msg].map(q).join(',')).join('\n');
       download(new Blob([csv], { type: 'text/csv' }), (App.project.name || 'project').replace(/[^\w-]+/g, '_') + '-events.csv');
     };
@@ -401,6 +402,7 @@
     else if (!st.pw) m = '⚠ PLC has no power — check QF/L1/N wiring in the Wiring tab.';
     else if (plc.mode === 'PROG') m = st.force && st.fen ? 'Program mode — outputs are off, but forced outputs stay active. Switch to RUN to execute.' : 'Program mode — outputs are off. Switch to RUN to execute.';
     msg.textContent = m;
+    msg.title = m;
     msg.classList.toggle('warn', !!st.nplc && !st.pw);
   }
 
@@ -418,7 +420,7 @@
       <article class="learn-body">
         <div class="kicker">${esc(cur.level)}</div><h2>${esc(cur.title)}</h2>
         <div class="lesson">${cur.body}</div>
-        <div class="btn-row">${ex ? `<button class="btn primary" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.test ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
+        <div class="btn-row">${ex ? `<button class="btn${cur.test ? '' : ' primary'}" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.test ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
         ${cur.test ? '<div class="grade" data-grade></div>' : ''}
         <h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
@@ -490,9 +492,9 @@
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [
         { label: 'New project…', onClick: newProject },
-        { label: 'Open project…\u2003Ctrl+O', onClick: openDialog },
-        { label: 'Save\u2003Ctrl+S', onClick: saveNow },
-        { label: 'Save as…\u2003Ctrl+Shift+S', onClick: saveAs },
+        { label: 'Open project…', kbd: 'Ctrl+O', onClick: openDialog },
+        { label: 'Save', kbd: 'Ctrl+S', onClick: saveNow },
+        { label: 'Save as…', kbd: 'Ctrl+Shift+S', onClick: saveAs },
         { label: 'Rename project…', onClick: rename },
         { sep: true },
         { label: 'Export to file (.plc.json)', onClick: exportProject },
@@ -500,7 +502,7 @@
         { sep: true },
         { label: 'Event log', onClick: eventLog },
         { label: 'Updates…', onClick: () => Updater.dialog() },
-        { label: 'Reset PLC data table', onClick: () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); App.log('system', 'PLC data table cleared'); } },
+        { label: 'Reset PLC data table…', onClick: () => UI.confirm('Reset PLC data table', 'Clear all bits, timers, counters and integers (B3, T4, C5, N7) to zero? The program is kept.', () => { App.plc.resetData(); App.plc.applyAll(true); UI.toast('Data table cleared'); App.log('system', 'PLC data table cleared'); }, 'Reset') },
         { label: `About PLC Trainer v${VERSION}`, onClick: about },
       ]);
     });
@@ -516,10 +518,15 @@
     });
     document.querySelector('[data-pname]').addEventListener('dblclick', rename);
     document.addEventListener('keydown', e => {
-      if (UI.isTyping() || document.querySelector('.modal-wrap')) return;
       const ctl = e.ctrlKey || e.metaKey, key = e.key.toLowerCase();
-      if (ctl && key === 's') { e.preventDefault(); if (e.shiftKey) saveAs(); else saveNow(); return; }
-      if (ctl && key === 'o') { e.preventDefault(); openDialog(); return; }
+      // Save / Open never reach the browser (its "Save page" / file picker); inside a dialog they do nothing
+      if (ctl && (key === 's' || key === 'o')) {
+        e.preventDefault();
+        if (document.querySelector('.modal-wrap')) return;
+        if (key === 'o') openDialog(); else if (e.shiftKey) saveAs(); else saveNow();
+        return;
+      }
+      if (UI.isTyping() || document.querySelector('.modal-wrap')) return;
       const v = App.view;
       if (v === 'ladder') Ladder.onKey(e);
       else if (v === 'wiring') Workspace.onKey(e);
@@ -610,9 +617,17 @@
     UI.form('Save as', [{ key: 'n', label: 'New project name', value: App.project.name + ' (copy)' }], v => {
       const name = v.n.trim();
       if (!name) return 'Enter a project name';
-      const data = App.serialize();
+      // copy the project under a new id and keep working in the copy; the running PLC and plant are not reset
+      App.flushSave();
+      const data = App.serialize(), id = Store.newId();
       data.name = name;
-      App.openNew(data);
+      if (!Store.save(id, data)) { UI.toast('Could not save the copy: browser storage is full or blocked.', 'danger', 6000); return; }
+      App.currentId = id;
+      Store.setCurrent(id);
+      App.project.name = name;
+      document.querySelector('[data-pname]').textContent = name;
+      saveState('saved');
+      App.log('system', `Saved as “${name}”`);
       UI.toast(`Saved as “${name}”. The original project is still in File → Open project.`, 'ok', 3500);
     });
   }
@@ -628,6 +643,7 @@
     HMI.init(document.getElementById('view-hmi'));
     bindChrome();
     bindGutters();
+    ['.plcbar', '.lad-toolbar', '.ws-toolbar', '.hmi-toolbar'].forEach(q => document.querySelectorAll(q).forEach(UI.scrollCue));
     setTheme(theme);
     Store.migrate();
     const cur = Store.current();

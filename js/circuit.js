@@ -86,9 +86,16 @@
       if (v && v.label === '400VAC' && !c.state.burnt) { c.state.burnt = true; api.alert(`${c.props.label}: power supply destroyed — 400 VAC on a 230 VAC input`, 'danger'); }
       return set(c, 'ok', !!(v && v.label === '230VAC') && !c.state.burnt);
     },
+    /* a short on the output puts the supply in current limit: DC OK goes off (shown, not modelled as a source change) */
+    tick(c, api) {
+      const sh = api.net.short, f = !!c.state.ok && (sh.has(api.root(c, 'P1')) || sh.has(api.root(c, 'M1')));
+      if (f && !c.state.dcFault) api.alert(`${c.props.label}: 24 V output short circuit — supply in current limit, DC OK off`, 'danger');
+      c.state.dcFault = f;
+    },
+    status: c => c.state.burnt ? 'Destroyed' : !c.state.ok ? 'No 230 VAC input' : c.state.dcFault ? 'OUTPUT SHORT — current limit, DC OK off' : 'DC OK',
     draw(c) {
       return R(0, 0, 110, 90, 'url(#gMetal)', 4) + band(0, 110) + band(72, 110) +
-        T(55, 36, '24V DC', 'dt big') + T(55, 50, '5 A', 'dt sm') + led(92, 34, c.state.ok, '#3ddc63') + T(92, 46, 'DC OK', 'dt xs') +
+        T(55, 36, '24V DC', 'dt big') + T(55, 50, '5 A', 'dt sm') + led(92, 34, c.state.ok && !c.state.dcFault, '#3ddc63') + T(92, 46, 'DC OK', 'dt xs') +
         (c.state.burnt ? burnt(110, 90) : '');
     },
   });
@@ -155,8 +162,9 @@
       const hot = api.feedsOverload(c);
       const s = c.state;
       s.heat = hot ? s.heat + dt : Math.max(0, s.heat - dt * 0.4);
-      if (!s.tripped && s.heat >= (Number(c.props.trip) || 4)) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
-      s.heatPct = Math.round(Math.min(1, s.heat / (Number(c.props.trip) || 4)) * 100);
+      const tr = Number(c.props.trip), T = Number.isFinite(tr) ? Math.max(0.1, tr) : 4;   // 0 = trips at once
+      if (!s.tripped && s.heat >= T) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
+      s.heatPct = Math.round(Math.min(1, s.heat / T) * 100);
     },
     onPart(c, p, ev) {
       if (ev !== 'down') return;
@@ -265,7 +273,7 @@
       { id: 'COM', x: 150, y: 0, l: 'COM' }, ...Array.from({ length: PLC_IN }, (_, i) => ({ id: 'I' + i, x: 174 + i * 22, y: 0, l: String(i) })),
       { id: 'VAC0', x: 20, y: 200, l: 'VAC0' }, ...[0, 1, 2, 3].map(i => ({ id: 'O' + i, x: 50 + i * 22, y: 200, l: String(i) })),
       { id: 'VAC1', x: 160, y: 200, l: 'VAC1' }, ...[4, 5, 6, 7].map(i => ({ id: 'O' + i, x: 190 + (i - 4) * 22, y: 200, l: String(i) }))],
-    init: () => ({ pw: false, burnt: false }),
+    init: () => ({ pw: false, burnt: false, badIn: 0 }),
     conduct(c, ctx) {
       if (!c.state.pw || !ctx || ctx.plcId !== c.id) return null;
       const out = [];
@@ -279,7 +287,14 @@
       const ch = set(c, 'pw', !!(v && v.kind === 'AC' && v.label === '230VAC') && !c.state.burnt);
       if (ctx && ctx.plcId === c.id) {
         let w = 0;
-        if (c.state.pw) for (let i = 0; i < PLC_IN; i++) { if (api.v(c, 'I' + i, 'COM')) w |= 1 << i; }
+        if (c.state.pw) for (let i = 0; i < PLC_IN; i++) {
+          const v = api.v(c, 'I' + i, 'COM');
+          if (v && v.kind === 'AC' && !(c.state.badIn & (1 << i))) {
+            c.state.badIn |= 1 << i;
+            api.alert(`${c.props.label}: input I:0/${i} destroyed — ${v.label} applied to a 24 VDC input`, 'danger');
+          }
+          if (v && v.kind === 'DC' && !(c.state.badIn & (1 << i))) w |= 1 << i;
+        }
         ctx.plcIn = w; ctx.plcPowered = c.state.pw;
       }
       return ch;
@@ -297,14 +312,15 @@
       st.forEach(([n, on, col], i) => { s += led(28, 98 + i * 15, on, col, 3.6) + T(38, 101 + i * 15, n, 'dt light xs', 'start'); });
       s += R(150, 52, 280, 92, '#24231f', 4, '#111');
       s += T(160, 66, 'IN', 'dt light xs', 'start');
-      for (let i = 0; i < PLC_IN; i++) s += led(186 + i * 20, 80, (inW >> i) & 1, '#f2c230', 4) + T(186 + i * 20, 94, String(i), 'dt light xs');
+      for (let i = 0; i < PLC_IN; i++) s += led(186 + i * 20, 80, ((inW >> i) & 1) || ((c.state.badIn >> i) & 1), (c.state.badIn >> i) & 1 ? '#ff4b3a' : '#f2c230', 4) + T(186 + i * 20, 94, String(i), 'dt light xs');
       s += T(160, 112, 'OUT', 'dt light xs', 'start');
       for (let i = 0; i < PLC_OUT; i++) s += led(186 + i * 20, 124, (outW >> i) & 1, '#ff8a3a', 4) + T(186 + i * 20, 138, String(i), 'dt light xs');
       s += `<g class="part" data-part="mode"><rect x="100" y="94" width="40" height="52" rx="4" fill="#33312c" stroke="#111"/><circle cx="120" cy="112" r="10" fill="#c9c5bb" stroke="#111"/><rect x="118" y="103" width="4" height="18" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 120 112)"/>${T(120, 138, me ? ctx.mode : '—', 'dt light xs')}</g>`;
       if (c.state.burnt) s += burnt(440, 200);
       return s;
     },
-    status: (c, ctx) => !c.state.pw ? 'No power on L1/N' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' : 'Second PLC (inactive)'),
+    status: (c, ctx) => (c.state.badIn ? `Damaged input(s): ${Array.from({ length: PLC_IN }, (_, i) => i).filter(i => (c.state.badIn >> i) & 1).map(i => 'I:0/' + i).join(', ')} — right-click → Repair. ` : '') +
+      (!c.state.pw ? 'No power on L1/N' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' : 'Second PLC (inactive)')),
   });
 
   /* ---------- PILOT DEVICES ---------- */
@@ -693,6 +709,15 @@
     for (const [r, s] of net.pots) if (s.size > 1) { const c = conflictOf(s); if (c) res.set(r, c); }
     return res;
   }
+  /* terminals still on a live conductor (a phase or +24 V): the breaker nearest the fault keeps the most of the plant alive */
+  function energized(net) {
+    let n = 0;
+    for (const i of net.idx.values()) {
+      const st = net.pots.get(net.find(i));
+      if (st) for (const p of st) if (isPh(p) || p.startsWith('DC+')) { n++; break; }
+    }
+    return n;
+  }
   function solveNet(circ, ctx, alerts) {
     let net = build(circ, ctx);
     let sh = shorts(net);
@@ -705,13 +730,15 @@
         return d.breaker && d.closed(c) && d.terms.some(t => roots.has(net.find(net.idx.get(c.id + ':' + t.id))));
       }).sort((a, b) => DEFS[a.type].breaker - DEFS[b.type].breaker);
       if (!cands.length) break;
-      let fixed = null;
+      let fixed = null, best = -1, bestNet = null, bestSh = null;
       for (const c of cands) {
+        if (fixed && DEFS[c.type].breaker !== DEFS[fixed.type].breaker) break;
         c.state.tripped = true;
         const n2 = build(circ, ctx), s2 = shorts(n2);
-        if (s2.size < sh.size) { fixed = c; net = n2; sh = s2; break; }
         c.state.tripped = false;
+        if (s2.size < sh.size) { const live = energized(n2); if (live > best) { best = live; fixed = c; bestNet = n2; bestSh = s2; } }
       }
+      if (fixed) { fixed.state.tripped = true; net = bestNet; sh = bestSh; }
       if (fixed) alerts.push({ msg: `${fixed.props.label} TRIPPED — ${reason}`, kind: 'danger' });
       else {
         cands.forEach(c => { c.state.tripped = true; });
@@ -771,6 +798,7 @@
       let ch = false;
       for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.evaluate && d.evaluate(c, api, ctx)) ch = true; }
       if (!ch) break;
+      if (it === 15) alerts.push({ msg: 'The circuit does not settle: a relay or contactor keeps switching. Is a coil fed through its own N.C. contact?', kind: 'warn' });
     }
     for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.tick) d.tick(c, api, dt, ctx); }
     return { api, alerts };
@@ -841,6 +869,7 @@
   function repair(c) {
     const d = DEFS[c.type];
     if ('burnt' in c.state) c.state.burnt = false;
+    if ('badIn' in c.state) c.state.badIn = 0;
     if ('tripped' in c.state && !d.breaker) c.state.tripped = false;
   }
 

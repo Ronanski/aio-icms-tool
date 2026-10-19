@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const SIZES = { I: 2, O: 2, S: 4, B3: 32, N7: 32, T4: 32, C5: 32 };
+  const SIZES = { I: 2, O: 2, S: 16, B3: 32, N7: 32, T4: 32, C5: 32 };
   const TBITS = ['EN', 'TT', 'DN'], TWORDS = ['PRE', 'ACC'];
   const CBITS = ['CU', 'CD', 'DN', 'OV', 'UN'], CWORDS = ['PRE', 'ACC'];
   const NUM_IN = 12, NUM_OUT = 8;
@@ -92,7 +92,9 @@
       case 'struct': return p && p.kind === 'struct' ? null : 'Expected a timer or counter, e.g. T4:0 or C5:0';
       case 'base': return p && p.kind === 'const' && [1, 0.01, 0.001].includes(p.value) ? null : 'Time base must be 1.0, 0.01 or 0.001';
       case 'int': return p && p.kind === 'const' && Number.isInteger(p.value) && p.value >= -32768 && p.value <= 32767 ? null : 'Expected an integer (-32768…32767)';
-      case 'src': return p && (p.kind === 'const' || p.kind === 'word') ? null : 'Expected a constant or word address (N7:0, T4:0.ACC, C5:1.PRE)';
+      case 'src':
+        if (p && p.kind === 'const' && !(Number.isInteger(p.value) && p.value >= -32768 && p.value <= 32767)) return 'Constants must be whole numbers from -32768 to 32767';
+        return p && (p.kind === 'const' || p.kind === 'word') ? null : 'Expected a constant or word address (N7:0, T4:0.ACC, C5:1.PRE)';
       case 'dest': return p && p.kind === 'word' ? null : 'Expected a word address, e.g. N7:0';
     }
     return null;
@@ -305,18 +307,32 @@
           const c = lo <= hi ? (t >= lo && t <= hi) : (t >= lo || t <= hi);
           hl[e.id] = p && c; return p && c;
         }
-        case 'MOV': if (p) this.setWord(A[1], this.getWord(A[0])); hl[e.id] = p; return p;
+        case 'MOV': if (p) { const v = this.getWord(A[0]); this.setWord(A[1], v); this.mathFlags(v, false); } hl[e.id] = p; return p;
         case 'ADD': case 'SUB': case 'MUL': case 'DIV': {
           if (p) {
             const a = this.getWord(A[0]), b = this.getWord(A[1]);
-            let r = e.t === 'ADD' ? a + b : e.t === 'SUB' ? a - b : e.t === 'MUL' ? a * b : (b === 0 ? 32767 : Math.round(a / b));
-            this.setWord(A[2], r);
+            const u = x => x & 0xFFFF;
+            let r, carry = false;
+            if (e.t === 'ADD') { r = a + b; carry = u(a) + u(b) > 0xFFFF; }
+            else if (e.t === 'SUB') { r = a - b; carry = u(a) < u(b); }
+            else if (e.t === 'MUL') r = a * b;
+            else r = b === 0 ? Infinity : Math.round(a / b);   // divide by zero: overflow, result 32767
+            this.setWord(A[2], Number.isFinite(r) ? r : 32767);
+            this.mathFlags(r, carry);
           }
           hl[e.id] = p; return p;
         }
-        case 'CLR': if (p) this.setWord(A[0], 0); hl[e.id] = p; return p;
+        case 'CLR': if (p) { this.setWord(A[0], 0); this.mathFlags(0, false); } hl[e.id] = p; return p;
       }
       return p;
+    }
+
+    /* arithmetic status S:0/0 carry, /1 overflow, /2 zero, /3 sign; an overflow also sets the minor fault bit S:5/0
+       (the program clears it; this trainer does not stop the PLC on it) */
+    mathFlags(r, carry) {
+      const d = this.data, over = !Number.isFinite(r) || r > 32767 || r < -32768, v = over ? (r < 0 ? -32768 : 32767) : r;
+      d.S[0] = asI16((d.S[0] & ~0xF) | (carry ? 1 : 0) | (over ? 2 : 0) | (v === 0 ? 4 : 0) | (v < 0 ? 8 : 0));
+      if (over) d.S[5] = asI16(d.S[5] | 1);
     }
 
     timer(t, a, p) {
@@ -360,7 +376,7 @@
     /* Static program checks: invalid operands and duplicate OTE addresses. */
     verify(rungs) {
       const errs = [], warns = [];
-      const otes = {};
+      const otes = {}, structs = {};
       rungs.forEach((r, ri) => {
         const walk = arr => arr.forEach(e => {
           if (e.t === 'BST') {
@@ -377,6 +393,14 @@
             const p = parse(e.a[0]);
             if (p) (otes[p.norm] = otes[p.norm] || []).push(ri);
           }
+          // a timer's preset and accum are 0…32767 (a negative preset faults a real controller)
+          if (['TON', 'TOF', 'RTO'].includes(e.t)) {
+            [[2, 'Preset'], [3, 'Accum']].forEach(([k, n]) => { if (Number(e.a[k]) < 0) errs.push({ ri, id: e.id, msg: `${e.t} ${n} must be 0 or more (got ${e.a[k]})` }); });
+          }
+          if (['TON', 'TOF', 'RTO', 'CTU', 'CTD'].includes(e.t)) {
+            const p = parse(e.a[0]);
+            if (p && p.kind === 'struct') (structs[p.norm] = structs[p.norm] || []).push({ ri, t: e.t, pre: e.a[p.file === 'T4' ? 2 : 1] });
+          }
           if (e.t === 'OTE' || e.t === 'OTL' || e.t === 'OTU') {
             const p = parse(e.a[0]);
             if (p && p.file === 'I') warns.push({ ri, id: e.id, msg: `Writing to input ${p.norm} — the input scan overwrites it` });
@@ -386,6 +410,12 @@
         const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR)"/);
         if (r.elems.length && !hasOut) warns.push({ ri, msg: 'Rung has no output instruction' });
       });
+      // one timer used by two timer instructions shares one ACC; a CTU/CTD pair must agree on the preset
+      for (const k in structs) {
+        const L = structs[k], rr = L.map(x => String(x.ri).padStart(4, '0')).join(', ');
+        if (k.startsWith('T4') && L.length > 1) warns.push({ ri: L[1].ri, msg: `${k} is used by ${L.length} timer instructions (rungs ${rr}) — they share one accumulator` });
+        else if (new Set(L.map(x => String(x.pre))).size > 1) warns.push({ ri: L[1].ri, msg: `${k} has different presets in rungs ${rr} — the last one scanned wins` });
+      }
       for (const k in otes) if (otes[k].length > 1) warns.push({ ri: otes[k][1], msg: `Duplicate OTE ${k} in rungs ${otes[k].map(n => String(n).padStart(4, '0')).join(', ')} — only the last one wins` });
       return { errs, warns };
     }

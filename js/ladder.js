@@ -373,24 +373,33 @@
     const f = find(id);
     if (!f || f.e.t === 'BST') return false;
     if (target.id === id) return false;
+    // check the target before touching the program, so a bad drop costs no undo step and keeps redo
+    if (target.id != null) {
+      const g = find(target.id);
+      if (!g) return false;
+      // dropping next to itself changes nothing
+      if (g.arr === f.arr && g.idx + (target.after ? 1 : 0) - (g.idx > f.idx ? 1 : 0) === f.idx) return false;
+    } else if (target.leg) {
+      const [bid, li] = target.leg.split(':').map(Number);
+      const g = find(bid);
+      if (!g || !g.e.legs[li]) return false;
+    } else if (target.r == null || !rungs()[target.r]) return false;
     const e = f.e, isO = !!(INSTR[e.t] && INSTR[e.t].out);
     snapshot();
     f.arr.splice(f.idx, 1);
     let ri = f.ri;
     if (target.id != null) {
       const g = find(target.id);
-      if (!g) { f.arr.splice(f.idx, 0, e); undo.pop(); return false; }
       g.arr.splice(g.idx + (target.after ? 1 : 0), 0, e); ri = g.ri;
     } else if (target.leg) {
       const [bid, li] = target.leg.split(':').map(Number);
       const g = find(bid);
-      if (!g || !g.e.legs[li]) { f.arr.splice(f.idx, 0, e); undo.pop(); return false; }
       g.e.legs[li].push(e); ri = g.ri;
-    } else if (target.r != null && rungs()[target.r]) {
+    } else {
       const arr = rungs()[target.r].elems;
       if (isO) arr.push(e); else arr.splice(outIdx(arr), 0, e);
       ri = target.r;
-    } else { f.arr.splice(f.idx, 0, e); undo.pop(); return false; }
+    }
     SEL = { r: ri, id, leg: null };
     changed();
     return true;
@@ -681,15 +690,21 @@
     if (!rEl || rEl.classList.contains('end')) return null;
     const lg = el.closest('[data-leg]');
     if (lg) return { leg: lg.dataset.leg, box: lg.getBoundingClientRect() };
-    const u = el.closest('.el[data-uid]');
+    const u = el.closest('.el[data-uid], .br[data-uid]');
     if (u) {
       const id = Number(u.dataset.uid);
       if (id === dnd.id) return null;
-      const b = u.querySelector('.hit').getBoundingClientRect();
+      const b = u.classList.contains('br') ? brBox(u) : u.querySelector('.hit').getBoundingClientRect();
       const after = x > b.left + b.width / 2;
       return { id, after, box: b, edge: after ? b.right : b.left };
     }
     return { r: Number(rEl.dataset.r), box: rEl.querySelector('.rung-svg').getBoundingClientRect() };
+  }
+  /* a branch's box spans both rails */
+  function brBox(g) {
+    const r = [...g.querySelectorAll('.hit')].map(h => h.getBoundingClientRect());
+    const left = Math.min(...r.map(x => x.left)), right = Math.max(...r.map(x => x.right)), top = Math.min(...r.map(x => x.top)), bottom = Math.max(...r.map(x => x.bottom));
+    return { left, right, top, bottom, width: right - left, height: bottom - top };
   }
   function showDrop(t) {
     let m = rungsEl.querySelector('.lad-drop');
@@ -710,6 +725,7 @@
     });
     rungsEl.addEventListener('pointermove', ev => {
       if (!dnd || ev.pointerId !== dnd.pid) return;
+      if (!(ev.buttons & 1)) { end(ev); return; }
       if (!dnd.on) {
         if (Math.hypot(ev.clientX - dnd.sx, ev.clientY - dnd.sy) < 6) return;
         dnd.on = true;
@@ -727,18 +743,23 @@
       dnd.t = dropTarget(ev.clientX, ev.clientY);
       showDrop(dnd.t);
     });
-    const end = ev => {
+    function end(ev) {
       if (!dnd) return;
-      const d = dnd; dnd = null;
+      const d = dnd;
+      // the target is taken where the button is released: outside the rungs nothing is dropped
+      if (d.on && ev.type === 'pointerup') d.t = dropTarget(ev.clientX, ev.clientY);
+      dnd = null;
       if (!d.on) return;
       showDrop(null);
       d.ghost.remove();
       rungsEl.classList.remove('dragging');
       try { rungsEl.releasePointerCapture(ev.pointerId); } catch (err) { /* ignore */ }
+      // drop only on a real button release over a target; a lost release (outside the window) cancels
       if (ev.type === 'pointerup' && d.t) Ladder.moveTo(d.id, d.t); else Ladder.render();
-    };
-    rungsEl.addEventListener('pointerup', end);
-    rungsEl.addEventListener('pointercancel', end);
+    }
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('blur', () => end({ type: 'cancel' }));
   }
 
   Ladder.onKey = function (ev) {

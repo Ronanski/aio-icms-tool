@@ -19,7 +19,14 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.loadFile(path.join(__dirname, 'app', 'index.html'));
+  // the app never navigates away from its own files: other links open in the normal browser
+  win.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith('file:')) return;
+    e.preventDefault();
+    if (/^https?:/.test(url)) shell.openExternal(url);
+  });
+  // tell the web app which Windows build it runs in, so its update check offers the matching download
+  win.loadFile(path.join(__dirname, 'app', 'index.html'), { query: { build: process.env.PORTABLE_EXECUTABLE_DIR ? 'portable' : 'installed' } });
 }
 
 app.whenReady().then(() => {

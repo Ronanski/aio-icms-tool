@@ -16,7 +16,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   version:
@@ -26,7 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: v
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          # a pushed tag must match package.json; a stable (no suffix) release must come from main
+          if [ "${{ github.event_name }}" = push ] && [ "${{ github.ref_name }}" != "v$v" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match package.json version $v"; exit 1; fi
+          if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.publish }}" = true ] && [ "${v#*-}" = "$v" ] && [ "${{ github.ref }}" != refs/heads/main ]; then
+            echo "::error::Stable releases are published from main only (this is ${{ github.ref }})"; exit 1; fi
 
   web:
     needs: version
@@ -95,6 +102,9 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
+          # a published APK must be release-signed, or it will not install over the app users have
+          if [ -z "$KEYSTORE_B64" ] && [ "${{ github.event_name }}" != pull_request ]; then
+            echo "::error::Android signing secrets are missing: not publishing a debug-signed APK. See RELEASING.md."; exit 1; fi
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
             ./gradlew assembleRelease \
@@ -117,6 +127,8 @@ jobs:
     needs: [version, web, windows, android]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only this job creates the tag and the release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -127,8 +139,13 @@ jobs:
         run: |
           v="${{ needs.version.outputs.version }}"
           awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md
-          # a beta usually has no CHANGELOG section of its own yet: use [Unreleased]
-          if [ ! -s notes.md ]; then awk '/^## \[Unreleased\]/ {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md; fi
+          # a beta usually has no CHANGELOG section of its own yet: use [Unreleased]. A stable release must have its section.
+          if [ ! -s notes.md ]; then
+            case "$v" in
+              *-*) awk '/^## \[Unreleased\]/ {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md ;;
+              *) echo "::error::CHANGELOG.md has no section for [$v]"; exit 1 ;;
+            esac
+          fi
           case "$v" in *-*) printf '> **Beta (pre-release).** For testing. Apps on the Beta update channel are offered this version.\n\n' | cat - notes.md > n && mv n notes.md;; esac
           {
             echo ""

@@ -1,6 +1,6 @@
 /* Service worker: caches the app shell so the trainer works offline once installed.
    Bump CACHE with every release so returning users get the new files. */
-const CACHE = 'plc-trainer-v1.2.0';
+const CACHE = 'plc-trainer-v1.2.1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/ui.js', 'js/store.js', 'js/plc.js', 'js/ladder.js', 'js/circuit.js', 'js/workspace.js',
@@ -9,7 +9,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser HTTP cache (GitHub Pages sends max-age=600), so a new version caches new files
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -33,7 +34,9 @@ self.addEventListener('fetch', e => {
   }
   if (url.origin !== location.origin) return;
   // app files: network first so updates arrive, cache when offline
-  e.respondWith(fetch(req).then(r => {
+  // no-cache: revalidate with the server instead of using the browser HTTP cache (a navigation request takes no options, so use its URL)
+  const net = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache' }) : fetch(req, { cache: 'no-cache' });
+  e.respondWith(net.then(r => {
     if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return r;
   }).catch(() => caches.match(req).then(hit => hit || caches.match('index.html'))));

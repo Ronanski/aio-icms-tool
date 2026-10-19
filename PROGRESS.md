@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.0 (released 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 107/107.
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 130/130 on the v1.2.1 branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -48,18 +48,22 @@
 - [x] Android signing key in repo secrets (v1.2.0 APK is release-signed)
 - [x] Old branch `ccr-d652d569-13gxij` deleted · [ ] optional: remove its github-pages environment rule
 
-## Audit of v1.2.0 (2026-10-18) — proposed v1.2.1, waiting for the owner's GO
-Checked by three reviewers (code, updater/release, UX in a real browser); the top two were reproduced again by hand.
-- [ ] **High · ladder drag**: a fast flick or a release outside the rungs leaves the drag armed; the next click on empty rung space moves an instruction (reproduced). Fix: cancel when no button is held, capture the pointer on press.
-- [ ] **High · Workbench toolbars**: in the default desktop layout the ladder toolbar is one row in a narrow pane; Verify is cut and the instruction buttons are off-screen with no scroll cue (same for wiring zoom). Fix: let toolbars wrap in panes, or an "＋ Instruction ▾" menu.
-- [ ] **Med · release safety**: a publish can still ship a debug-signed APK if the signing secrets disappear. Fix: fail the publish without the key.
-- [ ] **Med · web update**: "Reload to update" can load files from the browser cache for up to 10 min (Pages max-age=600). Fix: service worker fetches with `cache: 'no-cache'` / `reload`.
-- [ ] **Med · update bar** covers the PLC status bar (desktop) and PROG/RUN (phone). Fix: put it in the page flow.
-- [ ] **Med · phone toolbars** scroll sideways with no visible cue ("Forces" cut). Fix: edge fade.
-- [ ] **Med · "Run" twice**: the HMI "▶ Run / ✎ Edit" looks like the PLC RUN. Fix: rename to "Operate / Design".
-- [ ] **Low-Med · dark mode contrast**: Operator Panel cards (light card, light text), orange-on-orange Verify/active lesson, inactive HMI alarm text.
-- [ ] Low: failed/no-op drag clears redo; drop on a branch rail lands before the outputs; Ctrl+S / Ctrl+O reach the browser while typing or with a dialog open; Save as resets the running PLC and toasts success even if saving failed; CSV export formula injection; failed update checks retry without limit; portable `.exe` users are offered the installer; Electron `will-navigate` guard; tag-push release uses package.json version; stable release must not fall back to `[Unreleased]` notes; toasts overlap menus; Reset data table has no confirm; PLC bar wraps at 1400 px; Learn lesson 1 mentions ▦ Layout which phones don't show.
-- Checked OK: updater against the real GitHub API, XSS paths, project round-trips (v1.0/v1.1/v1.2 examples), overload performance, no console errors, no phone page scroll.
+## Done (v1.2.1, PR #5)
+From the v1.2.0 audit and the leftovers of the v1.1 audit:
+- [x] High: ladder drag never stays armed; no-op/failed drops keep undo/redo; drop on a branch rail
+- [x] High: Workbench toolbars wrap inside panes (all buttons, Verify and zoom visible)
+- [x] Release workflow refuses to publish a debug-signed APK; tag must match package.json; stable only from `main` with its own CHANGELOG section
+- [x] Service worker bypasses the HTTP cache, so web updates load at once
+- [x] Update bar in the page flow; phone toolbars show a fade where buttons are hidden
+- [x] HMI modes renamed Operate / Design
+- [x] Dark-mode contrast (Operator Panel, Verify, active lesson, HMI alarm)
+- [x] Ctrl+S/Shift+S/O while typing; Save as keeps the PLC running; CSV formula injection; Reset data table confirm; update-check retry limit; Electron will-navigate guard; menu shortcuts; Learn hint on phones; status message ellipsis
+- [x] S:0 math flags and S:5/0; PLC input destroyed by AC; breaker selectivity; oscillation warning
+- [x] Portable `.exe` updates with the portable file (the desktop shell passes `?build=portable|installed`)
+- [x] Verify: timer preset/accum ≥ 0, whole-number constants in range; warnings for shared timers and CTU/CTD preset mismatch
+- [x] 24 VDC PSU: output short → DC OK off + alarm; overload trip delay 0 s trips at once; workflow permissions least-privilege
+- [ ] Still open (low): DIV rounding of negative halves (needs a check against the instruction manual); earth-leakage teaching case (L-PE feed)
+- [ ] Owner's own list of v1.2 bugs/gaps (not received yet)
 
 ## Roadmap agreed with the owner
 **v1.3.0 — builder overhaul**

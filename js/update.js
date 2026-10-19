@@ -47,8 +47,9 @@
     }
     return best && compare(best.v, parse(current)) > 0 ? best.r : null;
   }
+  const portable = () => /[?&]build=portable\b/.test(location.search);
   function assetFor(r, plat) {
-    const re = plat === 'windows' ? /Setup-.*\.exe$/i : plat === 'android' ? /-android\.apk$/i : null;
+    const re = plat === 'windows' ? (portable() ? /-portable\.exe$/i : /Setup-.*\.exe$/i) : plat === 'android' ? /-android\.apk$/i : null;
     const a = re && (r.assets || []).find(x => re.test(x.name));
     return a ? a.browser_download_url : null;
   }
@@ -75,7 +76,9 @@
       set(K.last, String(U.state.at));
       if (rel && (manual || get(K.skip) !== rel.tag_name)) { showBar(rel); if (!manual) App.log('system', `Update available: ${rel.tag_name}${rel.prerelease ? ' (beta)' : ''}`); }
     } catch (err) {
-      U.state = { ...U.state, status: 'error' };
+      // count a failed try too, so a rate limit or outage is not retried on every start
+      U.state = { ...U.state, status: 'error', at: Date.now() };
+      set(K.last, String(U.state.at));
     } finally { busy = false; }
     return U.state;
   };
@@ -96,7 +99,8 @@
       if (b.dataset.u === 'notes') notes(r);
       if (b.dataset.u === 'go') install(r);
     };
-    document.body.appendChild(bar);
+    // in the page flow under the status bar, so it never covers PROG/RUN or the I/O strip
+    document.body.insertBefore(bar, document.getElementById('main'));
   }
   function install(r) {
     const plat = platform(), url = assetFor(r, plat);
@@ -105,13 +109,14 @@
     // the web app updates itself: index.html and scripts are fetched network-first, so a reload loads the new files
     if (plat === 'web' && !r.prerelease) { location.reload(); return; }
     openOut(url || r.html_url);
-    if (url) UI.toast(plat === 'android' ? 'Downloading the update. Open the .apk when it finishes and tap Install.' : 'Downloading the installer. Run it to update; your projects are kept.', 'ok', 6000);
+    if (url) UI.toast(plat === 'android' ? 'Downloading the update. Open the .apk when it finishes and tap Install.' : portable() ? 'Downloading the new portable app. Use it instead of the old .exe; your projects are kept.' : 'Downloading the installer. Run it to update; your projects are kept.', 'ok', 6000);
   }
   /* release notes as plain text with simple headings and bullets (never raw HTML) */
   function md(t) {
     return String(t || '').split(/\r?\n/).map(l => {
       const s = esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
       if (/^#{1,6}\s/.test(l)) return `<h4>${s.replace(/^#+\s*/, '')}</h4>`;
+      if (/^>\s?/.test(l)) return `<p class="rel-note">${s.replace(/^&gt;\s?/, '')}</p>`;
       if (/^\s*[-*]\s/.test(l)) return `<li>${s.replace(/^\s*[-*]\s/, '')}</li>`;
       return s.trim() ? `<p>${s}</p>` : '';
     }).join('');
@@ -155,5 +160,6 @@
   };
   U.compare = compare;
   U.pick = pick;
+  U.assetFor = r => assetFor(r, platform());
   window.Updater = U;
 })();
