@@ -720,6 +720,45 @@ function check(name, cond, info = '') {
   check('Dock puts the window back in the main area', await page.evaluate(() => !document.querySelector('.float-win') && document.getElementById('main').contains(document.getElementById('view-wiring')) && document.getElementById('view-wiring').classList.contains('active')));
   await page.evaluate(() => App.setLayout('single'));
 
+  console.log('v1.3 part 3: schematic');
+  await page.evaluate(new Function(kit + `
+    add('supply1', { label: 'Q0' });
+    App.openNew({ name: 'Schematic DOL', circuit: circ });
+    App.setLayout('single'); App.showView('schematic');`));
+  await wait(300);
+  check('Schematic view renders and picks the supply rails', await page.evaluate(() => !!document.querySelector('#view-schematic .sch-toolbar') && !!App.project.schematic.L && App.project.schematic.L.endsWith(':L') && App.project.schematic.N.endsWith(':N')));
+  const addSym = async (k, tag) => { await page.click(`#view-schematic [data-skind="${k}"]`); await page.fill('#f_t', tag); await page.click('.modal .btn.primary'); await wait(120); };
+  await addSym('pbnc', 'S0'); await addSym('pbno', 'S1'); await addSym('kmcoil', 'KM1');
+  const pathS1 = await page.evaluate(() => [...document.querySelectorAll('#view-schematic [data-path]')].find(g => g.textContent.includes('S1')).dataset.path);
+  await page.click(`#view-schematic [data-path="${pathS1}"] .hit`);
+  await page.click('#view-schematic [data-sact="branch"]');
+  await addSym('kmno', 'KM1');
+  await page.click('#view-schematic [data-sact="rung"]');
+  await addSym('kmno', 'KM1');
+  check('a second N.O. contact of KM1 is refused (the contactor has one)', await page.evaluate(() => Schematic.errs && [...Schematic.errs.values()].some(m => m.includes('already used'))));
+  await page.click('#view-schematic [data-sact="del"]');
+  await addSym('kmnc', 'KM1'); await addSym('lamp', 'H1');
+  await wait(300);
+  const sch = await page.evaluate(() => ({ text: JSON.stringify(App.project.schematic.rungs), comps: App.project.circuit.comps.map(c => c.type + ':' + c.props.label + ':' + (c.props.coil || '')).sort(), wires: App.project.circuit.wires.filter(w => w.sch).length }));
+  check('symbols became real devices in the Wiring (with the 230 VAC coil)', ['pb_nc:S0:', 'pb_no:S1:', 'contactor:KM1:230VAC', 'lamp:H1:230VAC'].every(x => sch.comps.includes(x)), sch.comps.join(' '));
+  check('the rungs were wired for you', sch.wires >= 8, String(sch.wires));
+  check('rung 2 lamp is on through the KM1 N.C. contact', await get('H1', 'state.on'), await page.evaluate(() => { const C = App.project.circuit, lab = k => { const [id, t] = k.split(':'); return C.comps.find(x => x.id === id).props.label + ':' + t; }; return JSON.stringify([App.project.schematic.rungs, C.wires.filter(w => w.sch).map(w => lab(w.a) + '>' + lab(w.b)), C.comps.find(x => x.props.label === 'H1').state, C.comps.find(x => x.props.label === 'KM1').state]); }));
+  await page.click('#view-schematic [data-smode="run"]');
+  const s1el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent === 'S1'));
+  const sb = await s1el.boundingBox();
+  await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up();
+  await wait(400);
+  check('pressing S1 in the schematic starts KM1 and the seal-in holds it', (await get('KM1', 'state.pulled')) && !(await get('S1', 'state.pressed')));
+  check('the KM1 N.C. contact opens and the lamp goes off', !(await get('H1', 'state.on')));
+  check('the schematic shows power flow on the energized coil', await page.evaluate(() => [...document.querySelectorAll('#view-schematic .sel-el')].some(g => g.querySelector('.stag').textContent === 'KM1' && g.querySelector('.ssym.on .ssym, .ssym.on') && g.querySelector('.skind').textContent === 'coil')));
+  const s0el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent === 'S0'));
+  const s0b = await s0el.boundingBox();
+  await page.mouse.move(s0b.x + s0b.width / 2, s0b.y + s0b.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up();
+  await wait(400);
+  check('pressing S0 stops KM1', !(await get('KM1', 'state.pulled')) && (await get('H1', 'state.on')));
+  check('the schematic is saved with the project and comes back', await page.evaluate(() => { App.saveNow(); const id = App.currentId; App.openSaved(id); return App.project.schematic.rungs.length === 2 && JSON.stringify(App.project.schematic.rungs).includes('"tag":"KM1"') && App.project.circuit.wires.some(w => w.sch); }));
+  await page.click('#view-schematic [data-smode="edit"]');
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

@@ -45,6 +45,8 @@ Installing needs the app served over https; the included GitHub Pages workflow d
   - Overload relay trips on a jammed or single-phasing motor
 - Live voltage overlay, a terminal hover tooltip, and a **multimeter**
 
+**Schematic**: draw a relay/contactor control circuit like a ladder (rails, rungs, branches, IEC-style symbols). Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic.
+
 **Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable.
 
 **Workbench layout / View menu**: **▦ View** lets you tick which windows show side by side (up to 3), or float any window over the others (move, resize, dock back). It also shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
@@ -90,7 +92,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 154 end-to-end checks (desktop, layouts, phone touch, offline)
+npm test                                 # 164 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

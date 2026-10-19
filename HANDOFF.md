@@ -9,7 +9,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 | **Tags** | `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 154 passed on the v1.3 part 2 branch (142 on `main`). |
+| **Tests** | `npm test`: 164 passed on the v1.3 part 3 branch (154 on `main`). |
 | **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch), #4 open (docs: savepoint + v1.2.0 audit). |
 | **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
@@ -18,7 +18,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## How to resume in 2 minutes
 1. `git checkout <branch>` and `git pull`
 2. Open `index.html` in Chrome, or run `npm start` and go to http://localhost:8080
-3. Run `npm install`, then `npm test`. All 154 checks should pass before you change anything.
+3. Run `npm install`, then `npm test`. All 164 checks should pass before you change anything.
 4. Read `CONTRIBUTING.md` (rules), then `PROGRESS.md` (what's next).
 
 ## Architecture in one screen
@@ -32,6 +32,7 @@ index.html ── loads scripts in order ──►
   workspace.js Workspace: wiring canvas (pan/zoom, wires, meter, props)
   panel.js     PanelView: big operable devices
   hmi.js       HMI: designer + runtime
+  schematic.js Schematic: rail/rung control-circuit editor; symbols map to Wiring devices by tag; generated wires carry `sch: true`
   examples.js  Examples: EX (projects) + LESSONS
   update.js    Updater: GitHub Releases check, Stable/Beta channel, update bar, File → Updates…
   app.js       App: project state, open/save projects, 20 ms tick loop, views + LAYOUTS (multi-pane grid, gutters), status bar, PWA install
@@ -59,6 +60,8 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 
 **Floating windows:** `App.floatView(v, geom)` moves the view's `<section>` into a `.float-win` on `<body>`; `App.dockView(v)` moves it back into `#main`. `visibleViews()` returns the docked grid views, `shownViews()` adds floating ones (render/update loop). Saved in `plc-trainer.floats`; docked automatically on narrow screens. **Device size:** `props.size` (0.4–3) scales the drawing (`scale()` in the transform) and `tpos()`.
 
+**Schematic:** `App.project.schematic = { L, N, rungs: [{ elems: [{k, tag} | {k:'br', legs}] }] }`. `Schematic.sync()` removes wires with `sch: true`, creates missing devices (`ensureDevice`) and wires each valid rung between the rails (`SK` maps a symbol kind to device type and terminals; relay contacts get pole 1/2). Empty branch legs stay open. Rails default to the 24 V PSU, else the 1-phase supply, else L1/N.
+
 **Contact variants:** a component def can have `variant: { n, of: { NO: type, NC: type } }`. `Circuit.retype(c, type, circ)` changes the type and moves wires by terminal position.
 
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
@@ -71,7 +74,7 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 
 ## Start of next session (read first)
 - v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19).
-- v1.3 part 1 merged (PR #6). v1.3 part 2 (floating windows, device size, 8 new parts, more type options) is in a PR, not merged. Not released: needs "GO STABLE v1.3.0" or a beta.
+- v1.3 parts 1 and 2 merged (PR #6, #7). v1.3 part 3 (Schematic view) is in a PR, not merged. Not released: needs "GO STABLE v1.3.0" or a beta.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
 - Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.
