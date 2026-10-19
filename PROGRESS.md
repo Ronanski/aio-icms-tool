@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.5.0 (stable release authorized 2026-10-19 with "GO STABLE v1.5.0": free draw, full IEC library, diagram in one line colour and in proportion. Before it 1.4.1.)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 203/203. Betas v1.4.0-beta.1 and beta.2 came first.
+**Status:** Stable v1.5.0 (released 2026-10-19). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 250/250.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -130,8 +130,9 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Latching relay, heater, hour meter, voltmeter, fan and 2P contactor in free draw
 - [x] Free draw: Text, PE earth, Copy (D), To front / To back; 90 symbols
 - [x] Electrical Diagram in one line colour like the ladder (owner: "dapat kapareha ng ladder diagram"); power circuit in proportion with the control circuit
-- [x] PR #20 merged; stable v1.5.0 authorized (GO STABLE v1.5.0). The v1.5 hardware work moves to the next version.
-- [ ] Next: modular PLC rack, I/O configuration, addressing styles, cabinet (v1.5 hardware); editable terminal numbers
+- [x] PR #20 merged (`430aea8`); stable v1.5.0 authorized (GO STABLE v1.5.0), Release workflow started · [ ] verify release assets, APK cert, Pages version.json
+- The hardware work moves to v1.6.0.
+- [ ] Next (v1.6): modular PLC rack, I/O configuration, addressing styles, cabinet; editable terminal numbers
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
@@ -141,18 +142,18 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Part 4: IEC Electrical Diagram with power circuit; Philippine wire colours
 - [x] Beta `v1.4.0-beta.1` and `v1.4.0-beta.2` (owner: GO BETA) · [ ] owner's beta feedback · [x] stable v1.4.0 authorized (GO STABLE, PR #15)
 
-**v1.5.0 — hardware**
+**v1.6.0 — hardware** (moved from v1.5.0: v1.5.0 shipped free draw and the IEC library)
 - [ ] Modular rack (chassis, PSU, CPU, I/O cards per slot), generic names only
 - [ ] I/O Configuration: a module works only after it is configured
 - [ ] Addressing display: Basic, file-based (current) or bit/byte style
 - [ ] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails
 
-**v1.6.0 — HMI**
+**v1.7.0 — HMI**
 - [ ] Studio (designer) vs Machine (runtime) modes
 - [ ] Pick resolution and terminal type (PC or 4"–15" terminal)
 - [ ] More objects: shapes, images, trends, multi-screen navigation, animation, security
 
-**v1.7.0 — more instructions and devices**
+**v1.8.0 — more instructions and devices**
 - [ ] OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, analog I/O; VFD, analog level transmitter; Tagalog/English toggle
 
 **v2.0.0 — online (MAJOR: project format changes)**
