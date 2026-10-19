@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '1.2.1';
+  const VERSION = '1.4.0-beta.1';
   /* four workspaces; Learn opens from the Help menu */
   const VIEWS = ['ladder', 'schematic', 'wiring', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
