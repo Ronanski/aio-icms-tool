@@ -75,7 +75,9 @@
       set(K.last, String(U.state.at));
       if (rel && (manual || get(K.skip) !== rel.tag_name)) { showBar(rel); if (!manual) App.log('system', `Update available: ${rel.tag_name}${rel.prerelease ? ' (beta)' : ''}`); }
     } catch (err) {
-      U.state = { ...U.state, status: 'error' };
+      // count a failed try too, so a rate limit or outage is not retried on every start
+      U.state = { ...U.state, status: 'error', at: Date.now() };
+      set(K.last, String(U.state.at));
     } finally { busy = false; }
     return U.state;
   };
@@ -96,7 +98,8 @@
       if (b.dataset.u === 'notes') notes(r);
       if (b.dataset.u === 'go') install(r);
     };
-    document.body.appendChild(bar);
+    // in the page flow under the status bar, so it never covers PROG/RUN or the I/O strip
+    document.body.insertBefore(bar, document.getElementById('main'));
   }
   function install(r) {
     const plat = platform(), url = assetFor(r, plat);
@@ -112,6 +115,7 @@
     return String(t || '').split(/\r?\n/).map(l => {
       const s = esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
       if (/^#{1,6}\s/.test(l)) return `<h4>${s.replace(/^#+\s*/, '')}</h4>`;
+      if (/^>\s?/.test(l)) return `<p class="rel-note">${s.replace(/^&gt;\s?/, '')}</p>`;
       if (/^\s*[-*]\s/.test(l)) return `<li>${s.replace(/^\s*[-*]\s/, '')}</li>`;
       return s.trim() ? `<p>${s}</p>` : '';
     }).join('');

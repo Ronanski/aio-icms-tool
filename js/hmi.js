@@ -48,7 +48,7 @@
     el.innerHTML = `
       <div class="hmi">
         <div class="hmi-toolbar">
-          <div class="seg"><button data-mode="run" class="on">▶ Run</button><button data-mode="edit">✎ Edit</button></div>
+          <div class="seg" title="Operate the screen, or design it (add, move, resize objects). The PLC's own RUN/PROG is in the status bar."><button data-mode="run" class="on">☝ Operate</button><button data-mode="edit">✎ Design</button></div>
           <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           <div class="hmi-zoom"><span class="tb-lbl">Zoom</span><button class="tbtn" data-hz="-1" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-hz="fit" data-hzv title="Fit the screen to the window">Fit</button><button class="tbtn" data-hz="1" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button></div>
           <div class="hmi-add">${Object.entries(TYPES).map(([k, t]) => `<button class="tbtn" data-add="${k}">${t.name}</button>`).join('')}</div>
@@ -199,7 +199,7 @@
     root.querySelector('.hmi-bezel').style.setProperty('--k', k);
     const v = root.querySelector('[data-hzv]');
     v.textContent = hz === 'fit' ? `Fit · ${Math.round(k * 100)}%` : Math.round(k * 100) + '%';
-    v.classList.toggle('on', hz === 'fit');
+    v.classList.toggle('fit', hz === 'fit');
   }
   HMI.onShow = () => requestAnimationFrame(fitScreen);
   let hmiRO = null;
@@ -243,8 +243,8 @@
     if (!propsEl) return;
     const o = hmi().objects.find(o => o.id === sel);
     if (mode !== 'edit') {
-      propsEl.innerHTML = `<div class="side-head"><h4>HMI Runtime</h4></div><div class="props"><p class="help">Touch the buttons on the screen. HMI buttons write to PLC tags (use <code>B3</code> bits — never physical inputs). Indicators read any tag.</p>
-      <p class="help">Switch to <b>Edit</b> to add objects, drag to move, drag the corner to resize, <b>Del</b> to delete.</p>
+      propsEl.innerHTML = `<div class="side-head"><h4>HMI Runtime</h4></div><div class="props"><p class="help">☝ Operate mode: touch the buttons on the screen. HMI buttons write to PLC tags (use <code>B3</code> bits — never physical inputs). Indicators read any tag.</p>
+      <p class="help">Switch to <b>✎ Design</b> to add objects, drag to move, drag the corner to resize, <b>Del</b> to delete.</p>
       <h5>Tags on this screen</h5><ul class="taglist">${hmi().objects.filter(o => o.tag).map(o => `<li><code>${esc(o.tag)}</code> ${esc(o.label)}</li>`).join('') || '<li class="help">none</li>'}</ul></div>`;
       return;
     }

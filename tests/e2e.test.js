@@ -419,6 +419,136 @@ function check(name, cond, info = '') {
   check('File → Updates shows the channel choice', await page.isChecked('[name="uch"][value="stable"]'));
   await page.keyboard.press('Escape');
 
+  console.log('v1.2.1 fixes');
+  await page.evaluate(() => { App.setLayout('single'); App.openNew({ name: 'Drag safety', ladder: { rungs: [{ text: 'BST XIC I:0/0 NXB XIC I:0/3 BND OTE O:0/0' }, { text: 'XIC I:0/1 OTE O:0/1' }] } }); App.showView('ladder'); });
+  await wait(300);
+  const lad2 = () => page.evaluate(() => App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)).join(' | '));
+  const prog0 = await lad2();
+  const firstXic = await page.evaluate(() => App.project.ladder.rungs[0].elems[0].legs[0][0].id);
+  const fx = await (await page.$(`.el[data-uid="${firstXic}"] .ins`)).boundingBox();
+  await page.mouse.move(fx.x + fx.width / 2, fx.y + fx.height / 2); await page.mouse.down();
+  await page.mouse.move(5, 5); await page.mouse.up();
+  const r1b = await (await page.$('.rung[data-r="1"] .rung-svg')).boundingBox();
+  await page.mouse.move(r1b.x + r1b.width / 2, r1b.y + 15, { steps: 4 });
+  await page.mouse.click(r1b.x + r1b.width / 2, r1b.y + 15);
+  await wait(200);
+  check('a release outside the rungs never leaves a drag armed (a later click moves nothing)', (await lad2()) === prog0, await lad2());
+  check('no drag ghost is left on screen', !(await page.$('.lad-ghost')));
+  check('a drop that changes nothing keeps undo and redo', await page.evaluate(() => {
+    Ladder.addRung(false); Ladder.undo();
+    const id = App.project.ladder.rungs[1].elems[0].id;
+    const bad = Ladder.moveTo(id, { id: 999999 }), same = Ladder.moveTo(id, { id: App.project.ladder.rungs[1].elems[1].id, after: false });
+    const n = App.project.ladder.rungs.length; Ladder.redo();
+    return !bad && !same && App.project.ladder.rungs.length === n + 1;
+  }));
+  await page.evaluate(() => Ladder.undo());
+  check('dropping on a branch rail places the instruction next to the branch', await page.evaluate(() => {
+    const r0 = App.project.ladder.rungs[0], br = r0.elems[0], x = App.project.ladder.rungs[1].elems[0];
+    Ladder.moveTo(x.id, { id: br.id, after: true });
+    return Ladder.serialize(App.project.ladder.rungs[0].elems).startsWith('BST XIC I:0/0 NXB XIC I:0/3 BND XIC I:0/1');
+  }));
+
+  await load('plcmotor');
+  await page.evaluate(() => App.setLayout('bench'));
+  await wait(400);
+  check('Workbench: every ladder toolbar button is visible inside its pane', await page.evaluate(() => {
+    const pane = document.getElementById('view-ladder').getBoundingClientRect();
+    const btns = [...document.querySelectorAll('#view-ladder .lad-toolbar button')].filter(b => b.offsetParent);
+    return btns.length > 30 && btns.every(b => { const r = b.getBoundingClientRect(); return r.right <= pane.right + 1 && r.left >= pane.left - 1 && r.width > 0; });
+  }));
+  check('Workbench: the wiring zoom is visible', await page.evaluate(() => {
+    const pane = document.getElementById('view-wiring').getBoundingClientRect(), z = document.querySelector('#view-wiring [data-z]').getBoundingClientRect();
+    return z.right <= pane.right + 1 && z.width > 0;
+  }));
+  await page.evaluate(() => App.setLayout('single'));
+
+  releases = [{ tag_name: 'v99.0.0', prerelease: false, draft: false, html_url: 'https://github.com/x/r', body: '> note', assets: [] }];
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); return Updater.check(true); });
+  check('the update bar sits under the status bar and covers nothing', await page.evaluate(() => {
+    const bar = document.querySelector('.update-bar'), pb = document.querySelector('.plcbar').getBoundingClientRect(), r = bar.getBoundingClientRect();
+    return bar.nextElementSibling.id === 'main' && r.top >= pb.bottom - 1;
+  }));
+  await page.click('.update-bar [data-u="later"]');
+  releases = [];
+  check('a failed update check is not retried at once', await page.evaluate(async () => {
+    const f = window.fetch; window.fetch = () => Promise.reject(new Error('down'));
+    const a = await Updater.check(true); let calls = 0; window.fetch = () => { calls++; return f.apply(window, arguments); };
+    await Updater.check(false); window.fetch = f;
+    return a.status === 'error' && calls === 0;
+  }));
+
+  await setMode('RUN');
+  await page.evaluate(() => { App.showView('wiring'); });
+  await wait(200);
+  const s1c = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id);
+  await page.click(`.comp[data-cid="${s1c}"] .frame`, { position: { x: 4, y: 4 }, force: true });
+  await page.focus('.ws-props input[data-pk="label"]');
+  await page.keyboard.press('Control+s');
+  await wait(150);
+  check('Ctrl+S saves even while typing in a field', (await page.textContent('#toast-root')).includes('Saved “PLC motor control”'));
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('Control+Shift+S');
+  await page.fill('#f_n', 'Running copy');
+  await page.click('.modal .btn.primary');
+  await wait(200);
+  check('Save as keeps the PLC running and the plant as it is', await page.evaluate(() => App.plc.mode === 'RUN' && App.project.name === 'Running copy' && Store.list().some(p => p.name === 'Running copy')));
+  await page.evaluate(() => { const p = App.project.circuit.comps.find(c => c.props.label === 'S1'); p.props.label = '=HYPERLINK("x")'; App.operate(p, 'btn')(); });
+  await page.click('[data-events]');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-evx]')]);
+  const csv = fs.readFileSync(await dl2.path(), 'utf8');
+  check('CSV export neutralises formulas', csv.includes('"\'=HYPERLINK') && !/(^|,)"=/m.test(csv));
+  await page.keyboard.press('Escape');
+  await page.click('[data-file]');
+  await page.click('.ctx-menu button:has-text("Reset PLC data table")');
+  check('Reset data table asks first', (await page.textContent('.modal-head h3')) === 'Reset PLC data table');
+  await page.keyboard.press('Escape');
+
+  check('math sets S:0 flags and S:5/0 on overflow', await page.evaluate(() => {
+    const run = t => { const e = new PLCcore.Engine(); e.setProgram([Ladder.newRung(Ladder.parseRung(t))]); e.setMode('RUN'); e.scan(0.02); return e; };
+    const add = run('ADD 32767 1 N7:0'), zero = run('SUB 5 5 N7:0'), neg = run('MOV -5 N7:0'), div = run('DIV 7 0 N7:0'), ok = run('ADD 2 3 N7:0');
+    return add.read('S:0/1') === 1 && add.read('S:5/0') === 1 && add.read('N7:0') === 32767 &&
+      zero.read('S:0/2') === 1 && neg.read('S:0/3') === 1 && div.read('S:0/1') === 1 && div.read('N7:0') === 32767 &&
+      ok.read('S:0/1') === 0 && ok.read('S:5/0') === 0 && ok.read('N7:0') === 5;
+  }));
+
+  const mk = async build => page.evaluate(build);
+  await mk(() => {
+    const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };
+    const q = add('supply1', { label: 'Q0' }), plc = add('plc', { label: 'PLC' });
+    w(q, 'L', plc, 'L1'); w(q, 'N', plc, 'N'); w(q, 'L', plc, 'I0'); w(q, 'N', plc, 'COM');
+    App.openNew({ name: 'Mains on input', circuit: circ });
+  });
+  await wait(300);
+  check('230 VAC on a 24 VDC PLC input destroys that input and raises an alarm', await page.evaluate(() => {
+    const c = App.project.circuit.comps.find(x => x.type === 'plc');
+    return (c.state.badIn & 1) === 1 && (App.plc.physIn & 1) === 0 && App.events().some(e => e.kind === 'alarm' && e.msg.includes('I:0/0 destroyed'));
+  }));
+  await mk(() => {
+    const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };
+    const q = add('supply1', { label: 'Q0' }), up = add('mcb1', { label: 'QF1' }, { on: true }), down = add('mcb1', { label: 'QF2' }, { on: true }), lamp = add('lamp', { label: 'H1', coil: '230VAC' });
+    w(q, 'L', up, '1'); w(up, '2', down, '1'); w(up, '2', lamp, 'X1'); w(lamp, 'X2', q, 'N'); w(down, '2', q, 'N');
+    App.openNew({ name: 'Selectivity', circuit: circ });
+  });
+  await wait(300);
+  check('a short trips the breaker nearest the fault, the upstream one stays on', (await get('QF2', 'state.tripped')) && !(await get('QF1', 'state.tripped')) && (await get('H1', 'state.on')));
+  await mk(() => {
+    const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };
+    const q = add('supply1', { label: 'Q0' }), g = add('psu24', { label: 'G1' }), k = add('relay', { label: 'K1', coil: '24VDC' });
+    w(q, 'L', g, 'L'); w(q, 'N', g, 'N'); w(g, 'P1', k, '11'); w(k, '12', k, 'A1'); w(k, 'A2', g, 'M1');
+    App.openNew({ name: 'Buzzer', circuit: circ });
+  });
+  await wait(500);
+  check('a circuit that never settles raises a warning', await page.evaluate(() => App.events().some(e => e.msg.includes('does not settle'))));
+
+  await page.evaluate(() => App.showView('hmi'));
+  check('HMI modes are named Operate / Design (not Run)', (await page.textContent('.hmi-toolbar .seg')).includes('Operate') && !(await page.textContent('.hmi-toolbar .seg')).includes('Run'));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
@@ -460,6 +590,9 @@ function check(name, cond, info = '') {
   await phone.touchscreen.tap(hp.x + hp.width / 2, hp.y + hp.height / 2);
   await phone.waitForTimeout(500);
   check('tapping an HMI button on a phone starts the motor', await phone.evaluate(() => App.plc.read('O:0/0') === 1));
+  await phone.evaluate(() => App.showView('ladder'));
+  await phone.waitForTimeout(300);
+  check('phone toolbars show a fade where more buttons are hidden', await phone.evaluate(() => document.querySelector('.lad-toolbar').classList.contains('more-r')));
   check('no page errors on phone', perr.length === 0, perr.join(' | '));
 
   console.log('Installable app (PWA)');

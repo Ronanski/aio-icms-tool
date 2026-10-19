@@ -19,6 +19,12 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // the app never navigates away from its own files: other links open in the normal browser
+  win.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith('file:')) return;
+    e.preventDefault();
+    if (/^https?:/.test(url)) shell.openExternal(url);
+  });
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
 }
 

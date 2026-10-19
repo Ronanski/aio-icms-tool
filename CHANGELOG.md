@@ -5,6 +5,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- **Ladder drag**: releasing the mouse outside the rungs (or a fast flick) no longer leaves the drag active, which made the next click move an instruction. A drop that changes nothing keeps undo/redo. Dropping on a branch rail places the instruction next to the branch.
+- **Workbench layout**: the ladder and wiring toolbars wrap inside their panes, so every instruction button, Verify and the zoom controls are visible.
+- **Update bar** sits under the status bar instead of covering PROG/RUN and the I/O strip.
+- **Web update**: the service worker skips the browser cache, so *Reload to update* loads the new files at once.
+- **Save as** keeps the PLC running and the plant as it is, and tells you if the copy could not be stored.
+- **Ctrl+S / Ctrl+Shift+S / Ctrl+O** work while typing in a field and never open the browser's own dialogs.
+- **Event log CSV**: labels starting with `=`, `+`, `-` or `@` cannot run as spreadsheet formulas.
+- **Dark mode**: Operator Panel labels, Verify, the active lesson and the inactive HMI alarm text are readable.
+- A failed update check (offline server, rate limit) is not retried on every start.
+- Windows app: links never replace the app window; they open in the browser.
+
+### Added
+- **Math status flags**: ADD, SUB, MUL, DIV, MOV and CLR set `S:0/0` carry, `S:0/1` overflow, `S:0/2` zero and `S:0/3` sign; an overflow or divide by zero also sets `S:5/0`. The S file now has 16 words.
+- **PLC input protection**: 230/400 VAC on a 24 VDC input destroys that input (red LED, alarm, status). Right-click → Repair fixes it.
+- **Breaker selectivity**: of two breakers of the same kind that can clear a short, the one nearest the fault trips and the upstream one stays on.
+- **Oscillation warning** when a circuit never settles (e.g. a relay coil fed through its own N.C. contact).
+- Phones: toolbars and the status bar show a fade where more buttons are hidden.
+
+### Changed
+- HMI modes are now **☝ Operate / ✎ Design**, so they are not confused with the PLC's RUN/PROG.
+- File → Reset PLC data table asks first. Menu shortcuts are right-aligned and hidden on touch screens.
+- Release workflow: a published release fails instead of shipping a debug-signed APK; a pushed tag must match `package.json`; stable releases come from `main` only and need their own CHANGELOG section.
+
 ## [1.2.0] - 2026-10-18
 
 ### Added

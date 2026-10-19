@@ -49,7 +49,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 
 **Workbench layout**: **▦ Layout** shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
 
-**HMI**: an 800×480 operator terminal screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has Edit and Run modes, zoom (🔍−, Fit, 🔍＋ or Ctrl + scroll) and binds to PLC tags. Momentary buttons stay on for at least two PLC scans, so a quick tap always registers.
+**HMI**: an 800×480 operator terminal screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has ☝ Operate and ✎ Design modes, zoom (🔍−, Fit, 🔍＋ or Ctrl + scroll) and binds to PLC tags. Momentary buttons stay on for at least two PLC scans, so a quick tap always registers.
 
 **Updates**: when online, the app tells you about a new version (File → **Updates…**: Stable or Beta channel) and downloads the installer for your device. Offline it works as usual.
 
@@ -90,7 +90,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 107 end-to-end checks (desktop, layouts, phone touch, offline)
+npm test                                 # 125 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

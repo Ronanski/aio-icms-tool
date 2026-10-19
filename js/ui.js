@@ -97,6 +97,7 @@
       if (it.head) { const h = document.createElement('div'); h.className = 'ctx-head'; h.textContent = it.head; m.appendChild(h); return; }
       const b = document.createElement('button');
       b.textContent = it.label;
+      if (it.kbd) { const k = document.createElement('kbd'); k.textContent = it.kbd; b.appendChild(k); }
       if (it.disabled) b.disabled = true;
       if (it.danger) b.className = 'danger';
       b.onclick = () => { UI.closeMenu(); if (it.onClick) it.onClick(); };
@@ -156,6 +157,18 @@
       setTimeout(() => document.addEventListener('pointerdown', away, true), 0);
     });
     return { close };
+  };
+
+  /* a row that scrolls sideways gets .more-l / .more-r while buttons are hidden on that side (CSS fades the edge) */
+  UI.scrollCue = function (el) {
+    const upd = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      el.classList.toggle('more-l', max > 2 && el.scrollLeft > 2);
+      el.classList.toggle('more-r', max > 2 && el.scrollLeft < max - 2);
+    };
+    el.addEventListener('scroll', upd, { passive: true });
+    new ResizeObserver(upd).observe(el);
+    upd();
   };
 
   UI.isTyping = () => {

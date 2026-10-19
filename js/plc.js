@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  const SIZES = { I: 2, O: 2, S: 4, B3: 32, N7: 32, T4: 32, C5: 32 };
+  const SIZES = { I: 2, O: 2, S: 16, B3: 32, N7: 32, T4: 32, C5: 32 };
   const TBITS = ['EN', 'TT', 'DN'], TWORDS = ['PRE', 'ACC'];
   const CBITS = ['CU', 'CD', 'DN', 'OV', 'UN'], CWORDS = ['PRE', 'ACC'];
   const NUM_IN = 12, NUM_OUT = 8;
@@ -305,18 +305,32 @@
           const c = lo <= hi ? (t >= lo && t <= hi) : (t >= lo || t <= hi);
           hl[e.id] = p && c; return p && c;
         }
-        case 'MOV': if (p) this.setWord(A[1], this.getWord(A[0])); hl[e.id] = p; return p;
+        case 'MOV': if (p) { const v = this.getWord(A[0]); this.setWord(A[1], v); this.mathFlags(v, false); } hl[e.id] = p; return p;
         case 'ADD': case 'SUB': case 'MUL': case 'DIV': {
           if (p) {
             const a = this.getWord(A[0]), b = this.getWord(A[1]);
-            let r = e.t === 'ADD' ? a + b : e.t === 'SUB' ? a - b : e.t === 'MUL' ? a * b : (b === 0 ? 32767 : Math.round(a / b));
-            this.setWord(A[2], r);
+            const u = x => x & 0xFFFF;
+            let r, carry = false;
+            if (e.t === 'ADD') { r = a + b; carry = u(a) + u(b) > 0xFFFF; }
+            else if (e.t === 'SUB') { r = a - b; carry = u(a) < u(b); }
+            else if (e.t === 'MUL') r = a * b;
+            else r = b === 0 ? Infinity : Math.round(a / b);   // divide by zero: overflow, result 32767
+            this.setWord(A[2], Number.isFinite(r) ? r : 32767);
+            this.mathFlags(r, carry);
           }
           hl[e.id] = p; return p;
         }
-        case 'CLR': if (p) this.setWord(A[0], 0); hl[e.id] = p; return p;
+        case 'CLR': if (p) { this.setWord(A[0], 0); this.mathFlags(0, false); } hl[e.id] = p; return p;
       }
       return p;
+    }
+
+    /* arithmetic status S:0/0 carry, /1 overflow, /2 zero, /3 sign; an overflow also sets the minor fault bit S:5/0
+       (the program clears it; this trainer does not stop the PLC on it) */
+    mathFlags(r, carry) {
+      const d = this.data, over = !Number.isFinite(r) || r > 32767 || r < -32768, v = over ? (r < 0 ? -32768 : 32767) : r;
+      d.S[0] = asI16((d.S[0] & ~0xF) | (carry ? 1 : 0) | (over ? 2 : 0) | (v === 0 ? 4 : 0) | (v < 0 ? 8 : 0));
+      if (over) d.S[5] = asI16(d.S[5] | 1);
     }
 
     timer(t, a, p) {

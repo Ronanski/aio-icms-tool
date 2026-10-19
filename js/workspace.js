@@ -334,7 +334,7 @@
         { head: `${c.props.label} · ${d.name}` },
         { label: 'Duplicate', onClick: () => duplicate(c) },
         ...Object.entries(d.variant ? d.variant.of : {}).filter(([, t]) => t !== c.type).map(([k, t]) => ({ label: `Change contact to ${k}`, onClick: () => retype(c, t) })),
-        { label: 'Repair / replace device', onClick: () => { Circuit.repair(c); App.save(); }, disabled: !c.state.burnt && !(c.state.tripped && !d.breaker) },
+        { label: 'Repair / replace device', onClick: () => { Circuit.repair(c); App.save(); }, disabled: !c.state.burnt && !c.state.badIn && !(c.state.tripped && !d.breaker) },
         { label: 'Remove all wires on this device', onClick: () => { circ().wires = circ().wires.filter(w => !w.a.startsWith(c.id + ':') && !w.b.startsWith(c.id + ':')); App.circuitChanged(); } },
         { label: 'Delete', danger: true, onClick: () => delSel() },
       ]);
@@ -509,7 +509,7 @@
         <div class="props">${vr}${fields.map(f => `<label class="field"><span>${esc(f.n)}</span>${f.opts ? `<select data-pk="${f.k}">${f.opts.map(o => `<option ${String(c.props[f.k]) === o ? 'selected' : ''}>${o}</option>`).join('')}</select>` : `<input data-pk="${f.k}" type="${f.type || 'text'}" value="${esc(c.props[f.k] ?? '')}">`}</label>`).join('')}
         <div class="status-box"><small>Status</small><div data-status>${esc(Circuit.status(c, App.ctx))}</div></div>
         <p class="help">${esc(d.info || '')}</p>
-        <div class="btn-row"><button class="btn" data-dup>Duplicate</button><button class="btn" data-rep ${c.state.burnt ? '' : 'disabled'}>Repair</button><button class="btn danger" data-del>Delete</button></div></div>`;
+        <div class="btn-row"><button class="btn" data-dup>Duplicate</button><button class="btn" data-rep ${c.state.burnt || c.state.badIn ? '' : 'disabled'}>Repair</button><button class="btn danger" data-del>Delete</button></div></div>`;
       propsEl.querySelectorAll('[data-pk]').forEach(i => i.addEventListener('change', () => {
         const k = i.dataset.pk;
         c.props[k] = i.type === 'number' ? Number(i.value) : i.value;
