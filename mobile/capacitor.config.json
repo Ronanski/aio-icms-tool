@@ -4,5 +4,11 @@
   "webDir": "www",
   "android": {
     "backgroundColor": "#F3F0E8"
+  },
+  "server": {
+    "androidScheme": "https",
+    "allowNavigation": [
+      "ronanski.github.io"
+    ]
   }
 }

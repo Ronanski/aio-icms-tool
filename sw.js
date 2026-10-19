@@ -1,6 +1,10 @@
-/* Service worker: caches the app shell so the trainer works offline once installed.
-   Bump CACHE with every release so returning users get the new files. */
-const CACHE = 'plc-trainer-v1.4.0';
+/* Service worker: caches the app so the trainer works offline once it has been opened.
+   The Stable copy (site root) and the Beta copy (/beta/) each have their own worker and cache.
+   VER is the app version; hosted builds get a build id added (scripts/copy-web.sh), so every new build caches its files. */
+const VER = 'v1.4.0';
+const SCOPE = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
+const CH = /\/beta\/$/.test(SCOPE) ? 'beta' : 'stable';
+const CACHE = `plc-trainer-${CH}-${VER}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/ui.js', 'js/store.js', 'js/plc.js', 'js/ladder.js', 'js/circuit.js', 'js/workspace.js',
@@ -14,8 +18,10 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
+  // drop older caches of this channel only (and the caches of versions before the channels existed)
+  const mine = k => k.startsWith(`plc-trainer-${CH}-`) || (CH === 'stable' && /^plc-trainer-v/.test(k));
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k.startsWith('plc-trainer-') && k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => mine(k) && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
@@ -33,6 +39,10 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (url.origin !== location.origin) return;
+  // the Stable worker leaves the Beta copy to its own worker
+  if (CH === 'stable' && url.pathname.startsWith(SCOPE + 'beta/')) return;
+  // version.json is always asked fresh by the updater
+  if (url.pathname.endsWith('/version.json')) return;
   // app files: network first so updates arrive, cache when offline
   // no-cache: revalidate with the server instead of using the browser HTTP cache (a navigation request takes no options, so use its URL)
   const net = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache' }) : fetch(req, { cache: 'no-cache' });

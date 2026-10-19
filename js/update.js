@@ -1,13 +1,14 @@
-/* In-app updates: when online, look at the GitHub Releases of this app and tell the user about a newer version.
-   Stable channel: normal releases only. Beta channel: pre-releases (tags like v1.3.0-beta.1) too.
-   Offline nothing happens and the app keeps working. Downloads open the installer for this platform. */
+/* In-app updates. The app is hosted on GitHub Pages: the Stable channel at the site root (the latest official
+   release), the Beta channel under /beta/ (every change merged into main). The Windows and Android apps open the
+   hosted app, so an update is only new web files: the app checks version.json of its channel when online and a
+   restart loads the new version. Nothing is downloaded or installed, and no browser opens.
+   Offline nothing happens: the last version stays cached and keeps working. */
 (function () {
   'use strict';
   const esc = UI.esc;
-  const REPO = 'Ronanski/aio-icms-tool';
-  const API = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
-  const K = { ch: 'plc-trainer.channel', last: 'plc-trainer.updateChecked', skip: 'plc-trainer.updateSkip' };
-  const AUTO_EVERY = 6 * 3600e3, MIN_GAP = 3600e3;   // GitHub allows 60 unauthenticated requests an hour
+  const PAGES = 'https://ronanski.github.io/aio-icms-tool/';
+  const K = { ch: 'plc-trainer.channel', last: 'plc-trainer.updateChecked', skip: 'plc-trainer.updateSkip', seen: 'plc-trainer.lastBuild' };
+  const AUTO_EVERY = 3600e3, MIN_GAP = 10 * 60e3;
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
 
@@ -33,50 +34,36 @@
   }
 
   const platform = () => (/Electron\//.test(navigator.userAgent) ? 'windows' : window.Capacitor ? 'android' : 'web');
-  const isBeta = v => !!(parse(v) && parse(v).pre.length);
-  const channel = () => { const c = get(K.ch); return c === 'beta' || c === 'stable' ? c : isBeta(App.VERSION) ? 'beta' : 'stable'; };
-
-  /* newest release for the channel that is newer than this app, or null */
-  function pick(releases, ch, current) {
-    let best = null;
-    for (const r of Array.isArray(releases) ? releases : []) {
-      if (!r || r.draft || (r.prerelease && ch !== 'beta')) continue;
-      const v = parse(r.tag_name);
-      if (!v || (r.prerelease && !v.pre.length)) continue;
-      if (!best || compare(v, best.v) > 0) best = { v, r };
-    }
-    return best && compare(best.v, parse(current)) > 0 ? best.r : null;
-  }
-  const portable = () => /[?&]build=portable\b/.test(location.search);
-  function assetFor(r, plat) {
-    const re = plat === 'windows' ? (portable() ? /-portable\.exe$/i : /Setup-.*\.exe$/i) : plat === 'android' ? /-android\.apk$/i : null;
-    const a = re && (r.assets || []).find(x => re.test(x.name));
-    return a ? a.browser_download_url : null;
-  }
-  /* open a download or web page outside the app: Electron sends window.open to the browser,
-     the Android shell hands navigation to other sites to the system browser */
-  function openOut(url) {
-    if (!/^https:\/\//.test(url)) return;
-    if (platform() === 'android') location.href = url; else window.open(url, '_blank', 'noopener');
-  }
+  const onPages = () => location.href.startsWith(PAGES);
+  const inBeta = () => onPages() && location.pathname.includes('/beta/');
+  const channel = () => { const c = get(K.ch); return c === 'beta' || c === 'stable' ? c : inBeta() ? 'beta' : 'stable'; };
+  const channelUrl = ch => PAGES + (ch === 'beta' ? 'beta/' : '');
+  /* this copy is the one the channel serves: an update is a reload. Elsewhere (a built-in copy, a local file) the
+     update opens the hosted app of the channel inside the app */
+  const servedHere = ch => onPages() && inBeta() === (ch === 'beta');
 
   /* ---------- check ---------- */
-  const U = { state: { status: 'idle', at: Number(get(K.last)) || 0, release: null } };
+  const U = { state: { status: 'idle', at: Number(get(K.last)) || 0, info: null } };
   let busy = false;
   U.check = async function (manual) {
     if (busy) return U.state;
     if (!navigator.onLine) { U.state = { ...U.state, status: 'offline' }; return U.state; }
     if (!manual && Date.now() - U.state.at < MIN_GAP) return U.state;
     busy = true;
+    const ch = channel();
     try {
-      const res = await fetch(API, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
+      const res = await fetch(channelUrl(ch) + 'version.json', { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const rel = pick(await res.json(), channel(), App.VERSION);
-      U.state = { status: rel ? 'available' : 'current', at: Date.now(), release: rel };
+      const v = await res.json();
+      const info = v && typeof v === 'object' && typeof v.build === 'string' && typeof v.version === 'string' ? { version: v.version, build: v.build, notes: typeof v.notes === 'string' ? v.notes : '', channel: ch } : null;
+      if (!info) throw new Error('bad version.json');
+      // a different build, or a built-in copy (offline fallback) that should move to the hosted app; a dev copy never moves
+      const newer = info.build !== App.BUILD || (!servedHere(ch) && App.BUILD !== 'dev');
+      U.state = { status: newer ? 'available' : 'current', at: Date.now(), info: newer ? info : null };
       set(K.last, String(U.state.at));
-      if (rel && (manual || get(K.skip) !== rel.tag_name)) { showBar(rel); if (!manual) App.log('system', `Update available: ${rel.tag_name}${rel.prerelease ? ' (beta)' : ''}`); }
+      if (newer && (manual || get(K.skip) !== info.build)) { showBar(info); if (!manual) App.log('system', `Update available: v${info.version}${ch === 'beta' ? ' (beta)' : ''}`); }
     } catch (err) {
-      // count a failed try too, so a rate limit or outage is not retried on every start
+      // count a failed try too, so an outage is not retried on every start
       U.state = { ...U.state, status: 'error', at: Date.now() };
       set(K.last, String(U.state.at));
     } finally { busy = false; }
@@ -85,32 +72,30 @@
 
   /* ---------- UI ---------- */
   function hideBar() { const b = document.querySelector('.update-bar'); if (b) b.remove(); }
-  function showBar(r) {
+  function showBar(info) {
     hideBar();
-    const plat = platform(), url = assetFor(r, plat);
-    const label = plat === 'web' && !r.prerelease ? '⟳ Reload to update' : url ? '⤓ Download update' : 'Open release page';
+    const beta = info.channel === 'beta';
     const bar = document.createElement('div');
     bar.className = 'update-bar';
-    bar.innerHTML = `<span>⬆ <b>PLC Trainer ${esc(r.tag_name)}</b> is available${r.prerelease ? ' <span class="beta-tag">BETA</span>' : ''}. You have v${esc(App.VERSION)}.</span>
-      <button class="btn" data-u="notes">What's new</button><button class="btn primary" data-u="go">${label}</button><button class="btn ghost" data-u="later" title="Hide until the next version">Later</button>`;
+    bar.innerHTML = `<span>⬆ <b>PLC Trainer v${esc(info.version)}</b>${beta ? ' <span class="beta-tag">BETA</span>' : ''} is ready. You have v${esc(App.VERSION)}.</span>
+      <button class="btn" data-u="notes">What's new</button><button class="btn primary" data-u="go">⟳ Restart to update</button><button class="btn ghost" data-u="later" title="Hide until the next version">Later</button>`;
     bar.onclick = e => {
       const b = e.target.closest('[data-u]'); if (!b) return;
-      if (b.dataset.u === 'later') { set(K.skip, r.tag_name); hideBar(); }
-      if (b.dataset.u === 'notes') notes(r);
-      if (b.dataset.u === 'go') install(r);
+      if (b.dataset.u === 'later') { set(K.skip, info.build); hideBar(); }
+      if (b.dataset.u === 'notes') notes(info);
+      if (b.dataset.u === 'go') apply(info);
     };
     // in the page flow under the status bar, so it never covers PROG/RUN or the I/O strip
     document.body.insertBefore(bar, document.getElementById('main'));
   }
-  function install(r) {
-    const plat = platform(), url = assetFor(r, plat);
-    App.log('system', `Update ${r.tag_name} started (${plat})`);
+  /* the new files are loaded network-first, so a reload is the whole update; projects are saved first */
+  function apply(info) {
+    App.log('system', `Updating to v${info.version}${info.channel === 'beta' ? ' (beta)' : ''}`);
     App.flushSave();
-    // the web app updates itself: index.html and scripts are fetched network-first, so a reload loads the new files
-    if (plat === 'web' && !r.prerelease) { location.reload(); return; }
-    openOut(url || r.html_url);
-    if (url) UI.toast(plat === 'android' ? 'Downloading the update. Open the .apk when it finishes and tap Install.' : portable() ? 'Downloading the new portable app. Use it instead of the old .exe; your projects are kept.' : 'Downloading the installer. Run it to update; your projects are kept.', 'ok', 6000);
+    if (servedHere(info.channel)) location.reload();
+    else location.href = channelUrl(info.channel);
   }
+  U.apply = apply;
   /* release notes as plain text with simple headings and bullets (never raw HTML) */
   function md(t) {
     return String(t || '').split(/\r?\n/).map(l => {
@@ -121,27 +106,27 @@
       return s.trim() ? `<p>${s}</p>` : '';
     }).join('');
   }
-  function notes(r) {
-    UI.modal({ title: `What's new in ${r.tag_name}${r.prerelease ? ' (beta)' : ''}`, wide: true, body: `<div class="rel-notes">${md(r.body) || '<p class="help">No release notes.</p>'}</div>`,
-      buttons: [{ label: 'Close' }, { label: 'Update', primary: true, onClick: () => install(r) }] });
+  function notes(info) {
+    UI.modal({ title: `What's new in v${info.version}${info.channel === 'beta' ? ' (beta)' : ''}`, wide: true, body: `<div class="rel-notes">${md(info.notes) || '<p class="help">No release notes.</p>'}</div>`,
+      buttons: [{ label: 'Close' }, { label: 'Restart to update', primary: true, onClick: () => apply(info) }] });
   }
   /* File → Updates…: channel, last check, check now */
   U.dialog = function () {
     const m = UI.modal({
       title: 'Updates',
-      body: `<p>This app: <b>v${esc(App.VERSION)}</b> · ${({ windows: 'Windows app', android: 'Android app', web: 'web app' })[platform()]}</p>
+      body: `<p>This app: <b>v${esc(App.VERSION)}</b>${App.BUILD && App.BUILD !== 'dev' ? ` <small>(${esc(App.BUILD)})</small>` : ''} · ${({ windows: 'Windows app', android: 'Android app', web: 'web app' })[platform()]}</p>
         <div class="field"><span>Update channel</span>
-          <label class="radio"><input type="radio" name="uch" value="stable"> <b>Stable</b> — tested releases</label>
-          <label class="radio"><input type="radio" name="uch" value="beta"> <b>Beta</b> — early versions with new features; may have bugs</label></div>
+          <label class="radio"><input type="radio" name="uch" value="stable"> <b>Stable</b> — official releases</label>
+          <label class="radio"><input type="radio" name="uch" value="beta"> <b>Beta</b> — every new change as soon as it is merged; may have bugs</label></div>
         <p class="help" data-ust></p>
-        <p class="help">The app looks for updates when it starts (at most once an hour) while you are online. Offline it works as usual.</p>`,
+        <p class="help">Updates install inside the app: when a new version is ready, <b>Restart to update</b> loads it. Nothing is downloaded and your projects stay. Offline the app keeps working with the version it has.</p>`,
       buttons: [{ label: 'Close' }, { label: 'Check now', primary: true, onClick: () => { run(); return false; } }],
     });
     const st = m.el.querySelector('[data-ust]');
     const show = () => {
       const s = U.state, when = s.at ? new Date(s.at).toLocaleString() : 'never';
       st.textContent = s.status === 'checking' ? 'Checking…' : s.status === 'offline' ? 'You are offline. Connect to the internet to check.' :
-        s.status === 'error' ? 'Could not reach GitHub. Try again later.' : s.status === 'available' ? `Update available: ${s.release.tag_name}. Last checked ${when}.` :
+        s.status === 'error' ? 'Could not reach the update server. Try again later.' : s.status === 'available' ? `Update ready: v${s.info.version}. Last checked ${when}.` :
         s.status === 'current' ? `You have the latest ${channel()} version. Last checked ${when}.` : `Last checked: ${when}.`;
     };
     const run = async () => { U.state = { ...U.state, status: 'checking' }; show(); await U.check(true); show(); };
@@ -154,12 +139,17 @@
   U.channel = channel;
 
   U.init = function () {
+    // after a restart into a new version, say so once
+    const prev = get(K.seen);
+    if (App.BUILD && App.BUILD !== 'dev') {
+      if (prev && prev !== App.BUILD) { UI.toast(`Updated to v${App.VERSION}${inBeta() ? ' (beta)' : ''}`, 'ok', 4000); App.log('system', `Updated to v${App.VERSION} (${App.BUILD})`); }
+      set(K.seen, App.BUILD);
+    }
     setTimeout(() => U.check(false), 3000);
     setInterval(() => U.check(false), AUTO_EVERY);
     window.addEventListener('online', () => U.check(false));
   };
   U.compare = compare;
-  U.pick = pick;
-  U.assetFor = r => assetFor(r, platform());
+  U.PAGES = PAGES;
   window.Updater = U;
 })();

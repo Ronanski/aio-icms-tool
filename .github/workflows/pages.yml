@@ -1,8 +1,12 @@
+# GitHub Pages hosts the app the Windows and Android apps open, and the web app:
+#   site root  = Stable: the latest official release (its tag)
+#   /beta/     = Beta: main, rebuilt on every merge
+# Each copy has a version.json that the in-app updater reads.
 name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-  workflow_dispatch:
+  workflow_dispatch:   # also started by the Release workflow after a stable release
 permissions:
   contents: read
   pages: write
@@ -18,9 +22,23 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Collect the site files
+        with:
+          fetch-depth: 0
+      - name: Stable copy (latest release) at the site root
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          bash scripts/copy-web.sh _site
+          tag="$(gh release view --json tagName -q .tagName 2>/dev/null || true)"
+          if [ -z "$tag" ]; then echo "::warning::No release yet: the site root gets main"; bash scripts/copy-web.sh _site "main.$(git rev-parse --short HEAD)"; exit 0; fi
+          git worktree add -f "$RUNNER_TEMP/stable" "$tag"
+          awk -v v="${tag#v}" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' "$RUNNER_TEMP/stable/CHANGELOG.md" > "$RUNNER_TEMP/stable-notes.md"
+          SRC="$RUNNER_TEMP/stable" bash scripts/copy-web.sh _site "$tag" "$RUNNER_TEMP/stable-notes.md"
+          echo "Stable: $tag"
+      - name: Beta copy (main) under /beta/
+        run: |
+          awk '/^## \[Unreleased\]/ {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > "$RUNNER_TEMP/beta-notes.md"
+          bash scripts/copy-web.sh _site/beta "beta.$(git rev-parse --short HEAD)" "$RUNNER_TEMP/beta-notes.md"
+          cat _site/beta/version.json | head -3
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -4,6 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>PLC Trainer</title>
+  <script>
+    /* Runs before the app. On the hosted app (GitHub Pages): take projects handed over by the app's built-in copy,
+       and open the copy of the chosen update channel (Stable at the root, Beta under /beta/).
+       In the Windows/Android app's built-in copy: move to the hosted app, which updates itself, bringing this
+       device's projects along the first few times. ?local=1 keeps the built-in copy (offline first start, tests). */
+    (function () {
+      var PAGES = 'https://ronanski.github.io/aio-icms-tool/', ls;
+      try { ls = window.localStorage; ls.length; } catch (e) { return; }
+      var ch = ls.getItem('plc-trainer.channel');
+      if (location.href.indexOf(PAGES) === 0) {
+        var m = /^#import=(.+)$/.exec(location.hash);
+        if (m) {
+          try {
+            var d = JSON.parse(decodeURIComponent(m[1]));
+            // only keys this app owns, only text, and never over something already here
+            for (var k in d) if (/^plc-trainer\./.test(k) && typeof d[k] === 'string' && ls.getItem(k) === null) ls.setItem(k, d[k]);
+          } catch (e) { /* a broken hand-over is ignored */ }
+          history.replaceState(null, '', location.pathname + location.search);
+          ch = ls.getItem('plc-trainer.channel');
+        }
+        var beta = location.pathname.indexOf('/beta/') >= 0;
+        if (ch === 'beta' && !beta) { location.replace(PAGES + 'beta/'); return; }
+        if (ch === 'stable' && beta) { location.replace(PAGES); return; }
+        if (!ch && beta) ls.setItem('plc-trainer.channel', 'beta');
+        return;
+      }
+      var shell = /Electron\//.test(navigator.userAgent) || (location.protocol === 'https:' && location.hostname === 'localhost');
+      if (!shell || /[?&]local=1\b/.test(location.search)) return;
+      var n = Number(ls.getItem('plc-trainer.handover')) || 0;
+      if (!n && !navigator.onLine) return;   // first start offline: use the built-in copy
+      var data = '';
+      if (n < 3) {
+        var o = {};
+        for (var i = 0; i < ls.length; i++) { var key = ls.key(i); if (/^plc-trainer\./.test(key) && key !== 'plc-trainer.handover') o[key] = ls.getItem(key); }
+        data = '#import=' + encodeURIComponent(JSON.stringify(o));
+      }
+      ls.setItem('plc-trainer.handover', String(n + 1));
+      location.replace(PAGES + (ch === 'beta' ? 'beta/' : '') + data);
+    })();
+  </script>
   <meta name="description" content="PLC trainer: ladder logic editor, power & control circuit wiring simulator, HMI, forcing and live equipment.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -64,6 +64,8 @@ jobs:
       - run: npm pkg set version=${{ needs.version.outputs.version }}
       - run: npm install
       - run: npm run dist:win
+        env:
+          BUILD_ID: v${{ needs.version.outputs.version }}
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -77,6 +79,7 @@ jobs:
         working-directory: mobile
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      BUILD_ID: v${{ needs.version.outputs.version }}
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -129,6 +132,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # only this job creates the tag and the release
+      actions: write    # and starts the Pages deploy, so the Stable copy of the hosted app moves to this release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -146,13 +150,15 @@ jobs:
               *) echo "::error::CHANGELOG.md has no section for [$v]"; exit 1 ;;
             esac
           fi
-          case "$v" in *-*) printf '> **Beta (pre-release).** For testing. Apps on the Beta update channel are offered this version.\n\n' | cat - notes.md > n && mv n notes.md;; esac
+          case "$v" in *-*) printf '> **Beta (pre-release).** A snapshot for testing. Apps on the Beta update channel already get every change in-app.\n\n' | cat - notes.md > n && mv n notes.md;; esac
           {
             echo ""
             echo "## Downloads"
-            echo "- **Windows**: \`PLC-Trainer-Setup-$v.exe\` (installer) or \`PLC-Trainer-$v-portable.exe\` (no install)"
+            echo "- **Windows**: \`PLC-Trainer-$v-portable.exe\` (no install: run it from any folder)"
             echo "- **Android**: \`PLC-Trainer-$v-android.apk\` (allow installing from this source when asked)"
             echo "- **Web / any device**: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ (installable as an app)"
+            echo ""
+            echo "Already have PLC Trainer 1.4.1 or newer? It updates itself inside the app: no download needed."
           } >> notes.md
           cat notes.md
       - uses: softprops/action-gh-release@v2
@@ -164,3 +170,8 @@ jobs:
           files: dist/*
           prerelease: ${{ contains(needs.version.outputs.version, '-') }}
           make_latest: ${{ !contains(needs.version.outputs.version, '-') }}
+      - name: Update the hosted Stable app
+        if: ${{ !contains(needs.version.outputs.version, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main --repo ${{ github.repository }}

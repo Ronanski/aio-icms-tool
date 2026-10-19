@@ -4,7 +4,7 @@
   "description": "PLC Trainer for Android",
   "private": true,
   "scripts": {
-    "prepare-app": "bash ../scripts/copy-web.sh www",
+    "prepare-app": "bash ../scripts/copy-web.sh www ${BUILD_ID:-}",
     "android": "npm run prepare-app && npx cap add android && npx capacitor-assets generate --android --iconBackgroundColor '#D97757' --iconBackgroundColorDark '#D97757' --splashBackgroundColor '#F3F0E8' --splashBackgroundColorDark '#1E1D1A' && npx cap sync android"
   },
   "dependencies": {

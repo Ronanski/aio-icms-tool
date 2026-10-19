@@ -2,32 +2,30 @@
 
 One version of the app ships four ways. All four are built from the same files by `scripts/copy-web.sh`:
 
-| Channel | File | Built by |
+| Where | File | Built by |
 |---|---|---|
-| Web / PWA | https://ronanski.github.io/aio-icms-tool/ | `.github/workflows/pages.yml`, on every push to `main` |
-| Windows | `PLC-Trainer-Setup-X.Y.Z.exe` (installer), `PLC-Trainer-X.Y.Z-portable.exe` | `release.yml` → Electron, in `desktop/` |
+| Hosted app (web, and what the Windows/Android apps open) | https://ronanski.github.io/aio-icms-tool/ (Stable) and `/beta/` (Beta) | `.github/workflows/pages.yml` |
+| Windows | `PLC-Trainer-X.Y.Z-portable.exe` (portable only, no installer) | `release.yml` → Electron, in `desktop/` |
 | Android | `PLC-Trainer-X.Y.Z-android.apk` | `release.yml` → Capacitor, in `mobile/` |
 | Offline copy | `PLC-Trainer-X.Y.Z-web.zip` (open `index.html`) | `release.yml` |
 
-## Make a release
+## How updates reach the apps (in-app, no downloads)
+- **Stable** = the latest official release. `pages.yml` puts the code of the latest release tag at the site root.
+- **Beta** = every change merged into `main`. `pages.yml` runs on every push to `main` and puts `main` under `/beta/`.
+- Each copy gets a `version.json` (`{version, build, notes}`) and a build id stamped into `js/app.js` and `sw.js` by `scripts/copy-web.sh`.
+- The Windows and Android apps are thin shells. Their built-in copy moves to the hosted app (bringing the device's projects along the first few starts: `#import=`), and the hosted app is cached by its service worker, so it works offline.
+- The app checks `version.json` of its channel when online (at most every 10 minutes, every hour while open). When the build differs it shows **Restart to update**, and a restart loads the new files. Nothing is downloaded and no browser opens.
+- A new `.exe` or `.apk` is needed only when the shell itself changes (`desktop/main.js`, `mobile/`), not for app changes.
+
+## Make a stable release
 1. Follow the checklist in `CONTRIBUTING.md`: tests pass, CHANGELOG updated, version bumped, merged into `main`.
 2. On GitHub, open **Actions → Release → Run workflow**, pick `main` and keep **Publish** ticked.
-3. The workflow builds all files. It then creates the tag `vX.Y.Z` and a GitHub Release with the notes from `CHANGELOG.md`, and attaches the files.
+3. The workflow builds all files, creates the tag `vX.Y.Z` and a GitHub Release with the notes from `CHANGELOG.md`, and starts `pages.yml` so the Stable copy of the hosted app moves to this release.
 
-Every pull request also runs the build jobs without publishing, so a broken installer shows up before merging. The files of a PR build can be downloaded from the run's **Artifacts**.
+Every pull request also runs the build jobs without publishing, so a broken build shows up before merging. The files of a PR build can be downloaded from the run's **Artifacts**.
 
-## Beta releases
-1. Set a pre-release version everywhere the checklist says (`package.json`, `VERSION` in `js/app.js`, `CACHE` in `sw.js`), e.g. `1.3.0-beta.1`.
-2. Run **Actions → Release → Run workflow** on the branch to test (it does not have to be `main`).
-3. The workflow publishes `v1.3.0-beta.1` as a **pre-release**, with notes from `[Unreleased]` in `CHANGELOG.md`.
-4. Apps on the **Beta** update channel (File → Updates…) are offered it the next time they are online. Apps on **Stable** ignore it.
-
-For the next beta, raise the number (`-beta.2`). The final release drops the suffix (`1.3.0`), which every app sees.
-
-GitHub Pages always serves `main` (stable). Beta testers use the Windows or Android installer, or the web zip.
-
-## In-app updates
-The app reads `https://api.github.com/repos/Ronanski/aio-icms-tool/releases` when online. It compares the tags with its own `VERSION`, so **`VERSION` in `js/app.js` must match the release tag**. Downloads pick the release asset by name: `Setup-*.exe` for Windows and `*-android.apk` for Android. The Android update installs over the old app only if both are signed with the same key (see below).
+## Beta
+Merging into `main` is enough: the Beta copy updates within minutes. A pre-release (version with a suffix, e.g. `1.5.0-beta.1`, run **Release** on any branch) is only a downloadable snapshot.
 
 ## Android signing key (do this once)
 Without a key, the workflow builds a **debug-signed** APK. It installs fine, but each release is signed with a different key. Users then have to uninstall the old version before installing a new one, which also deletes their saved projects. To sign properly:

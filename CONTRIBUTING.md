@@ -35,11 +35,11 @@ The project follows [SemVer](https://semver.org/): `MAJOR.MINOR.PATCH`.
 Release checklist:
 1. Run `npm test`. All checks must pass.
 2. Move the `[Unreleased]` notes in `CHANGELOG.md` under the new version and date.
-3. Bump the version in `package.json`, `VERSION` in `js/app.js`, and `CACHE` in `sw.js` (so installed apps pick up the new files). The in-app update check compares release tags with `VERSION`, so they must match. A beta uses a suffix: `1.3.0-beta.1` (see `RELEASING.md`).
+3. Bump the version in `package.json` (and `desktop/`, `mobile/`), `VERSION` in `js/app.js`, and `VER` in `sw.js`. Leave `BUILD = 'dev'` in `js/app.js`: the Pages and release builds stamp it. A beta snapshot uses a suffix: `1.5.0-beta.1` (see `RELEASING.md`).
 4. Update `PROGRESS.md` and `HANDOFF.md`.
 5. Commit with `chore(release): vX.Y.Z`.
 6. Merge into `main`.
-7. Run **Actions → Release → Run workflow** on `main`. It creates the tag `vX.Y.Z` and the GitHub Release with the `.exe`, `.apk` and web zip attached. See `RELEASING.md`.
+7. Run **Actions → Release → Run workflow** on `main`. It creates the tag `vX.Y.Z` and the GitHub Release with the portable `.exe`, `.apk` and web zip attached, and moves the hosted Stable app to it. See `RELEASING.md`.
 
 ## 4. Code rules
 - **No build step and no runtime dependencies.** Plain HTML, CSS and JS. `index.html` must work when opened directly from disk.

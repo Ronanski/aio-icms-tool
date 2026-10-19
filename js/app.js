@@ -3,6 +3,8 @@
   'use strict';
   const esc = UI.esc;
   const VERSION = '1.4.0';
+  // build id: 'dev' in the repository; the Pages and release builds stamp it (scripts/copy-web.sh) so the updater can tell builds apart
+  const BUILD = 'dev';
   /* four workspaces; Learn opens from the Help menu */
   const VIEWS = ['ladder', 'schematic', 'wiring', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
@@ -710,6 +712,7 @@
     });
   }
   App.VERSION = VERSION;
+  App.BUILD = BUILD;
   function rename() {
     UI.form('Rename project', [{ key: 'n', label: 'Project name', value: App.project.name }], v => {
       App.project.name = v.n.trim() || 'Untitled';

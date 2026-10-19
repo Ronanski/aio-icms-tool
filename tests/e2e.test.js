@@ -16,7 +16,23 @@ function check(name, cond, info = '') {
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
   // the update check asks GitHub for releases: tests answer with a fixed list instead of the network
   let releases = [];
-  const mockGitHub = target => target.route('https://api.github.com/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(releases) }));
+  // the hosted app (GitHub Pages) is served from this repository, and its version.json files from pagesInfo
+  const NOUP = { version: '0.0.0', build: 'dev', notes: '' };   // the same build as the repository copy: no update
+  const pagesInfo = { stable: NOUP, beta: NOUP }, pagesReq = [];
+  const ROOT = path.resolve(__dirname, '..');
+  const TYPES = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png' };
+  const mockGitHub = async target => {
+    await target.route('https://api.github.com/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(releases) }));
+    await target.route('https://ronanski.github.io/aio-icms-tool/**', r => {
+      const u = new globalThis.URL(r.request().url());
+      let p = decodeURIComponent(u.pathname.replace('/aio-icms-tool/', ''));
+      const beta = p.startsWith('beta/'); if (beta) p = p.slice(5);
+      if (p === 'version.json') { pagesReq.push(u.pathname); const v = pagesInfo[beta ? 'beta' : 'stable']; return r.fulfill(v ? { status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(v) } : { status: 404, body: '' }); }
+      const f = path.resolve(ROOT, p || 'index.html');
+      if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return r.fulfill({ status: 404, body: '' });
+      return r.fulfill({ status: 200, contentType: TYPES[path.extname(f)] || 'application/octet-stream', body: fs.readFileSync(f) });
+    });
+  };
   const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
   await mockGitHub(page);
   const errors = [];
@@ -393,33 +409,26 @@ function check(name, cond, info = '') {
     const c = Updater.compare;
     return c('1.2.0', '1.1.0') > 0 && c('1.3.0-beta.1', '1.2.0') > 0 && c('1.3.0-beta.1', '1.3.0') < 0 && c('1.3.0-beta.2', '1.3.0-beta.10') < 0 && c('v1.2.0', '1.2.0') === 0;
   }));
-  const ver = await page.evaluate(() => App.VERSION);
-  const [maj, min] = ver.split('.').map(Number);
-  const stableTag = `v${maj}.${min + 1}.0`, betaTag = `v${maj}.${min + 2}.0-beta.1`;
-  const asset = n => ({ name: n, browser_download_url: 'https://github.com/x/' + n });
-  releases = [
-    { tag_name: betaTag, prerelease: true, draft: false, html_url: 'https://github.com/x/beta', body: '### Added\n- **Beta** thing <script>', assets: [asset('PLC-Trainer-Setup-b.exe'), asset('PLC-Trainer-b-android.apk')] },
-    { tag_name: stableTag, prerelease: false, draft: false, html_url: 'https://github.com/x/stable', body: '- Stable fix', assets: [asset('PLC-Trainer-Setup-s.exe')] },
-    { tag_name: 'v99.0.0', prerelease: false, draft: true, html_url: '', body: '', assets: [] },
-  ];
+  pagesInfo.stable = { version: '9.9.0', build: 'v9.9.0', notes: '### Added\n- **Stable** thing <script>' };
+  pagesInfo.beta = { version: '9.9.1', build: 'beta.abc1234', notes: '- beta' };
   await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); localStorage.removeItem('plc-trainer.updateSkip'); });
-  let st = await page.evaluate(() => Updater.check(true).then(s => s.release && s.release.tag_name));
-  check('stable channel finds the newest stable release (not beta, not draft)', st === stableTag, st);
-  check('an update bar shows the new version', (await page.textContent('.update-bar')).includes(stableTag));
+  let st = await page.evaluate(() => Updater.check(true).then(s => s.info && s.info.version));
+  check('stable channel reads the Stable copy (site root version.json)', st === '9.9.0' && pagesReq[pagesReq.length - 1] === '/aio-icms-tool/version.json', st + ' ' + pagesReq.join());
+  check('the update bar offers an in-app restart, not a download', (await page.textContent('.update-bar')).includes('v9.9.0') && (await page.textContent('.update-bar')).includes('Restart to update') && !/download/i.test(await page.textContent('.update-bar')));
   await page.click('.update-bar [data-u="notes"]');
   check('release notes show as text, never as HTML', await page.evaluate(() => !!document.querySelector('.rel-notes li') && !document.querySelector('.rel-notes script')));
   await page.keyboard.press('Escape');
   await page.evaluate(() => localStorage.setItem('plc-trainer.channel', 'beta'));
-  st = await page.evaluate(() => Updater.check(true).then(s => s.release && s.release.tag_name));
-  check('beta channel finds the newer beta release', st === betaTag, st);
+  st = await page.evaluate(() => Updater.check(true).then(s => s.info && s.info.build));
+  check('beta channel reads the Beta copy (/beta/version.json, every merge)', st === 'beta.abc1234' && pagesReq[pagesReq.length - 1] === '/aio-icms-tool/beta/version.json', st);
   check('the bar marks it as BETA', (await page.textContent('.update-bar')).includes('BETA'));
   await page.click('.update-bar [data-u="later"]');
   check('Later hides the bar', !(await page.$('.update-bar')));
   await page.evaluate(() => Updater.check(false).catch(() => null));
   check('a skipped version does not come back on automatic checks', !(await page.$('.update-bar')));
-  releases = [{ tag_name: 'v' + ver, prerelease: false, draft: false, html_url: '', body: '', assets: [] }];
+  pagesInfo.beta = { version: '1.0.0', build: 'dev', notes: '' };
   st = await page.evaluate(() => Updater.check(true).then(s => s.status));
-  check('no update when this is the newest version', st === 'current', st);
+  check('no update when this is the build the channel serves', st === 'current', st);
   await page.context().setOffline(true);
   st = await page.evaluate(() => Updater.check(true).then(s => s.status));
   check('offline: no check, no error, app keeps working', st === 'offline' && !!(await page.evaluate(() => App.project && document.querySelector('.rung'))), st);
@@ -471,14 +480,14 @@ function check(name, cond, info = '') {
   }));
   await page.evaluate(() => App.setLayout('single'));
 
-  releases = [{ tag_name: 'v99.0.0', prerelease: false, draft: false, html_url: 'https://github.com/x/r', body: '> note', assets: [] }];
+  pagesInfo.stable = { version: '99.0.0', build: 'v99.0.0', notes: '> note' };
   await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); return Updater.check(true); });
   check('the update bar sits under the status bar and covers nothing', await page.evaluate(() => {
     const bar = document.querySelector('.update-bar'), pb = document.querySelector('.plcbar').getBoundingClientRect(), r = bar.getBoundingClientRect();
     return bar.nextElementSibling.id === 'main' && r.top >= pb.bottom - 1;
   }));
   await page.click('.update-bar [data-u="later"]');
-  releases = [];
+  pagesInfo.stable = NOUP; pagesInfo.beta = NOUP;
   check('a failed update check is not retried at once', await page.evaluate(async () => {
     const f = window.fetch; window.fetch = () => Promise.reject(new Error('down'));
     const a = await Updater.check(true); let calls = 0; window.fetch = () => { calls++; return f.apply(window, arguments); };
@@ -589,15 +598,19 @@ function check(name, cond, info = '') {
   });
   await wait(400);
   check('an overload relay set to 0 s trips at once (not after 4 s)', await get('F1', 'state.tripped'));
-  const elCtx = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0) Electron/33.2.1 Chrome/130' });
+  const elCtx = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0) Electron/33.2.1 Chrome/130', serviceWorkers: 'block' });
   await mockGitHub(elCtx);
   const el = await elCtx.newPage();
-  const relX = { tag_name: 'v9.9.9', assets: [{ name: 'PLC-Trainer-Setup-9.9.9.exe', browser_download_url: 'https://x/setup' }, { name: 'PLC-Trainer-9.9.9-portable.exe', browser_download_url: 'https://x/portable' }, { name: 'PLC-Trainer-9.9.9-android.apk', browser_download_url: 'https://x/apk' }] };
-  await el.goto(URL + '?build=portable'); await el.waitForTimeout(300);
-  const pPick = await el.evaluate(r => Updater.assetFor(r), relX);
-  await el.goto(URL + '?build=installed'); await el.waitForTimeout(300);
-  const iPick = await el.evaluate(r => Updater.assetFor(r), relX);
-  check('Windows: the portable app updates with the portable .exe, the installed app with the installer', pPick === 'https://x/portable' && iPick === 'https://x/setup', `${pPick} ${iPick}`);
+  await el.goto(URL + '?local=1'); await el.waitForTimeout(300);
+  check('the Windows app with ?local=1 stays on its built-in copy', el.url().startsWith('file:'));
+  await el.evaluate(() => { localStorage.setItem('plc-trainer.handoverTest', 'from the old app'); localStorage.setItem('plc-trainer.channel', 'stable'); });
+  await el.goto(URL); await el.waitForTimeout(1200);
+  check('the Windows app moves to the hosted app (in-app updates)', el.url() === 'https://ronanski.github.io/aio-icms-tool/', el.url());
+  check('projects and settings of the old app are brought along', await el.evaluate(() => localStorage.getItem('plc-trainer.handoverTest') === 'from the old app' && !location.hash && !!window.App && !!App.project));
+  await el.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'beta'); location.reload(); });
+  await el.waitForTimeout(1200);
+  check('the Beta channel opens the Beta copy (/beta/)', el.url() === 'https://ronanski.github.io/aio-icms-tool/beta/', el.url());
+  await el.evaluate(() => { localStorage.setItem('plc-trainer.handoverTest', 'changed in the hosted app'); });
   await elCtx.close();
 
   await page.evaluate(() => App.showView('hmi'));
