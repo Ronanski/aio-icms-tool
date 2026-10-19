@@ -31,6 +31,7 @@ index.html ── loads scripts in order ──►
   circuit.js   Circuit: DEFS (component library), solve() net solver
   workspace.js Workspace: wiring canvas (pan/zoom, wires, meter, props)
   hmi.js       HMI: designer + runtime
+  freedraw.js  FreeDraw: free-draw diagram (symbols on a grid, wired terminal to terminal, synced as `sch` wires)
   schematic.js Schematic: rail/rung control-circuit editor; symbols map to Wiring devices by tag; generated wires carry `sch: true`
   examples.js  Examples: EX (projects) + LESSONS
   update.js    Updater: GitHub Releases check, Stable/Beta channel, update bar, File → Updates…
@@ -79,13 +80,14 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 - v1.4 part 3 (6-terminal motor, timer dial, star-delta and forward/reverse examples) merged (PR #11). v1.4 is complete.
 - **v1.4.0-beta.1** published as a pre-release with the owner's "GO merge PR #11 then GO BETA v1.4.0-beta.1". Apps on the Beta channel are offered it. Not tested on a real phone or Windows PC yet: ask the owner for beta feedback.
 - v1.4 part 4 (IEC Electrical Diagram with power circuit, PH wire colours, three-motor example) merged (PR #13) and released as **v1.4.0-beta.2** with the owner's "GO merge PR #13 then GO BETA v1.4.0-beta.2". Not tested on a real phone or Windows PC yet: ask the owner for beta feedback. Wire colours were confirmed by the owner ("STANDARD SA PINAS"): L1 red, L2 yellow, L3 blue, N white, PE green. Schematic data now has `power: {src, main[], feeders[{elems}]}`.
+- **v1.5 part 1** (free-draw Electrical Diagram in `js/freedraw.js`, new parts): PR #18, merged when CI is green (owner's standing auto-merge rule); then on Beta. Free-draw data: `schematic.free = {items:[{id,k,tag,x,y,r}], wires:[{id,a:'d1:13',b}], seq}`; symbol kinds in `FreeDraw.KINDS`.
 - **v1.4.1** merged (PR #16) and released stable with "GO STABLE v1.4.1": in-app updates without downloads (hosted Stable/Beta copies on Pages, `version.json`, build ids, shells that open the hosted app, project hand-over `#import=`), Windows portable only, star-delta in the diagram power section, wire routing. The new update path only reaches people once they run a shell built from this code (one last manual download), and the Stable copy only gets the new updater code at the next stable release (v1.4.1).
 - **GO STABLE v1.4.0** given. Steps: PR #15 (version 1.4.0 + CHANGELOG [1.4.0]) → merge when CI is green → Release workflow from `main` → verify the release, assets, APK cert and Pages. If a step is not done when you resume, finish it.
 - Next after v1.4.0: owner's feedback from real devices, then v1.5 hardware (modular PLC, I/O config, addressing styles, cabinet).
 - Owner's direction (EduVolt-style screenshots): simple flat hardware graphics; operate devices in the Wiring; only 4 workspaces: Ladder, Wiring, Electrical Diagram, HMI. Copy the look, never brand names or logos (the app is public on Pages and Releases). Next after v1.4: release (GO BETA / GO STABLE), then v1.5 hardware. Roadmap in `PROGRESS.md`.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
-- Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.
+- **Standing rule from the owner (2026-10-19): "automerge and save progress kada tapos ng task. no need for my permission. ang permission lang ay pag stable release na."** So: merge your own PRs into `main` as soon as CI is green (that publishes them to the Beta channel), and update this savepoint and `PROGRESS.md` after every task, without asking. A **stable release still needs "GO STABLE vX.Y.Z"** in the owner's message. Answer in Taglish, in one short table.
 
 ## Last session summary (audit, PR #2, release v1.2.0)
 - Post-release audit of v1.2.0 done; findings and the proposed v1.2.1 list are in `PROGRESS.md` (two High items reproduced: ladder drag stays armed, Workbench toolbars cut off). Nothing fixed yet: waiting for the owner's GO.

@@ -900,6 +900,96 @@ function check(name, cond, info = '') {
   check('a device after the motor is reported', await page.evaluate(() => [...Schematic.perrs.values()].some(m => m.includes('last device'))));
   await page.click('#view-schematic [data-smode="edit"]').catch(() => {});
 
+  console.log('v1.5 part 1: more components');
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcd', { label: 'FI1' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', q, 'PE');
+    App.openNew({ name: 'RCD earth fault', circuit: circ });`));
+  await wait(300);
+  check('an earth fault trips the RCD, not the MCB in front of it', (await get('FI1', 'state.tripped')) && !(await get('QF1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcd', { label: 'FI1' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', r, '4');
+    App.openNew({ name: 'RCD L-N short', circuit: circ });`));
+  await wait(300);
+  check('a line-to-neutral short trips the MCB, not the RCD', (await get('QF1', 'state.tripped')) && !(await get('FI1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), f = add('fuse3', { label: 'FU1' }), m = add('mcb3', { label: 'QF1' }, { on: true }), s = add('isol3', { label: 'QS1' }, { on: true });
+    w(q, 'L1', s, '1'); w(q, 'L2', s, '3'); w(q, 'L3', s, '5'); w(s, '2', m, '1'); w(s, '4', m, '3'); w(s, '6', m, '5');
+    w(m, '2', f, '1'); w(m, '4', f, '3'); w(m, '6', f, '5'); w(f, '2', f, '4');
+    App.openNew({ name: 'Fuse 3P', circuit: circ });`));
+  await wait(300);
+  check('a 3-pole fuse blows before the 3-pole MCB; the disconnector passes power when ON', (await get('FU1', 'state.tripped')) && !(await get('QF1', 'state.tripped')) && (await get('QS1', 'state.on')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), s = add('pb_no', { label: 'S1' }), t = add('timer_off', { label: 'KT1', t: 1 }), h = add('lamp', { label: 'H1', coil: '230VAC' }), m = add('motor1', { label: 'M1' });
+    w(q, 'L', s, '13'); w(s, '14', t, 'A1'); w(t, 'A2', q, 'N'); w(q, 'L', t, '15'); w(t, '18', h, 'X1'); w(h, 'X2', q, 'N'); w(q, 'L', m, 'L'); w(q, 'N', m, 'N');
+    App.openNew({ name: 'Off-delay', circuit: circ });`));
+  await wait(200);
+  await part('S1', 'btn', 'down'); await wait(300);
+  check('off-delay timer: 15-18 closes at once with the coil', await get('H1', 'state.on'));
+  await part('S1', 'btn', 'up'); await wait(400);
+  check('off-delay timer: 15-18 stays closed during the delay after the coil drops', await get('H1', 'state.on'));
+  await wait(900);
+  check('off-delay timer: 15-18 opens when the delay is over', !(await get('H1', 'state.on')));
+  check('a single-phase motor runs on 230 V', (await get('M1', 'state.drive')) === 'run');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('dahlander', { label: 'M1' });
+    w(q, 'L1', m, '1U'); w(q, 'L2', m, '1V'); w(q, 'L3', m, '1W');
+    App.openNew({ name: 'Dahlander slow', circuit: circ });`));
+  await wait(300);
+  check('Dahlander: supply on 1U 1V 1W runs SLOW', (await get('M1', 'state.sp')) === 'slow' && (await get('M1', 'state.drive')) === 'run');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('dahlander', { label: 'M1' });
+    w(q, 'L1', m, '2U'); w(q, 'L2', m, '2V'); w(q, 'L3', m, '2W'); w(m, '1U', m, '1V'); w(m, '1V', m, '1W');
+    App.openNew({ name: 'Dahlander fast', circuit: circ });`));
+  await wait(300);
+  check('Dahlander: supply on 2U 2V 2W with 1U 1V 1W joined runs FAST', (await get('M1', 'state.sp')) === 'fast');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('motor2s', { label: 'M1' });
+    w(q, 'L1', m, '2U'); w(q, 'L2', m, '2V'); w(q, 'L3', m, '2W');
+    App.openNew({ name: 'Two-speed', circuit: circ });`));
+  await wait(300);
+  check('two-speed motor: supply on 2U 2V 2W runs FAST', (await get('M1', 'state.sp')) === 'fast');
+
+  console.log('v1.5 part 1: free-draw Electrical Diagram');
+  await page.evaluate(() => {
+    const it = (id, k, tag, x, y) => ({ id, k, tag, x, y, r: 0 });
+    const items = [it('d1', 'src1', 'Q0', 100, 0), it('d2', 'mcb2', 'QF1', 100, 120), it('d3', 'pbnc', 'S0', 90, 240), it('d4', 'pbno', 'S1', 90, 340), it('d5', 'kmno', 'KM1', 190, 340), it('d6', 'kmcoil', 'KM1', 90, 460), it('d7', 'lamp', 'H1', 230, 460),
+      it('d8', 'src3', 'Q1', 500, 0), it('d9', 'qm3', 'QM1', 500, 120), it('d10', 'km3', 'KM1', 500, 240), it('d11', 'm3', 'M1', 500, 380)];
+    const w = [['d1:L', 'd2:1'], ['d1:N', 'd2:3'], ['d2:2', 'd3:11'], ['d3:12', 'd4:13'], ['d3:12', 'd5:13'], ['d4:14', 'd6:A1'], ['d5:14', 'd6:A1'], ['d6:A2', 'd2:4'], ['d4:14', 'd7:X1'], ['d7:X2', 'd2:4'],
+      ['d8:L1', 'd9:1'], ['d8:L2', 'd9:3'], ['d8:L3', 'd9:5'], ['d9:2', 'd10:1'], ['d9:4', 'd10:3'], ['d9:6', 'd10:5'], ['d10:2', 'd11:U1'], ['d10:4', 'd11:V1'], ['d10:6', 'd11:W1'], ['d8:PE', 'd11:PE'], ['d99:X', 'd1:L']];
+    App.openNew({ name: 'Free DOL', schematic: { free: { items, wires: w.map((x, i) => ({ id: 'fw' + (i + 1), a: x[0], b: x[1] })), seq: 40 } } });
+    App.setLayout('single'); App.showView('schematic');
+  });
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('free draw: its toolbar shows and the rung tools hide', await page.isVisible('#view-schematic [data-fdact="lib"]') && !(await page.isVisible('#view-schematic [data-sact="rung"]')));
+  check('free draw: symbols and wires are drawn, a broken wire is dropped on load', await page.evaluate(() => document.querySelectorAll('#view-schematic .fitem').length === 11 && App.project.schematic.free.wires.length === 20));
+  check('free draw: every symbol became a device and every drawn wire is wired', await page.evaluate(() => ['Q0:supply1', 'QF1:mcb2', 'S1:pb_no', 'KM1:contactor', 'H1:lamp', 'Q1:supply3', 'QM1:mpcb', 'M1:motor'].every(x => App.project.circuit.comps.some(c => c.props.label + ':' + c.type === x)) && App.project.circuit.wires.filter(w => w.sch).length === 20 && FreeDraw.errs.size === 0));
+  await page.click('#view-schematic [data-smode="run"]');
+  const fS1 = await (await page.$('#view-schematic [data-fi="d4"] .hit')).boundingBox();
+  await page.mouse.move(fS1.x + fS1.width / 2, fS1.y + fS1.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up(); await wait(500);
+  check('free draw: pressing S1 on the drawing starts KM1, its seal-in holds it, the motor runs', (await get('KM1', 'state.pulled')) && (await get('H1', 'state.on')) && (await get('M1', 'state.drive')) === 'run');
+  check('free draw: the live paths light up', await page.evaluate(() => document.querySelectorAll('#view-schematic .fwire .w.on').length > 8));
+  await page.click('#view-schematic [data-smode="edit"]');
+  await page.click('#view-schematic [data-fdact="lib"]'); await page.click('.ctx-menu button:has-text("Loads")'); await wait(100); await page.click('.ctx-menu button:has-text("Pilot lamp")'); await page.fill('#f_t', 'H9'); await page.click('.modal .btn.primary'); await wait(200);
+  const h9 = await page.evaluate(() => App.project.schematic.free.items.find(i => i.tag === 'H9').id);
+  check('free draw: ＋ Library adds a symbol and its device', !!h9 && await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'H9')));
+  const tA = await (await page.$(`#view-schematic [data-ft="${h9}:X1"]`)).boundingBox(), tB = await (await page.$('#view-schematic [data-ft="d2:2"]')).boundingBox();
+  await page.mouse.click(tA.x + tA.width / 2, tA.y + tA.height / 2); await wait(100); await page.mouse.click(tB.x + tB.width / 2, tB.y + tB.height / 2); await wait(200);
+  check('free draw: clicking two terminals draws a wire, and it is wired in the Wiring', await page.evaluate(id => { const C = App.project.circuit, h = C.comps.find(c => c.props.label === 'H9'), q = C.comps.find(c => c.props.label === 'QF1'); return App.project.schematic.free.wires.some(w => (w.a === id + ':X1' && w.b === 'd2:2') || (w.b === id + ':X1' && w.a === 'd2:2')) && C.wires.some(w => w.sch && [w.a, w.b].includes(h.id + ':X1') && [w.a, w.b].includes(q.id + ':2')); }, h9));
+  const h9b = await (await page.$(`#view-schematic [data-fi="${h9}"] .hit`)).boundingBox();
+  await page.mouse.click(h9b.x + 8, h9b.y + 8); await wait(100);
+  await page.keyboard.press('r'); await wait(150);
+  check('free draw: R rotates the selected symbol', await page.evaluate(id => App.project.schematic.free.items.find(i => i.id === id).r === 90, h9));
+  await page.evaluate(() => { App.saveNow(); App.openSaved(App.currentId); App.showView('schematic'); });
+  check('free draw: the drawing is saved with the project', await page.evaluate(() => App.project.schematic.free.items.length === 12 && App.project.schematic.free.wires.length === 21));
+  check('free draw: Type changes a push button into a selector (and reports the device type clash)', await page.evaluate(() => {
+    const it = App.project.schematic.free.items.find(i => i.id === 'd4'); it.k = 'selno'; Schematic.sync(); Schematic.render();
+    return [...FreeDraw.errs.values()].some(m => m.includes('S1'));
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
+  await page.click('#view-schematic [data-sstyle="iec"]');
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });
