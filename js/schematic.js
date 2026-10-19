@@ -74,6 +74,7 @@
       N: typeof o.N === 'string' && termOk(o.N) ? o.N : null,
       rungs: (Array.isArray(o.rungs) ? o.rungs : []).filter(r => r && typeof r === 'object').map(r => ({ elems: cleanSeq(r.elems, 0), comment: typeof r.comment === 'string' ? r.comment.slice(0, 200) : '' })),
       power: cleanPower(o.power),
+      free: FreeDraw.clean(o.free),
     };
   };
 
@@ -229,6 +230,7 @@
       C.wires.push({ id: 'w' + C.seq, a, b, pts: [], color, sch: true });
     };
     syncPower(addWire);
+    FreeDraw.sync(addWire, ensureType, controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d');
     if (!railOk(s.L) || !railOk(s.N)) { [s.L, s.N] = autoRails(); }
     if (railOk(s.L) && railOk(s.N)) {
       const color = controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d';   // control wiring: 24 V red, 230 V black
@@ -340,7 +342,7 @@
   const VE = 92, VL = 104, VX = 60, VB = 14, VEMPTY = 60, RT = 52, FW = 112, PE_ = 92;
   const DV = { A: VE, C: VL, E: VEMPTY, P: VB };
   let style = 'iec';
-  try { style = localStorage.getItem('plc-trainer.schStyle') === 'nema' ? 'nema' : 'iec'; } catch (e) { /* private mode */ }
+  try { const v = localStorage.getItem('plc-trainer.schStyle'); style = v === 'nema' || v === 'free' ? v : 'iec'; } catch (e) { /* private mode */ }
   const vw = (x, y1, y2, live, cls = '') => (y2 > y1 ? `<line class="w${live ? ' on' : ''}${cls}" x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>` : '');
   function termIds(e) { const K = SK[e.k], p2 = K.type === 'relay' && !K.out && e.p === 2; return [p2 ? K.a2 : K.a, p2 ? K.b2 : K.b]; }
   const MARK = { pbno: 'push', pbnc: 'push', sel: 'turn', estop: 'mush', lsno: 'roll', lsnc: 'roll', ktno: 'delay', ktnc: 'delay', olnc: 'therm', olno: 'therm' };
@@ -565,12 +567,14 @@
   let root, body, side, undo = [], redo = [];
   SC.init = function (el) {
     root = el;
+    FreeDraw.init({ sch, circ, devOf, snap: () => snap(), changed: () => changed(), mode: () => mode, side: () => renderSide() });
     const groups = {};
     Object.entries(SK).forEach(([k, K]) => { (groups[K.g] = groups[K.g] || []).push(k); });
     el.innerHTML = `
       <div class="lad-toolbar sch-toolbar">
-        <div class="tb-group"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select">✎ Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols">☝ Operate</button></div>
-          <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit">⇵ IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung">⇄ Ladder</button></div></div>
+        <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select">✎ Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols">☝ Operate</button></div>
+          <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit">⇵ IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung">⇄ Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal">✎ Free draw</button></div></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Add a symbol">＋ Library ▾</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -590,12 +594,14 @@
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.smode) { mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run'); return; }
       if (b.dataset.sstyle) { style = b.dataset.sstyle; try { localStorage.setItem('plc-trainer.schStyle', style); } catch (err) { /* private mode */ } setStyleUi(); SC.render(); return; }
+      if (b.dataset.fdact) { if (b.dataset.fdact === 'lib') { const r = b.getBoundingClientRect(); FreeDraw.library(r.left, r.bottom + 4); } else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, del: FreeDraw.del })[b.dataset.fdact](); return; }
       if (b.dataset.skind) return SC.insert(b.dataset.skind);
       if (b.dataset.pkind) return SC.insertPower(b.dataset.pkind);
       ({ feeder: () => SC.addFeeder(), rung: () => SC.addRung(), branch: SC.branch, ml: () => SC.move(-1), mr: () => SC.move(1), del: SC.del, undo: SC.undo, redo: SC.redo })[b.dataset.sact]?.();
     });
     let held = null;
     body.addEventListener('pointerdown', ev => {
+      if (style === 'free') return;
       const pg = ev.target.closest('[data-pp]'), pf = ev.target.closest('[data-pf]');
       if (pg || pf) {
         SEL = { r: -1, e: null, leg: null };
@@ -629,9 +635,10 @@
     });
     const up = () => { if (held) { held(); held = null; } };
     window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-    body.addEventListener('dblclick', ev => { const pg = ev.target.closest('[data-pp]'); if (pg && mode === 'edit') { SC.retagPower(pByPath(pg.dataset.pp).e); return; } const g = ev.target.closest('[data-path]'); if (g && !g.dataset.li && mode === 'edit') SC.retag(byPath(g.dataset.path).e); });
+    body.addEventListener('dblclick', ev => { if (style === 'free') return; const pg = ev.target.closest('[data-pp]'); if (pg && mode === 'edit') { SC.retagPower(pByPath(pg.dataset.pp).e); return; } const g = ev.target.closest('[data-path]'); if (g && !g.dataset.li && mode === 'edit') SC.retag(byPath(g.dataset.path).e); });
     UI.longPress(body);
     body.addEventListener('contextmenu', ev => {
+      if (style === 'free') return;
       const g = ev.target.closest('[data-path]'); if (!g || g.dataset.li) return;
       ev.preventDefault();
       const { e } = byPath(g.dataset.path); SEL = { r: byPath(g.dataset.path).ri, e, leg: null }; SC.render();
@@ -645,6 +652,7 @@
     if (!root) return;
     root.querySelectorAll('[data-sstyle]').forEach(x => x.classList.toggle('on', x.dataset.sstyle === style));
     root.querySelector('.pw-group').hidden = style !== 'iec';
+    root.classList.toggle('free-style', style === 'free');
   }
   /* power elements are found by "m.i" (main section) or "f.feeder.i" */
   function pByPath(p) {
@@ -727,6 +735,11 @@
     SC.perrs = checkPower();
     const sl = body.scrollLeft, stp = body.scrollTop;
     const s = sch();
+    if (style === 'free') {
+      FreeDraw.render(body);
+      lastSig = liveSig();
+      return;
+    }
     if (style === 'iec') {
       renderIEC();
       body.querySelectorAll('[data-sact2]').forEach(b => { b.onclick = () => (b.dataset.sact2 === 'feeder' ? SC.addFeeder() : SC.addRung()); });
@@ -765,10 +778,16 @@
   }
   SC.update = function () {
     if (!body || !App.project || !sch()) return;
+    if (style === 'free') { FreeDraw.update(); return; }
     if (liveSig() !== lastSig) renderRungs();
   };
   function renderSide() {
     if (!side || !App.project || !sch()) return;
+    if (style === 'free') {
+      side.innerHTML = `<div class="side-head"><h4>Electrical Diagram — free draw</h4></div><div class="props">${FreeDraw.side()}</div>`;
+      FreeDraw.bindSide(side);
+      return;
+    }
     const s = sch(), ch = supplyChoices(), errs = [...(SC.errs ? SC.errs.values() : []), ...(SC.perrs ? SC.perrs.values() : [])];
     side.innerHTML = `<div class="side-head"><h4>Electrical Diagram</h4></div><div class="props">
       <label class="field"><span>Supply rail (L or +24 V)</span><select data-rail="L">${ch.map(o => `<option value="${esc(o.k)}" ${o.k === s.L ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select></label>
@@ -867,12 +886,13 @@
   };
   SC.onKey = function (ev) {
     const c = ev.ctrlKey || ev.metaKey, k = ev.key;
+    if (style === 'free' && !c) { FreeDraw.onKey(ev); return; }
     if (c && k.toLowerCase() === 'z') { ev.preventDefault(); SC.undo(); }
     else if (c && k.toLowerCase() === 'y') { ev.preventDefault(); SC.redo(); }
     else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); SC.del(); }
     else if (k === 'Escape') { SEL = { r: -1, e: null, leg: null }; SELP = null; SC.render(); }
   };
-  SC.resetSel = () => { SEL = { r: -1, e: null, leg: null }; SELP = null; undo = []; redo = []; SC.errs = null; lastSig = ''; };
+  SC.resetSel = () => { FreeDraw.resetSel(); SEL = { r: -1, e: null, leg: null }; SELP = null; undo = []; redo = []; SC.errs = null; lastSig = ''; };
   SC.state = state;
   window.Schematic = SC;
 })();

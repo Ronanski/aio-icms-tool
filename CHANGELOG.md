@@ -5,6 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Free draw** in the Electrical Diagram (*✎ Free draw*): place IEC symbols anywhere on a grid, drag them, rotate them (**R**), and wire terminal to terminal. Every symbol is a real device in the Wiring (found by its tag or added for you) and every drawn wire is wired there, so the simulator runs the drawing; live paths light up and ☝ Operate presses buttons, switches breakers and trips overloads on the drawing.
+  - **＋ Library** by group: Sources, Switches, Auxiliaries, Coils, Loads, Contactors, Protections, Motors (50 symbols).
+  - **Type ⇄** turns a switch contact into another actuator: push button, selector, key switch, limit switch, E-stop.
+  - Wrong device types and a device part drawn twice are reported.
+- **New parts**: Fuse 3-Pole, MCB 3-Pole, Disconnector 3-Pole, **RCD 2-Pole 30 mA** (trips on an earth fault before the breakers, not on a line-to-neutral short; TEST button), **Off-Delay Timer Relay**, **Single-Phase Motor**, **Two-Speed Motor** (two windings) and **Dahlander Motor** (slow/fast by connection; a wrong connection is a fault).
+
 ## [1.4.1] - 2026-10-19
 
 Updates now install inside the app (no downloads), the Windows app is portable only, and the Electrical Diagram draws star-delta motors.
