@@ -47,12 +47,17 @@
       olnc: two('olr', '95', '96', 'nc', 'F', { act: 'therm', n: 'Overload contact N.C.', part: 'ol' }),
       olno: two('olr', '97', '98', 'no', 'F', { act: 'therm', n: 'Overload contact N.O.', part: 'ol' }),
       qmaux: two('mpcb', '13', '14', 'no', 'QM', { n: 'Motor breaker aux N.O.' }),
+      km4no: two('contactor4', '13', '14', 'no', 'KM', { n: 'Contactor 4P aux N.O.' }),
+      kino: two('impulse', '1', '2', 'no', 'KI', { n: 'Impulse relay contact N.O.', part: 'lever' }),
+      kinc: two('impulse', '3', '4', 'nc', 'KI', { n: 'Impulse relay contact N.C.', part: 'lever' }),
     },
     Coils: {
       kmcoil: two('contactor', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor coil' }),
       kacoil: two('relay', 'A1', 'A2', 'coil', 'KA', { n: 'Relay coil' }),
       ktcoil: two('timer', 'A1', 'A2', 'tcoil', 'KT', { n: 'On-delay timer coil' }),
       kfcoil: two('timer_off', 'A1', 'A2', 'tcoiloff', 'KT', { n: 'Off-delay timer coil' }),
+      km4coil: two('contactor4', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor 4P coil' }),
+      kicoil: two('impulse', 'A1', 'A2', 'icoil', 'KI', { n: 'Impulse relay coil' }),
     },
     Loads: {
       lamp: two('lamp', 'X1', 'X2', 'lamp', 'H', { n: 'Pilot lamp' }),
@@ -61,6 +66,7 @@
     },
     Contactors: {
       km3: poles('contactor', ['1', '3', '5'], ['2', '4', '6'], 'km', 'KM', { n: 'Contactor main contacts 3P' }),
+      km4: poles('contactor4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'km', 'KM', { n: 'Contactor main contacts 4P' }),
     },
     Protections: {
       fu1: poles('fuse', ['1'], ['2'], 'fuse', 'FU', { n: 'Fuse 1P', part: 'f' }),
@@ -73,6 +79,9 @@
       ol3: poles('olr', ['1', '3', '5'], ['2', '4', '6'], 'ol', 'F', { n: 'Overload relay (heaters)', part: 'ol' }),
       qs3: poles('isol3', ['1', '3', '5'], ['2', '4', '6'], 'isol', 'QS', { n: 'Disconnector 3P', part: 'h' }),
       rcd: poles('rcd', ['1', '3'], ['2', '4'], 'rcd', 'FI', { n: 'RCD 2P 30 mA', part: 'h' }),
+    },
+    Others: {
+      node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', terms: [{ id: 'J', x: 0, y: 0 }] },
     },
     Motors: {
       m1: { n: 'Motor 1~ 230V', type: 'motor1', pre: 'M', look: 'motor', label: 'M\n1~', terms: [...row(['L', 'N'], -34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
@@ -96,7 +105,10 @@
     const items = (Array.isArray(o.items) ? o.items : []).filter(i => i && typeof i === 'object' && ID.test(i.id) && Object.prototype.hasOwnProperty.call(K, i.k) && typeof i.tag === 'string' && TAG.test(i.tag))
       .slice(0, 400).map(i => ({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0 }));
     const end = e => { if (typeof e !== 'string') return false; const [id, t] = e.split(':'); const it = items.find(i => i.id === id); return !!it && K[it.k].terms.some(x => x.id === t); };
-    const wires = (Array.isArray(o.wires) ? o.wires : []).filter(w => w && typeof w === 'object' && /^fw\d{1,6}$/.test(w.id) && end(w.a) && end(w.b) && w.a !== w.b).slice(0, 2000).map(w => ({ id: w.id, a: w.a, b: w.b }));
+    const wires = (Array.isArray(o.wires) ? o.wires : []).filter(w => w && typeof w === 'object' && /^fw\d{1,6}$/.test(w.id) && end(w.a) && end(w.b) && w.a !== w.b).slice(0, 2000).map(w => {
+      const pts = (Array.isArray(w.pts) ? w.pts : []).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).slice(0, 20).map(q => [num(q[0]), num(q[1])]);
+      return pts.length ? { id: w.id, a: w.a, b: w.b, pts } : { id: w.id, a: w.a, b: w.b };
+    });
     const n = s => Number(String(s).replace(/\D/g, '')) || 0;
     const seq = Math.max(Number.isFinite(o.seq) ? o.seq : 0, ...items.map(i => n(i.id)), ...wires.map(w => n(w.id)), 0);
     return { items, wires, seq };
@@ -115,10 +127,18 @@
   }
   const itemOf = id => fr().items.find(i => i.id === id);
   const endPos = e => { const [id, t] = e.split(':'); const it = itemOf(id); return it ? termPos(it, t) : null; };
-  function wirePath(a, b) {
+  /* square wire route: straight if lined up, else down-across-down; with bends, an L between each pair of points */
+  function wirePath(a, b, pts) {
+    if (pts && pts.length) {
+      const P = [a, ...pts.map(([x, y]) => ({ x, y })), b];
+      let d = `M${a.x} ${a.y}`;
+      for (let i = 1; i < P.length; i++) d += ` L${P[i - 1].x} ${P[i].y} L${P[i].x} ${P[i].y}`;
+      return d;
+    }
     const my = Math.round((a.y + b.y) / 20) * 10;
     return a.x === b.x || a.y === b.y ? `M${a.x} ${a.y} L${b.x} ${b.y}` : `M${a.x} ${a.y} L${a.x} ${my} L${b.x} ${my} L${b.x} ${b.y}`;
   }
+  const routeLen = (a, pts, b) => { const P = [a, ...pts.map(([x, y]) => ({ x, y })), b]; let n = 0; for (let i = 1; i < P.length; i++) n += Math.abs(P[i].x - P[i - 1].x) + Math.abs(P[i].y - P[i - 1].y); return n; };
 
   /* ---------- checks and wiring into the circuit ---------- */
   function check() {
@@ -165,7 +185,8 @@
     const S = K[it.k], d = H.devOf(it.tag);
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
-    if (['coil', 'tcoil', 'tcoiloff', 'lamp', 'horn'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw) };
+    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw) };
+    if (S.look === 'node') return { on: live(d.id + ':J') };
     if (S.look === 'motor') return { on: st.drive === 'run' };
     if (S.look === 'src') return { on: !!(st.on || st.ok) };
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];
@@ -190,8 +211,11 @@
       o.push(stub(0, -30, -14), stub(0, 14, 30));
       o.push(S.look === 'nc' ? `<path d="M0 -14 H10 M0 14 L13 -17"/>` : `<path d="M0 14 L-11 -13"/>`);
       if (S.act) o.push(`<path class="thin dash" d="M${S.look === 'nc' ? 6 : -6} 0 H-26"/>`, actMark(S.act, -26));
-    } else if (['coil', 'tcoil', 'tcoiloff'].includes(S.look)) {
+    } else if (S.look === 'node') {
+      o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
+    } else if (['coil', 'tcoil', 'tcoiloff', 'icoil'].includes(S.look)) {
       o.push(stub(0, -30, -9), stub(0, 9, 30), `<rect x="-14" y="-9" width="28" height="18"/>`);
+      if (S.look === 'icoil') o.push(`<path class="thin" d="M-8 5 V-5 H0 V5 H8 V-5"/>`);
       if (S.look !== 'coil') o.push(`<rect x="-26" y="-9" width="12" height="18"${S.look === 'tcoiloff' ? ' class="fill"' : ''}/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
     } else if (S.look === 'lamp') {
       o.push(stub(0, -30, -11), stub(0, 11, 30), `<circle cx="0" cy="0" r="11"/><path class="thin" d="M-8 -8 L8 8 M8 -8 L-8 8"/>`);
@@ -224,10 +248,11 @@
     return o.join('');
   }
   function labels(it, S) {
+    if (S.look === 'node') return '';
     // upright text at rotated positions
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
-    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'lamp', 'horn'].includes(S.look);
+    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' ? at(-30, -14) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
@@ -248,11 +273,13 @@
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
-      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${wirePath(a, b)}"/><path class="w${on ? ' on' : ''}" d="${wirePath(a, b)}"/></g>`);
+      const d = wirePath(a, b, w.pts);
+      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}" d="${d}"/></g>`);
+      if (sel && sel.w === w.id) (w.pts || []).forEach(([x, y], i) => o.push(`<circle class="fbend" data-fb="${w.id}:${i}" cx="${x}" cy="${y}" r="5"><title>Drag to move · double-click to remove</title></circle>`));
     }
     for (const it of F.items) {
       const S = K[it.k], st = stateOf(it), err = FD.errs.has(it);
-      o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}"><rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`);
+      o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}">${S.look === 'node' ? `<rect class="hit" x="${it.x - 8}" y="${it.y - 8}" width="16" height="16" rx="8"/>` : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`}`);
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
       S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
@@ -270,10 +297,25 @@
   FD.update = function () { if (body && sig() !== lastSig) FD.render(body); };
   const world = ev => { const r = svg.getBoundingClientRect(); return { x: (ev.clientX - r.left - view.x) / view.k, y: (ev.clientY - r.top - view.y) / view.k }; };
   const snap10 = v => Math.round(v / 10) * 10;
-  let held = null;
+  let held = null, lastTap = { k: '', t: 0 };
   function bind() {
     svg.addEventListener('pointerdown', ev => {
-      const p = world(ev), term = ev.target.closest('[data-ft]'), itEl = ev.target.closest('[data-fi]'), wEl = ev.target.closest('[data-fw]');
+      const p = world(ev), term = ev.target.closest('[data-ft]'), itEl = ev.target.closest('[data-fi]'), wEl = ev.target.closest('[data-fw]'), bEl = ev.target.closest('[data-fb]');
+      // double click / double tap (the drawing is redrawn between the two clicks, so the browser's dblclick is not used)
+      const tapKey = bEl ? 'b' + bEl.dataset.fb : wEl ? 'w' + wEl.dataset.fw : itEl ? 'i' + itEl.dataset.fi : '';
+      const dbl = tapKey && lastTap.k === tapKey && Date.now() - lastTap.t < 400;
+      lastTap = { k: tapKey, t: Date.now() };
+      if (dbl && H.mode() === 'edit' && !wiring) {
+        lastTap = { k: '', t: 0 };
+        if (bEl) { const [wid, i] = bEl.dataset.fb.split(':'), w = fr().wires.find(x => x.id === wid); if (w) { H.snap(); w.pts.splice(Number(i), 1); if (!w.pts.length) delete w.pts; H.changed(); } return; }
+        if (wEl) { const w = fr().wires.find(x => x.id === wEl.dataset.fw); if (w) { sel = { w: w.id }; addBend(w, [snap10(p.x), snap10(p.y)]); } return; }
+        if (itEl && K[itemOf(itEl.dataset.fi).k].look !== 'node') { drag = null; FD.retag(itemOf(itEl.dataset.fi)); return; }
+      }
+      if (bEl && H.mode() === 'edit') {
+        const [wid, i] = bEl.dataset.fb.split(':'), w = fr().wires.find(x => x.id === wid);
+        if (w) { drag = { bend: w, i: Number(i), moved: false, snapped: false }; svg.setPointerCapture(ev.pointerId); }
+        return;
+      }
       if (H.mode() === 'run') {
         if (itEl) {
           const it = itemOf(itEl.dataset.fi), S = K[it.k], d = H.devOf(it.tag);
@@ -292,6 +334,16 @@
         }
         wiring = null; FD.render(body); return;
       }
+      if (wiring && wEl) {
+        // ending a wire on another wire: a junction dot there, and both wires meet on it
+        const w = fr().wires.find(x => x.id === wEl.dataset.fw);
+        if (w && w.a !== wiring.from && w.b !== wiring.from) {
+          H.snap();
+          const j = splitWire(w, { x: snap10(p.x), y: snap10(p.y) }), F = fr();
+          F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: j });
+          wiring = null; H.changed(); return;
+        }
+      }
       if (wiring) { wiring = null; FD.render(body); return; }
       if (itEl) {
         const it = itemOf(itEl.dataset.fi);
@@ -306,6 +358,11 @@
     svg.addEventListener('pointermove', ev => {
       if (wiring) { const p = world(ev); wiring.cur = { x: snap10(p.x), y: snap10(p.y) }; const t = svg.querySelector('.wtemp'); const a = endPos(wiring.from); if (t && a) t.setAttribute('d', wirePath(a, wiring.cur)); else if (a) FD.render(body); }
       if (!drag) return;
+      if (drag.bend) {
+        const q = world(ev), pt = [snap10(q.x), snap10(q.y)], cur = drag.bend.pts[drag.i];
+        if (cur && (cur[0] !== pt[0] || cur[1] !== pt[1])) { if (!drag.snapped) { H.snap(); drag.snapped = true; } drag.bend.pts[drag.i] = pt; drag.moved = true; FD.render(body); }
+        return;
+      }
       if (drag.pan) { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`); return; }
       const p = world(ev), nx = snap10(p.x - drag.ox), ny = snap10(p.y - drag.oy);
       if (nx !== drag.item.x || ny !== drag.item.y) { if (!drag.snapped) { H.snap(); drag.snapped = true; } drag.item.x = nx; drag.item.y = ny; drag.moved = true; FD.render(body); }
@@ -318,7 +375,6 @@
       view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k;
       gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
     }, { passive: false });
-    svg.addEventListener('dblclick', ev => { const itEl = ev.target.closest('[data-fi]'); if (itEl && H.mode() === 'edit') FD.retag(itemOf(itEl.dataset.fi)); });
   }
 
   /* ---------- editing ---------- */
@@ -329,6 +385,24 @@
     if (!['Sources', 'Switches', 'Loads', 'Motors'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
     let n = 1; while (used.has(S.pre + n)) n++;
     return { def: S.pre + n, list: same };
+  }
+  /* a bend goes where it makes the route shortest */
+  function addBend(w, pt) {
+    const a = endPos(w.a), b = endPos(w.b), pts = w.pts || [];
+    let best = 0, bl = Infinity;
+    for (let i = 0; i <= pts.length; i++) { const t = [...pts.slice(0, i), pt, ...pts.slice(i)], l = routeLen(a, t, b); if (l < bl) { bl = l; best = i; } }
+    H.snap(); w.pts = [...pts.slice(0, best), pt, ...pts.slice(best)]; H.changed();
+  }
+  function splitWire(w, pt) {
+    const F = fr(), used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]);
+    let n = 1; while (used.has('J' + n)) n++;
+    F.seq++;
+    const node = { id: 'd' + F.seq, k: 'node', tag: 'J' + n, x: pt.x, y: pt.y, r: 0 }, j = node.id + ':J';
+    F.items.push(node);
+    F.seq++;
+    F.wires.push({ id: 'fw' + F.seq, a: j, b: w.b });
+    w.b = j; delete w.pts;
+    return j;
   }
   FD.add = function (k, tag, x, y) {
     const go = t => {
@@ -391,6 +465,7 @@
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
       <ul class="tips"><li><b>＋ Library</b> adds a symbol. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
       <li>Click a terminal ● then another to draw a wire. Every drawn wire is wired in the Wiring for you.</li>
+      <li>End a wire on another wire to branch it (a junction dot). Double-click a wire to add a bend, drag the bend, double-click it to remove it.</li>
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
       <li>☝ Operate: press buttons, switch breakers and trip overloads on the drawing.</li></ul>`;
   };
