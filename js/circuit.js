@@ -305,6 +305,29 @@
     },
     status: c => c.state.done ? 'Timed out — 15-18 closed' : c.state.pw ? `Timing ${(c.state.elD || 0).toFixed(1)} s` : 'Idle',
   });
+  def('timer_off', {
+    name: 'Off-Delay Timer Relay', cat: 'Control', view: 'cabinet', prefix: 'KT', w: 90, h: 110,
+    props: { coil: '230VAC', t: 5 },
+    pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }, { k: 't', n: 'Delay (s)', type: 'number' }],
+    info: 'Coil A1-A2. With the coil on, 15-18 closes (NO) and 15-16 opens (NC) at once; when the coil drops they stay switched for the delay, then go back. Click − / + to set the delay.',
+    terms: [{ id: 'A1', x: 12, y: 0 }, { id: '15', x: 55, y: 0 }, { id: 'A2', x: 12, y: 110 }, { id: '16', x: 45, y: 110 }, { id: '18', x: 72, y: 110 }],
+    init: () => ({ pw: false, el: 0, on: false, burnt: false }),
+    conduct: c => c.state.on ? [['15', '18']] : [['15', '16']],
+    evaluate(c, api) {
+      const on = coilOn(c, api, 'A1', 'A2');
+      let ch = set(c, 'pw', on);
+      if (on) { c.state.el = 0; ch = set(c, 'on', true) || ch; }
+      return ch;
+    },
+    tick(c, api, dt) {
+      const s = c.state, t = Number(c.props.t) || 0;
+      if (!s.pw && s.on) { s.el = Math.min(t, s.el + dt); if (s.el >= t) { s.on = false; s.el = 0; } }
+      s.elD = Math.round(s.el * 10) / 10;
+    },
+    onPart: (c, p, ev) => DEFS.timer.onPart(c, p, ev),
+    draw: c => DEFS.timer.draw({ ...c, state: { ...c.state, done: c.state.on } }) + T(45, 104, 'OFF-DELAY', 'dt xs'),
+    status: c => c.state.pw ? 'Coil on — 15-18 closed' : c.state.on ? `Delay ${(c.state.elD || 0).toFixed(1)} s — 15-18 still closed` : 'Idle',
+  });
   def('tblock', {
     name: 'Terminal Strip (6)', cat: 'Control', view: 'none', prefix: 'X', w: 140, h: 60,
     info: 'Six feed-through terminals: top n is connected to bottom n. Use as junction points / bus.',
@@ -531,6 +554,64 @@
     },
     status: c => c.state.tripped ? 'BLOWN — click to replace' : 'OK',
   });
+  def('fuse3', {
+    name: 'Fuse 3-Pole', cat: 'Protection', view: 'power', prefix: 'FU', w: 100, h: 90, breaker: 0.5,
+    props: { rating: '10A' },
+    pdefs: [{ k: 'rating', n: 'Rating', opts: ['2A', '4A', '6A', '10A', '16A', '25A', '32A'] }],
+    info: 'Three cartridge fuses in one carrier: 1-3-5 → 2-4-6. A short circuit blows them before any breaker. Click to replace.',
+    terms: [{ id: '1', x: 20, y: 0 }, { id: '3', x: 50, y: 0 }, { id: '5', x: 80, y: 0 }, { id: '2', x: 20, y: 90 }, { id: '4', x: 50, y: 90 }, { id: '6', x: 80, y: 90 }],
+    init: () => ({ tripped: false }),
+    closed: c => !c.state.tripped,
+    conduct: c => c.state.tripped ? null : [['1', '2'], ['3', '4'], ['5', '6']],
+    onPart(c, p, ev) { if (p === 'f' && ev === 'down' && c.state.tripped) { c.state.tripped = false; return true; } },
+    draw(c) {
+      const b = c.state.tripped;
+      return modBody(100, 90, c.props.rating, 14, 14) + `<g class="part" data-part="f">` + [20, 50, 80].map(x => R(x - 8, 30, 16, 40, '#e9e5dc', 6, '#555') +
+        (b ? `<path d="M${x - 6} 38 L${x + 6} 62 M${x + 6} 38 L${x - 6} 62" stroke="#d33a2c" stroke-width="2.5"/>` : `<line x1="${x}" y1="34" x2="${x}" y2="66" stroke="#8a8f96" stroke-width="2"/>`)).join('') + `</g>` +
+        T(50, 82, b ? 'BLOWN' : '', 'dt xs warnt');
+    },
+    status: c => c.state.tripped ? 'BLOWN — click to replace' : 'OK',
+  });
+  def('mcb3', {
+    name: 'MCB 3-Pole', cat: 'Protection', view: 'power', prefix: 'QF', w: 100, h: 100, breaker: 1,
+    info: 'Three-pole miniature breaker: 1-3-5 → 2-4-6. Trips on a short circuit. Click the handle: ON/OFF; after a trip, click once to reset.',
+    terms: [{ id: '1', x: 20, y: 0 }, { id: '3', x: 50, y: 0 }, { id: '5', x: 80, y: 0 }, { id: '2', x: 20, y: 100 }, { id: '4', x: 50, y: 100 }, { id: '6', x: 80, y: 100 }],
+    init: () => ({ on: false, tripped: false }),
+    closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? [['1', '2'], ['3', '4'], ['5', '6']] : null,
+    onPart: breakerOnPart, draw: c => mcbDraw(c, 100, 3),
+  });
+  def('isol3', {
+    name: 'Disconnector 3-Pole', cat: 'Protection', view: 'power', prefix: 'QS', w: 100, h: 100,
+    info: 'Load-break switch / isolator: 1-3-5 → 2-4-6. No protection: it never trips. Click the knob to switch ON/OFF.',
+    terms: [{ id: '1', x: 20, y: 0 }, { id: '3', x: 50, y: 0 }, { id: '5', x: 80, y: 0 }, { id: '2', x: 20, y: 100 }, { id: '4', x: 50, y: 100 }, { id: '6', x: 80, y: 100 }],
+    init: () => ({ on: false }),
+    conduct: c => c.state.on ? [['1', '2'], ['3', '4'], ['5', '6']] : null,
+    onPart(c, p, ev) { if (p === 'h' && ev === 'down') { c.state.on = !c.state.on; return true; } },
+    draw(c) {
+      const on = c.state.on;
+      return modBody(100, 100, 'ISOLATOR', 16, 16) + `<g class="part" data-part="h"><circle cx="50" cy="58" r="20" fill="#f2c230" stroke="#8a6a10"/><rect x="45" y="40" width="10" height="36" rx="3" fill="#d33a2c" stroke="#6b201a" transform="rotate(${on ? 90 : 0} 50 58)"/></g>` +
+        T(80, 46, 'I', 'dt sm') + T(50, 30 + 52, '', 'dt') + T(22, 46, 'O', 'dt sm') + T(50, 92, on ? 'ON' : 'OFF', 'dt xs');
+    },
+    status: c => c.state.on ? 'ON' : 'OFF',
+  });
+  def('rcd', {
+    name: 'RCD 2-Pole 30 mA', cat: 'Protection', view: 'power', prefix: 'FI', w: 70, h: 100, breaker: 0.8, earthOnly: true,
+    info: 'Residual current device: L 1 → 2 and N 3 → 4. Trips on an earth fault (line to PE) before the breakers; it does not trip on a line-to-neutral short. T = test button. Click the handle: ON/OFF, reset after a trip.',
+    terms: [{ id: '1', x: 20, y: 0, l: '1 L' }, { id: '3', x: 50, y: 0, l: '3 N' }, { id: '2', x: 20, y: 100, l: '2 L' }, { id: '4', x: 50, y: 100, l: '4 N' }],
+    init: () => ({ on: false, tripped: false }),
+    closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? [['1', '2'], ['3', '4']] : null,
+    onPart(c, p, ev) {
+      if (ev !== 'down') return;
+      if (p === 'test' && c.state.on && !c.state.tripped) { c.state.tripped = true; return true; }
+      return breakerOnPart(c, p, ev);
+    },
+    draw(c) {
+      return mcbDraw(c, 70, 2).replace('>C16<', '>30mA<') + `<g class="part" data-part="test"><rect x="52" y="34" width="14" height="10" rx="2" fill="#2f6fd6" stroke="#1b3f7a"/>${T(59, 42, 'T', 'dt light xs')}</g>`;
+    },
+    status: c => c.state.tripped ? 'TRIPPED (earth fault) — click the handle to reset' : c.state.on ? 'ON' : 'OFF',
+  });
   def('buzzer', {
     name: 'Buzzer / Horn', cat: 'Pilot Devices', view: 'panel', prefix: 'HA', w: 50, h: 80,
     props: { coil: '24VDC' },
@@ -756,6 +837,71 @@
       return s.drive === 'run' && !s.jam ? `${s.conn === 'star' ? 'STAR (Y)' : 'DELTA (Δ)'} · ${base}` : base;
     },
   });
+
+  /* motor drawn as a body under a terminal box; label shows the connection it runs in */
+  function motorBox(c, w, label, sub) {
+    const s = c.state, warn = (s.drive === 'run' && s.jam) || s.drive === 'single', bw = w - 24;
+    let g = R(4, 2, w - 8, 30, '#8a8f96', 3, '#4a4f55') + R(8, 6, w - 16, 22, '#e2733b', 2, '#7a3a1a') + T(w / 2, 22, sub || '', 'dt xs');
+    g += R(10, 36, bw - 4, 56, 'url(#gMotor)', 10, '#1b3570', 1.2) + R(bw + 6, 56, 16, 14, '#b9bdc2', 2, '#555') +
+      `<g transform="translate(${bw + 14} 63) rotate(${s.ang || 0})"><circle r="6" fill="#d6d9dc" stroke="#555"/><rect x="-1" y="-6" width="2" height="5" fill="#333"/></g>` + T(w / 2 - 6, 68, label, 'dt light big');
+    if (warn) g += `<rect x="8" y="34" width="${bw}" height="60" rx="11" fill="none" stroke="#ff4b3a" stroke-width="3" class="blink"/>`;
+    return g + btn('jam', 4, 100, 28, 14, 'JAM', s.jam);
+  }
+  def('motor1', {
+    name: 'Single-Phase Motor 230V', cat: 'Equipment', view: 'plant', prefix: 'M', w: 100, h: 120,
+    info: 'Single-phase motor: L, N, PE. Runs at 230 V AC between L and N. Click JAM to simulate a jam (overcurrent).',
+    terms: [{ id: 'L', x: 25, y: 0 }, { id: 'N', x: 50, y: 0 }, { id: 'PE', x: 80, y: 0 }],
+    init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false, burnt: false }),
+    transient: ['spd', 'drive', 'dir'],
+    evaluate(c, api) {
+      const v = api.v(c, 'L', 'N'), s = c.state;
+      if (v && v.label === '400VAC' && !s.burnt) { s.burnt = true; api.alert(`${c.props.label}: motor burnt — 400 VAC on a 230 V motor`, 'danger'); }
+      const run = !!(v && v.kind === 'AC' && v.label === '230VAC') && !s.burnt;
+      s.drive = run ? 'run' : 'off'; s.dir = run ? 1 : 0;
+      if (run && s.jam) api.overM.push({ c, t: ['L'] });
+      return false;
+    },
+    tick: (c, api, dt) => motorTick(c, dt),
+    onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
+    draw: c => motorBox(c, 100, 'M 1~', '230 V') + (c.state.burnt ? burnt(100, 120) : ''),
+    status: c => c.state.burnt ? 'Burnt' : motorStatus(c.state),
+  });
+  /* two speeds: separate windings (1U 1V 1W slow, 2U 2V 2W fast) or Dahlander (one tapped winding:
+     slow = supply on 1U 1V 1W with 2U 2V 2W open; fast = supply on 2U 2V 2W with 1U 1V 1W joined) */
+  function twoSpeed(type, name, dahl) {
+    def(type, {
+      name, cat: 'Equipment', view: 'plant', prefix: 'M', w: 150, h: 120,
+      info: dahl
+        ? 'Dahlander (pole-changing) motor. SLOW: supply on 1U 1V 1W, leave 2U 2V 2W open. FAST: supply on 2U 2V 2W and join 1U 1V 1W. Supply on both sets = fault.'
+        : 'Two-speed motor with two separate windings. SLOW: supply on 1U 1V 1W. FAST: supply on 2U 2V 2W. Never both.',
+      terms: [{ id: '1U', x: 18, y: 0 }, { id: '1V', x: 36, y: 0 }, { id: '1W', x: 54, y: 0 }, { id: '2U', x: 78, y: 0 }, { id: '2V', x: 96, y: 0 }, { id: '2W', x: 114, y: 0 }, { id: 'PE', x: 140, y: 0 }],
+      init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false, sp: 'off', k: 1 }),
+      transient: ['spd', 'drive', 'dir', 'sp'],
+      evaluate(c, api) {
+        const s = c.state, ph = ts => ts.map(t => api.phase(c, t));
+        const a = ph(['1U', '1V', '1W']), b = ph(['2U', '2V', '2W']), full = x => x.every(Boolean) && new Set(x).size === 3, none = x => !x.some(Boolean);
+        const joined = ts => { const r = ts.map(t => api.root(c, t)); return r[0] === r[1] && r[1] === r[2] && !api.pots(c, ts[0]).size; };
+        let sp = 'off';
+        if (full(a) && none(b) && (!dahl || !joined(['2U', '2V', '2W']))) sp = 'slow';
+        else if (full(b) && none(a) && (!dahl || joined(['1U', '1V', '1W']))) sp = 'fast';
+        else if (a.some(Boolean) || b.some(Boolean)) sp = 'fault';
+        s.sp = sp; s.k = sp === 'slow' ? 0.5 : 1;
+        if (sp === 'slow' || sp === 'fast') {
+          const t = sp === 'slow' ? ['1U', '1V', '1W'] : ['2U', '2V', '2W'];
+          s.drive = 'run'; s.dir = motorDrive(c, api, ...t).dir;
+          if (s.jam) api.overM.push({ c, t });
+        } else if (sp === 'fault') { s.drive = 'single'; s.dir = 0; api.overM.push({ c, t: a.some(Boolean) ? ['1U', '1V', '1W'] : ['2U', '2V', '2W'] }); }
+        else { s.drive = 'off'; s.dir = 0; }
+        return false;
+      },
+      tick: (c, api, dt) => motorTick(c, dt),
+      onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
+      draw: c => motorBox(c, 150, 'M 3~', dahl ? 'DAHLANDER' : 'TWO SPEED') + T(75, 112, ({ slow: 'SLOW', fast: 'FAST', fault: 'FAULT' })[c.state.sp] || '', 'dt xs warnt'),
+      status: c => (c.state.sp === 'fault' ? 'Wrong connection — overcurrent! ' : c.state.sp === 'slow' || c.state.sp === 'fast' ? c.state.sp.toUpperCase() + ' · ' : '') + motorStatus(c.state),
+    });
+  }
+  twoSpeed('motor2s', 'Two-Speed Motor (2 windings)', false);
+  twoSpeed('dahlander', 'Dahlander Motor (2 speeds)', true);
 
   def('conveyor', {
     name: 'Conveyor (motor + 2 sensors)', cat: 'Equipment', view: 'plant', prefix: 'CV', w: 380, h: 170,
@@ -998,7 +1144,7 @@
       const reason = [...sh.values()][0];
       const cands = circ.comps.filter(c => {
         const d = DEFS[c.type];
-        return d.breaker && d.closed(c) && d.terms.some(t => roots.has(net.find(net.idx.get(c.id + ':' + t.id))));
+        return d.breaker && d.closed(c) && (!d.earthOnly || reason.startsWith('Ground fault')) && d.terms.some(t => roots.has(net.find(net.idx.get(c.id + ':' + t.id))));
       }).sort((a, b) => DEFS[a.type].breaker - DEFS[b.type].breaker);
       if (!cands.length) break;
       let fixed = null, best = -1, bestNet = null, bestSh = null;

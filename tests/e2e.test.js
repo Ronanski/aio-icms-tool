@@ -900,6 +900,57 @@ function check(name, cond, info = '') {
   check('a device after the motor is reported', await page.evaluate(() => [...Schematic.perrs.values()].some(m => m.includes('last device'))));
   await page.click('#view-schematic [data-smode="edit"]').catch(() => {});
 
+  console.log('v1.5 part 1: more components');
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcd', { label: 'FI1' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', q, 'PE');
+    App.openNew({ name: 'RCD earth fault', circuit: circ });`));
+  await wait(300);
+  check('an earth fault trips the RCD, not the MCB in front of it', (await get('FI1', 'state.tripped')) && !(await get('QF1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcd', { label: 'FI1' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', r, '4');
+    App.openNew({ name: 'RCD L-N short', circuit: circ });`));
+  await wait(300);
+  check('a line-to-neutral short trips the MCB, not the RCD', (await get('QF1', 'state.tripped')) && !(await get('FI1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), f = add('fuse3', { label: 'FU1' }), m = add('mcb3', { label: 'QF1' }, { on: true }), s = add('isol3', { label: 'QS1' }, { on: true });
+    w(q, 'L1', s, '1'); w(q, 'L2', s, '3'); w(q, 'L3', s, '5'); w(s, '2', m, '1'); w(s, '4', m, '3'); w(s, '6', m, '5');
+    w(m, '2', f, '1'); w(m, '4', f, '3'); w(m, '6', f, '5'); w(f, '2', f, '4');
+    App.openNew({ name: 'Fuse 3P', circuit: circ });`));
+  await wait(300);
+  check('a 3-pole fuse blows before the 3-pole MCB; the disconnector passes power when ON', (await get('FU1', 'state.tripped')) && !(await get('QF1', 'state.tripped')) && (await get('QS1', 'state.on')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), s = add('pb_no', { label: 'S1' }), t = add('timer_off', { label: 'KT1', t: 1 }), h = add('lamp', { label: 'H1', coil: '230VAC' }), m = add('motor1', { label: 'M1' });
+    w(q, 'L', s, '13'); w(s, '14', t, 'A1'); w(t, 'A2', q, 'N'); w(q, 'L', t, '15'); w(t, '18', h, 'X1'); w(h, 'X2', q, 'N'); w(q, 'L', m, 'L'); w(q, 'N', m, 'N');
+    App.openNew({ name: 'Off-delay', circuit: circ });`));
+  await wait(200);
+  await part('S1', 'btn', 'down'); await wait(300);
+  check('off-delay timer: 15-18 closes at once with the coil', await get('H1', 'state.on'));
+  await part('S1', 'btn', 'up'); await wait(400);
+  check('off-delay timer: 15-18 stays closed during the delay after the coil drops', await get('H1', 'state.on'));
+  await wait(900);
+  check('off-delay timer: 15-18 opens when the delay is over', !(await get('H1', 'state.on')));
+  check('a single-phase motor runs on 230 V', (await get('M1', 'state.drive')) === 'run');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('dahlander', { label: 'M1' });
+    w(q, 'L1', m, '1U'); w(q, 'L2', m, '1V'); w(q, 'L3', m, '1W');
+    App.openNew({ name: 'Dahlander slow', circuit: circ });`));
+  await wait(300);
+  check('Dahlander: supply on 1U 1V 1W runs SLOW', (await get('M1', 'state.sp')) === 'slow' && (await get('M1', 'state.drive')) === 'run');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('dahlander', { label: 'M1' });
+    w(q, 'L1', m, '2U'); w(q, 'L2', m, '2V'); w(q, 'L3', m, '2W'); w(m, '1U', m, '1V'); w(m, '1V', m, '1W');
+    App.openNew({ name: 'Dahlander fast', circuit: circ });`));
+  await wait(300);
+  check('Dahlander: supply on 2U 2V 2W with 1U 1V 1W joined runs FAST', (await get('M1', 'state.sp')) === 'fast');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('motor2s', { label: 'M1' });
+    w(q, 'L1', m, '2U'); w(q, 'L2', m, '2V'); w(q, 'L3', m, '2W');
+    App.openNew({ name: 'Two-speed', circuit: circ });`));
+  await wait(300);
+  check('two-speed motor: supply on 2U 2V 2W runs FAST', (await get('M1', 'state.sp')) === 'fast');
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });
