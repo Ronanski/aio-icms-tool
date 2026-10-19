@@ -1,6 +1,6 @@
 /* Service worker: caches the app shell so the trainer works offline once installed.
    Bump CACHE with every release so returning users get the new files. */
-const CACHE = 'plc-trainer-v1.2.1';
+const CACHE = 'plc-trainer-v1.4.0-beta.2';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/ui.js', 'js/store.js', 'js/plc.js', 'js/ladder.js', 'js/circuit.js', 'js/workspace.js',
