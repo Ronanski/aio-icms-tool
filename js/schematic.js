@@ -799,7 +799,7 @@
       <li>☝ Operate: click push buttons, selectors, limit switches and overload contacts to work them.</li>
       <li>Double-click a symbol to change its tag. Contacts of KM1 follow coil KM1.</li>
       <li><b>⇵ IEC</b> view: each column is a current path from L (top) to N (bottom); the power circuit is on the right. <b>＋ Feeder</b> adds a motor feeder: breaker → contactor → overload → motor, wired L1-L2-L3 and PE for you.</li>
-      <li>Wire colours (Philippine practice): L1 red, L2 yellow, L3 blue, N white, PE green.</li></ul></div>`;
+      <li>The diagram is drawn in one line colour, like the ladder; live paths light up. The wires it makes in the Wiring get the Philippine colours: L1 red, L2 yellow, L3 blue, N white, PE green.</li></ul></div>`;
     bindSide();
   }
   function bindSide() {

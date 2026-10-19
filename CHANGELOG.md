@@ -21,6 +21,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Contactor 4-Pole** (1-2, 3-4, 5-6, 7-8 + 13-14) and **Impulse Relay** (each pulse on the coil toggles the contact: one lamp from several push buttons), in the Wiring and in free draw.
 - **New parts**: Fuse 3-Pole, MCB 3-Pole, Disconnector 3-Pole, **RCD 2-Pole 30 mA** (trips on an earth fault before the breakers, not on a line-to-neutral short; TEST button), **Off-Delay Timer Relay**, **Single-Phase Motor**, **Two-Speed Motor** (two windings) and **Dahlander Motor** (slow/fast by connection; a wrong connection is a fault).
 
+### Changed
+- Electrical Diagram: the power circuit is drawn in one line colour like the control circuit and the ladder (no more red/yellow/blue lines next to grey ones); live paths still light up. The Philippine wire colours stay on the real wires in the Wiring.
+
 ### Fixed
 - The RCD ring in the free-draw symbol is drawn as a ring, not a filled shape.
 
