@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 1.1.0 (released 2026-10-18 from `main`; downloads on GitHub Releases)
-**Status:** Stable web app that installs on phones, tablets and PCs. PR #2 (fixes + QoL features) is open and waiting for the owner's merge/release authorization. `npm test`: 107/107 on the PR branch.
+**Current version:** 1.2.0 (released 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 107/107.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -24,7 +24,7 @@
 - [x] CI and GitHub Pages workflows
 - [x] Windows installer + portable `.exe` and Android `.apk`, published by the Release workflow
 
-## Done in PR #2 (audit fixes, planned v1.1.1)
+## Done (v1.2.0, PR #2): audit fixes
 - [x] HMI / wiring / panel momentary buttons register on a quick tap (min. 2 scans)
 - [x] Overload relay trips only for the motor it feeds
 - [x] Safe import: XSS in HMI/wire colors, ids, states; non-project files refused
@@ -33,7 +33,7 @@
 - [x] Momentary device state not restored stuck; black wires visible in dark mode
 - [x] No PLC maker brand names in the UI
 
-## Done in PR #2 (QoL features, planned v1.2.0)
+## Done (v1.2.0, PR #2): QoL features
 - [x] Ladder: drag instructions; right-click Change to…; clear zoom buttons + Ctrl+scroll
 - [x] N.O./N.C. contact type for push buttons and selectors
 - [x] Collapsible parts groups
@@ -44,8 +44,22 @@
 
 ## Owner actions
 - [x] Authorize merge of PR #2 and the release v1.2.0 (GO STABLE v1.2.0)
-- [ ] Make `main` the default branch so Pages can deploy
-- [ ] Android signing key in repo secrets, so updates install over old versions (see RELEASING.md)
+- [x] Make `main` the default branch; github-pages environment allows `main`
+- [x] Android signing key in repo secrets (v1.2.0 APK is release-signed)
+- [x] Old branch `ccr-d652d569-13gxij` deleted · [ ] optional: remove its github-pages environment rule
+
+## Audit of v1.2.0 (2026-10-18) — proposed v1.2.1, waiting for the owner's GO
+Checked by three reviewers (code, updater/release, UX in a real browser); the top two were reproduced again by hand.
+- [ ] **High · ladder drag**: a fast flick or a release outside the rungs leaves the drag armed; the next click on empty rung space moves an instruction (reproduced). Fix: cancel when no button is held, capture the pointer on press.
+- [ ] **High · Workbench toolbars**: in the default desktop layout the ladder toolbar is one row in a narrow pane; Verify is cut and the instruction buttons are off-screen with no scroll cue (same for wiring zoom). Fix: let toolbars wrap in panes, or an "＋ Instruction ▾" menu.
+- [ ] **Med · release safety**: a publish can still ship a debug-signed APK if the signing secrets disappear. Fix: fail the publish without the key.
+- [ ] **Med · web update**: "Reload to update" can load files from the browser cache for up to 10 min (Pages max-age=600). Fix: service worker fetches with `cache: 'no-cache'` / `reload`.
+- [ ] **Med · update bar** covers the PLC status bar (desktop) and PROG/RUN (phone). Fix: put it in the page flow.
+- [ ] **Med · phone toolbars** scroll sideways with no visible cue ("Forces" cut). Fix: edge fade.
+- [ ] **Med · "Run" twice**: the HMI "▶ Run / ✎ Edit" looks like the PLC RUN. Fix: rename to "Operate / Design".
+- [ ] **Low-Med · dark mode contrast**: Operator Panel cards (light card, light text), orange-on-orange Verify/active lesson, inactive HMI alarm text.
+- [ ] Low: failed/no-op drag clears redo; drop on a branch rail lands before the outputs; Ctrl+S / Ctrl+O reach the browser while typing or with a dialog open; Save as resets the running PLC and toasts success even if saving failed; CSV export formula injection; failed update checks retry without limit; portable `.exe` users are offered the installer; Electron `will-navigate` guard; tag-push release uses package.json version; stable release must not fall back to `[Unreleased]` notes; toasts overlap menus; Reset data table has no confirm; PLC bar wraps at 1400 px; Learn lesson 1 mentions ▦ Layout which phones don't show.
+- Checked OK: updater against the real GitHub API, XSS paths, project round-trips (v1.0/v1.1/v1.2 examples), overload performance, no console errors, no phone page scroll.
 
 ## Roadmap agreed with the owner
 **v1.3.0 — builder overhaul**
