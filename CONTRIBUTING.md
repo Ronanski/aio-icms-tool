@@ -44,7 +44,7 @@ Release checklist:
 ## 4. Code rules
 - **No build step and no runtime dependencies.** Plain HTML, CSS and JS. `index.html` must work when opened directly from disk.
 - `desktop/` and `mobile/` are thin wrappers that only package the web app. App features belong in the web code, never in a wrapper.
-- Each module is an IIFE that exposes one global (`UI`, `Store`, `PLCcore`, `Ladder`, `Circuit`, `Workspace`, `PanelView`, `HMI`, `Examples`, `App`). Script order in `index.html` matters.
+- Each module is an IIFE that exposes one global (`UI`, `Store`, `PLCcore`, `Ladder`, `Circuit`, `Workspace`, `Schematic`, `HMI`, `Updater`, `Examples`, `App`). Script order in `index.html` matters.
 - Match the surrounding style: 2-space indent, single quotes, semicolons, small helpers, short comments only where the logic isn't obvious.
 - Colors come from the CSS tokens in `:root`. Every new color needs a dark-mode value.
 - The device drawings in `circuit.js` keep their real-world colors, independent of the theme.

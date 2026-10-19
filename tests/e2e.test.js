@@ -35,11 +35,17 @@ function check(name, cond, info = '') {
   const setMode = m => page.evaluate(m => App.setMode(m), m);
 
   console.log('Views');
-  for (const v of ['ladder', 'wiring', 'panel', 'hmi', 'learn']) {
+  check('4 workspaces: Ladder, Electrical Diagram, Wiring, HMI', await page.$$eval('.tabs [data-view]', b => b.map(x => x.textContent.replace(/^\W+/, '').trim()).join('|')) === 'Ladder|Electrical Diagram|Wiring|HMI');
+  for (const v of ['ladder', 'schematic', 'wiring', 'hmi']) {
     await page.click(`.tabs [data-view="${v}"]`);
     await wait(250);
     check(`${v} view renders`, await page.isVisible(`#view-${v}.active`));
   }
+  await page.click('[data-help]'); await page.click('.ctx-menu button:has-text("Lessons")'); await wait(250);
+  check('Help → Lessons opens Learn', await page.isVisible('#view-learn.active'));
+  await page.click('[data-help]'); await page.click('.ctx-menu button:has-text("Keyboard shortcuts")'); await wait(150);
+  check('Help → Keyboard shortcuts lists Ctrl+S', (await page.textContent('.modal-body')).includes('Ctrl+S'));
+  await page.keyboard.press('Escape');
 
   console.log('New project');
   await page.click('[data-file]');
@@ -124,11 +130,13 @@ function check(name, cond, info = '') {
   await page.evaluate(() => App.setLayout('bench'));
   await wait(400);
   const shown = () => page.evaluate(() => [...document.querySelectorAll('.view.active')].map(v => v.id.replace('view-', '')).join(','));
-  check('Workbench shows ladder, wiring and panel together', (await shown()) === 'ladder,wiring,panel');
-  const pb = await (await page.$('#view-panel .pcard svg [data-part="btn"]')).boundingBox();
+  check('Workbench shows ladder, wiring and HMI together', (await shown()) === 'ladder,wiring,hmi');
+  await page.evaluate(() => Workspace.fit()); await wait(200);
+  const benchS1 = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id);
+  const pb = await (await page.$(`#view-wiring .comp[data-cid="${benchS1}"] [data-part="btn"]`)).boundingBox();
   await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2); await page.mouse.down(); await wait(150); await page.mouse.up();
   await wait(800);
-  check('panel press runs the motor while all panes are live', await get('KM1', 'state.pulled'));
+  check('pressing START in the wiring runs the motor while all panes are live', await get('KM1', 'state.pulled'));
   check('ladder pane shows power flow', (await page.$$eval('#view-ladder .w.on', els => els.length)) > 0);
   check('wiring pane shows live wires', (await page.$$eval('#view-wiring .wl.live', els => els.length)) > 0);
   await page.evaluate(() => App.setLayout('lw'));
@@ -242,7 +250,7 @@ function check(name, cond, info = '') {
       { id: 'h3', type: 'script', x: 10, y: 10 },
     ] } });
   });
-  for (const v of ['wiring', 'hmi', 'panel']) { await page.evaluate(v => App.showView(v), v); await wait(250); }
+  for (const v of ['wiring', 'hmi', 'schematic']) { await page.evaluate(v => App.showView(v), v); await wait(250); }
   check('scripts hidden in an imported file do not run', await page.evaluate(() => window.__x === undefined && !document.querySelector('img[src="x"]')));
   check('unsafe HMI objects are dropped or cleaned', await page.evaluate(() => App.project.hmi.objects.length === 1 && App.project.hmi.objects[0].color === '#2fa84f'));
   check('unsafe wire colors are replaced', await page.evaluate(() => App.project.circuit.wires[0].color === '#1d1d1d'));
@@ -273,7 +281,7 @@ function check(name, cond, info = '') {
     return c[0] > 200 && c[1] > 200 && c[2] > 200;
   }));
   await page.evaluate(() => { delete document.documentElement.dataset.theme; });
-  for (const v of ['ladder', 'panel', 'hmi', 'learn']) { await page.evaluate(v => App.showView(v), v); await wait(150); }
+  for (const v of ['ladder', 'schematic', 'hmi', 'learn']) { await page.evaluate(v => App.showView(v), v); await wait(150); }
   check('no brand names in the app', await page.evaluate(() => !/Allen.?Bradley|Rockwell|RSLogix|MicroLogix|PanelView|SLC 500/i.test(document.documentElement.outerHTML)));
 
   console.log('Ladder: change, drag, zoom');
@@ -356,8 +364,9 @@ function check(name, cond, info = '') {
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-evx]')]);
   check('the event log exports to CSV', dl.suggestedFilename().endsWith('-events.csv'));
   await page.keyboard.press('Escape');
-  await page.evaluate(() => App.showView('panel')); await wait(200);
-  await (await page.$('#view-panel .pcard svg [data-part="btn"]')).click();
+  await page.evaluate(() => { App.setLayout('single'); App.showView('wiring'); Workspace.fit(); }); await wait(300);
+  const opb = await (await page.$('#view-wiring .comp [data-part="btn"]')).boundingBox();
+  await page.mouse.move(opb.x + opb.width / 2, opb.y + opb.height / 2); await page.mouse.down(); await wait(100); await page.mouse.up();
   check('operating a device is logged', await page.evaluate(() => App.events().some(e => e.kind === 'operator' && e.msg.includes('button operated'))));
 
   console.log('Save, Save as, Open');
@@ -601,7 +610,7 @@ function check(name, cond, info = '') {
   await page.click('.ctx-menu button:has-text("☐ HMI")');
   await wait(300);
   check('View menu: ticking HMI shows Ladder and HMI side by side', (await shown()) === 'ladder,hmi');
-  for (const n of ['Wiring', 'Panel & Plant']) { await page.click('[data-layout]'); await page.click(`.ctx-menu button:has-text("☐ ${n}")`); await wait(200); }
+  for (const n of ['Wiring', 'Electrical Diagram']) { await page.click('[data-layout]'); await page.click(`.ctx-menu button:has-text("☐ ${n}")`); await wait(200); }
   check('View menu: no more than 3 windows at once', (await shown()).split(',').length === 3 && (await page.textContent('#toast-root')).includes('Up to 3 windows'));
   await page.click('[data-layout]'); await page.click('.ctx-menu button:has-text("☑ HMI")'); await wait(200);
   check('View menu: unticking hides a window', (await shown()) === 'ladder,wiring');
@@ -795,6 +804,12 @@ function check(name, cond, info = '') {
   await page.mouse.move(hf.x + 4 + 20 * railK, hf.y + 4, { steps: 5 }); await page.mouse.up();
   check('a device dropped near a DIN rail clips onto its centre line', (await get('H1', 'y')) + 40 === railY + 18, `${await get('H1', 'y')} vs rail ${railY}`);
   check('a DIN rail is drawn behind the devices', await page.evaluate(() => !!document.querySelector('.ws-svg .rails .comp') && !document.querySelector('.ws-svg .comps .comp .clabel')?.textContent.startsWith('RAIL')));
+  console.log('v1.4 part 2: four workspaces');
+  check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });
+  await page.reload(); await wait(800);
+  check('a saved Panel view opens the Wiring, an old Wiring + Panel layout becomes Wiring + HMI', await page.evaluate(() => App.view === 'wiring' && App.layout === 'wh' && !document.querySelector('.float-win')));
+  await page.evaluate(() => { App.setLayout('single'); App.showView('wiring'); });
   check('terminals are drawn as screw heads', await page.evaluate(() => document.querySelector('.ws-svg .comps .term').querySelectorAll('line').length === 2));
 
   check('no page errors', errors.length === 0, errors.join(' | '));

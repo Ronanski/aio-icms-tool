@@ -52,16 +52,15 @@
     </div>
     <nav class="tabs" aria-label="Views">
       <button data-view="ladder"><span class="ti">⊢⊣</span>Ladder</button>
-      <button data-view="schematic"><span class="ti">⊢◯</span>Schematic</button>
+      <button data-view="schematic" title="Electrical Diagram (schematic)"><span class="ti">⊢◯</span>Electrical Diagram</button>
       <button data-view="wiring"><span class="ti">⌁</span>Wiring</button>
-      <button data-view="panel"><span class="ti">◉</span>Panel &amp; Plant</button>
       <button data-view="hmi"><span class="ti">▭</span>HMI</button>
-      <button data-view="learn"><span class="ti">✦</span>Learn</button>
     </nav>
     <div class="top-actions">
       <button class="btn primary" data-install hidden>⤓ Install app</button>
       <button class="btn ghost" data-examples>Examples ▾</button>
       <button class="btn ghost" data-file>File ▾</button>
+      <button class="btn ghost" data-help title="Lessons, guide and keyboard shortcuts">Help ▾</button>
       <button class="icon-btn" data-theme-btn title="Theme">◐</button>
       <input type="file" id="importFile" accept=".json,application/json" hidden>
     </div>
@@ -78,14 +77,13 @@
     <span class="bar-msg" data-msg></span>
     <span class="spacer"></span>
     <button class="tbtn sm" data-events title="Event log: mode changes, forces, trips, alarms and operator actions">📋 Events <b class="badge" data-evbadge hidden>0</b></button>
-    <button class="tbtn sm" data-layout title="Show ladder, wiring and panel side by side">▦ Layout</button>
+    <button class="tbtn sm" data-layout title="Show ladder, wiring, diagram and HMI side by side">▦ Layout</button>
   </div>
 
   <main id="main">
     <section class="view" id="view-ladder"></section>
     <section class="view" id="view-schematic"></section>
     <section class="view" id="view-wiring"></section>
-    <section class="view" id="view-panel"></section>
     <section class="view" id="view-hmi"></section>
     <section class="view" id="view-learn"></section>
     <div class="gutter gv" data-g="v" title="Drag to resize · double-click to reset"></div>
@@ -101,7 +99,6 @@
   <script src="js/ladder.js"></script>
   <script src="js/circuit.js"></script>
   <script src="js/workspace.js"></script>
-  <script src="js/panel.js"></script>
   <script src="js/hmi.js"></script>
   <script src="js/schematic.js"></script>
   <script src="js/examples.js"></script>

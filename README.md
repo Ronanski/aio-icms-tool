@@ -2,7 +2,7 @@
 
 **Version 1.2.1** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
 
-A PLC trainer that runs in the browser. Write ladder logic, wire real-looking power and control circuits, operate the panel, build an HMI, and watch the equipment respond.
+A PLC trainer that runs in the browser. Write ladder logic, wire real-looking power and control circuits, press the buttons right in the wiring, build an HMI, and watch the equipment respond.
 
 No build step. It runs in any modern browser on Windows, Mac, Android, iPhone and iPad, and installs as an app that works offline.
 
@@ -46,11 +46,11 @@ Installing needs the app served over https; the included GitHub Pages workflow d
   - Overload relay trips on a jammed or single-phasing motor
 - Live voltage overlay, a terminal hover tooltip, and a **multimeter**
 
-**Schematic**: draw a relay/contactor control circuit like a ladder (rails, rungs, branches, IEC-style symbols). Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic.
+**Electrical Diagram** (schematic): draw a relay/contactor control circuit like a ladder (rails, rungs, branches, IEC-style symbols). Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic.
 
-**Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable.
+**Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. Push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring (the separate Operator Panel was removed in v1.4). Lessons and keyboard shortcuts are in **Help ▾**.
 
-**Workbench layout / View menu**: **▦ View** lets you tick which windows show side by side (up to 3), or float any window over the others (move, resize, dock back). It also shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
+**Workbench layout / View menu**: **▦ View** lets you tick which windows show side by side (up to 3), or float any window over the others (move, resize, dock back). It also shows the ladder, the wiring (control and power circuit) and the HMI side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the Electrical Diagram.
 
 **HMI**: an 800×480 operator terminal screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has ☝ Operate and ✎ Design modes, zoom (🔍−, Fit, 🔍＋ or Ctrl + scroll) and binds to PLC tags. Momentary buttons stay on for at least two PLC scans, so a quick tap always registers.
 
@@ -63,7 +63,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 ## Quick start
 1. Open `index.html`. The *PLC motor start/stop + HMI* example loads.
 2. Click **RUN** in the top bar.
-3. Pick **▦ Layout → Workbench**, then press **START** on the panel. The rung goes green, KM1 pulls in and the motor spins.
+3. Pick **▦ Layout → Workbench**, then press **START** in the wiring. The rung goes green, KM1 pulls in and the motor spins.
 4. Click **JAM** on the motor. After a few seconds F1 trips and the HMI shows an alarm.
 
 ## Project structure
@@ -76,7 +76,6 @@ js/plc.js         addressing, instruction set, scan engine, forcing
 js/ladder.js      ladder renderer/editor + data table
 js/circuit.js     component library + electrical solver
 js/workspace.js   wiring canvas
-js/panel.js       Panel & Plant view
 js/hmi.js         HMI designer/runtime
 js/examples.js    example projects + lessons
 js/app.js         app state, scan loop, projects, install
