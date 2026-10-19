@@ -8,7 +8,7 @@
     /* Runs before the app. On the hosted app (GitHub Pages): take projects handed over by the app's built-in copy,
        and open the copy of the chosen update channel (Stable at the root, Beta under /beta/).
        In the Windows/Android app's built-in copy: move to the hosted app, which updates itself, bringing this
-       device's projects along the first few times. ?local=1 keeps the built-in copy (offline first start, tests). */
+       device's projects along. ?local=1 keeps the built-in copy (offline first start, tests). */
     (function () {
       var PAGES = 'https://ronanski.github.io/aio-icms-tool/', ls;
       try { ls = window.localStorage; ls.length; } catch (e) { return; }
@@ -34,14 +34,12 @@
       if (!shell || /[?&]local=1\b/.test(location.search)) return;
       var n = Number(ls.getItem('plc-trainer.handover')) || 0;
       if (!n && !navigator.onLine) return;   // first start offline: use the built-in copy
-      var data = '';
-      if (n < 3) {
-        var o = {};
-        for (var i = 0; i < ls.length; i++) { var key = ls.key(i); if (/^plc-trainer\./.test(key) && key !== 'plc-trainer.handover') o[key] = ls.getItem(key); }
-        data = '#import=' + encodeURIComponent(JSON.stringify(o));
-      }
+      // always hand the built-in copy's projects over: the hosted app only adds keys it does not have, so this is
+      // safe to repeat, and a hosted copy too old to read it does not lose them
+      var o = {};
+      for (var i = 0; i < ls.length; i++) { var key = ls.key(i); if (/^plc-trainer\./.test(key) && key !== 'plc-trainer.handover') o[key] = ls.getItem(key); }
       ls.setItem('plc-trainer.handover', String(n + 1));
-      location.replace(PAGES + (ch === 'beta' ? 'beta/' : '') + data);
+      location.replace(PAGES + (ch === 'beta' ? 'beta/' : '') + '#import=' + encodeURIComponent(JSON.stringify(o)));
     })();
   </script>
   <meta name="description" content="PLC trainer: ladder logic editor, power & control circuit wiring simulator, HMI, forcing and live equipment.">
