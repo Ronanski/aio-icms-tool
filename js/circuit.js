@@ -264,11 +264,12 @@
     },
     status: c => c.state.burnt ? 'Coil burnt' : c.state.pulled ? 'Energized' : 'De-energized',
   });
+  const TSTEPS = [0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 45, 60];
   def('timer', {
     name: 'On-Delay Timer Relay', cat: 'Control', view: 'cabinet', prefix: 'KT', w: 90, h: 110,
     props: { coil: '230VAC', t: 5 },
     pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }, { k: 't', n: 'Delay (s)', type: 'number' }],
-    info: 'Coil A1-A2. After the delay: 15-18 closes (NO), 15-16 opens (NC). Resets instantly when coil drops.',
+    info: 'Coil A1-A2. After the delay: 15-18 closes (NO), 15-16 opens (NC). Resets instantly when coil drops. Click − / + beside the dial to set the delay.',
     terms: [{ id: 'A1', x: 12, y: 0 }, { id: '15', x: 55, y: 0 }, { id: 'A2', x: 12, y: 110 }, { id: '16', x: 45, y: 110 }, { id: '18', x: 72, y: 110 }],
     init: () => ({ pw: false, el: 0, done: false, burnt: false }),
     conduct: c => c.state.done ? [['15', '18']] : [['15', '16']],
@@ -283,12 +284,23 @@
       if (s.pw && !s.done) { s.el = Math.min(t, s.el + dt); if (s.el >= t) s.done = true; }
       s.elD = Math.round(s.el * 10) / 10;
     },
+    onPart(c, p, ev) {
+      if (ev !== 'down' || (p !== 'up' && p !== 'dn')) return;
+      const t = Number(c.props.t) || 0, i = TSTEPS.findIndex(x => x >= t);
+      const k = p === 'up' ? (i < 0 ? TSTEPS.length - 1 : TSTEPS[i] > t ? i : Math.min(TSTEPS.length - 1, i + 1)) : Math.max(0, (i < 0 ? TSTEPS.length : i) - 1);
+      c.props.t = TSTEPS[k];
+      return true;
+    },
     draw(c) {
-      const s = c.state, t = Number(c.props.t) || 0, fr = t ? s.el / t : 1;
-      const a = -220 + 260 * fr, rad = a * Math.PI / 180;
-      return R(0, 0, 90, 110, 'url(#gPlastic)', 5) + band(0, 90, 18, '#d4cfc4') + band(92, 90, 18, '#d4cfc4') +
-        `<circle cx="45" cy="50" r="18" fill="#f4f1ea" stroke="#555"/><path d="M45 50 L${45 + 14 * Math.cos(rad)} ${50 + 14 * Math.sin(rad)}" stroke="#d33a2c" stroke-width="2.5" stroke-linecap="round"/>` +
-        T(45, 80, `${(s.elD || 0).toFixed(1)} / ${t}s`, 'dt xs') + led(16, 30, s.pw, '#3ddc63') + T(16, 41, 'U', 'dt xs') + led(74, 30, s.done, '#f2c230') + T(74, 41, 'R', 'dt xs') +
+      // set-point dial: the pointer shows the delay on a 0–60 s scale; the bar under it fills while timing
+      const s = c.state, t = Number(c.props.t) || 0, fr = Math.min(1, t / 60), a = (-225 + 270 * fr) * Math.PI / 180;
+      const tick = i => { const r = (-225 + 27 * i) * Math.PI / 180; return `<line x1="${45 + 19 * Math.cos(r)}" y1="${50 + 19 * Math.sin(r)}" x2="${45 + 22 * Math.cos(r)}" y2="${50 + 22 * Math.sin(r)}" stroke="#555"/>`; };
+      return modBody(90, 110, '', 18, 18) + Array.from({ length: 11 }, (_, i) => tick(i)).join('') +
+        `<circle cx="45" cy="50" r="16" fill="#2f6fd6" stroke="#1b3f7a"/><path d="M45 50 L${45 + 13 * Math.cos(a)} ${50 + 13 * Math.sin(a)}" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>` +
+        `<g class="part" data-part="dn"><rect x="2" y="54" width="16" height="16" rx="3" fill="#e1e1de" stroke="#777"/>${T(10, 66, '−', 'dt sm')}</g>` +
+        `<g class="part" data-part="up"><rect x="72" y="54" width="16" height="16" rx="3" fill="#e1e1de" stroke="#777"/>${T(80, 66, '+', 'dt sm')}</g>` +
+        T(45, 80, `${t} s`, 'dt sm') + R(14, 84, 62, 4, '#d4d4d0', 1, 'none') + (t && s.el ? R(14, 84, Math.max(1, 62 * Math.min(1, s.el / t)), 4, '#f2c230', 1, 'none') : '') +
+        led(14, 30, s.pw, '#3ddc63') + T(14, 41, 'U', 'dt xs') + led(76, 30, s.done, '#f2c230') + T(76, 41, 'R', 'dt xs') +
         (s.burnt ? burnt(90, 110) : '');
     },
     status: c => c.state.done ? 'Timed out — 15-18 closed' : c.state.pw ? `Timing ${(c.state.elD || 0).toFixed(1)} s` : 'Idle',
@@ -648,7 +660,7 @@
   }
   function motorTick(c, dt) {
     const s = c.state;
-    const target = s.drive === 'run' && !s.jam ? s.dir : 0;
+    const target = s.drive === 'run' && !s.jam ? s.dir * (s.k || 1) : 0;
     const rate = s.drive === 'run' ? 1.6 : 0.7;
     if (s.spd < target) s.spd = Math.min(target, s.spd + rate * dt);
     else if (s.spd > target) s.spd = Math.max(target, s.spd - rate * dt);
@@ -693,6 +705,56 @@
       return g + btn('jam', 88, 104, 28, 14, 'JAM', s.jam);
     },
     status: c => motorStatus(c.state),
+  });
+
+  /* Six-terminal motor for star-delta: windings U1-U2, V1-V2, W1-W2, all brought out (no bridges in the box).
+     Star: U2 V2 W2 joined and dead, phases on U1 V1 W1. Delta: every winding across two different phases. */
+  function m6Conn(c, api) {
+    const p = t => api.phase(c, t), r = t => api.root(c, t);
+    const a = ['U1', 'V1', 'W1'].map(p), b = ['U2', 'V2', 'W2'].map(p);
+    if (!a.every(Boolean)) return a.some(Boolean) ? 'single' : 'off';
+    if (new Set(a).size < 3) return 'single';
+    const starPt = r('U2') === r('V2') && r('V2') === r('W2') && !b.some(Boolean) && !api.pots(c, 'U2').size;
+    if (starPt) return 'star';
+    if (b.every((x, i) => x && x !== a[i])) return 'delta';
+    return b.some(Boolean) ? 'single' : 'open';
+  }
+  def('motor6', {
+    name: 'Motor 6 terminals (star-delta)', cat: 'Equipment', view: 'plant', prefix: 'M', w: 140, h: 120,
+    info: 'Windings U1-U2, V1-V2, W1-W2 all on the terminal box, for a star-delta starter. STAR: U2 V2 W2 joined, supply on U1 V1 W1 (reduced current, ~70 % speed in this model). DELTA: each winding across two phases (full speed). Swap two phases to reverse. Click JAM to simulate a jam.',
+    terms: [{ id: 'U1', x: 20, y: 0 }, { id: 'V1', x: 40, y: 0 }, { id: 'W1', x: 60, y: 0 }, { id: 'W2', x: 80, y: 0 }, { id: 'U2', x: 100, y: 0 }, { id: 'V2', x: 120, y: 0 }, { id: 'PE', x: 136, y: 40, dir: 1 }],
+    init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false, conn: 'off', k: 1 }),
+    transient: ['spd', 'drive', 'dir', 'conn'],
+    evaluate(c, api) {
+      const conn = m6Conn(c, api), s = c.state;
+      s.conn = conn; s.k = conn === 'star' ? 0.7 : 1;
+      if (conn === 'star' || conn === 'delta') {
+        const { dir } = motorDrive(c, api, 'U1', 'V1', 'W1');
+        s.drive = 'run'; s.dir = dir;
+        if (s.jam) api.overM.push({ c, t: ['U1', 'V1', 'W1'] });
+      } else if (conn === 'single') { s.drive = 'single'; s.dir = 0; api.overM.push({ c, t: ['U1', 'V1', 'W1'] }); }
+      else { s.drive = 'off'; s.dir = 0; }
+      return false;
+    },
+    tick: (c, api, dt) => motorTick(c, dt),
+    onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
+    draw(c) {
+      const s = c.state, warn = (s.drive === 'run' && s.jam) || s.drive === 'single';
+      let g = R(10, 2, 120, 30, '#8a8f96', 3, '#4a4f55') + R(14, 6, 112, 22, '#e2733b', 2, '#7a3a1a');
+      g += `<text class="dt xs" x="70" y="22" text-anchor="middle">${s.conn === 'star' ? 'Y STAR' : s.conn === 'delta' ? 'Δ DELTA' : ''}</text>`;
+      g += R(18, 36, 96, 56, 'url(#gMotor)', 10, '#1b3570', 1.2) + Array.from({ length: 8 }, (_, i) => `<line x1="${28 + i * 11}" y1="40" x2="${28 + i * 11}" y2="88" stroke="#1b3570" stroke-width="1.4" opacity=".55"/>`).join('') +
+        R(114, 56, 18, 14, '#b9bdc2', 2, '#555') + `<g transform="translate(126 63) rotate(${s.ang || 0})"><circle r="6" fill="#d6d9dc" stroke="#555"/><rect x="-1" y="-6" width="2" height="5" fill="#333"/></g>` +
+        R(24, 92, 18, 8, '#22488f', 1, '#1b3570') + R(90, 92, 18, 8, '#22488f', 1, '#1b3570') + T(66, 68, 'M 3~', 'dt light big');
+      if (warn) g += `<rect x="16" y="34" width="100" height="60" rx="11" fill="none" stroke="#ff4b3a" stroke-width="3" class="blink"/>`;
+      if (s.drive === 'run' && !s.jam) g += T(126, 86, s.dir > 0 ? 'CW' : 'CCW', 'dt xs warnt');
+      return g + btn('jam', 4, 102, 28, 14, 'JAM', s.jam);
+    },
+    status: c => {
+      const s = c.state;
+      if (s.conn === 'open') return 'Windings not connected: join U2 V2 W2 (star) or wire them for delta';
+      const base = motorStatus(s);
+      return s.drive === 'run' && !s.jam ? `${s.conn === 'star' ? 'STAR (Y)' : 'DELTA (Δ)'} · ${base}` : base;
+    },
   });
 
   def('conveyor', {

@@ -144,6 +144,8 @@
     App.currentId = Store.newId();
     Store.setCurrent(App.currentId);
     applyProject(proj);
+    // an example (or file) with diagram rungs but no diagram wires yet: let the Electrical Diagram wire them now
+    if (proj.schematic.rungs.length && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
   };
   App.openSaved = function (id) {
     let proj = null;

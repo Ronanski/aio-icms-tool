@@ -804,6 +804,51 @@ function check(name, cond, info = '') {
   await page.mouse.move(hf.x + 4 + 20 * railK, hf.y + 4, { steps: 5 }); await page.mouse.up();
   check('a device dropped near a DIN rail clips onto its centre line', (await get('H1', 'y')) + 40 === railY + 18, `${await get('H1', 'y')} vs rail ${railY}`);
   check('a DIN rail is drawn behind the devices', await page.evaluate(() => !!document.querySelector('.ws-svg .rails .comp') && !document.querySelector('.ws-svg .comps .comp .clabel')?.textContent.startsWith('RAIL')));
+  console.log('v1.4 part 3: star-delta, forward/reverse, timer dial');
+  const tap = async l => { await part(l, 'btn', 'down'); await wait(200); await part(l, 'btn', 'up'); await wait(500); };
+  await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); App.project.circuit.comps.find(c => c.props.label === 'KT1').props.t = 1; });
+  await wait(300);
+  check('the star-delta diagram is wired with no errors', await page.evaluate(() => App.project.circuit.wires.some(w => w.sch) && Schematic.errs.size === 0));
+  await tap('S1');
+  check('START: KM1 + KM3 pull in, the motor runs in STAR', (await get('KM1', 'state.pulled')) && (await get('KM3', 'state.pulled')) && !(await get('KM2', 'state.pulled')) && (await get('M1', 'state.conn')) === 'star');
+  await wait(1300);
+  check('after the star time: KM3 drops, KM2 pulls in, the motor runs in DELTA', !(await get('KM3', 'state.pulled')) && (await get('KM2', 'state.pulled')) && (await get('M1', 'state.conn')) === 'delta' && !(await get('QM1', 'state.tripped')));
+  await tap('S0');
+  check('STOP drops every contactor', !(await get('KM1', 'state.pulled')) && !(await get('KM2', 'state.pulled')) && !(await get('KA2', 'state.pulled')));
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('motor6', { label: 'M6' });
+    w(q, 'L1', m, 'U1'); w(q, 'L2', m, 'V1'); w(q, 'L3', m, 'W1');
+    App.openNew({ name: 'Open windings', circuit: circ });`));
+  await wait(300);
+  check('a 6-terminal motor with open windings does not run and says why', (await get('M6', 'state.drive')) !== 'run' && (await page.evaluate(() => Circuit.status(App.project.circuit.comps.find(c => c.props.label === 'M6'), App.ctx))).includes('not connected'));
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), b = add('mpcb', { label: 'QM1' }, { on: true }), m = add('motor6', { label: 'M6' });
+    w(q, 'L1', b, '1'); w(q, 'L2', b, '3'); w(q, 'L3', b, '5');
+    w(b, '2', m, 'U1'); w(b, '4', m, 'V1'); w(b, '6', m, 'W1'); w(b, '2', m, 'W2'); w(b, '4', m, 'U2'); w(b, '6', m, 'V2');
+    w(m, 'U2', m, 'V2'); w(m, 'V2', m, 'W2');
+    App.openNew({ name: 'Star and delta', circuit: circ });`));
+  await wait(300);
+  check('star and delta at the same time short the phases and QM1 trips', await get('QM1', 'state.tripped'));
+  await page.evaluate(() => { const p = Examples.EX.stardeltaplc.build(); p.ladder.rungs[1].text = 'XIC O:0/0 TON T4:0 1.0 1 0'; App.openNew(p); App.setMode('RUN'); });
+  await wait(300);
+  await tap('S1');
+  check('PLC star-delta: star first', (await get('KM3', 'state.pulled')) && !(await get('KM2', 'state.pulled')) && (await get('M1', 'state.conn')) === 'star');
+  await wait(1300);
+  check('PLC star-delta: then delta', !(await get('KM3', 'state.pulled')) && (await get('KM2', 'state.pulled')) && (await get('M1', 'state.conn')) === 'delta');
+  await page.evaluate(() => { App.openNew(Examples.EX.fwdrev.build()); App.setMode('RUN'); });
+  await wait(300);
+  await tap('S1');
+  check('FWD runs the motor forward', (await get('KM1', 'state.pulled')) && (await get('M1', 'state.dir')) === 1);
+  await tap('S2');
+  check('REV while running forward is refused (interlock)', (await get('KM1', 'state.pulled')) && !(await get('KM2', 'state.pulled')));
+  await tap('S0'); await tap('S2');
+  check('after STOP, REV runs the motor in reverse', (await get('KM2', 'state.pulled')) && (await get('M1', 'state.dir')) === -1 && !(await get('QM1', 'state.tripped')));
+  check('the timer dial sets the delay with − / +', await page.evaluate(() => {
+    const c = Circuit.create('timer', 0, 0, { comps: [], wires: [], seq: 0 });
+    Circuit.part(c, 'up', 'down'); const a = c.props.t; Circuit.part(c, 'dn', 'down'); Circuit.part(c, 'dn', 'down');
+    return a === 6 && c.props.t === 4;
+  }));
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });
