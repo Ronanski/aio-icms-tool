@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-19
+
 ### Fixed
 - **Ladder drag**: releasing the mouse outside the rungs (or a fast flick) no longer leaves the drag active, which made the next click move an instruction. A drop that changes nothing keeps undo/redo. Dropping on a branch rail places the instruction next to the branch.
 - **Workbench layout**: the ladder and wiring toolbars wrap inside their panes, so every instruction button, Verify and the zoom controls are visible.
@@ -121,7 +123,8 @@ The first public release.
 - Light and dark themes.
 - End-to-end regression suite (`npm test`, 26 checks).
 
-[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Ronanski/aio-icms-tool/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/Ronanski/aio-icms-tool/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ronanski/aio-icms-tool/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.0.0

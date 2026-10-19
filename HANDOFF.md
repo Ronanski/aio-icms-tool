@@ -66,7 +66,7 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
 ## Start of next session (read first)
-- v1.2.1 fixes (owner's GO v1.2.1) are on `claude/focused-archimedes-12aqro` in a PR to `main`; see `PROGRESS.md` → "Done on branch for v1.2.1". Not merged, version not bumped, not released: needs the owner's GO to merge and GO STABLE v1.2.1 to release.
+- v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19). See the savepoint table for the release check.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
 - Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.

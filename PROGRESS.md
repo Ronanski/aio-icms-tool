@@ -48,7 +48,7 @@
 - [x] Android signing key in repo secrets (v1.2.0 APK is release-signed)
 - [x] Old branch `ccr-d652d569-13gxij` deleted · [ ] optional: remove its github-pages environment rule
 
-## Done on branch for v1.2.1 (owner's GO v1.2.1; not released yet)
+## Done (v1.2.1, PR #5)
 From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] High: ladder drag never stays armed; no-op/failed drops keep undo/redo; drop on a branch rail
 - [x] High: Workbench toolbars wrap inside panes (all buttons, Verify and zoom visible)
