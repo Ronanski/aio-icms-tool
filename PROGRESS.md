@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.0 (released 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 125/125 on the v1.2.1 branch.
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 130/130 on the v1.2.1 branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -59,7 +59,10 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Dark-mode contrast (Operator Panel, Verify, active lesson, HMI alarm)
 - [x] Ctrl+S/Shift+S/O while typing; Save as keeps the PLC running; CSV formula injection; Reset data table confirm; update-check retry limit; Electron will-navigate guard; menu shortcuts; Learn hint on phones; status message ellipsis
 - [x] S:0 math flags and S:5/0; PLC input destroyed by AC; breaker selectivity; oscillation warning
-- [ ] Not done: portable `.exe` users are offered the installer (the app cannot tell which build it is without a desktop preload)
+- [x] Portable `.exe` updates with the portable file (the desktop shell passes `?build=portable|installed`)
+- [x] Verify: timer preset/accum ≥ 0, whole-number constants in range; warnings for shared timers and CTU/CTD preset mismatch
+- [x] 24 VDC PSU: output short → DC OK off + alarm; overload trip delay 0 s trips at once; workflow permissions least-privilege
+- [ ] Still open (low): DIV rounding of negative halves (needs a check against the instruction manual); earth-leakage teaching case (L-PE feed)
 - [ ] Owner's own list of v1.2 bugs/gaps (not received yet)
 
 ## Roadmap agreed with the owner

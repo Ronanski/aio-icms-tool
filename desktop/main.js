@@ -25,7 +25,8 @@ function createWindow() {
     e.preventDefault();
     if (/^https?:/.test(url)) shell.openExternal(url);
   });
-  win.loadFile(path.join(__dirname, 'app', 'index.html'));
+  // tell the web app which Windows build it runs in, so its update check offers the matching download
+  win.loadFile(path.join(__dirname, 'app', 'index.html'), { query: { build: process.env.PORTABLE_EXECUTABLE_DIR ? 'portable' : 'installed' } });
 }
 
 app.whenReady().then(() => {

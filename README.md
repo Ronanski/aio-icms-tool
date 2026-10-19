@@ -90,7 +90,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 125 end-to-end checks (desktop, layouts, phone touch, offline)
+npm test                                 # 130 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

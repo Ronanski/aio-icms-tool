@@ -86,9 +86,16 @@
       if (v && v.label === '400VAC' && !c.state.burnt) { c.state.burnt = true; api.alert(`${c.props.label}: power supply destroyed — 400 VAC on a 230 VAC input`, 'danger'); }
       return set(c, 'ok', !!(v && v.label === '230VAC') && !c.state.burnt);
     },
+    /* a short on the output puts the supply in current limit: DC OK goes off (shown, not modelled as a source change) */
+    tick(c, api) {
+      const sh = api.net.short, f = !!c.state.ok && (sh.has(api.root(c, 'P1')) || sh.has(api.root(c, 'M1')));
+      if (f && !c.state.dcFault) api.alert(`${c.props.label}: 24 V output short circuit — supply in current limit, DC OK off`, 'danger');
+      c.state.dcFault = f;
+    },
+    status: c => c.state.burnt ? 'Destroyed' : !c.state.ok ? 'No 230 VAC input' : c.state.dcFault ? 'OUTPUT SHORT — current limit, DC OK off' : 'DC OK',
     draw(c) {
       return R(0, 0, 110, 90, 'url(#gMetal)', 4) + band(0, 110) + band(72, 110) +
-        T(55, 36, '24V DC', 'dt big') + T(55, 50, '5 A', 'dt sm') + led(92, 34, c.state.ok, '#3ddc63') + T(92, 46, 'DC OK', 'dt xs') +
+        T(55, 36, '24V DC', 'dt big') + T(55, 50, '5 A', 'dt sm') + led(92, 34, c.state.ok && !c.state.dcFault, '#3ddc63') + T(92, 46, 'DC OK', 'dt xs') +
         (c.state.burnt ? burnt(110, 90) : '');
     },
   });
@@ -155,8 +162,9 @@
       const hot = api.feedsOverload(c);
       const s = c.state;
       s.heat = hot ? s.heat + dt : Math.max(0, s.heat - dt * 0.4);
-      if (!s.tripped && s.heat >= (Number(c.props.trip) || 4)) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
-      s.heatPct = Math.round(Math.min(1, s.heat / (Number(c.props.trip) || 4)) * 100);
+      const tr = Number(c.props.trip), T = Number.isFinite(tr) ? Math.max(0.1, tr) : 4;   // 0 = trips at once
+      if (!s.tripped && s.heat >= T) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
+      s.heatPct = Math.round(Math.min(1, s.heat / T) * 100);
     },
     onPart(c, p, ev) {
       if (ev !== 'down') return;

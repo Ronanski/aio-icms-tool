@@ -47,8 +47,9 @@
     }
     return best && compare(best.v, parse(current)) > 0 ? best.r : null;
   }
+  const portable = () => /[?&]build=portable\b/.test(location.search);
   function assetFor(r, plat) {
-    const re = plat === 'windows' ? /Setup-.*\.exe$/i : plat === 'android' ? /-android\.apk$/i : null;
+    const re = plat === 'windows' ? (portable() ? /-portable\.exe$/i : /Setup-.*\.exe$/i) : plat === 'android' ? /-android\.apk$/i : null;
     const a = re && (r.assets || []).find(x => re.test(x.name));
     return a ? a.browser_download_url : null;
   }
@@ -108,7 +109,7 @@
     // the web app updates itself: index.html and scripts are fetched network-first, so a reload loads the new files
     if (plat === 'web' && !r.prerelease) { location.reload(); return; }
     openOut(url || r.html_url);
-    if (url) UI.toast(plat === 'android' ? 'Downloading the update. Open the .apk when it finishes and tap Install.' : 'Downloading the installer. Run it to update; your projects are kept.', 'ok', 6000);
+    if (url) UI.toast(plat === 'android' ? 'Downloading the update. Open the .apk when it finishes and tap Install.' : portable() ? 'Downloading the new portable app. Use it instead of the old .exe; your projects are kept.' : 'Downloading the installer. Run it to update; your projects are kept.', 'ok', 6000);
   }
   /* release notes as plain text with simple headings and bullets (never raw HTML) */
   function md(t) {
@@ -159,5 +160,6 @@
   };
   U.compare = compare;
   U.pick = pick;
+  U.assetFor = r => assetFor(r, platform());
   window.Updater = U;
 })();

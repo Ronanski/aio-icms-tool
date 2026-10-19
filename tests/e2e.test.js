@@ -546,6 +546,51 @@ function check(name, cond, info = '') {
   await wait(500);
   check('a circuit that never settles raises a warning', await page.evaluate(() => App.events().some(e => e.msg.includes('does not settle'))));
 
+  check('Verify rejects a negative timer preset and out-of-range or fractional constants', await page.evaluate(() => {
+    const e = new PLCcore.Engine();
+    const v = t => e.verify([Ladder.newRung(Ladder.parseRung(t))]);
+    return v('XIC I:0/0 TON T4:0 1.0 -5 0').errs.length === 1 && v('XIC I:0/0 MOV 2.5 N7:0').errs.length === 1 &&
+      v('EQU N7:0 99999 OTE O:0/0').errs.length === 1 && v('XIC I:0/0 CTU C5:0 -3 0').errs.length === 0 && v('XIC I:0/0 TON T4:0 1.0 5 0').errs.length === 0;
+  }));
+  check('Verify warns about shared timers and counters with different presets', await page.evaluate(() => {
+    const e = new PLCcore.Engine(), R = t => Ladder.newRung(Ladder.parseRung(t));
+    const t2 = e.verify([R('XIC I:0/0 TON T4:0 1.0 5 0'), R('XIC I:0/1 TOF T4:0 1.0 5 0')]).warns.some(w => w.msg.includes('share one accumulator'));
+    const c2 = e.verify([R('XIC I:0/0 CTU C5:0 10 0'), R('XIC I:0/1 CTD C5:0 5 0')]).warns.some(w => w.msg.includes('different presets'));
+    const ok = !e.verify([R('XIC I:0/0 CTU C5:0 10 0'), R('XIC I:0/1 CTD C5:0 10 0')]).warns.some(w => w.msg.includes('presets'));
+    return t2 && c2 && ok;
+  }));
+  await mk(() => {
+    const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };
+    const q = add('supply1', { label: 'Q0' }), g = add('psu24', { label: 'G1' });
+    w(q, 'L', g, 'L'); w(q, 'N', g, 'N'); w(g, 'P1', g, 'M1');
+    App.openNew({ name: 'PSU short', circuit: circ });
+  });
+  await wait(300);
+  check('a shorted 24 V output turns DC OK off and raises an alarm', (await get('G1', 'state.dcFault')) === true && await page.evaluate(() => App.events().some(e => e.msg.includes('24 V output short circuit'))));
+  await page.evaluate(() => {
+    const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };
+    const q = add('supply3', { label: 'Q0' }), f = add('olr', { label: 'F1', trip: 0 }), m = add('motor', { label: 'M1' }, { jam: true });
+    ['L1', 'L2', 'L3'].forEach((p, i) => { w(q, p, f, String(1 + i * 2)); w(f, String(2 + i * 2), m, ['U1', 'V1', 'W1'][i]); });
+    App.openNew({ name: 'Instant trip', circuit: circ });
+    App.project.circuit.comps.find(c => c.props.label === 'M1').state.jam = true;
+  });
+  await wait(400);
+  check('an overload relay set to 0 s trips at once (not after 4 s)', await get('F1', 'state.tripped'));
+  const elCtx = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0) Electron/33.2.1 Chrome/130' });
+  await mockGitHub(elCtx);
+  const el = await elCtx.newPage();
+  const relX = { tag_name: 'v9.9.9', assets: [{ name: 'PLC-Trainer-Setup-9.9.9.exe', browser_download_url: 'https://x/setup' }, { name: 'PLC-Trainer-9.9.9-portable.exe', browser_download_url: 'https://x/portable' }, { name: 'PLC-Trainer-9.9.9-android.apk', browser_download_url: 'https://x/apk' }] };
+  await el.goto(URL + '?build=portable'); await el.waitForTimeout(300);
+  const pPick = await el.evaluate(r => Updater.assetFor(r), relX);
+  await el.goto(URL + '?build=installed'); await el.waitForTimeout(300);
+  const iPick = await el.evaluate(r => Updater.assetFor(r), relX);
+  check('Windows: the portable app updates with the portable .exe, the installed app with the installer', pPick === 'https://x/portable' && iPick === 'https://x/setup', `${pPick} ${iPick}`);
+  await elCtx.close();
+
   await page.evaluate(() => App.showView('hmi'));
   check('HMI modes are named Operate / Design (not Run)', (await page.textContent('.hmi-toolbar .seg')).includes('Operate') && !(await page.textContent('.hmi-toolbar .seg')).includes('Run'));
 

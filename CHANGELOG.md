@@ -16,6 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Dark mode**: Operator Panel labels, Verify, the active lesson and the inactive HMI alarm text are readable.
 - A failed update check (offline server, rate limit) is not retried on every start.
 - Windows app: links never replace the app window; they open in the browser.
+- **Portable Windows app** updates with the new portable `.exe` (the installed app still gets the installer).
+- Overload relay: a trip delay of 0 s trips at once (it was silently changed to 4 s).
 
 ### Added
 - **Math status flags**: ADD, SUB, MUL, DIV, MOV and CLR set `S:0/0` carry, `S:0/1` overflow, `S:0/2` zero and `S:0/3` sign; an overflow or divide by zero also sets `S:5/0`. The S file now has 16 words.
@@ -23,10 +25,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Breaker selectivity**: of two breakers of the same kind that can clear a short, the one nearest the fault trips and the upstream one stays on.
 - **Oscillation warning** when a circuit never settles (e.g. a relay coil fed through its own N.C. contact).
 - Phones: toolbars and the status bar show a fade where more buttons are hidden.
+- **Verify** rejects a negative timer preset or accum and constants that are not whole numbers from -32768 to 32767, and warns when one timer is used by two timer instructions or a counter's CTU/CTD presets differ.
+- **24 VDC power supply**: a short on its output puts it in current limit: DC OK goes off, with an alarm and status.
 
 ### Changed
 - HMI modes are now **☝ Operate / ✎ Design**, so they are not confused with the PLC's RUN/PROG.
 - File → Reset PLC data table asks first. Menu shortcuts are right-aligned and hidden on touch screens.
+- Workflows: only the release job can write to the repository (CI and the build jobs are read-only).
 - Release workflow: a published release fails instead of shipping a debug-signed APK; a pushed tag must match `package.json`; stable releases come from `main` only and need their own CHANGELOG section.
 
 ## [1.2.0] - 2026-10-18
