@@ -307,10 +307,13 @@
     return { q0, qm1, km1, km2, km3, m1, qf2 };
   }
   EX.stardelta = {
-    title: 'Star-delta starter (hardwired, Electrical Diagram)', desc: 'Star-delta starter drawn in the Electrical Diagram: KA1 start/stop with seal-in, KM1 main, KM3 star, KT1 star time, KA2 changeover, KM2 delta, with KM2/KM3 interlocks. The Diagram wires the control circuit for you.',
+    title: 'Star-delta starter (hardwired, Electrical Diagram)', desc: 'Star-delta starter drawn in the Electrical Diagram, power and control: QM1 → KM1 → motor Y-Δ with KM2 delta and KM3 star; KA1 start/stop with seal-in, KM1 main, KM3 star, KT1 star time, KA2 changeover, KM2 delta, with KM2/KM3 interlocks. The Diagram wires the control circuit for you.',
     build() {
+      // the power circuit is drawn in the Electrical Diagram (feeder QM1 → KM1 → motor Y-Δ with KM2/KM3), which wires it
       const B = builder();
-      const { qf2 } = starDeltaPower(B);
+      const q0 = B.add('supply3', 60, 20, { label: 'Q0' });
+      const qf2 = B.add('mcb2', 640, 140, { label: 'QF2' }, { on: true });
+      B.w(q0, 'L1', qf2, '1', C.L1, [[80, 120], [660, 120]]); B.w(q0, 'N', qf2, '3', C.N, [[150, 130], [690, 130]]);
       B.add('pb_nc', 640, 330, { label: 'S0', color: 'red', text: 'STOP' });
       B.add('pb_no', 720, 330, { label: 'S1', color: 'green', text: 'START' });
       B.add('relay', 800, 330, { label: 'KA1', coil: '230VAC' });
@@ -327,6 +330,7 @@
           { comment: 'Star time over: changeover relay KA2', elems: [e('ktno', 'KT1'), e('kacoil', 'KA2')] },
           { comment: 'Delta KM2 (not with KM3)', elems: [e('kano', 'KA2'), e('kmnc', 'KM3'), e('kmcoil', 'KM2')] },
         ],
+        power: { src: 'Q0', main: [], feeders: [{ elems: [e('qm3', 'QM1'), e('km3', 'KM1'), { k: 'm6', tag: 'M1', delta: 'KM2', star: 'KM3' }] }] },
       };
       return p;
     },

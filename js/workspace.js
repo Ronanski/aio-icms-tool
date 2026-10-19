@@ -51,10 +51,35 @@
       let ym;
       if (a.dir === b.dir) ym = a.dir < 0 ? Math.min(ea[1], eb[1]) : Math.max(ea[1], eb[1]);
       else ym = (ea[1] + eb[1]) / 2;
+      ym = clearY(ea, eb, ym);
       P.push([ea[0], ym], [eb[0], ym]);
     } else P.push([eb[0], cur[1]]);
     P.push(eb, [b.x, b.y]);
     return P;
+  }
+  /* a wire without bends runs down, across and down again: pick the height of the horizontal run so the wire crosses
+     as few devices as it can (devices are boxes; rails and junctions don't count), staying near the plain middle */
+  let boxes = null;
+  function deviceBoxes() {
+    if (boxes) return boxes;
+    boxes = circ().comps.filter(c => !DEFS[c.type].rail && !DEFS[c.type].junction).map(c => {
+      const s = c.props.size || 1, d = Circuit.dims(c);
+      return [c.x + 1, c.y + 1, c.x + d.w * s - 1, c.y + d.h * s - 1];
+    });
+    return boxes;
+  }
+  const hits = (x1, y1, x2, y2) => deviceBoxes().reduce((n, [l, t, r, b]) => n + (Math.max(x1, x2) > l && Math.min(x1, x2) < r && Math.max(y1, y2) > t && Math.min(y1, y2) < b ? 1 : 0), 0);
+  function clearY(ea, eb, y0) {
+    const cost = y => hits(ea[0], ea[1], ea[0], y) + hits(Math.min(ea[0], eb[0]), y, Math.max(ea[0], eb[0]), y) + hits(eb[0], y, eb[0], eb[1]);
+    let best = y0, bc = cost(y0);
+    if (!bc) return y0;
+    const cands = [ea[1], eb[1]];
+    deviceBoxes().forEach(([, t, , b]) => cands.push(t - 8, b + 8));
+    for (const y of cands) {
+      const c = cost(y);
+      if (c < bc || (c === bc && Math.abs(y - y0) < Math.abs(best - y0))) { best = y; bc = c; }
+    }
+    return best;
   }
   const pathD = P => 'M' + P.map(p => p[0] + ' ' + p[1]).join(' L');
 
@@ -466,6 +491,7 @@
     });
   }
   function renderWires() {
+    boxes = null;
     const h = [];
     circ().wires.forEach(w => {
       const a = tpos(w.a), b = tpos(w.b);

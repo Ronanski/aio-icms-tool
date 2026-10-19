@@ -38,6 +38,8 @@
     km3: { n: 'Contactor main contacts', type: 'contactor', ins: ['1', '3', '5'], outs: ['2', '4', '6'], pre: 'KM' },
     ol3: { n: 'Overload relay (heaters)', type: 'olr', ins: ['1', '3', '5'], outs: ['2', '4', '6'], pre: 'F' },
     m3: { n: 'Motor 3~', type: 'motor', ins: ['U1', 'V1', 'W1'], outs: null, pre: 'M', part: 'jam' },
+    // star-delta: the motor with its delta contactor (from the feeder to W2 U2 V2) and star contactor (joins W2 U2 V2)
+    m6: { n: 'Motor star-delta (Y-Δ)', type: 'motor6', ins: ['U1', 'V1', 'W1'], outs: null, pre: 'M', part: 'jam', sd: true },
   };
   SC.PKINDS = PK;
   const PH3 = ['L1', 'L2', 'L3'];
@@ -60,7 +62,9 @@
   }
   function cleanPower(p) {
     const o = p && typeof p === 'object' ? p : {};
-    const seq = a => (Array.isArray(a) ? a : []).filter(e => e && typeof e === 'object' && Object.prototype.hasOwnProperty.call(PK, e.k) && typeof e.tag === 'string' && TAG.test(e.tag)).map(e => ({ k: e.k, tag: e.tag })).slice(0, 12);
+    const okTag = t => typeof t === 'string' && TAG.test(t);
+    const seq = a => (Array.isArray(a) ? a : []).filter(e => e && typeof e === 'object' && Object.prototype.hasOwnProperty.call(PK, e.k) && okTag(e.tag) && (!PK[e.k].sd || (okTag(e.delta) && okTag(e.star))))
+      .map(e => (PK[e.k].sd ? { k: e.k, tag: e.tag, delta: e.delta, star: e.star } : { k: e.k, tag: e.tag })).slice(0, 12);
     return { src: typeof o.src === 'string' && TAG.test(o.src) ? o.src : 'Q0', main: seq(o.main), feeders: (Array.isArray(o.feeders) ? o.feeders : []).filter(f => f && typeof f === 'object').slice(0, 20).map(f => ({ elems: seq(f.elems) })) };
   }
   SC.clean = function (s, termOk) {
@@ -155,9 +159,15 @@
       if (dev && dev.type !== K.type) { errs.set(e, `${e.tag} is a ${DEFS[dev.type].name} in the Wiring, not a ${DEFS[K.type].name}`); return; }
       if (used.has(e.tag)) { errs.set(e, `${e.tag}: its main contacts are already used in the power circuit`); return; }
       used.set(e.tag, e);
-      if (e.k === 'm3' && !last) errs.set(e, `${e.tag}: the motor must be the last device of its feeder`);
+      if (PK[e.k].ins[0] === 'U1' && !last) errs.set(e, `${e.tag}: the motor must be the last device of its feeder`);
+      if (K.sd) for (const t of [e.delta, e.star]) {
+        const d = devOf(t);
+        if (d && d.type !== 'contactor') errs.set(e, `${t} is a ${DEFS[d.type].name} in the Wiring, not a contactor`);
+        else if (used.has(t) || t === e.tag || e.delta === e.star) errs.set(e, `${t}: its main contacts are already used in the power circuit`);
+        else used.set(t, e);
+      }
     };
-    P.main.forEach(e => { if (e.k === 'm3') errs.set(e, 'A motor cannot be in the main supply section'); else one(e, false); });
+    P.main.forEach(e => { if (PK[e.k].ins[0] === 'U1') errs.set(e, 'A motor cannot be in the main supply section'); else one(e, false); });
     P.feeders.forEach(f => f.elems.forEach((e, i) => one(e, i === f.elems.length - 1)));
     return errs;
   }
@@ -180,7 +190,18 @@
         if (perrs.has(e)) break;
         const K = PK[e.k], c = ensureType(K.type, e.tag);
         K.ins.forEach((t, i) => pole(at[i], c.id + ':' + t, i));
-        if (!K.outs) { wire(src.id + ':PE', c.id + ':PE', col.PE); break; }
+        if (!K.outs) {
+          wire(src.id + ':PE', c.id + ':PE', col.PE);
+          if (K.sd) {
+            // delta: feeder → KM(delta) 1-3-5 → 2-4-6 → W2 U2 V2 ; star: W2 U2 V2 → KM(star) 1-3-5, 2-4-6 bridged
+            const d = ensureType('contactor', e.delta), y = ensureType('contactor', e.star), m2 = ['W2', 'U2', 'V2'];
+            ['1', '3', '5'].forEach((t, i) => pole(at[i], d.id + ':' + t, i));
+            ['2', '4', '6'].forEach((t, i) => pole(d.id + ':' + t, c.id + ':' + m2[i], i));
+            ['1', '3', '5'].forEach((t, i) => pole(c.id + ':' + m2[i], y.id + ':' + t, i));
+            wire(y.id + ':2', y.id + ':4', col.L2); wire(y.id + ':4', y.id + ':6', col.L2);
+          }
+          break;
+        }
         at = K.outs.map(t => c.id + ':' + t);
       }
     }
@@ -427,6 +448,37 @@
     }
     o.push('</g></g>');
   }
+  /* star-delta motor: two rows deep, two lanes wide — motor in the feeder lane, delta and star contactors beside it */
+  const isSd = e => !!PK[e.k].sd;
+  const feedW = f => (f.elems.some(isSd) ? 2 : 1) * FW;
+  function psymSd(e, lx, y0, o, path) {
+    const xs = [lx + 50, lx + 66, lx + 82], ds = [lx + FW + 30, lx + FW + 46, lx + FW + 62];
+    const c = devOf(e.tag), d = devOf(e.delta), y = devOf(e.star), ok = c && d && y && !(SC.perrs && SC.perrs.has(e));
+    const k = ok ? { ins: ['U1', 'V1', 'W1'].map(t => c.id + ':' + t), mid: ['W2', 'U2', 'V2'].map(t => c.id + ':' + t), dIn: ['1', '3', '5'].map(t => d.id + ':' + t) } : null;
+    const lv = (key, i) => !!k && phaseLive(key, PH3[i]);
+    const sel = SELP && SELP.path === path ? ' sel' : '', H = PE_ * 2, my = y0 + PE_ + 40;
+    o.push(`<g class="sel-el pel${sel}" data-pp="${path}"><rect class="hit" x="${lx + 2}" y="${y0 + 2}" width="${FW * 2 - 4}" height="${H - 4}" rx="6"/>`);
+    // taps from the feeder to the delta contactor
+    xs.forEach((x, i) => {
+      const ty = y0 + 10 + i * 7;
+      o.push(`<line class="pw p${i + 1}${lv(k && k.ins[i], i) ? ' on' : ''}" x1="${x}" y1="${y0}" x2="${x}" y2="${my - 18}"/>`);
+      o.push(`<line class="pw p${i + 1}${lv(k && k.dIn[i], i) ? ' on' : ''}" x1="${x}" y1="${ty}" x2="${ds[i]}" y2="${ty}"/><line class="pw p${i + 1}${lv(k && k.dIn[i], i) ? ' on' : ''}" x1="${ds[i]}" y1="${ty}" x2="${ds[i]}" y2="${y0 + PE_ / 2 - 14}"/><circle class="jn" cx="${x}" cy="${ty}" r="2.4"/>`);
+      // delta contactor outputs carry W2 U2 V2: down to the star contactor, and across to the motor
+      o.push(`<line class="pw p${i + 1}${lv(k && k.mid[i], i) ? ' on' : ''}" x1="${ds[i]}" y1="${y0 + PE_ / 2 + 14}" x2="${ds[i]}" y2="${my + 22}"/>`);
+    });
+    o.push(`<g class="ssym${SC.perrs && SC.perrs.has(e) ? ' err' : ''}${!ok ? ' miss' : ''}">`);
+    const contacts = (cols, cy) => cols.map(x => `<path d="M${x} ${cy + 14} L${x - 10} ${cy - 12}"/><path class="thin" d="M${x - 4} ${cy - 14} a4 4 0 0 0 8 0"/>`).join('') + `<path class="thin dash" d="M${cols[0] - 5} ${cy} H${cols[2] - 5}"/>`;
+    o.push(contacts(ds, y0 + PE_ / 2));
+    o.push(`<path d="M${xs[0]} ${my - 18} L${xs[1] - 8} ${my - 10} M${xs[2]} ${my - 18} L${xs[1] + 8} ${my - 10}"/><circle cx="${xs[1]}" cy="${my + 4}" r="18" class="${c && c.state.drive === 'run' ? 'mon' : ''}"/>`);
+    o.push(`<path class="thin" d="M${xs[1] + 18} ${my + 4} H${ds[0]}"/>`);
+    o.push(`<path d="M${ds[0]} ${my + 22} V${my + 30} M${ds[1]} ${my + 22} V${my + 30} M${ds[2]} ${my + 22} V${my + 30} M${ds[0]} ${my + 30} H${ds[2]}"/>`);
+    o.push(`<path class="pe" d="M${xs[1]} ${my + 22} V${my + 34} M${xs[1] - 8} ${my + 34} H${xs[1] + 8} M${xs[1] - 5} ${my + 38} H${xs[1] + 5} M${xs[1] - 2} ${my + 42} H${xs[1] + 2}"/>`);
+    o.push('</g>');
+    o.push(`<text class="mtxt" x="${xs[1]}" y="${my + 1}">M</text><text class="mtxt sm" x="${xs[1]}" y="${my + 14}">Y-Δ</text>`);
+    o.push(`<text class="stag iec" x="${lx + 30}" y="${my + 4}">-${esc(e.tag)}</text><text class="stag iec" x="${ds[0] - 14}" y="${y0 + PE_ / 2 + 4}">-${esc(e.delta)}</text><text class="stag iec" x="${ds[0] - 14}" y="${my + 30}">-${esc(e.star)}</text>`);
+    o.push(`<text class="sterm" x="${ds[2] + 6}" y="${my + 18}">W2 U2 V2</text></g>`);
+    return H;
+  }
   function renderPowerV(x0) {
     const P = pw(), o = [];
     if (!hasPower()) return { svg: '', w: 0, h: 0 };
@@ -439,25 +491,27 @@
     y += 2;
     P.main.forEach((e, i) => { psym(e, x0, y + PE_ / 2, o, 'm.' + i); y += PE_; });
     if (!P.main.length) { xs.forEach((x, i) => o.push(`<line class="pw p${i + 1}${srcLive(PH3[i]) ? ' on' : ''}" x1="${x}" y1="${y}" x2="${x}" y2="${y + 20}"/>`)); y += 20; }
-    const busY = y + 6, nF = Math.max(1, P.feeders.length);
+    const busY = y + 6, fxs = [];
+    let acc = x0; P.feeders.forEach(f => { fxs.push(acc); acc += feedW(f); });
+    const lastX = fxs.length ? fxs[fxs.length - 1] : x0;
     const lastK = (() => { const e = P.main[P.main.length - 1]; const k = e && powerKeys(e); return k ? k.outs : src ? PH3.map(t => src.id + ':' + t) : [null, null, null]; })();
     PH3.forEach((ph, i) => {
       const by = busY + i * 9, live = phaseLive(lastK[i], ph);
       o.push(`<line class="pw p${i + 1}${live ? ' on' : ''}" x1="${xs[i]}" y1="${y}" x2="${xs[i]}" y2="${by}"/>`);
-      o.push(`<line class="pw p${i + 1}${live ? ' on' : ''}" x1="${xs[i]}" y1="${by}" x2="${x0 + (nF - 1) * FW + 82}" y2="${by}"/>`);
+      o.push(`<line class="pw p${i + 1}${live ? ' on' : ''}" x1="${xs[i]}" y1="${by}" x2="${lastX + 82}" y2="${by}"/>`);
     });
     let h = busY + 30;
     P.feeders.forEach((f, fi) => {
-      const lx = x0 + fi * FW, fsel = SELP && SELP.f === fi && SELP.i == null ? ' sel' : '';
+      const lx = fxs[fi], fsel = SELP && SELP.f === fi && SELP.i == null ? ' sel' : '';
       let fy = busY + 30;
       const fx = [lx + 50, lx + 66, lx + 82];
       o.push(`<g class="sleg pfeed${fsel}" data-pf="${fi}"><rect class="hit" x="${lx + 4}" y="${busY - 4}" width="${FW - 8}" height="26" rx="5"/><text class="sterm c" x="${lx + 66}" y="${busY - 8}">${fi + 1}</text></g>`);
       PH3.forEach((ph, i) => o.push(`<line class="pw p${i + 1}${phaseLive(lastK[i], ph) ? ' on' : ''}" x1="${fx[i]}" y1="${busY + i * 9}" x2="${fx[i]}" y2="${fy}"/><circle class="jn" cx="${fx[i]}" cy="${busY + i * 9}" r="2.6"/>`));
-      f.elems.forEach((e, i) => { psym(e, lx, fy + PE_ / 2, o, 'f.' + fi + '.' + i); fy += PE_; });
+      f.elems.forEach((e, i) => { if (isSd(e)) fy += psymSd(e, lx, fy, o, 'f.' + fi + '.' + i); else { psym(e, lx, fy + PE_ / 2, o, 'f.' + fi + '.' + i); fy += PE_; } });
       if (!f.elems.length) o.push(`<text class="hint" x="${lx + 66}" y="${fy + 20}">empty feeder</text>`);
       h = Math.max(h, fy + 40);
     });
-    return { svg: o.join(''), w: Math.max(1, P.feeders.length) * FW + 40, h };
+    return { svg: o.join(''), w: Math.max(FW, acc - x0) + 40, h };
   }
   function renderIEC() {
     const s = sch();
@@ -526,7 +580,7 @@
           <button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button>
         </div>
         ${Object.entries(groups).map(([g, ks]) => `<div class="tb-group"><span class="tb-lbl">${g}</span>${ks.map(k => `<button class="tbtn" data-skind="${k}" title="${esc(SK[k].n)}">${esc(btnLabel(k))}</button>`).join('')}</div>`).join('')}
-        <div class="tb-group pw-group"><span class="tb-lbl">Power</span><button class="tbtn" data-sact="feeder" title="New motor feeder">＋ Feeder</button>${Object.keys(PK).map(k => `<button class="tbtn" data-pkind="${k}" title="${esc(PK[k].n)}">${esc({ qf3: 'QF 3P', qm3: 'QM 3P', km3: 'KM 3P', ol3: 'OL 3P', m3: 'M 3~' }[k])}</button>`).join('')}</div>
+        <div class="tb-group pw-group"><span class="tb-lbl">Power</span><button class="tbtn" data-sact="feeder" title="New motor feeder">＋ Feeder</button>${Object.keys(PK).map(k => `<button class="tbtn" data-pkind="${k}" title="${esc(PK[k].n)}">${esc({ qf3: 'QF 3P', qm3: 'QM 3P', km3: 'KM 3P', ol3: 'OL 3P', m3: 'M 3~', m6: 'M Y-Δ' }[k])}</button>`).join('')}</div>
       </div>
       <div class="lad-main"><div class="sch-body lad-rungs" tabindex="0"></div><aside class="lad-side sch-side"></aside></div>`;
     body = el.querySelector('.sch-body'); side = el.querySelector('.sch-side');
@@ -617,21 +671,21 @@
     return { def: K.pre + n, list: same };
   }
   /* new power device: into the selected feeder (or the main section when it is selected), after the selection */
-  SC.insertPower = function (k, tag) {
-    const P = pw();
-    const go = t => {
+  SC.insertPower = function (k, tag, extra) {
+    const P = pw(), K = PK[k];
+    const go = (t, more) => {
       if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
       snap();
       let arr, at;
-      if (SELP && SELP.f === -1 && k !== 'm3') { arr = P.main; at = SELP.i == null ? arr.length : SELP.i + 1; }
+      if (SELP && SELP.f === -1 && K.outs) { arr = P.main; at = SELP.i == null ? arr.length : SELP.i + 1; }
       else {
         if (!P.feeders.length || !SELP || SELP.f < 0 || !P.feeders[SELP.f]) { if (!P.feeders.length || !SELP) P.feeders.push({ elems: [] }); SELP = { f: SELP && P.feeders[SELP.f] ? SELP.f : P.feeders.length - 1, i: null }; }
         arr = P.feeders[SELP.f].elems;
         at = SELP.i == null ? arr.length : SELP.i + 1;
         // devices go in front of the motor, the motor at the end
-        if (k === 'm3') at = arr.length; else { const m = arr.findIndex(e => e.k === 'm3'); if (m >= 0 && at > m) at = m; }
+        if (!K.outs) at = arr.length; else { const m = arr.findIndex(e => !PK[e.k].outs); if (m >= 0 && at > m) at = m; }
       }
-      const e = { k, tag: t };
+      const e = { k, tag: t, ...(more || {}) };
       arr.splice(at, 0, e);
       const f = arr === P.main ? -1 : SELP.f;
       SELP = { f, i: at, path: f < 0 ? 'm.' + at : 'f.' + f + '.' + at };
@@ -639,9 +693,21 @@
       if (style !== 'iec') { style = 'iec'; setStyleUi(); }
       changed();
     };
-    if (tag) return go(tag);
+    if (tag) return go(tag, extra);
     const sg = suggestPowerTag(k);
-    UI.form(PK[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
+    if (K.sd) {
+      const taken = new Set([...P.main, ...P.feeders.flatMap(f => f.elems)].flatMap(e => [e.tag, e.delta, e.star]).concat(circ().comps.map(c => c.props.label)));
+      const nextKM = skip => { let n = 1; while (taken.has('KM' + n) || skip.includes('KM' + n)) n++; return 'KM' + n; };
+      const dk = nextKM([]), yk = nextKM([dk]);
+      UI.form(K.n, [{ key: 't', label: 'Motor tag', value: sg.def }, { key: 'd', label: 'Delta contactor (Δ)', value: dk }, { key: 's', label: 'Star contactor (Y)', value: yk }], v => {
+        const [t, d, y] = [v.t, v.d, v.s].map(x => String(x || '').trim());
+        if (![t, d, y].every(x => TAG.test(x))) return 'Use letters, numbers, - or _ (up to 20)';
+        if (d === y) return 'The delta and star contactors must be different';
+        return go(t, { delta: d, star: y });
+      }, '<p class="help">The motor goes last in the feeder. The delta contactor takes the feeder to W2 U2 V2; the star contactor joins W2 U2 V2. Put the main contactor (KM 3P) and the overload in front of it. The control circuit (star timer, interlocks) goes in the current paths.</p>');
+      return;
+    }
+    UI.form(K.n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
       `<p class="help">Use the tag of a device in the Wiring, or a new tag: the device is added to the Wiring and wired L1-L2-L3 for you. Click a feeder number first to choose the feeder; select the top device of the supply section to add a main switch there.</p>`);
   };
   SC.addMain = function (k, tag) { SELP = { f: -1, i: pw().main.length - 1, path: null }; return SC.insertPower(k, tag); };
