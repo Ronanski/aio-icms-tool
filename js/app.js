@@ -268,7 +268,7 @@
     for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= App.ticks) pending.splice(i, 1)[0].fn();
   }
   function frame() {
-    const vis = visibleViews();
+    const vis = shownViews();
     if (vis.includes('ladder')) Ladder.update();
     if (vis.includes('wiring')) Workspace.update();
     if (vis.includes('panel')) PanelView.update();
@@ -298,11 +298,68 @@
     App.view = customPanes.includes(App.view) ? App.view : customPanes[0];
     App.showView(App.view);
   };
-  function visibleViews() {
-    const L = layoutOf(App.layout);
-    if (!L.panes || App.view === 'learn' || innerWidth <= NARROW || !L.panes.includes(App.view)) return [App.view];
-    return L.panes;
+  /* ---------- floating windows: a view can be popped out of the grid into a movable, resizable window ---------- */
+  const floats = new Map();          // view -> {x, y, w, h}
+  let lastDocked = 'ladder';
+  const floating = () => (innerWidth > NARROW ? [...floats.keys()] : []);
+  function saveFloats() { try { localStorage.setItem('plc-trainer.floats', JSON.stringify([...floats])); } catch (e) { /* ignore */ } }
+  App.floatView = function (v, geom) {
+    if (!VNAME[v] || floats.has(v)) return;
+    if (innerWidth <= NARROW) { UI.toast('Floating windows need a wider screen', 'warn'); return; }
+    const g = geom || { x: 80 + floats.size * 40, y: 140 + floats.size * 40, w: Math.min(760, innerWidth - 160), h: Math.min(520, innerHeight - 200) };
+    floats.set(v, g);
+    const sec = document.getElementById('view-' + v);
+    const fw = document.createElement('div');
+    fw.className = 'float-win'; fw.dataset.fv = v;
+    fw.innerHTML = `<div class="fw-head" title="Drag to move · drag the bottom-right corner to resize"><b>${VNAME[v]}</b><span class="spacer"></span><button class="tbtn sm" data-dock title="Put this window back in the main area">⤓ Dock</button></div>`;
+    sec.style.gridArea = '';
+    fw.appendChild(sec);
+    document.body.appendChild(fw);
+    sec.classList.add('active');
+    const place = () => { const q = floats.get(v); Object.assign(fw.style, { left: Math.max(0, Math.min(innerWidth - 120, q.x)) + 'px', top: Math.max(0, Math.min(innerHeight - 60, q.y)) + 'px', width: q.w + 'px', height: q.h + 'px' }); };
+    place();
+    const head = fw.querySelector('.fw-head');
+    head.addEventListener('pointerdown', e => {
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      const q = floats.get(v), sx = e.clientX, sy = e.clientY, ox = q.x, oy = q.y;
+      head.setPointerCapture(e.pointerId);
+      const move = ev => { q.x = ox + ev.clientX - sx; q.y = oy + ev.clientY - sy; place(); };
+      const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); saveFloats(); };
+      head.addEventListener('pointermove', move); head.addEventListener('pointerup', up);
+    });
+    fw.querySelector('[data-dock]').onclick = () => App.dockView(v);
+    // the window clicked last gets the keyboard and comes to the front
+    fw.addEventListener('pointerdown', () => { if (fw !== document.body.lastElementChild) document.body.appendChild(fw); focusView(v); }, true);
+    new ResizeObserver(() => { const q = floats.get(v); if (!q || !fw.isConnected) return; q.w = fw.offsetWidth; q.h = fw.offsetHeight; saveFloats(); window.dispatchEvent(new Event('resize')); }).observe(fw);
+    saveFloats();
+    App.dirty[v] = true;
+    if (App.view === v) App.view = lastDocked !== v ? lastDocked : VIEWS.find(x => !floats.has(x));
+    App.showView(App.view);
+    renderView(v);
+    App.log('system', `${VNAME[v]} window floated`);
+  };
+  App.dockView = function (v) {
+    const fw = document.querySelector(`.float-win[data-fv="${v}"]`);
+    floats.delete(v); saveFloats();
+    if (fw) { const main = document.getElementById('main'); main.insertBefore(document.getElementById('view-' + v), main.querySelector('.gutter')); fw.remove(); }
+    App.showView(v);
+  };
+  function focusView(k) {
+    App.view = k;
+    VIEWS.forEach(x => document.getElementById('view-' + x).classList.toggle('focus', x === k && shownViews().length > 1));
+    document.querySelectorAll('.tabs [data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === k));
   }
+  /* docked views (the grid); floating views are shown in their own windows */
+  function visibleViews() {
+    const fl = floating(), L = layoutOf(App.layout);
+    let v = fl.includes(App.view) ? lastDocked : App.view;
+    if (fl.includes(v)) v = VIEWS.find(x => !fl.includes(x));
+    const panes = L.panes ? L.panes.filter(x => !fl.includes(x)) : null;
+    if (!panes || panes.length < 2 || v === 'learn' || innerWidth <= NARROW || !panes.includes(v)) return [v];
+    return panes;
+  }
+  const shownViews = () => [...visibleViews(), ...floating()];
   function renderView(v) {
     App.dirty[v] = false;
     if (v === 'ladder') { Ladder.render(); Ladder.DataTable.render(); }
@@ -311,14 +368,24 @@
     if (v === 'hmi') { HMI.render(); HMI.onShow(); }
     if (v === 'learn') renderLearn();
   }
-  function renderVisible() { visibleViews().forEach(v => { if (App.dirty[v] !== false || v === 'learn') renderView(v); }); }
+  function renderVisible() { shownViews().forEach(v => { if (App.dirty[v] !== false || v === 'learn') renderView(v); }); }
   App.showView = function (v) {
+    // a floating window is brought to the front instead of changing the main area
+    if (floating().includes(v)) {
+      const fw = document.querySelector(`.float-win[data-fv="${v}"]`);
+      if (fw) document.body.appendChild(fw);
+      focusView(v);
+      return;
+    }
+    lastDocked = v;
     const L = layoutOf(App.layout);
     // a view outside the current layout opens on its own; Learn always does
     if (L.panes && v !== 'learn' && !L.panes.includes(v)) App.layout = 'single';
     App.view = v;
     const vis = visibleViews();
+    const fl = floating();
     VIEWS.forEach(k => {
+      if (fl.includes(k)) return;
       const el = document.getElementById('view-' + k);
       const i = vis.indexOf(k);
       el.classList.toggle('active', i >= 0);
@@ -391,7 +458,7 @@
     let wasNarrow = innerWidth <= NARROW;
     window.addEventListener('resize', () => {
       const n = innerWidth <= NARROW;
-      if (n !== wasNarrow) { wasNarrow = n; App.showView(App.view); }
+      if (n !== wasNarrow) { wasNarrow = n; if (n) [...floats.keys()].forEach(k => App.dockView(k)); App.showView(App.view); }
     });
   }
 
@@ -509,6 +576,8 @@
           ...Object.entries(VNAME).map(([k, n]) => ({ label: (vis.includes(k) ? '☑ ' : '☐ ') + n, onClick: () => App.toggleWindow(k) })),
           { sep: true }, { head: 'Ready-made layouts' },
           ...LAYOUTS.map(l => ({ label: (l.key === App.layout ? '✓ ' : '\u2003') + l.label, onClick: () => App.setLayout(l.key) })),
+          { sep: true }, { head: 'Floating windows' },
+          ...Object.entries(VNAME).map(([k, n]) => (floats.has(k) ? { label: '⤓ Dock ' + n, onClick: () => App.dockView(k) } : { label: '⧉ Float ' + n, onClick: () => App.floatView(k), disabled: innerWidth <= NARROW })),
         ]);
       }
     });
@@ -686,6 +755,7 @@
     // wide screens start on the Workbench (ladder + wiring + panel) until the user picks something else
     App.layout = layoutOf(lay || (innerWidth >= 1200 ? 'bench' : 'single')).key;
     App.showView(v);
+    try { (JSON.parse(localStorage.getItem('plc-trainer.floats') || '[]') || []).forEach(([k, g]) => { if (VNAME[k] && g && [g.x, g.y, g.w, g.h].every(Number.isFinite)) App.floatView(k, g); }); } catch (e) { /* ignore */ }
     setInterval(tick, 20);
     requestAnimationFrame(frame);
     Updater.init();

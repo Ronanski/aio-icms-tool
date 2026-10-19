@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 142/142 on the v1.3 branch.
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 154/154 on the v1.3 branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -71,7 +71,13 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Drag/add/remove wire bends
 - [x] Smart alignment while dragging devices (straight wires), with a guide line
 - [x] Event log saved with the project
-- [ ] Next: schematic mode (rails/rungs), same-size resizable devices with full properties, more components, docked/floating windows
+
+## v1.3.0 part 2 (owner: "GO v1.3 part 2")
+- [x] Floating / docked windows (pop out, move, resize, dock; remembered)
+- [x] Size for every device (0.5×–2×) and Same size for all
+- [x] New parts: fuse, buzzer, key selector, solenoid valve, 1-phase fan, NPN proximity, pressure switch, float switch
+- [x] More type options: PNP↔NPN, pressure/float N.O.↔N.C.
+- [ ] Part 3: schematic mode like the ladder (L/N rails and rungs), rotate devices, full per-device property sheets (ratings, tag text), VFD / star-delta / analog devices
 
 ## Roadmap agreed with the owner
 **v1.3.0 — builder overhaul**

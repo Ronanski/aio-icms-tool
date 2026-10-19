@@ -325,6 +325,10 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .dt.btn-t { font-size: 8px; font-weight: 700; }
 .dt.btn-t.on { fill: #fff; }
 .wire .wh { fill: none; stroke: transparent; stroke-width: 10; cursor: pointer; }
+.float-win { position: fixed; z-index: 45; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow-lg); resize: both; overflow: hidden; min-width: 320px; min-height: 220px; }
+.fw-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; cursor: move; background: var(--surface-2); border-bottom: 1px solid var(--border); user-select: none; touch-action: none; font-size: 13px; }
+.fw-head .spacer { flex: 1; }
+.float-win > .view { flex: 1; min-height: 0; position: relative; }
 .comp.jct .jdot { fill: var(--text); stroke: var(--surface); stroke-width: 1.2; }
 .comp.jct .term:hover .jdot { fill: var(--accent); }
 .bend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
@@ -557,22 +561,22 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
   .lad-side.open, .ws-props.open, .hmi-props.open, .ws-palette.open { transform: none; }
 }
 /* inside a pane, side panels slide over the pane instead of taking width */
-#main.multi .mobile-only { display: inline-flex; align-items: center; }
-#main.multi .lad-side, #main.multi .ws-props, #main.multi .hmi-props, #main.multi .ws-palette {
+#main.multi .mobile-only, .float-win .mobile-only { display: inline-flex; align-items: center; }
+#main.multi .lad-side, #main.multi .ws-props, #main.multi .hmi-props, #main.multi .ws-palette, .float-win .lad-side, .float-win .ws-props, .float-win .hmi-props, .float-win .ws-palette {
   display: block; position: absolute; top: 0; bottom: 0; z-index: 30; width: min(320px, 85%); transition: transform .22s ease; box-shadow: var(--shadow-lg); }
-#main.multi .lad-side, #main.multi .ws-props, #main.multi .hmi-props { right: 0; transform: translateX(105%); border-left: 1px solid var(--border); }
-#main.multi .ws-palette { left: 0; transform: translateX(-105%); border-right: 1px solid var(--border); }
-#main.multi .lad-side.open, #main.multi .ws-props.open, #main.multi .hmi-props.open, #main.multi .ws-palette.open { transform: none; }
-#main.multi .lad-toolbar, #main.multi .ws-toolbar, #main.multi .hmi-toolbar { flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 8px; }
-#main.multi .tb-group { padding: 1px 5px 1px 3px; }
-#main.multi .tb-lbl, #main.multi .ins-btn small { display: none; }
-#main.multi .ins-btn { min-width: 38px; padding: 3px 4px; }
-#main.multi .lad-toolbar .tbtn, #main.multi .ws-toolbar .tbtn { padding: 4px 7px; }
-#main.multi .ws-hint { display: none; }
-#main.multi .panel-view { padding: 10px; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
-#main.multi .psec { padding: 10px 12px 12px; }
-#main.multi .psec p { display: none; }
-#main.multi .pcard svg { width: calc(var(--pw) * .62) !important; }
+#main.multi .lad-side, #main.multi .ws-props, #main.multi .hmi-props, .float-win .lad-side, .float-win .ws-props, .float-win .hmi-props { right: 0; transform: translateX(105%); border-left: 1px solid var(--border); }
+#main.multi .ws-palette, .float-win .ws-palette { left: 0; transform: translateX(-105%); border-right: 1px solid var(--border); }
+#main.multi .lad-side.open, #main.multi .ws-props.open, #main.multi .hmi-props.open, #main.multi .ws-palette.open, .float-win .lad-side.open, .float-win .ws-props.open, .float-win .hmi-props.open, .float-win .ws-palette.open { transform: none; }
+#main.multi .lad-toolbar, #main.multi .ws-toolbar, #main.multi .hmi-toolbar, .float-win .lad-toolbar, .float-win .ws-toolbar, .float-win .hmi-toolbar { flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 8px; }
+#main.multi .tb-group, .float-win .tb-group { padding: 1px 5px 1px 3px; }
+#main.multi .tb-lbl, #main.multi .ins-btn small, .float-win .tb-lbl, .float-win .ins-btn small { display: none; }
+#main.multi .ins-btn, .float-win .ins-btn { min-width: 38px; padding: 3px 4px; }
+#main.multi .lad-toolbar .tbtn, #main.multi .ws-toolbar .tbtn, .float-win .lad-toolbar .tbtn, .float-win .ws-toolbar .tbtn { padding: 4px 7px; }
+#main.multi .ws-hint, .float-win .ws-hint { display: none; }
+#main.multi .panel-view, .float-win .panel-view { padding: 10px; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+#main.multi .psec, .float-win .psec { padding: 10px 12px 12px; }
+#main.multi .psec p, .float-win .psec p { display: none; }
+#main.multi .pcard svg, .float-win .pcard svg { width: calc(var(--pw) * .62) !important; }
 @media (prefers-reduced-motion: reduce) { .lad-side, .ws-props, .hmi-props, .ws-palette { transition: none; } }
 /* touch screens: bigger targets */
 @media (pointer: coarse) {

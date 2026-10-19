@@ -431,6 +431,59 @@
     status: c => c.state.burnt ? 'Burnt out' : c.state.on ? 'ON' : 'OFF',
   });
 
+  def('fuse', {
+    name: 'Fuse (1-pole)', cat: 'Protection', view: 'power', prefix: 'FU', w: 36, h: 90, breaker: 0.5,   // lower rank than any breaker: a fuse clears a fault first
+    props: { rating: '2A' },
+    pdefs: [{ k: 'rating', n: 'Rating', opts: ['1A', '2A', '4A', '6A', '10A', '16A'] }],
+    info: 'Cartridge fuse 1 → 2. It blows on a short circuit before any breaker. Click it to replace a blown fuse.',
+    terms: [{ id: '1', x: 18, y: 0 }, { id: '2', x: 18, y: 90 }],
+    init: () => ({ tripped: false }),
+    closed: c => !c.state.tripped,
+    conduct: c => c.state.tripped ? null : [['1', '2']],
+    onPart(c, p, ev) { if (p === 'f' && ev === 'down' && c.state.tripped) { c.state.tripped = false; return true; } },
+    draw(c) {
+      const b = c.state.tripped;
+      return R(4, 6, 28, 78, 'url(#gPlastic)', 4) + `<g class="part" data-part="f">` + R(10, 22, 16, 46, '#e9e5dc', 6, '#555') +
+        (b ? `<path d="M12 30 L24 60 M24 30 L12 60" stroke="#d33a2c" stroke-width="2.5"/>` : `<line x1="18" y1="26" x2="18" y2="64" stroke="#8a8f96" stroke-width="2"/>`) + `</g>` +
+        T(18, 18, c.props.rating, 'dt xs') + T(18, 80, b ? 'BLOWN' : 'OK', `dt xs${b ? ' warnt' : ''}`);
+    },
+    status: c => c.state.tripped ? 'BLOWN — click to replace' : 'OK',
+  });
+  def('buzzer', {
+    name: 'Buzzer / Horn', cat: 'Pilot Devices', view: 'panel', prefix: 'HA', w: 50, h: 80,
+    props: { coil: '24VDC' },
+    pdefs: [{ k: 'coil', n: 'Voltage', opts: RATINGS }],
+    info: 'Audible alarm X1-X2. Sounds at its rated voltage; over-voltage burns it.',
+    terms: [{ id: 'X1', x: 13, y: 80 }, { id: 'X2', x: 37, y: 80 }],
+    init: () => ({ on: false, burnt: false }),
+    evaluate(c, api) { return set(c, 'on', coilOn(c, api, 'X1', 'X2')); },
+    draw(c) {
+      const on = c.state.on;
+      return R(0, 0, 50, 80, '#2b2a28', 6, '#111') + `<circle cx="25" cy="30" r="17" fill="#3b3a36" stroke="#111"/>` +
+        [6, 10, 14].map(r => `<circle cx="25" cy="30" r="${r}" fill="none" stroke="#9aa0a6" stroke-width="1.2"/>`).join('') +
+        (on ? `<path d="M44 18 q6 12 0 24 M48 12 q10 18 0 36" fill="none" stroke="#f2c230" stroke-width="2" class="blink"/>` : '') +
+        R(8, 56, 34, 12, '#d7d3ca', 2, '#777') + T(25, 65, c.props.coil, 'dt xs') + (c.state.burnt ? burnt(50, 80) : '');
+    },
+    status: c => c.state.burnt ? 'Burnt out' : c.state.on ? 'SOUNDING' : 'Silent',
+  });
+  def('selkey', {
+    name: 'Key Selector 2-Pos', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 60, h: 90,
+    props: { text: 'OFF  ON' },
+    pdefs: [{ k: 'text', n: 'Legend' }],
+    info: 'Key-operated 2-position selector (maintained). Contact 13-14 closes in position I. Click the key to turn it.',
+    terms: [{ id: '13', x: 15, y: 90 }, { id: '14', x: 45, y: 90 }],
+    init: () => ({ pos: 0 }),
+    conduct: c => c.state.pos ? [['13', '14']] : null,
+    onPart(c, p, ev) { if (p === 'key' && ev === 'down') { c.state.pos = c.state.pos ? 0 : 1; return true; } },
+    draw(c) {
+      const a = c.state.pos ? 45 : -45;
+      return R(0, 0, 60, 90, '#2b2a28', 6, '#111') + R(6, 4, 48, 13, '#f2efe6', 2, '#999') + T(30, 13.5, c.props.text || '', 'dt xs') +
+        `<g class="part" data-part="key"><circle cx="30" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="30" cy="42" r="9" fill="#555" stroke="#222"/><g transform="rotate(${a} 30 42)"><rect x="28" y="22" width="4" height="22" rx="1" fill="#d4af37" stroke="#7a6420"/><circle cx="30" cy="22" r="5" fill="#d4af37" stroke="#7a6420"/></g></g>` +
+        R(12, 66, 36, 12, '#d7d3ca', 2, '#777') + T(30, 75, c.state.pos ? 'I' : '0', 'dt xs');
+    },
+    status: c => c.state.pos ? 'Position I (13-14 closed)' : 'Position 0',
+  });
+
   /* ---------- SENSORS ---------- */
   def('limit', {
     name: 'Limit Switch', cat: 'Sensors', view: 'plant', prefix: 'SQ', w: 70, h: 90,
@@ -447,12 +500,16 @@
     },
     status: c => c.state.act ? 'Actuated' : 'Free',
   });
-  def('prox', {
-    name: 'Proximity Sensor PNP', cat: 'Sensors', view: 'plant', prefix: 'B', w: 60, h: 90,
-    info: '3-wire PNP sensor: BN brown = +24 V, BU blue = 0 V, BK black = output (switches +24 V to the PLC input when a target is present). Click to place/remove the target.',
+  function prox(type, out) {
+  def(type, {
+    name: 'Proximity Sensor ' + out, cat: 'Sensors', view: 'plant', prefix: 'B', w: 60, h: 90,
+    variant: { n: 'Output type', of: { PNP: 'prox', NPN: 'prox_npn' } },
+    info: out === 'PNP'
+      ? '3-wire PNP sensor: BN brown = +24 V, BU blue = 0 V, BK black = output (switches +24 V to the PLC input when a target is present; use with a sinking input, COM to 0 V). Click to place/remove the target.'
+      : '3-wire NPN sensor: BN brown = +24 V, BU blue = 0 V, BK black = output (switches 0 V to the PLC input when a target is present; use with a sourcing input, COM to +24 V). Click to place/remove the target.',
     terms: [{ id: 'BN', x: 12, y: 90 }, { id: 'BK', x: 30, y: 90 }, { id: 'BU', x: 48, y: 90 }],
     init: () => ({ tgt: false, act: false, pw: false }),
-    conduct: c => c.state.act ? [['BN', 'BK']] : null,
+    conduct: c => c.state.act ? [[out === 'PNP' ? 'BN' : 'BU', 'BK']] : null,
     evaluate(c, api) {
       const v = api.v(c, 'BN', 'BU');
       const pw = !!(v && v.kind === 'DC' && !v.rev);
@@ -466,8 +523,37 @@
         R(21, 13, 18, 4, '#f39c1e', 1, 'none') + led(30, 54, s.act, '#f2c230', 3) +
         `<path d="M27 60 L27 70 L12 80 L12 90" stroke="#8b4513" stroke-width="2" fill="none"/><path d="M30 60 L30 90" stroke="#111" stroke-width="2" fill="none"/><path d="M33 60 L33 70 L48 80 L48 90" stroke="#1e6fd9" stroke-width="2" fill="none"/>`;
     },
-    status: c => !c.state.pw ? 'Not powered (BN +24V, BU 0V)' : c.state.act ? 'Target detected' : 'No target',
+    status: c => !c.state.pw ? 'Not powered (BN +24V, BU 0V)' : c.state.act ? `Target detected (BK = ${out === 'PNP' ? '+24 V' : '0 V'})` : 'No target',
   });
+  }
+  prox('prox', 'PNP');
+  prox('prox_npn', 'NPN');
+
+  /* process switches with one contact, N.O. or N.C. (contact type in the properties) */
+  function procSwitch(type, base, name, contact, what) {
+    const ids = contact === 'NO' ? ['13', '14'] : ['11', '12'];
+    def(type, {
+      name: name + (contact === 'NC' ? ' (NC)' : ''), cat: 'Sensors', view: 'plant', prefix: what === 'pressure' ? 'SP' : 'SL', w: 60, h: 90,
+      variant: { n: 'Contact type', of: { NO: base, NC: base + '_nc' } },
+      info: `${name}: contact ${ids.join('-')} is ${contact === 'NO' ? 'open, and closes when' : 'closed, and opens when'} the ${what === 'pressure' ? 'pressure reaches the setpoint' : 'liquid lifts the float'}. Click it to change the process value.`,
+      terms: [{ id: ids[0], x: 15, y: 90 }, { id: ids[1], x: 45, y: 90 }],
+      init: () => ({ act: false }),
+      conduct: c => (contact === 'NO') === c.state.act ? [ids] : null,
+      onPart(c, p, ev) { if (p === 'pv' && ev === 'down') { c.state.act = !c.state.act; return true; } },
+      draw(c) {
+        const a = c.state.act;
+        const body = what === 'pressure'
+          ? `<circle cx="30" cy="34" r="22" fill="#f4f1ea" stroke="#555" stroke-width="2"/><path d="M30 34 L${a ? 44 : 18} ${a ? 24 : 26}" stroke="#d33a2c" stroke-width="2.5" stroke-linecap="round"/><circle cx="30" cy="34" r="3" fill="#333"/>${T(30, 50, a ? 'HIGH' : 'LOW', 'dt xs')}`
+          : `<rect x="26" y="4" width="8" height="44" fill="#9aa0a6"/><rect x="8" y="${a ? 18 : 34}" width="44" height="14" rx="7" fill="#f39c1e" stroke="#7a4f14"/>${T(30, a ? 14 : 58, a ? 'HIGH' : 'LOW', 'dt xs')}`;
+        return `<g class="part" data-part="pv"><rect x="0" y="0" width="60" height="64" fill="transparent"/>${body}</g>` + R(12, 66, 36, 12, '#d7d3ca', 2, '#777') + T(30, 75, contact, 'dt xs') + led(52, 70, (contact === 'NO') === a, '#f2c230', 3);
+      },
+      status: c => `${c.state.act ? 'Setpoint reached' : 'Below setpoint'} · ${ids.join('-')} ${(contact === 'NO') === c.state.act ? 'closed' : 'open'}`,
+    });
+  }
+  procSwitch('pswitch', 'pswitch', 'Pressure Switch', 'NO', 'pressure');
+  procSwitch('pswitch_nc', 'pswitch', 'Pressure Switch', 'NC', 'pressure');
+  procSwitch('float', 'float', 'Float Switch', 'NO', 'float');
+  procSwitch('float_nc', 'float', 'Float Switch', 'NC', 'float');
 
   /* ---------- LOADS & EQUIPMENT ---------- */
   const PH = { L1: 0, L2: 1, L3: 2 };
@@ -642,6 +728,46 @@
     const f = open ? '#2fa84f' : '#c9c5bb';
     return `<path d="M${x - 9} ${y - 7} L${x + 9} ${y + 7} L${x + 9} ${y - 7} L${x - 9} ${y + 7} Z" fill="${f}" stroke="#333"/><line x1="${x}" y1="${y}" x2="${x}" y2="${y - 10}" stroke="#333"/>`;
   }
+
+  def('valve', {
+    name: 'Solenoid Valve 2/2', cat: 'Equipment', view: 'plant', prefix: 'Y', w: 90, h: 80,
+    props: { coil: '24VDC' },
+    pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }],
+    info: 'Normally closed 2/2-way valve, coil A1-A2. Energized = open, flow passes.',
+    terms: [{ id: 'A1', x: 30, y: 0 }, { id: 'A2', x: 60, y: 0 }],
+    init: () => ({ open: false, burnt: false, flow: 0 }),
+    evaluate(c, api) { return set(c, 'open', coilOn(c, api, 'A1', 'A2')); },
+    tick(c, api, dt) { c.state.flow = Math.round(((c.state.flow || 0) + dt * 60) % 20); },
+    draw(c) {
+      const o = c.state.open;
+      return R(25, 8, 40, 26, o ? '#2fa84f' : '#5c6670', 3, '#333') + T(45, 25, 'SOL', 'dt light xs') + `<line x1="45" y1="34" x2="45" y2="46" stroke="#333" stroke-width="3"/>` +
+        `<path d="M0 58 H90" stroke="#7d8790" stroke-width="8"/>` + valve(45, 58, o) +
+        (o ? `<line x1="0" y1="58" x2="90" y2="58" stroke="#4aa3df" stroke-width="3" stroke-dasharray="6 4" stroke-dashoffset="${-c.state.flow}"/>` : '') +
+        T(45, 78, o ? 'OPEN' : 'CLOSED', 'dt xs') + (c.state.burnt ? burnt(90, 80) : '');
+    },
+    status: c => c.state.burnt ? 'Coil burnt' : c.state.open ? 'Open (energized)' : 'Closed',
+  });
+  def('fan', {
+    name: 'Single-Phase Fan 230V', cat: 'Equipment', view: 'plant', prefix: 'M', w: 90, h: 100,
+    props: { coil: '230VAC' },
+    info: 'Single-phase 230 VAC fan motor: L, N and PE. Runs on 230 VAC between L and N; 400 VAC burns it.',
+    terms: [{ id: 'L', x: 25, y: 0 }, { id: 'N', x: 45, y: 0 }, { id: 'PE', x: 70, y: 0 }],
+    init: () => ({ on: false, burnt: false, spd: 0, ang: 0 }),
+    transient: ['spd'],
+    evaluate(c, api) { return set(c, 'on', coilOn(c, api, 'L', 'N')); },
+    tick(c, api, dt) {
+      const s = c.state;
+      s.spd = s.on ? Math.min(1, s.spd + dt * 1.5) : Math.max(0, s.spd - dt * 0.6);
+      s.ang = Math.round(((s.ang || 0) + s.spd * dt * 900) % 360);
+    },
+    draw(c) {
+      const s = c.state;
+      return `<circle cx="45" cy="56" r="38" fill="#3e464e" stroke="#2a3138" stroke-width="2"/>` + fan(45, 56, 32, s.ang, s) +
+        Array.from({ length: 6 }, (_, i) => `<line x1="9" y1="${30 + i * 10}" x2="81" y2="${30 + i * 10}" stroke="#2a3138" stroke-width="1" opacity=".5"/>`).join('') +
+        (s.burnt ? burnt(90, 100) : '');
+    },
+    status: c => c.state.burnt ? 'Burnt out' : c.state.on ? `Running ${Math.round(c.state.spd * 100)} %` : (c.state.spd > 0.01 ? 'Coasting…' : 'Stopped'),
+  });
 
   def('cylinder', {
     name: 'Pneumatic Cylinder (5/2 valve + reeds)', cat: 'Equipment', view: 'plant', prefix: 'CY', w: 300, h: 130,
@@ -818,7 +944,7 @@
     const id = 'c' + circ.seq;
     const used = new Set(circ.comps.map(c => c.props.label));
     let n = 1; while (used.has(d.prefix + n)) n++;
-    return { id, type, x: Math.round(x / 10) * 10, y: Math.round(y / 10) * 10, props: { label: d.prefix + n, ...JSON.parse(JSON.stringify(d.props)) }, state: d.init ? d.init() : {} };
+    return { id, type, x: Math.round(x / 10) * 10, y: Math.round(y / 10) * 10, props: { label: d.prefix + n, size: 1, ...JSON.parse(JSON.stringify(d.props)) }, state: d.init ? d.init() : {} };
   }
   const okNum = v => typeof v === 'number' && isFinite(v);
   function cleanVal(v, def) {
@@ -834,7 +960,7 @@
   }
   function normalize(c) {
     const d = DEFS[c.type];
-    const dp = { label: d.prefix, ...JSON.parse(JSON.stringify(d.props)) }, sp = c.props && typeof c.props === 'object' ? c.props : {};
+    const dp = { label: d.prefix, size: 1, ...JSON.parse(JSON.stringify(d.props)) }, sp = c.props && typeof c.props === 'object' ? c.props : {};
     c.props = {};
     for (const k in dp) c.props[k] = cleanVal(k in sp ? sp[k] : dp[k], dp[k]);
     for (const f of d.pdefs || []) {
@@ -842,6 +968,7 @@
       if (f.type === 'number') c.props[f.k] = Number(c.props[f.k]) || 0;
     }
     c.props.label = String(c.props.label).slice(0, 40);
+    c.props.size = Math.max(0.4, Math.min(3, Number(c.props.size) || 1));
     const ds = d.init ? d.init() : {}, ss = c.state && typeof c.state === 'object' ? c.state : {};
     c.state = { ...ds };
     for (const k in ss) { const v = cleanVal(ss[k], ds[k]); if (v !== undefined) c.state[k] = v; }

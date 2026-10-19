@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **Floating windows**: ▦ View → *Float Ladder / Wiring / Panel & Plant / HMI* pops a window out of the main area. Move it by its title bar, resize it from the corner, *⤓ Dock* puts it back. Floating windows stay live and are remembered.
+- **Size** for every device in the wiring (0.5× to 2×), and *Same size for all*. Wires follow the new terminal positions.
+- **New parts**: Fuse (blows before any breaker; click to replace), Buzzer/Horn, Key Selector 2-Pos, Solenoid Valve 2/2, Single-Phase Fan 230 V, Proximity Sensor **NPN**, Pressure Switch and Float Switch (each N.O. or N.C.).
+- **More type options in the properties**: proximity sensor PNP ↔ NPN, pressure/float switch N.O. ↔ N.C.
 - **View menu** (▦ View in the status bar): tick the windows you want side by side (up to 3), e.g. ☑ Ladder ☑ Wiring. The ready-made layouts are still there.
 - **Wire junctions**: while drawing a wire, click an existing wire to end the new one there, on a junction dot. Right-click a wire → *Start a new wire from here* to branch off it. The two halves keep their route.
 - **Move wire bends**: select a wire and drag the round handles on its bends (snapped to the grid). Double-click a handle to remove it, double-click the selected wire (or right-click → *Add a bend here*) to add one.
