@@ -130,9 +130,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Latching relay, heater, hour meter, voltmeter, fan and 2P contactor in free draw
 - [x] Free draw: Text, PE earth, Copy (D), To front / To back; 90 symbols
 - [x] Electrical Diagram in one line colour like the ladder (owner: "dapat kapareha ng ladder diagram"); power circuit in proportion with the control circuit
-- [x] PR #20 merged (`430aea8`); stable v1.5.0 authorized (GO STABLE v1.5.0), Release workflow started · [ ] verify release assets, APK cert, Pages version.json
+- [x] PR #20 merged (`430aea8`); stable v1.5.0 authorized (GO STABLE v1.5.0), released (run #44) · [x] verified: 3 assets, APK cert 27:5F:A5…, Pages version.json 1.5.0
 - The hardware work moves to v1.6.0.
-- [x] Release v1.5.0 verified: portable .exe, .apk and web.zip on the release; Pages `version.json` = 1.5.0 (APK certificate not re-checked)
 - [ ] Next (v1.6): modular PLC rack, I/O configuration, addressing styles, cabinet; editable terminal numbers
 
 ## v1.6.0 part 1 (owner: "Continue v 1.6"): modular PLC rack
