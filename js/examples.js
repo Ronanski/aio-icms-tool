@@ -432,6 +432,34 @@
     },
   };
 
+  EX.rack = {
+    title: 'Modular PLC rack (PSU, CPU, I/O cards)', desc: 'Rack power supply, CPU in slot 0, a 24 VDC input card in slot 1 and a relay output card in slot 2 on a DIN rail. START/STOP with a seal-in: addresses follow the slots (I:1/0, O:2/0).',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply1', 60, 20, { label: 'Q0' });
+      const qf = B.add('mcb2', 220, 20, { label: 'QF1' }, { on: true });
+      B.add('din', 50, 252, { label: 'RAIL1', len: '600' });
+      const ps = B.add('mpsu', 60, 190, { label: 'PS1' });
+      B.add('mcpu', 170, 190, { label: 'CPU1' });
+      const di = B.add('mdi8', 300, 190, { label: 'DI1', slot: '1' });
+      const dq = B.add('mdo8', 500, 190, { label: 'DO1', slot: '2' });
+      B.w(q0, 'L', qf, '1', C.L1); B.w(q0, 'N', qf, '3', C.N);
+      B.w(qf, '2', ps, 'L1', C.L1); B.w(qf, '4', ps, 'N', C.N); B.w(q0, 'PE', ps, 'PE', C.PE);
+      const s1 = B.add('pb_no', 330, 20, { label: 'S1', color: 'green', text: 'START' });
+      const s2 = B.add('pb_nc', 400, 20, { label: 'S2', color: 'red', text: 'STOP' });
+      B.w(ps, 'V24', s1, '13', C.DC); B.w(s1, '13', s2, '11', C.DC);
+      B.w(s1, '14', di, 'I0', C.DC); B.w(s2, '12', di, 'I1', C.DC); B.w(ps, 'C24', di, 'COM', C.DC0);
+      const h1 = B.add('lamp', 520, 430, { label: 'H1', color: 'green', coil: '230VAC' });
+      const h2 = B.add('lamp', 590, 430, { label: 'H2', color: 'red', coil: '230VAC' });
+      B.w(qf, '2', dq, 'VAC0', C.AC); B.w(dq, 'O0', h1, 'X1', C.AC); B.w(dq, 'O1', h2, 'X1', C.AC);
+      B.w(h1, 'X2', h2, 'X2', C.N); B.w(h2, 'X2', qf, '4', C.N);
+      return proj('Modular PLC rack', B.circ, [
+        { text: 'BST XIC I:1/0 NXB XIC O:2/0 BND XIC I:1/1 OTE O:2/0', comment: 'START (I:1/0) with seal-in, STOP (N.C., I:1/1) — run lamp on the relay card in slot 2' },
+        { text: 'XIO O:2/0 OTE O:2/1', comment: 'Stopped lamp' },
+      ], { 'I:1/0': 'START', 'I:1/1': 'STOP (N.C.)', 'O:2/0': 'RUN lamp', 'O:2/1': 'STOPPED lamp' });
+    },
+  };
+
   EX.blank = {
     title: 'Empty project', desc: 'Start from scratch: empty workspace and program.',
     build: () => proj('Untitled', { comps: [], wires: [], seq: 0 }, []),

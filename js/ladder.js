@@ -841,17 +841,19 @@
     const bitHead = `<tr><th></th>${Array.from({ length: 16 }, (_, i) => `<th>${15 - i}</th>`).join('')}</tr>`;
     const bitRow = (f, w, n) => `<tr><th class="rowh">${f}:${w}</th>${Array.from({ length: 16 }, (_, i) => {
       const b = 15 - i, a = `${f}:${w}/${b}`;
-      const dead = (f === 'I' || f === 'O') && (w > 0 || b >= n);
+      const dead = (f === 'I' || f === 'O') && b >= n;
       return `<td class="bit${dead ? ' dead' : ''}" data-bit="${a}" title="${a}${App.project.ladder.desc[a] ? ' — ' + esc(App.project.ladder.desc[a]) : ''}">0</td>`;
     }).join('')}</tr>`;
     if (dtFile === 'I' || dtFile === 'O') {
-      const n = dtFile === 'I' ? PLCcore.NUM_IN : PLCcore.NUM_OUT;
-      body = `<table class="dt bits">${bitHead}${bitRow(dtFile, 0, n)}</table>
-      <div class="io-list">${Array.from({ length: n }, (_, i) => {
-        const a = `${dtFile}:0/${i}`;
+      // one word per I/O slot: the compact PLC's I:0/O:0, or each rack card in its slot
+      const words = Circuit.ioMap(App.project.circuit).filter(m => m.file === dtFile);
+      body = words.length ? `<table class="dt bits">${bitHead}${words.map(m => bitRow(dtFile, m.word, m.n)).join('')}</table>
+      <div class="io-list">${words.map(m => (m.label ? `<div class="io-slot">Slot ${m.word}: ${esc(m.label)} — ${esc(m.name)}</div>` : '') + Array.from({ length: m.n }, (_, i) => {
+        const a = `${dtFile}:${m.word}/${i}`;
         return `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code>${a}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
-      }).join('')}</div>
-      <p class="help">${dtFile === 'I' ? 'Inputs follow field wiring. Force to test logic without hardware.' : 'Outputs are written by the ladder; forcing overrides the physical output terminal.'}</p>`;
+      }).join('')).join('')}</div>
+      <p class="help">${dtFile === 'I' ? 'Inputs follow field wiring. Force to test logic without hardware.' : 'Outputs are written by the ladder; forcing overrides the physical output terminal.'}</p>`
+        : `<p class="help">No ${dtFile === 'I' ? 'input' : 'output'} card in the rack. Add one from the PLC Rack parts in the Wiring.</p>`;
     } else if (dtFile === 'B3') {
       body = `<table class="dt bits">${bitHead}${Array.from({ length: 8 }, (_, w) => bitRow('B3', w, 16)).join('')}</table><p class="help">Click a bit to toggle it.</p>`;
     } else if (dtFile === 'T4') {

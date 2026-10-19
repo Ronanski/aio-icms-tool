@@ -25,7 +25,7 @@
   const App = {
     project: null,
     plc: new PLCcore.Engine(),
-    ctx: { plcIn: 0, plcInRaw: 0, plcOut: 0, plcPowered: false, plcId: null, mode: 'PROG', forces: false },
+    ctx: { plcIn: 0, plcInRaw: 0, plcOut: 0, plcInX: [], plcOutX: [], rack: null, plcPowered: false, plcId: null, mode: 'PROG', forces: false },
     api: null,
     view: 'ladder',
     currentId: null,
@@ -161,7 +161,7 @@
     return true;
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
-  App.circuitChanged = function () { App.dirty.wiring = true; renderVisible(); App.save(); };
+  App.circuitChanged = function () { App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
   /* compare with the last known forces so every change is logged, whichever control made it */
   let lastForces = {}, lastFen = true;
@@ -259,10 +259,10 @@
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     const ctx = App.ctx, plc = App.plc, circ = App.project.circuit;
-    const pc = circ.comps.find(c => c.type === 'plc');
-    ctx.plcId = pc ? pc.id : null;
-    ctx.plcOut = plc.physOut; ctx.mode = plc.mode; ctx.forces = plc.forcesEnabled && plc.forceCount() > 0;
-    ctx.plcIn = 0; ctx.plcPowered = false;
+    const rack = Circuit.rack(circ), pc = rack.ctl;
+    ctx.plcId = pc ? pc.id : null; ctx.rack = rack;
+    ctx.plcOut = plc.physOut; ctx.plcOutX = plc.physOutX.slice(); ctx.mode = plc.mode; ctx.forces = plc.forcesEnabled && plc.forceCount() > 0;
+    ctx.plcIn = 0; ctx.plcInX = new Array(PLCcore.SIZES.I).fill(0); ctx.plcPowered = false;
     const r = Circuit.solve(circ, dt, ctx);
     App.api = r.api;
     for (const a of r.alerts) {
@@ -272,6 +272,7 @@
     }
     if (r.alerts.length) App.save();
     if (pc) { plc.powered = ctx.plcPowered; plc.physIn = ctx.plcIn; } else { plc.powered = true; plc.physIn = 0; }
+    plc.physInX = ctx.plcInX;
     if (pc && plc.powered !== lastPw && App.ticks > 0) App.log(plc.powered ? 'system' : 'alarm', plc.powered ? 'PLC power restored' : 'PLC lost its power');
     lastPw = plc.powered;
     ctx.plcInRaw = ctx.plcIn;
@@ -480,7 +481,7 @@
     const plc = App.plc, ctx = App.ctx;
     const st = {
       mode: plc.mode, pw: plc.powered, run: plc.powered && plc.mode === 'RUN', force: plc.forceCount() > 0, fen: plc.forcesEnabled,
-      io: (ctx.plcId ? ctx.plcInRaw : plc.data.I[0] & 0xFFFF) + '|' + plc.physOut,
+      io: plc.data.I.join() + '|' + plc.physOut + '|' + plc.physOutX.join() + '|' + JSON.stringify(ctx.rack && [ctx.rack.cpu, ctx.rack.slots]),
       scan: Math.floor(performance.now() / 500), nplc: !!ctx.plcId,
     };
     if (!force && JSON.stringify(st) === JSON.stringify(barCache)) return;
@@ -492,10 +493,10 @@
     const fb = document.querySelector('[data-forces]');
     fb.textContent = `Forces: ${plc.forcesEnabled ? 'Enabled' : 'Disabled'} (${plc.forceCount()})`;
     fb.classList.toggle('warn', st.force);
-    const inW = plc.data.I[0] & 0xFFFF, outW = plc.physOut;
-    document.querySelector('[data-io]').innerHTML =
-      `<span class="iol">I:0</span>${Array.from({ length: PLCcore.NUM_IN }, (_, i) => `<i class="${(inW >> i) & 1 ? 'on in' : ''}${plc.forces['I:0/' + i] !== undefined ? ' f' : ''}" title="I:0/${i}"></i>`).join('')}` +
-      `<span class="iol">O:0</span>${Array.from({ length: PLCcore.NUM_OUT }, (_, i) => `<i class="${(outW >> i) & 1 ? 'on out' : ''}${plc.forces['O:0/' + i] !== undefined ? ' f' : ''}" title="O:0/${i}"></i>`).join('')}`;
+    // one group of I/O lights per input word and output word (compact: I:0/O:0, rack: one per card)
+    const word = (f, w) => f === 'I' ? plc.data.I[w] & 0xFFFF : w ? plc.physOutX[w] : plc.physOut;
+    document.querySelector('[data-io]').innerHTML = Circuit.ioMap(App.project.circuit).map(({ file: f, word: w, n }) =>
+      `<span class="iol">${f}:${w}</span>${Array.from({ length: n }, (_, i) => `<i class="${(word(f, w) >> i) & 1 ? 'on ' + (f === 'I' ? 'in' : 'out') : ''}${plc.forces[`${f}:${w}/${i}`] !== undefined ? ' f' : ''}" title="${f}:${w}/${i}"></i>`).join('')}`).join('');
     document.querySelector('[data-scan]').textContent = `scan ${plc.scanMs.toFixed(2)} ms`;
     const msg = document.querySelector('[data-msg]');
     let m = '';

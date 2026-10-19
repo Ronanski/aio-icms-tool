@@ -209,7 +209,7 @@
 
   function addComp(type, x, y) {
     const d = DEFS[type];
-    if (d.unique && circ().comps.some(c => c.type === type)) { UI.toast('Only one PLC is supported in a project', 'warn'); return; }
+    if (d.unique && circ().comps.some(c => DEFS[c.type].unique === d.unique)) { UI.toast(d.uniqueMsg || 'Only one of this device per project', 'warn'); return; }
     const c = Circuit.create(type, x, y, circ());
     circ().comps.push(c);
     select({ kind: 'comp', id: c.id });
@@ -427,8 +427,8 @@
   }
   function duplicate(c) {
     const n = Circuit.create(c.type, c.x + 30, c.y + 30, circ());
-    n.props = { ...JSON.parse(JSON.stringify(c.props)), label: n.props.label };
-    if (DEFS[c.type].unique) { UI.toast('Only one PLC is supported', 'warn'); return; }
+    n.props = { ...JSON.parse(JSON.stringify(c.props)), label: n.props.label, ...(DEFS[c.type].slot ? { slot: n.props.slot } : {}) };
+    if (DEFS[c.type].unique) { UI.toast(DEFS[c.type].uniqueMsg || 'Only one of this device per project', 'warn'); return; }
     circ().comps.push(n); select({ kind: 'comp', id: n.id }); App.circuitChanged();
   }
   function delSel() {

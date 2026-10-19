@@ -1089,6 +1089,56 @@ function check(name, cond, info = '') {
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await page.click('#view-schematic [data-sstyle="iec"]');
 
+  console.log('v1.6 part 1: modular PLC rack');
+  check('the rack modules are in the parts list under PLC Rack', await page.evaluate(() => ['mpsu', 'mcpu', 'mdi8', 'mdi8ac', 'mdo8', 'mdo8t'].every(t => Circuit.DEFS[t] && Circuit.DEFS[t].cat === 'PLC Rack')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), ps = add('mpsu', { label: 'PS1' }), cpu = add('mcpu', { label: 'CPU1' });
+    const di = add('mdi8', { label: 'DI1' }), dac = add('mdi8ac', { label: 'DI2' }), dq = add('mdo8', { label: 'DO1' }), dt = add('mdo8t', { label: 'DO2' });
+    const s1 = add('pb_no', { label: 'S1' }), s2 = add('pb_no', { label: 'S2' }), h1 = add('lamp', { label: 'H1', coil: '230VAC' }), h2 = add('lamp', { label: 'H2', coil: '24VDC' });
+    w(q, 'L', ps, 'L1'); w(q, 'N', ps, 'N'); w(q, 'PE', ps, 'PE');
+    w(ps, 'V24', s1, '13'); w(s1, '14', di, 'I0'); w(ps, 'C24', di, 'COM');
+    w(q, 'L', s2, '13'); w(s2, '14', dac, 'I3'); w(q, 'N', dac, 'COM');
+    w(q, 'L', dq, 'VAC0'); w(dq, 'O0', h1, 'X1'); w(h1, 'X2', q, 'N');
+    w(ps, 'V24', dt, 'VP'); w(ps, 'C24', dt, 'COM'); w(dt, 'O5', h2, 'X1'); w(h2, 'X2', ps, 'C24');
+    App.openNew({ name: 'Rack', circuit: circ, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:3/0' }, { text: 'XIC I:2/3 OTE O:4/5' }] } });`));
+  await wait(300);
+  check('new cards take the next free slot (1, 2, 3, 4)', await page.evaluate(() => ['DI1', 'DI2', 'DO1', 'DO2'].map(l => App.project.circuit.comps.find(c => c.props.label === l).props.slot).join() === '1,2,3,4'));
+  check('the CPU module is the controller and is powered by the rack power supply', await page.evaluate(() => App.ctx.plcId === App.project.circuit.comps.find(c => c.type === 'mcpu').id && App.plc.powered));
+  await setMode('RUN'); await wait(200);
+  await part('S1', 'btn', 'down'); await wait(300);
+  check('24 VDC card in slot 1: S1 sets I:1/0; the ladder sets O:3/0 and the relay card lights H1', (await page.evaluate(() => App.plc.read('I:1/0') === 1)) && await get('H1', 'state.on'));
+  await part('S1', 'btn', 'up'); await wait(300);
+  check('releasing S1 turns H1 off', !(await get('H1', 'state.on')));
+  await part('S2', 'btn', 'down'); await wait(300);
+  check('230 VAC card in slot 2: S2 sets I:2/3; the transistor card in slot 4 lights the 24 V lamp on O:4/5', (await page.evaluate(() => App.plc.read('I:2/3') === 1)) && await get('H2', 'state.on'));
+  await part('S2', 'btn', 'up'); await wait(200);
+  await page.evaluate(() => App.force('I:1/0', 1)); await wait(300);
+  check('a rack input (I:1/0) can be forced', await get('H1', 'state.on'));
+  await page.evaluate(() => App.force('I:1/0', null)); await wait(200);
+  await page.evaluate(() => { App.showView('ladder'); document.querySelector('[data-file="I"]').click(); });
+  await wait(200);
+  check('the data table lists the input cards by slot', await page.evaluate(() => !!document.querySelector('[data-io="I:1/0"]') && !!document.querySelector('[data-io="I:2/7"]') && !document.querySelector('[data-io="I:0/0"]')));
+  check('the status bar shows one I/O group per card', await page.evaluate(() => [...document.querySelectorAll('[data-io] .iol')].map(e => e.textContent).join() === 'I:1,I:2,O:3,O:4'));
+  await page.evaluate(() => { const c = App.project.circuit.comps.find(c => c.props.label === 'DO1'); c.props.slot = '2'; App.circuitChanged(); });
+  await wait(300);
+  check('two cards in one slot: the second is inactive and says so', await page.evaluate(() => { const c = App.project.circuit.comps.find(c => c.props.label === 'DO1'); return Circuit.status(c, App.ctx).includes('already taken'); }));
+  await page.evaluate(() => { App.project.circuit.comps.find(c => c.props.label === 'DO1').props.slot = '3'; App.circuitChanged(); });
+  await page.evaluate(() => { App.setLayout('single'); App.showView('wiring'); });
+  const nRack = await page.evaluate(() => App.project.circuit.comps.length);
+  await page.evaluate(() => document.querySelector('.pal-item[data-type="plc"]').click());
+  await wait(200);
+  check('a compact PLC cannot be added next to a CPU module', await page.evaluate(n => App.project.circuit.comps.length === n, nRack));
+  await setMode('PROG');
+
+  await page.evaluate(() => App.openNew(Examples.EX.rack.build())); await wait(300);
+  await setMode('RUN'); await wait(200);
+  check('rack example: STOP is closed, the STOPPED lamp is on', (await get('H2', 'state.on')) && !(await get('H1', 'state.on')));
+  await press('S1'); await wait(400);
+  check('rack example: START runs and seals in (RUN lamp on O:2/0)', (await get('H1', 'state.on')) && !(await get('H2', 'state.on')));
+  await press('S2'); await wait(400);
+  check('rack example: STOP stops it', !(await get('H1', 'state.on')) && await get('H2', 'state.on'));
+  await setMode('PROG');
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });
