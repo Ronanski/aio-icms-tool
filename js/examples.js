@@ -1,7 +1,8 @@
 /* Example projects (wired circuits + ladder + HMI) and guided lessons. */
 (function () {
   'use strict';
-  const C = { L1: '#8B4513', L2: '#1d1d1d', L3: '#8a8f96', N: '#2f6fd6', PE: '#58a83a', AC: '#d33a2c', DC: '#1f4fa8', DC0: '#5aa0e6' };
+  // wire colours, Philippine practice: L1 red, L2 yellow, L3 blue, N white, PE green; control 230 V black; 24 V DC + red, 0 V blue
+  const C = { L1: '#b3261e', L2: '#f2c230', L3: '#2b6fe0', N: '#f4f4f0', PE: '#58a83a', AC: '#1d1d1d', DC: '#d33a2c', DC0: '#1f4fa8' };
 
   function builder() {
     const circ = { comps: [], wires: [], seq: 0 };
@@ -400,6 +401,30 @@
         'I:0/0': 'S1 FORWARD PB', 'I:0/1': 'S2 REVERSE PB', 'I:0/2': 'S0 STOP PB (NC)', 'I:0/3': 'QM1 MOTOR BREAKER ON',
         'O:0/0': 'KM1 FORWARD', 'O:0/1': 'KM2 REVERSE',
       });
+    },
+  };
+
+  EX.threemotors = {
+    title: 'Three motors (IEC Electrical Diagram)', desc: 'Three DOL motors drawn the IEC way: main breaker Q4, motor feeders Q1-Q3 → KM1-KM3 → F1-F3 → M1-M3, and the control current paths with stop/start, seal-in, run lamps and pilot lamps. The diagram wires everything in the Wiring for you.',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply3', 60, 20, { label: 'Q0' });
+      const q4 = B.add('mccb3', 60, 140, { label: 'Q4' }, { on: true });
+      B.add('lamp', 900, 40, { label: 'H7', color: 'blue', coil: '230VAC' });
+      const p = proj('Three motors (IEC diagram)', B.circ, [{ comment: 'This project is hardwired — no PLC. See the Electrical Diagram tab.', text: '' }]);
+      const e = (k, tag) => ({ k, tag });
+      const motor = n => ({ comment: `Motor M${n}: stop S${n}, start S${n + 4}, seal-in KM${n} 13-14, overload F${n}, run lamp H${n}`,
+        elems: [e('olnc', 'F' + n), e('pbnc', 'S' + n), { k: 'br', legs: [[e('pbno', 'S' + (n + 4))], [e('kmno', 'KM' + n)]] }, { k: 'br', legs: [[e('kmcoil', 'KM' + n)], [e('lamp', 'H' + n)]] }] });
+      p.schematic = {
+        L: q4 + ':2', N: q0 + ':N',
+        rungs: [motor(1), motor(2), motor(3),
+          { comment: 'Pilot lamp test', elems: [e('pbno', 'S8'), e('lamp', 'H4')] },
+          { comment: 'Pilot lamp test', elems: [e('pbno', 'S9'), e('lamp', 'H5')] },
+          { comment: 'Pilot lamp test', elems: [e('pbno', 'S11'), e('lamp', 'H6')] },
+          { comment: 'Control voltage present', elems: [e('lamp', 'H7')] }],
+        power: { src: 'Q0', main: [e('qf3', 'Q4')], feeders: [1, 2, 3].map(n => ({ elems: [e('qm3', 'Q' + n), e('km3', 'KM' + n), e('ol3', 'F' + n), e('m3', 'M' + n)] })) },
+      };
+      return p;
     },
   };
 

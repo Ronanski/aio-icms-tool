@@ -55,7 +55,7 @@
     draw(c) {
       const on = c.state.on;
       return R(0, 0, 140, 70, 'url(#gDark)', 6) + T(48, 14, '3~ 400/230 V 60 Hz', 'dt light') +
-        ['L1', 'L2', 'L3'].map((p, i) => led(20 + i * 20, 30, on, ['#a0522d', '#cfcfcf', '#9aa0a6'][i]) + T(20 + i * 20, 43, p, 'dt light sm')).join('') +
+        ['L1', 'L2', 'L3'].map((p, i) => led(20 + i * 20, 30, on, ['#e53935', '#f2c230', '#2b6fe0'][i]) + T(20 + i * 20, 43, p, 'dt light sm')).join('') +
         `<g class="part" data-part="sw" transform="translate(112 30)"><circle r="14" fill="#e3e0d8" stroke="#222"/><rect x="-3.5" y="-12" width="7" height="24" rx="3" fill="${on ? '#c0392b' : '#4a4a4a'}" transform="rotate(${on ? 90 : 0})"/></g>` +
         T(112, 53, on ? 'ON' : 'OFF', 'dt light sm');
     },
@@ -317,7 +317,7 @@
     },
   });
   /* Terminal block group PE L1 L2 L3 N: each top terminal is linked to the one below it */
-  const TB5 = [['PE', '#59a845'], ['L1', '#a7abb0'], ['L2', '#a7abb0'], ['L3', '#a7abb0'], ['N', '#3f73d4']];
+  const TB5 = [['PE', '#59a845'], ['L1', '#a7abb0'], ['L2', '#a7abb0'], ['L3', '#a7abb0'], ['N', '#f4f4f0']];
   def('tb5', {
     name: 'Terminal Block PE-L1-L2-L3-N', cat: 'Wiring', view: 'none', prefix: 'X', w: 100, h: 80,
     info: 'Five feed-through terminals on a DIN rail: green PE, grey L1 L2 L3, blue N. Each top terminal is connected to the one below it.',
@@ -1148,7 +1148,8 @@
     if ('tripped' in c.state && !d.breaker) c.state.tripped = false;
   }
 
-  const POT_COLORS = { L1: '#8B4513', L2: '#1d1d1d', L3: '#8a8f96', N: '#2f6fd6', PE: '#58a83a', 'DC+': '#d33a2c', 'DC-': '#1f4fa8' };
+  /* Philippine practice: L1 red, L2 yellow, L3 blue, neutral white, earth green; 24 V DC: + red, 0 V blue */
+  const POT_COLORS = { L1: '#b3261e', L2: '#f2c230', L3: '#2b6fe0', N: '#f4f4f0', PE: '#58a83a', 'DC+': '#d33a2c', 'DC-': '#1f4fa8' };
   function potClass(set) {
     for (const p of ['L1', 'L2', 'L3', 'N']) if (set.has(p)) return p;
     for (const p of set) { if (p.startsWith('DC+')) return 'DC+'; }

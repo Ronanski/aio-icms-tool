@@ -27,8 +27,8 @@
   const byId = id => circ().comps.find(c => c.id === id);
   const snap = v => Math.round(v / 10) * 10;
   const WIRE_COLORS = [
-    ['auto', 'Auto (by potential)', 'conic-gradient(#8B4513 0 25%,#1d1d1d 0 50%,#2f6fd6 0 75%,#d33a2c 0)'],
-    ['#1d1d1d', 'Black'], ['#8B4513', 'Brown'], ['#8a8f96', 'Gray'], ['#2f6fd6', 'Blue'], ['#d33a2c', 'Red'], ['#58a83a', 'Green/Yellow'], ['#e8e4da', 'White'], ['#f39c1e', 'Orange'],
+    ['auto', 'Auto (by conductor)', 'conic-gradient(#b3261e 0 25%,#f2c230 0 50%,#2b6fe0 0 75%,#f4f4f0 0)'],
+    ['#b3261e', 'Red (L1)'], ['#f2c230', 'Yellow (L2)'], ['#2b6fe0', 'Blue (L3)'], ['#f4f4f0', 'White (N)'], ['#58a83a', 'Green (PE)'], ['#1d1d1d', 'Black (control)'], ['#d33a2c', 'Red (+24 V)'], ['#1f4fa8', 'Dark blue (0 V)'], ['#f39c1e', 'Orange'],
   ];
 
   function tpos(key) {
@@ -365,8 +365,9 @@
   }
   function guessColor(a, b) {
     const t = (a + ' ' + b).toUpperCase();
-    if (/:(L1|U1)\b/.test(t)) return '#8B4513';
-    if (/:(N|M1|M2|C24|COM|BU)\b/.test(t)) return '#2f6fd6';
+    if (/:(L1|U1)\b/.test(t)) return Circuit.POT_COLORS.L1;
+    if (/:N\b/.test(t)) return Circuit.POT_COLORS.N;
+    if (/:(M1|M2|C24|COM|BU)\b/.test(t)) return Circuit.POT_COLORS['DC-'];
     if (/:PE\b/.test(t)) return '#58a83a';
     if (/:(P1|P2|V24|BN)\b/.test(t)) return '#d33a2c';
     return '#1d1d1d';

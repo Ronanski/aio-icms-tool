@@ -101,7 +101,7 @@
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc },
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
-      schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })) },
+      schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined },
       events: LOG.slice(-LOG_KEEP),
     };
   };
@@ -145,7 +145,8 @@
     Store.setCurrent(App.currentId);
     applyProject(proj);
     // an example (or file) with diagram rungs but no diagram wires yet: let the Electrical Diagram wire them now
-    if (proj.schematic.rungs.length && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
+    const sp = proj.schematic.power;
+    if ((proj.schematic.rungs.length || sp.main.length || sp.feeders.some(f => f.elems.length)) && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
   };
   App.openSaved = function (id) {
     let proj = null;

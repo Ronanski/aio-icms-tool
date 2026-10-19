@@ -46,7 +46,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
   - Overload relay trips on a jammed or single-phasing motor
 - Live voltage overlay, a terminal hover tooltip, and a **multimeter**
 
-**Electrical Diagram** (schematic): draw a relay/contactor control circuit like a ladder (rails, rungs, branches, IEC-style symbols). Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic.
+**Electrical Diagram** (schematic): draw the control circuit the IEC way — L on top, N at the bottom, one numbered current path per column, with terminal numbers and -KM1-style tags (a horizontal ladder view is also available) — plus the power circuit: supply, main switch and motor feeders (breaker → contactor → overload → motor). Wire colours follow Philippine practice (L1 red, L2 yellow, L3 blue, N white, PE green). Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic.
 
 **Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. Push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring (the separate Operator Panel was removed in v1.4). Lessons and keyboard shortcuts are in **Help ▾**.
 

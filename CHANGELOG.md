@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added (v1.4 part 4)
+- **IEC Electrical Diagram** (new default view): L rail on top, N rail at the bottom, one numbered column per current path, contacts drawn the IEC way with their terminal numbers (95/96, 11/12, 13/14, A1/A2, X1/X2) and tags like -KM1. Push-button, selector, E-stop, limit-switch, timer and overload actuators are shown. *⇄ Ladder* switches back to the horizontal ladder style.
+- **Power circuit in the diagram**: the 3-phase supply, a main switch and motor feeders (circuit breaker or motor protection breaker → contactor main contacts → overload relay → motor 3~ with PE). The diagram adds the devices to the Wiring and wires L1-L2-L3 and PE for you; live phases light up. *＋ Feeder* and the *Power* buttons build it; Operate mode switches breakers and resets overloads from the diagram.
+- **Example**: *Three motors (IEC Electrical Diagram)*, with main breaker Q4, feeders Q1-Q3 → KM1-KM3 → F1-F3 → M1-M3, start/stop with seal-in, run lamps and pilot lamps.
+- A coil with a lamp across it (a branch made only of loads) is drawn at the bottom of its current path.
+
+### Changed (v1.4 part 4)
+- **Wire colours follow Philippine practice**: L1 red, L2 yellow, L3 blue, N white, PE green; 24 V DC + red, 0 V blue; 230 V control wiring black. The wire colour palette, *Auto* colours, examples and new diagram wiring use them. Wires in existing projects keep their colours.
+
+### Fixed (v1.4 part 4)
+- A diagram tag that was not text could be read as the word "undefined".
+
 ### Added (v1.4 part 3)
 - **Motor with 6 terminals** (U1 V1 W1 / U2 V2 W2) for star-delta starting: it runs in STAR when U2 V2 W2 are joined (reduced speed in this model) and in DELTA when every winding is across two phases; it says when the windings are not connected. Star and delta at the same time short the phases and trip the breaker.
 - **Timer relay with a dial**: the dial shows the set delay, − / + change it (0.5–60 s), and a bar fills while it times.
