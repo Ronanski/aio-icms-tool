@@ -284,6 +284,125 @@
     },
   };
 
+  /* Star-delta power circuit: Q0 → QM1 → KM1 (main, to U1 V1 W1) + KM2 (delta, to W2 U2 V2) + KM3 (star point) → M1.
+     Delta check: U1=L1/U2=L2, V1=L2/V2=L3, W1=L3/W2=L1. KM2 and KM3 together short the phases: QM1 trips. */
+  function starDeltaPower(B) {
+    const q0 = B.add('supply3', 60, 20, { label: 'Q0' });
+    const qm1 = B.add('mpcb', 60, 140, { label: 'QM1', ir: '10' }, { on: true });
+    const km1 = B.add('contactor', 40, 340, { label: 'KM1', coil: '230VAC' });
+    const km2 = B.add('contactor', 230, 340, { label: 'KM2', coil: '230VAC' });
+    const km3 = B.add('contactor', 420, 340, { label: 'KM3', coil: '230VAC' });
+    const m1 = B.add('motor6', 40, 640, { label: 'M1' });
+    B.w(q0, 'L1', qm1, '1', C.L1); B.w(q0, 'L2', qm1, '3', C.L2); B.w(q0, 'L3', qm1, '5', C.L3);
+    B.w(qm1, '2', km1, '1', C.L1); B.w(qm1, '4', km1, '3', C.L2); B.w(qm1, '6', km1, '5', C.L3);
+    B.w(qm1, '2', km2, '1', C.L1, [[78, 300], [260, 300]]); B.w(qm1, '4', km2, '3', C.L2, [[100, 310], [280, 310]]); B.w(qm1, '6', km2, '5', C.L3, [[122, 320], [300, 320]]);
+    B.w(km1, '2', m1, 'U1', C.L1); B.w(km1, '4', m1, 'V1', C.L2); B.w(km1, '6', m1, 'W1', C.L3);
+    B.w(km2, '2', m1, 'W2', C.L1, [[260, 540], [120, 540]]); B.w(km2, '4', m1, 'U2', C.L2, [[280, 560], [140, 560]]); B.w(km2, '6', m1, 'V2', C.L3, [[300, 580], [160, 580]]);
+    B.w(m1, 'W2', km3, '1', C.L2, [[120, 600], [450, 600], [450, 320]]); B.w(m1, 'U2', km3, '3', C.L2, [[140, 610], [470, 610], [470, 325]]); B.w(m1, 'V2', km3, '5', C.L2, [[160, 620], [490, 620], [490, 330]]);
+    B.w(km3, '2', km3, '4', C.L2); B.w(km3, '4', km3, '6', C.L2);
+    B.w(q0, 'PE', m1, 'PE', C.PE, [[180, 110], [560, 110], [560, 680]]);
+    const qf2 = B.add('mcb2', 640, 140, { label: 'QF2' }, { on: true });
+    B.w(q0, 'L1', qf2, '1', C.L1, [[80, 120], [660, 120]]); B.w(q0, 'N', qf2, '3', C.N, [[150, 130], [690, 130]]);
+    return { q0, qm1, km1, km2, km3, m1, qf2 };
+  }
+  EX.stardelta = {
+    title: 'Star-delta starter (hardwired, Electrical Diagram)', desc: 'Star-delta starter drawn in the Electrical Diagram: KA1 start/stop with seal-in, KM1 main, KM3 star, KT1 star time, KA2 changeover, KM2 delta, with KM2/KM3 interlocks. The Diagram wires the control circuit for you.',
+    build() {
+      const B = builder();
+      const { qf2 } = starDeltaPower(B);
+      B.add('pb_nc', 640, 330, { label: 'S0', color: 'red', text: 'STOP' });
+      B.add('pb_no', 720, 330, { label: 'S1', color: 'green', text: 'START' });
+      B.add('relay', 800, 330, { label: 'KA1', coil: '230VAC' });
+      B.add('timer', 910, 330, { label: 'KT1', coil: '230VAC', t: 5 });
+      B.add('relay', 1020, 330, { label: 'KA2', coil: '230VAC' });
+      const p = proj('Star-delta starter (hardwired)', B.circ, [{ comment: 'This project is hardwired — no PLC. The control circuit is in the Electrical Diagram tab.', text: '' }]);
+      const e = (k, tag) => ({ k, tag });
+      p.schematic = {
+        L: qf2 + ':2', N: qf2 + ':4',
+        rungs: [
+          { comment: 'Start/stop: S1 starts KA1, KA1 seals in, S0 stops', elems: [e('pbnc', 'S0'), { k: 'br', legs: [[e('pbno', 'S1')], [e('kano', 'KA1')]] }, e('kacoil', 'KA1')] },
+          { comment: 'Main contactor KM1', elems: [e('kano', 'KA1'), e('kmcoil', 'KM1')] },
+          { comment: 'Star KM3 (until KA2 changes over, not with KM2) and the star timer KT1', elems: [e('kmno', 'KM1'), { k: 'br', legs: [[e('kanc', 'KA2'), e('kmnc', 'KM2'), e('kmcoil', 'KM3')], [e('ktcoil', 'KT1')]] }] },
+          { comment: 'Star time over: changeover relay KA2', elems: [e('ktno', 'KT1'), e('kacoil', 'KA2')] },
+          { comment: 'Delta KM2 (not with KM3)', elems: [e('kano', 'KA2'), e('kmnc', 'KM3'), e('kmcoil', 'KM2')] },
+        ],
+      };
+      return p;
+    },
+  };
+  EX.stardeltaplc = {
+    title: 'Star-delta starter (PLC)', desc: 'Star-delta starter run by the PLC: O:0/0 KM1 main, O:0/1 KM3 star, O:0/2 KM2 delta, T4:0 star time; KM2/KM3 also interlocked by their N.C. contacts.',
+    build() {
+      const B = builder();
+      const { qm1, km1, km2, km3, qf2 } = starDeltaPower(B);
+      const plc = B.add('plc', 640, 560, { label: 'PLC' });
+      const s1 = B.add('pb_no', 760, 330, { label: 'S1', color: 'green', text: 'START' });
+      const s0 = B.add('pb_nc', 840, 330, { label: 'S0', color: 'red', text: 'STOP' });
+      B.w(qf2, '2', plc, 'L1', C.L1); B.w(qf2, '4', plc, 'N', C.N);
+      B.w(plc, 'C24', plc, 'COM', C.DC0);
+      B.w(plc, 'V24', s1, '13', C.DC); B.w(s1, '13', s0, '11', C.DC, [[775, 440], [855, 440]]);
+      B.w(s1, '14', plc, 'I0', C.DC); B.w(s0, '12', plc, 'I1', C.DC);
+      B.w(plc, 'V24', qm1, '13', C.DC, [[730, 530], [620, 530], [620, 126], [146, 126]]); B.w(qm1, '14', plc, 'I2', C.DC, [[146, 290], [600, 290], [600, 540], [858, 540]]);
+      B.w(plc, 'L1', plc, 'VAC0', C.AC, [[630, 548], [630, 780], [660, 780]]);
+      B.w(plc, 'O0', km1, 'A1', C.AC, [[690, 800], [20, 800], [20, 330], [50, 330]]);
+      B.w(plc, 'O1', km2, '21', C.AC, [[712, 810], [380, 810], [380, 320], [340, 320]]);
+      B.w(km2, '22', km3, 'A1', C.AC, [[340, 500], [410, 500], [410, 326], [430, 326]]);
+      B.w(plc, 'O2', km3, '21', C.AC, [[734, 820], [580, 820], [580, 315], [530, 315]]);
+      B.w(km3, '22', km2, 'A1', C.AC, [[530, 495], [220, 495], [220, 328], [240, 328]]);
+      B.w(km1, 'A2', km2, 'A2', C.N); B.w(km2, 'A2', km3, 'A2', C.N); B.w(km3, 'A2', plc, 'N', C.N, [[430, 520], [740, 520]]);
+      return proj('Star-delta starter (PLC)', B.circ, [
+        { comment: 'Start/stop with seal-in. S0 STOP is N.C. and QM1 aux 13-14 is closed while QM1 is ON → both XIC.', text: 'BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 XIC I:0/2 OTE O:0/0' },
+        { comment: 'Star time', text: 'XIC O:0/0 TON T4:0 1.0 5 0' },
+        { comment: 'Star KM3 until the star time is over, never with delta', text: 'XIC O:0/0 XIO T4:0/DN XIO O:0/2 OTE O:0/1' },
+        { comment: 'Delta KM2 after the star time, never with star', text: 'XIC O:0/0 XIC T4:0/DN XIO O:0/1 OTE O:0/2' },
+      ], {
+        'I:0/0': 'S1 START PB', 'I:0/1': 'S0 STOP PB (NC)', 'I:0/2': 'QM1 MOTOR BREAKER ON',
+        'O:0/0': 'KM1 MAIN', 'O:0/1': 'KM3 STAR', 'O:0/2': 'KM2 DELTA', 'T4:0': 'STAR TIME',
+      });
+    },
+  };
+  EX.fwdrev = {
+    title: 'Forward / reverse (PLC)', desc: 'Reversing starter: KM1 forward, KM2 reverse (L1 and L3 swapped). Interlocked twice: in the ladder and by the contactors\' N.C. contacts. Press STOP before changing direction.',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply3', 60, 20, { label: 'Q0' });
+      const qm1 = B.add('mpcb', 60, 140, { label: 'QM1', ir: '6.3' }, { on: true });
+      const km1 = B.add('contactor', 40, 340, { label: 'KM1', coil: '230VAC' });
+      const km2 = B.add('contactor', 230, 340, { label: 'KM2', coil: '230VAC' });
+      const m1 = B.add('motor', 90, 640, { label: 'M1' });
+      B.w(q0, 'L1', qm1, '1', C.L1); B.w(q0, 'L2', qm1, '3', C.L2); B.w(q0, 'L3', qm1, '5', C.L3);
+      B.w(qm1, '2', km1, '1', C.L1); B.w(qm1, '4', km1, '3', C.L2); B.w(qm1, '6', km1, '5', C.L3);
+      B.w(qm1, '2', km2, '5', C.L1, [[78, 320], [300, 320]]); B.w(qm1, '4', km2, '3', C.L2, [[100, 310], [280, 310]]); B.w(qm1, '6', km2, '1', C.L3, [[122, 300], [260, 300]]);
+      B.w(km1, '2', m1, 'U1', C.L1); B.w(km1, '4', m1, 'V1', C.L2); B.w(km1, '6', m1, 'W1', C.L3);
+      B.w(km2, '2', m1, 'U1', C.L3, [[260, 560], [120, 560]]); B.w(km2, '4', m1, 'V1', C.L2, [[280, 570], [140, 570]]); B.w(km2, '6', m1, 'W1', C.L1, [[300, 580], [160, 580]]);
+      B.w(q0, 'PE', m1, 'PE', C.PE, [[180, 110], [420, 110], [420, 620], [190, 620]]);
+      const qf2 = B.add('mcb2', 640, 140, { label: 'QF2' }, { on: true });
+      B.w(q0, 'L1', qf2, '1', C.L1, [[80, 120], [660, 120]]); B.w(q0, 'N', qf2, '3', C.N, [[150, 130], [690, 130]]);
+      const plc = B.add('plc', 640, 560, { label: 'PLC' });
+      const s1 = B.add('pb_no', 640, 330, { label: 'S1', color: 'green', text: 'FWD' });
+      const s2 = B.add('pb_no', 720, 330, { label: 'S2', color: 'blue', text: 'REV' });
+      const s0 = B.add('pb_nc', 800, 330, { label: 'S0', color: 'red', text: 'STOP' });
+      B.w(qf2, '2', plc, 'L1', C.L1); B.w(qf2, '4', plc, 'N', C.N);
+      B.w(plc, 'C24', plc, 'COM', C.DC0);
+      B.w(plc, 'V24', s1, '13', C.DC); B.w(s1, '13', s2, '13', C.DC, [[655, 440], [735, 440]]); B.w(s2, '13', s0, '11', C.DC, [[735, 440], [815, 440]]);
+      B.w(s1, '14', plc, 'I0', C.DC); B.w(s2, '14', plc, 'I1', C.DC); B.w(s0, '12', plc, 'I2', C.DC);
+      B.w(plc, 'V24', qm1, '13', C.DC, [[730, 530], [620, 530], [620, 126], [146, 126]]); B.w(qm1, '14', plc, 'I3', C.DC, [[146, 290], [600, 290], [600, 540], [880, 540]]);
+      B.w(plc, 'L1', plc, 'VAC0', C.AC, [[630, 548], [630, 780], [660, 780]]);
+      B.w(plc, 'O0', km2, '21', C.AC, [[690, 800], [380, 800], [380, 320], [340, 320]]);
+      B.w(km2, '22', km1, 'A1', C.AC, [[340, 500], [20, 500], [20, 330], [50, 330]]);
+      B.w(plc, 'O1', km1, '21', C.AC, [[712, 810], [200, 810], [200, 320], [150, 320]]);
+      B.w(km1, '22', km2, 'A1', C.AC, [[150, 510], [220, 510], [220, 328], [240, 328]]);
+      B.w(km1, 'A2', km2, 'A2', C.N); B.w(km2, 'A2', plc, 'N', C.N, [[240, 520], [740, 520]]);
+      return proj('Forward / reverse (PLC)', B.circ, [
+        { comment: 'Forward: FWD starts and seals in; STOP (N.C.) and QM1 ON allow it; blocked while reversing (press STOP first)', text: 'BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/2 XIC I:0/3 XIO O:0/1 OTE O:0/0' },
+        { comment: 'Reverse: the mirror of forward', text: 'BST XIC I:0/1 NXB XIC O:0/1 BND XIC I:0/2 XIC I:0/3 XIO O:0/0 OTE O:0/1' },
+      ], {
+        'I:0/0': 'S1 FORWARD PB', 'I:0/1': 'S2 REVERSE PB', 'I:0/2': 'S0 STOP PB (NC)', 'I:0/3': 'QM1 MOTOR BREAKER ON',
+        'O:0/0': 'KM1 FORWARD', 'O:0/1': 'KM2 REVERSE',
+      });
+    },
+  };
+
   EX.blank = {
     title: 'Empty project', desc: 'Start from scratch: empty workspace and program.',
     build: () => proj('Untitled', { comps: [], wires: [], seq: 0 }, []),

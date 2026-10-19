@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added (v1.4 part 3)
+- **Motor with 6 terminals** (U1 V1 W1 / U2 V2 W2) for star-delta starting: it runs in STAR when U2 V2 W2 are joined (reduced speed in this model) and in DELTA when every winding is across two phases; it says when the windings are not connected. Star and delta at the same time short the phases and trip the breaker.
+- **Timer relay with a dial**: the dial shows the set delay, − / + change it (0.5–60 s), and a bar fills while it times.
+- **Examples**: *Star-delta starter (hardwired, Electrical Diagram)*, which wires its control circuit from the diagram; *Star-delta starter (PLC)* with ladder; *Forward / reverse (PLC)* with ladder and contactor interlocks.
+- An opened project whose Electrical Diagram is not wired yet is wired at once.
+
 ### Changed
 - **Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. The *Panel & Plant* view is removed: push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring. Lessons and the new keyboard-shortcut list are in **Help ▾**.
 - The Schematic tab is now called **Electrical Diagram**.

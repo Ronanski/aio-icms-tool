@@ -5,11 +5,11 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.2.1 released** 2026-10-19 from `main` (squash `9fc837d`, PR #5); all 4 assets, APK cert `27:5F:A5:15:06:CC:46…` (same key as v1.2.0); Pages serves 1.2.1. v1.3 parts 1–3 merged into `main` (PR #6, #7, #8), not released. v1.4 part 1 merged (PR #9). v1.4 part 2 is on `claude/focused-archimedes-12aqro` (PR to `main`, not merged). |
+| **Version** | **v1.2.1 released** 2026-10-19 from `main` (squash `9fc837d`, PR #5); all 4 assets, APK cert `27:5F:A5:15:06:CC:46…` (same key as v1.2.0); Pages serves 1.2.1. v1.3 parts 1–3 merged into `main` (PR #6, #7, #8), not released. v1.4 parts 1–2 merged (PR #9, #10). v1.4 part 3 is on `claude/focused-archimedes-12aqro` (PR to `main`, not merged). |
 | **Tags** | `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-19 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 178 passed on the v1.4 part 2 branch (174 on `main`). |
+| **Tests** | `npm test`: 190 passed on the v1.4 part 3 branch (178 on `main`). |
 | **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch), #4 open (docs: savepoint + v1.2.0 audit). |
 | **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
@@ -75,8 +75,9 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 - v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19).
 - v1.3 parts 1–3 merged (PR #6, #7, #8; #8 with "GO merge PR #8 then GO v1.4 part 1"). Not released: needs a GO BETA or GO STABLE.
 - v1.4 part 1 (flat wiring look, DIN rail + snap, terminal block, motor protection breaker, wire labels) merged (PR #9) with "GO merge PR #9 then GO v1.4 part 2".
-- v1.4 part 2 (4 workspaces, Panel & Plant removed, Help menu with Lessons) is in a PR, not merged.
-- Owner's direction (EduVolt-style screenshots): simple flat hardware graphics; operate devices in the Wiring; only 4 workspaces: Ladder, Wiring, Electrical Diagram, HMI. Copy the look, never brand names or logos (the app is public on Pages and Releases). Next: v1.4 part 3 (star-delta, reversing, timer with dial). Roadmap in `PROGRESS.md`.
+- v1.4 part 2 (4 workspaces, Panel & Plant removed, Help menu with Lessons) merged (PR #10) with "GO merge PR #10 then GO v1.4 part 3".
+- v1.4 part 3 (6-terminal motor, timer dial, star-delta and forward/reverse examples) is in a PR, not merged. v1.4 is then complete; next is a beta or stable release on the owner's GO, then v1.5 (hardware).
+- Owner's direction (EduVolt-style screenshots): simple flat hardware graphics; operate devices in the Wiring; only 4 workspaces: Ladder, Wiring, Electrical Diagram, HMI. Copy the look, never brand names or logos (the app is public on Pages and Releases). Next after v1.4: release (GO BETA / GO STABLE), then v1.5 hardware. Roadmap in `PROGRESS.md`.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
 - Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.
