@@ -661,6 +661,65 @@ function check(name, cond, info = '') {
   await page.evaluate(() => { App.log('system', 'remember me'); App.saveNow(); App.openSaved(App.currentId); });
   check('the event log is saved with the project', await page.evaluate(() => App.events().some(e => e.msg === 'remember me')));
 
+  console.log('v1.3 part 2: components, size, floating windows');
+  const build = (fn) => page.evaluate(fn);
+  const kit = `const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c.id; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts: [], color: '#8B4513' }); };`;
+  check('new parts are in the parts list', await page.evaluate(() => ['fuse', 'buzzer', 'selkey', 'valve', 'fan', 'prox_npn', 'pswitch', 'pswitch_nc', 'float', 'float_nc'].every(t => Circuit.DEFS[t] && !Circuit.DEFS[t].hidden) && !!document.querySelector('.pal-item[data-type="valve"]')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('fuse', { label: 'FU1' }), m = add('mcb1', { label: 'QF1' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', m, '1'); w(m, '2', q, 'N');
+    App.openNew({ name: 'Fuse', circuit: circ });`));
+  await wait(300);
+  check('a fuse blows before the breaker behind it', (await get('FU1', 'state.tripped')) && !(await get('QF1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), g = add('psu24', { label: 'G1' }), hz = add('buzzer', { label: 'HA1' }), y = add('valve', { label: 'Y1' }), fn = add('fan', { label: 'M1' });
+    w(q, 'L', g, 'L'); w(q, 'N', g, 'N'); w(g, 'P1', hz, 'X1'); w(hz, 'X2', g, 'M1'); w(g, 'P2', y, 'A1'); w(y, 'A2', g, 'M2'); w(q, 'L', fn, 'L'); w(q, 'N', fn, 'N');
+    App.openNew({ name: 'Loads', circuit: circ });`));
+  await wait(600);
+  check('buzzer sounds, solenoid valve opens and the 230 V fan runs', (await get('HA1', 'state.on')) && (await get('Y1', 'state.open')) && (await get('M1', 'state.spd')) > 0.3);
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), g = add('psu24', { label: 'G1' }), b = add('prox_npn', { label: 'B1' }, { tgt: true }), s = add('pswitch', { label: 'SP1' });
+    w(q, 'L', g, 'L'); w(q, 'N', g, 'N'); w(g, 'P1', b, 'BN'); w(b, 'BU', g, 'M1'); w(g, 'P2', s, '13');
+    App.openNew({ name: 'Sensors', circuit: circ });`));
+  await wait(300);
+  check('an NPN sensor switches 0 V to its output', await page.evaluate(() => { const c = App.project.circuit.comps.find(x => x.props.label === 'B1'); return App.api.sameNet(c.id + ':BK', c.id + ':BU'); }));
+  check('a pressure switch can be changed N.O. → N.C. and its wire follows', await page.evaluate(() => {
+    const c = App.project.circuit.comps.find(x => x.props.label === 'SP1');
+    Circuit.retype(c, 'pswitch_nc', App.project.circuit);
+    return c.type === 'pswitch_nc' && App.project.circuit.wires.some(w => w.b === c.id + ':11');
+  }));
+  await page.evaluate(() => { App.openNew(Examples.EX.practice.build()); App.setLayout('single'); App.showView('wiring'); Workspace.fit(); });
+  await wait(400);
+  const s1sel = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id);
+  await page.click(`.comp[data-cid="${s1sel}"] .frame`, { position: { x: 4, y: 4 }, force: true });
+  const fw0 = (await (await page.$(`.comp[data-cid="${s1sel}"] .frame`)).boundingBox()).width;
+  await page.selectOption('.ws-props [data-pk="size"]', '1.5');
+  await wait(200);
+  const fw1 = (await (await page.$(`.comp[data-cid="${s1sel}"] .frame`)).boundingBox()).width;
+  check('a device can be made bigger (Size)', fw1 > fw0 * 1.4, `${fw0} → ${fw1}`);
+  check('wires follow the bigger device', await page.evaluate(id => { const w = App.project.circuit.wires.find(x => x.b === id + ':14' || x.a === id + ':14'); const p = document.querySelector(`.wire[data-wid="${w.id}"] .wb`).getAttribute('d'); const c = App.project.circuit.comps.find(x => x.id === id); return p.includes(String(c.x + 45 * 1.5)); }, s1sel));
+  await page.click('.ws-props [data-same]');
+  check('Same size for all gives every device that size', await page.evaluate(() => App.project.circuit.comps.every(c => c.props.size === 1.5)));
+  await page.evaluate(() => { App.setLayout('single'); App.showView('ladder'); App.floatView('wiring'); });
+  await wait(400);
+  check('Float: the wiring window pops out and the ladder stays in the main area', await page.evaluate(() => {
+    const fw = document.querySelector('.float-win[data-fv="wiring"]');
+    return !!fw && fw.contains(document.getElementById('view-wiring')) && document.getElementById('view-ladder').classList.contains('active') && document.querySelectorAll('#view-wiring .comp').length > 5;
+  }));
+  const fh = await (await page.$('.float-win .fw-head')).boundingBox();
+  const pos0 = await page.evaluate(() => document.querySelector('.float-win').getBoundingClientRect().left);
+  await page.mouse.move(fh.x + 60, fh.y + fh.height / 2); await page.mouse.down(); await page.mouse.move(fh.x + 160, fh.y + 40, { steps: 5 }); await page.mouse.up();
+  check('a floating window can be moved by its title bar', Math.abs((await page.evaluate(() => document.querySelector('.float-win').getBoundingClientRect().left)) - pos0 - 100) < 3);
+  await setMode('RUN');
+  await wait(300);
+  check('a floating window stays live (wires show voltage)', (await page.$$eval('.float-win .wl.live', els => els.length)) > 0);
+  await page.click('.float-win [data-dock]');
+  await wait(300);
+  check('Dock puts the window back in the main area', await page.evaluate(() => !document.querySelector('.float-win') && document.getElementById('main').contains(document.getElementById('view-wiring')) && document.getElementById('view-wiring').classList.contains('active')));
+  await page.evaluate(() => App.setLayout('single'));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

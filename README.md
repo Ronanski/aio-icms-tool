@@ -34,7 +34,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 - **Forcing**: Force On / Force Off / Remove for I/O, a global Forces Enable/Disable, and FORCE LEDs
 
 **Wiring simulator (power and control circuits)**
-- Components: 3-phase and 1-phase supplies, 24 VDC PSU, MCCB, MCB 1P/2P, thermal overload relay, contactor, control relay, on-delay timer relay, terminal strip, PLC (12 DC inputs, 8 relay outputs, built-in 24 V), push buttons NO/NC, E-stop, 2- and 3-position selectors, pilot lamps, limit switch, PNP proximity sensor, 3-phase motor, conveyor with photo-eyes, tank with valves and level switches, pneumatic cylinder with reed switches
+- Components: 3-phase and 1-phase supplies, 24 VDC PSU, fuse, MCCB, MCB 1P/2P, thermal overload relay, contactor, control relay, on-delay timer relay, terminal strip, PLC (12 DC inputs, 8 relay outputs, built-in 24 V), push buttons NO/NC, E-stop, 2- and 3-position selectors, key selector, pilot lamps, buzzer, limit switch, PNP/NPN proximity sensors, pressure and float switches (NO/NC), solenoid valve, single-phase fan, 3-phase motor, conveyor with photo-eyes, tank with valves and level switches, pneumatic cylinder with reed switches
 - Wire terminal-to-terminal, with bends, wire colors and pan/zoom. Click an existing wire to join it with a **junction dot**; drag a selected wire's **bend handles** to re-route it; devices **snap into line** with the terminal they are wired to, so wires run straight. Wires have a thin outline, so black wires show in dark mode
 - Change a push button or 2-position selector between **N.O. and N.C.** in its properties; its wires move to the new terminals
 - Component groups in the parts list fold open and closed
@@ -47,7 +47,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 
 **Panel & Plant**: every pilot device, breaker and piece of equipment drawn large and fully operable.
 
-**Workbench layout / View menu**: **▦ View** lets you tick which windows show side by side (up to 3). It also shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
+**Workbench layout / View menu**: **▦ View** lets you tick which windows show side by side (up to 3), or float any window over the others (move, resize, dock back). It also shows the ladder, the wiring (control and power circuit) and the panel side by side, all live at the same time. Drag the dividers to resize. Other layouts pair any two views or add the HMI.
 
 **HMI**: an 800×480 operator terminal screen with push buttons (momentary, toggle, set, reset), indicators, pilot lights, numeric display and entry, bar graph, motor and tank graphics, alarm banner and text. It has ☝ Operate and ✎ Design modes, zoom (🔍−, Fit, 🔍＋ or Ctrl + scroll) and binds to PLC tags. Momentary buttons stay on for at least two PLC scans, so a quick tap always registers.
 
@@ -90,7 +90,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 142 end-to-end checks (desktop, layouts, phone touch, offline)
+npm test                                 # 154 end-to-end checks (desktop, layouts, phone touch, offline)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

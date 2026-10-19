@@ -22,6 +22,7 @@
   let pinch = null;
 
   const circ = () => App.project.circuit;
+  const SIZES = ['0.5', '0.75', '1', '1.25', '1.5', '2'];
   const byId = id => circ().comps.find(c => c.id === id);
   const snap = v => Math.round(v / 10) * 10;
   const WIRE_COLORS = [
@@ -34,7 +35,8 @@
     const c = byId(cid); if (!c) return null;
     const d = DEFS[c.type];
     const t = d.terms.find(t => t.id === tid); if (!t) return null;
-    return { x: c.x + t.x, y: c.y + t.y, dir: t.dir ?? (t.y === 0 ? -1 : 1) };
+    const s = c.props.size || 1;
+    return { x: c.x + t.x * s, y: c.y + t.y * s, dir: t.dir ?? (t.y === 0 ? -1 : 1) };
   }
   function route(a, pts, b) {
     const P = [[a.x, a.y]];
@@ -206,7 +208,7 @@
     const cs = circ().comps;
     if (!cs.length || !svg.clientWidth) return;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    cs.forEach(c => { const d = DEFS[c.type]; x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y - 16); x1 = Math.max(x1, c.x + d.w); y1 = Math.max(y1, c.y + d.h); });
+    cs.forEach(c => { const d = DEFS[c.type], s = c.props.size || 1; x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y - 16); x1 = Math.max(x1, c.x + d.w * s); y1 = Math.max(y1, c.y + d.h * s); });
     circ().wires.forEach(w => (w.pts || []).forEach(p => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }));
     const W = svg.clientWidth, H = svg.clientHeight, pad = 40;
     const k = Math.max(0.25, Math.min(1.4, Math.min((W - pad * 2) / (x1 - x0), (H - pad * 2) / (y1 - y0))));
@@ -304,7 +306,8 @@
             const other = mine === w.a ? w.b : w.a;
             if (other.startsWith(drag.c.id + ':')) continue;
             const t = d.terms.find(x => x.id === mine.split(':')[1]), o = tpos(other);
-            if (t && o && Math.abs(nx + t.x - o.x) <= 8) { nx = o.x - t.x; drag.guide = o.x; break; }
+            const ts = drag.c.props.size || 1;
+            if (t && o && Math.abs(nx + t.x * ts - o.x) <= 8) { nx = o.x - t.x * ts; drag.guide = o.x; break; }
           }
         }
         if (nx !== drag.c.x || ny !== drag.c.y) { drag.c.x = nx; drag.c.y = ny; drag.moved = true; renderWires(); }
@@ -517,7 +520,8 @@
         compEls.set(c.id, e);
         if (sel && sel.kind === 'comp' && sel.id === c.id) g.classList.add('sel');
       }
-      const tr = `translate(${c.x} ${c.y})`;
+      const sz = c.props.size || 1;
+      const tr = `translate(${c.x} ${c.y})` + (sz !== 1 ? ` scale(${sz})` : '');
       if (tr !== e.tr) { e.g.setAttribute('transform', tr); e.tr = tr; }
       const s = Circuit.sig(c, ctx);
       if (s !== e.sig) {
@@ -588,18 +592,20 @@
     if (sel && sel.kind === 'comp') {
       const c = byId(sel.id); if (!c) { propsEl.innerHTML = ''; return; }
       const d = DEFS[c.type];
-      const fields = [{ k: 'label', n: 'Tag / label' }, ...(d.pdefs || [])];
+      const fields = d.junction ? [] : [{ k: 'label', n: 'Tag / label' }, { k: 'size', n: 'Size (×)', opts: SIZES }, ...(d.pdefs || [])];
       const vr = d.variant ? `<label class="field"><span>${esc(d.variant.n)}</span><select data-variant>${Object.entries(d.variant.of).map(([k, t]) => `<option value="${t}" ${t === c.type ? 'selected' : ''}>${k === 'NO' ? 'N.O. (normally open)' : k === 'NC' ? 'N.C. (normally closed)' : esc(k)}</option>`).join('')}</select></label>` : '';
       propsEl.innerHTML = `<div class="side-head"><h4>${esc(d.name)}</h4></div>
         <div class="props">${vr}${fields.map(f => `<label class="field"><span>${esc(f.n)}</span>${f.opts ? `<select data-pk="${f.k}">${f.opts.map(o => `<option ${String(c.props[f.k]) === o ? 'selected' : ''}>${o}</option>`).join('')}</select>` : `<input data-pk="${f.k}" type="${f.type || 'text'}" value="${esc(c.props[f.k] ?? '')}">`}</label>`).join('')}
         <div class="status-box"><small>Status</small><div data-status>${esc(Circuit.status(c, App.ctx))}</div></div>
         <p class="help">${esc(d.info || '')}</p>
-        <div class="btn-row"><button class="btn" data-dup>Duplicate</button><button class="btn" data-rep ${c.state.burnt || c.state.badIn ? '' : 'disabled'}>Repair</button><button class="btn danger" data-del>Delete</button></div></div>`;
+        <div class="btn-row">${d.junction ? '' : '<button class="btn" data-same title="Give every device in the circuit this size">Same size for all</button>'}<button class="btn" data-dup>Duplicate</button><button class="btn" data-rep ${c.state.burnt || c.state.badIn ? '' : 'disabled'}>Repair</button><button class="btn danger" data-del>Delete</button></div></div>`;
       propsEl.querySelectorAll('[data-pk]').forEach(i => i.addEventListener('change', () => {
         const k = i.dataset.pk;
-        c.props[k] = i.type === 'number' ? Number(i.value) : i.value;
-        App.save();
+        c.props[k] = i.type === 'number' || k === 'size' ? Number(i.value) : i.value;
+        if (k === 'size') App.circuitChanged(); else App.save();
       }));
+      const sa = propsEl.querySelector('[data-same]');
+      if (sa) sa.onclick = () => { circ().comps.forEach(x => { if (!DEFS[x.type].junction) x.props.size = c.props.size || 1; }); App.circuitChanged(); UI.toast('All devices now have the same size', 'ok'); };
       const vs = propsEl.querySelector('[data-variant]');
       if (vs) vs.onchange = () => retype(c, vs.value);
       propsEl.querySelector('[data-del]').onclick = delSel;
