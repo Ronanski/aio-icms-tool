@@ -759,6 +759,44 @@ function check(name, cond, info = '') {
   check('the schematic is saved with the project and comes back', await page.evaluate(() => { App.saveNow(); const id = App.currentId; App.openSaved(id); return App.project.schematic.rungs.length === 2 && JSON.stringify(App.project.schematic.rungs).includes('"tag":"KM1"') && App.project.circuit.wires.some(w => w.sch); }));
   await page.click('#view-schematic [data-smode="edit"]');
 
+  console.log('v1.4 part 1: wiring look, DIN rail, terminal block, motor protection');
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), f = add('mccb3', { label: 'QF1' }, { on: true }), m = add('mpcb', { label: 'QM1' }, { on: true });
+    w(q, 'L1', f, '1'); w(q, 'L2', f, '3'); w(q, 'L3', f, '5'); w(f, '2', m, '1'); w(f, '4', m, '3'); w(f, '6', m, '5'); w(m, '2', m, '4');
+    App.openNew({ name: 'MPCB short', circuit: circ });`));
+  await wait(300);
+  check('a short behind the motor protection breaker trips it, not the MCCB in front', (await get('QM1', 'state.tripped')) && !(await get('QF1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), m = add('mpcb', { label: 'QM1', trip: 0 }, { on: true }), mo = add('motor', { label: 'M1' }, { jam: true });
+    w(q, 'L1', m, '1'); w(q, 'L2', m, '3'); w(q, 'L3', m, '5'); w(m, '2', mo, 'U1'); w(m, '4', mo, 'V1'); w(m, '6', mo, 'W1');
+    App.openNew({ name: 'MPCB overload', circuit: circ });`));
+  await wait(800);
+  check('a jammed motor trips its motor protection breaker', (await get('QM1', 'state.tripped')) && (await get('M1', 'state.drive')) === 'off');
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }, { on: true }), x = add('tb5', { label: 'X1' }), h = add('lamp', { label: 'H1', coil: '230VAC' });
+    w(q, 'L', x, 'L1'); w(q, 'N', x, 'N'); w(x, 'L1b', h, 'X1'); w(h, 'X2', x, 'Nb');
+    circ.wires.push({ id: 'w90', a: x + ':PE', b: q + ':PE', pts: [], color: '#58A83A', tag: '  PE-1  ' }, { id: 'w91', a: x + ':PEb', b: q + ':PE', pts: [], color: '#58A83A', tag: 'X'.repeat(40) }, { id: 'w92', a: x + ':L2', b: x + ':L3', pts: [], color: '#1d1d1d', tag: 5 });
+    App.openNew({ name: 'Terminal block', circuit: circ });`));
+  await page.evaluate(() => { App.setLayout('single'); App.showView('wiring'); Workspace.fit(); });
+  await wait(400);
+  check('a terminal block passes L1 and N through to a 230 V lamp', await get('H1', 'state.on'));
+  check('wire labels are trimmed to 12 characters and must be text', await page.evaluate(() => { const W = App.project.circuit.wires; return W.find(w => w.id === 'w90').tag === 'PE-1' && W.find(w => w.id === 'w91').tag.length === 12 && !('tag' in W.find(w => w.id === 'w92')); }));
+  check('a live wire carries a marker with its conductor (L1)', await page.evaluate(() => [...document.querySelectorAll('.wire .ferr text')].some(t => t.textContent === 'L1' && t.parentNode.style.display !== 'none')));
+  check('a dead black wire gets no guessed marker', await page.evaluate(() => { const f = document.querySelector('.wire[data-wid="w92"] .ferr'); return !!f && f.style.display === 'none'; }));
+  await page.uncheck('[data-tags]');
+  check('wire labels can be switched off', !(await page.$('.wire .ferr')));
+  await page.check('[data-tags]');
+  const railY = await page.evaluate(() => { const c = App.project.circuit, h = c.comps.find(x => x.props.label === 'H1'); const r = Circuit.create('din', h.x - 50, h.y + 40 - 18 + 15, c); c.comps.push(r); App.circuitChanged(); return r.y; });
+  await wait(200);
+  const railK = await page.evaluate(() => Number(/scale\(([\d.]+)\)/.exec(document.querySelector('.ws-svg .vp').getAttribute('transform'))[1]));
+  const hid = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'H1').id);
+  const hf = await (await page.$(`.comp[data-cid="${hid}"] .frame`)).boundingBox();
+  await page.mouse.move(hf.x + 4, hf.y + 4); await page.mouse.down();
+  await page.mouse.move(hf.x + 4 + 20 * railK, hf.y + 4, { steps: 5 }); await page.mouse.up();
+  check('a device dropped near a DIN rail clips onto its centre line', (await get('H1', 'y')) + 40 === railY + 18, `${await get('H1', 'y')} vs rail ${railY}`);
+  check('a DIN rail is drawn behind the devices', await page.evaluate(() => !!document.querySelector('.ws-svg .rails .comp') && !document.querySelector('.ws-svg .comps .comp .clabel')?.textContent.startsWith('RAIL')));
+  check('terminals are drawn as screw heads', await page.evaluate(() => document.querySelector('.ws-svg .comps .term').querySelectorAll('line').length === 2));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

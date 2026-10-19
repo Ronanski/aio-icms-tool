@@ -123,13 +123,19 @@
         T(45, 30, 'MCCB 63A', 'dt light xs') + T(45, 95, handleTxt(c), `dt sm ${s.tripped ? 'warnt' : s.on ? 'ont' : 'light'}`);
     },
   });
+  /* modular device on a DIN rail: light grey body, screw rows top and bottom, black legend strip */
+  function modBody(w, h, legend, top = 18, bot = 18) {
+    return R(0, 0, w, h, '#f1f1ef', 3, '#8b8b86') + R(0, 0, w, top, '#e1e1de', 3, '#8b8b86') + R(0, h - bot, w, bot, '#e1e1de', 3, '#8b8b86') +
+      (legend ? `<rect x="0.5" y="${top + 1}" width="${w - 1}" height="9" fill="#1f1f1f"/>` + T(w / 2, top + 8, legend, 'dt light xs') : '');
+  }
   function mcbDraw(c, w, poles) {
-    const s = c.state, hy = s.tripped ? 40 : s.on ? 30 : 52;
-    return R(0, 0, w, 100, 'url(#gPlastic)', 3) + band(0, w, 16, '#cfcac0') + band(84, w, 16, '#cfcac0') +
-      T(w / 2, 26, poles + 'P C16', 'dt xs') +
-      R(w / 2 - 11, 32, 22, 36, '#3b3a36', 2) +
-      `<g class="part" data-part="h"><rect x="${w / 2 - 9}" y="${hy}" width="18" height="12" rx="2" fill="${s.tripped ? '#f39c1e' : '#2a2a2a'}" stroke="#111"/></g>` +
-      R(w / 2 - 6, 72, 12, 8, s.on && !s.tripped ? '#d33a2c' : '#2fa84f', 1, '#333');
+    const s = c.state, on = s.on && !s.tripped, pw = w / poles;
+    let g = modBody(w, 100, 'C16');
+    for (let i = 1; i < poles; i++) g += `<line x1="${i * pw}" y1="29" x2="${i * pw}" y2="82" stroke="#c8c8c4"/>`;
+    // contact position window per pole: red = closed (ON), green = open
+    for (let i = 0; i < poles; i++) g += R(i * pw + pw / 2 - 6, 33, 12, 7, on ? '#d33a2c' : '#3ddc63', 1, '#333');
+    const hy = s.tripped ? 56 : on ? 48 : 64;
+    return g + `<g class="part" data-part="h"><rect x="3" y="45" width="${w - 6}" height="34" rx="2" fill="#2e2e2c"/><rect x="5" y="${hy}" width="${w - 10}" height="13" rx="2" fill="${s.tripped ? '#f39c1e' : '#0f0f0f'}" stroke="#555"/></g>`;
   }
   def('mcb1', {
     name: 'MCB 1-Pole', cat: 'Protection', view: 'power', prefix: 'QF', w: 40, h: 100, breaker: 1,
@@ -148,6 +154,40 @@
     closed: c => c.state.on && !c.state.tripped,
     conduct: c => (c.state.on && !c.state.tripped) ? [['1', '2'], ['3', '4']] : null,
     onPart: breakerOnPart, draw: c => mcbDraw(c, 70, 2),
+  });
+  def('mpcb', {
+    name: 'Motor Protection Breaker', cat: 'Protection', view: 'power', prefix: 'QM', w: 100, h: 130, breaker: 1.5,
+    props: { ir: '4', trip: 3 },
+    pdefs: [{ k: 'ir', n: 'Current setting Ir (A)', opts: ['0.63', '1', '1.6', '2.5', '4', '6.3', '10', '16', '25'] }, { k: 'trip', n: 'Trip delay at overload (s)', type: 'number' }],
+    info: 'Motor protection circuit breaker: 1/L1-3/L2-5/L3 → 2/T1-4/T2-6/T3. Trips on a short circuit and on motor overload (jammed or single-phasing). Aux 13-14 is closed while ON. Click the knob: ON/OFF; after a trip, click once to reset. TEST trips it.',
+    terms: [{ id: '1', x: 18, y: 0, l: '1/L1' }, { id: '3', x: 40, y: 0, l: '3/L2' }, { id: '5', x: 62, y: 0, l: '5/L3' }, { id: '13', x: 86, y: 0 },
+      { id: '2', x: 18, y: 130, l: '2/T1' }, { id: '4', x: 40, y: 130, l: '4/T2' }, { id: '6', x: 62, y: 130, l: '6/T3' }, { id: '14', x: 86, y: 130 }],
+    init: () => ({ on: false, tripped: false, heat: 0 }),
+    closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? [['1', '2'], ['3', '4'], ['5', '6'], ['13', '14']] : null,
+    tick(c, api, dt) {
+      const s = c.state, hot = s.on && !s.tripped && api.feedsOverload(c);
+      s.heat = hot ? s.heat + dt : Math.max(0, s.heat - dt * 0.4);
+      const tr = Number(c.props.trip), lim = Number.isFinite(tr) ? Math.max(0.1, tr) : 3;
+      if (!s.tripped && s.heat >= lim) { s.tripped = true; s.heat = 0; api.alert(`${c.props.label}: motor protection TRIPPED (overload)`, 'warn'); }
+      s.heatPct = Math.round(Math.min(1, s.heat / lim) * 100);
+    },
+    onPart(c, p, ev) {
+      if (ev !== 'down') return;
+      if (p === 'h') return breakerOnPart(c, p, ev);
+      if (p === 'test' && c.state.on && !c.state.tripped) { c.state.tripped = true; return true; }
+    },
+    draw(c) {
+      const s = c.state, a = s.tripped ? 45 : s.on ? 90 : 0;
+      return modBody(100, 130, '', 20, 20) + R(0.5, 21, 99, 9, '#1f1f1f', 0, 'none') +
+        `<circle cx="26" cy="50" r="11" fill="#fff" stroke="#555"/><path d="M26 50 L33 43" stroke="#d33a2c" stroke-width="2" stroke-linecap="round"/>` + T(26, 72, c.props.ir + ' A', 'dt xs') +
+        T(80, 40, s.tripped ? 'TRIPPED' : '', 'dt xs warnt') +
+        `<g class="part" data-part="h"><circle cx="66" cy="66" r="17" fill="#3a3a38"/><rect x="62" y="50" width="8" height="32" rx="3" fill="#111" stroke="#555" transform="rotate(${a} 66 66)"/></g>` +
+        T(90, 62, 'I', 'dt sm') + T(66, 96, 'O', 'dt sm') +
+        `<g class="part" data-part="test"><rect x="12" y="84" width="28" height="12" rx="2" fill="#2fa84f" stroke="#1d5a2c"/>${T(26, 93, 'TEST', 'dt light xs')}</g>` +
+        (s.heatPct ? R(12, 101, Math.max(1, 76 * s.heatPct / 100), 4, '#d33a2c', 1, 'none') : '');
+    },
+    status: c => c.state.tripped ? 'TRIPPED — click the knob to reset' : !c.state.on ? 'OFF' : c.state.heatPct ? `ON · overload ${c.state.heatPct}%` : 'ON',
   });
   def('olr', {
     name: 'Thermal Overload Relay', cat: 'Protection', view: 'power', prefix: 'F', w: 140, h: 110,
@@ -189,17 +229,17 @@
     props: { coil: '230VAC' },
     pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }],
     info: 'Coil A1-A2. Main poles 1/L1-2/T1, 3/L2-4/T2, 5/L3-6/T3. Aux 13-14 NO, 21-22 NC. Wrong coil voltage → no pull-in (too low) or burnt coil (too high).',
-    terms: [{ id: 'A1', x: 10, y: 0 }, { id: '1', x: 30, y: 0 }, { id: '3', x: 50, y: 0 }, { id: '5', x: 70, y: 0 }, { id: '13', x: 92, y: 0 }, { id: '21', x: 110, y: 0 },
-      { id: 'A2', x: 10, y: 140 }, { id: '2', x: 30, y: 140 }, { id: '4', x: 50, y: 140 }, { id: '6', x: 70, y: 140 }, { id: '14', x: 92, y: 140 }, { id: '22', x: 110, y: 140 }],
+    terms: [{ id: 'A1', x: 10, y: 0 }, { id: '1', x: 30, y: 0, l: '1/L1' }, { id: '3', x: 50, y: 0, l: '3/L2' }, { id: '5', x: 70, y: 0, l: '5/L3' }, { id: '13', x: 92, y: 0 }, { id: '21', x: 110, y: 0 },
+      { id: 'A2', x: 10, y: 140 }, { id: '2', x: 30, y: 140, l: '2/T1' }, { id: '4', x: 50, y: 140, l: '4/T2' }, { id: '6', x: 70, y: 140, l: '6/T3' }, { id: '14', x: 92, y: 140 }, { id: '22', x: 110, y: 140 }],
     init: () => ({ pulled: false, burnt: false }),
     conduct: c => c.state.pulled ? [['1', '2'], ['3', '4'], ['5', '6'], ['13', '14']] : [['21', '22']],
     evaluate(c, api) { return set(c, 'pulled', coilOn(c, api, 'A1', 'A2')); },
     draw(c) {
       const p = c.state.pulled;
-      return R(0, 0, 120, 140, 'url(#gPlastic)', 5) + band(0, 120, 20, '#d4cfc4') + band(120, 120, 20, '#d4cfc4') +
-        R(36, 44, 48, 40, '#2b2a27', 4) + R(40, p ? 60 : 48, 40, 20, p ? '#2fa84f' : '#ece9e1', 2, '#111') +
-        T(60, p ? 74 : 62, p ? 'I' : 'O', p ? 'dt light big' : 'dt big') +
-        T(60, 100, c.props.coil, 'dt xs') + T(60, 112, '3P + 1NO 1NC', 'dt xs') +
+      // indicator window: the white bar drops into view when the contactor pulls in
+      return modBody(120, 140, '', 22, 22) + T(20, 34, 'NO', 'dt xs') + T(101, 34, 'NC', 'dt xs') +
+        R(30, 52, 60, 22, '#2a2a28', 2) + [0, 1, 2, 3].map(i => R(34 + i * 14, p ? 62 : 56, 10, 8, '#f4f4f2', 1, '#111')).join('') +
+        T(60, 90, c.props.coil, 'dt xs') + T(60, 101, '3P + 1NO 1NC', 'dt xs') + led(100, 63, p, '#3ddc63', 3) +
         (c.state.burnt ? burnt(120, 140) : '');
     },
     status: c => c.state.burnt ? 'Coil burnt' : c.state.pulled ? 'Energized (pulled in)' : 'De-energized',
@@ -264,6 +304,33 @@
       return s;
     },
   });
+  /* Terminal block group PE L1 L2 L3 N: each top terminal is linked to the one below it */
+  const TB5 = [['PE', '#59a845'], ['L1', '#a7abb0'], ['L2', '#a7abb0'], ['L3', '#a7abb0'], ['N', '#3f73d4']];
+  def('tb5', {
+    name: 'Terminal Block PE-L1-L2-L3-N', cat: 'Wiring', view: 'none', prefix: 'X', w: 100, h: 80,
+    info: 'Five feed-through terminals on a DIN rail: green PE, grey L1 L2 L3, blue N. Each top terminal is connected to the one below it.',
+    terms: TB5.flatMap(([n], i) => [{ id: n, x: 10 + i * 20, y: 0 }, { id: n + 'b', x: 10 + i * 20, y: 80, l: n }]),
+    conduct: () => TB5.map(([n]) => [n, n + 'b']),
+    draw() {
+      return TB5.map(([n, col], i) => R(i * 20 + 0.5, 0, 19, 80, col, 2, '#4a4a46') + R(i * 20 + 3, 34, 14, 12, '#f4f4f2', 1, '#666') + T(i * 20 + 10, 43, n, 'dt xs')).join('') +
+        `<rect x="2" y="37" width="16" height="2" fill="#f2c230"/><rect x="2" y="43" width="16" height="2" fill="#f2c230"/>`;
+    },
+  });
+  /* DIN rail: mounting only (no terminals); devices dropped on it snap onto its centre line */
+  def('din', {
+    name: 'DIN Rail', cat: 'Wiring', view: 'none', prefix: 'RAIL', w: 400, h: 36, rail: true,
+    props: { len: '400' },
+    pdefs: [{ k: 'len', n: 'Length', opts: ['200', '300', '400', '600', '800', '1000'] }],
+    info: 'Mounting rail. Drag a device onto it and the device snaps onto the rail. Change its length in the properties.',
+    terms: [],
+    dims: c => ({ w: Number(c.props.len) || 400 }),
+    draw(c) {
+      const w = c ? Number(c.props.len) || 400 : 400;
+      let g = R(0, 0, w, 36, 'url(#gRail)', 2, '#8c7444') + `<rect x="0" y="9" width="${w}" height="18" fill="#a88a4e" opacity=".5"/>`;
+      for (let x = 30; x < w - 20; x += 70) g += `<rect x="${x}" y="13" width="34" height="10" rx="5" fill="#f4f4f2" stroke="#8c7444"/>`;
+      return g;
+    },
+  });
   /* Junction: a dot where wires meet (made by clicking an existing wire); one terminal, no drawing of its own */
   def('jct', {
     name: 'Wire junction', cat: 'Wiring', view: 'none', prefix: 'J', w: 0, h: 0, hidden: true, junction: true,
@@ -317,11 +384,14 @@
       s += T(22, 66, 'PLC-20', 'dt light brand', 'start') + T(22, 80, 'Compact controller', 'dt light xs', 'start');
       const st = [['POWER', pw, '#3ddc63'], ['RUN', run, '#3ddc63'], ['FAULT', !!c.state.burnt, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230']];
       st.forEach(([n, on, col], i) => { s += led(28, 98 + i * 15, on, col, 3.6) + T(38, 101 + i * 15, n, 'dt light xs', 'start'); });
-      s += R(150, 52, 280, 92, '#24231f', 4, '#111');
-      s += T(160, 66, 'IN', 'dt light xs', 'start');
-      for (let i = 0; i < PLC_IN; i++) s += led(186 + i * 20, 80, ((inW >> i) & 1) || ((c.state.badIn >> i) & 1), (c.state.badIn >> i) & 1 ? '#ff4b3a' : '#f2c230', 4) + T(186 + i * 20, 94, String(i), 'dt light xs');
-      s += T(160, 112, 'OUT', 'dt light xs', 'start');
-      for (let i = 0; i < PLC_OUT; i++) s += led(186 + i * 20, 124, (outW >> i) & 1, '#ff8a3a', 4) + T(186 + i * 20, 138, String(i), 'dt light xs');
+      // LCD: I/O status, an active bit is shown inverted (dark cell, light digit)
+      s += R(150, 52, 280, 92, '#3b4652', 4, '#1d232a') + R(156, 58, 268, 80, pw ? '#c9d86c' : '#8f9a5a', 2, '#2d3a1e');
+      const cell = (x, y, n, on, bad) => R(x - 8, y - 11, 16, 15, on ? (bad ? '#a3241a' : '#1e2a10') : 'none', 1, 'none') + `<text class="lcd${on ? ' on' : ''}" x="${x}" y="${y}" text-anchor="middle">${n}</text>`;
+      s += `<text class="lcd" x="162" y="80">I</text>`;
+      for (let i = 0; i < PLC_IN; i++) { const bad = (c.state.badIn >> i) & 1; s += cell(186 + i * 20, 80, i, pw && (((inW >> i) & 1) || bad), bad); }
+      s += `<text class="lcd" x="162" y="112">Q</text>`;
+      for (let i = 0; i < PLC_OUT; i++) s += cell(186 + i * 20, 112, i, pw && (outW >> i) & 1);
+      s += `<text class="lcd sm" x="416" y="132" text-anchor="end">${pw ? (me ? ctx.mode : 'INACTIVE') : ''}</text>`;
       s += `<g class="part" data-part="mode"><rect x="100" y="94" width="40" height="52" rx="4" fill="#33312c" stroke="#111"/><circle cx="120" cy="112" r="10" fill="#c9c5bb" stroke="#111"/><rect x="118" y="103" width="4" height="18" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 120 112)"/>${T(120, 138, me ? ctx.mode : '—', 'dt light xs')}</g>`;
       if (c.state.burnt) s += burnt(440, 200);
       return s;
@@ -518,7 +588,8 @@
     onPart(c, p, ev) { if (p === 'tgt' && ev === 'down') { c.state.tgt = !c.state.tgt; return true; } },
     draw(c) {
       const s = c.state;
-      return `<g class="part" data-part="tgt"><rect x="4" y="0" width="52" height="10" rx="2" fill="${s.tgt ? '#8b8f95' : 'transparent'}" stroke="${s.tgt ? '#444' : '#999'}" stroke-dasharray="${s.tgt ? '' : '3 2'}"/><rect x="0" y="0" width="60" height="62" fill="transparent"/></g>` +
+      return (s.pw ? `<path d="M24 13 L36 13 L50 0 L10 0 Z" fill="#ff3b30" opacity="${s.act ? 0.45 : 0.18}"/>` : '') +
+        `<g class="part" data-part="tgt"><rect x="4" y="0" width="52" height="10" rx="2" fill="${s.tgt ? '#8b8f95' : 'transparent'}" stroke="${s.tgt ? '#444' : '#999'}" stroke-dasharray="${s.tgt ? '' : '3 2'}"/><rect x="0" y="0" width="60" height="62" fill="transparent"/></g>` +
         R(20, 14, 20, 46, 'url(#gMetal)', 2) + [20, 26, 32, 38, 44].map(y => `<line x1="20" y1="${y}" x2="40" y2="${y}" stroke="#777" stroke-width=".7"/>`).join('') +
         R(21, 13, 18, 4, '#f39c1e', 1, 'none') + led(30, 54, s.act, '#f2c230', 3) +
         `<path d="M27 60 L27 70 L12 80 L12 90" stroke="#8b4513" stroke-width="2" fill="none"/><path d="M30 60 L30 90" stroke="#111" stroke-width="2" fill="none"/><path d="M33 60 L33 70 L48 80 L48 90" stroke="#1e6fd9" stroke-width="2" fill="none"/>`;
@@ -598,7 +669,9 @@
   }
   def('motor', {
     name: '3-Phase Induction Motor', cat: 'Equipment', view: 'plant', prefix: 'M', w: 120, h: 120,
-    info: 'Terminals U1 V1 W1 + PE. Phase sequence L1-L2-L3 → forward; swap any two phases → reverse. Missing a phase → single-phasing (overcurrent). Click JAM to simulate a mechanical jam.',
+    props: { conn: 'Star' },
+    pdefs: [{ k: 'conn', n: 'Terminal box bridges', opts: ['Star', 'Delta'] }],
+    info: 'Terminals U1 V1 W1 + PE. The bridges in the terminal box show star or delta (the simulation runs the motor the same way). Phase sequence L1-L2-L3 → forward; swap any two phases → reverse. Missing a phase → single-phasing (overcurrent). Click JAM to simulate a mechanical jam.',
     terms: [{ id: 'U1', x: 30, y: 0 }, { id: 'V1', x: 50, y: 0 }, { id: 'W1', x: 70, y: 0 }, { id: 'PE', x: 100, y: 0 }],
     init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false }),
     transient: ['spd', 'drive', 'dir'],
@@ -606,15 +679,18 @@
     tick: (c, api, dt) => motorTick(c, dt),
     onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
     draw(c) {
-      const s = c.state, warn = (s.drive === 'run' && s.jam) || s.drive === 'single';
-      return R(15, 0, 95, 20, '#5c6670', 3, '#333') +
-        `<rect x="20" y="104" width="80" height="8" rx="2" fill="#3e464e"/>` +
-        `<circle cx="60" cy="62" r="42" fill="url(#gMotor)" stroke="#2a3138" stroke-width="1.5"/>` +
-        Array.from({ length: 16 }, (_, i) => { const a = i * 22.5 * Math.PI / 180; return `<line x1="${60 + 34 * Math.cos(a)}" y1="${62 + 34 * Math.sin(a)}" x2="${60 + 41 * Math.cos(a)}" y2="${62 + 41 * Math.sin(a)}" stroke="#2a3138" stroke-width="2"/>`; }).join('') +
-        `<circle cx="60" cy="62" r="31" fill="#2a3138"/>` + fan(60, 62, 28, s.ang, s) +
-        (warn ? `<circle cx="60" cy="62" r="44" fill="none" stroke="#ff4b3a" stroke-width="3" class="blink"/>` : '') +
-        btn('jam', 92, 96, 28, 14, 'JAM', s.jam) +
-        (s.drive === 'run' && !s.jam ? `<path d="M${s.dir > 0 ? '92 30 l8 -2 l-2 8' : '28 30 l-8 -2 l2 8'}" fill="none" stroke="#2fa84f" stroke-width="2"/>` : '');
+      const s = c.state, warn = (s.drive === 'run' && s.jam) || s.drive === 'single', star = c.props.conn !== 'Delta';
+      // terminal box on top: U1 V1 W1 / W2 U2 V2 with yellow bridges (star: one bar, delta: three links)
+      let g = R(16, 2, 76, 34, '#8a8f96', 3, '#4a4f55') + R(20, 6, 68, 26, '#e2733b', 2, '#7a3a1a');
+      g += (star ? R(26, 23, 48, 5, '#f2c230', 1, '#8a6a10') : [30, 50, 70].map(x => R(x - 2.5, 9, 5, 18, '#f2c230', 1, '#8a6a10')).join(''));
+      g += [30, 50, 70].map(x => `<circle cx="${x}" cy="25.5" r="3" fill="#d9d9d6" stroke="#444"/>`).join('');
+      // body: side view, cooling ribs, shaft on the right with a key mark that turns
+      g += R(8, 38, 86, 56, 'url(#gMotor)', 10, '#1b3570', 1.2) + Array.from({ length: 7 }, (_, i) => `<line x1="${20 + i * 11}" y1="42" x2="${20 + i * 11}" y2="90" stroke="#1b3570" stroke-width="1.4" opacity=".55"/>`).join('') +
+        R(94, 58, 18, 14, '#b9bdc2', 2, '#555') + `<g transform="translate(106 65) rotate(${s.ang || 0})"><circle r="6" fill="#d6d9dc" stroke="#555"/><rect x="-1" y="-6" width="2" height="5" fill="#333"/></g>` +
+        R(14, 94, 18, 8, '#22488f', 1, '#1b3570') + R(70, 94, 18, 8, '#22488f', 1, '#1b3570') + T(51, 70, 'M 3~', 'dt light big');
+      if (warn) g += `<rect x="6" y="36" width="90" height="60" rx="11" fill="none" stroke="#ff4b3a" stroke-width="3" class="blink"/>`;
+      if (s.drive === 'run' && !s.jam) g += `<circle cx="106" cy="65" r="11" fill="none" stroke="#d33a2c" stroke-width="1.5"/>` + T(106, 88, s.dir > 0 ? 'CW' : 'CCW', 'dt xs warnt');
+      return g + btn('jam', 88, 104, 28, 14, 'JAM', s.jam);
     },
     status: c => motorStatus(c.state),
   });
@@ -990,7 +1066,8 @@
   function drawTerms(d) {
     return d.terms.map(t => {
       const ly = t.y === 0 ? 13 : t.y - 7;
-      return `<g class="term" data-term="${esc(t.id)}"><circle class="thit" cx="${t.x}" cy="${t.y}" r="9"/><circle cx="${t.x}" cy="${t.y}" r="4.6"/><line x1="${t.x - 2.6}" y1="${t.y - 2.6}" x2="${t.x + 2.6}" y2="${t.y + 2.6}"/><text class="tlbl" x="${t.x}" y="${ly}">${esc(t.l)}</text></g>`;
+      // screw terminal: a round head with a cross slot
+      return `<g class="term" data-term="${esc(t.id)}"><circle class="thit" cx="${t.x}" cy="${t.y}" r="9"/><circle cx="${t.x}" cy="${t.y}" r="5.2"/><line x1="${t.x - 3}" y1="${t.y}" x2="${t.x + 3}" y2="${t.y}"/><line x1="${t.x}" y1="${t.y - 3}" x2="${t.x}" y2="${t.y + 3}"/><text class="tlbl" x="${t.x}" y="${ly}">${esc(t.l)}</text></g>`;
     }).join('');
   }
   function sig(c, ctx) {
@@ -999,6 +1076,8 @@
     return s;
   }
   function draw(c, ctx) { const d = DEFS[c.type]; return d ? d.draw(c, ctx) : ''; }
+  /* drawn size before scaling: a DIN rail's width follows its length */
+  function dims(c) { const d = DEFS[c.type]; return { w: d.dims ? d.dims(c).w : d.w, h: d.h }; }
   function status(c, ctx) { const d = DEFS[c.type]; return d && d.status ? d.status(c, ctx) : ''; }
   function repair(c) {
     const d = DEFS[c.type];
@@ -1021,5 +1100,5 @@
     return out.join(', ');
   }
 
-  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, drawTerms, sig, status, repair, potClass, potText };
+  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText };
 })();
