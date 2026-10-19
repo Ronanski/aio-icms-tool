@@ -753,14 +753,14 @@ function check(name, cond, info = '') {
   check('the rungs were wired for you', sch.wires >= 8, String(sch.wires));
   check('rung 2 lamp is on through the KM1 N.C. contact', await get('H1', 'state.on'), await page.evaluate(() => { const C = App.project.circuit, lab = k => { const [id, t] = k.split(':'); return C.comps.find(x => x.id === id).props.label + ':' + t; }; return JSON.stringify([App.project.schematic.rungs, C.wires.filter(w => w.sch).map(w => lab(w.a) + '>' + lab(w.b)), C.comps.find(x => x.props.label === 'H1').state, C.comps.find(x => x.props.label === 'KM1').state]); }));
   await page.click('#view-schematic [data-smode="run"]');
-  const s1el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent === 'S1'));
+  const s1el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent.replace(/^-/, '') === 'S1'));
   const sb = await s1el.boundingBox();
   await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up();
   await wait(400);
   check('pressing S1 in the schematic starts KM1 and the seal-in holds it', (await get('KM1', 'state.pulled')) && !(await get('S1', 'state.pressed')));
   check('the KM1 N.C. contact opens and the lamp goes off', !(await get('H1', 'state.on')));
-  check('the schematic shows power flow on the energized coil', await page.evaluate(() => [...document.querySelectorAll('#view-schematic .sel-el')].some(g => g.querySelector('.stag').textContent === 'KM1' && g.querySelector('.ssym.on .ssym, .ssym.on') && g.querySelector('.skind').textContent === 'coil')));
-  const s0el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent === 'S0'));
+  check('the schematic shows power flow on the energized coil', await page.evaluate(() => [...document.querySelectorAll('#view-schematic .sel-el')].some(g => g.querySelector('.stag').textContent.replace(/^-/, '') === 'KM1' && g.querySelector('.ssym.on .ssym, .ssym.on') && g.dataset.kind === 'coil')));
+  const s0el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent.replace(/^-/, '') === 'S0'));
   const s0b = await s0el.boundingBox();
   await page.mouse.move(s0b.x + s0b.width / 2, s0b.y + s0b.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up();
   await wait(400);
@@ -848,6 +848,44 @@ function check(name, cond, info = '') {
     Circuit.part(c, 'up', 'down'); const a = c.props.t; Circuit.part(c, 'dn', 'down'); Circuit.part(c, 'dn', 'down');
     return a === 6 && c.props.t === 4;
   }));
+
+  console.log('v1.4 part 4: IEC Electrical Diagram, power circuit, PH wire colours');
+  check('wire colours follow Philippine practice (L1 red, L2 yellow, L3 blue, N white, PE green)', await page.evaluate(() => { const P = Circuit.POT_COLORS; return P.L1 === '#b3261e' && P.L2 === '#f2c230' && P.L3 === '#2b6fe0' && P.N === '#f4f4f0' && P.PE === '#58a83a'; }));
+  await page.evaluate(() => { App.openNew(Examples.EX.threemotors.build()); App.setLayout('single'); App.showView('schematic'); });
+  await wait(400);
+  check('the IEC view is the default: L on top, N at the bottom, columns run downwards', await page.evaluate(() => {
+    const els = [...document.querySelectorAll('#view-schematic .iec-svg .srung[data-r="0"] .sel-el')].map(g => ({ t: g.querySelector('.stag').textContent, y: g.getBoundingClientRect().y }));
+    const y = t => els.find(e => e.t === t).y;
+    return !!document.querySelector('#view-schematic .iec-svg') && y('-F1') < y('-S1') && y('-S1') < y('-KM1');
+  }));
+  check('contacts show their terminal numbers (95/96, 13/14, A1/A2)', await page.evaluate(() => { const t = [...document.querySelectorAll('#view-schematic .srung[data-r="0"] .sterm')].map(x => x.textContent).join(' '); return ['95', '96', '13', '14', 'A1', 'A2'].every(n => t.split(' ').includes(n)); }));
+  check('three motor feeders are drawn and wired with no problems', await page.evaluate(() => document.querySelectorAll('#view-schematic [data-pf]').length === 4 && Schematic.errs.size === 0 && Schematic.perrs.size === 0 && App.project.circuit.comps.filter(c => c.type === 'motor').length === 3));
+  check('power wires carry the phase colours', await page.evaluate(() => { const C = App.project.circuit, q = C.comps.find(c => c.props.label === 'Q0'); const w = C.wires.find(w => w.sch && w.a === q.id + ':L2'); return !!w && w.color === Circuit.POT_COLORS.L2; }));
+  await tap('S5');
+  check('START S5 runs M1 through Q4 → Q1 → KM1 → F1, with the run lamp', (await get('KM1', 'state.pulled')) && (await get('M1', 'state.drive')) === 'run' && (await get('H1', 'state.on')) && !(await get('M2', 'state.drive') === 'run'));
+  await wait(200);
+  check('the live power path is highlighted in the diagram', await page.evaluate(() => document.querySelectorAll('#view-schematic .pw.on').length > 6));
+  await tap('S1');
+  check('STOP S1 stops M1', !(await get('KM1', 'state.pulled')));
+  await page.click('#view-schematic [data-sstyle="nema"]'); await wait(150);
+  check('the ladder-style view is still there as an option', await page.evaluate(() => !document.querySelector('#view-schematic .iec-svg') && document.querySelectorAll('#view-schematic .srung').length === 7));
+  await page.click('#view-schematic [data-sstyle="iec"]'); await wait(150);
+  await page.evaluate(new Function(kit + `add('supply3', { label: 'Q0' }); App.openNew({ name: 'Feeder', circuit: circ }); App.showView('schematic');`));
+  await wait(200);
+  await page.click('#view-schematic [data-sact="feeder"]');
+  const addPow = async (k, tag) => { await page.click(`#view-schematic [data-pkind="${k}"]`); await page.fill('#f_t', tag); await page.click('.modal .btn.primary'); await wait(120); };
+  await addPow('qm3', 'QM1'); await addPow('km3', 'KM1'); await addPow('m3', 'M1'); await addPow('ol3', 'F1');
+  check('a feeder built from the toolbar keeps the motor last and is wired L1-L2-L3 + PE', await page.evaluate(() => {
+    const f = App.project.schematic.power.feeders[0].elems.map(e => e.k).join(','), C = App.project.circuit, lab = k => { const [id, t] = k.split(':'); return C.comps.find(x => x.id === id).props.label + ':' + t; };
+    const ws = C.wires.filter(w => w.sch).map(w => lab(w.a) + '>' + lab(w.b));
+    return f === 'qm3,km3,ol3,m3' && ['Q0:L1>QM1:1', 'QM1:2>KM1:1', 'KM1:6>F1:5', 'F1:6>M1:W1', 'Q0:PE>M1:PE'].every(x => ws.includes(x));
+  }));
+  check('the power circuit is saved with the project and comes back', await page.evaluate(() => { App.saveNow(); App.openSaved(App.currentId); const f = App.project.schematic.power.feeders; return f.length === 1 && f[0].elems.length === 4 && App.project.schematic.power.src === 'Q0'; }));
+  await page.evaluate(() => App.showView('schematic'));
+  check('the motor protection breaker is ON when the diagram adds it', await get('QM1', 'state.on'));
+  await page.evaluate(() => { App.project.schematic.power.feeders[0].elems.push({ k: 'qf3', tag: 'Q9' }); Schematic.sync(); Schematic.render(); });
+  check('a device after the motor is reported', await page.evaluate(() => [...Schematic.perrs.values()].some(m => m.includes('last device'))));
+  await page.click('#view-schematic [data-smode="edit"]').catch(() => {});
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));

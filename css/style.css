@@ -355,7 +355,7 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .wire .wl { fill: none; stroke-width: 2.2; stroke-linejoin: round; opacity: 0; pointer-events: none; }
 .wire .wl.live { opacity: .95; stroke-dasharray: 6 8; animation: flow .7s linear infinite; stroke-width: 3.6; }
 .wire .wl.short { opacity: 1; stroke: #ff2d20; stroke-width: 4; animation: blink .5s steps(2) infinite; }
-.wl.p-L1 { stroke: #e0904f; } .wl.p-L2 { stroke: #ffcf6b; } .wl.p-L3 { stroke: #f0f0f0; } .wl.p-N { stroke: #7fc0ff; }
+.wl.p-L1 { stroke: #ff8a80; } .wl.p-L2 { stroke: #fff59d; } .wl.p-L3 { stroke: #9ec5ff; } .wl.p-N { stroke: #9e9e9e; }
 .wl.p-PE { stroke: #b6f08c; } .wl.p-DCp { stroke: #ff8c7a; } .wl.p-DCm { stroke: #8fb7ff; }
 @keyframes flow { to { stroke-dashoffset: -14; } }
 .wire:hover .wb { stroke-width: 3; }
@@ -592,3 +592,28 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .ferr text { font: 700 6.5px var(--sans); fill: #1d1d1b; text-anchor: middle; }
 .rails .comp .clabel { opacity: .6; }
 .kbd-table td { padding: 4px 10px 4px 0; font-size: 13px; } .kbd-table kbd { font: 12px var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+/* Electrical Diagram, IEC view */
+.iec-svg .colbg { fill: transparent; }
+.iec-svg .srung.sel .colbg { fill: color-mix(in srgb, var(--accent-soft) 35%, transparent); }
+.iec-svg .colnum { font: 600 11px var(--mono); fill: var(--muted); text-anchor: middle; }
+.iec-svg .railtxt { font: 700 13px var(--mono); fill: var(--lad-text); }
+.iec-svg .railsrc { font: 500 9.5px var(--mono); fill: var(--muted); }
+.iec-svg .stag.iec { text-anchor: end; font-size: 11.5px; }
+.iec-svg .sterm { font: 500 9px var(--mono); fill: var(--muted); }
+.iec-svg .sterm.c { text-anchor: middle; }
+.iec-svg .ssym .dash { stroke-dasharray: 3 2; }
+.iec-svg .w.open { stroke-dasharray: 4 3; opacity: .6; }
+.iec-svg .jn { fill: var(--lad-wire); }
+.iec-svg .hint { font: 500 10px var(--sans); fill: var(--muted); text-anchor: middle; }
+.iec-svg .pw { stroke-width: 2; opacity: .75; }
+.iec-svg .pw.on { stroke-width: 3; opacity: 1; filter: drop-shadow(0 0 2px currentColor); }
+.iec-svg .pw.p1, .iec-svg .psrc.p1 { stroke: #b3261e; color: #e53935; }
+.iec-svg .pw.p2, .iec-svg .psrc.p2 { stroke: #e0a800; color: #f2c230; }
+.iec-svg .pw.p3, .iec-svg .psrc.p3 { stroke: #2b6fe0; color: #2b6fe0; }
+.iec-svg .psrc { fill: var(--lad-bg); stroke-width: 2; }
+.iec-svg .ssym .pe { stroke: #58a83a; }
+.iec-svg .ssym circle.mon { fill: var(--lad-hl); stroke: var(--lad-on); }
+.iec-svg .mtxt { font: 700 12px var(--sans); fill: var(--lad-text); text-anchor: middle; }
+.iec-svg .mtxt.sm { font-size: 10px; }
+.sch-body.operate .pel { cursor: pointer; }
+.sch-svg .ssym, .sch-svg text { pointer-events: none; }
