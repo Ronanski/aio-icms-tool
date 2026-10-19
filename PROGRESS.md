@@ -138,7 +138,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Rack power supply, CPU module (slot 0), input cards 24 VDC / 230 VAC, relay and transistor output cards; snap on a DIN rail
 - [x] Slot per card (1–7, next free on add); addresses I:slot/bit, O:slot/bit; engine I/O files 8 words, forces on any I/O word
 - [x] Data table and status bar per card; one controller per project (compact PLC or CPU module); example *Modular PLC rack*
-- [ ] Part 2: I/O Configuration (a module works only after it is configured; Verify flags addresses with no card)
+- [x] Part 2: I/O Configuration (dialog, Read I/O Config, saved in the project; a card works only when configured; mismatch = no RUN / CPU fault; Verify checks I/O addresses)
 - [ ] Part 3: addressing display (Basic / file-based / bit-byte); part 4: 2D cabinet
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
@@ -151,7 +151,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 
 **v1.6.0 — hardware** (moved from v1.5.0: v1.5.0 shipped free draw and the IEC library)
 - [x] Modular rack (PSU, CPU, I/O cards per slot), generic names only (part 1)
-- [ ] I/O Configuration: a module works only after it is configured
+- [x] I/O Configuration: a module works only after it is configured (part 2)
 - [ ] Addressing display: Basic, file-based (current) or bit/byte style
 - [ ] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails
 

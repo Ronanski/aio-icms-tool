@@ -394,6 +394,10 @@
           d.args.forEach((spec, k) => {
             const err = validArg(spec.ty, e.a[k]);
             if (err) errs.push({ ri, id: e.id, msg: `${e.t} operand "${spec.n}" = "${e.a[k] ?? ''}": ${err}` });
+            // I/O addresses must exist in the hardware (compact PLC or the rack's I/O configuration)
+            const p = !err && this.ioCheck && parse(e.a[k]);
+            const io = p && (p.file === 'I' || p.file === 'O') && this.ioCheck(p);
+            if (io) (io.warn ? warns : errs).push({ ri, id: e.id, msg: io.msg });
           });
           if (e.t === 'OTE') {
             const p = parse(e.a[0]);

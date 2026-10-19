@@ -407,6 +407,7 @@
       const d = DEFS[c.type];
       UI.menu(e.clientX, e.clientY, [
         { head: `${c.props.label} · ${d.name}` },
+        ...(c.type === 'mcpu' || d.slot ? [{ label: 'I/O Configuration…', onClick: () => App.ioConfig() }] : []),
         { label: 'Duplicate', onClick: () => duplicate(c) },
         ...Object.entries(d.variant ? d.variant.of : {}).filter(([, t]) => t !== c.type).map(([k, t]) => ({ label: `Change contact to ${k}`, onClick: () => retype(c, t) })),
         { label: 'Repair / replace device', onClick: () => { Circuit.repair(c); App.save(); }, disabled: !c.state.burnt && !c.state.badIn && !(c.state.tripped && !d.breaker) },
