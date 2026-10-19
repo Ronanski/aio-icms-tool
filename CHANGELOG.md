@@ -23,6 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 - Electrical Diagram: the power circuit is drawn in one line colour like the control circuit and the ladder (no more red/yellow/blue lines next to grey ones); live paths still light up. The Philippine wire colours stay on the real wires in the Wiring.
+- Electrical Diagram: the power circuit is in proportion with the control circuit: wider pole spacing, a bigger motor symbol, and its rows spread so the motors sit level with the N rail.
 
 ### Fixed
 - The RCD ring in the free-draw symbol is drawn as a ring, not a filled shape.
