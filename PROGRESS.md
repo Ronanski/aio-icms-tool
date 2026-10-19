@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 203/203 on the v1.4 part 4 branch. **v1.4.0-beta.1** published as a pre-release (Beta channel).
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 203/203 on `main`. **v1.4.0-beta.2** published as a pre-release (Beta channel); stable is still 1.2.1.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -104,13 +104,15 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Power circuit in the diagram: supply, main switch, motor feeders, auto-wired L1-L2-L3 + PE, live phases, operate breakers
 - [x] Wire colours, Philippine practice (owner confirmed): L1 red, L2 yellow, L3 blue, N white, PE green
 - [x] Example: three motors (IEC)
+- [x] Merged (PR #13); v1.4.0-beta.2 pre-release published (4 assets, release-signed APK)
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
 - [x] Part 1: flat device graphics, DIN rail + snap, terminal block, motor protection breaker, wire labels
 - [x] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
 - [x] Part 3: star-delta, reversing (FWD/REV), timer relay with a dial; star-delta examples (wiring + diagram, wiring + ladder)
-- [x] Beta `v1.4.0-beta.1` (owner: GO BETA) · [ ] owner's beta feedback · [ ] stable v1.4.0 on GO STABLE
+- [x] Part 4: IEC Electrical Diagram with power circuit; Philippine wire colours
+- [x] Beta `v1.4.0-beta.1` and `v1.4.0-beta.2` (owner: GO BETA) · [ ] owner's beta feedback · [ ] stable v1.4.0 on GO STABLE
 
 **v1.5.0 — hardware**
 - [ ] Modular rack (chassis, PSU, CPU, I/O cards per slot), generic names only
