@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 190/190 on the v1.4 part 3 branch.
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 190/190 on `main`. **v1.4.0-beta.1** published as a pre-release (Beta channel).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -97,13 +97,14 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 ## v1.4.0 part 3 (owner: "GO merge PR #10 then GO v1.4 part 3")
 - [x] 6-terminal motor (star / delta / open windings), timer relay dial (− / +)
 - [x] Examples: star-delta hardwired with Electrical Diagram, star-delta PLC, forward/reverse PLC
+- [x] Merged (PR #11); v1.4.0-beta.1 pre-release published (4 assets, release-signed APK)
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
 - [x] Part 1: flat device graphics, DIN rail + snap, terminal block, motor protection breaker, wire labels
 - [x] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
 - [x] Part 3: star-delta, reversing (FWD/REV), timer relay with a dial; star-delta examples (wiring + diagram, wiring + ladder)
-- [ ] Beta `v1.3.0-beta.1` or `v1.4.0-beta.1` on the owner's GO BETA; stable v1.4.0 on GO STABLE
+- [x] Beta `v1.4.0-beta.1` (owner: GO BETA) · [ ] owner's beta feedback · [ ] stable v1.4.0 on GO STABLE
 
 **v1.5.0 — hardware**
 - [ ] Modular rack (chassis, PSU, CPU, I/O cards per slot), generic names only
