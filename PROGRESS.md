@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 203/203 on `main`. **v1.4.0-beta.2** published as a pre-release (Beta channel); stable is still 1.2.1.
+**Current version:** 1.4.0 (stable release authorized 2026-10-19 with "GO STABLE v1.4.0", PR #15; before it 1.2.1. Downloads on GitHub Releases, web app on GitHub Pages)
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 203/203. Betas v1.4.0-beta.1 and beta.2 came first.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -112,7 +112,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
 - [x] Part 3: star-delta, reversing (FWD/REV), timer relay with a dial; star-delta examples (wiring + diagram, wiring + ladder)
 - [x] Part 4: IEC Electrical Diagram with power circuit; Philippine wire colours
-- [x] Beta `v1.4.0-beta.1` and `v1.4.0-beta.2` (owner: GO BETA) · [ ] owner's beta feedback · [ ] stable v1.4.0 on GO STABLE
+- [x] Beta `v1.4.0-beta.1` and `v1.4.0-beta.2` (owner: GO BETA) · [ ] owner's beta feedback · [x] stable v1.4.0 authorized (GO STABLE, PR #15)
 
 **v1.5.0 — hardware**
 - [ ] Modular rack (chassis, PSU, CPU, I/O cards per slot), generic names only

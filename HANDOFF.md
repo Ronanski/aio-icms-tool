@@ -5,12 +5,12 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.2.1 released** 2026-10-19 from `main` (squash `9fc837d`, PR #5); all 4 assets, APK cert `27:5F:A5:15:06:CC:46…` (same key as v1.2.0); Pages serves 1.2.1. v1.3 and v1.4 (parts 1–4) merged into `main` (PR #6–#13). **Latest beta: v1.4.0-beta.2** (pre-release, 2026-10-19, Release run #26, built from the version-bump commit `489b17c` on `claude/focused-archimedes-12aqro`, not from `main`, so Pages still serves 1.2.1); all 4 assets uploaded; APK cert `27:5F:A5:15:06:CC:46…` (same key, checked with keytool). v1.4.0-beta.1 (run #23, commit `0dcfc8b`) came before it. `main` still says version 1.2.1: the stable release bumps it to 1.4.0. |
-| **Tags** | `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
+| **Version** | **v1.4.0 (stable)**: owner's "GO STABLE v1.4.0" (2026-10-19). Release PR #15 sets 1.4.0 everywhere and turns `[Unreleased]` into CHANGELOG `[1.4.0]`; after it merges, the Release workflow runs from `main` and Pages deploys `main`. Check GitHub Releases for `v1.4.0` and its 4 assets before calling it done. Before that: v1.4.0-beta.2 (run #26) and beta.1 (run #23) were pre-releases built from version-bump commits on the feature branch; v1.2.1 was the last stable. APK cert `27:5F:A5:15:06:CC:46…` on every release since v1.2.0. |
+| **Tags** | `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow (plus `v1.4.0` once the stable run publishes). `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-19 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
 | **Tests** | `npm test`: 203 passed on `main`. |
-| **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch), #4 open (docs: savepoint + v1.2.0 audit). |
+| **Pull requests** | #1–#14 merged (#3 closed); #15 = Release v1.4.0. |
 | **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
@@ -79,7 +79,8 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 - v1.4 part 3 (6-terminal motor, timer dial, star-delta and forward/reverse examples) merged (PR #11). v1.4 is complete.
 - **v1.4.0-beta.1** published as a pre-release with the owner's "GO merge PR #11 then GO BETA v1.4.0-beta.1". Apps on the Beta channel are offered it. Not tested on a real phone or Windows PC yet: ask the owner for beta feedback.
 - v1.4 part 4 (IEC Electrical Diagram with power circuit, PH wire colours, three-motor example) merged (PR #13) and released as **v1.4.0-beta.2** with the owner's "GO merge PR #13 then GO BETA v1.4.0-beta.2". Not tested on a real phone or Windows PC yet: ask the owner for beta feedback. Wire colours were confirmed by the owner ("STANDARD SA PINAS"): L1 red, L2 yellow, L3 blue, N white, PE green. Schematic data now has `power: {src, main[], feeders[{elems}]}`.
-- Next: owner's beta feedback → fixes (`-beta.3`) or `GO STABLE v1.4.0` (bump package.json ×3, VERSION, sw.js CACHE to 1.4.0 on `main`, CHANGELOG `[1.4.0]` section, run Release from `main`); then v1.5 hardware.
+- **GO STABLE v1.4.0** given. Steps: PR #15 (version 1.4.0 + CHANGELOG [1.4.0]) → merge when CI is green → Release workflow from `main` → verify the release, assets, APK cert and Pages. If a step is not done when you resume, finish it.
+- Next after v1.4.0: owner's feedback from real devices, then v1.5 hardware (modular PLC, I/O config, addressing styles, cabinet).
 - Owner's direction (EduVolt-style screenshots): simple flat hardware graphics; operate devices in the Wiring; only 4 workspaces: Ladder, Wiring, Electrical Diagram, HMI. Copy the look, never brand names or logos (the app is public on Pages and Releases). Next after v1.4: release (GO BETA / GO STABLE), then v1.5 hardware. Roadmap in `PROGRESS.md`.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
