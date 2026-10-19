@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '1.4.0';
+  const VERSION = '1.4.1';
   // build id: 'dev' in the repository; the Pages and release builds stamp it (scripts/copy-web.sh) so the updater can tell builds apart
   const BUILD = 'dev';
   /* four workspaces; Learn opens from the Help menu */

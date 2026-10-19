@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-19
+
+Updates now install inside the app (no downloads), the Windows app is portable only, and the Electrical Diagram draws star-delta motors.
+
 ### Added
 - **In-app updates, no downloads**: the Windows and Android apps open the hosted app, which updates itself. When a new version is ready the app shows **Restart to update**; nothing is downloaded, no installer, no browser. Works offline with the last version it has.
   - **Stable** channel = official releases. **Beta** channel = every change as soon as it is merged (File → Updates…).
