@@ -495,8 +495,16 @@
      the rack power supply. A card in slot s is addressed I:s/b or O:s/b. */
   const SLOTS = ['1', '2', '3', '4', '5', '6', '7'];
   const rackOn = ctx => !!(ctx && ctx.rack && ctx.rack.pw);
-  // the card is configured in the rack: a CPU is present, and it is the first card in its slot
-  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id);
+  // the card works: a CPU is present, the card is the first one in its slot and the I/O configuration expects it there
+  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type);
+  // why a card does not work (for its status line)
+  const cardWhy = (c, ctx) => {
+    const r = ctx && ctx.rack;
+    if (!r || !r.cpu) return 'No CPU module in the rack';
+    if (r.slots[c.props.slot] !== c.id) return `Slot ${c.props.slot} is already taken — inactive`;
+    const want = r.conf[c.props.slot];
+    return want ? `I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
+  };
   const cardBody = (w, h, title, sub) => R(0, 0, w, h, 'url(#gPlc)', 4, '#3a3833') + T(8, 48, title, 'dt light brand', 'start') + T(8, 62, sub, 'dt light xs', 'start');
   const slotTag = (w, s) => R(w - 46, 36, 38, 16, '#e8e6df', 3, '#555') + T(w - 27, 47.5, s, 'dt xs');
   def('mpsu', {
@@ -531,16 +539,16 @@
       return ch;
     },
     onPart(c, p, ev, ctx) { if (ev === 'down' && p === 'mode' && ctx && ctx.setMode) { ctx.setMode(ctx.mode === 'RUN' ? 'PROG' : 'RUN'); return true; } },
-    ctxSig: (c, ctx) => `|${ctx.plcId}|${ctx.mode}|${ctx.forces}`,
+    ctxSig: (c, ctx) => `|${ctx.plcId}|${ctx.mode}|${ctx.forces}|${ctx.rack && ctx.rack.bad.length}`,
     draw(c, ctx) {
       const me = ctx && ctx.plcId === c.id, pw = c.state.pw, run = me && pw && ctx.mode === 'RUN';
       let s = cardBody(120, 160, 'CPU', 'Modular controller') + band(0, 120, 22, '#1e1d1a') + slotTag(120, 'SLOT 0');
-      const st = [['PWR', pw, '#3ddc63'], ['RUN', run, '#3ddc63'], ['FLT', false, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230']];
+      const st = [['PWR', pw, '#3ddc63'], ['RUN', run, '#3ddc63'], ['FLT', me && pw && ctx.rack && ctx.rack.bad.length > 0, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230']];
       st.forEach(([n, on, col], i) => { s += led(14, 80 + i * 14, on, col, 3.4) + T(23, 83 + i * 14, n, 'dt light xs', 'start'); });
       s += `<g class="part" data-part="mode"><rect x="68" y="76" width="42" height="56" rx="4" fill="#33312c" stroke="#111"/><circle cx="89" cy="96" r="10" fill="#c9c5bb" stroke="#111"/><rect x="87" y="87" width="4" height="18" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 89 96)"/>${T(89, 124, me ? ctx.mode : '—', 'dt light xs')}</g>`;
       return s + R(10, 140, 100, 12, '#2a2925', 2, '#111') + T(60, 149, 'COMM', 'dt light xs');
     },
-    status: (c, ctx) => !c.state.pw ? 'No power from the rack power supply' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' : 'Second PLC (inactive)'),
+    status: (c, ctx) => !c.state.pw ? 'No power from the rack power supply' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' + (ctx.rack && ctx.rack.bad.length ? ' — I/O configuration mismatch: ' + ctx.rack.bad.map(b => b.msg).join('; ') : '') : 'Second PLC (inactive)'),
   });
   /* input card: 8 inputs I0–I7 and their common on top; ok(v) says whether a voltage is a valid ON signal */
   function inCard(type, name, sub, info, ok, bad) {
@@ -569,7 +577,7 @@
         for (let i = 0; i < 8; i++) { const b = (c.state.badIn >> i) & 1; s += led(20 + i * 20, 92, b || ((w >> i) & 1), b ? '#ff4b3a' : '#f2c230', 4) + T(20 + i * 20, 108, String(i), 'dt light xs'); }
         return s + T(95, 140, `I:${c.props.slot}/0 – I:${c.props.slot}/7`, 'dt light xs') + led(178, 140, on, '#3ddc63', 3);
       },
-      status: (c, ctx) => (c.state.badIn ? 'Damaged input(s) — right-click → Repair. ' : '') + (!cardOn(c, ctx) ? (ctx && ctx.rack && ctx.rack.cpu ? `Slot ${c.props.slot} is already taken — inactive` : 'No CPU module in the rack') : rackOn(ctx) ? `Slot ${c.props.slot}: I:${c.props.slot}/0–7` : 'Rack not powered'),
+      status: (c, ctx) => (c.state.badIn ? 'Damaged input(s) — right-click → Repair. ' : '') + (!cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: I:${c.props.slot}/0–7` : 'Rack not powered'),
     });
   }
   inCard('mdi8', 'PLC Input Card 8 × 24 VDC', '24 VDC', 'Eight 24 VDC inputs I0–I7 with a common (COM). Wire the sensor supply 0 V to COM; 24 VDC on an input turns it ON. Address: I:slot/bit. AC on an input destroys it.',
@@ -595,7 +603,7 @@
       for (let i = 0; i < 8; i++) s += led(22 + i * 22, 92, (w >> i) & 1, '#f2c230', 4) + T(22 + i * 22, 108, String(i), 'dt light xs');
       return s + T(105, 128, `O:${c.props.slot}/0 – O:${c.props.slot}/7`, 'dt light xs') + led(196, 128, on, '#3ddc63', 3);
     },
-    status: (c, ctx) => !cardOn(c, ctx) ? (ctx && ctx.rack && ctx.rack.cpu ? `Slot ${c.props.slot} is already taken — inactive` : 'No CPU module in the rack') : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
+    status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
   });
   def('mdo8t', {
     name: 'PLC Transistor Output Card 8 × 24 VDC', cat: 'PLC Rack', view: 'cabinet', prefix: 'DO', w: 210, h: 160, slot: true,
@@ -621,7 +629,7 @@
       for (let i = 0; i < 8; i++) s += led(22 + i * 22, 92, (w >> i) & 1, '#f2c230', 4) + T(22 + i * 22, 108, String(i), 'dt light xs');
       return s + T(105, 128, `O:${c.props.slot}/0 – O:${c.props.slot}/7`, 'dt light xs') + led(196, 128, on, '#3ddc63', 3) + (c.state.burnt ? burnt(210, 160) : '');
     },
-    status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? (ctx && ctx.rack && ctx.rack.cpu ? `Slot ${c.props.slot} is already taken — inactive` : 'No CPU module in the rack') : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
+    status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
   });
 
   /* ---------- PILOT DEVICES ---------- */
@@ -1664,21 +1672,50 @@
     return out.join(', ');
   }
 
-  /* the controller and its rack: which CPU runs, which card owns each slot (the first one found) */
-  function rack(circ) {
-    const ctl = circ.comps.find(c => DEFS[c.type] && DEFS[c.type].unique === 'cpu');
-    const slots = {};
-    for (const c of circ.comps) if (DEFS[c.type] && DEFS[c.type].slot && !(c.props.slot in slots)) slots[c.props.slot] = c.id;
-    return { ctl, cpu: ctl && ctl.type === 'mcpu' ? ctl.id : null, slots, pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
+  const CARDS = () => ORDER.filter(t => DEFS[t].slot);
+  const ioFile = t => (t.startsWith('mdi') ? 'I' : 'O');
+  /* keep only valid slots and card types of a saved I/O configuration */
+  function cleanIo(io) {
+    const slots = {}, src = io && typeof io === 'object' && io.slots && typeof io.slots === 'object' ? io.slots : {};
+    for (const s of SLOTS) if (typeof src[s] === 'string' && DEFS[src[s]] && DEFS[src[s]].slot) slots[s] = src[s];
+    return { slots };
   }
-  /* I/O words the data table shows: the compact PLC's I:0/O:0, or the rack cards by slot */
-  function ioMap(circ) {
-    const r = rack(circ);
+  /* the controller and its rack: which CPU runs, which card owns each slot (the first one found),
+     the I/O configuration (conf) and every slot where the installed card does not match it (bad) */
+  function rack(circ, io) {
+    const ctl = circ.comps.find(c => DEFS[c.type] && DEFS[c.type].unique === 'cpu');
+    const slots = {}, conf = (io && io.slots) || {}, bad = [];
+    for (const c of circ.comps) if (DEFS[c.type] && DEFS[c.type].slot && !(c.props.slot in slots)) slots[c.props.slot] = c.id;
+    const cpu = ctl && ctl.type === 'mcpu' ? ctl.id : null;
+    if (cpu) for (const s of SLOTS) {
+      const c = slots[s] && circ.comps.find(x => x.id === slots[s]), have = c ? c.type : '', want = conf[s] || '';
+      if (have === want) continue;
+      bad.push({ slot: s, want, have, msg: !want ? `slot ${s}: ${DEFS[have].name} installed but not configured` : !have ? `slot ${s}: ${DEFS[want].name} configured but missing` : `slot ${s}: ${DEFS[want].name} configured, ${DEFS[have].name} installed` });
+    }
+    return { ctl, cpu, slots, conf, bad, pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
+  }
+  /* I/O words the data table shows: the compact PLC's I:0/O:0, or the configured rack slots */
+  function ioMap(circ, io) {
+    const r = rack(circ, io);
     if (!r.cpu) return [{ file: 'I', word: 0, n: 12 }, { file: 'O', word: 0, n: 8 }];
-    return SLOTS.filter(s => r.slots[s]).map(s => {
-      const c = circ.comps.find(x => x.id === r.slots[s]);
-      return { file: c.type.startsWith('mdi') ? 'I' : 'O', word: Number(s), n: 8, label: c.props.label, name: DEFS[c.type].name };
+    return SLOTS.filter(s => r.conf[s]).map(s => {
+      const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]);
+      return { file: ioFile(r.conf[s]), word: Number(s), n: 8, label: c && c.type === r.conf[s] ? c.props.label : '(missing)', name: DEFS[r.conf[s]].name };
     });
   }
-  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap };
+  /* is an I/O address real hardware? null when it is, else the reason (used by Verify) */
+  function ioCheck(a, circ, io) {
+    const r = rack(circ, io);
+    if (!r.cpu) {
+      const n = a.file === 'I' ? 12 : 8;
+      if (a.word !== 0 || (a.kind === 'bit' && a.bit >= n)) return { warn: true, msg: `${a.norm} is not on the compact PLC (${a.file}:0/0–${n - 1})` };
+      return null;
+    }
+    if (a.word === 0) return { msg: `${a.norm}: slot 0 is the CPU, it has no I/O` };
+    const t = r.conf[a.word];
+    if (!t || ioFile(t) !== a.file) return { msg: `${a.norm}: slot ${a.word} is not configured as ${a.file === 'I' ? 'an input' : 'an output'} card (I/O Configuration)` };
+    if (a.kind === 'bit' && a.bit >= 8) return { msg: `${a.norm}: the card in slot ${a.word} has 8 points (${a.file}:${a.word}/0–7)` };
+    return null;
+  }
+  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS };
 })();

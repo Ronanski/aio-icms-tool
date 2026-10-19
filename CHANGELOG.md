@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Two cards in one slot: the second one is inactive and says so. Wrong voltage on a card destroys the input or the card.
   - The data table (I and O) and the status bar show one word per card; rack I/O can be forced.
   - Only one controller per project: a compact PLC or a CPU module.
+- **I/O Configuration** for the modular PLC (Ladder → *I/O Config*, or right-click the CPU or a card): pick the card the CPU expects in each slot 1–7, or **Read I/O Config** to copy the installed cards. Saved with the project.
+  - A card works only when it is configured in its slot. If the rack does not match the configuration, the CPU refuses RUN and its **FLT** light is on; a card removed or moved while running is a **CPU fault** that stops the controller (logged as an alarm).
+  - **Verify** checks I/O addresses against the hardware: an address in an unconfigured slot, slot 0 or past a card's 8 points is an error; on the compact PLC, an address it does not have (e.g. I:1/0) is a warning.
+  - The data table follows the I/O configuration (a missing card shows as *(missing)*).
 - Example **Modular PLC rack (PSU, CPU, I/O cards)**: START/STOP with a seal-in on I:1/0, I:1/1 and O:2/0.
 
 ## [1.5.0] - 2026-10-19

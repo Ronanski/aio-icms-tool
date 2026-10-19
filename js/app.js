@@ -34,6 +34,8 @@
   };
   window.App = App;
   App.ctx.setMode = m => App.setMode(m);
+  // Verify checks I/O addresses against the hardware in the Wiring
+  App.plc.ioCheck = a => Circuit.ioCheck(a, App.project.circuit, App.project.io);
 
   /* ---------- project ---------- */
   /* Build a project from saved or imported data. Files can be hand-edited, so every field is checked:
@@ -71,6 +73,7 @@
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
       schematic: Schematic.clean(p.schematic, termOk),
+      io: Circuit.cleanIo(p.io),
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && KINDS[e.kind]).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
     };
   }
@@ -104,6 +107,7 @@
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
+      io: p.io,
       events: LOG.slice(-LOG_KEEP),
     };
   };
@@ -160,6 +164,36 @@
     applyProject(proj);
     return true;
   };
+  /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
+  App.ioConfig = function () {
+    const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc;
+    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', body: `<p class="help">${r.ctl ? 'The compact PLC has fixed I/O: I:0/0–11 and O:0/0–7.' : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular rack.</p>` }); return; }
+    const run = App.plc.mode === 'RUN';
+    const opts = sel => `<option value="">— Empty —</option>` + Circuit.CARDS().map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(Circuit.DEFS[t].name)}</option>`).join('');
+    const inst = s => { const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]); return c ? c : null; };
+    const row = s => { const c = inst(s); return `<tr><th>${s}</th><td><select data-slot="${s}" ${run ? 'disabled' : ''}>${opts(r.conf[s] || '')}</select></td><td data-have="${c ? c.type : ''}">${c ? `${esc(c.props.label)} — ${esc(Circuit.DEFS[c.type].name)}` : '—'}</td><td class="io-st" data-st="${s}"></td></tr>`; };
+    const body = `<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
+      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>Installed in the rack</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${Circuit.SLOTS.map(row).join('')}</table>`;
+    const mark = el => el.querySelectorAll('[data-slot]').forEach(sel => {
+      const have = sel.closest('tr').querySelector('[data-have]').dataset.have, st = el.querySelector(`[data-st="${sel.dataset.slot}"]`);
+      st.textContent = !sel.value && !have ? '' : sel.value === have ? '✓' : '✗ mismatch'; st.className = 'io-st ' + (sel.value === have ? 'ok' : 'bad');
+    });
+    UI.modal({
+      title: 'I/O Configuration', wide: true, body,
+      onOpen: el => { mark(el); el.addEventListener('change', () => mark(el)); },
+      buttons: [
+        ...(run ? [] : [{ label: 'Read I/O Config', onClick: el => { el.querySelectorAll('[data-slot]').forEach(sel => { sel.value = sel.closest('tr').querySelector('[data-have]').dataset.have; }); mark(el); return false; } }]),
+        { label: run ? 'Close' : 'Cancel' },
+        ...(run ? [] : [{ label: 'Apply', primary: true, onClick: el => {
+          const slots = {};
+          el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.value) slots[sel.dataset.slot] = sel.value; });
+          App.project.io = Circuit.cleanIo({ slots });
+          App.log('system', 'I/O configuration changed: ' + (Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`).join(', ') || 'empty'));
+          Ladder.DataTable.render(); updateBar(true); App.dirty.wiring = true; App.save();
+        } }]),
+      ],
+    });
+  };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
   App.circuitChanged = function () { App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
@@ -174,6 +208,11 @@
     Ladder.DataTable.render(); updateBar(true);
   };
   App.setMode = function (m) {
+    const rk = m === 'RUN' && Circuit.rack(App.project.circuit, App.project.io);
+    if (rk && rk.cpu && rk.bad.length) {
+      const msg = `I/O configuration does not match the rack: ${rk.bad.map(b => b.msg).join('; ')}`;
+      UI.toast(msg + ' — open I/O Configuration', 'danger', 6000); App.log('system', 'Go to RUN refused: ' + msg); return;
+    }
     if (m === 'RUN' && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
     if (App.plc.mode !== m) App.log('mode', `Controller mode changed to ${m}`);
     App.plc.setMode(m);
@@ -259,7 +298,7 @@
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     const ctx = App.ctx, plc = App.plc, circ = App.project.circuit;
-    const rack = Circuit.rack(circ), pc = rack.ctl;
+    const rack = Circuit.rack(circ, App.project.io), pc = rack.ctl;
     ctx.plcId = pc ? pc.id : null; ctx.rack = rack;
     ctx.plcOut = plc.physOut; ctx.plcOutX = plc.physOutX.slice(); ctx.mode = plc.mode; ctx.forces = plc.forcesEnabled && plc.forceCount() > 0;
     ctx.plcIn = 0; ctx.plcInX = new Array(PLCcore.SIZES.I).fill(0); ctx.plcPowered = false;
@@ -276,6 +315,12 @@
     if (pc && plc.powered !== lastPw && App.ticks > 0) App.log(plc.powered ? 'system' : 'alarm', plc.powered ? 'PLC power restored' : 'PLC lost its power');
     lastPw = plc.powered;
     ctx.plcInRaw = ctx.plcIn;
+    // the rack no longer matches the I/O configuration while running: major fault, the CPU stops
+    if (rack.cpu && rack.bad.length && plc.mode === 'RUN' && plc.powered) {
+      plc.setMode('PROG');
+      const msg = `CPU fault: I/O configuration mismatch (${rack.bad.map(b => b.msg).join('; ')}) — the controller stopped`;
+      UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
+    }
     plc.scan(dt);
     App.ticks++;
     for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= App.ticks) pending.splice(i, 1)[0].fn();
@@ -481,7 +526,7 @@
     const plc = App.plc, ctx = App.ctx;
     const st = {
       mode: plc.mode, pw: plc.powered, run: plc.powered && plc.mode === 'RUN', force: plc.forceCount() > 0, fen: plc.forcesEnabled,
-      io: plc.data.I.join() + '|' + plc.physOut + '|' + plc.physOutX.join() + '|' + JSON.stringify(ctx.rack && [ctx.rack.cpu, ctx.rack.slots]),
+      io: plc.data.I.join() + '|' + plc.physOut + '|' + plc.physOutX.join() + '|' + JSON.stringify(ctx.rack && [ctx.rack.cpu, ctx.rack.slots, ctx.rack.conf]),
       scan: Math.floor(performance.now() / 500), nplc: !!ctx.plcId,
     };
     if (!force && JSON.stringify(st) === JSON.stringify(barCache)) return;
@@ -495,7 +540,7 @@
     fb.classList.toggle('warn', st.force);
     // one group of I/O lights per input word and output word (compact: I:0/O:0, rack: one per card)
     const word = (f, w) => f === 'I' ? plc.data.I[w] & 0xFFFF : w ? plc.physOutX[w] : plc.physOut;
-    document.querySelector('[data-io]').innerHTML = Circuit.ioMap(App.project.circuit).map(({ file: f, word: w, n }) =>
+    document.querySelector('[data-io]').innerHTML = Circuit.ioMap(App.project.circuit, App.project.io).map(({ file: f, word: w, n }) =>
       `<span class="iol">${f}:${w}</span>${Array.from({ length: n }, (_, i) => `<i class="${(word(f, w) >> i) & 1 ? 'on ' + (f === 'I' ? 'in' : 'out') : ''}${plc.forces[`${f}:${w}/${i}`] !== undefined ? ' f' : ''}" title="${f}:${w}/${i}"></i>`).join('')}`).join('');
     document.querySelector('[data-scan]').textContent = `scan ${plc.scanMs.toFixed(2)} ms`;
     const msg = document.querySelector('[data-msg]');

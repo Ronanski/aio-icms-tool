@@ -15,8 +15,8 @@
     const w = (a, ta, b, tb, color, pts = []) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a + ':' + ta, b: b + ':' + tb, pts, color }); };
     return { circ, add, w };
   }
-  const proj = (name, circ, rungs = [], desc = {}, hmi = []) => ({
-    version: 1, name,
+  const proj = (name, circ, rungs = [], desc = {}, hmi = [], io) => ({
+    version: 1, name, ...(io ? { io } : {}),
     ladder: { rungs: rungs.map(r => typeof r === 'string' ? { text: r, comment: '' } : r), desc },
     circuit: circ,
     hmi: { objects: hmi.map((o, i) => ({ id: 'h' + (i + 1), ...o })), seq: hmi.length },
@@ -456,7 +456,7 @@
       return proj('Modular PLC rack', B.circ, [
         { text: 'BST XIC I:1/0 NXB XIC O:2/0 BND XIC I:1/1 OTE O:2/0', comment: 'START (I:1/0) with seal-in, STOP (N.C., I:1/1) — run lamp on the relay card in slot 2' },
         { text: 'XIO O:2/0 OTE O:2/1', comment: 'Stopped lamp' },
-      ], { 'I:1/0': 'START', 'I:1/1': 'STOP (N.C.)', 'O:2/0': 'RUN lamp', 'O:2/1': 'STOPPED lamp' });
+      ], { 'I:1/0': 'START', 'I:1/1': 'STOP (N.C.)', 'O:2/0': 'RUN lamp', 'O:2/1': 'STOPPED lamp' }, [], { slots: { 1: 'mdi8', 2: 'mdo8' } });
     },
   };
 

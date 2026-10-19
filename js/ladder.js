@@ -627,6 +627,7 @@
           <button class="tbtn" data-act="redo" title="Redo (Ctrl+Y)">↷</button>
           <button class="tbtn" data-act="ascii" title="Edit selected rung as text">ASCII</button>
           <button class="tbtn accent" data-act="verify" title="Verify project">✓ Verify</button>
+          <button class="tbtn" data-act="iocfg" title="I/O Configuration: the card the CPU expects in each rack slot">I/O Config</button>
         </div>
         <div class="tb-group zoom-group"><span class="tb-lbl">Zoom</span>
           <button class="tbtn" data-act="zout" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button>
@@ -647,7 +648,7 @@
       ({
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
-        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false),
+        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
     });
@@ -846,14 +847,14 @@
     }).join('')}</tr>`;
     if (dtFile === 'I' || dtFile === 'O') {
       // one word per I/O slot: the compact PLC's I:0/O:0, or each rack card in its slot
-      const words = Circuit.ioMap(App.project.circuit).filter(m => m.file === dtFile);
+      const words = Circuit.ioMap(App.project.circuit, App.project.io).filter(m => m.file === dtFile);
       body = words.length ? `<table class="dt bits">${bitHead}${words.map(m => bitRow(dtFile, m.word, m.n)).join('')}</table>
       <div class="io-list">${words.map(m => (m.label ? `<div class="io-slot">Slot ${m.word}: ${esc(m.label)} — ${esc(m.name)}</div>` : '') + Array.from({ length: m.n }, (_, i) => {
         const a = `${dtFile}:${m.word}/${i}`;
         return `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code>${a}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
       }).join('')).join('')}</div>
       <p class="help">${dtFile === 'I' ? 'Inputs follow field wiring. Force to test logic without hardware.' : 'Outputs are written by the ladder; forcing overrides the physical output terminal.'}</p>`
-        : `<p class="help">No ${dtFile === 'I' ? 'input' : 'output'} card in the rack. Add one from the PLC Rack parts in the Wiring.</p>`;
+        : `<p class="help">No ${dtFile === 'I' ? 'input' : 'output'} card in the I/O configuration. Add cards from the PLC Rack parts in the Wiring, then <button class="tbtn sm" data-act="iocfg">I/O Configuration</button>.</p>`;
     } else if (dtFile === 'B3') {
       body = `<table class="dt bits">${bitHead}${Array.from({ length: 8 }, (_, w) => bitRow('B3', w, 16)).join('')}</table><p class="help">Click a bit to toggle it.</p>`;
     } else if (dtFile === 'T4') {
@@ -881,6 +882,7 @@
       if (t.dataset.fon) return App.force(t.dataset.fon, 1);
       if (t.dataset.foff) return App.force(t.dataset.foff, 0);
       if (t.dataset.frm) return App.force(t.dataset.frm, null);
+      if (t.dataset.act === 'iocfg') { App.ioConfig(); return; }
       if (t.dataset.act === 'fen') { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); return; }
       if (t.dataset.act === 'fclr') { Object.keys(App.plc.forces).forEach(k => App.plc.setForce(k, null)); App.forcesChanged(); return; }
       const bitEl = t.closest('[data-bit]');

@@ -1100,7 +1100,7 @@ function check(name, cond, info = '') {
     w(q, 'L', s2, '13'); w(s2, '14', dac, 'I3'); w(q, 'N', dac, 'COM');
     w(q, 'L', dq, 'VAC0'); w(dq, 'O0', h1, 'X1'); w(h1, 'X2', q, 'N');
     w(ps, 'V24', dt, 'VP'); w(ps, 'C24', dt, 'COM'); w(dt, 'O5', h2, 'X1'); w(h2, 'X2', ps, 'C24');
-    App.openNew({ name: 'Rack', circuit: circ, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:3/0' }, { text: 'XIC I:2/3 OTE O:4/5' }] } });`));
+    App.openNew({ name: 'Rack', circuit: circ, io: { slots: { 1: 'mdi8', 2: 'mdi8ac', 3: 'mdo8', 4: 'mdo8t' } }, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:3/0' }, { text: 'XIC I:2/3 OTE O:4/5' }] } });`));
   await wait(300);
   check('new cards take the next free slot (1, 2, 3, 4)', await page.evaluate(() => ['DI1', 'DI2', 'DO1', 'DO2'].map(l => App.project.circuit.comps.find(c => c.props.label === l).props.slot).join() === '1,2,3,4'));
   check('the CPU module is the controller and is powered by the rack power supply', await page.evaluate(() => App.ctx.plcId === App.project.circuit.comps.find(c => c.type === 'mcpu').id && App.plc.powered));
@@ -1138,6 +1138,37 @@ function check(name, cond, info = '') {
   await press('S2'); await wait(400);
   check('rack example: STOP stops it', !(await get('H1', 'state.on')) && await get('H2', 'state.on'));
   await setMode('PROG');
+
+  console.log('v1.6 part 2: I/O Configuration');
+  await page.evaluate(() => { const p = Examples.EX.rack.build(); delete p.io; App.openNew(p); }); await wait(300);
+  await setMode('RUN'); await wait(200);
+  check('with no I/O configuration the CPU refuses RUN, shows FLT and says why', await page.evaluate(() => {
+    const cpu = App.project.circuit.comps.find(c => c.type === 'mcpu');
+    return App.plc.mode === 'PROG' && App.events().some(e => e.msg.includes('Go to RUN refused') && e.msg.includes('installed but not configured')) && Circuit.status(cpu, App.ctx).includes('mismatch') && App.ctx.rack.bad.length === 2;
+  }));
+  check('an unconfigured card stays inactive', await page.evaluate(() => Circuit.status(App.project.circuit.comps.find(c => c.props.label === 'DI1'), App.ctx).includes('not in the I/O configuration')));
+  await page.evaluate(() => App.ioConfig()); await wait(200);
+  check('the I/O Configuration dialog lists slots 0–7 and marks mismatches', await page.evaluate(() => document.querySelectorAll('.io-cfg [data-slot]').length === 7 && document.querySelectorAll('.io-cfg .io-st.bad').length === 2));
+  await page.click('.modal-foot button:has-text("Read I/O Config")'); await wait(100);
+  check('Read I/O Config copies the installed cards', await page.evaluate(() => document.querySelector('[data-slot="1"]').value === 'mdi8' && document.querySelector('[data-slot="2"]').value === 'mdo8' && !document.querySelector('.io-cfg .io-st.bad')));
+  await page.click('.modal-foot button:has-text("Apply")'); await wait(200);
+  check('Apply saves the configuration in the project', await page.evaluate(() => JSON.stringify(App.serialize().io) === JSON.stringify({ slots: { 1: 'mdi8', 2: 'mdo8' } })));
+  await setMode('RUN'); await wait(200);
+  check('a matching configuration goes to RUN and the cards work', await page.evaluate(() => App.plc.mode === 'RUN') && await get('H2', 'state.on'));
+  await page.evaluate(() => { const c = App.project.circuit; const d = c.comps.find(x => x.props.label === 'DO1'); c.comps = c.comps.filter(x => x !== d); c.wires = c.wires.filter(w => !w.a.startsWith(d.id + ':') && !w.b.startsWith(d.id + ':')); App.circuitChanged(); });
+  await wait(300);
+  check('removing a configured card while running faults the CPU into PROG', await page.evaluate(() => App.plc.mode === 'PROG' && App.events().some(e => e.kind === 'alarm' && e.msg.includes('CPU fault') && e.msg.includes('configured but missing'))));
+  await page.evaluate(() => { const p = Examples.EX.rack.build(); p.ladder.rungs.push({ text: 'XIC I:5/0 OTE O:2/9', comment: '' }); App.openNew(p); }); await wait(200);
+  check('Verify: an address in an unconfigured slot or past the card\'s 8 points is an error', await page.evaluate(() => {
+    const { errs } = App.plc.verify(App.project.ladder.rungs);
+    return errs.some(e => e.msg.includes('I:5/0') && e.msg.includes('not configured')) && errs.some(e => e.msg.includes('O:2/9') && e.msg.includes('8 points'));
+  }));
+  check('Verify: a compact PLC flags an input it does not have as a warning only', await page.evaluate(() => {
+    App.openNew({ name: 'Compact', circuit: Examples.EX.practice.build().circuit, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:0/0' }] } });
+    const { errs, warns } = App.plc.verify(App.project.ladder.rungs);
+    return !errs.length && warns.some(w => w.msg.includes('not on the compact PLC'));
+  }));
+  check('a saved I/O configuration is cleaned on load', await page.evaluate(() => JSON.stringify(App.buildProject({ name: 'x', io: { slots: { 1: 'mdo8', 9: 'mdi8', 2: 'lamp', 3: 5 } } }).io) === JSON.stringify({ slots: { 1: 'mdo8' } })));
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
