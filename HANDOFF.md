@@ -5,11 +5,11 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.2.0 released** 2026-10-18 from `main` (squash commit `45fc1e3`, PR #2), owner's GO STABLE v1.2.0. Release: https://github.com/Ronanski/aio-icms-tool/releases/tag/v1.2.0 |
-| **Tags** | `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
+| **Version** | **v1.2.1 released** 2026-10-19 from `main` (squash `9fc837d`, PR #5); all 4 assets, APK cert `27:5F:A5:15:06:CC:46â€¦` (same key as v1.2.0); Pages serves 1.2.1. v1.3 part 1 is on `claude/focused-archimedes-12aqro` (PR to `main`, not merged). |
+| **Tags** | `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-18 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 130 passed, 0 failed on the v1.2.1 branch (107 on `main`). |
+| **Tests** | `npm test`: 142 passed on the v1.3 branch (130 on `main`). |
 | **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch), #4 open (docs: savepoint + v1.2.0 audit). |
 | **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
@@ -18,7 +18,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## How to resume in 2 minutes
 1. `git checkout <branch>` and `git pull`
 2. Open `index.html` in Chrome, or run `npm start` and go to http://localhost:8080
-3. Run `npm install`, then `npm test`. All 130 checks should pass before you change anything.
+3. Run `npm install`, then `npm test`. All 142 checks should pass before you change anything.
 4. Read `CONTRIBUTING.md` (rules), then `PROGRESS.md` (what's next).
 
 ## Architecture in one screen
@@ -55,6 +55,8 @@ desktop/  Electron wrapper â†’ Windows installer   mobile/  Capacitor wrapper â†
 
 **Updates:** `Updater.check(manual)` fetches the repo's releases when online (auto: 3 s after start, then every 6 h, min 1 h apart), `pick()` chooses the newest for the channel (`plc-trainer.channel`: stable | beta; beta includes pre-releases) newer than `App.VERSION`. Windows downloads `Setup-*.exe`, Android `*-android.apk`, web reloads. Tests mock `api.github.com`. A release is a beta when its version has a suffix (`1.3.0-beta.1`); `release.yml` then publishes a pre-release.
 
+**View menu / custom layout:** `App.layout = 'custom'` uses `customPanes` (ticked windows, saved in `plc-trainer.customPanes`); `App.toggleWindow(v)` ticks/unticks. **Junctions:** type `jct` (hidden from the palette, one terminal `J`, `dir: 0`); `splitWire(w, pt)` in `workspace.js` puts one on a wire and splits it, keeping the route by passing the route corners as `pts`. Bend handles (`.bend`) are drawn in the overlay for the selected wire. **Events** are saved in the project (`events`, last 200).
+
 **Contact variants:** a component def can have `variant: { n, of: { NO: type, NC: type } }`. `Circuit.retype(c, type, circ)` changes the type and moves wires by terminal position.
 
 **Adding an instruction:** add an entry to `INSTR` in `plc.js` and a case in `Engine.el()`. The toolbar in `ladder.js` (the `TB` list) and `ICON` handle the button.
@@ -66,7 +68,8 @@ desktop/  Electron wrapper â†’ Windows installer   mobile/  Capacitor wrapper â†
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
 ## Start of next session (read first)
-- v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19). See the savepoint table for the release check.
+- v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19).
+- v1.3 part 1 (View menu, junctions, bend handles, smart alignment, saved event log) is in a PR, not merged: needs "GO merge" and later "GO STABLE v1.3.0" or a beta.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
 - Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.

@@ -325,6 +325,11 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .dt.btn-t { font-size: 8px; font-weight: 700; }
 .dt.btn-t.on { fill: #fff; }
 .wire .wh { fill: none; stroke: transparent; stroke-width: 10; cursor: pointer; }
+.comp.jct .jdot { fill: var(--text); stroke: var(--surface); stroke-width: 1.2; }
+.comp.jct .term:hover .jdot { fill: var(--accent); }
+.bend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
+.bend:hover { fill: var(--accent); }
+.guide { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 5 4; pointer-events: none; }
 .wire .wo { fill: none; stroke: var(--wire-halo); stroke-width: 4.2; stroke-linejoin: round; pointer-events: none; }
 .wire .wb { fill: none; stroke-width: 2.2; stroke-linejoin: round; }
 .wire .wl { fill: none; stroke-width: 2.2; stroke-linejoin: round; opacity: 0; pointer-events: none; }

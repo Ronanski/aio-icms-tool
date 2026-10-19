@@ -34,7 +34,7 @@
     const c = byId(cid); if (!c) return null;
     const d = DEFS[c.type];
     const t = d.terms.find(t => t.id === tid); if (!t) return null;
-    return { x: c.x + t.x, y: c.y + t.y, dir: t.y === 0 ? -1 : 1 };
+    return { x: c.x + t.x, y: c.y + t.y, dir: t.dir ?? (t.y === 0 ? -1 : 1) };
   }
   function route(a, pts, b) {
     const P = [[a.x, a.y]];
@@ -127,6 +127,11 @@
     svg.addEventListener('pointercancel', onUp);
     svg.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e); }, { passive: false });
     svg.addEventListener('contextmenu', onCtx);
+    svg.addEventListener('dblclick', e => {
+      const b = e.target.closest('.bend'), we = e.target.closest('.wire');
+      if (b) { const w = circ().wires.find(x => x.id === b.dataset.wid); if (w) { w.pts.splice(Number(b.dataset.i), 1); renderWires(); renderTemp(); App.save(); } return; }
+      if (we && sel && sel.kind === 'wire' && sel.id === we.dataset.wid) { addBend(circ().wires.find(x => x.id === sel.id), toWorld(e)); return; }
+    });
     svg.addEventListener('dblclick', e => { const ce = e.target.closest('.comp'); if (ce && !e.target.closest('[data-part]')) { select({ kind: 'comp', id: ce.dataset.cid }); const i = propsEl.querySelector('input'); if (i) i.focus(); } });
     const canvas = el.querySelector('.ws-canvas');
     canvas.addEventListener('dragover', e => e.preventDefault());
@@ -147,7 +152,7 @@
   function buildPalette(q) {
     q = q.trim().toLowerCase();
     const cats = {};
-    Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
+    Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (d.hidden) return; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
     const list = root.querySelector('.pal-list');
     list.innerHTML = Object.entries(cats).map(([cat, types]) => `<details class="pal-cat" data-cat="${esc(cat)}"${q || !palClosed.includes(cat) ? ' open' : ''}><summary>${esc(cat)} <small>${types.length}</small></summary><div class="pal-grid">${types.map(t => {
       const d = DEFS[t];
@@ -232,6 +237,12 @@
     if (e.button === 1) { startPan(e); return; }
     const pt = toWorld(e);
     const compEl = e.target.closest('.comp'), termEl = e.target.closest('.term'), partEl = e.target.closest('[data-part]'), wireEl = e.target.closest('.wire');
+    const bendEl = e.target.closest('.bend');
+    if (bendEl && !wiring && tool === 'select') {
+      const w = circ().wires.find(x => x.id === bendEl.dataset.wid);
+      if (w) { drag = { kind: 'bend', w, i: Number(bendEl.dataset.i), moved: false }; svg.setPointerCapture(e.pointerId); }
+      return;
+    }
     if (termEl && compEl) {
       const key = compEl.dataset.cid + ':' + termEl.dataset.term;
       if (tool === 'meter') { probes[probes.next] = key; probes.next = probes.next === 'a' ? 'b' : 'a'; renderTemp(); updateMeter(); return; }
@@ -244,6 +255,11 @@
         svg.setPointerCapture(e.pointerId);
       }
       return;
+    }
+    // clicking an existing wire while wiring ends the new wire there, on a junction dot
+    if (wiring && wireEl && tool === 'select') {
+      const w = circ().wires.find(x => x.id === wireEl.dataset.wid);
+      if (w && w.a !== wiring.from && w.b !== wiring.from) { onTerm(splitWire(w, pt)); return; }
     }
     if (wiring) { wiring.pts.push([snap(pt.x), snap(pt.y)]); renderTemp(); return; }
     if (compEl) {
@@ -276,8 +292,27 @@
     if (drag) {
       if (drag.kind === 'pan') { view.x = drag.vx + e.clientX - drag.sx; view.y = drag.vy + e.clientY - drag.sy; applyView(); }
       else if (drag.kind === 'comp') {
-        const nx = snap(pt.x - drag.ox), ny = snap(pt.y - drag.oy);
-        if (nx !== drag.c.x || ny !== drag.c.y) { drag.c.x = nx; drag.c.y = ny; drag.moved = true; renderWires(); renderTemp(); }
+        let nx = snap(pt.x - drag.ox);
+        const ny = snap(pt.y - drag.oy);
+        // smart alignment: a wired terminal that comes within 8 px of the other end's x snaps onto it, so the wire runs straight
+        drag.guide = null;
+        if (!e.altKey) {
+          const d = DEFS[drag.c.type];
+          for (const w of circ().wires) {
+            const mine = w.a.startsWith(drag.c.id + ':') ? w.a : w.b.startsWith(drag.c.id + ':') ? w.b : null;
+            if (!mine) continue;
+            const other = mine === w.a ? w.b : w.a;
+            if (other.startsWith(drag.c.id + ':')) continue;
+            const t = d.terms.find(x => x.id === mine.split(':')[1]), o = tpos(other);
+            if (t && o && Math.abs(nx + t.x - o.x) <= 8) { nx = o.x - t.x; drag.guide = o.x; break; }
+          }
+        }
+        if (nx !== drag.c.x || ny !== drag.c.y) { drag.c.x = nx; drag.c.y = ny; drag.moved = true; renderWires(); }
+        renderTemp();
+      }
+      else if (drag.kind === 'bend') {
+        const p = [snap(pt.x), snap(pt.y)], q = drag.w.pts[drag.i];
+        if (q && (p[0] !== q[0] || p[1] !== q[1])) { drag.w.pts[drag.i] = p; drag.moved = true; renderWires(); renderTemp(); }
       }
       return;
     }
@@ -291,7 +326,8 @@
     }
     if (!drag) return;
     if (drag.kind === 'part') drag.rel();
-    if (drag.kind === 'comp' && drag.moved) App.save();
+    if ((drag.kind === 'comp' || drag.kind === 'bend') && drag.moved) App.save();
+    if (drag.kind === 'comp' && drag.guide != null) { drag = null; renderTemp(); }
     svg.classList.remove('panning');
     try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
     drag = null;
@@ -340,7 +376,9 @@
       ]);
     } else if (wireEl) {
       select({ kind: 'wire', id: wireEl.dataset.wid });
-      UI.menu(e.clientX, e.clientY, [{ label: 'Straighten (remove bends)', onClick: () => { const w = circ().wires.find(w => w.id === sel.id); if (w) { w.pts = []; App.circuitChanged(); } } }, { label: 'Delete wire', danger: true, onClick: () => delSel() }]);
+      const pt = toWorld(e), w0 = circ().wires.find(w => w.id === sel.id);
+      UI.menu(e.clientX, e.clientY, [{ label: 'Start a new wire from here (junction)', onClick: () => { const key = splitWire(w0, pt); wiring = { from: key, pts: [], cur: null }; select(null); renderTemp(); } },
+        { label: 'Add a bend here', onClick: () => addBend(w0, pt) }, { label: 'Straighten (remove bends)', onClick: () => { const w = circ().wires.find(w => w.id === sel.id); if (w) { w.pts = []; App.circuitChanged(); } } }, { label: 'Delete wire', danger: true, onClick: () => delSel() }]);
     }
   }
   function retype(c, type) {
@@ -377,6 +415,7 @@
     compEls.forEach((e, id) => e.g.classList.toggle('sel', !!(s && s.kind === 'comp' && s.id === id)));
     wireEls.forEach(w => w.g.classList.toggle('sel', !!(s && s.kind === 'wire' && s.id === w.id)));
     renderProps();
+    renderTemp();   // bend handles follow the selection
   }
 
   /* ---------- rendering ---------- */
@@ -419,7 +458,50 @@
       const p = tpos(probes[k]); if (!p) return;
       h.push(`<g class="probe ${k}"><circle cx="${p.x}" cy="${p.y}" r="8"/><text x="${p.x}" y="${p.y - 12}">${k === 'a' ? 'V+' : 'COM'}</text></g>`);
     });
+    if (sel && sel.kind === 'wire' && tool === 'select') {
+      const w = circ().wires.find(x => x.id === sel.id);
+      if (w) (w.pts || []).forEach((p, i) => h.push(`<circle class="bend" data-wid="${esc(w.id)}" data-i="${i}" cx="${p[0]}" cy="${p[1]}" r="5.5"><title>Drag to move this bend · double-click to remove it</title></circle>`));
+    }
+    if (drag && drag.kind === 'comp' && drag.guide != null) h.push(`<line class="guide" x1="${drag.guide}" y1="-6000" x2="${drag.guide}" y2="6000"/>`);
     gOver.innerHTML = h.join('');
+  }
+
+  /* ---------- wire geometry: nearest point, split at a junction, add a bend ---------- */
+  function nearestOnWire(w, pt) {
+    const P = route(tpos(w.a), w.pts || [], tpos(w.b));
+    let best = null;
+    for (let k = 0; k < P.length - 1; k++) {
+      const [x1, y1] = P[k], [x2, y2] = P[k + 1], dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
+      const u = L ? Math.max(0, Math.min(1, ((pt.x - x1) * dx + (pt.y - y1) * dy) / L)) : 0;
+      const x = x1 + u * dx, y = y1 + u * dy, d = Math.hypot(pt.x - x, pt.y - y);
+      if (!best || d < best.d) best = { d, x, y, k, P, horiz: dy === 0 };
+    }
+    return best;
+  }
+  const dedupe = pts => pts.filter((p, i) => !i || p[0] !== pts[i - 1][0] || p[1] !== pts[i - 1][1]);
+  /* split wire w at the point nearest pt: a junction dot there and two wires that keep the old route; returns the junction terminal */
+  function splitWire(w, pt) {
+    const n = nearestOnWire(w, pt);
+    // stay on the segment; snap only along it
+    const x = n.horiz ? snap(n.x) : n.x, y = n.horiz ? n.y : snap(n.y);
+    const j = Circuit.create('jct', x, y, circ());
+    j.x = x; j.y = y;
+    circ().comps.push(j);
+    const key = j.id + ':J', P = n.P;
+    const w2 = { id: 'w' + (++circ().seq), a: key, b: w.b, color: w.color, pts: dedupe(P.slice(n.k + 1, P.length - 2)) };
+    w.b = key; w.pts = dedupe(P.slice(2, n.k + 1));
+    circ().wires.push(w2);
+    App.log('operator', `Junction added on a wire (${keyLabel(w.a)} … ${keyLabel(w2.b)})`);
+    App.circuitChanged();
+    return key;
+  }
+  function addBend(w, pt) {
+    const n = nearestOnWire(w, pt);
+    const idx = p => n.P.findIndex(q => q[0] === p[0] && q[1] === p[1]);
+    const at = (w.pts || []).filter(p => idx(p) <= n.k).length;
+    w.pts = w.pts || [];
+    w.pts.splice(at, 0, [snap(pt.x), snap(pt.y)]);
+    renderWires(); renderTemp(); App.save();
   }
 
   WS.update = function () {
@@ -440,7 +522,10 @@
       const s = Circuit.sig(c, ctx);
       if (s !== e.sig) {
         const d = DEFS[c.type];
-        e.g.innerHTML = `<rect class="frame" x="-5" y="-18" width="${d.w + 10}" height="${d.h + 23}" rx="8"/><text class="clabel" x="0" y="-6">${esc(c.props.label)}</text>` + Circuit.draw(c, ctx) + Circuit.drawTerms(d);
+        e.g.classList.toggle('jct', !!d.junction);
+        e.g.innerHTML = d.junction
+          ? `<g class="term" data-term="J"><circle class="thit" r="9"/><circle class="jdot" r="4.2"/></g>`
+          : `<rect class="frame" x="-5" y="-18" width="${d.w + 10}" height="${d.h + 23}" rx="8"/><text class="clabel" x="0" y="-6">${esc(c.props.label)}</text>` + Circuit.draw(c, ctx) + Circuit.drawTerms(d);
         e.sig = s;
       }
     }

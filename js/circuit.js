@@ -264,6 +264,13 @@
       return s;
     },
   });
+  /* Junction: a dot where wires meet (made by clicking an existing wire); one terminal, no drawing of its own */
+  def('jct', {
+    name: 'Wire junction', cat: 'Wiring', view: 'none', prefix: 'J', w: 0, h: 0, hidden: true, junction: true,
+    info: 'Junction dot: every wire that ends here is connected. Right-click it to delete it with its wires.',
+    terms: [{ id: 'J', x: 0, y: 0, l: '', dir: 0 }],
+    draw: () => '',
+  });
   /* PLC: compact controller. 12 DC inputs, 8 relay outputs in two groups. */
   const PLC_IN = 12, PLC_OUT = 8;
   def('plc', {
