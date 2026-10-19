@@ -3,19 +3,21 @@
   'use strict';
   const esc = UI.esc;
   const VERSION = '1.2.1';
-  const VIEWS = ['ladder', 'schematic', 'wiring', 'panel', 'hmi', 'learn'];
+  /* four workspaces; Learn opens from the Help menu */
+  const VIEWS = ['ladder', 'schematic', 'wiring', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
   const LAYOUTS = [
     { key: 'single', label: 'Single view', panes: null },
-    { key: 'bench', label: 'Workbench: Ladder + Wiring + Panel & Plant', short: 'Workbench', panes: ['ladder', 'wiring', 'panel'] },
-    { key: 'lwh', label: 'Ladder + Wiring + HMI', short: 'Ladder · Wiring · HMI', panes: ['ladder', 'wiring', 'hmi'] },
+    { key: 'bench', label: 'Workbench: Ladder + Wiring + HMI', short: 'Workbench', panes: ['ladder', 'wiring', 'hmi'] },
     { key: 'lw', label: 'Ladder + Wiring', short: 'Ladder · Wiring', panes: ['ladder', 'wiring'] },
-    { key: 'lp', label: 'Ladder + Panel & Plant', short: 'Ladder · Panel', panes: ['ladder', 'panel'] },
-    { key: 'wp', label: 'Wiring + Panel & Plant', short: 'Wiring · Panel', panes: ['wiring', 'panel'] },
     { key: 'lh', label: 'Ladder + HMI', short: 'Ladder · HMI', panes: ['ladder', 'hmi'] },
-    { key: 'sw', label: 'Schematic + Wiring', short: 'Schematic · Wiring', panes: ['schematic', 'wiring'] },
-    { key: 'swp', label: 'Schematic + Wiring + Panel & Plant', short: 'Schematic · Wiring · Panel', panes: ['schematic', 'wiring', 'panel'] },
+    { key: 'wh', label: 'Wiring + HMI', short: 'Wiring · HMI', panes: ['wiring', 'hmi'] },
+    { key: 'sw', label: 'Electrical Diagram + Wiring', short: 'Diagram · Wiring', panes: ['schematic', 'wiring'] },
+    { key: 'sl', label: 'Electrical Diagram + Ladder', short: 'Diagram · Ladder', panes: ['ladder', 'schematic'] },
+    { key: 'slw', label: 'Ladder + Electrical Diagram + Wiring', short: 'Ladder · Diagram · Wiring', panes: ['ladder', 'schematic', 'wiring'] },
   ];
+  /* layouts saved by older versions, which still had the Operator Panel */
+  const OLD_LAYOUT = { lwh: 'bench', lp: 'lw', wp: 'wh', swp: 'slw' };
   const NARROW = 760;
 
   const App = {
@@ -26,7 +28,7 @@
     view: 'ladder',
     currentId: null,
     layout: 'single',
-    dirty: { ladder: true, wiring: true, panel: true, hmi: true },
+    dirty: { ladder: true, wiring: true, hmi: true },
   };
   window.App = App;
   App.ctx.setMode = m => App.setMode(m);
@@ -154,7 +156,7 @@
     return true;
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
-  App.circuitChanged = function () { App.dirty.panel = true; App.dirty.wiring = true; renderVisible(); App.save(); };
+  App.circuitChanged = function () { App.dirty.wiring = true; renderVisible(); App.save(); };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
   /* compare with the last known forces so every change is logged, whichever control made it */
   let lastForces = {}, lastFen = true;
@@ -277,7 +279,6 @@
     if (vis.includes('ladder')) Ladder.update();
     if (vis.includes('wiring')) Workspace.update();
     if (vis.includes('schematic')) Schematic.update();
-    if (vis.includes('panel')) PanelView.update();
     if (vis.includes('hmi')) HMI.update();
     updateBar(false);
     requestAnimationFrame(frame);
@@ -285,12 +286,12 @@
 
   /* ---------- views ---------- */
   /* 'custom' is the set of windows ticked in the View menu (1 to 3, kept in VIEWS order) */
-  const VNAME = { ladder: 'Ladder', schematic: 'Schematic', wiring: 'Wiring', panel: 'Panel & Plant', hmi: 'HMI' };
+  const VNAME = { ladder: 'Ladder', schematic: 'Electrical Diagram', wiring: 'Wiring', hmi: 'HMI' };
   let customPanes = ['ladder', 'wiring'];
   try { const c = JSON.parse(localStorage.getItem('plc-trainer.customPanes') || 'null'); if (Array.isArray(c) && c.length && c.every(v => VNAME[v])) customPanes = c.slice(0, 3); } catch (e) { /* ignore */ }
   const layoutOf = k => (k === 'custom'
     ? { key: 'custom', label: 'Custom', short: customPanes.map(v => VNAME[v]).join(' · '), panes: customPanes.length > 1 ? customPanes : null }
-    : LAYOUTS.find(l => l.key === k) || LAYOUTS[0]);
+    : LAYOUTS.find(l => l.key === (OLD_LAYOUT[k] || k)) || LAYOUTS[0]);
   /* tick or untick a window in the View menu */
   App.toggleWindow = function (v) {
     const cur = visibleViews().filter(x => VNAME[x]);
@@ -371,7 +372,6 @@
     if (v === 'ladder') { Ladder.render(); Ladder.DataTable.render(); }
     if (v === 'wiring') { Workspace.render(); Workspace.onShow(); }
     if (v === 'schematic') Schematic.render();
-    if (v === 'panel') PanelView.render();
     if (v === 'hmi') { HMI.render(); HMI.onShow(); }
     if (v === 'learn') renderLearn();
   }
@@ -566,6 +566,11 @@
     App.showView(k === 'blank' ? 'wiring' : App.view === 'learn' ? 'wiring' : App.view);
   }
   App.loadExample = loadExample;
+  function shortcuts() {
+    const K = [['Ctrl+S', 'Save'], ['Ctrl+Shift+S', 'Save as'], ['Ctrl+O', 'Open project'], ['Ctrl+Z / Ctrl+Y', 'Undo / redo'], ['Delete', 'Delete the selection'], ['Esc', 'Cancel a wire or close a menu'],
+      ['S / M', 'Wiring: Select / Meter tool'], ['Alt + drag', 'Wiring: place a device freely (no alignment, no DIN-rail clip)'], ['Right-click', 'Device, wire or instruction menu']];
+    UI.modal({ title: 'Keyboard shortcuts', body: `<table class="kbd-table">${K.map(([k, d]) => `<tr><td><kbd>${esc(k)}</kbd></td><td>${esc(d)}</td></tr>`).join('')}</table>`, buttons: [{ label: 'Close', primary: true }] });
+  }
 
   /* ---------- top bar ---------- */
   function bindChrome() {
@@ -591,6 +596,13 @@
     document.querySelector('[data-examples]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
       UI.menu(r.left, r.bottom + 4, [{ head: 'Load example' }, ...Object.entries(Examples.EX).map(([k, x]) => ({ label: x.title, onClick: () => loadExample(k) }))]);
+    });
+    document.querySelector('[data-help]').addEventListener('click', e => {
+      const r = e.currentTarget.getBoundingClientRect();
+      UI.menu(r.left, r.bottom + 4, [
+        { label: '✦ Lessons & guide', onClick: () => App.showView('learn') },
+        { label: '⌨ Keyboard shortcuts', onClick: shortcuts },
+      ]);
     });
     document.querySelector('[data-file]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
@@ -744,7 +756,6 @@
     try { theme = localStorage.getItem('plc-trainer.theme') || 'auto'; } catch (e) { /* ignore */ }
     Ladder.init(document.getElementById('view-ladder'));
     Workspace.init(document.getElementById('view-wiring'));
-    PanelView.init(document.getElementById('view-panel'));
     HMI.init(document.getElementById('view-hmi'));
     Schematic.init(document.getElementById('view-schematic'));
     bindChrome();
@@ -760,8 +771,9 @@
     if (!opened) App.openNew(Examples.EX.plcmotor.build());
     let v = 'ladder', lay = null;
     try { v = localStorage.getItem('plc-trainer.view') || (first ? 'learn' : 'ladder'); lay = localStorage.getItem('plc-trainer.layout'); } catch (e) { /* ignore */ }
+    if (v === 'panel') v = 'wiring';   // the Operator Panel was merged into the Wiring (v1.4)
     if (!VIEWS.includes(v)) v = 'ladder';
-    // wide screens start on the Workbench (ladder + wiring + panel) until the user picks something else
+    // wide screens start on the Workbench (ladder + wiring + HMI) until the user picks something else
     App.layout = layoutOf(lay || (innerWidth >= 1200 ? 'bench' : 'single')).key;
     App.showView(v);
     try { (JSON.parse(localStorage.getItem('plc-trainer.floats') || '[]') || []).forEach(([k, g]) => { if (VNAME[k] && g && [g.x, g.y, g.w, g.h].every(Number.isFinite)) App.floatView(k, g); }); } catch (e) { /* ignore */ }

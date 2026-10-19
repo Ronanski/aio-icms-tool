@@ -387,23 +387,6 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .tips { padding-left: 18px; font-size: 12.5px; color: var(--muted); }
 .tips li { margin-bottom: 5px; }
 
-/* ---------- panel & plant ---------- */
-.panel-view { flex: 1; overflow: auto; padding: 16px 18px 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 18px; align-content: start; align-items: start; }
-.psec { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px 16px; box-shadow: var(--shadow); }
-.psec header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
-.psec h3 { margin: 0; font-family: var(--serif); font-weight: 600; font-size: 19px; }
-.psec p { margin: 0; color: var(--muted); font-size: 12.5px; }
-.psec-panel { background: linear-gradient(180deg, #a8adb3, #8e949b); border-color: #7b8188; }
-.psec-panel h3, .psec-panel p { color: #1f2328; }
-.psec-panel .pcard { background: rgba(255, 255, 255, .18); border-color: rgba(0, 0, 0, .12); }
-.psec-panel .pcard-head span, .psec-panel .pcard-foot, .psec-panel .pcard-head b { color: #1f2328; }
-.pgrid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-.pcard { border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--surface-2); display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 100%; }
-.pcard-head { display: flex; gap: 8px; align-items: baseline; width: 100%; font-size: 12px; }
-.pcard-head b { font-family: var(--mono); }
-.pcard-head span { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pcard svg { display: block; touch-action: none; user-select: none; width: var(--pw); max-width: 100%; }
-.pcard-foot { font-size: 11.5px; color: var(--muted); min-height: 1.2em; text-align: center; }
 .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
 .empty h3 { font-family: var(--serif); color: var(--text); }
 
@@ -559,7 +542,6 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
   .learn { flex-direction: column; overflow: auto; }
   .learn-nav { width: 100%; max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }
   .learn-body { overflow: visible; }
-  .panel-view { padding: 12px max(12px, env(safe-area-inset-right, 0px)) 24px max(12px, env(safe-area-inset-left, 0px)); }
   .hmi-stage { padding: 10px; }
   .modal-wrap { align-items: end; padding: 0; }
   .modal { width: 100%; border-radius: 16px 16px 0 0; max-height: 85vh; padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -589,10 +571,6 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 #main.multi .ins-btn, .float-win .ins-btn { min-width: 38px; padding: 3px 4px; }
 #main.multi .lad-toolbar .tbtn, #main.multi .ws-toolbar .tbtn, .float-win .lad-toolbar .tbtn, .float-win .ws-toolbar .tbtn { padding: 4px 7px; }
 #main.multi .ws-hint, .float-win .ws-hint { display: none; }
-#main.multi .panel-view, .float-win .panel-view { padding: 10px; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
-#main.multi .psec, .float-win .psec { padding: 10px 12px 12px; }
-#main.multi .psec p, .float-win .psec p { display: none; }
-#main.multi .pcard svg, .float-win .pcard svg { width: calc(var(--pw) * .62) !important; }
 @media (prefers-reduced-motion: reduce) { .lad-side, .ws-props, .hmi-props, .ws-palette { transition: none; } }
 /* touch screens: bigger targets */
 @media (pointer: coarse) {
@@ -613,3 +591,4 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .ferr rect { fill: #f7f7f4; stroke: #6b6b66; stroke-width: .7; }
 .ferr text { font: 700 6.5px var(--sans); fill: #1d1d1b; text-anchor: middle; }
 .rails .comp .clabel { opacity: .6; }
+.kbd-table td { padding: 4px 10px 4px 0; font-size: 13px; } .kbd-table kbd { font: 12px var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }

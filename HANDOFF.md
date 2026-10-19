@@ -5,11 +5,11 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.2.1 released** 2026-10-19 from `main` (squash `9fc837d`, PR #5); all 4 assets, APK cert `27:5F:A5:15:06:CC:46…` (same key as v1.2.0); Pages serves 1.2.1. v1.3 parts 1–3 merged into `main` (PR #6, #7, #8), not released. v1.4 part 1 is on `claude/focused-archimedes-12aqro` (PR to `main`, not merged). |
+| **Version** | **v1.2.1 released** 2026-10-19 from `main` (squash `9fc837d`, PR #5); all 4 assets, APK cert `27:5F:A5:15:06:CC:46…` (same key as v1.2.0); Pages serves 1.2.1. v1.3 parts 1–3 merged into `main` (PR #6, #7, #8), not released. v1.4 part 1 merged (PR #9). v1.4 part 2 is on `claude/focused-archimedes-12aqro` (PR to `main`, not merged). |
 | **Tags** | `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-19 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 174 passed on the v1.4 part 1 branch (164 on `main`). |
+| **Tests** | `npm test`: 178 passed on the v1.4 part 2 branch (174 on `main`). |
 | **Pull requests** | #1 merged (v1.1.0), #2 merged (v1.2.0), #3 closed (it targeted the old branch), #4 open (docs: savepoint + v1.2.0 audit). |
 | **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
@@ -30,7 +30,6 @@ index.html ── loads scripts in order ──►
   ladder.js    Ladder: parseRung/serialize (ASCII), SVG render, editor ops, DataTable
   circuit.js   Circuit: DEFS (component library), solve() net solver
   workspace.js Workspace: wiring canvas (pan/zoom, wires, meter, props)
-  panel.js     PanelView: big operable devices
   hmi.js       HMI: designer + runtime
   schematic.js Schematic: rail/rung control-circuit editor; symbols map to Wiring devices by tag; generated wires carry `sch: true`
   examples.js  Examples: EX (projects) + LESSONS
@@ -46,7 +45,7 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 
 **Solver idea:** terminals are nodes. Wires and closed contacts merge them into nets (union-find). Sources put potentials on nets (`L1/L2/L3/N/PE`, `DC+:<id>/DC-:<id>`). Loads read the voltage between two terminals. Conflicting potentials on one net mean a short: the solver trips the lowest-rank breaker that clears it. The solver loops up to 16 times until no contact changes state.
 
-**Adding a component:** call `def('type', {...})` in `circuit.js` with `terms`, then whichever of `conduct`, `sources`, `evaluate`, `tick`, `onPart`, `draw` and `status` it needs. The palette, Panel view and saving pick it up automatically.
+**Adding a component:** call `def('type', {...})` in `circuit.js` with `terms`, then whichever of `conduct`, `sources`, `evaluate`, `tick`, `onPart`, `draw` and `status` it needs. The palette and saving pick it up automatically. Devices are operated in the Wiring (`onPart`), there is no separate panel view since v1.4.
 
 **Momentary presses:** `App.hold(key, up)` is called on press and returns the release function; `up()` runs no earlier than `App.holdTicks` (2) ticks after the press, so a quick tap is always scanned. `App.operate(c, part)` presses a device part, logs it and returns that release. `App.later(n, fn)` runs `fn` after n ticks.
 
@@ -75,8 +74,9 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 ## Start of next session (read first)
 - v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19).
 - v1.3 parts 1–3 merged (PR #6, #7, #8; #8 with "GO merge PR #8 then GO v1.4 part 1"). Not released: needs a GO BETA or GO STABLE.
-- v1.4 part 1 (flat wiring look, DIN rail + snap, terminal block, motor protection breaker, wire labels) is in a PR, not merged.
-- Owner's direction (EduVolt-style screenshots): simple flat hardware graphics; operate devices in the Wiring; only 4 workspaces: Ladder, Wiring, Electrical Diagram, HMI. Copy the look, never brand names or logos (the app is public on Pages and Releases). Next: v1.4 part 2 (4 workspaces, Learn to Help), part 3 (star-delta, reversing). Roadmap in `PROGRESS.md`.
+- v1.4 part 1 (flat wiring look, DIN rail + snap, terminal block, motor protection breaker, wire labels) merged (PR #9) with "GO merge PR #9 then GO v1.4 part 2".
+- v1.4 part 2 (4 workspaces, Panel & Plant removed, Help menu with Lessons) is in a PR, not merged.
+- Owner's direction (EduVolt-style screenshots): simple flat hardware graphics; operate devices in the Wiring; only 4 workspaces: Ladder, Wiring, Electrical Diagram, HMI. Copy the look, never brand names or logos (the app is public on Pages and Releases). Next: v1.4 part 3 (star-delta, reversing, timer with dial). Roadmap in `PROGRESS.md`.
 - The owner said they found **more gaps and bugs in v1.2** but has not listed them yet. Ask for that list.
 - PR #4 (docs) was merged.
 - Rules that held this session: no merge, workflow run or release without the owner's explicit GO in the same message; GO STABLE authorizes a stable release; answer in Taglish, in one short table.

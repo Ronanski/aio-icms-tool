@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- **Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. The *Panel & Plant* view is removed: push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring. Lessons and the new keyboard-shortcut list are in **Help ▾**.
+- The Schematic tab is now called **Electrical Diagram**.
+- Layouts: *Workbench* is now Ladder + Wiring + HMI; new *Wiring + HMI*, *Electrical Diagram + Ladder* and *Ladder + Electrical Diagram + Wiring*. A layout or window saved with the old panel opens the nearest new one (the Panel view opens the Wiring).
+
 ### Added
 - **New Wiring look** (simple and flat, like real DIN-rail hardware): light grey modular bodies, screw terminals with a cross slot, terminal numbers such as 1/L1 and 2/T1. Redrawn: MCB (black toggle, red/green contact windows), contactor (indicator window), motor (blue body, terminal box U1 V1 W1 with star or delta bridges, turning shaft with CW/CCW), compact PLC (LCD that shows the I and Q bits), proximity sensor (red beam when powered).
 - **DIN Rail** (Wiring group): drag a device onto it and it clips onto the rail. Length 200–1000. Hold Alt to place freely.

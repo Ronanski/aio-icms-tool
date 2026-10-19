@@ -296,7 +296,7 @@
       body: `<p>Inputs are read into the <b>input image</b> (<code>I:0/x</code>), the ladder is solved left to right, top to bottom, and the <b>output image</b> (<code>O:0/x</code>) is written to the relay outputs. That cycle is the <b>scan</b>.</p>
       <ol><li>Go to <b>Ladder</b>. Click <b>＋ Rung</b>, then the <code>XIC</code> button and set the address to <code>I:0/0</code>.</li>
       <li>Click <code>OTE</code> and set it to <code>O:0/0</code>.</li>
-      <li>Switch the PLC to <b>RUN</b> (top bar). Open <b>Panel &amp; Plant</b><span class="desk-only"> (or pick <b>▦ Layout → Workbench</b> to see ladder, wiring and panel together)</span> and hold <b>S1 START</b>. Lamp H1 lights — and the instructions turn green.</li></ol>`,
+      <li>Switch the PLC to <b>RUN</b> (top bar). Open <b>Wiring</b><span class="desk-only"> (or pick <b>▦ Layout → Workbench</b> to see ladder, wiring and HMI together)</span> and hold the <b>S1 START</b> button there. Lamp H1 lights — and the instructions turn green.</li></ol>`,
       solution: ['XIC I:0/0 OTE O:0/0'],
     },
     {
@@ -350,12 +350,12 @@ XIO I:0/1 RES C5:0</pre>
     {
       id: 'l8', level: 'Circuits', title: '8 · Hardwired DOL starter', ex: 'dol',
       body: `<p>Study a motor starter without a PLC. <b>Power circuit</b>: Q0 supply → QF1 MCCB → KM1 main poles → F1 overload → M1. <b>Control circuit</b>: QF2 → S0 STOP (NC) → S1 START (NO) ∥ KM1 13-14 → coil A1-A2 → F1 95-96 → N.</p>
-      <ol><li>Press START in the Panel view. KM1 pulls in and seals itself.</li><li>Click <b>JAM</b> on the motor: after a few seconds F1 trips, 95-96 opens and the motor stops, the amber lamp lights via 97-98.</li><li>Reset F1 (blue R) and restart.</li><li>Use the <b>Meter</b> in Wiring to measure 230 V across the coil.</li></ol>`,
+      <ol><li>Press START in the Wiring view. KM1 pulls in and seals itself.</li><li>Click <b>JAM</b> on the motor: after a few seconds F1 trips, 95-96 opens and the motor stops, the amber lamp lights via 97-98.</li><li>Reset F1 (blue R) and restart.</li><li>Use the <b>Meter</b> in Wiring to measure 230 V across the coil.</li></ol>`,
     },
     {
       id: 'l9', level: 'Circuits', title: '9 · PLC motor control + HMI', ex: 'plcmotor',
       body: `<p>The same motor, now controlled by the PLC. The contactor coil is switched by relay output <code>O:0/0</code>. The overload’s NC contact is wired to input <code>I:0/2</code>.</p>
-      <ol><li>Put the PLC in RUN. Start the motor from the panel <i>and</i> from the HMI tab.</li><li>Jam the motor and watch the HMI alarm banner.</li><li>Open the HMI in <b>Edit</b> mode and add a numeric entry for <code>T4:0.ACC</code>.</li></ol>`,
+      <ol><li>Put the PLC in RUN. Start the motor from the push button in the Wiring <i>and</i> from the HMI tab.</li><li>Jam the motor and watch the HMI alarm banner.</li><li>Open the HMI in <b>Edit</b> mode and add a numeric entry for <code>T4:0.ACC</code>.</li></ol>`,
     },
     {
       id: 'l10', level: 'Circuits', title: '10 · Conveyor batching', ex: 'conveyor',

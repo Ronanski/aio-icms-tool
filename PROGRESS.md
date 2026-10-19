@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 174/174 on the v1.4 part 1 branch.
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 178/178 on the v1.4 part 2 branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -86,11 +86,17 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Flat wiring look: screw terminals, modular bodies, MCB, contactor, motor with terminal box, PLC LCD, prox beam
 - [x] DIN rail with snap; terminal block PE-L1-L2-L3-N; motor protection breaker
 - [x] Wire labels (ferrules): live conductor or own label; green/yellow earth
+- [x] Merged (PR #9)
+
+## v1.4.0 part 2 (owner: "GO merge PR #9 then GO v1.4 part 2")
+- [x] 4 workspaces: Ladder, Electrical Diagram, Wiring, HMI; Panel & Plant removed (operate in the Wiring)
+- [x] Help ▾ menu: Lessons & guide, Keyboard shortcuts
+- [x] Layouts updated; old saved layouts/views/floating windows mapped to the new ones
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
 - [x] Part 1: flat device graphics, DIN rail + snap, terminal block, motor protection breaker, wire labels
-- [ ] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
+- [x] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
 - [ ] Part 3: star-delta, reversing (FWD/REV), timer relay with a dial; complete star-delta example (wiring + diagram + ladder)
 - [ ] Beta `v1.3.0-beta.1` or `v1.4.0-beta.1` on the owner's GO BETA; stable v1.4.0 on GO STABLE
 
