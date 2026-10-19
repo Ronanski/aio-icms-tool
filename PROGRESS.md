@@ -132,7 +132,15 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Electrical Diagram in one line colour like the ladder (owner: "dapat kapareha ng ladder diagram"); power circuit in proportion with the control circuit
 - [x] PR #20 merged (`430aea8`); stable v1.5.0 authorized (GO STABLE v1.5.0), Release workflow started · [ ] verify release assets, APK cert, Pages version.json
 - The hardware work moves to v1.6.0.
+- [x] Release v1.5.0 verified: portable .exe, .apk and web.zip on the release; Pages `version.json` = 1.5.0 (APK certificate not re-checked)
 - [ ] Next (v1.6): modular PLC rack, I/O configuration, addressing styles, cabinet; editable terminal numbers
+
+## v1.6.0 part 1 (owner: "Continue v 1.6"): modular PLC rack
+- [x] Rack power supply, CPU module (slot 0), input cards 24 VDC / 230 VAC, relay and transistor output cards; snap on a DIN rail
+- [x] Slot per card (1–7, next free on add); addresses I:slot/bit, O:slot/bit; engine I/O files 8 words, forces on any I/O word
+- [x] Data table and status bar per card; one controller per project (compact PLC or CPU module); example *Modular PLC rack*
+- [ ] Part 2: I/O Configuration (a module works only after it is configured; Verify flags addresses with no card)
+- [ ] Part 3: addressing display (Basic / file-based / bit-byte); part 4: 2D cabinet
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
@@ -143,7 +151,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Beta `v1.4.0-beta.1` and `v1.4.0-beta.2` (owner: GO BETA) · [ ] owner's beta feedback · [x] stable v1.4.0 authorized (GO STABLE, PR #15)
 
 **v1.6.0 — hardware** (moved from v1.5.0: v1.5.0 shipped free draw and the IEC library)
-- [ ] Modular rack (chassis, PSU, CPU, I/O cards per slot), generic names only
+- [x] Modular rack (PSU, CPU, I/O cards per slot), generic names only (part 1)
 - [ ] I/O Configuration: a module works only after it is configured
 - [ ] Addressing display: Basic, file-based (current) or bit/byte style
 - [ ] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails

@@ -3,7 +3,8 @@
 (function () {
   'use strict';
 
-  const SIZES = { I: 2, O: 2, S: 16, B3: 32, N7: 32, T4: 32, C5: 32 };
+  // I/O files: one word per slot (0 = compact controller / CPU, 1–7 = rack cards)
+  const SIZES = { I: 8, O: 8, S: 16, B3: 32, N7: 32, T4: 32, C5: 32 };
   const TBITS = ['EN', 'TT', 'DN'], TWORDS = ['PRE', 'ACC'];
   const CBITS = ['CU', 'CD', 'DN', 'OV', 'UN'], CWORDS = ['PRE', 'ACC'];
   const NUM_IN = 12, NUM_OUT = 8;
@@ -120,15 +121,17 @@
       this.forces = {};          // norm -> 0/1
       this.forcesEnabled = true;
       this.rungs = [];
-      this.physIn = 0;           // word from field wiring
-      this.physOut = 0;          // word to output terminals
+      this.physIn = 0;           // word from field wiring (slot 0)
+      this.physOut = 0;          // word to output terminals (slot 0)
+      this.physInX = new Array(SIZES.I).fill(0);   // rack cards: input word per slot (index 1–7)
+      this.physOutX = new Array(SIZES.O).fill(0);  // rack cards: output word per slot
       this.powered = true;
       this.first = true;
       this.pw = Object.create(null);   // power-flow per segment key
       this.hl = Object.create(null);   // instruction highlight per id
       this.scanMs = 0;
       this.scans = 0;
-      this._fm = { I: [0, 0], O: [0, 0] };  // force masks: [mask, values]
+      this._fm = { I: {}, O: {} };  // force masks per word: [mask, values]
     }
     resetData() { this.data = makeData(); }
 
@@ -171,9 +174,9 @@
       if (m === 'RUN') {
         this.first = true;
         // non-retentive outputs are cleared on entering RUN
-        this.data.O[0] = 0;
+        this.data.O.fill(0);
       } else {
-        this.data.O[0] = 0;
+        this.data.O.fill(0);
         for (const k in this.pw) this.pw[k] = false;
       }
     }
@@ -182,24 +185,25 @@
     setForce(norm, val) {
       if (val === null || val === undefined) delete this.forces[norm];
       else {
-        // only physical I/O bits of the base word can be forced
+        // only physical I/O bits (I:s/b, O:s/b) can be forced
         const a = parse(norm);
-        if (!this.isForceable(a) || a.word !== 0) return;
+        if (!this.isForceable(a)) return;
         this.forces[norm] = val ? 1 : 0;
       }
-      this._fm = { I: [0, 0], O: [0, 0] };
+      this._fm = { I: {}, O: {} };
       for (const k in this.forces) {
         const a = parse(k);
-        if (!a || a.word !== 0) continue;
-        const fm = this._fm[a.file];
+        if (!a) continue;
+        const fm = this._fm[a.file][a.word] || (this._fm[a.file][a.word] = [0, 0]);
         fm[0] |= 1 << a.bit;
         if (this.forces[k]) fm[1] |= 1 << a.bit;
       }
     }
     forceCount() { return Object.keys(this.forces).length; }
-    applyForce(file, w) {
-      if (!this.forcesEnabled) return w;
-      const [m, v] = this._fm[file];
+    applyForce(file, w, word = 0) {
+      const fm = this._fm[file][word];
+      if (!this.forcesEnabled || !fm) return w;
+      const [m, v] = fm;
       return (w & ~m) | (v & m);
     }
 
@@ -235,8 +239,9 @@
       const t0 = performance.now();
       const d = this.data;
       // no power: the first scan after power returns sets S:1/15 again
-      if (!this.powered) { this.physOut = 0; this.first = true; for (const k in this.pw) this.pw[k] = false; return; }
+      if (!this.powered) { this.physOut = 0; this.physOutX.fill(0); this.first = true; for (const k in this.pw) this.pw[k] = false; return; }
       d.I[0] = asI16(this.applyForce('I', this.physIn & 0xFFFF));
+      for (let k = 1; k < SIZES.I; k++) d.I[k] = asI16(this.applyForce('I', (this.physInX[k] || 0) & 0xFFFF, k));
       this.dt = dt;
       if (this.mode === 'RUN') {
         d.S[1] = asI16(this.first ? d.S[1] | (1 << 15) : d.S[1] & ~(1 << 15));
@@ -248,6 +253,7 @@
       }
       const outW = this.mode === 'RUN' ? (d.O[0] & 0xFFFF) : 0;
       this.physOut = this.applyForce('O', outW) & 0xFFFF;
+      for (let k = 1; k < SIZES.O; k++) this.physOutX[k] = this.applyForce('O', this.mode === 'RUN' ? d.O[k] & 0xFFFF : 0, k) & 0xFFFF;
       this.scanMs = performance.now() - t0;
     }
 

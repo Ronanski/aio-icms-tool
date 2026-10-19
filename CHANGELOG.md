@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Modular PLC rack** (Wiring → *PLC Rack*): a rack power supply (230 VAC in, 24 VDC out for sensors), a **CPU module** (slot 0, key switch PROG/RUN, PWR/RUN/FLT/FORCE lights) and I/O cards: **input card 8 × 24 VDC**, **input card 8 × 230 VAC**, **relay output card 8** and **transistor output card 8 × 24 VDC**. Snap them on a DIN rail.
+  - Each card has a **slot** (1–7, the next free slot when you add it); its I/O is addressed by the slot: a card in slot 2 is **I:2/0–7** or **O:2/0–7**, like a modular controller.
+  - Two cards in one slot: the second one is inactive and says so. Wrong voltage on a card destroys the input or the card.
+  - The data table (I and O) and the status bar show one word per card; rack I/O can be forced.
+  - Only one controller per project: a compact PLC or a CPU module.
+- Example **Modular PLC rack (PSU, CPU, I/O cards)**: START/STOP with a seal-in on I:1/0, I:1/1 and O:2/0.
+
 ## [1.5.0] - 2026-10-19
 
 Free-draw Electrical Diagram with a full IEC component library (90 symbols), new parts in the Wiring, and a cleaner diagram: one line colour like the ladder, power and control circuits in proportion.

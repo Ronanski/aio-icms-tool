@@ -248,6 +248,7 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .io-list { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
 .io-row { display: grid; grid-template-columns: 14px 54px 1fr auto auto; gap: 6px; align-items: center; font-size: 12px; padding: 2px 4px; border-radius: 6px; }
 .io-row:hover { background: var(--surface-2); }
+.io-slot { font-size: 11px; font-weight: 600; color: var(--muted); padding: 6px 4px 2px; }
 .io-led { width: 11px; height: 11px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--border-strong); }
 .io-led.on { background: #f2c230; border-color: #b78d12; box-shadow: 0 0 5px #f2c230; }
 .io-row[data-io^="O"] .io-led.on { background: #ff8a3a; border-color: #c25a14; box-shadow: 0 0 5px #ff8a3a; }
