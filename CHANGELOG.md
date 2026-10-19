@@ -7,12 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 - **Free draw** in the Electrical Diagram (*✎ Free draw*): place IEC symbols anywhere on a grid, drag them, rotate them (**R**), and wire terminal to terminal. Every symbol is a real device in the Wiring (found by its tag or added for you) and every drawn wire is wired there, so the simulator runs the drawing; live paths light up and ☝ Operate presses buttons, switches breakers and trips overloads on the drawing.
-  - **＋ Library** by group: Sources, Switches, Auxiliaries, Coils, Loads, Contactors, Protections, Motors (50 symbols).
-  - **Type ⇄** turns a switch contact into another actuator: push button, selector, key switch, limit switch, E-stop.
+  - **＋ Library** by group: Sources, Switches, Sensors, Auxiliaries, Coils, Loads, Contactors, Protections, Others, Motors (90 IEC 60617 symbols).
+  - **Type ⇄** turns a switch contact into another actuator: push button, selector, key, limit, E-stop, foot, pressure, level, temperature or flow switch; and a 3-wire sensor into inductive/photoelectric, PNP/NPN.
   - Wrong device types and a device part drawn twice are reported.
 - Free draw: **junctions** (end a new wire on an existing wire to branch it) and **wire bends** (double-click a wire to add one, drag it, double-click to remove; works with a double tap on phones).
+- **Full IEC component library**, in the Wiring and in free draw:
+  - Sensors: **thermostat** and **flow switch** (N.O./N.C.), **photoelectric sensor** PNP/NPN, and the 3-wire sensor symbol (BN, BK, BU) for inductive and photoelectric sensors.
+  - Pilot devices: **push button N.O. + N.C.** (13-14 / 21-22) and **foot switch**; selector H-O-A HAND and AUTO contacts in free draw.
+  - Protection: **fuse 2P and 4P**, **MCB 4P**, **disconnector 4P**, **fuse disconnector 3P**, **RCD 4P 30 mA**, **RCBO 2P** (trips on an earth fault and on a short circuit).
+  - Control: **latching relay** (SET A1-A2 / RESET B1-B2, keeps its state without power); 2-pole contactor main contacts in free draw.
+  - Loads: **heater**, **hour meter** (counts the time it is powered), **voltmeter** (shows the voltage between V1 and V2), fan in free draw.
+- Free draw: **Text** notes, a **PE earth** symbol wired to the supply PE, **⧉ Copy** (**D**) and **To front / To back**.
 - **Contactor 4-Pole** (1-2, 3-4, 5-6, 7-8 + 13-14) and **Impulse Relay** (each pulse on the coil toggles the contact: one lamp from several push buttons), in the Wiring and in free draw.
 - **New parts**: Fuse 3-Pole, MCB 3-Pole, Disconnector 3-Pole, **RCD 2-Pole 30 mA** (trips on an earth fault before the breakers, not on a line-to-neutral short; TEST button), **Off-Delay Timer Relay**, **Single-Phase Motor**, **Two-Speed Motor** (two windings) and **Dahlander Motor** (slow/fast by connection; a wrong connection is a fault).
+
+### Fixed
+- The RCD ring in the free-draw symbol is drawn as a ring, not a filled shape.
 
 ## [1.4.1] - 2026-10-19
 

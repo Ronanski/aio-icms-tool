@@ -122,7 +122,14 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 ## v1.5.0 part 2 (auto-merge rule)
 - [x] Free draw: junctions (wire onto wire) and wire bends (double click / double tap)
 - [x] Contactor 4-pole, impulse relay (Wiring + free draw)
-- [ ] Next: modular PLC rack, I/O configuration, addressing styles, cabinet (v1.5 hardware); editable terminal numbers; RCBO
+- [x] Merged (PR #19), on Beta
+
+## v1.5.0 part 3 (owner: "ikaw mismo alam mo ang mga symbol"): full IEC component library
+- [x] Sensors: thermostat, flow switch, photoelectric PNP/NPN, 3-wire sensor symbol; push button NO+NC, foot switch, H-O-A contacts
+- [x] Protection: fuse 2P/4P, MCB 4P, disconnector 4P, fuse disconnector 3P, RCD 4P, RCBO
+- [x] Latching relay, heater, hour meter, voltmeter, fan and 2P contactor in free draw
+- [x] Free draw: Text, PE earth, Copy (D), To front / To back; 90 symbols
+- [ ] Next: modular PLC rack, I/O configuration, addressing styles, cabinet (v1.5 hardware); editable terminal numbers
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
