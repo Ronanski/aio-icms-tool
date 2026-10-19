@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 1.2.1 (released 2026-10-19; 1.2.0 on 2026-10-18 from `main`; downloads on GitHub Releases, web app on GitHub Pages)
-**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 164/164 on the v1.3 branch.
+**Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 174/174 on the v1.4 part 1 branch.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -80,25 +80,33 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 
 ## v1.3.0 part 3 (owner: "GO v1.3 part 3")
 - [x] Schematic view: rails, rungs, branches, symbols; devices found/created by tag and wired automatically; live power flow; operate mode; contact checks; saved with undo/redo
-- [ ] Next: rotate devices in the wiring, full per-device property sheets, VFD / star-delta / analog devices; then v1.4 (cabinet, modular PLC)
+- [x] Merged (PR #8)
 
-## Roadmap agreed with the owner
-**v1.3.0 — builder overhaul**
-- [ ] Electrical schematic mode like the ladder (L1/N rails, rungs, straight wires)
-- [ ] Grid, align tools, 90° wires; drag and re-route wires; tap an existing wire to branch with a junction dot
-- [ ] Same-size, resizable components with full properties; more components and symbols
-- [ ] Window manager: docked or floating windows, saved layouts, View menu with checkboxes
+## v1.4.0 part 1 (owner: "GO merge PR #8 then GO v1.4 part 1")
+- [x] Flat wiring look: screw terminals, modular bodies, MCB, contactor, motor with terminal box, PLC LCD, prox beam
+- [x] DIN rail with snap; terminal block PE-L1-L2-L3-N; motor protection breaker
+- [x] Wire labels (ferrules): live conductor or own label; green/yellow earth
 
-**v1.4.0 — hardware**
+## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
+**v1.4.0 — wiring like real hardware, 4 workspaces**
+- [x] Part 1: flat device graphics, DIN rail + snap, terminal block, motor protection breaker, wire labels
+- [ ] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
+- [ ] Part 3: star-delta, reversing (FWD/REV), timer relay with a dial; complete star-delta example (wiring + diagram + ladder)
+- [ ] Beta `v1.3.0-beta.1` or `v1.4.0-beta.1` on the owner's GO BETA; stable v1.4.0 on GO STABLE
+
+**v1.5.0 — hardware**
 - [ ] Modular rack (chassis, PSU, CPU, I/O cards per slot), generic names only
 - [ ] I/O Configuration: a module works only after it is configured
 - [ ] Addressing display: Basic, file-based (current) or bit/byte style
 - [ ] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails
 
-**v1.5.0 — HMI**
+**v1.6.0 — HMI**
 - [ ] Studio (designer) vs Machine (runtime) modes
 - [ ] Pick resolution and terminal type (PC or 4"–15" terminal)
 - [ ] More objects: shapes, images, trends, multi-screen navigation, animation, security
+
+**v1.7.0 — more instructions and devices**
+- [ ] OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, analog I/O; VFD, analog level transmitter; Tagalog/English toggle
 
 **v2.0.0 — online (MAJOR: project format changes)**
 - [ ] Tag-based engine (tasks, programs, routines)

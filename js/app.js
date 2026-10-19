@@ -55,6 +55,7 @@
     const termOk = k => typeof k === 'string' && ids.has(k.split(':')[0]) && Circuit.DEFS[comps.find(c => c.id === k.split(':')[0]).type].terms.some(t => t.id === k.split(':')[1]);
     const wires = arr(cir.wires).filter(w => isObj(w) && ID.test(w.id) && termOk(w.a) && termOk(w.b)).map(w => ({
       id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d', ...(w.sch === true ? { sch: true } : {}),
+      ...(typeof w.tag === 'string' && w.tag.trim() ? { tag: w.tag.trim().slice(0, 12) } : {}),
       pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
     }));
     const objects = arr(hm.objects).map(HMI.clean).filter(Boolean);

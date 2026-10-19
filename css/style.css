@@ -350,8 +350,8 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .bend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
 .bend:hover { fill: var(--accent); }
 .guide { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 5 4; pointer-events: none; }
-.wire .wo { fill: none; stroke: var(--wire-halo); stroke-width: 4.2; stroke-linejoin: round; pointer-events: none; }
-.wire .wb { fill: none; stroke-width: 2.2; stroke-linejoin: round; }
+.wire .wo { fill: none; stroke: var(--wire-halo); stroke-width: 4.8; stroke-linejoin: round; pointer-events: none; }
+.wire .wb { fill: none; stroke-width: 2.8; stroke-linejoin: round; }
 .wire .wl { fill: none; stroke-width: 2.2; stroke-linejoin: round; opacity: 0; pointer-events: none; }
 .wire .wl.live { opacity: .95; stroke-dasharray: 6 8; animation: flow .7s linear infinite; stroke-width: 3.6; }
 .wire .wl.short { opacity: 1; stroke: #ff2d20; stroke-width: 4; animation: blink .5s steps(2) infinite; }
@@ -605,3 +605,11 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
   .ctx-menu button { padding: 11px 14px; font-size: 15px; }
   .rung-svg { -webkit-touch-callout: none; }
 }
+.lcd { font: 700 11px var(--mono); fill: #1e2a10; pointer-events: none; }
+.lcd.on { fill: #c9d86c; }
+.lcd.sm { font-size: 9px; }
+.wire .wpe { fill: none; stroke: #f2c230; stroke-width: 2.2; stroke-dasharray: 7 7; stroke-linejoin: round; pointer-events: none; }
+.ferr { pointer-events: none; }
+.ferr rect { fill: #f7f7f4; stroke: #6b6b66; stroke-width: .7; }
+.ferr text { font: 700 6.5px var(--sans); fill: #1d1d1b; text-anchor: middle; }
+.rails .comp .clabel { opacity: .6; }

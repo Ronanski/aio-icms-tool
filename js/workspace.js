@@ -6,7 +6,7 @@
   const esc = UI.esc;
   const { DEFS } = Circuit;
   const WS = {};
-  let root, svg, gView, gWires, gComps, gOver, propsEl, meterEl, tipEl, bannerEl;
+  let root, svg, gView, gRails, gWires, gComps, gOver, propsEl, meterEl, tipEl, bannerEl;
   let view = { x: 40, y: 30, k: 0.9 };
   let sel = null;            // {kind:'comp'|'wire', id}
   let wiring = null;         // {from, pts:[[x,y]], cur:[x,y]}
@@ -15,6 +15,7 @@
   let probes = { a: null, b: null, next: 'a' };
   let wireColor = 'auto';
   let showLive = true;
+  let showTags = (() => { try { return localStorage.getItem('plc-trainer.wiretags') !== '0'; } catch (e) { return true; } })();
   const compEls = new Map();
   let wireEls = [];
   let palDrawer = null;
@@ -80,6 +81,7 @@
             <span class="tb-lbl">Wire</span>
             <div class="swatches">${WIRE_COLORS.map(([v, n, bg]) => `<button class="sw${v === wireColor ? ' on' : ''}" data-wc="${v}" title="${n}" style="background:${bg || v}"></button>`).join('')}</div>
             <label class="chk"><input type="checkbox" data-live checked> Live voltage</label>
+            <label class="chk" title="Wire markers (ferrules) at both ends: L1, L2, L3, N, PE, +24V, 0V"><input type="checkbox" data-tags${showTags ? ' checked' : ''}> Wire labels</label>
             <span class="spacer"></span>
             <span class="tb-lbl">Zoom</span><button class="tbtn" data-zoom="-1" title="Zoom out (scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-z data-zoom="0" title="Reset zoom to 100%">100%</button><button class="tbtn" data-zoom="1" title="Zoom in (scroll)" aria-label="Zoom in">🔍＋</button>
             <button class="tbtn" data-fit title="Fit all">⤢ Fit</button>
@@ -89,7 +91,7 @@
             <svg class="ws-svg">
               <defs><pattern id="wsGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern>
               <pattern id="wsGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#wsGrid)"/><path d="M100 0 H0 V100" fill="none" class="gridLine"/></pattern></defs>
-              <g class="vp"><rect class="bg" x="-6000" y="-6000" width="12000" height="12000" fill="url(#wsGrid2)"/><g class="wires"></g><g class="comps"></g><g class="over"></g></g>
+              <g class="vp"><rect class="bg" x="-6000" y="-6000" width="12000" height="12000" fill="url(#wsGrid2)"/><g class="rails"></g><g class="wires"></g><g class="comps"></g><g class="over"></g></g>
             </svg>
             <div class="ws-banner"></div>
             <div class="meter-read hidden"></div>
@@ -101,7 +103,7 @@
       </div>`;
     svg = el.querySelector('.ws-svg');
     gView = svg.querySelector(".vp");
-    gWires = svg.querySelector('.wires'); gComps = svg.querySelector('.comps'); gOver = svg.querySelector('.over');
+    gRails = svg.querySelector('.rails'); gWires = svg.querySelector('.wires'); gComps = svg.querySelector('.comps'); gOver = svg.querySelector('.over');
     propsEl = el.querySelector('.ws-props'); meterEl = el.querySelector('.meter-read'); tipEl = el.querySelector('.ws-tip'); bannerEl = el.querySelector('.ws-banner');
     palDrawer = UI.drawer(el.querySelector('[data-drawer="pal"]'), el.querySelector('.ws-palette'));
     UI.drawer(el.querySelector('[data-drawer="props"]'), propsEl);
@@ -123,6 +125,7 @@
       if (b.hasAttribute('data-fit')) WS.fit();
     });
     el.querySelector('[data-live]').addEventListener('change', e => { showLive = e.target.checked; wireEls.forEach(w => { w.cls = null; }); });
+    el.querySelector('[data-tags]').addEventListener('change', e => { showTags = e.target.checked; try { localStorage.setItem('plc-trainer.wiretags', showTags ? '1' : '0'); } catch (err) { /* private mode */ } renderWires(); });
     svg.addEventListener('pointerdown', onDown);
     svg.addEventListener('pointermove', onMove);
     svg.addEventListener('pointerup', onUp);
@@ -208,7 +211,7 @@
     const cs = circ().comps;
     if (!cs.length || !svg.clientWidth) return;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    cs.forEach(c => { const d = DEFS[c.type], s = c.props.size || 1; x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y - 16); x1 = Math.max(x1, c.x + d.w * s); y1 = Math.max(y1, c.y + d.h * s); });
+    cs.forEach(c => { const d = Circuit.dims(c), s = c.props.size || 1; x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y - 16); x1 = Math.max(x1, c.x + d.w * s); y1 = Math.max(y1, c.y + d.h * s); });
     circ().wires.forEach(w => (w.pts || []).forEach(p => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }));
     const W = svg.clientWidth, H = svg.clientHeight, pad = 40;
     const k = Math.max(0.25, Math.min(1.4, Math.min((W - pad * 2) / (x1 - x0), (H - pad * 2) / (y1 - y0))));
@@ -295,7 +298,14 @@
       if (drag.kind === 'pan') { view.x = drag.vx + e.clientX - drag.sx; view.y = drag.vy + e.clientY - drag.sy; applyView(); }
       else if (drag.kind === 'comp') {
         let nx = snap(pt.x - drag.ox);
-        const ny = snap(pt.y - drag.oy);
+        let ny = snap(pt.y - drag.oy);
+        // DIN rail: a device whose middle comes within 24 px of a rail's centre line clips onto it
+        const dd = DEFS[drag.c.type];
+        if (!dd.rail && !dd.junction && !e.altKey) {
+          const ds = drag.c.props.size || 1, mid = ny + dd.h * ds / 2, w = Circuit.dims(drag.c).w * ds;
+          const r = circ().comps.find(r => DEFS[r.type].rail && nx + w > r.x && nx < r.x + Circuit.dims(r).w * (r.props.size || 1) && Math.abs(mid - (r.y + 18 * (r.props.size || 1))) <= 24);
+          if (r) ny = Math.round(r.y + 18 * (r.props.size || 1) - dd.h * ds / 2);
+        }
         // smart alignment: a wired terminal that comes within 8 px of the other end's x snaps onto it, so the wire runs straight
         drag.guide = null;
         if (!e.altKey) {
@@ -433,6 +443,27 @@
     renderProps();
     renderTemp();
   };
+  /* wire marker (ferrule) text: the wire's own label, else the conductor that is live on it. Colours are not trusted
+     (red is used for 24 V and for 230 V control wires alike); only green/yellow always means earth. */
+  const COLOR_TAG = { '#58a83a': 'PE' };
+  const POT_TAG = { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N', PE: 'PE', 'DC+': '+24V', 'DC-': '0V' };
+  function wireTag(w, api) {
+    if (w.tag) return w.tag;
+    const pc = api ? Circuit.potClass(api.potsR(api.rootK(w.a))) : '';
+    return pc ? POT_TAG[pc] : COLOR_TAG[String(w.color).toLowerCase()] || '';
+  }
+  function ferrule(p) { return `<g class="ferr" data-x="${p.x}" data-y="${p.y + p.dir * 15}"><rect height="9" rx="1.5"/><text></text></g>`; }
+  function setTag(we, txt) {
+    if (we.tag === txt) return;
+    we.tag = txt;
+    we.g.querySelectorAll('.ferr').forEach(f => {
+      f.style.display = txt ? '' : 'none';
+      if (!txt) return;
+      const x = Number(f.dataset.x), y = Number(f.dataset.y), wd = Math.max(14, txt.length * 5.2 + 5), r = f.firstChild, t = f.lastChild;
+      r.setAttribute('x', x - wd / 2); r.setAttribute('y', y - 4.5); r.setAttribute('width', wd);
+      t.setAttribute('x', x); t.setAttribute('y', y + 2.6); t.textContent = txt;
+    });
+  }
   function renderWires() {
     const h = [];
     circ().wires.forEach(w => {
@@ -440,11 +471,13 @@
       if (!a || !b) return;
       const d = pathD(route(a, w.pts || [], b));
       const wc = esc(w.color || '#1d1d1d');
+      // earth wires are green/yellow
       // .wo is a thin outline under the wire so black wires show on dark backgrounds (and white ones on light)
-      h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${esc(w.id)}"><path class="wh" d="${d}"/><path class="wo" d="${d}"/><path class="wb" d="${d}" stroke="${wc}"/><path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${wc}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${wc}"/></g>`);
+      h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${esc(w.id)}"><path class="wh" d="${d}"/><path class="wo" d="${d}"/><path class="wb" d="${d}" stroke="${wc}"/>${String(w.color).toLowerCase() === '#58a83a' ? `<path class="wpe" d="${d}"/>` : ''}<path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${wc}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${wc}"/>${showTags ? ferrule(a) + ferrule(b) : ''}</g>`);
     });
     gWires.innerHTML = h.join('');
-    wireEls = [...gWires.querySelectorAll('.wire')].map(g => ({ g, id: g.dataset.wid, l: g.querySelector('.wl'), w: circ().wires.find(w => w.id === g.dataset.wid), cls: null }));
+    wireEls = [...gWires.querySelectorAll('.wire')].map(g => ({ g, id: g.dataset.wid, l: g.querySelector('.wl'), w: circ().wires.find(w => w.id === g.dataset.wid), cls: null, tag: null }));
+    if (showTags) wireEls.forEach(we => setTag(we, wireTag(we.w, App.api)));
   }
   function renderTemp() {
     const h = [];
@@ -491,7 +524,7 @@
     j.x = x; j.y = y;
     circ().comps.push(j);
     const key = j.id + ':J', P = n.P;
-    const w2 = { id: 'w' + (++circ().seq), a: key, b: w.b, color: w.color, pts: dedupe(P.slice(n.k + 1, P.length - 2)) };
+    const w2 = { id: 'w' + (++circ().seq), a: key, b: w.b, color: w.color, ...(w.tag ? { tag: w.tag } : {}), pts: dedupe(P.slice(n.k + 1, P.length - 2)) };
     w.b = key; w.pts = dedupe(P.slice(2, n.k + 1));
     circ().wires.push(w2);
     App.log('operator', `Junction added on a wire (${keyLabel(w.a)} … ${keyLabel(w2.b)})`);
@@ -515,7 +548,7 @@
       if (!e) {
         const g = document.createElementNS(NS, 'g');
         g.classList.add('comp'); g.dataset.cid = c.id;
-        gComps.appendChild(g);
+        (DEFS[c.type].rail ? gRails : gComps).appendChild(g);
         e = { g, sig: null, tr: null };
         compEls.set(c.id, e);
         if (sel && sel.kind === 'comp' && sel.id === c.id) g.classList.add('sel');
@@ -529,7 +562,7 @@
         e.g.classList.toggle('jct', !!d.junction);
         e.g.innerHTML = d.junction
           ? `<g class="term" data-term="J"><circle class="thit" r="9"/><circle class="jdot" r="4.2"/></g>`
-          : `<rect class="frame" x="-5" y="-18" width="${d.w + 10}" height="${d.h + 23}" rx="8"/><text class="clabel" x="0" y="-6">${esc(c.props.label)}</text>` + Circuit.draw(c, ctx) + Circuit.drawTerms(d);
+          : `<rect class="frame" x="-5" y="-18" width="${Circuit.dims(c).w + 10}" height="${d.h + 23}" rx="8"/><text class="clabel" x="0" y="-6">${esc(c.props.label)}</text>` + Circuit.draw(c, ctx) + Circuit.drawTerms(d);
         e.sig = s;
       }
     }
@@ -543,6 +576,7 @@
           else { const pc = Circuit.potClass(api.potsR(r)); if (pc) cls = 'live p-' + pc.replace('+', 'p').replace('-', 'm'); }
         }
         if (cls !== w.cls) { w.cls = cls; w.l.setAttribute('class', 'wl ' + cls); }
+        if (showTags) setTag(w, wireTag(w.w, api));
       }
       const sh = api.net.short.size ? [...api.net.short.values()][0] : '';
       const msg = sh ? `⚠ ${sh} with no breaker to clear it — circuit is dead. Fix the wiring.` : '';
@@ -616,10 +650,12 @@
       propsEl.innerHTML = `<div class="side-head"><h4>Wire</h4></div><div class="props">
         <p><code>${esc(keyLabel(w.a))}</code> → <code>${esc(keyLabel(w.b))}</code></p>
         <div class="swatches big">${WIRE_COLORS.slice(1).map(([v, n]) => `<button class="sw${w.color === v ? ' on' : ''}" data-c="${v}" title="${n}" style="background:${v}"></button>`).join('')}</div>
+        <label class="field"><span>Wire label (marker)</span><input data-wtag maxlength="12" placeholder="${esc(wireTag({ ...w, tag: '' }, App.api) || 'e.g. 101')}" value="${esc(w.tag || '')}"></label>
         <div class="btn-row"><button class="btn" data-str>Straighten</button><button class="btn danger" data-del>Delete</button></div></div>`;
       propsEl.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { w.color = b.dataset.c; renderWires(); renderProps(); App.save(); });
       propsEl.querySelector('[data-del]').onclick = delSel;
       propsEl.querySelector('[data-str]').onclick = () => { w.pts = []; App.circuitChanged(); };
+      propsEl.querySelector('[data-wtag]').addEventListener('change', e => { const v = e.target.value.trim().slice(0, 12); if (v) w.tag = v; else delete w.tag; renderWires(); App.save(); });
     } else {
       const n = circ().comps.length, m = circ().wires.length;
       propsEl.innerHTML = `<div class="side-head"><h4>Workspace</h4></div><div class="props">
