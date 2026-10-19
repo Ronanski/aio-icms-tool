@@ -5,13 +5,13 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.5.0 (stable)**: owner's "GO STABLE v1.5.0" (2026-10-19). PR #20 (full IEC library, diagram in one colour and in proportion, version 1.5.0, CHANGELOG `[1.5.0]`) merges into `main`, then the Release workflow runs from `main` and starts `pages.yml`, so the hosted Stable copy moves to v1.5.0. Check the release (portable .exe, .apk, web.zip), the APK cert and https://ronanski.github.io/aio-icms-tool/version.json before calling it done. v1.4.1 was the previous stable. APK cert `27:5F:A5:15:06:CC:46…` on every release since v1.2.0. |
-| **Tags** | `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow (plus `v1.4.0` once the stable run publishes). `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
+| **Version** | **v1.5.0 (stable)**: owner's "GO STABLE v1.5.0" (2026-10-19). PR #20 merged into `main` (`430aea8`), Release workflow started from `main` (publish = true); it creates tag `v1.5.0` and starts `pages.yml`, so the hosted Stable copy moves to v1.5.0. **On resume, verify first:** GitHub Release `v1.5.0` has the portable .exe, .apk and web.zip; the APK cert starts `27:5F:A5:15:06:CC:46`; https://ronanski.github.io/aio-icms-tool/version.json says 1.5.0. v1.4.1 was the previous stable. |
+| **Tags** | `v1.5.0` (being published), `v1.4.1`, `v1.4.0`, `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0`, `v1.1.0`. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-19 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 250 passed (v1.5 part 3: full IEC library, PR #20). |
-| **Pull requests** | #1–#19 merged (#3 closed); #17 = Release v1.4.1; #18/#19 = free draw; #20 = full IEC component library (90 free-draw symbols). Next: v1.5 hardware (modular PLC rack, I/O configuration, addressing styles, cabinet). |
-| **Downloads** | v1.2.0 assets: `PLC-Trainer-Setup-1.2.0.exe`, `PLC-Trainer-1.2.0-portable.exe`, `PLC-Trainer-1.2.0-android.apk`, `PLC-Trainer-1.2.0-web.zip`. Web app live on GitHub Pages (https://ronanski.github.io/aio-icms-tool/, serves v1.2.0). |
+| **Tests** | `npm test`: 250 passed on `main` (`430aea8`); CI green on PR #20. |
+| **Pull requests** | #1–#20 merged (#3 closed). #17 = Release v1.4.1; #18/#19 = free draw; #20 = Release v1.5.0 (full IEC library, diagram in one colour and in proportion). |
+| **Downloads** | GitHub Releases: `PLC-Trainer-X.Y.Z-portable.exe`, `PLC-Trainer-X.Y.Z-android.apk`, `PLC-Trainer-X.Y.Z-web.zip` (portable only since v1.4.1). Web app: https://ronanski.github.io/aio-icms-tool/ (Stable) and `/beta/` (Beta = `main`). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
 
@@ -73,6 +73,10 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
 ## Start of next session (read first)
+- **Session 2026-10-19 (latest):** v1.5 parts 1–3 and **stable v1.5.0**. Free-draw Electrical Diagram (`js/freedraw.js`): grid, 90 IEC 60617 symbols in 10 groups, junctions, bends, Text, PE earth, Copy (D), To front/back, Type ⇄. New devices in `js/circuit.js`: fuse 2P/3P/4P, MCB 3P/4P, disconnector 3P/4P, fuse disconnector, RCD 2P/4P, RCBO, off-delay timer, impulse relay, latching relay, contactor 4P, push button NO+NC, foot switch, thermostat, flow switch, photoelectric sensor, heater, hour meter, voltmeter, 1-phase, two-speed and Dahlander motors.
+- Owner's diagram direction: the Electrical Diagram looks like the ladder ("dapat kapareha ng ladder diagram, parang AutoCAD o simulator"): one line colour, live paths light up; PH wire colours only on the real wires in the Wiring. Power and control circuits in proportion (`PP` pole spacing, `PE_` stretched to the N rail in `renderPowerV`).
+- Owner wants symbols from my own IEC knowledge, not only from their screenshots ("reference lang un").
+- **Next:** verify the v1.5.0 release (see Savepoint). Then v1.6 hardware: modular PLC rack (PSU, CPU, I/O cards), I/O Configuration, addressing styles (Basic / file / bit-byte), 2D cabinet. Also open: editable terminal numbers, owner's feedback from real devices, owner's v1.2 bug list.
 - v1.2.1 (PR #5) was merged and released with the owner's "GO merge PR #5 then GO STABLE v1.2.1" (2026-10-19).
 - v1.3 parts 1–3 merged (PR #6, #7, #8; #8 with "GO merge PR #8 then GO v1.4 part 1"). Not released: needs a GO BETA or GO STABLE.
 - v1.4 part 1 (flat wiring look, DIN rail + snap, terminal block, motor protection breaker, wire labels) merged (PR #9) with "GO merge PR #9 then GO v1.4 part 2".
