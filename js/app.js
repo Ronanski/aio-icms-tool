@@ -3,7 +3,7 @@
   'use strict';
   const esc = UI.esc;
   const VERSION = '1.2.1';
-  const VIEWS = ['ladder', 'wiring', 'panel', 'hmi', 'learn'];
+  const VIEWS = ['ladder', 'schematic', 'wiring', 'panel', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
   const LAYOUTS = [
     { key: 'single', label: 'Single view', panes: null },
@@ -13,6 +13,8 @@
     { key: 'lp', label: 'Ladder + Panel & Plant', short: 'Ladder · Panel', panes: ['ladder', 'panel'] },
     { key: 'wp', label: 'Wiring + Panel & Plant', short: 'Wiring · Panel', panes: ['wiring', 'panel'] },
     { key: 'lh', label: 'Ladder + HMI', short: 'Ladder · HMI', panes: ['ladder', 'hmi'] },
+    { key: 'sw', label: 'Schematic + Wiring', short: 'Schematic · Wiring', panes: ['schematic', 'wiring'] },
+    { key: 'swp', label: 'Schematic + Wiring + Panel & Plant', short: 'Schematic · Wiring · Panel', panes: ['schematic', 'wiring', 'panel'] },
   ];
   const NARROW = 760;
 
@@ -52,7 +54,7 @@
     const ids = new Set(comps.map(c => c.id));
     const termOk = k => typeof k === 'string' && ids.has(k.split(':')[0]) && Circuit.DEFS[comps.find(c => c.id === k.split(':')[0]).type].terms.some(t => t.id === k.split(':')[1]);
     const wires = arr(cir.wires).filter(w => isObj(w) && ID.test(w.id) && termOk(w.a) && termOk(w.b)).map(w => ({
-      id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d',
+      id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d', ...(w.sch === true ? { sch: true } : {}),
       pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
     }));
     const objects = arr(hm.objects).map(HMI.clean).filter(Boolean);
@@ -63,6 +65,7 @@
       ladder: { rungs, desc },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
+      schematic: Schematic.clean(p.schematic, termOk),
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && KINDS[e.kind]).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
     };
   }
@@ -80,7 +83,7 @@
     lastForces = {}; lastFen = true;
     plc.setProgram(rungs);
     plc.applyAll(true);
-    Ladder.resetSel(); Workspace.resetView(); HMI.resetSel();
+    Ladder.resetSel(); Workspace.resetView(); HMI.resetSel(); Schematic.resetSel();
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
     renderVisible();
     document.querySelector('[data-pname]').textContent = App.project.name;
@@ -95,6 +98,7 @@
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc },
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
+      schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })) },
       events: LOG.slice(-LOG_KEEP),
     };
   };
@@ -271,6 +275,7 @@
     const vis = shownViews();
     if (vis.includes('ladder')) Ladder.update();
     if (vis.includes('wiring')) Workspace.update();
+    if (vis.includes('schematic')) Schematic.update();
     if (vis.includes('panel')) PanelView.update();
     if (vis.includes('hmi')) HMI.update();
     updateBar(false);
@@ -279,7 +284,7 @@
 
   /* ---------- views ---------- */
   /* 'custom' is the set of windows ticked in the View menu (1 to 3, kept in VIEWS order) */
-  const VNAME = { ladder: 'Ladder', wiring: 'Wiring', panel: 'Panel & Plant', hmi: 'HMI' };
+  const VNAME = { ladder: 'Ladder', schematic: 'Schematic', wiring: 'Wiring', panel: 'Panel & Plant', hmi: 'HMI' };
   let customPanes = ['ladder', 'wiring'];
   try { const c = JSON.parse(localStorage.getItem('plc-trainer.customPanes') || 'null'); if (Array.isArray(c) && c.length && c.every(v => VNAME[v])) customPanes = c.slice(0, 3); } catch (e) { /* ignore */ }
   const layoutOf = k => (k === 'custom'
@@ -364,6 +369,7 @@
     App.dirty[v] = false;
     if (v === 'ladder') { Ladder.render(); Ladder.DataTable.render(); }
     if (v === 'wiring') { Workspace.render(); Workspace.onShow(); }
+    if (v === 'schematic') Schematic.render();
     if (v === 'panel') PanelView.render();
     if (v === 'hmi') { HMI.render(); HMI.onShow(); }
     if (v === 'learn') renderLearn();
@@ -627,6 +633,7 @@
       const v = App.view;
       if (v === 'ladder') Ladder.onKey(e);
       else if (v === 'wiring') Workspace.onKey(e);
+      else if (v === 'schematic') Schematic.onKey(e);
       else if (v === 'hmi') HMI.onKey(e);
     });
     window.addEventListener('resize', () => { if (visibleViews().includes('ladder')) Ladder.render(); });
@@ -738,6 +745,7 @@
     Workspace.init(document.getElementById('view-wiring'));
     PanelView.init(document.getElementById('view-panel'));
     HMI.init(document.getElementById('view-hmi'));
+    Schematic.init(document.getElementById('view-schematic'));
     bindChrome();
     bindGutters();
     ['.plcbar', '.lad-toolbar', '.ws-toolbar', '.hmi-toolbar'].forEach(q => document.querySelectorAll(q).forEach(UI.scrollCue));

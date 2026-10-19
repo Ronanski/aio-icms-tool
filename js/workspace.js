@@ -635,6 +635,7 @@
     }
   }
 
+  WS.selectComp = id => select({ kind: 'comp', id });
   WS.onShow = function () { if (!WS._fitted) { WS._fitted = true; requestAnimationFrame(() => WS.fit()); } };
   WS.refit = () => { WS._fitted = false; };
   WS.resetView = function () { WS._fitted = false; sel = null; wiring = null; probes = { a: null, b: null, next: 'a' }; compEls.forEach(e => e.g.remove()); compEls.clear(); };

@@ -329,6 +329,22 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .fw-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; cursor: move; background: var(--surface-2); border-bottom: 1px solid var(--border); user-select: none; touch-action: none; font-size: 13px; }
 .fw-head .spacer { flex: 1; }
 .float-win > .view { flex: 1; min-height: 0; position: relative; }
+/* schematic (rails and rungs, drawn like the ladder) */
+.sch-rails { display: flex; justify-content: space-between; padding: 0 16px 4px 70px; font: 600 11px var(--mono); color: var(--muted); }
+.sch-svg .ssym path, .sch-svg .ssym circle, .sch-svg .ssym rect { fill: none; stroke: var(--lad-wire); stroke-width: 2; }
+.sch-svg .ssym .thin { stroke-width: 1.3; }
+.sch-svg .ssym.on path, .sch-svg .ssym.on circle, .sch-svg .ssym.on rect { stroke: var(--lad-on); stroke-width: 2.6; }
+.sch-svg .ssym.on circle, .sch-svg .ssym.on rect { fill: var(--lad-hl); }
+.sch-svg .ssym.err path, .sch-svg .ssym.err circle, .sch-svg .ssym.err rect { stroke: var(--danger); }
+.sch-svg .ssym.miss { opacity: .5; }
+.sch-svg .stag { font: 600 12px var(--mono); fill: var(--lad-text); text-anchor: middle; }
+.sch-svg .skind { font: 500 9.5px var(--sans); fill: var(--muted); text-anchor: middle; text-transform: uppercase; letter-spacing: .03em; }
+.sch-svg .hit { fill: transparent; stroke: transparent; }
+.sch-svg .sel-el:hover > .hit, .sch-svg .sleg:hover > .hit { fill: color-mix(in srgb, var(--accent-soft) 50%, transparent); }
+.sch-svg .sel-el.sel > .hit, .sch-svg .sleg.sel > .hit { fill: color-mix(in srgb, var(--accent-soft) 85%, transparent); stroke: var(--accent); stroke-dasharray: 4 3; }
+.sch-body.operate .sel-el { cursor: pointer; }
+.sch-add { padding: 10px 70px; }
+.sch-toolbar .tbtn[data-skind] { font: 600 11px var(--mono); }
 .comp.jct .jdot { fill: var(--text); stroke: var(--surface); stroke-width: 1.2; }
 .comp.jct .term:hover .jdot { fill: var(--accent); }
 .bend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
