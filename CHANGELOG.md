@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - **＋ Library** by group: Sources, Switches, Auxiliaries, Coils, Loads, Contactors, Protections, Motors (50 symbols).
   - **Type ⇄** turns a switch contact into another actuator: push button, selector, key switch, limit switch, E-stop.
   - Wrong device types and a device part drawn twice are reported.
+- Free draw: **junctions** (end a new wire on an existing wire to branch it) and **wire bends** (double-click a wire to add one, drag it, double-click to remove; works with a double tap on phones).
+- **Contactor 4-Pole** (1-2, 3-4, 5-6, 7-8 + 13-14) and **Impulse Relay** (each pulse on the coil toggles the contact: one lamp from several push buttons), in the Wiring and in free draw.
 - **New parts**: Fuse 3-Pole, MCB 3-Pole, Disconnector 3-Pole, **RCD 2-Pole 30 mA** (trips on an earth fault before the breakers, not on a line-to-neutral short; TEST button), **Off-Delay Timer Relay**, **Single-Phase Motor**, **Two-Speed Motor** (two windings) and **Dahlander Motor** (slow/fast by connection; a wrong connection is a fault).
 
 ## [1.4.1] - 2026-10-19

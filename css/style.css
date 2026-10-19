@@ -637,3 +637,6 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .sch-body.operate .free-svg .fitem { cursor: pointer; }
+.free-svg .fbend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
+.free-svg .ssym .jdot { fill: var(--lad-wire); stroke: none; }
+.free-svg .ssym.on .jdot { fill: var(--lad-on); }

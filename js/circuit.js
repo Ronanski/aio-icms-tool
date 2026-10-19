@@ -244,6 +244,41 @@
     },
     status: c => c.state.burnt ? 'Coil burnt' : c.state.pulled ? 'Energized (pulled in)' : 'De-energized',
   });
+  def('contactor4', {
+    name: 'Contactor 4-Pole', cat: 'Control', view: 'cabinet', prefix: 'KM', w: 120, h: 140,
+    props: { coil: '230VAC' },
+    pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }],
+    info: 'Coil A1-A2. Four main poles 1-2, 3-4, 5-6, 7-8 (e.g. L1 L2 L3 and N). Aux 13-14 N.O.',
+    terms: [{ id: 'A1', x: 10, y: 0 }, { id: '1', x: 30, y: 0 }, { id: '3', x: 50, y: 0 }, { id: '5', x: 70, y: 0 }, { id: '7', x: 90, y: 0 }, { id: '13', x: 110, y: 0 },
+      { id: 'A2', x: 10, y: 140 }, { id: '2', x: 30, y: 140 }, { id: '4', x: 50, y: 140 }, { id: '6', x: 70, y: 140 }, { id: '8', x: 90, y: 140 }, { id: '14', x: 110, y: 140 }],
+    init: () => ({ pulled: false, burnt: false }),
+    conduct: c => c.state.pulled ? [['1', '2'], ['3', '4'], ['5', '6'], ['7', '8'], ['13', '14']] : null,
+    evaluate(c, api) { return set(c, 'pulled', coilOn(c, api, 'A1', 'A2')); },
+    draw: c => DEFS.contactor.draw(c).replace('3P + 1NO 1NC', '4P + 1NO'),
+    status: c => c.state.burnt ? 'Coil burnt' : c.state.pulled ? 'Energized (pulled in)' : 'De-energized',
+  });
+  /* impulse relay (latching, "teleruptor"): every pulse on the coil toggles the contact, which then stays */
+  def('impulse', {
+    name: 'Impulse Relay', cat: 'Control', view: 'cabinet', prefix: 'KI', w: 70, h: 110,
+    props: { coil: '230VAC' },
+    pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }],
+    info: 'Coil A1-A2. Each pulse on the coil toggles the contact 1-2 (N.O.) and 3-4 (N.C.); it stays until the next pulse. Typical use: one lamp switched from several push buttons. Click the lever to toggle by hand.',
+    terms: [{ id: 'A1', x: 12, y: 0 }, { id: '1', x: 36, y: 0 }, { id: '3', x: 58, y: 0 }, { id: 'A2', x: 12, y: 110 }, { id: '2', x: 36, y: 110 }, { id: '4', x: 58, y: 110 }],
+    init: () => ({ pw: false, closed: false, burnt: false }),
+    conduct: c => c.state.closed ? [['1', '2']] : [['3', '4']],
+    evaluate(c, api) {
+      const on = coilOn(c, api, 'A1', 'A2'), s = c.state;
+      if (on && !s.pw) s.closed = !s.closed;   // rising edge of the coil
+      return set(c, 'pw', on) || false;
+    },
+    onPart(c, p, ev) { if (p === 'lever' && ev === 'down') { c.state.closed = !c.state.closed; return true; } },
+    draw(c) {
+      const s = c.state;
+      return modBody(70, 110, 'IMPULSE', 18, 18) + `<g class="part" data-part="lever">${R(22, 46, 26, 30, '#2a2a28', 3)}${R(26, s.closed ? 50 : 60, 18, 12, s.closed ? '#2fa84f' : '#e9e9e6', 2, '#111')}</g>` +
+        T(35, 88, s.closed ? 'ON' : 'OFF', 'dt xs') + led(58, 40, s.pw, '#3ddc63', 3) + T(35, 100, c.props.coil, 'dt xs') + (s.burnt ? burnt(70, 110) : '');
+    },
+    status: c => (c.state.closed ? '1-2 closed (ON)' : '1-2 open (OFF)') + (c.state.pw ? ' · coil on' : ''),
+  });
   def('relay', {
     name: 'Control Relay', cat: 'Control', view: 'cabinet', prefix: 'KA', w: 90, h: 110,
     props: { coil: '24VDC' },

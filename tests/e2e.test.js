@@ -987,8 +987,31 @@ function check(name, cond, info = '') {
     const it = App.project.schematic.free.items.find(i => i.id === 'd4'); it.k = 'selno'; Schematic.sync(); Schematic.render();
     return [...FreeDraw.errs.values()].some(m => m.includes('S1'));
   }));
+  // junction: end a new wire on an existing wire
+  await page.evaluate(() => { const F = App.project.schematic.free; F.items.push({ id: 'd90', k: 'lamp', tag: 'H8', x: 330, y: 460, r: 0 }); Schematic.sync(); Schematic.render(); });
+  const jStart = await (await page.$('#view-schematic [data-ft="d90:X1"]')).boundingBox();
+  await page.mouse.click(jStart.x + jStart.width / 2, jStart.y + jStart.height / 2); await wait(100);
+  const wSeg = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => x.a === 'd2:2' && x.b === 'd3:11') || App.project.schematic.free.wires.find(x => x.b === 'd2:2' && x.a === 'd3:11'); const el = document.querySelector(`#view-schematic [data-fw="${w.id}"] .fwh`); const r = el.getBoundingClientRect(); return { id: w.id, x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.click(wSeg.x, wSeg.y); await wait(200);
+  check('free draw: ending a wire on a wire makes a junction, and the new lamp gets power through it', await page.evaluate(() => { const F = App.project.schematic.free; return F.items.some(i => i.k === 'node') && F.wires.filter(w => w.a.endsWith(':J') || w.b.endsWith(':J')).length === 3; }) && await page.evaluate(() => { const C = App.project.circuit, h = C.comps.find(c => c.props.label === 'H8'), q = C.comps.find(c => c.props.label === 'QF1'); return App.api.sameNet(h.id + ':X1', q.id + ':2'); }));
+  const bendW = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => x.a === 'd8:PE' || x.b === 'd8:PE'); const el = document.querySelector(`#view-schematic [data-fw="${w.id}"] .fwh`); const r = el.getBoundingClientRect(); return { id: w.id, x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.dblclick(bendW.x, bendW.y); await wait(200);
+  check('free draw: double-clicking a wire adds a bend you can drag', await page.evaluate(id => { const w = App.project.schematic.free.wires.find(x => x.id === id); return !!w.pts && w.pts.length === 1 && !!document.querySelector('#view-schematic .fbend'); }, bendW.id));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await page.click('#view-schematic [data-sstyle="iec"]');
+
+  console.log('v1.5 part 2: impulse relay, 4-pole contactor');
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), s1 = add('pb_no', { label: 'S1' }), s2 = add('pb_no', { label: 'S2' }), ki = add('impulse', { label: 'KI1' }), h = add('lamp', { label: 'H1', coil: '230VAC' }), k4 = add('contactor4', { label: 'KM4' });
+    w(q, 'L', s1, '13'); w(q, 'L', s2, '13'); w(s1, '14', ki, 'A1'); w(s2, '14', ki, 'A1'); w(ki, 'A2', q, 'N'); w(q, 'L', ki, '1'); w(ki, '2', h, 'X1'); w(h, 'X2', q, 'N');
+    w(ki, '2', k4, 'A1'); w(k4, 'A2', q, 'N'); w(q, 'L', k4, '7');
+    App.openNew({ name: 'Impulse', circuit: circ });`));
+  await wait(200);
+  await tap('S1');
+  check('impulse relay: a pulse from S1 switches the lamp on and it stays on', await get('H1', 'state.on'));
+  check('4-pole contactor pulls in and closes pole 7-8', (await get('KM4', 'state.pulled')) && await page.evaluate(() => { const c = App.project.circuit.comps.find(x => x.props.label === 'KM4'); return App.api.sameNet(c.id + ':7', c.id + ':8'); }));
+  await tap('S2');
+  check('impulse relay: a pulse from S2 switches it off again', !(await get('H1', 'state.on')));
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));

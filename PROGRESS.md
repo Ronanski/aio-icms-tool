@@ -117,7 +117,12 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 ## v1.5.0 part 1 (owner: "GO v1.5 part 1", after SimuRelay screenshots)
 - [x] Free-draw Electrical Diagram: grid, library by group, drag, rotate, wire terminal to terminal, Type ⇄, operate, live paths, saved with the project
 - [x] New parts: fuse 3P, MCB 3P, disconnector 3P, RCD 2P, off-delay timer, 1-phase motor, two-speed and Dahlander motors
-- [ ] Next (part 2): wire bends and junctions in free draw, editable terminal numbers, more symbols (KM 4P, RCBO, impulse relay), modular PLC (v1.5 hardware)
+- [x] Merged (PR #18), on Beta
+
+## v1.5.0 part 2 (auto-merge rule)
+- [x] Free draw: junctions (wire onto wire) and wire bends (double click / double tap)
+- [x] Contactor 4-pole, impulse relay (Wiring + free draw)
+- [ ] Next: modular PLC rack, I/O configuration, addressing styles, cabinet (v1.5 hardware); editable terminal numbers; RCBO
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
