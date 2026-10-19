@@ -5,41 +5,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Added (v1.4 part 4)
+## [1.4.0] - 2026-10-19
+
+Wiring that looks like real DIN-rail hardware, four workspaces, an IEC Electrical Diagram with the power circuit, star-delta and forward/reverse, and Philippine wire colours.
+
+### Added
 - **IEC Electrical Diagram** (new default view): L rail on top, N rail at the bottom, one numbered column per current path, contacts drawn the IEC way with their terminal numbers (95/96, 11/12, 13/14, A1/A2, X1/X2) and tags like -KM1. Push-button, selector, E-stop, limit-switch, timer and overload actuators are shown. *⇄ Ladder* switches back to the horizontal ladder style.
 - **Power circuit in the diagram**: the 3-phase supply, a main switch and motor feeders (circuit breaker or motor protection breaker → contactor main contacts → overload relay → motor 3~ with PE). The diagram adds the devices to the Wiring and wires L1-L2-L3 and PE for you; live phases light up. *＋ Feeder* and the *Power* buttons build it; Operate mode switches breakers and resets overloads from the diagram.
 - **Example**: *Three motors (IEC Electrical Diagram)*, with main breaker Q4, feeders Q1-Q3 → KM1-KM3 → F1-F3 → M1-M3, start/stop with seal-in, run lamps and pilot lamps.
 - A coil with a lamp across it (a branch made only of loads) is drawn at the bottom of its current path.
-
-### Changed (v1.4 part 4)
-- **Wire colours follow Philippine practice**: L1 red, L2 yellow, L3 blue, N white, PE green; 24 V DC + red, 0 V blue; 230 V control wiring black. The wire colour palette, *Auto* colours, examples and new diagram wiring use them. Wires in existing projects keep their colours.
-
-### Fixed (v1.4 part 4)
-- A diagram tag that was not text could be read as the word "undefined".
-
-### Added (v1.4 part 3)
 - **Motor with 6 terminals** (U1 V1 W1 / U2 V2 W2) for star-delta starting: it runs in STAR when U2 V2 W2 are joined (reduced speed in this model) and in DELTA when every winding is across two phases; it says when the windings are not connected. Star and delta at the same time short the phases and trip the breaker.
 - **Timer relay with a dial**: the dial shows the set delay, − / + change it (0.5–60 s), and a bar fills while it times.
 - **Examples**: *Star-delta starter (hardwired, Electrical Diagram)*, which wires its control circuit from the diagram; *Star-delta starter (PLC)* with ladder; *Forward / reverse (PLC)* with ladder and contactor interlocks.
 - An opened project whose Electrical Diagram is not wired yet is wired at once.
-
-### Changed
-- **Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. The *Panel & Plant* view is removed: push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring. Lessons and the new keyboard-shortcut list are in **Help ▾**.
-- The Schematic tab is now called **Electrical Diagram**.
-- Layouts: *Workbench* is now Ladder + Wiring + HMI; new *Wiring + HMI*, *Electrical Diagram + Ladder* and *Ladder + Electrical Diagram + Wiring*. A layout or window saved with the old panel opens the nearest new one (the Panel view opens the Wiring).
-
-### Added
 - **New Wiring look** (simple and flat, like real DIN-rail hardware): light grey modular bodies, screw terminals with a cross slot, terminal numbers such as 1/L1 and 2/T1. Redrawn: MCB (black toggle, red/green contact windows), contactor (indicator window), motor (blue body, terminal box U1 V1 W1 with star or delta bridges, turning shaft with CW/CCW), compact PLC (LCD that shows the I and Q bits), proximity sensor (red beam when powered).
 - **DIN Rail** (Wiring group): drag a device onto it and it clips onto the rail. Length 200–1000. Hold Alt to place freely.
-- **Terminal Block PE-L1-L2-L3-N**: green PE, grey L1 L2 L3, blue N; each top terminal feeds the one below it.
+- **Terminal Block PE-L1-L2-L3-N**: green PE, grey L1 L2 L3, white N; each top terminal feeds the one below it.
 - **Motor Protection Breaker** (motor circuit breaker): trips on a short circuit (before the MCCB in front of it) and on motor overload; rotary knob ON/OFF/reset, TEST button, current setting Ir, aux contact 13-14.
 - **Wire labels (ferrules)** at both ends of every wire: the conductor that is live on it (L1, L2, L3, N, PE, +24V, 0V) or your own label (wire properties, up to 12 characters). Toggle with *Wire labels* in the Wiring toolbar. Earth wires are drawn green/yellow.
-- **Schematic view** (new tab): build a control circuit like a ladder: a supply rail (L or +24 V), a return rail (N or 0 V) and rungs of contacts and loads, with parallel branches. Symbols: push buttons N.O./N.C., selector, E-stop, limit switch N.O./N.C., contactor/relay/timer/overload contacts, contactor/relay/timer coils, pilot lamp and buzzer.
+- **Electrical Diagram** (new tab): build a control circuit: a supply rail (L or +24 V), a return rail (N or 0 V) and rungs of contacts and loads, with parallel branches. Symbols: push buttons N.O./N.C., selector, E-stop, limit switch N.O./N.C., contactor/relay/timer/overload contacts, contactor/relay/timer coils, pilot lamp and buzzer.
   - Each symbol is a real device in the Wiring, found by its tag (S1, KM1…) or added there for you, and the rungs are wired automatically, so the electrical simulator runs the circuit (shorts, trips and coil voltages included).
-  - Power flow shows live in green. In *☝ Operate* mode you press buttons, turn selectors and trip overloads right on the schematic.
+  - Power flow shows live in green. In *☝ Operate* mode you press buttons, turn selectors and trip overloads right on the diagram.
   - Contacts are checked: a contactor has one N.O. and one N.C. aux contact, a relay two changeover contacts; a rung with a problem is not wired and the problem is listed.
-  - New layouts: *Schematic + Wiring* and *Schematic + Wiring + Panel & Plant*. The schematic is saved with the project, with undo/redo.
-- **Floating windows**: ▦ View → *Float Ladder / Wiring / Panel & Plant / HMI* pops a window out of the main area. Move it by its title bar, resize it from the corner, *⤓ Dock* puts it back. Floating windows stay live and are remembered.
+  - The diagram is saved with the project, with undo/redo.
+- **Floating windows**: ▦ View → *Float Ladder / Electrical Diagram / Wiring / HMI* pops a window out of the main area. Move it by its title bar, resize it from the corner, *⤓ Dock* puts it back. Floating windows stay live and are remembered.
 - **Size** for every device in the wiring (0.5× to 2×), and *Same size for all*. Wires follow the new terminal positions.
 - **New parts**: Fuse (blows before any breaker; click to replace), Buzzer/Horn, Key Selector 2-Pos, Solenoid Valve 2/2, Single-Phase Fan 230 V, Proximity Sensor **NPN**, Pressure Switch and Float Switch (each N.O. or N.C.).
 - **More type options in the properties**: proximity sensor PNP ↔ NPN, pressure/float switch N.O. ↔ N.C.
@@ -48,6 +37,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Move wire bends**: select a wire and drag the round handles on its bends (snapped to the grid). Double-click a handle to remove it, double-click the selected wire (or right-click → *Add a bend here*) to add one.
 - **Smart alignment**: while you drag a device, a wired terminal that comes within 8 px of the other end lines up with it so the wire runs straight; a dashed guide shows it. Hold Alt to place freely.
 - The **event log is saved with the project** (last 200 events).
+
+### Changed
+- **Wire colours follow Philippine practice**: L1 red, L2 yellow, L3 blue, N white, PE green; 24 V DC + red, 0 V blue; 230 V control wiring black. The wire colour palette, *Auto* colours, examples and new diagram wiring use them. Wires in existing projects keep their colours.
+- **Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. The *Panel & Plant* view is removed: push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring. Lessons and the new keyboard-shortcut list are in **Help ▾**.
+- Layouts: *Workbench* is now Ladder + Wiring + HMI; new *Wiring + HMI*, *Electrical Diagram + Ladder* and *Ladder + Electrical Diagram + Wiring*. A layout or window saved with the old panel opens the nearest new one (the Panel view opens the Wiring).
+
+### Fixed
+- A diagram tag that was not text could be read as the word "undefined".
 
 ## [1.2.1] - 2026-10-19
 
