@@ -6,7 +6,7 @@
 # version.json that the in-app updater reads: {version, build, notes}.
 set -euo pipefail
 dest="${1:?usage: scripts/copy-web.sh <target-dir> [build-id] [notes-file]}"
-build="${2:-}"
+build="${2:-${BUILD_ID:-}}"   # or from the BUILD_ID environment variable (release builds)
 notes="${3:-}"
 # SRC: copy the app from another checkout (Pages copies the latest release this way); default: this repository
 root="${SRC:-$(cd "$(dirname "$0")/.." && pwd)}"

@@ -7,7 +7,7 @@
   "private": true,
   "main": "main.js",
   "scripts": {
-    "prepare-app": "bash ../scripts/copy-web.sh app ${BUILD_ID:-}",
+    "prepare-app": "bash ../scripts/copy-web.sh app",
     "start": "npm run prepare-app && electron .",
     "dist:win": "npm run prepare-app && electron-builder --win portable --publish never"
   },
