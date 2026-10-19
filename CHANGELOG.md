@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-19
+
+Free-draw Electrical Diagram with a full IEC component library (90 symbols), new parts in the Wiring, and a cleaner diagram: one line colour like the ladder, power and control circuits in proportion.
+
 ### Added
 - **Free draw** in the Electrical Diagram (*✎ Free draw*): place IEC symbols anywhere on a grid, drag them, rotate them (**R**), and wire terminal to terminal. Every symbol is a real device in the Wiring (found by its tag or added for you) and every drawn wire is wired there, so the simulator runs the drawing; live paths light up and ☝ Operate presses buttons, switches breakers and trips overloads on the drawing.
   - **＋ Library** by group: Sources, Switches, Sensors, Auxiliaries, Coils, Loads, Contactors, Protections, Others, Motors (90 IEC 60617 symbols).

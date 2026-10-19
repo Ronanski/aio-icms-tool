@@ -5,7 +5,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.4.1 (stable)**: owner's "GO STABLE v1.4.1" (2026-10-19). Release PR sets 1.4.1 and CHANGELOG `[1.4.1]`; after merge the Release workflow runs from `main` and then starts `pages.yml`, so the hosted Stable copy (site root) moves to v1.4.1, the first stable with in-app updates. Check the release (portable .exe, .apk, web.zip) and https://ronanski.github.io/aio-icms-tool/version.json before calling it done. Beta = `/beta/` = `main` (live since PR #16). v1.4.0 was the previous stable. APK cert `27:5F:A5:15:06:CC:46…` on every release since v1.2.0. |
+| **Version** | **v1.5.0 (stable)**: owner's "GO STABLE v1.5.0" (2026-10-19). PR #20 (full IEC library, diagram in one colour and in proportion, version 1.5.0, CHANGELOG `[1.5.0]`) merges into `main`, then the Release workflow runs from `main` and starts `pages.yml`, so the hosted Stable copy moves to v1.5.0. Check the release (portable .exe, .apk, web.zip), the APK cert and https://ronanski.github.io/aio-icms-tool/version.json before calling it done. v1.4.1 was the previous stable. APK cert `27:5F:A5:15:06:CC:46…` on every release since v1.2.0. |
 | **Tags** | `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0` and `v1.1.0` created by the Release workflow (plus `v1.4.0` once the stable run publishes). `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-19 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |

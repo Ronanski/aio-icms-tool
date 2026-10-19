@@ -1,6 +1,6 @@
 # PLC Trainer
 
-**Version 1.4.1** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
+**Version 1.5.0** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
 
 A PLC trainer that runs in the browser. Write ladder logic, wire real-looking power and control circuits, press the buttons right in the wiring, build an HMI, and watch the equipment respond.
 
