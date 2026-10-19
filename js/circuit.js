@@ -279,6 +279,26 @@
     },
     status: c => (c.state.closed ? '1-2 closed (ON)' : '1-2 open (OFF)') + (c.state.pw ? ' · coil on' : ''),
   });
+  /* latching relay: a pulse on the SET coil (A1-A2) closes 11-14, a pulse on the RESET coil (B1-B2) opens it again */
+  def('latch', {
+    name: 'Latching Relay (set/reset)', cat: 'Control', view: 'cabinet', prefix: 'KA', w: 90, h: 110,
+    props: { coil: '24VDC' }, pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }],
+    info: 'Two coils: SET A1-A2 and RESET B1-B2. A pulse on SET closes 11-14 (11-12 opens) and it stays, even with no power, until a pulse on RESET.',
+    terms: [{ id: 'A1', x: 10, y: 0 }, { id: 'B1', x: 28, y: 0 }, { id: '11', x: 60, y: 0 }, { id: 'A2', x: 10, y: 110 }, { id: 'B2', x: 28, y: 110 }, { id: '12', x: 52, y: 110 }, { id: '14', x: 72, y: 110 }],
+    init: () => ({ set: false, burnt: false }),
+    conduct: c => c.state.set ? [['11', '14']] : [['11', '12']],
+    evaluate(c, api) {
+      const s = coilOn(c, api, 'A1', 'A2'), r = coilOn(c, api, 'B1', 'B2');
+      if (s && !r) return set(c, 'set', true);
+      if (r && !s) return set(c, 'set', false);
+      return false;
+    },
+    draw(c) {
+      const on = c.state.set;
+      return modBody(90, 110, 'LATCH', 18, 18) + T(22, 42, 'SET', 'dt xs') + T(22, 54, 'RESET', 'dt xs') + R(46, 36, 34, 34, '#2a2a28', 3) + R(50, on ? 40 : 54, 26, 12, on ? '#2fa84f' : '#e9e9e6', 2, '#111') + T(45, 86, c.props.coil, 'dt xs') + (c.state.burnt ? burnt(90, 110) : '');
+    },
+    status: c => c.state.set ? 'SET — 11-14 closed' : 'RESET — 11-12 closed',
+  });
   def('relay', {
     name: 'Control Relay', cat: 'Control', view: 'cabinet', prefix: 'KA', w: 90, h: 110,
     props: { coil: '24VDC' },
@@ -495,6 +515,37 @@
   }
   pb('pb_no', 'Push Button (NO)', 'NO', 'green', 'START');
   pb('pb_nc', 'Push Button (NC)', 'NC', 'red', 'STOP');
+  def('pb_co', {
+    name: 'Push Button NO + NC', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 70, h: 90,
+    props: { color: 'black', text: 'JOG' },
+    pdefs: [{ k: 'color', n: 'Color', opts: Object.keys(COLORS) }, { k: 'text', n: 'Legend' }],
+    info: 'Momentary push button with two contact blocks: 13-14 N.O. closes and 21-22 N.C. opens while pressed (jog, interlocks).',
+    terms: [{ id: '13', x: 10, y: 90 }, { id: '14', x: 26, y: 90 }, { id: '21', x: 44, y: 90 }, { id: '22', x: 60, y: 90 }],
+    init: () => ({ pressed: false }),
+    transient: ['pressed'],
+    conduct: c => c.state.pressed ? [['13', '14']] : [['21', '22']],
+    onPart(c, p, ev) { if (p === 'btn') { c.state.pressed = ev === 'down'; return true; } },
+    draw(c) {
+      const pr = c.state.pressed, col = COLORS[c.props.color] || COLORS.black;
+      return R(0, 0, 70, 90, '#2b2a28', 6, '#111') + R(6, 4, 58, 13, '#f2efe6', 2, '#999') + T(35, 13.5, c.props.text || '', 'dt xs') +
+        `<g class="part" data-part="btn"><circle cx="35" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="35" cy="42" r="${pr ? 13.5 : 15}" fill="${col}" stroke="rgba(0,0,0,.4)"/></g>` + R(8, 66, 54, 12, '#d7d3ca', 2, '#777') + T(35, 75, 'NO + NC', 'dt xs');
+    },
+    status: c => c.state.pressed ? 'Pressed' : 'Released',
+  });
+  def('foot', {
+    name: 'Foot Switch', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 80, h: 70,
+    info: 'Foot pedal: 13-14 N.O. closes while pressed, 21-22 N.C. opens.',
+    terms: [{ id: '13', x: 12, y: 70 }, { id: '14', x: 30, y: 70 }, { id: '21', x: 50, y: 70 }, { id: '22', x: 68, y: 70 }],
+    init: () => ({ pressed: false }),
+    transient: ['pressed'],
+    conduct: c => c.state.pressed ? [['13', '14']] : [['21', '22']],
+    onPart(c, p, ev) { if (p === 'btn') { c.state.pressed = ev === 'down'; return true; } },
+    draw(c) {
+      const pr = c.state.pressed;
+      return `<path d="M4 50 L76 50 L70 20 L10 20 Z" fill="#f2c230" stroke="#8a6a10"/>` + `<g class="part" data-part="btn"><path d="M14 ${pr ? 38 : 30} L66 ${pr ? 34 : 22} L66 ${pr ? 40 : 30} L14 ${pr ? 44 : 38} Z" fill="#2a2a28" stroke="#111"/><rect x="0" y="10" width="80" height="45" fill="transparent"/></g>` + T(40, 62, 'FOOT', 'dt xs');
+    },
+    status: c => c.state.pressed ? 'Pressed' : 'Released',
+  });
   def('estop', {
     name: 'Emergency Stop', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 80, h: 100,
     info: 'Latching mushroom head. NC 11-12 opens when pushed, NO 13-14 closes. Click again to twist-release.',
@@ -647,6 +698,85 @@
     },
     status: c => c.state.tripped ? 'TRIPPED (earth fault) — click the handle to reset' : c.state.on ? 'ON' : 'OFF',
   });
+  /* more pole counts of the same protection devices */
+  const P4 = { ins: ['1', '3', '5', '7'], outs: ['2', '4', '6', '8'] };
+  const polesTerms = (ins, outs, w, h) => [...ins.map((t, i) => ({ id: t, x: Math.round(w / (ins.length + 1) * (i + 1)), y: 0 })), ...outs.map((t, i) => ({ id: t, x: Math.round(w / (outs.length + 1) * (i + 1)), y: h }))];
+  const pairs = (ins, outs) => ins.map((t, i) => [t, outs[i]]);
+  function fuseN(type, n) {
+    const ins = P4.ins.slice(0, n), outs = P4.outs.slice(0, n), w = 30 + n * 28;
+    def(type, {
+      name: `Fuse ${n}-Pole`, cat: 'Protection', view: 'power', prefix: 'FU', w, h: 90, breaker: 0.5,
+      props: { rating: '10A' }, pdefs: [{ k: 'rating', n: 'Rating', opts: ['2A', '4A', '6A', '10A', '16A', '25A', '32A'] }],
+      info: `${n} cartridge fuses in one carrier: ${ins.join('-')} → ${outs.join('-')}. A short circuit blows them before any breaker. Click to replace.`,
+      terms: polesTerms(ins, outs, w, 90),
+      init: () => ({ tripped: false }), closed: c => !c.state.tripped,
+      conduct: c => c.state.tripped ? null : pairs(ins, outs),
+      onPart(c, p, ev) { if (p === 'f' && ev === 'down' && c.state.tripped) { c.state.tripped = false; return true; } },
+      draw(c) {
+        const b = c.state.tripped;
+        return modBody(w, 90, c.props.rating, 14, 14) + `<g class="part" data-part="f">` + polesTerms(ins, outs, w, 90).slice(0, n).map(({ x }) => R(x - 8, 30, 16, 40, '#e9e5dc', 6, '#555') +
+          (b ? `<path d="M${x - 6} 38 L${x + 6} 62 M${x + 6} 38 L${x - 6} 62" stroke="#d33a2c" stroke-width="2.5"/>` : `<line x1="${x}" y1="34" x2="${x}" y2="66" stroke="#8a8f96" stroke-width="2"/>`)).join('') + `</g>` + T(w / 2, 82, b ? 'BLOWN' : '', 'dt xs warnt');
+      },
+      status: c => c.state.tripped ? 'BLOWN — click to replace' : 'OK',
+    });
+  }
+  fuseN('fuse2', 2); fuseN('fuse4', 4);
+  def('mcb4', {
+    name: 'MCB 4-Pole', cat: 'Protection', view: 'power', prefix: 'QF', w: 130, h: 100, breaker: 1,
+    info: 'Four-pole miniature breaker (L1 L2 L3 N): 1-3-5-7 → 2-4-6-8. Trips on a short circuit.',
+    terms: polesTerms(P4.ins, P4.outs, 130, 100),
+    init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? pairs(P4.ins, P4.outs) : null,
+    onPart: breakerOnPart, draw: c => mcbDraw(c, 130, 4),
+  });
+  def('isol4', {
+    name: 'Disconnector 4-Pole', cat: 'Protection', view: 'power', prefix: 'QS', w: 130, h: 100,
+    info: 'Load-break switch, 4 poles (L1 L2 L3 N): 1-3-5-7 → 2-4-6-8. Never trips. Click the knob to switch.',
+    terms: polesTerms(P4.ins, P4.outs, 130, 100),
+    init: () => ({ on: false }),
+    conduct: c => c.state.on ? pairs(P4.ins, P4.outs) : null,
+    onPart(c, p, ev) { if (p === 'h' && ev === 'down') { c.state.on = !c.state.on; return true; } },
+    draw: c => DEFS.isol3.draw(c).replace(/width="100"/g, 'width="130"').replace(/cx="50"/g, 'cx="65"').replace(/x="45"/g, 'x="60"').replace(/rotate\((\d+) 50 58\)/, 'rotate($1 65 58)'),
+    status: c => (c.state.on ? 'ON' : 'OFF'),
+  });
+  def('fsw3', {
+    name: 'Fuse Disconnector 3-Pole', cat: 'Protection', view: 'power', prefix: 'QS', w: 100, h: 100, breaker: 0.5,
+    props: { rating: '16A' }, pdefs: [{ k: 'rating', n: 'Fuse rating', opts: ['6A', '10A', '16A', '25A', '32A'] }],
+    info: 'Switch with fuses in it (fuse-switch disconnector): 1-3-5 → 2-4-6. Click the knob to switch ON/OFF; the fuses blow on a short circuit (click F to replace them).',
+    terms: polesTerms(['1', '3', '5'], ['2', '4', '6'], 100, 100),
+    init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? pairs(['1', '3', '5'], ['2', '4', '6']) : null,
+    onPart(c, p, ev) {
+      if (ev !== 'down') return;
+      if (p === 'h') { c.state.on = !c.state.on; return true; }
+      if (p === 'f' && c.state.tripped) { c.state.tripped = false; return true; }
+    },
+    draw(c) {
+      const s = c.state;
+      return DEFS.isol3.draw(c).replace('ISOLATOR', 'FUSE SW ' + c.props.rating) + `<g class="part" data-part="f"><rect x="78" y="72" width="18" height="14" rx="3" fill="${s.tripped ? '#d33a2c' : '#e9e5dc'}" stroke="#555"/>${T(87, 82, 'F', `dt xs${s.tripped ? ' light' : ''}`)}</g>`;
+    },
+    status: c => c.state.tripped ? 'Fuses BLOWN — click F to replace' : c.state.on ? 'ON' : 'OFF',
+  });
+  def('rcd4', {
+    name: 'RCD 4-Pole 30 mA', cat: 'Protection', view: 'power', prefix: 'FI', w: 130, h: 100, breaker: 0.8, earthOnly: true,
+    info: 'Residual current device for 3-phase + N: 1-3-5-7 → 2-4-6-8 (7-8 = N). Trips on an earth fault before the breakers. T = test.',
+    terms: polesTerms(P4.ins, P4.outs, 130, 100),
+    init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? pairs(P4.ins, P4.outs) : null,
+    onPart: (c, p, ev) => DEFS.rcd.onPart(c, p, ev),
+    draw: c => mcbDraw(c, 130, 4).replace('>C16<', '>30mA<') + `<g class="part" data-part="test"><rect x="110" y="34" width="14" height="10" rx="2" fill="#2f6fd6" stroke="#1b3f7a"/>${T(117, 42, 'T', 'dt light xs')}</g>`,
+    status: c => DEFS.rcd.status(c),
+  });
+  def('rcbo', {
+    name: 'RCBO 2-Pole (RCD + MCB)', cat: 'Protection', view: 'power', prefix: 'QF', w: 70, h: 100, breaker: 0.9,
+    info: 'Residual current breaker with overcurrent protection: L 1 → 2, N 3 → 4. Trips on an earth fault and on a short circuit, before the MCBs in front of it. T = test.',
+    terms: [{ id: '1', x: 20, y: 0, l: '1 L' }, { id: '3', x: 50, y: 0, l: '3 N' }, { id: '2', x: 20, y: 100, l: '2 L' }, { id: '4', x: 50, y: 100, l: '4 N' }],
+    init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? [['1', '2'], ['3', '4']] : null,
+    onPart: (c, p, ev) => DEFS.rcd.onPart(c, p, ev),
+    draw: c => DEFS.rcd.draw(c).replace('>30mA<', '>B16 30mA<'),
+    status: c => c.state.tripped ? 'TRIPPED — click the handle to reset' : c.state.on ? 'ON' : 'OFF',
+  });
   def('buzzer', {
     name: 'Buzzer / Horn', cat: 'Pilot Devices', view: 'panel', prefix: 'HA', w: 50, h: 80,
     props: { coil: '24VDC' },
@@ -698,10 +828,10 @@
     },
     status: c => c.state.act ? 'Actuated' : 'Free',
   });
-  function prox(type, out) {
+  function prox(type, out, label = 'Proximity Sensor', variant = { PNP: 'prox', NPN: 'prox_npn' }) {
   def(type, {
-    name: 'Proximity Sensor ' + out, cat: 'Sensors', view: 'plant', prefix: 'B', w: 60, h: 90,
-    variant: { n: 'Output type', of: { PNP: 'prox', NPN: 'prox_npn' } },
+    name: label + ' ' + out, cat: 'Sensors', view: 'plant', prefix: 'B', w: 60, h: 90,
+    variant: { n: 'Output type', of: variant },
     info: out === 'PNP'
       ? '3-wire PNP sensor: BN brown = +24 V, BU blue = 0 V, BK black = output (switches +24 V to the PLC input when a target is present; use with a sinking input, COM to 0 V). Click to place/remove the target.'
       : '3-wire NPN sensor: BN brown = +24 V, BU blue = 0 V, BK black = output (switches 0 V to the PLC input when a target is present; use with a sourcing input, COM to +24 V). Click to place/remove the target.',
@@ -727,21 +857,27 @@
   }
   prox('prox', 'PNP');
   prox('prox_npn', 'NPN');
+  prox('photo', 'PNP', 'Photoelectric Sensor', { PNP: 'photo', NPN: 'photo_npn' });
+  prox('photo_npn', 'NPN', 'Photoelectric Sensor', { PNP: 'photo', NPN: 'photo_npn' });
 
   /* process switches with one contact, N.O. or N.C. (contact type in the properties) */
   function procSwitch(type, base, name, contact, what) {
     const ids = contact === 'NO' ? ['13', '14'] : ['11', '12'];
     def(type, {
-      name: name + (contact === 'NC' ? ' (NC)' : ''), cat: 'Sensors', view: 'plant', prefix: what === 'pressure' ? 'SP' : 'SL', w: 60, h: 90,
+      name: name + (contact === 'NC' ? ' (NC)' : ''), cat: 'Sensors', view: 'plant', prefix: ({ pressure: 'SP', float: 'SL', temp: 'ST', flow: 'SF' })[what], w: 60, h: 90,
       variant: { n: 'Contact type', of: { NO: base, NC: base + '_nc' } },
-      info: `${name}: contact ${ids.join('-')} is ${contact === 'NO' ? 'open, and closes when' : 'closed, and opens when'} the ${what === 'pressure' ? 'pressure reaches the setpoint' : 'liquid lifts the float'}. Click it to change the process value.`,
+      info: `${name}: contact ${ids.join('-')} is ${contact === 'NO' ? 'open, and closes when' : 'closed, and opens when'} the ${({ pressure: 'pressure reaches the setpoint', float: 'liquid lifts the float', temp: 'temperature reaches the setpoint', flow: 'flow is detected' })[what]}. Click it to change the process value.`,
       terms: [{ id: ids[0], x: 15, y: 90 }, { id: ids[1], x: 45, y: 90 }],
       init: () => ({ act: false }),
       conduct: c => (contact === 'NO') === c.state.act ? [ids] : null,
       onPart(c, p, ev) { if (p === 'pv' && ev === 'down') { c.state.act = !c.state.act; return true; } },
       draw(c) {
         const a = c.state.act;
-        const body = what === 'pressure'
+        const body = what === 'temp'
+          ? `<rect x="24" y="6" width="12" height="40" rx="6" fill="#f4f1ea" stroke="#555"/><rect x="27" y="${a ? 12 : 30}" width="6" height="${a ? 34 : 16}" rx="3" fill="#d33a2c"/><circle cx="30" cy="48" r="8" fill="#d33a2c" stroke="#555"/>${T(48, 20, a ? 'HOT' : 'COLD', 'dt xs')}`
+          : what === 'flow'
+          ? `<rect x="4" y="24" width="52" height="18" rx="3" fill="#9aa0a6"/><path d="M10 33 H48 M40 27 L48 33 L40 39" stroke="${a ? '#2f6fd6' : '#666'}" stroke-width="3" fill="none"/>${T(30, 56, a ? 'FLOW' : 'NO FLOW', 'dt xs')}`
+          : what === 'pressure'
           ? `<circle cx="30" cy="34" r="22" fill="#f4f1ea" stroke="#555" stroke-width="2"/><path d="M30 34 L${a ? 44 : 18} ${a ? 24 : 26}" stroke="#d33a2c" stroke-width="2.5" stroke-linecap="round"/><circle cx="30" cy="34" r="3" fill="#333"/>${T(30, 50, a ? 'HIGH' : 'LOW', 'dt xs')}`
           : `<rect x="26" y="4" width="8" height="44" fill="#9aa0a6"/><rect x="8" y="${a ? 18 : 34}" width="44" height="14" rx="7" fill="#f39c1e" stroke="#7a4f14"/>${T(30, a ? 14 : 58, a ? 'HIGH' : 'LOW', 'dt xs')}`;
         return `<g class="part" data-part="pv"><rect x="0" y="0" width="60" height="64" fill="transparent"/>${body}</g>` + R(12, 66, 36, 12, '#d7d3ca', 2, '#777') + T(30, 75, contact, 'dt xs') + led(52, 70, (contact === 'NO') === a, '#f2c230', 3);
@@ -753,6 +889,10 @@
   procSwitch('pswitch_nc', 'pswitch', 'Pressure Switch', 'NC', 'pressure');
   procSwitch('float', 'float', 'Float Switch', 'NO', 'float');
   procSwitch('float_nc', 'float', 'Float Switch', 'NC', 'float');
+  procSwitch('tswitch', 'tswitch', 'Thermostat', 'NO', 'temp');
+  procSwitch('tswitch_nc', 'tswitch', 'Thermostat', 'NC', 'temp');
+  procSwitch('flowsw', 'flowsw', 'Flow Switch', 'NO', 'flow');
+  procSwitch('flowsw_nc', 'flowsw', 'Flow Switch', 'NC', 'flow');
 
   /* ---------- LOADS & EQUIPMENT ---------- */
   const PH = { L1: 0, L2: 1, L3: 2 };
@@ -938,6 +1078,45 @@
   twoSpeed('motor2s', 'Two-Speed Motor (2 windings)', false);
   twoSpeed('dahlander', 'Dahlander Motor (2 speeds)', true);
 
+  def('heater', {
+    name: 'Heater 230V', cat: 'Equipment', view: 'plant', prefix: 'EH', w: 70, h: 70,
+    props: { coil: '230VAC' }, pdefs: [{ k: 'coil', n: 'Rated voltage', opts: RATINGS }],
+    info: 'Resistive heater X1-X2 (e.g. cabinet or tank heater). It glows at its rated voltage; over-voltage burns it.',
+    terms: [{ id: 'X1', x: 20, y: 70 }, { id: 'X2', x: 50, y: 70 }],
+    init: () => ({ on: false, burnt: false }),
+    evaluate(c, api) { return set(c, 'on', coilOn(c, api, 'X1', 'X2')); },
+    draw(c) {
+      const on = c.state.on;
+      return R(4, 4, 62, 52, '#3a3a38', 6, '#111') + `<path d="M12 30 l6 -12 l6 24 l6 -24 l6 24 l6 -24 l6 24 l6 -12" fill="none" stroke="${on ? '#ff6a2a' : '#888'}" stroke-width="3" ${on ? 'filter="url(#fGlow)"' : ''}/>` + T(35, 64, c.props.coil, 'dt xs') + (c.state.burnt ? burnt(70, 70) : '');
+    },
+    status: c => c.state.burnt ? 'Burnt' : c.state.on ? 'Heating' : 'Off',
+  });
+  def('hourmeter', {
+    name: 'Hour Meter', cat: 'Equipment', view: 'panel', prefix: 'P', w: 70, h: 60,
+    props: { coil: '230VAC' }, pdefs: [{ k: 'coil', n: 'Rated voltage', opts: RATINGS }],
+    info: 'Counts the running time while X1-X2 is powered (e.g. across a motor contactor coil). In this simulator it shows simulated seconds.',
+    terms: [{ id: 'X1', x: 20, y: 60 }, { id: 'X2', x: 50, y: 60 }],
+    init: () => ({ on: false, t: 0, burnt: false }),
+    evaluate(c, api) { return set(c, 'on', coilOn(c, api, 'X1', 'X2')); },
+    tick(c, api, dt) { if (c.state.on) c.state.t = Math.round((c.state.t + dt) * 100) / 100; c.state.tD = Math.floor(c.state.t); },
+    draw(c) {
+      const t = c.state.tD || 0, hh = Math.floor(t / 3600), mm = Math.floor(t / 60) % 60, ss = t % 60, pad = n => String(n).padStart(2, '0');
+      return R(2, 2, 66, 44, '#2b2a28', 5, '#111') + R(8, 10, 54, 20, '#c9d86c', 2, '#2d3a1e') + `<text class="lcd" x="35" y="25" text-anchor="middle">${hh}:${pad(mm)}:${pad(ss)}</text>` + T(35, 40, 'h', 'dt light xs') + led(60, 40, c.state.on, '#3ddc63', 2.5);
+    },
+    status: c => `${c.state.tD || 0} s counted${c.state.on ? ' · running' : ''}`,
+  });
+  def('vmeter', {
+    name: 'Voltmeter', cat: 'Equipment', view: 'panel', prefix: 'PV', w: 70, h: 60,
+    info: 'Panel voltmeter between V1 and V2: shows the voltage like the multimeter (it does not conduct).',
+    terms: [{ id: 'V1', x: 20, y: 60 }, { id: 'V2', x: 50, y: 60 }],
+    init: () => ({ v: 0, kind: '' }),
+    transient: ['v', 'kind'],
+    evaluate(c, api) { const v = api.v(c, 'V1', 'V2'); return set(c, 'v', v ? v.v : 0) | set(c, 'kind', v ? v.kind : ''); },
+    draw(c) {
+      return R(2, 2, 66, 44, '#f4f1ea', 5, '#555') + `<path d="M12 36 A24 24 0 0 1 58 36" fill="none" stroke="#555"/><path d="M35 36 L${35 - 20 * Math.cos(Math.min(1, c.state.v / 400) * Math.PI)} ${36 - 20 * Math.sin(Math.min(1, c.state.v / 400) * Math.PI)}" stroke="#d33a2c" stroke-width="2"/>` + T(35, 30, `${c.state.v} V ${c.state.kind}`, 'dt xs') + T(35, 44, 'V', 'dt xs');
+    },
+    status: c => `${c.state.v} V ${c.state.kind}`,
+  });
   def('conveyor', {
     name: 'Conveyor (motor + 2 sensors)', cat: 'Equipment', view: 'plant', prefix: 'CV', w: 380, h: 170,
     info: 'Belt driven by a 3-phase motor (U1 V1 W1). Two PNP photo-eyes: B1 at the infeed, B2 at the discharge (BN +24 V, BU 0 V, BK output). Use +BOX / AUTO to feed boxes.',

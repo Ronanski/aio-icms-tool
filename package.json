@@ -1,6 +1,6 @@
 {
   "name": "plc-trainer",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "PLC trainer: ladder logic, power & control wiring simulator, HMI, forcing.",
   "private": true,
   "scripts": {

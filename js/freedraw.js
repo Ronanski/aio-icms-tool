@@ -15,6 +15,7 @@
     terms: [...ins.map((t, i) => ({ id: t, x: (i - (ins.length - 1) / 2) * 20, y: -30, pole: i })), ...outs.map((t, i) => ({ id: t, x: (i - (outs.length - 1) / 2) * 20, y: 30, pole: i }))],
     ...extra,
   });
+  const sens = (type, out, n, photo) => ({ type, pre: 'B', look: 'sens', label: out, photo, part: 'tgt', n, terms: [{ id: 'BN', x: 0, y: -30 }, { id: 'BU', x: 0, y: 30 }, { id: 'BK', x: 30, y: 0 }] });
   const row = (ids, y, gap = 20) => ids.map((t, i) => ({ id: t, x: (i - (ids.length - 1) / 2) * gap, y, src: true }));
   const LIB = {
     Sources: {
@@ -32,6 +33,27 @@
       estop: two('estop', '11', '12', 'nc', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop' }),
       lsno: two('limit', '13', '14', 'no', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch N.O.' }),
       lsnc: two('limit', '21', '22', 'nc', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch N.C.' }),
+      pbcono: two('pb_co', '13', '14', 'no', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button NO+NC — N.O. 13-14' }),
+      pbconc: two('pb_co', '21', '22', 'nc', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button NO+NC — N.C. 21-22' }),
+      footno: two('foot', '13', '14', 'no', 'S', { act: 'foot', part: 'btn', mom: true, n: 'Foot switch N.O.' }),
+      footnc: two('foot', '21', '22', 'nc', 'S', { act: 'foot', part: 'btn', mom: true, n: 'Foot switch N.C.' }),
+      sel3h: two('sel3', '13', '14', 'no', 'S', { act: 'turn', part: 'l', n: 'Selector H-O-A — HAND 13-14' }),
+      sel3a: two('sel3', '23', '24', 'no', 'S', { act: 'turn', part: 'r', n: 'Selector H-O-A — AUTO 23-24' }),
+    },
+    Sensors: {
+      pswno: two('pswitch', '13', '14', 'no', 'SP', { act: 'press', part: 'pv', n: 'Pressure switch N.O.' }),
+      pswnc: two('pswitch_nc', '11', '12', 'nc', 'SP', { act: 'press', part: 'pv', n: 'Pressure switch N.C.' }),
+      fltno: two('float', '13', '14', 'no', 'SL', { act: 'float', part: 'pv', n: 'Float (level) switch N.O.' }),
+      fltnc: two('float_nc', '11', '12', 'nc', 'SL', { act: 'float', part: 'pv', n: 'Float (level) switch N.C.' }),
+      tswno: two('tswitch', '13', '14', 'no', 'ST', { act: 'temp', part: 'pv', n: 'Thermostat N.O.' }),
+      tswnc: two('tswitch_nc', '11', '12', 'nc', 'ST', { act: 'temp', part: 'pv', n: 'Thermostat N.C.' }),
+      fswno: two('flowsw', '13', '14', 'no', 'SF', { act: 'flow', part: 'pv', n: 'Flow switch N.O.' }),
+      fswnc: two('flowsw_nc', '11', '12', 'nc', 'SF', { act: 'flow', part: 'pv', n: 'Flow switch N.C.' }),
+      // 3-wire DC sensors: BN brown +24 V, BU blue 0 V, BK black output
+      prox: sens('prox', 'PNP', 'Inductive proximity sensor PNP'),
+      proxn: sens('prox_npn', 'NPN', 'Inductive proximity sensor NPN'),
+      photo: sens('photo', 'PNP', 'Photoelectric sensor PNP', true),
+      photon: sens('photo_npn', 'NPN', 'Photoelectric sensor NPN', true),
     },
     Auxiliaries: {
       kmno: two('contactor', '13', '14', 'no', 'KM', { n: 'Contactor aux N.O.' }),
@@ -50,6 +72,8 @@
       km4no: two('contactor4', '13', '14', 'no', 'KM', { n: 'Contactor 4P aux N.O.' }),
       kino: two('impulse', '1', '2', 'no', 'KI', { n: 'Impulse relay contact N.O.', part: 'lever' }),
       kinc: two('impulse', '3', '4', 'nc', 'KI', { n: 'Impulse relay contact N.C.', part: 'lever' }),
+      ltno: two('latch', '11', '14', 'no', 'KA', { n: 'Latching relay contact N.O.' }),
+      ltnc: two('latch', '11', '12', 'nc', 'KA', { n: 'Latching relay contact N.C.' }),
     },
     Coils: {
       kmcoil: two('contactor', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor coil' }),
@@ -58,30 +82,48 @@
       kfcoil: two('timer_off', 'A1', 'A2', 'tcoiloff', 'KT', { n: 'Off-delay timer coil' }),
       km4coil: two('contactor4', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor 4P coil' }),
       kicoil: two('impulse', 'A1', 'A2', 'icoil', 'KI', { n: 'Impulse relay coil' }),
+      ltset: two('latch', 'A1', 'A2', 'coil', 'KA', { n: 'Latching relay SET coil', label: 'S' }),
+      ltrst: two('latch', 'B1', 'B2', 'coil', 'KA', { n: 'Latching relay RESET coil', label: 'R' }),
     },
     Loads: {
       lamp: two('lamp', 'X1', 'X2', 'lamp', 'H', { n: 'Pilot lamp' }),
       horn: two('buzzer', 'X1', 'X2', 'horn', 'HA', { n: 'Buzzer / horn' }),
       valve: two('valve', 'A1', 'A2', 'coil', 'Y', { n: 'Solenoid valve' }),
+      heater: two('heater', 'X1', 'X2', 'heat', 'EH', { n: 'Heater' }),
+      hmeter: two('hourmeter', 'X1', 'X2', 'meter', 'P', { n: 'Hour meter', label: 'h' }),
+      vmeter: two('vmeter', 'V1', 'V2', 'meter', 'PV', { n: 'Voltmeter', label: 'V' }),
+      fan: { n: 'Fan 1~ 230V', type: 'fan', pre: 'M', look: 'motor', label: 'FAN\n1~', terms: [...row(['L', 'N'], -34), { id: 'PE', x: 40, y: 0 }] },
     },
     Contactors: {
       km3: poles('contactor', ['1', '3', '5'], ['2', '4', '6'], 'km', 'KM', { n: 'Contactor main contacts 3P' }),
+      km2: poles('contactor', ['1', '3'], ['2', '4'], 'km', 'KM', { n: 'Contactor main contacts 2P' }),
       km4: poles('contactor4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'km', 'KM', { n: 'Contactor main contacts 4P' }),
     },
     Protections: {
       fu1: poles('fuse', ['1'], ['2'], 'fuse', 'FU', { n: 'Fuse 1P', part: 'f' }),
+      fu2: poles('fuse2', ['1', '3'], ['2', '4'], 'fuse', 'FU', { n: 'Fuse 2P', part: 'f' }),
       fu3: poles('fuse3', ['1', '3', '5'], ['2', '4', '6'], 'fuse', 'FU', { n: 'Fuse 3P', part: 'f' }),
+      fu4: poles('fuse4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'fuse', 'FU', { n: 'Fuse 4P', part: 'f' }),
       mcb1: poles('mcb1', ['1'], ['2'], 'brk', 'QF', { n: 'MCB 1P', part: 'h' }),
       mcb2: poles('mcb2', ['1', '3'], ['2', '4'], 'brk', 'QF', { n: 'MCB 2P', part: 'h' }),
       mcb3: poles('mcb3', ['1', '3', '5'], ['2', '4', '6'], 'brk', 'QF', { n: 'MCB 3P', part: 'h' }),
+      mcb4: poles('mcb4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'brk', 'QF', { n: 'MCB 4P', part: 'h' }),
       qf3: poles('mccb3', ['1', '3', '5'], ['2', '4', '6'], 'brk', 'Q', { n: 'MCCB 3P', part: 'h' }),
       qm3: poles('mpcb', ['1', '3', '5'], ['2', '4', '6'], 'qm', 'QM', { n: 'Motor protection breaker 3P', part: 'h' }),
       ol3: poles('olr', ['1', '3', '5'], ['2', '4', '6'], 'ol', 'F', { n: 'Overload relay (heaters)', part: 'ol' }),
       qs3: poles('isol3', ['1', '3', '5'], ['2', '4', '6'], 'isol', 'QS', { n: 'Disconnector 3P', part: 'h' }),
+      qs4: poles('isol4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'isol', 'QS', { n: 'Disconnector 4P', part: 'h' }),
+      fsw3: poles('fsw3', ['1', '3', '5'], ['2', '4', '6'], 'fsw', 'QS', { n: 'Fuse disconnector 3P', part: 'h' }),
       rcd: poles('rcd', ['1', '3'], ['2', '4'], 'rcd', 'FI', { n: 'RCD 2P 30 mA', part: 'h' }),
+      rcd4: poles('rcd4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'rcd', 'FI', { n: 'RCD 4P 30 mA', part: 'h' }),
+      rcbo: poles('rcbo', ['1', '3'], ['2', '4'], 'rcd', 'QF', { n: 'RCBO 2P (RCD + MCB)', part: 'h' }),
     },
     Others: {
       node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', terms: [{ id: 'J', x: 0, y: 0 }] },
+      // protective earth: wired to the PE of the supply
+      gnd: { n: 'Protective earth (PE)', type: 'jct', pre: 'PE', look: 'gnd', terms: [{ id: 'J', x: 0, y: -20, pe: true }] },
+      // a note on the drawing, no device
+      text: { n: 'Text', type: null, pre: 'TXT', look: 'text', terms: [] },
     },
     Motors: {
       m1: { n: 'Motor 1~ 230V', type: 'motor1', pre: 'M', look: 'motor', label: 'M\n1~', terms: [...row(['L', 'N'], -34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
@@ -95,7 +137,8 @@
   Object.entries(LIB).forEach(([g, o]) => Object.entries(o).forEach(([k, v]) => { K[k] = { ...v, g, n: v.n || k }; }));
   FD.KINDS = K;
   /* TYPE: switch symbols of the same contact (N.O. or N.C.) can be swapped for another actuator */
-  const TYPES = [['pbno', 'selno', 'keyno', 'lsno'], ['pbnc', 'selnc', 'estop', 'lsnc']];
+  const TYPES = [['pbno', 'selno', 'keyno', 'lsno', 'pbcono', 'footno', 'pswno', 'fltno', 'tswno', 'fswno'], ['pbnc', 'selnc', 'estop', 'lsnc', 'pbconc', 'footnc', 'pswnc', 'fltnc', 'tswnc', 'fswnc'],
+    ['prox', 'proxn', 'photo', 'photon']];
 
   /* ---------- data ---------- */
   const ID = /^d\d{1,6}$/;
@@ -103,7 +146,7 @@
     const o = f && typeof f === 'object' ? f : {};
     const num = v => (Number.isFinite(v) ? Math.round(v / 10) * 10 : 0);
     const items = (Array.isArray(o.items) ? o.items : []).filter(i => i && typeof i === 'object' && ID.test(i.id) && Object.prototype.hasOwnProperty.call(K, i.k) && typeof i.tag === 'string' && TAG.test(i.tag))
-      .slice(0, 400).map(i => ({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0 }));
+      .slice(0, 400).map(i => ({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}) }));
     const end = e => { if (typeof e !== 'string') return false; const [id, t] = e.split(':'); const it = items.find(i => i.id === id); return !!it && K[it.k].terms.some(x => x.id === t); };
     const wires = (Array.isArray(o.wires) ? o.wires : []).filter(w => w && typeof w === 'object' && /^fw\d{1,6}$/.test(w.id) && end(w.a) && end(w.b) && w.a !== w.b).slice(0, 2000).map(w => {
       const pts = (Array.isArray(w.pts) ? w.pts : []).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).slice(0, 20).map(q => [num(q[0]), num(q[1])]);
@@ -145,6 +188,7 @@
     const errs = new Map(), used = new Map();
     for (const it of fr().items) {
       const S = K[it.k], dev = H.devOf(it.tag);
+      if (!S.type) continue;
       if (dev && dev.type !== S.type) { errs.set(it, `${it.tag} is a ${DEFS[dev.type].name} in the Wiring, not a ${DEFS[S.type].name}`); continue; }
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
@@ -162,10 +206,13 @@
       if (!it || errs.has(it)) return null;
       const c = ensureType(K[it.k].type, it.tag);
       const tm = K[it.k].terms.find(q => q.id === t);
-      return { k: c.id + ':' + t, pole: tm && tm.pole, src: tm && tm.src ? t : null };
+      return { k: c.id + ':' + t, pole: tm && tm.pole, src: tm && tm.src ? t : tm && tm.pe ? 'PE' : null };
     };
-    // a placed symbol is a device in the Wiring even before it is wired
-    for (const it of F.items) if (!errs.has(it)) ensureType(K[it.k].type, it.tag);
+    // a placed symbol is a device in the Wiring even before it is wired; an earth symbol is wired to the PE of the supply
+    const ok = F.items.filter(it => !errs.has(it) && K[it.k].type);
+    for (const it of ok) ensureType(K[it.k].type, it.tag);
+    const sup = H.circ().comps.find(c => c.type === 'supply3' || c.type === 'supply1');
+    if (sup) for (const it of ok) if (K[it.k].look === 'gnd') addWire(ensureType('jct', it.tag).id + ':J', sup.id + ':PE', col.PE);
     for (const w of F.wires) {
       const a = key(w.a), b = key(w.b);
       if (!a || !b) continue;
@@ -182,12 +229,15 @@
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + t : null; }
   function stateOf(it) {
-    const S = K[it.k], d = H.devOf(it.tag);
+    const S = K[it.k];
+    if (!S.type) return { on: false };
+    const d = H.devOf(it.tag);
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
-    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw) };
-    if (S.look === 'node') return { on: live(d.id + ':J') };
-    if (S.look === 'motor') return { on: st.drive === 'run' };
+    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
+    if (S.look === 'node' || S.look === 'gnd') return { on: live(d.id + ':J') };
+    if (S.look === 'motor') return { on: st.drive === 'run' || (S.type === 'fan' && !!st.on) };
+    if (S.look === 'sens') return { on: !!st.act };
     if (S.look === 'src') return { on: !!(st.on || st.ok) };
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
@@ -206,6 +256,11 @@
       therm: `<path class="thin" d="M${ax} -6 h-5 v6 h5 v6"/>`,
       delay: `<path class="thin" d="M${ax} -7 a7 7 0 0 0 0 14"/>`,
       delayoff: `<path class="thin" d="M${ax - 7} -7 a7 7 0 0 1 0 14"/>`,
+      foot: `<path class="thin" d="M${ax} -6 V5 h-7 l-2 -4"/>`,
+      press: `<rect class="thin" x="${ax - 10}" y="-5" width="10" height="10"/><path class="thin" d="M${ax - 7} 3 V-3 h3 a1.5 1.5 0 0 1 0 3 h-3"/>`,
+      float: `<path class="thin" d="M${ax} 0 h-4"/><circle class="thin" cx="${ax - 8}" cy="0" r="4"/><path class="thin" d="M${ax - 14} 6 h12"/>`,
+      temp: `<rect class="thin" x="${ax - 10}" y="-5" width="10" height="10"/><ellipse class="thin" cx="${ax - 5}" cy="0" rx="2.5" ry="3.5"/><path class="thin" d="M${ax - 7.5} 0 h5"/>`,
+      flow: `<path class="thin" d="M${ax} -6 V6 M${ax} -6 l-8 3 l8 3"/>`,
     })[a] || '';
     if (S.look === 'no' || S.look === 'nc') {
       o.push(stub(0, -30, -14), stub(0, 14, 30));
@@ -213,6 +268,19 @@
       if (S.act) o.push(`<path class="thin dash" d="M${S.look === 'nc' ? 6 : -6} 0 H-26"/>`, actMark(S.act, -26));
     } else if (S.look === 'node') {
       o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
+    } else if (S.look === 'gnd') {
+      o.push(`<path class="pe" d="M0 -20 V0 M-10 0 H10 M-6 4 H6 M-2 8 H2"/>`);
+    } else if (S.look === 'text') {
+      // drawn by labels()
+    } else if (S.look === 'heat') {
+      o.push(stub(0, -30, -14), stub(0, 14, 30), `<rect x="-7" y="-14" width="14" height="28"/><path class="thin" d="M-7 -7 H7 M-7 0 H7 M-7 7 H7"/>`);
+    } else if (S.look === 'meter') {
+      o.push(stub(0, -30, -12), stub(0, 12, 30), `<circle cx="0" cy="0" r="12"/>`);
+    } else if (S.look === 'sens') {
+      // 3-wire sensor: a square body with the sensing symbol (diamond = proximity, arrows = light beam)
+      o.push(stub(0, -30, -12), stub(0, 12, 30), `<path d="M12 0 H30"/><rect x="-12" y="-12" width="24" height="24"/>`);
+      o.push(S.photo ? `<path class="thin" d="M-22 -10 l8 6 m-4 0 h4 v-3 M-22 2 l8 6 m-4 0 h4 v-3"/>` : `<path class="thin" d="M-7 0 L0 -7 L7 0 L0 7 Z"/>`);
+      if (st.on) o.push(`<path class="thin" d="M3 9 L9 3"/>`);
     } else if (['coil', 'tcoil', 'tcoiloff', 'icoil'].includes(S.look)) {
       o.push(stub(0, -30, -9), stub(0, 9, 30), `<rect x="-14" y="-9" width="28" height="18"/>`);
       if (S.look === 'icoil') o.push(`<path class="thin" d="M-8 5 V-5 H0 V5 H8 V-5"/>`);
@@ -231,7 +299,8 @@
       // multi-pole power device: one symbol per pole and a dashed link
       S.terms.filter(t => t.y < 0).forEach(t => {
         const x = t.x;
-        if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/><path class="thin" d="M${x} -12 V12"/>`);
+        if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
+        else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/><path class="thin" d="M${x} -12 V12"/>`);
         else if (S.look === 'ol') o.push(stub(x, -30, -10), stub(x, 10, 30), `<path d="M${x} -10 h-4 v8 h8 v8 h-4 V10"/>`);
         else {
           o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/>`);
@@ -249,14 +318,18 @@
   }
   function labels(it, S) {
     if (S.look === 'node') return '';
+    if (S.look === 'text') return `<text class="ftext" x="${it.x}" y="${it.y + 4}">${esc(it.txt || '')}</text>`;
     // upright text at rotated positions
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
-    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn'].includes(S.look);
+    if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
+    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter', 'sens'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' ? at(-30, -14) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
+    // meter letter, S/R of a latching coil (in the symbol), PNP/NPN of a sensor (beside it)
+    if (S.label && ['meter', 'coil', 'sens'].includes(S.look)) { const [mx, my] = S.look === 'sens' ? at(26, -16) : at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     S.terms.forEach(t => {
       const lx = t.x + (t.id === 'PE' && S.look === 'motor' ? 2 : 5), ly = t.y + (t.y < 0 ? -2 : t.y > 0 ? 10 : -6);
       const [x, y] = at(lx, ly);
@@ -279,7 +352,11 @@
     }
     for (const it of F.items) {
       const S = K[it.k], st = stateOf(it), err = FD.errs.has(it);
-      o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}">${S.look === 'node' ? `<rect class="hit" x="${it.x - 8}" y="${it.y - 8}" width="16" height="16" rx="8"/>` : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`}`);
+      const hit = S.look === 'node' ? `<rect class="hit" x="${it.x - 8}" y="${it.y - 8}" width="16" height="16" rx="8"/>`
+        : S.look === 'text' ? `<rect class="hit" x="${it.x - 6}" y="${it.y - 12}" width="${(it.txt || '').length * 7.5 + 12}" height="22" rx="4"/>`
+        : S.look === 'gnd' ? `<rect class="hit" x="${it.x - 14}" y="${it.y - 24}" width="28" height="36" rx="4"/>`
+        : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`;
+      o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
       S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
@@ -382,7 +459,7 @@
     const S = K[k], used = new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag)]);
     const same = H.circ().comps.filter(c => c.type === S.type).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
-    if (!['Sources', 'Switches', 'Loads', 'Motors'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
+    if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
     let n = 1; while (used.has(S.pre + n)) n++;
     return { def: S.pre + n, list: same };
   }
@@ -406,23 +483,28 @@
   }
   FD.add = function (k, tag, x, y) {
     const go = t => {
-      if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
+      if (k === 'text') { if (!t) return 'Type some text'; } else if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
       H.snap();
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
       const cx = x != null ? x : snap10((r.width / 2 - view.x) / view.k) + (F.items.length % 5) * 20, cy = y != null ? y : snap10((r.height / 2 - view.y) / view.k);
-      const it = { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
+      const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
       F.items.push(it); sel = { i: it.id };
       H.changed();
       return undefined;
     };
     if (tag) return go(tag);
+    if (k === 'text') { UI.form('Text', [{ key: 't', label: 'Text', value: '' }], v => go(v.t.trim())); return undefined; }
     const sg = suggest(k);
     UI.form(K[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
       '<p class="help">Use the tag of a device in the Wiring (its contacts and coil share the tag), or a new tag: the device is added to the Wiring for you.</p>');
   };
   FD.retag = function (it) {
     if (!it) return;
+    if (it.k === 'text') {
+      UI.form('Edit text', [{ key: 't', label: 'Text', value: it.txt || '' }], v => { const t = v.t.trim(); if (!t) return 'Type some text'; H.snap(); it.txt = t.slice(0, 80); H.changed(); return undefined; });
+      return;
+    }
     UI.form(`${K[it.k].n} — tag`, [{ key: 't', label: 'Device tag', value: it.tag, list: suggest(it.k).list }], v => {
       const t = v.t.trim(); if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
       H.snap(); it.tag = t; H.changed();
@@ -434,8 +516,25 @@
   };
   FD.cycleType = function () {
     const it = sel && sel.i && itemOf(sel.i); if (!it) return;
-    const list = TYPES.find(l => l.includes(it.k)); if (!list) { UI.toast('Only switch contacts have types'); return; }
+    const list = TYPES.find(l => l.includes(it.k)); if (!list) { UI.toast('Only switch contacts and sensors have types'); return; }
     H.snap(); it.k = list[(list.indexOf(it.k) + 1) % list.length]; H.changed();
+  };
+  /* a copy of the selected symbol next to it, with a new tag (a text keeps its text) */
+  FD.copy = function () {
+    const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
+    const F = fr(), S = K[it.k];
+    let tag = it.tag;
+    if (S.type) { const used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
+    H.snap(); F.seq++;
+    const c = { ...it, id: 'd' + F.seq, tag, x: it.x + 40, y: it.y + 40 };
+    F.items.push(c); sel = { i: c.id }; H.changed();
+  };
+  /* drawing order: to the front (drawn last) or to the back */
+  FD.order = function (front) {
+    const it = sel && sel.i && itemOf(sel.i); if (!it) return;
+    const F = fr(); H.snap();
+    F.items = F.items.filter(i => i !== it); if (front) F.items.push(it); else F.items.unshift(it);
+    H.changed();
   };
   FD.del = function () {
     const F = fr();
@@ -447,6 +546,7 @@
     const k = ev.key;
     if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); FD.del(); }
     else if (k === 'r' || k === 'R') { ev.preventDefault(); FD.rotate(); }
+    else if (k === 'd' || k === 'D') { ev.preventDefault(); FD.copy(); }
     else if (k === 'Escape') { wiring = null; sel = null; if (body) FD.render(body); H.side(); }
   };
   /* the library: pick a group, then a symbol (one long list would not fit a phone screen) */
@@ -460,17 +560,18 @@
     const it = FD.selected(), errs = FD.errs ? [...FD.errs.values()] : [];
     const d = it && H.devOf(it.tag);
     return `${it ? `<h5>${esc(K[it.k].n)} <code>-${esc(it.tag)}</code></h5>
-      <div class="btn-row"><button class="btn" data-fd="retag">Tag…</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn danger" data-fd="del">Delete</button></div>
-      <p class="help">${d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>` : '<p class="help">Select a symbol to rotate it, change its tag or its type.</p>'}
+      <div class="btn-row"><button class="btn" data-fd="retag">${it.k === 'text' ? 'Edit text…' : 'Tag…'}</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Copy (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>` : '<p class="help">Select a symbol to rotate it, change its tag or its type.</p>'}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
       <ul class="tips"><li><b>＋ Library</b> adds a symbol. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
       <li>Click a terminal ● then another to draw a wire. Every drawn wire is wired in the Wiring for you.</li>
       <li>End a wire on another wire to branch it (a junction dot). Double-click a wire to add a bend, drag the bend, double-click it to remove it.</li>
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
+      <li><b>D</b> copies the selected symbol. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
       <li>☝ Operate: press buttons, switch breakers and trip overloads on the drawing.</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
-    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, del: FD.del })[b.dataset.fd](); });
+    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del })[b.dataset.fd](); });
   };
   window.FreeDraw = FD;
 })();

@@ -988,7 +988,7 @@ function check(name, cond, info = '') {
     return [...FreeDraw.errs.values()].some(m => m.includes('S1'));
   }));
   // junction: end a new wire on an existing wire
-  await page.evaluate(() => { const F = App.project.schematic.free; F.items.push({ id: 'd90', k: 'lamp', tag: 'H8', x: 330, y: 460, r: 0 }); Schematic.sync(); Schematic.render(); });
+  await page.evaluate(() => { const F = App.project.schematic.free; F.items.push({ id: 'd90', k: 'lamp', tag: 'H8', x: 330, y: 460, r: 0 }); Schematic.sync(); Schematic.render(); }); await wait(200);
   const jStart = await (await page.$('#view-schematic [data-ft="d90:X1"]')).boundingBox();
   await page.mouse.click(jStart.x + jStart.width / 2, jStart.y + jStart.height / 2); await wait(100);
   const wSeg = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => x.a === 'd2:2' && x.b === 'd3:11') || App.project.schematic.free.wires.find(x => x.b === 'd2:2' && x.a === 'd3:11'); const el = document.querySelector(`#view-schematic [data-fw="${w.id}"] .fwh`); const r = el.getBoundingClientRect(); return { id: w.id, x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
@@ -1012,6 +1012,82 @@ function check(name, cond, info = '') {
   check('4-pole contactor pulls in and closes pole 7-8', (await get('KM4', 'state.pulled')) && await page.evaluate(() => { const c = App.project.circuit.comps.find(x => x.props.label === 'KM4'); return App.api.sameNet(c.id + ':7', c.id + ':8'); }));
   await tap('S2');
   check('impulse relay: a pulse from S2 switches it off again', !(await get('H1', 'state.on')));
+
+  console.log('v1.5 part 3: full IEC component library');
+  check('the new parts are in the parts list', await page.evaluate(() => ['tswitch', 'tswitch_nc', 'flowsw', 'flowsw_nc', 'photo', 'photo_npn', 'pb_co', 'foot', 'fuse2', 'fuse4', 'mcb4', 'isol4', 'fsw3', 'rcd4', 'rcbo', 'latch', 'heater', 'hourmeter', 'vmeter'].every(t => Circuit.DEFS[t] && !Circuit.DEFS[t].hidden)));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcbo', { label: 'QF2' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', q, 'PE');
+    App.openNew({ name: 'RCBO earth fault', circuit: circ });`));
+  await wait(300);
+  check('an earth fault trips the RCBO, not the MCB in front of it', (await get('QF2', 'state.tripped')) && !(await get('QF1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcbo', { label: 'QF2' }, { on: true });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', r, '4');
+    App.openNew({ name: 'RCBO short', circuit: circ });`));
+  await wait(300);
+  check('a short circuit after the RCBO trips the RCBO, not the MCB in front of it', (await get('QF2', 'state.tripped')) && !(await get('QF1', 'state.tripped')));
+  await build(new Function(kit + `
+    const q = add('supply3', { label: 'Q0' }), f = add('fuse4', { label: 'FU1' }), m = add('mcb4', { label: 'QF1' }, { on: true }), s = add('isol4', { label: 'QS1' }, { on: true });
+    w(q, 'L1', s, '1'); w(q, 'L2', s, '3'); w(q, 'L3', s, '5'); w(q, 'N', s, '7'); ['2', '4', '6', '8'].forEach((t, i) => w(s, t, m, ['1', '3', '5', '7'][i])); ['2', '4', '6', '8'].forEach((t, i) => w(m, t, f, ['1', '3', '5', '7'][i])); w(f, '6', f, '8');
+    App.openNew({ name: 'Fuse 4P', circuit: circ });`));
+  await wait(300);
+  check('a 4-pole fuse blows on an L3-N short before the 4-pole MCB; the 4-pole disconnector passes power', (await get('FU1', 'state.tripped')) && !(await get('QF1', 'state.tripped')) && (await get('QS1', 'state.on')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), s1 = add('pb_no', { label: 'S1' }), s2 = add('pb_no', { label: 'S2' }), k = add('latch', { label: 'KA1', coil: '230VAC' }), h = add('lamp', { label: 'H1', coil: '230VAC' }), v = add('vmeter', { label: 'PV1' }), p = add('hourmeter', { label: 'P1' });
+    w(q, 'L', s1, '13'); w(q, 'L', s2, '13'); w(s1, '14', k, 'A1'); w(k, 'A2', q, 'N'); w(s2, '14', k, 'B1'); w(k, 'B2', q, 'N');
+    w(q, 'L', k, '11'); w(k, '14', h, 'X1'); w(h, 'X2', q, 'N'); w(k, '14', p, 'X1'); w(p, 'X2', q, 'N'); w(q, 'L', v, 'V1'); w(q, 'N', v, 'V2');
+    App.openNew({ name: 'Latch', circuit: circ });`));
+  await wait(300);
+  check('a voltmeter reads 230 V between L and N', (await get('PV1', 'state.v')) === 230, String(await get('PV1', 'state.v')));
+  await tap('S1');
+  check('latching relay: a pulse on SET closes 11-14 and it stays', (await get('KA1', 'state.set')) && (await get('H1', 'state.on')));
+  await wait(1200);
+  check('an hour meter counts while it is powered', (await get('P1', 'state.t')) > 0.5, String(await get('P1', 'state.t')));
+  await tap('S2');
+  check('latching relay: a pulse on RESET opens it again', !(await get('KA1', 'state.set')) && !(await get('H1', 'state.on')));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), t = add('tswitch', { label: 'ST1' }), e = add('heater', { label: 'EH1' }), b = add('pb_co', { label: 'S1' }), h1 = add('lamp', { label: 'H1', coil: '230VAC' }), h2 = add('lamp', { label: 'H2', coil: '230VAC' }), fs = add('foot', { label: 'S2' }), h3 = add('lamp', { label: 'H3', coil: '230VAC' });
+    w(q, 'L', t, '13'); w(t, '14', e, 'X1'); w(e, 'X2', q, 'N'); w(q, 'L', b, '13'); w(b, '14', h1, 'X1'); w(h1, 'X2', q, 'N'); w(q, 'L', b, '21'); w(b, '22', h2, 'X1'); w(h2, 'X2', q, 'N');
+    w(q, 'L', fs, '13'); w(fs, '14', h3, 'X1'); w(h3, 'X2', q, 'N');
+    App.openNew({ name: 'Sensors', circuit: circ });`));
+  await wait(300);
+  check('heater is off while the thermostat contact is open, push button NO+NC: N.C. lamp on', !(await get('EH1', 'state.on')) && !(await get('H1', 'state.on')) && (await get('H2', 'state.on')));
+  await part('ST1', 'pv', 'down'); await wait(400);
+  check('the thermostat closes 13-14 at its setpoint and the heater heats', await get('EH1', 'state.on'));
+  await part('S1', 'btn', 'down'); await part('S2', 'btn', 'down'); await wait(400);
+  check('pressing the NO+NC button swaps the lamps, the foot switch lights its lamp', (await get('H1', 'state.on')) && !(await get('H2', 'state.on')) && (await get('H3', 'state.on')));
+  await part('S1', 'btn', 'up'); await part('S2', 'btn', 'up'); await wait(400);
+  check('releasing them springs back', !(await get('H1', 'state.on')) && (await get('H2', 'state.on')) && !(await get('H3', 'state.on')));
+  // free draw: the new symbols, a text note, PE earth and copy
+  await page.evaluate(() => {
+    const it = (id, k, tag, x, y) => ({ id, k, tag, x, y, r: 0 });
+    const items = [it('d1', 'src1', 'Q0', 100, 0), it('d2', 'rcbo', 'QF1', 100, 120), it('d3', 'tswno', 'ST1', 90, 240), it('d4', 'heater', 'EH1', 90, 340), it('d5', 'gnd', 'PE1', 300, 340), it('d6', 'prox', 'B1', 400, 200),
+      it('d7', 'ltset', 'KA1', 500, 200), it('d8', 'ltno', 'KA1', 600, 200), it('d9', 'fsw3', 'QS1', 700, 200), { ...it('d10', 'text', 'TXT', 100, 500), txt: 'Tank heater' }];
+    const w = [['d1:L', 'd2:1'], ['d1:N', 'd2:3'], ['d2:2', 'd3:13'], ['d3:14', 'd4:X1'], ['d4:X2', 'd2:4']];
+    App.openNew({ name: 'Free lib', schematic: { free: { items, wires: w.map((x, i) => ({ id: 'fw' + (i + 1), a: x[0], b: x[1] })), seq: 20 } } });
+    App.setLayout('single'); App.showView('schematic');
+  });
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('free draw: the new symbols become devices (text is only a note)', await page.evaluate(() => ['QF1:rcbo', 'ST1:tswitch', 'EH1:heater', 'PE1:jct', 'B1:prox', 'KA1:latch', 'QS1:fsw3'].every(x => App.project.circuit.comps.some(c => c.props.label + ':' + c.type === x)) && !App.project.circuit.comps.some(c => c.props.label === 'TXT') && FreeDraw.errs.size === 0 && document.querySelector('#view-schematic .ftext').textContent === 'Tank heater'));
+  check('free draw: the PE earth symbol is wired to the supply PE', await page.evaluate(() => { const C = App.project.circuit, pe = C.comps.find(c => c.props.label === 'PE1'), q = C.comps.find(c => c.props.label === 'Q0'); return App.api.sameNet(pe.id + ':J', q.id + ':PE'); }));
+  check('free draw: the text survives save and load', await page.evaluate(() => { App.saveNow(); App.openSaved(App.currentId); return App.project.schematic.free.items.find(i => i.id === 'd10').txt === 'Tank heater'; }));
+  await page.evaluate(() => App.showView('schematic'));
+  const fp = await (await page.$('#view-schematic [data-fi="d6"] .hit')).boundingBox();
+  await page.mouse.click(fp.x + 6, fp.y + 6); await wait(100);
+  await page.keyboard.press('d'); await wait(200);
+  check('free draw: D copies the selected symbol with a new tag', await page.evaluate(() => { const F = App.project.schematic.free; const c = F.items[F.items.length - 1]; return F.items.length === 11 && c.k === 'prox' && c.tag === 'B2' && App.project.circuit.comps.some(x => x.props.label === 'B2' && x.type === 'prox'); }));
+  await page.click('#view-schematic [data-fd="type"]'); await wait(150);
+  check('free draw: Type ⇄ turns an inductive sensor into an NPN one', await page.evaluate(() => { const F = App.project.schematic.free; return F.items[F.items.length - 1].k === 'proxn'; }));
+  await page.click('#view-schematic [data-fd="back"]'); await wait(150);
+  check('free draw: To back draws the symbol first', await page.evaluate(() => App.project.schematic.free.items[0].k === 'proxn'));
+  await page.click('#view-schematic [data-smode="run"]');
+  const fT = await (await page.$('#view-schematic [data-fi="d3"] .hit')).boundingBox();
+  await page.mouse.click(fT.x + fT.width / 2, fT.y + fT.height / 2); await wait(500);
+  check('free draw: clicking the thermostat on the drawing switches the heater on', await get('EH1', 'state.on'));
+  await page.click('#view-schematic [data-smode="edit"]');
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
+  await page.click('#view-schematic [data-sstyle="iec"]');
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));

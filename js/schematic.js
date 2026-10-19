@@ -339,7 +339,12 @@
     return { x: cx, live };
   }
   /* ---------- IEC view: L on top, N at the bottom, one numbered column per current path, power circuit on the right ---------- */
-  const VE = 92, VL = 104, VX = 60, VB = 14, VEMPTY = 60, RT = 52, FW = 112, PE_ = 92;
+  const VE = 92, VL = 104, VX = 60, VB = 14, VEMPTY = 60, RT = 52;
+  /* power circuit: PP = spacing of the three poles, FW = width of one feeder lane, PE_ = height of one device row
+     (stretched so the power circuit is as tall as the control circuit beside it) */
+  const PP = 26, FW = 50 + PP * 2 + 46;
+  let PE_ = 92;
+  const pxs = lx => [lx + 50, lx + 50 + PP, lx + 50 + PP * 2];
   const DV = { A: VE, C: VL, E: VEMPTY, P: VB };
   let style = 'iec';
   try { const v = localStorage.getItem('plc-trainer.schStyle'); style = v === 'nema' || v === 'free' ? v : 'iec'; } catch (e) { /* private mode */ }
@@ -419,7 +424,7 @@
     return { c, ins: K.ins.map(t => c.id + ':' + t), outs: K.outs ? K.outs.map(t => c.id + ':' + t) : null };
   }
   function psym(e, lx, cy, o, path) {
-    const K = PK[e.k], xs = [lx + 50, lx + 66, lx + 82], k = powerKeys(e), st = k ? k.c.state : {};
+    const K = PK[e.k], xs = pxs(lx), k = powerKeys(e), st = k ? k.c.state : {};
     const err = SC.perrs && SC.perrs.has(e), sel = SELP && SELP.path === path ? ' sel' : '';
     o.push(`<g class="sel-el pel${sel}" data-pp="${path}"><rect class="hit" x="${lx + 2}" y="${cy - PE_ / 2 + 2}" width="${FW - 4}" height="${PE_ - 4}" rx="6"/>`);
     o.push(`<text class="stag iec" x="${lx + 30}" y="${cy + 4}">-${esc(e.tag)}</text>`);
@@ -432,9 +437,9 @@
     o.push(`<g class="${cls}">`);
     if (e.k === 'm3') {
       const run = st.drive === 'run';
-      o.push(`<path d="M${xs[0]} ${cy - 18} L${xs[1] - 6} ${cy - 8} M${xs[2]} ${cy - 18} L${xs[1] + 6} ${cy - 8}"/><circle cx="${xs[1]}" cy="${cy + 6}" r="17" class="${run ? 'mon' : ''}"/>`);
-      o.push(`<text class="mtxt" x="${xs[1]}" y="${cy + 3}">M</text><text class="mtxt sm" x="${xs[1]}" y="${cy + 16}">3~</text>`);
-      o.push(`<path class="pe" d="M${xs[1] + 17} ${cy + 6} H${lx + FW - 6} V${cy + 22} M${lx + FW - 14} ${cy + 22} H${lx + FW + 2} M${lx + FW - 11} ${cy + 26} H${lx + FW - 1} M${lx + FW - 8} ${cy + 30} H${lx + FW - 4}"/><text class="sterm" x="${lx + FW - 22}" y="${cy + 38}">PE</text>`);
+      o.push(`<path d="M${xs[0]} ${cy - 18} L${xs[1] - 9} ${cy - 10} M${xs[2]} ${cy - 18} L${xs[1] + 9} ${cy - 10}"/><circle cx="${xs[1]}" cy="${cy + 8}" r="20" class="${run ? 'mon' : ''}"/>`);
+      o.push(`<text class="mtxt" x="${xs[1]}" y="${cy + 5}">M</text><text class="mtxt sm" x="${xs[1]}" y="${cy + 18}">3~</text>`);
+      o.push(`<path class="pe" d="M${xs[1] + 20} ${cy + 8} H${lx + FW - 6} V${cy + 22} M${lx + FW - 14} ${cy + 22} H${lx + FW + 2} M${lx + FW - 11} ${cy + 26} H${lx + FW - 1} M${lx + FW - 8} ${cy + 30} H${lx + FW - 4}"/><text class="sterm" x="${lx + FW - 22}" y="${cy + 38}">PE</text>`);
     } else if (e.k === 'ol3') {
       o.push(`<rect x="${xs[0] - 8}" y="${t + 4}" width="${xs[2] - xs[0] + 16}" height="20"/>`);
       xs.forEach(x => o.push(`<path d="M${x} ${t} V${t + 8} h-4 v8 h4 V${b}"/>`));
@@ -454,7 +459,7 @@
   const isSd = e => !!PK[e.k].sd;
   const feedW = f => (f.elems.some(isSd) ? 2 : 1) * FW;
   function psymSd(e, lx, y0, o, path) {
-    const xs = [lx + 50, lx + 66, lx + 82], ds = [lx + FW + 30, lx + FW + 46, lx + FW + 62];
+    const xs = pxs(lx), ds = pxs(lx + FW - 20);
     const c = devOf(e.tag), d = devOf(e.delta), y = devOf(e.star), ok = c && d && y && !(SC.perrs && SC.perrs.has(e));
     const k = ok ? { ins: ['U1', 'V1', 'W1'].map(t => c.id + ':' + t), mid: ['W2', 'U2', 'V2'].map(t => c.id + ':' + t), dIn: ['1', '3', '5'].map(t => d.id + ':' + t) } : null;
     const lv = (key, i) => !!k && phaseLive(key, PH3[i]);
@@ -481,11 +486,15 @@
     o.push(`<text class="sterm" x="${ds[2] + 6}" y="${my + 18}">W2 U2 V2</text></g>`);
     return H;
   }
-  function renderPowerV(x0) {
+  function renderPowerV(x0, bottom) {
     const P = pw(), o = [];
     if (!hasPower()) return { svg: '', w: 0, h: 0 };
+    // rows of devices from the supply down to the lowest motor; spread them so the motors sit near the N rail
+    const rows = P.main.length + Math.max(1, ...P.feeders.map(f => f.elems.reduce((n, e) => n + (isSd(e) ? 2 : 1), 0)));
+    const fixed = RT - 34 + (P.main.length ? 0 : 20) + 36;
+    PE_ = Math.round(Math.max(92, Math.min(150, (bottom - fixed) / rows)));
     const src = devOf(P.src), srcLive = ph => !!(src && phaseLive(src.id + ':' + ph, ph));
-    const xs = [x0 + 50, x0 + 66, x0 + 82];
+    const xs = pxs(x0);
     let y = RT - 36;
     o.push(`<g class="sleg${SELP && SELP.f === -1 && SELP.i == null ? ' sel' : ''}" data-pf="-1"><rect class="hit" x="${x0 + 4}" y="${y - 22}" width="${FW - 8}" height="26" rx="5"/><title>Supply: select it, then QF 3P adds a main switch</title>`);
     PH3.forEach((ph, i) => o.push(`<circle class="psrc p${i + 1}" cx="${xs[i]}" cy="${y - 10}" r="8"/><text class="sterm c" x="${xs[i]}" y="${y - 7}">${ph}</text>`));
@@ -493,24 +502,24 @@
     y += 2;
     P.main.forEach((e, i) => { psym(e, x0, y + PE_ / 2, o, 'm.' + i); y += PE_; });
     if (!P.main.length) { xs.forEach((x, i) => o.push(`<line class="pw p${i + 1}${srcLive(PH3[i]) ? ' on' : ''}" x1="${x}" y1="${y}" x2="${x}" y2="${y + 20}"/>`)); y += 20; }
-    const busY = y + 6, fxs = [];
+    const busY = y + 6, fxs = [], BP = 10;
     let acc = x0; P.feeders.forEach(f => { fxs.push(acc); acc += feedW(f); });
     const lastX = fxs.length ? fxs[fxs.length - 1] : x0;
     const lastK = (() => { const e = P.main[P.main.length - 1]; const k = e && powerKeys(e); return k ? k.outs : src ? PH3.map(t => src.id + ':' + t) : [null, null, null]; })();
     PH3.forEach((ph, i) => {
-      const by = busY + i * 9, live = phaseLive(lastK[i], ph);
+      const by = busY + i * BP, live = phaseLive(lastK[i], ph);
       o.push(`<line class="pw p${i + 1}${live ? ' on' : ''}" x1="${xs[i]}" y1="${y}" x2="${xs[i]}" y2="${by}"/>`);
-      o.push(`<line class="pw p${i + 1}${live ? ' on' : ''}" x1="${xs[i]}" y1="${by}" x2="${lastX + 82}" y2="${by}"/>`);
+      o.push(`<line class="pw p${i + 1}${live ? ' on' : ''}" x1="${xs[i]}" y1="${by}" x2="${pxs(lastX)[2]}" y2="${by}"/>`);
     });
     let h = busY + 30;
     P.feeders.forEach((f, fi) => {
       const lx = fxs[fi], fsel = SELP && SELP.f === fi && SELP.i == null ? ' sel' : '';
       let fy = busY + 30;
-      const fx = [lx + 50, lx + 66, lx + 82];
-      o.push(`<g class="sleg pfeed${fsel}" data-pf="${fi}"><rect class="hit" x="${lx + 4}" y="${busY - 4}" width="${FW - 8}" height="26" rx="5"/><text class="sterm c" x="${lx + 66}" y="${busY - 8}">${fi + 1}</text></g>`);
-      PH3.forEach((ph, i) => o.push(`<line class="pw p${i + 1}${phaseLive(lastK[i], ph) ? ' on' : ''}" x1="${fx[i]}" y1="${busY + i * 9}" x2="${fx[i]}" y2="${fy}"/><circle class="jn" cx="${fx[i]}" cy="${busY + i * 9}" r="2.6"/>`));
+      const fx = pxs(lx);
+      o.push(`<g class="sleg pfeed${fsel}" data-pf="${fi}"><rect class="hit" x="${lx + 4}" y="${busY - 4}" width="${FW - 8}" height="26" rx="5"/><text class="sterm c" x="${fx[1]}" y="${busY - 8}">${fi + 1}</text></g>`);
+      PH3.forEach((ph, i) => o.push(`<line class="pw p${i + 1}${phaseLive(lastK[i], ph) ? ' on' : ''}" x1="${fx[i]}" y1="${busY + i * BP}" x2="${fx[i]}" y2="${fy}"/><circle class="jn" cx="${fx[i]}" cy="${busY + i * BP}" r="2.6"/>`));
       f.elems.forEach((e, i) => { if (isSd(e)) fy += psymSd(e, lx, fy, o, 'f.' + fi + '.' + i); else { psym(e, lx, fy + PE_ / 2, o, 'f.' + fi + '.' + i); fy += PE_; } });
-      if (!f.elems.length) o.push(`<text class="hint" x="${lx + 66}" y="${fy + 20}">empty feeder</text>`);
+      if (!f.elems.length) o.push(`<text class="hint" x="${fx[1]}" y="${fy + 20}">empty feeder</text>`);
       h = Math.max(h, fy + 40);
     });
     return { svg: o.join(''), w: Math.max(FW, acc - x0) + 40, h };
@@ -542,7 +551,7 @@
       } else o.push(`<text class="hint" x="${wx}" y="${(RT + RB) / 2}">empty</text>`);
       o.push('</g>');
     });
-    const P = renderPowerV(ctlW + 30);
+    const P = renderPowerV(ctlW + 30, RB - 10);
     const W = ctlW + 30 + P.w, H = Math.max(RB + 40, P.h);
     body.innerHTML = `<svg class="rung-svg sch-svg iec-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${o.join('')}${P.svg}</svg>
       <div class="sch-add"><button class="tbtn" data-sact2="rung">＋ Add a current path</button> <button class="tbtn" data-sact2="feeder">＋ Add a motor feeder</button></div>`;
@@ -574,7 +583,7 @@
       <div class="lad-toolbar sch-toolbar">
         <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select">✎ Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols">☝ Operate</button></div>
           <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit">⇵ IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung">⇄ Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal">✎ Free draw</button></div></div>
-        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Add a symbol">＋ Library ▾</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Add a symbol">＋ Library ▾</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="copy" title="Copy the selected symbol (D)">⧉</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -594,7 +603,7 @@
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.smode) { mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run'); return; }
       if (b.dataset.sstyle) { style = b.dataset.sstyle; try { localStorage.setItem('plc-trainer.schStyle', style); } catch (err) { /* private mode */ } setStyleUi(); SC.render(); return; }
-      if (b.dataset.fdact) { if (b.dataset.fdact === 'lib') { const r = b.getBoundingClientRect(); FreeDraw.library(r.left, r.bottom + 4); } else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, del: FreeDraw.del })[b.dataset.fdact](); return; }
+      if (b.dataset.fdact) { if (b.dataset.fdact === 'lib') { const r = b.getBoundingClientRect(); FreeDraw.library(r.left, r.bottom + 4); } else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, copy: FreeDraw.copy, del: FreeDraw.del })[b.dataset.fdact](); return; }
       if (b.dataset.skind) return SC.insert(b.dataset.skind);
       if (b.dataset.pkind) return SC.insertPower(b.dataset.pkind);
       ({ feeder: () => SC.addFeeder(), rung: () => SC.addRung(), branch: SC.branch, ml: () => SC.move(-1), mr: () => SC.move(1), del: SC.del, undo: SC.undo, redo: SC.redo })[b.dataset.sact]?.();
@@ -799,7 +808,7 @@
       <li>☝ Operate: click push buttons, selectors, limit switches and overload contacts to work them.</li>
       <li>Double-click a symbol to change its tag. Contacts of KM1 follow coil KM1.</li>
       <li><b>⇵ IEC</b> view: each column is a current path from L (top) to N (bottom); the power circuit is on the right. <b>＋ Feeder</b> adds a motor feeder: breaker → contactor → overload → motor, wired L1-L2-L3 and PE for you.</li>
-      <li>Wire colours (Philippine practice): L1 red, L2 yellow, L3 blue, N white, PE green.</li></ul></div>`;
+      <li>The diagram is drawn in one line colour, like the ladder; live paths light up. The wires it makes in the Wiring get the Philippine colours: L1 red, L2 yellow, L3 blue, N white, PE green.</li></ul></div>`;
     bindSide();
   }
   function bindSide() {

@@ -331,11 +331,11 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .float-win > .view { flex: 1; min-height: 0; position: relative; }
 /* schematic (rails and rungs, drawn like the ladder) */
 .sch-rails { display: flex; justify-content: space-between; padding: 0 16px 4px 70px; font: 600 11px var(--mono); color: var(--muted); }
-.sch-svg .ssym path, .sch-svg .ssym circle, .sch-svg .ssym rect { fill: none; stroke: var(--lad-wire); stroke-width: 2; }
+.sch-svg .ssym path, .sch-svg .ssym circle, .sch-svg .ssym rect, .sch-svg .ssym ellipse { fill: none; stroke: var(--lad-wire); stroke-width: 2; }
 .sch-svg .ssym .thin { stroke-width: 1.3; }
-.sch-svg .ssym.on path, .sch-svg .ssym.on circle, .sch-svg .ssym.on rect { stroke: var(--lad-on); stroke-width: 2.6; }
+.sch-svg .ssym.on path, .sch-svg .ssym.on circle, .sch-svg .ssym.on rect, .sch-svg .ssym.on ellipse { stroke: var(--lad-on); stroke-width: 2.6; }
 .sch-svg .ssym.on circle, .sch-svg .ssym.on rect { fill: var(--lad-hl); }
-.sch-svg .ssym.err path, .sch-svg .ssym.err circle, .sch-svg .ssym.err rect { stroke: var(--danger); }
+.sch-svg .ssym.err path, .sch-svg .ssym.err circle, .sch-svg .ssym.err rect, .sch-svg .ssym.err ellipse { stroke: var(--danger); }
 .sch-svg .ssym.miss { opacity: .5; }
 .sch-svg .stag { font: 600 12px var(--mono); fill: var(--lad-text); text-anchor: middle; }
 .sch-svg .skind { font: 500 9.5px var(--sans); fill: var(--muted); text-anchor: middle; text-transform: uppercase; letter-spacing: .03em; }
@@ -605,13 +605,10 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .iec-svg .w.open { stroke-dasharray: 4 3; opacity: .6; }
 .iec-svg .jn { fill: var(--lad-wire); }
 .iec-svg .hint { font: 500 10px var(--sans); fill: var(--muted); text-anchor: middle; }
-.iec-svg .pw { stroke-width: 2; opacity: .75; }
-.iec-svg .pw.on { stroke-width: 3; opacity: 1; filter: drop-shadow(0 0 2px currentColor); }
-.iec-svg .pw.p1, .iec-svg .psrc.p1 { stroke: #b3261e; color: #e53935; }
-.iec-svg .pw.p2, .iec-svg .psrc.p2 { stroke: #e0a800; color: #f2c230; }
-.iec-svg .pw.p3, .iec-svg .psrc.p3 { stroke: #2b6fe0; color: #2b6fe0; }
-.iec-svg .psrc { fill: var(--lad-bg); stroke-width: 2; }
-.iec-svg .ssym .pe { stroke: #58a83a; }
+/* the diagram is drawn like the ladder (one line colour, live paths light up); wire colours belong to the Wiring */
+.iec-svg .pw { stroke: var(--lad-wire); stroke-width: 1.6; }
+.iec-svg .pw.on { stroke: var(--lad-on); stroke-width: 2.6; }
+.iec-svg .psrc { fill: var(--lad-bg); stroke: var(--lad-wire); stroke-width: 1.6; }
 .iec-svg .ssym circle.mon { fill: var(--lad-hl); stroke: var(--lad-on); }
 .iec-svg .mtxt { font: 700 12px var(--sans); fill: var(--lad-text); text-anchor: middle; }
 .iec-svg .mtxt.sm { font-size: 10px; }
@@ -640,3 +637,4 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fbend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
 .free-svg .ssym .jdot { fill: var(--lad-wire); stroke: none; }
 .free-svg .ssym.on .jdot { fill: var(--lad-on); }
+.free-svg .ftext { font: 600 13px var(--sans); fill: var(--lad-text); pointer-events: none; }
