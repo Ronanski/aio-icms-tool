@@ -1,6 +1,13 @@
-/* Windows/desktop shell: one window that loads the same web app from disk. */
+/* Windows/desktop shell: one window. It opens the built-in copy of the web app, which moves on to the hosted app
+   (GitHub Pages, Stable or Beta channel). The hosted app updates itself inside the window and keeps working offline
+   from its cache, so this shell almost never needs a new version. If the hosted app cannot load and has never been
+   cached, the built-in copy is used. */
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+
+const PAGES = 'https://ronanski.github.io/aio-icms-tool/';
+const LOCAL = path.join(__dirname, 'app', 'index.html');
+const ours = url => url.startsWith(PAGES) || url.startsWith('file:');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -16,17 +23,24 @@ function createWindow() {
   });
   // links to other sites open in the normal browser, not inside the app
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url);
+    if (/^https?:/.test(url) && !ours(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  // the app never navigates away from its own files: other links open in the normal browser
+  // the window only shows the app (built-in or hosted); anything else opens in the normal browser
   win.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith('file:')) return;
+    if (ours(url)) return;
     e.preventDefault();
     if (/^https?:/.test(url)) shell.openExternal(url);
   });
-  // tell the web app which Windows build it runs in, so its update check offers the matching download
-  win.loadFile(path.join(__dirname, 'app', 'index.html'), { query: { build: process.env.PORTABLE_EXECUTABLE_DIR ? 'portable' : 'installed' } });
+  // the hosted app failed to load and nothing is cached (first start without internet): use the built-in copy
+  win.webContents.on('did-fail-load', (e, code, desc, url, isMain) => {
+    if (isMain && url.startsWith(PAGES) && code !== -3) win.loadFile(LOCAL, { query: { local: '1' } });
+  });
+  // the hosted copy answered with an error page (e.g. the Beta copy is not deployed yet): use the built-in copy
+  win.webContents.on('did-navigate', (e, url, code) => {
+    if (url.startsWith(PAGES) && code >= 400) win.loadFile(LOCAL, { query: { local: '1' } });
+  });
+  win.loadFile(LOCAL);
 }
 
 app.whenReady().then(() => {

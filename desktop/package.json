@@ -2,14 +2,14 @@
   "name": "plc-trainer-desktop",
   "productName": "PLC Trainer",
   "version": "1.4.0",
-  "description": "PLC Trainer for Windows",
+  "description": "PLC Trainer for Windows (portable)",
   "author": "Ronan",
   "private": true,
   "main": "main.js",
   "scripts": {
     "prepare-app": "bash ../scripts/copy-web.sh app",
     "start": "npm run prepare-app && electron .",
-    "dist:win": "npm run prepare-app && electron-builder --win nsis portable --publish never"
+    "dist:win": "npm run prepare-app && electron-builder --win portable --publish never"
   },
   "devDependencies": {
     "electron": "33.2.1",
@@ -18,17 +18,19 @@
   "build": {
     "appId": "io.github.ronanski.plctrainer",
     "productName": "PLC Trainer",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "app/**/*"],
-    "icon": "app/icons/icon-512.png",
-    "win": { "icon": "app/icons/icon-512.png" },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "PLC Trainer",
-      "artifactName": "PLC-Trainer-Setup-${version}.exe"
+    "directories": {
+      "output": "dist"
     },
-    "portable": { "artifactName": "PLC-Trainer-${version}-portable.exe" }
+    "files": [
+      "main.js",
+      "app/**/*"
+    ],
+    "icon": "app/icons/icon-512.png",
+    "win": {
+      "icon": "app/icons/icon-512.png"
+    },
+    "portable": {
+      "artifactName": "PLC-Trainer-${version}-portable.exe"
+    }
   }
 }

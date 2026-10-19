@@ -106,6 +106,13 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Example: three motors (IEC)
 - [x] Merged (PR #13); v1.4.0-beta.2 pre-release published (4 assets, release-signed APK)
 
+## v1.4.1 (owner: "gawen n ito" for v1.4.1 and v1.5; "GO in-app update")
+- [x] In-app updates: hosted Stable (latest release) and Beta (main) copies, Restart to update, no downloads; projects brought along
+- [x] Windows portable only
+- [x] Star-delta motor in the diagram power section; wires route around devices
+- [ ] Owner's report of bugs on a real phone and PC; owner's v1.2 bug list
+- [ ] v1.5 hardware (modular PLC, I/O configuration, addressing styles, cabinet)
+
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
 - [x] Part 1: flat device graphics, DIN rail + snap, terminal block, motor protection breaker, wire labels

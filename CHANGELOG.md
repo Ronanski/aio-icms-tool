@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **In-app updates, no downloads**: the Windows and Android apps open the hosted app, which updates itself. When a new version is ready the app shows **Restart to update**; nothing is downloaded, no installer, no browser. Works offline with the last version it has.
+  - **Stable** channel = official releases. **Beta** channel = every change as soon as it is merged (File → Updates…).
+  - The first start of the new app brings the projects of the old app along.
+- **Star-delta motor in the Electrical Diagram power circuit** (*M Y-Δ*): the motor with its delta and star contactors, wired for you. The *Star-delta starter (hardwired)* example now draws its power circuit in the diagram.
+
+### Changed
+- **Windows: portable app only** (`PLC-Trainer-X.Y.Z-portable.exe`). The installer is gone.
+- Wiring: a wire without bends now picks the route that crosses the fewest devices.
+
 ## [1.4.0] - 2026-10-19
 
 Wiring that looks like real DIN-rail hardware, four workspaces, an IEC Electrical Diagram with the power circuit, star-delta and forward/reverse, and Philippine wire colours.
