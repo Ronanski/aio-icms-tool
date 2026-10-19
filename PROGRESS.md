@@ -1,6 +1,6 @@
 # Progress
 
-**Current version:** 1.4.0 (stable release authorized 2026-10-19 with "GO STABLE v1.4.0", PR #15; before it 1.2.1. Downloads on GitHub Releases, web app on GitHub Pages)
+**Current version:** 1.4.1 (stable release authorized 2026-10-19 with "GO STABLE v1.4.1"; first version with in-app updates. Before it 1.4.0.)
 **Status:** Stable. Signed Android APK, Windows installer, web/PWA. In-app updates (Stable/Beta). `npm test`: 203/203. Betas v1.4.0-beta.1 and beta.2 came first.
 
 ## Done (v1.0.0)
@@ -110,6 +110,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] In-app updates: hosted Stable (latest release) and Beta (main) copies, Restart to update, no downloads; projects brought along
 - [x] Windows portable only
 - [x] Star-delta motor in the diagram power section; wires route around devices
+- [x] Merged (PR #16); stable v1.4.1 authorized (GO STABLE)
 - [ ] Owner's report of bugs on a real phone and PC; owner's v1.2 bug list
 - [ ] v1.5 hardware (modular PLC, I/O configuration, addressing styles, cabinet)
 
