@@ -164,6 +164,72 @@
     },
   };
 
+  /* The HMI shows what the motor really does: KM1's own 13-14 is wired back to a PLC input. The coil is fed after QF1 and through
+     F1 95-96 (hardwired), so a main breaker that is off, a tripped overload or a contactor that does not close shows "not running";
+     commanded and not running (or running without a command) for 2 s latches a discrepancy alarm. */
+  EX.plcfeedback = {
+    title: 'PLC motor with running feedback + HMI', desc: 'DOL motor run by the PLC with real feedback: F1 95-96 hardwired in the coil circuit, the coil fed after QF1, KM1 13-14 to input I:0/3. The HMI shows the real running status, not the command, and a discrepancy alarm (commanded but not running, or running without a command) stops the motor until RESET.',
+    build() {
+      const B = builder();
+      const { q0, qf1, km1, f1 } = powerColumn(B, true);
+      const qf2 = B.add('mcb2', 300, 150, { label: 'QF2' }, { on: true });
+      B.w(q0, 'L1', qf2, '1', C.L1, [[80, 110], [320, 110]]);
+      B.w(q0, 'N', qf2, '3', C.N, [[150, 120], [350, 120]]);
+      const plc = B.add('plc', 300, 560, { label: 'PLC' });
+      B.w(qf2, '2', plc, 'L1', C.L1); B.w(qf2, '4', plc, 'N', C.N);
+      B.w(plc, 'C24', plc, 'COM', C.DC0);
+      const s1 = B.add('pb_no', 440, 300, { label: 'S1', color: 'green', text: 'START' });
+      const s0 = B.add('pb_nc', 520, 300, { label: 'S0', color: 'red', text: 'STOP' });
+      const h1 = B.add('lamp', 620, 310, { label: 'H1', color: 'green', coil: '230VAC' });
+      const h2 = B.add('lamp', 690, 310, { label: 'H2', color: 'red', coil: '230VAC' });
+      B.w(plc, 'V24', s1, '13', C.DC);
+      B.w(s1, '13', s0, '11', C.DC, [[455, 412], [535, 412]]);
+      B.w(s1, '14', plc, 'I0', C.DC);
+      B.w(s0, '12', plc, 'I1', C.DC);
+      // feedback: F1 97-98 (closes on trip) to I:0/2, KM1 13-14 (closed = contactor in) to I:0/3
+      B.w(plc, 'V24', f1, '97', C.DC, [[390, 516], [175, 516]]);
+      B.w(f1, '98', plc, 'I2', C.DC, [[190, 500], [250, 500], [250, 530], [518, 530]]);
+      B.w(plc, 'V24', km1, '13', C.DC, [[390, 290], [142, 290]]);
+      B.w(km1, '14', plc, 'I3', C.DC, [[142, 470], [262, 470], [262, 538], [540, 538]]);
+      // coil circuit: L1 after QF1 → PLC output contact O0 → F1 95-96 → KM1 A1-A2 → N
+      B.w(qf1, '2', plc, 'VAC0', C.AC, [[75, 280], [280, 280], [280, 772], [320, 772]]);
+      B.w(plc, 'O0', f1, '95', C.AC, [[350, 850], [230, 850], [230, 520], [145, 520]]);
+      B.w(f1, '96', km1, 'A1', C.AC, [[160, 508], [24, 508], [24, 300], [60, 300]]);
+      B.w(km1, 'A2', plc, 'N', C.N, [[60, 484], [270, 484], [270, 544], [340, 544]]);
+      B.w(plc, 'L1', plc, 'VAC1', C.AC);
+      B.w(plc, 'O4', h1, 'X1', C.AC, [[438, 800], [760, 800], [760, 420], [633, 420]]);
+      B.w(plc, 'O5', h2, 'X1', C.AC, [[460, 810], [770, 810], [770, 430], [703, 430]]);
+      B.w(h1, 'X2', h2, 'X2', C.N, [[657, 410], [727, 410]]);
+      B.w(h1, 'X2', plc, 'N', C.N, [[657, 450], [600, 450]]);
+      return proj('PLC motor with running feedback', B.circ, [
+        { comment: 'Start/stop with seal-in. S0 STOP is wired NC (ON when healthy). The command drops on an overload trip (I:0/2) or a discrepancy alarm.', text: 'BST XIC I:0/0 NXB XIC B3:0/0 NXB XIC O:0/0 BND XIC I:0/1 XIO B3:0/1 XIO I:0/2 XIO B3:0/14 OTE O:0/0' },
+        { comment: 'Discrepancy: commanded but KM1 13-14 is not closed, or closed without a command, for 2 s', text: 'BST XIC O:0/0 XIO I:0/3 NXB XIO O:0/0 XIC I:0/3 BND TON T4:1 1.0 2 0' },
+        { comment: 'Latch the discrepancy alarm (the HMI shows it; RESET clears it)', text: 'XIC T4:1/DN OTL B3:0/14' },
+        { comment: 'HMI RESET clears the discrepancy alarm', text: 'XIC B3:0/2 OTU B3:0/14' },
+        { comment: 'Run lamp from the feedback, not from the command', text: 'XIC I:0/3 OTE O:0/4' },
+        { comment: 'Fault lamp: discrepancy or overload', text: 'BST XIC B3:0/14 NXB XIC I:0/2 BND OTE O:0/5' },
+        { comment: 'Overload alarm bit for the HMI', text: 'XIC I:0/2 OTE B3:0/15' },
+        { comment: 'Running time in seconds, counted from the feedback (retentive)', text: 'XIC I:0/3 RTO T4:0 1.0 32767 0' },
+      ], {
+        'I:0/0': 'S1 START PB', 'I:0/1': 'S0 STOP PB (NC)', 'I:0/2': 'F1 OVERLOAD TRIPPED (97-98)', 'I:0/3': 'KM1 RUNNING FEEDBACK (13-14)',
+        'O:0/0': 'KM1 RUN COMMAND', 'O:0/4': 'H1 RUN LAMP', 'O:0/5': 'H2 FAULT LAMP',
+        'B3:0/0': 'HMI START', 'B3:0/1': 'HMI STOP', 'B3:0/2': 'HMI RESET', 'B3:0/14': 'DISCREPANCY ALARM', 'B3:0/15': 'OL ALARM',
+        'T4:0': 'RUN TIME', 'T4:1': 'DISCREPANCY TIME',
+      }, [
+        { type: 'text', x: 24, y: 16, w: 600, h: 40, label: 'MOTOR M1 — RUNNING FEEDBACK', size: 24, color: '#ffffff' },
+        { type: 'motor', x: 30, y: 80, w: 130, h: 130, label: 'M1', tag: 'I:0/3' },
+        { type: 'ind', x: 190, y: 86, w: 170, h: 64, label: 'MOTOR', tag: 'I:0/3', onText: 'RUNNING', offText: 'NOT RUNNING', onColor: '#2fa84f', offColor: '#5b5953', shape: 'box' },
+        { type: 'ind', x: 390, y: 86, w: 170, h: 64, label: 'COMMAND', tag: 'O:0/0', onText: 'ON', offText: 'OFF', onColor: '#2f6fd6', offColor: '#5b5953', shape: 'box' },
+        { type: 'num', x: 590, y: 86, w: 180, h: 64, label: 'RUN TIME', tag: 'T4:0.ACC', units: 's', scale: 1, dec: 0 },
+        { type: 'pb', x: 190, y: 180, w: 170, h: 80, label: 'START', tag: 'B3:0/0', mode: 'momentary', color: '#2fa84f' },
+        { type: 'pb', x: 390, y: 180, w: 170, h: 80, label: 'STOP', tag: 'B3:0/1', mode: 'momentary', color: '#d33a2c' },
+        { type: 'pb', x: 590, y: 180, w: 180, h: 80, label: 'RESET', tag: 'B3:0/2', mode: 'momentary', color: '#7a7770' },
+        { type: 'alarm', x: 40, y: 290, w: 730, h: 56, label: 'DISCREPANCY — KM1 did not follow the command (check QF1, F1, KM1), then RESET', tag: 'B3:0/14' },
+        { type: 'alarm', x: 40, y: 360, w: 730, h: 56, label: 'MOTOR OVERLOAD TRIPPED — reset F1', tag: 'B3:0/15' },
+      ]);
+    },
+  };
+
   EX.conveyor = {
     title: 'Conveyor batch counter', desc: 'Conveyor motor via KM1, two PNP photo-eyes. Counts boxes at the discharge, stops for 4 s after every batch of 5, infeed jam alarm.',
     build() {
@@ -682,6 +748,14 @@ XIO I:0/1 RES C5:0</pre>
       <li>While running, change a rung (for example the run lamp). The edit is pending: press <b>▶ Test edits</b> and check the machine.</li>
       <li>Press <b>✓ Assemble</b> to keep it in the controller.</li></ol>`,
     },
+    {
+      id: 'l17', level: 'Circuits', title: '17 · Running feedback and a discrepancy alarm', ex: 'plcfeedback',
+      body: `<p>A PLC output only says what the program <b>wants</b>. To know what the motor <b>does</b>, wire a contact of the contactor back to an input: here KM1 13-14 goes to <code>I:0/3</code>. The overload F1 95-96 is hardwired in the coil circuit, and the coil is fed after the main breaker QF1, so the feedback drops whenever the motor cannot run.</p>
+      <p>The HMI motor and the RUNNING indicator use <code>I:0/3</code>, not <code>O:0/0</code>. If the command and the feedback disagree for 2 s, <code>B3:0/14</code> latches a discrepancy alarm and stops the command until RESET.</p>
+      <ol><li>Put the PLC in RUN and press <b>START</b> on the HMI: the motor runs and the HMI shows RUNNING.</li>
+      <li>Switch <b>QF1</b> off in the Wiring and press START again: the command is ON but the HMI shows NOT RUNNING, and after 2 s the discrepancy alarm comes on.</li>
+      <li>Switch QF1 on, press <b>RESET</b> on the HMI, then START: the motor runs again.</li></ol>`,
+    },
   ];
 
   /* ---------- Lesson goals: checked live while you work (Wiring, Ladder, HMI), one after the other ----------
@@ -778,6 +852,11 @@ XIO I:0/1 RES C5:0</pre>
       { say: 'Download to the controller', ok: G => G.ev('Download: the project was written to the controller') },
       { say: 'Online edit in RUN: Test edits', ok: G => G.ev('Online edits: testing') },
       { say: 'Assemble the edits', ok: G => G.ev('Online edits assembled') },
+    ],
+    l17: [
+      { say: 'PLC in RUN: the motor runs and the feedback I:0/3 is ON', ok: G => G.mode() === 'RUN' && G.read('I:0/3') === 1 && run(G, 'M1') },
+      { say: 'QF1 off: the discrepancy alarm B3:0/14 is ON', ok: G => !!G.dev('QF1') && !G.dev('QF1').state.on && G.read('B3:0/14') === 1 },
+      { say: 'QF1 on, RESET and START: the motor runs again, no alarm', ok: G => G.read('B3:0/14') === 0 && G.read('I:0/3') === 1 && run(G, 'M1') },
     ],
   };
 

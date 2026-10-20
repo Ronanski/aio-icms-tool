@@ -58,7 +58,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
 
 **Event log**: **📋 Events** lists mode changes, forces, trips and alarms, PLC power and operator actions with a timestamp. Filter by type and export to CSV.
 
-**Learn**: 12 guided lessons (lessons 1–6 have **Check my work** auto-grading) (first rung, seal-in, latch, timers, flasher, counters, forcing, DOL starter, PLC motor control, conveyor, tank, a forward/reverse challenge), an instruction reference, and 6 example projects.
+**Learn**: 17 guided lessons (lessons 1–6 have **Check my work** auto-grading, the later ones live checklists) (first rung, seal-in, latch, timers, flasher, counters, forcing, DOL starter, PLC motor control, conveyor, tank, a forward/reverse challenge, PLC rack, analog and VFD, HMI screens, online edits, running feedback with a discrepancy alarm), an instruction reference, and 13 example projects (among them *PLC motor with running feedback + HMI*: the HMI shows what the motor really does, not what the PLC commands).
 
 ## Quick start
 1. Open `index.html`. The *PLC motor start/stop + HMI* example loads.
@@ -92,7 +92,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 538 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
+npm test                                 # 551 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

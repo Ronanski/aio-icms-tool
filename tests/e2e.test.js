@@ -2222,6 +2222,45 @@ function check(name, cond, info = '') {
     return ['kpmon', 'kpno', 'lampfl'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.items.length === 15 && ['phasemon', 'lamp_fl'].every(t => p.circuit.comps.some(c => c.type === t)) && !(p.keep && p.keep.free.items.length); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); localStorage.removeItem('plc-trainer.fdColors'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  console.log('Running feedback example: HMI → PLC → Wiring and back, with a discrepancy alarm');
+  await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcfeedback.build()) && prev) Store.remove(prev); App.showView('hmi'); });
+  await setMode('RUN');
+  // the HMI as the operator sees it: the text of an indicator, and whether an alarm banner shows
+  const hmiInd = l => page.evaluate(l => { const e = [...document.querySelectorAll('#view-hmi .h-ind')].find(x => x.querySelector('small').textContent === l); return e ? e.querySelector('[data-t]').textContent : null; }, l);
+  const hmiAlarm = t => page.evaluate(t => [...document.querySelectorAll('#view-hmi .t-alarm.on .h-alarm')].some(x => x.textContent.includes(t)), t);
+  check('feedback: the example loads quietly; F1 95-96 is in the coil circuit, the coil is fed after QF1 and KM1 13-14 goes to I:0/3', await page.evaluate(() => {
+    const C = App.project.circuit, id = l => C.comps.find(c => c.props.label === l).id, has = (a, b) => C.wires.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
+    return App.compat().length === 0 && has(id('F1') + ':96', id('KM1') + ':A1') && has(id('PLC') + ':O0', id('F1') + ':95') && has(id('QF1') + ':2', id('PLC') + ':VAC0') && has(id('KM1') + ':14', id('PLC') + ':I3');
+  }));
+  check('feedback: the HMI reads PLC data only, and its motor and RUNNING indicator follow the feedback input I:0/3, not the command', await page.evaluate(() => {
+    const H = App.project.hmi.objects, addr = /^(I|O|B3|T4|C5|N7):/;
+    return H.every(o => !o.tag || addr.test(o.tag)) && H.find(o => o.type === 'motor').tag === 'I:0/3' && H.find(o => o.label === 'MOTOR').tag === 'I:0/3';
+  }));
+  await hmiTap('START');
+  check('feedback: HMI START → O:0/0 → KM1 pulls in, its 13-14 sets I:0/3, M1 runs, H1 lights and the HMI shows RUNNING', await until(is("r('O:0/0') === 1 && d('KM1').pulled && r('I:0/3') === 1 && d('M1').drive === 'run' && d('H1').on")) && await (async () => { await wait(150); return (await hmiInd('MOTOR')) === 'RUNNING'; })());
+  await hmiTap('STOP');
+  check('feedback: HMI STOP drops the command and the feedback; the HMI shows NOT RUNNING', await until(is("r('O:0/0') === 0 && r('I:0/3') === 0 && !d('KM1').pulled")) && await (async () => { await wait(150); return (await hmiInd('MOTOR')) === 'NOT RUNNING'; })());
+  await op('QF1', 'h');
+  await hmiTap('START');
+  check('feedback: with QF1 off, START sets the command but KM1 cannot pull in: the HMI shows COMMAND ON and NOT RUNNING', await until(is("!d('QF1').on && r('O:0/0') === 1 && r('I:0/3') === 0 && !d('KM1').pulled && d('M1').drive === 'off'"), null, 1500) && await (async () => { await wait(150); return (await hmiInd('COMMAND')) === 'ON' && (await hmiInd('MOTOR')) === 'NOT RUNNING'; })());
+  check('feedback: after 2 s the discrepancy alarm latches, drops the command, lights H2 and shows on the HMI', await until(is("r('B3:0/14') === 1 && r('O:0/0') === 0 && d('H2').on"), null, 4000) && await (async () => { await wait(150); return hmiAlarm('DISCREPANCY'); })());
+  await op('QF1', 'h'); await hmiTap('START'); await wait(300);
+  check('feedback: START does nothing while the alarm is latched', await page.evaluate(is("r('B3:0/14') === 1 && r('O:0/0') === 0 && !d('KM1').pulled")));
+  await hmiTap('RESET');
+  check('feedback: HMI RESET clears the alarm and the banner', await until(is("r('B3:0/14') === 0 && !d('H2').on")) && await (async () => { await wait(150); return !(await hmiAlarm('DISCREPANCY')); })());
+  await hmiTap('START');
+  check('feedback: with QF1 back on, START runs the motor again with RUNNING feedback', await until(is("r('O:0/0') === 1 && r('I:0/3') === 1 && d('M1').drive === 'run'")));
+  await op('M1', 'jam');
+  check('feedback: a jammed motor trips F1; its 95-96 drops KM1 and its 97-98 sets I:0/2, the rung drops the command and the overload alarm shows', await until(is("d('F1').tripped && !d('KM1').pulled && r('I:0/2') === 1 && r('O:0/0') === 0 && r('B3:0/15') === 1"), null, 10000) && await (async () => { await wait(150); return hmiAlarm('OVERLOAD'); })());
+  await wait(2500);
+  check('feedback: an overload trip is not a discrepancy (command and feedback dropped together)', await page.evaluate(is("r('B3:0/14') === 0")));
+  await op('M1', 'jam'); await op('F1', 'reset');
+  check('feedback: lesson 17 uses this example and checks its three steps live', await page.evaluate(() => { const l = Examples.LESSONS.find(x => x.id === 'l17'); return !!l && l.ex === 'plcfeedback' && l.goals.length === 3; }));
+  check('feedback: the example saves and reloads with its wiring, ladder and HMI', await page.evaluate(() => { const s = App.serialize(), p = App.buildProject(JSON.parse(JSON.stringify(s)));
+    return p.circuit.wires.length === s.circuit.wires.length && p.ladder.rungs.length === 8 && p.hmi.objects.length === 10 && !(p.keep && p.keep.comps && p.keep.comps.length); }));
+  await setMode('PROG');
+  await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
