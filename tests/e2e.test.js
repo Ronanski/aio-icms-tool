@@ -1190,6 +1190,18 @@ function check(name, cond, info = '') {
   check('compact PLC in bit/byte style: I:0/9 is I1.1', await page.evaluate(() => { App.openNew({ ...Examples.EX.practice.build(), addr: 'bitbyte' }); return App.fmt('I:0/9') === 'I1.1' && App.fmt('O:0/7') === 'Q0.7' && App.fmt('B3:0/1') === 'B3:0/1'; }));
   await page.evaluate(() => App.setAddrStyle('file'));
 
+  console.log('v1.6.1: address styles everywhere');
+  await page.evaluate(() => { const p = Examples.EX.rack.build(); p.addr = 'bitbyte'; p.ladder.rungs.push({ text: 'XIC I:5/0 OTE O:2/9', comment: '' }); App.openNew(p); App.setLayout('single'); App.showView('ladder'); }); await wait(200);
+  check('Verify messages show the address style, with the file address in brackets', await page.evaluate(() => App.fmtText('Writing to input I:1/0') === 'Writing to input I0.0 (I:1/0)' && App.fmtText('N7:0 and I:5/0') === 'N7:0 and I:5/0'));
+  await page.evaluate(() => { App.project.hmi.objects = [{ id: 'h1', type: 'lamp', x: 10, y: 10, w: 80, h: 90, label: 'RUN', tag: 'O:2/0', onColor: '#2fa84f', offColor: '#3a3833' }]; App.showView('hmi'); }); await wait(200);
+  await page.click('#view-hmi [data-mode="edit"]'); await wait(100);
+  await page.evaluate(() => { const el = document.querySelector('#view-hmi .hobj[data-id="h1"]'); const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.x + 5, clientY: r.y + 5, button: 0, pointerId: 1 })); document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })); }); await wait(200);
+  check('the HMI tag field shows the address style', await page.evaluate(() => document.querySelector('#view-hmi [data-k="tag"]').value === 'Q0.0'));
+  await page.fill('#view-hmi [data-k="tag"]', 'Q0.1'); await page.dispatchEvent('#view-hmi [data-k="tag"]', 'change'); await wait(150);
+  check('an HMI tag typed in the address style is stored file-based', await page.evaluate(() => App.project.hmi.objects[0].tag === 'O:2/1'));
+  await page.click('#view-hmi [data-mode="run"]');
+  await page.evaluate(() => App.showView('ladder'));
+
   console.log('v1.6 part 4: 2D cabinet');
   check('the cabinet parts are in the parts list under Cabinet', await page.evaluate(() => ['encl', 'door', 'duct', 'hmiterm'].every(t => Circuit.DEFS[t] && Circuit.DEFS[t].cat === 'Cabinet') && !!document.querySelector('.pal-item[data-type="encl"]')));
   await page.evaluate(() => { App.openNew(Examples.EX.cabinet.build()); App.setLayout('single'); App.showView('wiring'); Workspace.fit(); }); await wait(400);

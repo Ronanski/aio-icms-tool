@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- The address style (file-based, bit/byte, basic) is also used in the **Verify** messages and the event log (with the file address in brackets, e.g. `I0.0 (I:1/0)`) and in the **HMI** tag field, its suggestions (the real I/O points) and the runtime tag list. An HMI tag can be typed in any style; it is stored file-based.
+
 ## [1.6.0] - 2026-10-20
 
 Hardware: a modular PLC rack with I/O Configuration, address styles and a 2D control cabinet; and a free-draw Electrical Diagram reworked with an icon library panel.

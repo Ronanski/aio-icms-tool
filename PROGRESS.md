@@ -164,7 +164,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 **v1.6.1 — fixes from the owner's checks**
 - [ ] IEC diagram spacing issue (owner to point it out on the screenshots)
 - [ ] Owner's feedback from Beta / real devices; owner's v1.2 bug list
-- [ ] Address styles also in the ASCII rung editor, HMI tags and Verify messages
+- [x] Address styles also in HMI tags, Verify messages and the event log (the ASCII rung editor stays file-based: it is the program text)
 
 **v1.7.0 — HMI**
 - [ ] Studio (designer) vs Machine (runtime) modes

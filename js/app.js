@@ -214,6 +214,8 @@
     if (redraw) { App.dirty.wiring = true; App.dirty.ladder = true; renderVisible(); Ladder.render(); Ladder.DataTable.render(); updateBar(true); }
   };
   App.fmt = a => (book ? book.fmt(a) : a);
+  // every I/O address in a text (I:1/0, O:2/3) in the address style; the file-based address follows in brackets
+  App.fmtText = t => String(t).replace(/\b[IO]:\d+\/\d+\b/g, a => { const f = App.fmt(a); return f === a ? a : `${f} (${a})`; });
   App.addrIn = s => (book ? book.toFile(s) : String(s).trim().toUpperCase());
   App.setAddrStyle = function (st) {
     if (!Object.prototype.hasOwnProperty.call(Circuit.STYLES, st) || App.project.addr === st) return;
@@ -226,8 +228,8 @@
   let lastForces = {}, lastFen = true;
   App.forcesChanged = function () {
     const plc = App.plc, now = plc.forces;
-    for (const k in now) if (lastForces[k] !== now[k]) App.log('force', `Force ${now[k] ? 'ON' : 'OFF'} installed on ${k}`);
-    for (const k in lastForces) if (!(k in now)) App.log('force', `Force removed from ${k}`);
+    for (const k in now) if (lastForces[k] !== now[k]) App.log('force', `Force ${now[k] ? 'ON' : 'OFF'} installed on ${App.fmtText(k)}`);
+    for (const k in lastForces) if (!(k in now)) App.log('force', `Force removed from ${App.fmtText(k)}`);
     if (plc.forcesEnabled !== lastFen) App.log('force', `Forces ${plc.forcesEnabled ? 'enabled' : 'disabled'}`);
     lastForces = { ...now }; lastFen = plc.forcesEnabled;
     Ladder.DataTable.render(); updateBar(true);
