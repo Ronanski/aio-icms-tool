@@ -5,12 +5,12 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v1.6.0 (stable)**: owner's "GO STABLE v1.6.0" (2026-10-20). Release PR (version 1.6.0, CHANGELOG `[1.6.0]`) merges into `main`, then the Release workflow runs from `main` (publish = true): tag `v1.6.0`, GitHub Release with portable .exe, .apk, web.zip, and `pages.yml` moves the hosted Stable copy to v1.6.0. **On resume, verify first** if not already noted below: the 3 assets, APK cert `27:5F:A5:15:06:CC:46…`, https://ronanski.github.io/aio-icms-tool/version.json = 1.6.0. v1.5.0 was the previous stable. |
-| **Tags** | `v1.6.0` (being published), `v1.5.0`, `v1.4.1`, `v1.4.0`, `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0`, `v1.1.0`. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
+| **Version** | **v1.6.0 (stable), released and verified** (owner: "GO STABLE v1.6.0", 2026-10-20): 3 assets, APK cert `27:5F:A5:15:06:CC:46…`, Pages Stable `version.json` = 1.6.0 (re-checked 2026-10-20). Beta (`/beta/` = `main`) has v1.6.1 fixes, v1.7 HMI, v1.8 instructions/devices and v2.0 parts A–C, not released (needs "GO STABLE"). |
+| **Tags** | `v1.6.0`, `v1.5.0`, `v1.4.1`, `v1.4.0`, `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0`, `v1.1.0`. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-20 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 310 passed (free draw like SimuRelay). |
-| **Pull requests** | #1–#27 merged (#3 closed). #23–#26 = v1.6 parts 1–4; #27 = free draw like SimuRelay; next = Release v1.6.0. |
+| **Tests** | `npm test`: 380 passed on `main` (`2d40c73`, 2026-10-20). |
+| **Pull requests** | #1–#33 merged (#3 closed). #23–#26 = v1.6 hardware (rack, I/O Configuration, address styles, cabinet); #27 = free draw like SimuRelay; #28 = Release v1.6.0; #29 = v1.6.1 fixes; #30 = v1.7 HMI; #31 = v1.8; #32–#33 = v2.0 parts A–C. |
 | **Downloads** | GitHub Releases: `PLC-Trainer-X.Y.Z-portable.exe`, `PLC-Trainer-X.Y.Z-android.apk`, `PLC-Trainer-X.Y.Z-web.zip` (portable only since v1.4.1). Web app: https://ronanski.github.io/aio-icms-tool/ (Stable) and `/beta/` (Beta = `main`). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
 | **Live preview** | claude.ai artifact (private): https://claude.ai/artifact/KHjQzV4oxhUo1vuYfxDKXi |
