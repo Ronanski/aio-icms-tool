@@ -1190,6 +1190,31 @@ function check(name, cond, info = '') {
   check('compact PLC in bit/byte style: I:0/9 is I1.1', await page.evaluate(() => { App.openNew({ ...Examples.EX.practice.build(), addr: 'bitbyte' }); return App.fmt('I:0/9') === 'I1.1' && App.fmt('O:0/7') === 'Q0.7' && App.fmt('B3:0/1') === 'B3:0/1'; }));
   await page.evaluate(() => App.setAddrStyle('file'));
 
+  console.log('v1.6 part 4: 2D cabinet');
+  check('the cabinet parts are in the parts list under Cabinet', await page.evaluate(() => ['encl', 'door', 'duct', 'hmiterm'].every(t => Circuit.DEFS[t] && Circuit.DEFS[t].cat === 'Cabinet') && !!document.querySelector('.pal-item[data-type="encl"]')));
+  await page.evaluate(() => { App.openNew(Examples.EX.cabinet.build()); App.setLayout('single'); App.showView('wiring'); Workspace.fit(); }); await wait(400);
+  check('cabinet and door are drawn behind the devices, the ducts with the rails', await page.evaluate(() => document.querySelectorAll('.ws-svg .backs .comp').length === 2 && document.querySelectorAll('.ws-svg .rails .comp').length === 5));
+  check('a plate takes its size from its properties', await page.evaluate(() => { const c = App.project.circuit.comps.find(x => x.type === 'encl'); const d = Circuit.dims(c); return d.w === 1200 && d.h === 800; }));
+  check('the HMI terminal on the door is powered from the 24 V supply', await get('HMI1', 'state.pw'));
+  await setMode('RUN'); await wait(200);
+  await tap('S1');
+  check('cabinet example: START on the door runs the motor through the rack', (await get('KM1', 'state.pulled')) && await get('H1', 'state.on'));
+  check('the HMI terminal shows the live HMI screen', await page.evaluate(() => { const c = App.project.circuit.comps.find(x => x.props.label === 'HMI1'); const s = Circuit.draw(c, App.ctx); return s.includes('RUNNING') && s.includes('data-part="h:'); }));
+  const stopId = await page.evaluate(() => App.project.hmi.objects.find(o => o.label === 'STOP').id);
+  await page.evaluate(id => { const c = App.project.circuit.comps.find(x => x.props.label === 'HMI1'); const up = App.operate(c, 'h:' + id); setTimeout(up, 150); }, stopId);
+  await wait(600);
+  check('pressing STOP on the HMI terminal in the Wiring stops the motor', !(await get('KM1', 'state.pulled')) && await page.evaluate(() => App.plc.read('B3:0/1') === 0));
+  await setMode('PROG');
+  const cabBefore = await page.evaluate(() => { const g = n => App.project.circuit.comps.find(x => x.props.label === n); return { cab: [g('+CP1').x, g('+CP1').y], qf: [g('QF1').x, g('QF1').y], door: [g('+CD1').x, g('+CD1').y], s1: [g('S1').x, g('S1').y] }; });
+  const scr = await page.evaluate(() => { const m = document.querySelector('.ws-svg .vp').getScreenCTM(); const pt = (x, y) => ({ x: x * m.a + m.e, y: y * m.d + m.f }); return { a: pt(1120, 300), b: pt(1160, 340) }; });
+  await page.mouse.move(scr.a.x, scr.a.y); await page.mouse.down(); await page.mouse.move(scr.b.x, scr.b.y, { steps: 5 }); await page.mouse.up(); await wait(200);
+  check('moving the cabinet moves the devices mounted on it, not the door', await page.evaluate(b => {
+    const g = n => App.project.circuit.comps.find(x => x.props.label === n);
+    const dx = g('+CP1').x - b.cab[0], dy = g('+CP1').y - b.cab[1];
+    return dx !== 0 && dy !== 0 && g('QF1').x === b.qf[0] + dx && g('QF1').y === b.qf[1] + dy && g('+CD1').x === b.door[0] && g('S1').x === b.s1[0];
+  }, cabBefore));
+  check('without 24 V the HMI terminal is dark', await page.evaluate(() => { const c = Circuit.create('hmiterm', 0, 0, { comps: [], seq: 0 }); return Circuit.draw(c, App.ctx).includes('NO POWER'); }));
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });

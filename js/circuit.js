@@ -635,6 +635,69 @@
     status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
   });
 
+  /* ---------- CABINET: backplate, door, cable duct, HMI terminal ----------
+     Plates (layer 'back') are drawn behind everything; moving one moves the devices mounted on it. */
+  const SIZES_W = ['400', '600', '800', '1000', '1200', '1600'], SIZES_H = ['300', '400', '600', '800', '1000', '1200'];
+  const plateDims = c => ({ w: Number(c.props.w) || 800, h: Number(c.props.h) || 600 });
+  def('encl', {
+    name: 'Control Cabinet (backplate)', cat: 'Cabinet', view: 'none', prefix: '+CP', w: 800, h: 600, layer: 'back', plate: true,
+    props: { w: '800', h: '600', title: 'CONTROL CABINET' },
+    pdefs: [{ k: 'w', n: 'Width', opts: SIZES_W }, { k: 'h', n: 'Height', opts: SIZES_H }, { k: 'title', n: 'Name plate' }],
+    info: 'Inside of a control cabinet: the mounting plate. Put DIN rails and cable ducts on it, then the devices. Moving the cabinet moves everything mounted on it.',
+    terms: [],
+    dims: plateDims,
+    draw(c) {
+      const { w, h } = plateDims(c || { props: {} });
+      let s = R(0, 0, w, h, '#8f959b', 8, '#4f5459', 2) + R(16, 16, w - 32, h - 32, '#e2e4df', 3, '#a6aaa8');
+      for (const [x, y] of [[30, 30], [w - 30, 30], [30, h - 30], [w - 30, h - 30]]) s += `<circle cx="${x}" cy="${y}" r="5" fill="#c4c7c3" stroke="#8a8e8c"/>`;
+      return s + R(40, 22, 220, 20, '#3b3f44', 2, 'none') + T(150, 36, (c && c.props.title) || 'CONTROL CABINET', 'dt light xs');
+    },
+  });
+  def('door', {
+    name: 'Cabinet Door', cat: 'Cabinet', view: 'none', prefix: '+CD', w: 600, h: 600, layer: 'back', plate: true,
+    props: { w: '600', h: '600', title: 'MOTOR CONTROL' },
+    pdefs: [{ k: 'w', n: 'Width', opts: SIZES_W }, { k: 'h', n: 'Height', opts: SIZES_H }, { k: 'title', n: 'Name plate' }],
+    info: 'Front of the cabinet: put push buttons, selector switches, pilot lamps, the E-stop, meters and the HMI terminal on it. Moving the door moves everything mounted on it.',
+    terms: [],
+    dims: plateDims,
+    draw(c) {
+      const { w, h } = plateDims(c || { props: {} });
+      return R(0, 0, w, h, '#cfd1cb', 10, '#777b7f', 2) + R(12, 12, w - 24, h - 24, 'none', 8, '#b3b6b0') +
+        R(-6, h * 0.18, 10, 40, '#6d7176', 2, '#3f4245') + R(-6, h * 0.82 - 40, 10, 40, '#6d7176', 2, '#3f4245') +
+        R(w - 30, h / 2 - 40, 16, 80, '#3a3d40', 6, '#1e2022') + R(w / 2 - 110, 26, 220, 26, '#2b2d30', 3, 'none') + T(w / 2, 43, (c && c.props.title) || 'MOTOR CONTROL', 'dt light xs');
+    },
+  });
+  def('duct', {
+    name: 'Cable Duct', cat: 'Cabinet', view: 'none', prefix: 'WD', w: 400, h: 40, layer: 'rail',
+    props: { len: '400', dir: 'H' },
+    pdefs: [{ k: 'len', n: 'Length', opts: ['200', '300', '400', '600', '800', '1000', '1200'] }, { k: 'dir', n: 'Direction', opts: ['H', 'V'] }],
+    info: 'Slotted wiring duct: the wires between devices run inside it. Horizontal above and below the DIN rails, vertical at the sides.',
+    terms: [],
+    dims: c => (c.props.dir === 'V' ? { w: 40, h: Number(c.props.len) || 400 } : { w: Number(c.props.len) || 400, h: 40 }),
+    draw(c) {
+      const v = c && c.props.dir === 'V', L = c ? Number(c.props.len) || 400 : 400;
+      let s = v ? R(0, 0, 40, L, '#a3a8a5', 2, '#6d7270') + R(12, 0, 16, L, '#b9bdba', 0, 'none') : R(0, 0, L, 40, '#a3a8a5', 2, '#6d7270') + R(0, 12, L, 16, '#b9bdba', 0, 'none');
+      for (let p = 8; p < L - 6; p += 16) s += v ? `<rect x="2" y="${p}" width="8" height="8" fill="#7d827f"/><rect x="30" y="${p}" width="8" height="8" fill="#7d827f"/>` : `<rect x="${p}" y="2" width="8" height="8" fill="#7d827f"/><rect x="${p}" y="30" width="8" height="8" fill="#7d827f"/>`;
+      return s;
+    },
+  });
+  def('hmiterm', {
+    name: 'HMI Terminal (operator panel)', cat: 'Cabinet', view: 'panel', prefix: 'HMI', w: 300, h: 220,
+    info: 'Touch panel for the cabinet door. It shows the screen made in the HMI workspace, live, and its buttons can be pressed here. Needs 24 VDC on + / M (0 V).',
+    terms: [{ id: 'P', x: 250, y: 220, l: '+' }, { id: 'M', x: 275, y: 220 }],
+    init: () => ({ pw: false }),
+    evaluate(c, api) { const v = api.v(c, 'P', 'M'); return set(c, 'pw', !!(v && v.kind === 'DC')); },
+    onPart(c, p, ev, ctx) { if (c.state.pw && p.startsWith('h:') && ctx && ctx.hmiPress) { ctx.hmiPress(p.slice(2), ev); return true; } },
+    ctxSig: (c, ctx) => '|' + (c.state.pw && ctx.hmiMini ? ctx.hmiMini().key : ''),
+    draw(c, ctx) {
+      const pw = c && c.state.pw, m = pw && ctx && ctx.hmiMini ? ctx.hmiMini() : null;
+      return R(0, 0, 300, 220, '#2a2b2d', 10, '#111') + R(18, 16, 264, 158.4, pw ? '#10161c' : '#050607', 2, '#000') +
+        (m ? `<g transform="translate(18 16) scale(0.33)">${m.svg}</g>` : T(150, 100, pw ? '' : 'NO POWER', 'dt light xs')) +
+        T(22, 196, 'Operator terminal', 'dt light xs', 'start') + [0, 1, 2, 3].map(i => R(150 + i * 22, 186, 16, 12, '#45474a', 2, '#111')).join('') + led(140, 192, pw, '#3ddc63', 3);
+    },
+    status: c => (c.state.pw ? 'On — shows the HMI screen' : 'No 24 VDC on + / M'),
+  });
+
   /* ---------- PILOT DEVICES ---------- */
   function pb(type, name, contact, color, text) {
     const ids = contact === 'NO' ? ['13', '14'] : ['11', '12'];
@@ -1651,7 +1714,7 @@
   }
   function draw(c, ctx) { const d = DEFS[c.type]; return d ? d.draw(c, ctx) : ''; }
   /* drawn size before scaling: a DIN rail's width follows its length */
-  function dims(c) { const d = DEFS[c.type]; return { w: d.dims ? d.dims(c).w : d.w, h: d.h }; }
+  function dims(c) { const d = DEFS[c.type], x = d.dims ? d.dims(c) : {}; return { w: x.w || d.w, h: x.h || d.h }; }
   function status(c, ctx) { const d = DEFS[c.type]; return d && d.status ? d.status(c, ctx) : ''; }
   function repair(c) {
     const d = DEFS[c.type];

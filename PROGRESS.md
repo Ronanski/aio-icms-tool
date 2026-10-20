@@ -140,7 +140,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Data table and status bar per card; one controller per project (compact PLC or CPU module); example *Modular PLC rack*
 - [x] Part 2: I/O Configuration (dialog, Read I/O Config, saved in the project; a card works only when configured; mismatch = no RUN / CPU fault; Verify checks I/O addresses)
 - [x] Part 3: address styles: file-based / bit-byte / basic (display only, typed in any style, stored file-based; saved per project)
-- [ ] Part 4: 2D cabinet
+- [x] Part 4: 2D cabinet: backplate, door, cable duct, HMI terminal on the door (live HMI screen, operable); plates carry their devices; example *Motor starter cabinet*
+- [ ] Stable v1.6.0: waiting for the owner's "GO STABLE v1.6.0"
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
@@ -154,7 +155,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Modular rack (PSU, CPU, I/O cards per slot), generic names only (part 1)
 - [x] I/O Configuration: a module works only after it is configured (part 2)
 - [x] Addressing display: Basic, file-based or bit/byte style (part 3)
-- [ ] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails
+- [x] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails (part 4)
 
 **v1.7.0 — HMI**
 - [ ] Studio (designer) vs Machine (runtime) modes
@@ -171,7 +172,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 
 ## Audit findings not fixed yet
 - [ ] Math status flags S:0 (carry, overflow, zero, sign) and S:5/0 on divide by zero
-- [ ] PLC inputs accept any voltage (230 VAC on a 24 VDC input)
+- [x] PLC inputs accept any voltage (230 VAC on a 24 VDC input): an AC voltage on a 24 VDC input destroys the input (compact PLC and rack cards)
 - [ ] Breaker selectivity: with equal rank, the upstream breaker can trip first
 - [ ] No warning for an oscillating circuit (relay fed through its own NC contact)
 - [ ] Release workflow publishes a debug-signed APK when signing secrets are missing

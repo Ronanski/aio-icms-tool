@@ -16,6 +16,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - **Verify** checks I/O addresses against the hardware: an address in an unconfigured slot, slot 0 or past a card's 8 points is an error; on the compact PLC, an address it does not have (e.g. I:1/0) is a warning.
   - The data table follows the I/O configuration (a missing card shows as *(missing)*).
 - **Address styles** (Ladder toolbar → *Address*): show I/O addresses **file-based** (`I:1/0`, `O:2/0`), **bit/byte** (`I0.0`, `Q0.0`) or **basic** (`I1`, `Q1`). Bit/byte and basic number the real I/O points in order (compact PLC, or the configured rack cards). Used in the ladder, the instruction dialog and its suggestions, the data table, the forces list, the status bar and the card labels in the Wiring. An address can be typed in any style; the program is always stored file-based, so projects open the same in every style. Saved with the project.
+- **2D cabinet** (Wiring → *Cabinet*): **Control Cabinet** backplate and **Cabinet Door** (size and name plate in the properties), **Cable Duct** (horizontal or vertical) and an **HMI Terminal** for the door. Cabinet and door are drawn behind the devices; moving one moves everything mounted on it, with the bends of the wires between those devices.
+  - The HMI terminal shows the screen made in the HMI workspace, live, and its buttons can be pressed in the Wiring. It needs 24 VDC on + / M; without power it is dark.
+- Example **Motor starter cabinet (modular PLC, door with HMI)**: breakers, the modular PLC, contactor, overload and terminal block on DIN rails between cable ducts; START/STOP, pilot lamps and the HMI terminal on the door; START/STOP from the door or the HMI.
 - Example **Modular PLC rack (PSU, CPU, I/O cards)**: START/STOP with a seal-in on I:1/0, I:1/1 and O:2/0.
 
 ## [1.5.0] - 2026-10-19

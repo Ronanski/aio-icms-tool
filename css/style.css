@@ -598,7 +598,7 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .ferr { pointer-events: none; }
 .ferr rect { fill: #f7f7f4; stroke: #6b6b66; stroke-width: .7; }
 .ferr text { font: 700 6.5px var(--sans); fill: #1d1d1b; text-anchor: middle; }
-.rails .comp .clabel { opacity: .6; }
+.rails .comp .clabel, .backs .comp .clabel { opacity: .6; }
 .kbd-table td { padding: 4px 10px 4px 0; font-size: 13px; } .kbd-table kbd { font: 12px var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
 /* Electrical Diagram, IEC view */
 .iec-svg .colbg { fill: transparent; }

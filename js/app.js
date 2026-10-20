@@ -34,6 +34,9 @@
   };
   window.App = App;
   App.ctx.setMode = m => App.setMode(m);
+  // the HMI terminal in the Wiring shows and operates the HMI screen
+  App.ctx.hmiMini = () => HMI.mini();
+  App.ctx.hmiPress = (id, ev) => HMI.pressId(id, ev);
   // Verify checks I/O addresses against the hardware in the Wiring
   App.plc.ioCheck = a => Circuit.ioCheck(a, App.project.circuit, App.project.io);
 

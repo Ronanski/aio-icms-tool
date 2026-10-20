@@ -6,7 +6,7 @@
   const esc = UI.esc;
   const { DEFS } = Circuit;
   const WS = {};
-  let root, svg, gView, gRails, gWires, gComps, gOver, propsEl, meterEl, tipEl, bannerEl;
+  let root, svg, gView, gBacks, gRails, gWires, gComps, gOver, propsEl, meterEl, tipEl, bannerEl;
   let view = { x: 40, y: 30, k: 0.9 };
   let sel = null;            // {kind:'comp'|'wire', id}
   let wiring = null;         // {from, pts:[[x,y]], cur:[x,y]}
@@ -62,7 +62,7 @@
   let boxes = null;
   function deviceBoxes() {
     if (boxes) return boxes;
-    boxes = circ().comps.filter(c => !DEFS[c.type].rail && !DEFS[c.type].junction).map(c => {
+    boxes = circ().comps.filter(c => !DEFS[c.type].rail && !DEFS[c.type].junction && !DEFS[c.type].layer).map(c => {
       const s = c.props.size || 1, d = Circuit.dims(c);
       return [c.x + 1, c.y + 1, c.x + d.w * s - 1, c.y + d.h * s - 1];
     });
@@ -116,7 +116,7 @@
             <svg class="ws-svg">
               <defs><pattern id="wsGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern>
               <pattern id="wsGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#wsGrid)"/><path d="M100 0 H0 V100" fill="none" class="gridLine"/></pattern></defs>
-              <g class="vp"><rect class="bg" x="-6000" y="-6000" width="12000" height="12000" fill="url(#wsGrid2)"/><g class="rails"></g><g class="wires"></g><g class="comps"></g><g class="over"></g></g>
+              <g class="vp"><rect class="bg" x="-6000" y="-6000" width="12000" height="12000" fill="url(#wsGrid2)"/><g class="backs"></g><g class="rails"></g><g class="wires"></g><g class="comps"></g><g class="over"></g></g>
             </svg>
             <div class="ws-banner"></div>
             <div class="meter-read hidden"></div>
@@ -128,7 +128,7 @@
       </div>`;
     svg = el.querySelector('.ws-svg');
     gView = svg.querySelector(".vp");
-    gRails = svg.querySelector('.rails'); gWires = svg.querySelector('.wires'); gComps = svg.querySelector('.comps'); gOver = svg.querySelector('.over');
+    gBacks = svg.querySelector('.backs'); gRails = svg.querySelector('.rails'); gWires = svg.querySelector('.wires'); gComps = svg.querySelector('.comps'); gOver = svg.querySelector('.over');
     propsEl = el.querySelector('.ws-props'); meterEl = el.querySelector('.meter-read'); tipEl = el.querySelector('.ws-tip'); bannerEl = el.querySelector('.ws-banner');
     palDrawer = UI.drawer(el.querySelector('[data-drawer="pal"]'), el.querySelector('.ws-palette'));
     UI.drawer(el.querySelector('[data-drawer="props"]'), propsEl);
@@ -295,13 +295,25 @@
     if (compEl) {
       const c = byId(compEl.dataset.cid);
       select({ kind: 'comp', id: c.id });
-      drag = { kind: 'comp', c, ox: pt.x - c.x, oy: pt.y - c.y, moved: false };
+      drag = { kind: 'comp', c, ox: pt.x - c.x, oy: pt.y - c.y, moved: false, ...mounted(c) };
       svg.setPointerCapture(e.pointerId);
       return;
     }
     if (wireEl) { select({ kind: 'wire', id: wireEl.dataset.wid }); return; }
     select(null);
     startPan(e);
+  }
+  /* devices whose middle lies on a cabinet plate or door c, and the wires that run between them */
+  function mounted(c) {
+    if (!DEFS[c.type].plate) return {};
+    const d = Circuit.dims(c), s = c.props.size || 1;
+    const kids = circ().comps.filter(k => k !== c && !DEFS[k.type].plate).filter(k => {
+      const kd = Circuit.dims(k), ks = k.props.size || 1, mx = k.x + kd.w * ks / 2, my = k.y + kd.h * ks / 2;
+      return mx > c.x && mx < c.x + d.w * s && my > c.y && my < c.y + d.h * s;
+    });
+    const ids = new Set(kids.map(k => k.id));
+    const kw = circ().wires.filter(w => ids.has(w.a.split(':')[0]) && ids.has(w.b.split(':')[0]) && (w.pts || []).length).map(w => ({ w, pts: w.pts.map(p => p.slice()) }));
+    return { x0: c.x, y0: c.y, kids: kids.map(k => ({ c: k, x: k.x, y: k.y })), kw };
   }
   function startPan(e) { drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(e.pointerId); svg.classList.add('panning'); }
   function onMove(e) {
@@ -326,7 +338,7 @@
         let ny = snap(pt.y - drag.oy);
         // DIN rail: a device whose middle comes within 24 px of a rail's centre line clips onto it
         const dd = DEFS[drag.c.type];
-        if (!dd.rail && !dd.junction && !e.altKey) {
+        if (!dd.rail && !dd.junction && !dd.layer && !e.altKey) {
           const ds = drag.c.props.size || 1, mid = ny + dd.h * ds / 2, w = Circuit.dims(drag.c).w * ds;
           const r = circ().comps.find(r => DEFS[r.type].rail && nx + w > r.x && nx < r.x + Circuit.dims(r).w * (r.props.size || 1) && Math.abs(mid - (r.y + 18 * (r.props.size || 1))) <= 24);
           if (r) ny = Math.round(r.y + 18 * (r.props.size || 1) - dd.h * ds / 2);
@@ -345,7 +357,16 @@
             if (t && o && Math.abs(nx + t.x * ts - o.x) <= 8) { nx = o.x - t.x * ts; drag.guide = o.x; break; }
           }
         }
-        if (nx !== drag.c.x || ny !== drag.c.y) { drag.c.x = nx; drag.c.y = ny; drag.moved = true; renderWires(); }
+        if (nx !== drag.c.x || ny !== drag.c.y) {
+          drag.c.x = nx; drag.c.y = ny; drag.moved = true;
+          // a cabinet plate or door carries what is mounted on it, and the bends of the wires between those devices
+          if (drag.kids) {
+            const dx = nx - drag.x0, dy = ny - drag.y0;
+            drag.kids.forEach(k => { k.c.x = k.x + dx; k.c.y = k.y + dy; });
+            drag.kw.forEach(k => { k.w.pts = k.pts.map(([x, y]) => [x + dx, y + dy]); });
+          }
+          renderWires();
+        }
         renderTemp();
       }
       else if (drag.kind === 'bend') {
@@ -576,7 +597,8 @@
       if (!e) {
         const g = document.createElementNS(NS, 'g');
         g.classList.add('comp'); g.dataset.cid = c.id;
-        (DEFS[c.type].rail ? gRails : gComps).appendChild(g);
+        const dl = DEFS[c.type];
+        (dl.layer === 'back' ? gBacks : dl.rail || dl.layer === 'rail' ? gRails : gComps).appendChild(g);
         e = { g, sig: null, tr: null };
         compEls.set(c.id, e);
         if (sel && sel.kind === 'comp' && sel.id === c.id) g.classList.add('sel');
@@ -590,7 +612,7 @@
         e.g.classList.toggle('jct', !!d.junction);
         e.g.innerHTML = d.junction
           ? `<g class="term" data-term="J"><circle class="thit" r="9"/><circle class="jdot" r="4.2"/></g>`
-          : `<rect class="frame" x="-5" y="-18" width="${Circuit.dims(c).w + 10}" height="${d.h + 23}" rx="8"/><text class="clabel" x="0" y="-6">${esc(c.props.label)}</text>` + Circuit.draw(c, ctx) + Circuit.drawTerms(d);
+          : `<rect class="frame" x="-5" y="-18" width="${Circuit.dims(c).w + 10}" height="${Circuit.dims(c).h + 23}" rx="8"/><text class="clabel" x="0" y="-6">${esc(c.props.label)}</text>` + Circuit.draw(c, ctx) + Circuit.drawTerms(d);
         e.sig = s;
       }
     }
