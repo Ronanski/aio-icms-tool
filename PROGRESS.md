@@ -179,7 +179,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 
 **v2.0.0 — online (MAJOR: project format changes)**
 - [x] Tag-based engine (part A): controller tags (BOOL/INT/TIMER/COUNTER/ALIAS) over the data table; Controller Organizer with tasks (continuous + periodic), programs, routines
-- [ ] Go Online, Download / Upload with compare, Online Edit (accept, test, assemble)
+- [x] Go Online, Download / Upload with compare, Online Edit (test, assemble, cancel) — Realistic connection mode; Simple stays the default
 - [ ] Simulated network: who-active browser, controller ↔ HMI ↔ software links, MSG and produced/consumed tags (no real ports)
 
 ## Audit findings not fixed yet

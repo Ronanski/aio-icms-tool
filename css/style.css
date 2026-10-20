@@ -686,3 +686,11 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .org { padding-left: 0; font-size: 13px; line-height: 1.9; }
 .org small { color: var(--muted); }
 .tag-tbl td, .tag-tbl th { white-space: nowrap; }
+.conn-chip { font: 700 11px var(--mono); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); }
+.conn-chip.on { background: var(--ok); color: #fff; border-color: transparent; }
+.conn-chip.edit { background: var(--warn); color: #fff; border-color: transparent; }
+.conn-chip.off { background: var(--surface-2); }
+.lad-banner { display: flex; gap: 8px; align-items: center; padding: 6px 14px; background: color-mix(in srgb, var(--warn) 18%, var(--surface)); border-bottom: 1px solid var(--border); font-size: 13px; flex-wrap: wrap; }
+.lad-comm select { font-size: 12px; padding: 3px 4px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.lad-comm-real { display: inline-flex; gap: 2px; }
+.lad-comm-real[hidden] { display: none; }

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **Online with the controller (v2.0)** (Ladder → *Online*): **Simple** (as before: edits run at once) or **Realistic**: the controller keeps the program last downloaded, as with real PLC software.
+  - Offline, edits change the project only; the status bar shows **OFFLINE · project ≠ controller**.
+  - **⇄ Go Online** compares them and offers **Download** (writes the project into the controller; needs PROG and a project without errors), **Upload** (reads the controller program into the project) or **Compare**.
+  - **≠ Compare** lists every rung (by file), task and tag that differs.
+  - **Online edits**: in PROG an edit is written at once; in RUN it is pending — **▶ Test edits** runs it, **✓ Assemble** keeps it, **✕ Cancel edits** goes back to the controller program.
+  - The connection mode and the controller program are saved with the project.
 - **Controller Tags (v2.0)** (Ladder → *🏷 Tags*): give names to addresses. **BOOL**, **INT**, **TIMER** and **COUNTER** tags get their own address (B3, N7, T4, C5, from the top down); an **ALIAS** tag is another name for an address (`START_PB` = `I:1/0`). Use the names in instructions (`XIC START_PB`, `TON RUN_T 1.0 5 0`, `XIC RUN_T.DN`); the ladder shows the names and the tag description; renaming a tag renames it in the program; live values in the list. Saved with the project.
 - **Controller Organizer (v2.0)** (Ladder → *🗂 Organizer*): the project as tasks, programs and routines: MainTask (continuous) → MainProgram → MainRoutine (LAD 2) and the subroutines; Controller Tags; I/O Configuration. A subroutine file can be a **periodic task** (runs on its own every 10 … 1000 ms) instead of being called by JSR.
 - **New instructions (v1.8)**: **OSR / OSF** (one-shot rising / falling with storage and output bits), **MCR** zones, **JSR / SBR / RET** with **program files** (LAD 2 main + subroutine files LAD 3–9: *File* list and *＋ File* in the Ladder toolbar, saved with the project), **COP / FLL** (copy / fill a block of words, file addresses `#N7:0`), **SQO** (sequencer output with a mask, control file **R6**: EN, DN, LEN, POS; new R6 tab in the data table). Verify checks JSR targets and MCR pairs.
