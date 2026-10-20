@@ -141,6 +141,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Part 2: I/O Configuration (dialog, Read I/O Config, saved in the project; a card works only when configured; mismatch = no RUN / CPU fault; Verify checks I/O addresses)
 - [x] Part 3: address styles: file-based / bit-byte / basic (display only, typed in any style, stored file-based; saved per project)
 - [x] Part 4: 2D cabinet: backplate, door, cable duct, HMI terminal on the door (live HMI screen, operable); plates carry their devices; example *Motor starter cabinet*
+- [x] Free draw like SimuRelay (owner: "GO dito"): library panel with icon grid and groups, drag or click to add, no more stacking, Points L1/L2/L3/N/PE/+24V/0V, battery, generator, AC/DC converter, DC motor, wire pieces and link arrows, toolbar order with Play and Values, zoom bottom right, major grid lines
+- [ ] Owner to point out the spacing issue in the IEC diagram screenshots (sent 2026-10-20)
 - [ ] Stable v1.6.0: waiting for the owner's "GO STABLE v1.6.0"
 
 ## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)

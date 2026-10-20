@@ -971,9 +971,9 @@ function check(name, cond, info = '') {
   check('free draw: pressing S1 on the drawing starts KM1, its seal-in holds it, the motor runs', (await get('KM1', 'state.pulled')) && (await get('H1', 'state.on')) && (await get('M1', 'state.drive')) === 'run');
   check('free draw: the live paths light up', await page.evaluate(() => document.querySelectorAll('#view-schematic .fwire .w.on').length > 8));
   await page.click('#view-schematic [data-smode="edit"]');
-  await page.click('#view-schematic [data-fdact="lib"]'); await page.click('.ctx-menu button:has-text("Loads")'); await wait(100); await page.click('.ctx-menu button:has-text("Pilot lamp")'); await page.fill('#f_t', 'H9'); await page.click('.modal .btn.primary'); await wait(200);
+  await page.selectOption('#view-schematic .fd-grp', 'Loads'); await wait(100); await page.click('#view-schematic .fd-ico[data-fk="lamp"]'); await page.fill('#f_t', 'H9'); await page.click('.modal .btn.primary'); await wait(200);
   const h9 = await page.evaluate(() => App.project.schematic.free.items.find(i => i.tag === 'H9').id);
-  check('free draw: ＋ Library adds a symbol and its device', !!h9 && await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'H9')));
+  check('free draw: the Library adds a symbol and its device', !!h9 && await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'H9')));
   const tA = await (await page.$(`#view-schematic [data-ft="${h9}:X1"]`)).boundingBox(), tB = await (await page.$('#view-schematic [data-ft="d2:2"]')).boundingBox();
   await page.mouse.click(tA.x + tA.width / 2, tA.y + tA.height / 2); await wait(100); await page.mouse.click(tB.x + tB.width / 2, tB.y + tB.height / 2); await wait(200);
   check('free draw: clicking two terminals draws a wire, and it is wired in the Wiring', await page.evaluate(id => { const C = App.project.circuit, h = C.comps.find(c => c.props.label === 'H9'), q = C.comps.find(c => c.props.label === 'QF1'); return App.project.schematic.free.wires.some(w => (w.a === id + ':X1' && w.b === 'd2:2') || (w.b === id + ':X1' && w.a === 'd2:2')) && C.wires.some(w => w.sch && [w.a, w.b].includes(h.id + ':X1') && [w.a, w.b].includes(q.id + ':2')); }, h9));
@@ -1214,6 +1214,64 @@ function check(name, cond, info = '') {
     return dx !== 0 && dy !== 0 && g('QF1').x === b.qf[0] + dx && g('QF1').y === b.qf[1] + dy && g('+CD1').x === b.door[0] && g('S1').x === b.s1[0];
   }, cabBefore));
   check('without 24 V the HMI terminal is dark', await page.evaluate(() => { const c = Circuit.create('hmiterm', 0, 0, { comps: [], seq: 0 }); return Circuit.draw(c, App.ctx).includes('NO POWER'); }));
+
+  console.log('v1.6: free draw library panel, points, wire pieces, values');
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'free'); localStorage.removeItem('plc-trainer.fdLib'); App.openNew({ name: 'Free v2', circuit: { comps: [], wires: [], seq: 0 } }); App.setLayout('single'); App.showView('schematic'); });
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  await page.selectOption('#view-schematic .fd-grp', 'All'); await wait(100);
+  check('free draw: the library is an icon grid beside the drawing, with every symbol under All', await page.evaluate(() => !!document.querySelector('#view-schematic .fd-lib .fd-grp') && document.querySelectorAll('#view-schematic .fd-ico').length === Object.keys(FreeDraw.KINDS).length && document.querySelectorAll('#view-schematic .fd-ico svg .ssym').length > 50));
+  await page.selectOption('#view-schematic .fd-grp', 'Motors'); await wait(100);
+  check('free draw: the group list shows one group (Motors, with the DC motor)', await page.evaluate(() => { const k = [...document.querySelectorAll('#view-schematic .fd-ico')].map(b => b.dataset.fk); return k.length === 6 && k.includes('mdc') && document.querySelector('#view-schematic .fd-ico').classList.contains('g-motors'); }));
+  check('free draw: the new sources and wire pieces are in the library', await page.evaluate(() => ['pL1', 'pL2', 'pL3', 'pN', 'pPE', 'pP', 'pM', 'batt', 'gen', 'psu', 'wline', 'wcorner', 'wtee', 'wcross', 'wlink', 'mdc'].every(k => FreeDraw.KINDS[k])));
+  await page.selectOption('#view-schematic .fd-grp', 'Others'); await wait(100);
+  for (let i = 0; i < 4; i++) { await page.click('#view-schematic .fd-ico[data-fk="wcorner"]'); await wait(80); }
+  check('free draw: symbols added one after another do not land on each other', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && its.every((a, i) => its.every((b, j) => i === j || Math.abs(a.x - b.x) >= 70 || Math.abs(a.y - b.y) >= 70)); }));
+  check('free draw: wire pieces need no tag dialog', await page.evaluate(() => !document.querySelector('.modal')));
+  await page.dragAndDrop('#view-schematic .fd-ico[data-fk="wcross"]', '#view-schematic .fd-host', { targetPosition: { x: 60, y: 60 } }); await wait(200);
+  check('free draw: a symbol dragged from the library lands where it is dropped', await page.evaluate(() => App.project.schematic.free.items.some(i => i.k === 'wcross')));
+  await page.click('#view-schematic [data-fdact="lib"]'); await wait(100);
+  check('free draw: the Library button hides and shows the panel', await page.evaluate(() => !document.querySelector('#view-schematic .fd-lib').offsetParent));
+  await page.click('#view-schematic [data-fdact="lib"]'); await wait(100);
+  // potential points wired to the supply: L1 → S1 → H1 → N, and a link arrow pair
+  await page.evaluate(() => {
+    const items = [{ id: 'd1', k: 'src1', tag: 'Q1', x: 0, y: -100, r: 0 }, { id: 'd2', k: 'pL1', tag: 'XP1', x: 0, y: 0, r: 0 }, { id: 'd3', k: 'pbno', tag: 'S1', x: 0, y: 80, r: 0 },
+      { id: 'd4', k: 'wlink', tag: 'A', x: 0, y: 160, r: 0 }, { id: 'd5', k: 'wlink', tag: 'A', x: 200, y: 0, r: 180 }, { id: 'd6', k: 'lamp', tag: 'H1', x: 200, y: 80, r: 0 }, { id: 'd7', k: 'pN', tag: 'XP2', x: 200, y: 180, r: 180 },
+      { id: 'd8', k: 'pP', tag: 'XP3', x: 400, y: 0, r: 0 }];
+    const w = [['d2:J', 'd3:13'], ['d3:14', 'd4:J0'], ['d5:J0', 'd6:X1'], ['d6:X2', 'd7:J']];
+    App.openNew({ name: 'Points', circuit: { comps: [], wires: [], seq: 0 }, schematic: { free: { items, wires: w.map((x, i) => ({ id: 'fw' + (i + 1), a: x[0], b: x[1] })), seq: 20 } } });
+    App.showView('schematic');
+  });
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('free draw: Point L1 and Point N are wired to the supply L and N', await page.evaluate(() => { const C = App.project.circuit, q = C.comps.find(c => c.props.label === 'Q1'), j1 = C.comps.find(c => c.props.label === 'XP1'), j2 = C.comps.find(c => c.props.label === 'XP2'); return App.api.sameNet(j1.id + ':J', q.id + ':L') && App.api.sameNet(j2.id + ':J', q.id + ':N'); }));
+  check('free draw: a +24 V point with no 24 V supply is reported', await page.evaluate(() => [...FreeDraw.errs.values()].some(m => m.includes('+24 V'))));
+  await page.click('#view-schematic [data-fdact="play"]'); await wait(100);
+  check('free draw: Play switches to operate', await page.evaluate(() => document.querySelector('#view-schematic [data-smode="run"]').classList.contains('on') && document.querySelector('#view-schematic [data-fdact="play"]').textContent.includes('Stop')));
+  await page.click('#view-schematic [data-fdact="values"]'); await wait(200);
+  const pS1 = await (await page.$('#view-schematic [data-fi="d3"] .hit')).boundingBox();
+  await page.mouse.move(pS1.x + pS1.width / 2, pS1.y + pS1.height / 2); await page.mouse.down(); await wait(400);
+  check('free draw: through the link arrows (same tag) S1 lights H1', await get('H1', 'state.on'));
+  const vals = await page.evaluate(() => [...document.querySelectorAll('#view-schematic .fval')].map(x => x.textContent));
+  check('free draw: Values shows 230 V on the lamp, closed on S1, L1 on the point', vals.includes('230 V~') && vals.includes('closed') && vals.includes('L1'), vals.join(','));
+  await page.mouse.up(); await wait(200);
+  await page.click('#view-schematic [data-fdact="values"]'); await page.click('#view-schematic [data-fdact="play"]');
+  await page.click('#view-schematic [data-fz="in"]'); await wait(100);
+  check('free draw: zoom buttons at the bottom right zoom the drawing', await page.evaluate(() => /scale\(1\.2/.test(document.querySelector('#view-schematic .fv').getAttribute('transform'))));
+  await page.click('#view-schematic [data-fz="fit"]'); await wait(100);
+  check('free draw: the grid has major lines every 100 px', await page.evaluate(() => !!document.querySelector('#view-schematic #fdGrid2 .gridLine')));
+  check('DC motor runs on 24 V DC and reverses with the polarity', await page.evaluate(() => {
+    const circ = { comps: [], wires: [], seq: 0 }, b = Circuit.create('battery', 0, 0, circ), m = Circuit.create('motordc', 0, 0, circ);
+    circ.comps.push(b, m); circ.wires.push({ id: 'w1', a: b.id + ':P', b: m.id + ':A1' }, { id: 'w2', a: b.id + ':M', b: m.id + ':A2' });
+    Circuit.solve(circ, 0.02, {}); const fwd = m.state.drive === 'run' && m.state.dir === 1;
+    circ.wires = [{ id: 'w1', a: b.id + ':P', b: m.id + ':A2' }, { id: 'w2', a: b.id + ':M', b: m.id + ':A1' }];
+    Circuit.solve(circ, 0.02, {}); return fwd && m.state.dir === -1;
+  }));
+  check('the generator supplies only while it runs', await page.evaluate(() => {
+    const circ = { comps: [], wires: [], seq: 0 }, g = Circuit.create('gen3', 0, 0, circ), h = Circuit.create('lamp', 0, 0, circ);
+    h.props.coil = '230VAC'; circ.comps.push(g, h); circ.wires.push({ id: 'w1', a: g.id + ':L1', b: h.id + ':X1' }, { id: 'w2', a: g.id + ':N', b: h.id + ':X2' });
+    Circuit.solve(circ, 0.02, {}); const off = !h.state.on; Circuit.part(g, 'run', 'down', {}); Circuit.solve(circ, 0.02, {}); return off && h.state.on;
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
+  await page.click('#view-schematic [data-sstyle="iec"]');
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));

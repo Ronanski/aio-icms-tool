@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- Free draw: symbols added one after another no longer land on top of each other; each goes to the nearest free spot.
+
 ### Added
 - **Modular PLC rack** (Wiring → *PLC Rack*): a rack power supply (230 VAC in, 24 VDC out for sensors), a **CPU module** (slot 0, key switch PROG/RUN, PWR/RUN/FLT/FORCE lights) and I/O cards: **input card 8 × 24 VDC**, **input card 8 × 230 VAC**, **relay output card 8** and **transistor output card 8 × 24 VDC**. Snap them on a DIN rail.
   - Each card has a **slot** (1–7, the next free slot when you add it); its I/O is addressed by the slot: a card in slot 2 is **I:2/0–7** or **O:2/0–7**, like a modular controller.
@@ -18,6 +21,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Address styles** (Ladder toolbar → *Address*): show I/O addresses **file-based** (`I:1/0`, `O:2/0`), **bit/byte** (`I0.0`, `Q0.0`) or **basic** (`I1`, `Q1`). Bit/byte and basic number the real I/O points in order (compact PLC, or the configured rack cards). Used in the ladder, the instruction dialog and its suggestions, the data table, the forces list, the status bar and the card labels in the Wiring. An address can be typed in any style; the program is always stored file-based, so projects open the same in every style. Saved with the project.
 - **2D cabinet** (Wiring → *Cabinet*): **Control Cabinet** backplate and **Cabinet Door** (size and name plate in the properties), **Cable Duct** (horizontal or vertical) and an **HMI Terminal** for the door. Cabinet and door are drawn behind the devices; moving one moves everything mounted on it, with the bends of the wires between those devices.
   - The HMI terminal shows the screen made in the HMI workspace, live, and its buttons can be pressed in the Wiring. It needs 24 VDC on + / M; without power it is dark.
+- **Free draw, reworked** (Electrical Diagram → *Free draw*):
+  - **Library panel** beside the drawing: an icon grid of every symbol with a group list (All, Sources, Switches, …, Motors) and a colour bar per group. Click a symbol to add it, or drag it onto the drawing. *Library* in the toolbar hides or shows the panel.
+  - Toolbar in this order: Library, **▶ Play** (operate the drawing; ■ Stop to edit again), **Values**, Back, Front, Rotate, Duplicate, Delete, Undo, Redo, Type ⇄.
+  - **Values** shows the voltage on each load (e.g. 230 V~, 24 V=), open/closed on each contact and the conductor on each wire point.
+  - **Zoom buttons** (−, fit, +) at the bottom right, and a grid with major lines every 100 px.
+  - New symbols: **Point L1, L2, L3, N, PE, +24 V, 0 V** (wired to that conductor of the supply), **AC/DC converter** (the 24 V power supply), **3-phase generator**, **battery 24 V**, **DC motor**, and **wire pieces**: straight, corner, T, cross and a **link arrow** (arrows with the same tag are connected).
+  - Wire pieces, junctions and points get a tag on their own (no dialog).
+- New devices in the Wiring: **Battery 24 V**, **3-Phase Generator** (START/STOP) and **DC Motor 24 V** (reverses with the polarity).
 - Example **Motor starter cabinet (modular PLC, door with HMI)**: breakers, the modular PLC, contactor, overload and terminal block on DIN rails between cable ducts; START/STOP, pilot lamps and the HMI terminal on the door; START/STOP from the door or the HMI.
 - Example **Modular PLC rack (PSU, CPU, I/O cards)**: START/STOP with a seal-in on I:1/0, I:1/1 and O:2/0.
 
