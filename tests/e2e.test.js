@@ -1808,7 +1808,7 @@ function check(name, cond, info = '') {
     return quiet && ok && App.compat().length === 0 && App.project.format === 1 && App.serialize().format === 2;
   }));
   // damaged data: wrong types, missing or duplicate ids, oversized entries, wires to nothing — none of it may crash or spoil the rest
-  check('compat: damaged data loads without errors; damaged entries are left out and reported, readable unknown ones kept', await page.evaluate(() => {
+  const damagedR = await page.evaluate(() => {
     const bad = { name: 'Damaged', circuit: { comps: [null, 5, 'x', { type: 'lamp' }, { id: 'c1', type: 'lamp', props: { label: 'H1' } }, { id: 'c1', type: 'lamp' }, { id: 'c2' }, { id: 'c3', type: {} },
       { id: 'c4', type: 'bigThing', blob: 'x'.repeat(30000) }, { id: 'c' + '9'.repeat(30), type: 'zz' }, { id: 'c5', type: 'futureThing', props: { label: 'U1' } }],
     wires: [{ id: 'w1', a: 'c1:X1', b: 'c99:A' }, { id: 'w2' }, 'w', { id: 'w3', a: 5, b: null }, { id: 'w4', a: 'c5:A', b: 'c1:X2' }] },
@@ -1823,7 +1823,8 @@ function check(name, cond, info = '') {
       && k.rungs.length === 1 && !!k.main && k.feeders.length === 1 && k.free.items.map(i => i.id).join() === 'd4' && k.L === 'c5:L'
       && k.dropped >= 15 && /damaged entries/.test(m) && s.schematic.L === 'c5:L' && s.schematic.power.main[0].k === 'futureMain'
       && App.compat().every(x => !/damaged/.test(x)) && App.project.keep.comps.length === 1;
-  }));
+  });
+  check('compat: damaged data loads without errors; damaged entries are left out and reported, readable unknown ones kept', damagedR === true, String(damagedR));
   // tags of kept parts and symbols are reserved; a tag the known part of the file also uses is not
   const reserveP = { name: 'Reserved tags', format: 3,
     circuit: { seq: 10, comps: [
@@ -1861,12 +1862,15 @@ function check(name, cond, info = '') {
     return typeof r === 'string' && /main power circuit holds parts/.test(r) && App.project.schematic.power.main.length === 0 && App.serialize().schematic.power.main[0].k === 'futureMain';
   }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); Schematic.resetSel(); Schematic.render(); }); await wait(200);
-  check('compat: a kept rail cannot be changed here, and is saved as it was even after the diagram chose rails itself', await page.evaluate(() => {
+  // checks that can explain a failure return a string; only `true` passes
+  const railR = await page.evaluate(() => {
     const sel = document.querySelector('#view-schematic [data-rail="L"]'); if (!sel) return 'no rail selector';
     const opt = [...sel.options].find(o => o.value && o.value !== App.project.schematic.L); const before = App.project.schematic.L;
-    if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change')); }
+    if (!opt) return 'no other rail to choose';
+    sel.value = opt.value; sel.dispatchEvent(new Event('change'));
     return App.project.schematic.L === before && App.serialize().schematic.L === 'c5:L' && document.getElementById('toast-root').textContent.includes('rail is on a part this version does not know');
-  }));
+  });
+  check('compat: a kept rail cannot be changed here, and is saved as it was even after the diagram chose rails itself', railR === true, String(railR));
   check('compat: kept paths and feeders stay right after the ones they followed when others are inserted or deleted', await page.evaluate(() => {
     const S = App.project.schematic, P = S.power;
     S.rungs = S.rungs.filter(r => r.comment !== 'B' && r.comment !== ''); S.rungs.unshift({ elems: [], comment: 'X' });
