@@ -3,8 +3,11 @@
 (function () {
   'use strict';
 
-  // I/O files: one word per slot (0 = compact controller / CPU, 1–7 = rack cards)
-  const SIZES = { I: 8, O: 8, S: 16, B3: 32, N7: 32, T4: 32, C5: 32 };
+  // I/O files: one word per slot (0 = compact controller / CPU, 1–7 = rack cards), then 4 analog channel words per slot
+  // (I:s.c / O:s.c = word 8 + 4·s + c); R6 = control structures (sequencers)
+  const SIZES = { I: 40, O: 40, S: 16, B3: 32, N7: 32, T4: 32, C5: 32, R6: 32 };
+  const ANA = (s, c) => 8 + s * 4 + c;
+  const RBITS = ['EN', 'DN', 'ER'], RWORDS = ['LEN', 'POS'];
   const TBITS = ['EN', 'TT', 'DN'], TWORDS = ['PRE', 'ACC'];
   const CBITS = ['CU', 'CD', 'DN', 'OV', 'UN'], CWORDS = ['PRE', 'ACC'];
   const NUM_IN = 12, NUM_OUT = 8;
@@ -18,6 +21,8 @@
     OTE: { k: 'coil', out: true, name: 'Output Energize', grp: 'Bit', args: [A('Address', 'bit', 'O:0/0')], help: 'Bit follows rung condition.' },
     OTL: { k: 'coil', out: true, lbl: 'L', name: 'Output Latch', grp: 'Bit', args: [A('Address', 'bit', 'O:0/0')], help: 'Sets the bit when rung is true. Stays set.' },
     OTU: { k: 'coil', out: true, lbl: 'U', name: 'Output Unlatch', grp: 'Bit', args: [A('Address', 'bit', 'O:0/0')], help: 'Clears the bit when rung is true.' },
+    OSR: { k: 'box', out: true, name: 'One Shot Rising', grp: 'Bit', args: [A('Storage Bit', 'bit', 'B3:1/0'), A('Output Bit', 'bit', 'B3:1/1')], help: 'Output Bit is ON for one scan when the rung goes false-to-true.' },
+    OSF: { k: 'box', out: true, name: 'One Shot Falling', grp: 'Bit', args: [A('Storage Bit', 'bit', 'B3:1/2'), A('Output Bit', 'bit', 'B3:1/3')], help: 'Output Bit is ON for one scan when the rung goes true-to-false.' },
     TON: { k: 'box', out: true, name: 'Timer On Delay', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'Times while rung is true. DN after preset. Resets when rung goes false.' },
     TOF: { k: 'box', out: true, name: 'Timer Off Delay', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'DN is ON while rung true and stays ON for preset after rung goes false.' },
     RTO: { k: 'box', out: true, name: 'Retentive Timer On', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'Like TON but keeps its accumulated value. Use RES to reset.' },
@@ -37,6 +42,13 @@
     MUL: { k: 'box', out: true, name: 'Multiply', grp: 'Math/Move', args: [A('Source A', 'src', 'N7:0'), A('Source B', 'src', '2'), A('Dest', 'dest', 'N7:1')], help: 'Dest = A × B' },
     DIV: { k: 'box', out: true, name: 'Divide', grp: 'Math/Move', args: [A('Source A', 'src', 'N7:0'), A('Source B', 'src', '2'), A('Dest', 'dest', 'N7:1')], help: 'Dest = A ÷ B (rounded)' },
     CLR: { k: 'box', out: true, name: 'Clear', grp: 'Math/Move', args: [A('Dest', 'dest', 'N7:0')], help: 'Dest = 0' },
+    COP: { k: 'box', out: true, name: 'Copy File', grp: 'File/Seq', args: [A('Source', 'file', '#N7:0'), A('Dest', 'file', '#N7:10'), A('Length', 'len', '4')], help: 'Copies Length words from the Source file to the Dest file while the rung is true.' },
+    FLL: { k: 'box', out: true, name: 'Fill File', grp: 'File/Seq', args: [A('Source', 'src', '0'), A('Dest', 'file', '#N7:10'), A('Length', 'len', '4')], help: 'Writes Source into Length words of the Dest file while the rung is true.' },
+    SQO: { k: 'box', out: true, name: 'Sequencer Output', grp: 'File/Seq', bits: ['EN', 'DN'], args: [A('File', 'file', '#N7:20'), A('Mask', 'src', '-1'), A('Dest', 'dest', 'O:0'), A('Control', 'ctl', 'R6:0'), A('Length', 'len', '4'), A('Position', 'int', '0')], help: 'On each false-to-true rung: POS steps to the next word of the File (back to 1 after LEN) and writes it through the Mask into Dest. Step 0 is the reset state.' },
+    MCR: { k: 'coil', out: true, lbl: 'MCR', name: 'Master Control Reset', grp: 'Program', args: [], help: 'Put MCR rungs around a zone: when the first MCR rung is false, every rung in the zone is false (non-retentive outputs off). The closing MCR rung has no conditions.' },
+    JSR: { k: 'box', out: true, name: 'Jump to Subroutine', grp: 'Program', args: [A('SBR file number', 'prog', 'U:3')], help: 'Runs program file LAD n (a subroutine) while the rung is true, then comes back.' },
+    SBR: { k: 'box', name: 'Subroutine', grp: 'Program', args: [], help: 'Marks the start of a subroutine (first instruction of its first rung; optional).' },
+    RET: { k: 'coil', out: true, lbl: 'RET', name: 'Return', grp: 'Program', args: [], help: 'Ends the subroutine early and goes back to the JSR when the rung is true.' },
   };
 
   /* ---------- Addressing ---------- */
@@ -62,7 +74,18 @@
     let m;
     if (/^[-+]?\d+(\.\d+)?$/.test(s)) { const v = Number(s); return { kind: 'const', value: v, norm: String(v) }; }
     if ((m = s.match(/^([IO]):(\d+)\/(\d+)$/))) return bitA(m[1], +m[2], +m[3]);
-    if ((m = s.match(/^([IO]):(\d+)$/))) return wordA(m[1], +m[2]);
+    if ((m = s.match(/^([IO]):(\d+)$/))) return +m[2] < 8 ? wordA(m[1], +m[2]) : null;
+    if ((m = s.match(/^([IO]):([1-7])\.([0-3])$/))) return { kind: 'word', file: m[1], word: ANA(+m[2], +m[3]), ana: true, norm: `${m[1]}:${m[2]}.${m[3]}` };
+    if ((m = s.match(/^#(N7|B3):(\d+)$/))) return +m[2] < SIZES[m[1]] ? { kind: 'file', file: m[1], word: +m[2], norm: `#${m[1]}:${+m[2]}` } : null;
+    if ((m = s.match(/^U:([3-9])$/))) return { kind: 'prog', n: +m[1], norm: `U:${m[1]}` };
+    if ((m = s.match(/^R6:(\d+)$/))) return +m[1] < SIZES.R6 ? { kind: 'struct', file: 'R6', word: +m[1], norm: `R6:${+m[1]}` } : null;
+    if ((m = s.match(/^R6:(\d+)[./]([A-Z]+)$/))) {
+      const w = +m[1], sub = m[2];
+      if (w >= SIZES.R6) return null;
+      if (RBITS.includes(sub)) return { kind: 'bit', file: 'R6', word: w, sub, norm: `R6:${w}/${sub}` };
+      if (RWORDS.includes(sub)) return { kind: 'word', file: 'R6', word: w, sub, norm: `R6:${w}.${sub}` };
+      return null;
+    }
     if ((m = s.match(/^B3?\/(\d+)$/))) { const n = +m[1]; return bitA('B3', Math.floor(n / 16), n % 16); }
     if ((m = s.match(/^(B3|N7):(\d+)\/(\d+)$/))) return bitA(m[1], +m[2], +m[3]);
     if ((m = s.match(/^(B3|N7):(\d+)$/))) return wordA(m[1], +m[2]);
@@ -97,6 +120,10 @@
         if (p && p.kind === 'const' && !(Number.isInteger(p.value) && p.value >= -32768 && p.value <= 32767)) return 'Constants must be whole numbers from -32768 to 32767';
         return p && (p.kind === 'const' || p.kind === 'word') ? null : 'Expected a constant or word address (N7:0, T4:0.ACC, C5:1.PRE)';
       case 'dest': return p && p.kind === 'word' ? null : 'Expected a word address, e.g. N7:0';
+      case 'file': return p && p.kind === 'file' ? null : 'Expected a file address, e.g. #N7:0';
+      case 'len': return p && p.kind === 'const' && Number.isInteger(p.value) && p.value >= 1 && p.value <= 32 ? null : 'Length is 1 to 32';
+      case 'ctl': return p && p.kind === 'struct' && p.file === 'R6' ? null : 'Expected a control, e.g. R6:0';
+      case 'prog': return p && p.kind === 'prog' ? null : 'Expected a program file U:3 … U:9';
     }
     return null;
   }
@@ -110,6 +137,7 @@
       B3: new Array(SIZES.B3).fill(0), N7: new Array(SIZES.N7).fill(0),
       T4: Array.from({ length: SIZES.T4 }, () => ({ EN: 0, TT: 0, DN: 0, PRE: 0, ACC: 0, base: 1, _f: 0 })),
       C5: Array.from({ length: SIZES.C5 }, () => ({ CU: 0, CD: 0, DN: 0, OV: 0, UN: 0, PRE: 0, ACC: 0 })),
+      R6: Array.from({ length: SIZES.R6 }, () => ({ EN: 0, DN: 0, ER: 0, LEN: 0, POS: 0 })),
     };
   }
 
@@ -138,13 +166,13 @@
     getBit(a) {
       const d = this.data;
       if (!a) return 0;
-      if (a.file === 'T4' || a.file === 'C5') return d[a.file][a.word][a.sub] ? 1 : 0;
+      if (a.file === 'T4' || a.file === 'C5' || a.file === 'R6') return d[a.file][a.word][a.sub] ? 1 : 0;
       return (d[a.file][a.word] >> a.bit) & 1;
     }
     setBit(a, v) {
       if (!a) return;
       const d = this.data;
-      if (a.file === 'T4' || a.file === 'C5') { d[a.file][a.word][a.sub] = v ? 1 : 0; return; }
+      if (a.file === 'T4' || a.file === 'C5' || a.file === 'R6') { d[a.file][a.word][a.sub] = v ? 1 : 0; return; }
       const x = d[a.file][a.word];
       d[a.file][a.word] = asI16(v ? (x | (1 << a.bit)) : (x & ~(1 << a.bit)));
     }
@@ -152,13 +180,13 @@
       if (!a) return 0;
       if (a.kind === 'const') return a.value;
       const d = this.data;
-      if (a.file === 'T4' || a.file === 'C5') return d[a.file][a.word][a.sub];
+      if (a.file === 'T4' || a.file === 'C5' || a.file === 'R6') return d[a.file][a.word][a.sub];
       return d[a.file][a.word];
     }
     setWord(a, v) {
       if (!a || a.kind !== 'word') return;
       const d = this.data;
-      if (a.file === 'T4' || a.file === 'C5') { d[a.file][a.word][a.sub] = i16(v); return; }
+      if (a.file === 'T4' || a.file === 'C5' || a.file === 'R6') { d[a.file][a.word][a.sub] = i16(v); return; }
       d[a.file][a.word] = i16(v);
     }
     /* string helpers used by HMI and data table */
@@ -207,18 +235,39 @@
       return (w & ~m) | (v & m);
     }
 
-    setProgram(rungs) {
-      this.rungs = rungs;
+    /* rungs = LAD 2 (main), subs = { 3: rungs, … } subroutine files called by JSR */
+    setProgram(rungs, subs = {}) {
+      this.rungs = rungs; this.subs = subs;
       this.pw = Object.create(null); this.hl = Object.create(null);
       const prep = arr => arr.forEach(e => {
         if (e.t === 'BST') e.legs.forEach(prep);
         else e._p = (e.a || []).map(parse);
       });
-      rungs.forEach(r => prep(r.elems));
+      const prepR = r => { prep(r.elems); r._mcr = r.elems.some(e => e.t === 'MCR'); };
+      rungs.forEach(prepR);
+      for (const n in subs) subs[n].forEach(prepR);
+    }
+    allRungs() { return [this.rungs, ...Object.values(this.subs || {})].flat(); }
+    /* run a list of rungs: an MCR zone makes its rungs false; a true RET ends a subroutine */
+    runRungs(rungs, depth) {
+      let off = false, inZone = false;
+      this._ret = false;
+      for (const r of rungs) {
+        this.pw['r' + r.id] = !off || r._mcr;
+        const p = this.seq(r.elems, !off || r._mcr);
+        if (r._mcr) { if (!inZone) { inZone = true; off = !p; } else { inZone = false; off = false; } }
+        if (this._ret) { this._ret = false; if (depth > 0) return; }
+      }
     }
     /* write presets/time base (and optionally accum) of an instruction into the data table */
     applyInstr(e, withAcc) {
       const d = INSTR[e.t]; if (!d) return;
+      if (e.t === 'SQO') {
+        const c = parse(e.a[3]); if (!c || c.kind !== 'struct' || c.file !== 'R6') return;
+        const s = this.data.R6[c.word]; s.LEN = Math.max(1, Math.min(32, Number(e.a[4]) || 1));
+        if (withAcc) s.POS = Math.max(0, Math.min(s.LEN, Number(e.a[5]) || 0));
+        return;
+      }
       const p0 = parse(e.a[0]);
       if (!p0 || p0.kind !== 'struct') return;
       const s = this.data[p0.file][p0.word];
@@ -232,6 +281,7 @@
     }
     applyAll(withAcc) {
       const walk = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(walk); else this.applyInstr(e, withAcc); });
+      for (const n in this.subs || {}) this.subs[n].forEach(r => walk(r.elems));
       this.rungs.forEach(r => walk(r.elems));
     }
 
@@ -245,11 +295,11 @@
       this.dt = dt;
       if (this.mode === 'RUN') {
         d.S[1] = asI16(this.first ? d.S[1] | (1 << 15) : d.S[1] & ~(1 << 15));
-        for (const r of this.rungs) { this.pw['r' + r.id] = true; this.seq(r.elems, true); }
+        this.runRungs(this.rungs, 0);
         this.first = false;
         this.scans++;
       } else {
-        for (const r of this.rungs) { this.pw['r' + r.id] = false; this.preview(r.elems); }
+        for (const r of this.allRungs()) { this.pw['r' + r.id] = false; this.preview(r.elems); }
       }
       const outW = this.mode === 'RUN' ? (d.O[0] & 0xFFFF) : 0;
       this.physOut = this.applyForce('O', outW) & 0xFFFF;
@@ -296,7 +346,8 @@
         case 'CTU': case 'CTD': { this.counter(e.t, A[0], p); hl[e.id] = p; return p; }
         case 'RES': {
           hl[e.id] = p;
-          if (p && A[0] && A[0].kind === 'struct') {
+          if (p && A[0] && A[0].kind === 'struct' && A[0].file === 'R6') { const s = this.data.R6[A[0].word]; s.POS = 0; s.EN = 0; s.DN = 0; s.ER = 0; }
+          else if (p && A[0] && A[0].kind === 'struct') {
             const s = this.data[A[0].file][A[0].word];
             s.ACC = 0; s.DN = 0;
             if (A[0].file === 'T4') { s.EN = 0; s.TT = 0; s._f = 0; } else { s.CU = 0; s.CD = 0; s.OV = 0; s.UN = 0; }
@@ -329,6 +380,44 @@
           hl[e.id] = p; return p;
         }
         case 'CLR': if (p) { this.setWord(A[0], 0); this.mathFlags(0, false); } hl[e.id] = p; return p;
+        case 'OSR': case 'OSF': {
+          const st = !!this.getBit(A[0]), edge = e.t === 'OSR' ? p && !st : !p && st;
+          this.setBit(A[1], edge); this.setBit(A[0], p); hl[e.id] = edge; return p;
+        }
+        case 'MCR': hl[e.id] = p; return p;
+        case 'SBR': hl[e.id] = p; return p;
+        case 'RET': hl[e.id] = p; if (p) this._ret = true; return p;
+        case 'JSR': {
+          hl[e.id] = p;
+          const sub = A[0] && this.subs && this.subs[A[0].n];
+          if (p && sub) {
+            this.depth = (this.depth || 0) + 1;
+            // nesting deeper than 8 levels is a major fault on the real controller; here it just stops
+            if (this.depth <= 8) this.runRungs(sub, this.depth); else this.data.S[5] = asI16(this.data.S[5] | 4);
+            this.depth--; this._ret = false;
+          }
+          return p;
+        }
+        case 'COP': {
+          if (p && A[0] && A[1]) { const n = Number(e.a[2]) || 1, src = this.data[A[0].file], dst = this.data[A[1].file], tmp = []; for (let k = 0; k < n; k++) tmp.push(src[A[0].word + k] || 0); tmp.forEach((v, k) => { if (A[1].word + k < dst.length) dst[A[1].word + k] = v; }); }
+          hl[e.id] = p; return p;
+        }
+        case 'FLL': {
+          if (p && A[1]) { const n = Number(e.a[2]) || 1, v = i16(this.getWord(A[0])), dst = this.data[A[1].file]; for (let k = 0; k < n && A[1].word + k < dst.length; k++) dst[A[1].word + k] = v; }
+          hl[e.id] = p; return p;
+        }
+        case 'SQO': {
+          const c = A[3] && A[3].file === 'R6' ? this.data.R6[A[3].word] : null;
+          if (c && A[0] && A[2]) {
+            if (p && !c.EN) {
+              c.POS = c.POS >= c.LEN ? 1 : c.POS + 1;
+              const v = this.data[A[0].file][A[0].word + c.POS] || 0, m = this.getWord(A[1]);
+              this.setWord(A[2], asI16((this.getWord(A[2]) & ~m) | (v & m)));
+            }
+            c.EN = p ? 1 : 0; c.DN = c.POS >= c.LEN ? 1 : 0;
+          }
+          hl[e.id] = p; return p;
+        }
       }
       return p;
     }
@@ -399,6 +488,7 @@
             const io = p && (p.file === 'I' || p.file === 'O') && this.ioCheck(p);
             if (io) (io.warn ? warns : errs).push({ ri, id: e.id, msg: io.msg });
           });
+          if (e.t === 'JSR') { const p = parse(e.a[0]); if (p && p.kind === 'prog' && !(this.subs && this.subs[p.n])) errs.push({ ri, id: e.id, msg: `JSR ${p.norm}: there is no program file LAD ${p.n}` }); }
           if (e.t === 'OTE') {
             const p = parse(e.a[0]);
             if (p) (otes[p.norm] = otes[p.norm] || []).push(ri);
@@ -417,7 +507,7 @@
           }
         });
         walk(r.elems);
-        const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR)"/);
+        const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR|OSR|OSF|COP|FLL|SQO|MCR|JSR|RET)"/);
         if (r.elems.length && !hasOut) warns.push({ ri, msg: 'Rung has no output instruction' });
       });
       // one timer used by two timer instructions shares one ACC; a CTU/CTD pair must agree on the preset
@@ -426,10 +516,11 @@
         if (k.startsWith('T4') && L.length > 1) warns.push({ ri: L[1].ri, msg: `${k} is used by ${L.length} timer instructions (rungs ${rr}) — they share one accumulator` });
         else if (new Set(L.map(x => String(x.pre))).size > 1) warns.push({ ri: L[1].ri, msg: `${k} has different presets in rungs ${rr} — the last one scanned wins` });
       }
+      if (rungs.filter(r => r.elems.some(e => e.t === 'MCR')).length % 2) warns.push({ ri: rungs.length - 1, msg: 'MCR zones come in pairs: an MCR rung with conditions starts a zone, an MCR rung alone ends it' });
       for (const k in otes) if (otes[k].length > 1) warns.push({ ri: otes[k][1], msg: `Duplicate OTE ${k} in rungs ${otes[k].map(n => String(n).padStart(4, '0')).join(', ')} — only the last one wins` });
       return { errs, warns };
     }
   }
 
-  window.PLCcore = { INSTR, SIZES, NUM_IN, NUM_OUT, parse, validArg, Engine, i16 };
+  window.PLCcore = { INSTR, SIZES, NUM_IN, NUM_OUT, ANA, parse, validArg, Engine, i16 };
 })();

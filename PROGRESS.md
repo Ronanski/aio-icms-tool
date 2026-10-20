@@ -172,8 +172,10 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] More objects: shapes (rectangle, ellipse, line/pipe), images, trends, multi-screen navigation, animation (visibility, ON colour, blink), security (log-in PIN)
 - [x] HMI terminal on the cabinet door follows the terminal type and the screen on display
 
-**v1.8.0 — more instructions and devices**
-- [ ] OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, analog I/O; VFD, analog level transmitter; Tagalog/English toggle
+**v1.8.0 — more instructions and devices** (done on `main`, not released)
+- [x] OSR/OSF, JSR/SBR/RET (program files LAD 3–9), MCR, SQO (R6 control file), COP/FLL
+- [x] Analog I/O cards (4–20 mA in, 0–10 V out); VFD; analog level transmitter; example
+- [x] Tagalog/English toggle (main UI; technical terms stay English)
 
 **v2.0.0 — online (MAJOR: project format changes)**
 - [ ] Tag-based engine (tasks, programs, routines)

@@ -661,6 +661,127 @@
     status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
   });
 
+  /* analog cards: the signal is not a potential in the net solver, it is looked up by net:
+     a transmitter publishes ctx.anaSrc[key] = mA, an output card publishes ctx.anaOut[key] = V */
+  const anaIn = (c, api, ctx, t) => { let v = null; for (const k in ctx.anaSrc || {}) if (api.sameNet(c.id + ':' + t, k)) v = Math.max(v || 0, ctx.anaSrc[k]); return v; };
+  def('mai4', {
+    name: 'PLC Analog Input Card 4 × 4–20 mA', cat: 'PLC Rack', view: 'cabinet', prefix: 'AI', w: 150, h: 160, slot: true, analog: 'I', chans: 4,
+    props: { slot: '3' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
+    info: 'Four 4–20 mA inputs CH0–CH3 (common COM = 0 V). Wire a transmitter output (e.g. a level transmitter OUT) to a channel. Value in I:slot.ch: 4 mA = 0, 20 mA = 32767; below 3.6 mA the channel reads 0 (wire break).',
+    terms: [...[0, 1, 2, 3].map(i => ({ id: 'CH' + i, x: 15 + i * 30, y: 0, l: String(i) })), { id: 'COM', x: 135, y: 0 }],
+    init: () => ({ mA: [0, 0, 0, 0] }),
+    transient: ['mA'],
+    evaluate(c, api, ctx) {
+      if (!cardOn(c, ctx)) return false;
+      const s = Number(c.props.slot), on = rackOn(ctx);
+      c.state.mA = [0, 1, 2, 3].map(i => { const v = on ? anaIn(c, api, ctx, 'CH' + i) : null; return v == null ? 0 : v; });
+      c.state.mA.forEach((ma, i) => { ctx.plcInX[PLCcore.ANA(s, i)] = ma < 3.6 ? 0 : Math.round(Math.max(0, Math.min(1, (ma - 4) / 16)) * 32767); });
+      return false;
+    },
+    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.mA || []).map(v => v.toFixed(1))}|${ctx.fmt && ctx.fmt('I:0/0')}`,
+    draw(c, ctx) {
+      const on = cardOn(c, ctx) && rackOn(ctx);
+      let s = cardBody(150, 160, 'ANALOG IN', '4–20 mA') + band(0, 150, 22, '#1e1d1a') + slotTag(150, 'SLOT ' + c.props.slot);
+      (c.state.mA || []).forEach((ma, i) => { s += T(12, 86 + i * 14, `CH${i}`, 'dt light xs', 'start') + R(40, 78 + i * 14, 70, 9, '#2a2925', 2, '#111') + R(41, 79 + i * 14, Math.max(0, Math.min(1, (ma - 4) / 16)) * 68, 7, '#f2c230', 1, 'none') + T(140, 86 + i * 14, on ? ma.toFixed(1) : '—', 'dt light xs', 'end'); });
+      return s + T(75, 148, `I:${c.props.slot}.0 – I:${c.props.slot}.3`, 'dt light xs') + led(140, 148, on, '#3ddc63', 3);
+    },
+    status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: ${(c.state.mA || []).map((v, i) => `CH${i} ${v.toFixed(1)} mA`).join(', ')}` : 'Rack not powered',
+  });
+  def('mao2', {
+    name: 'PLC Analog Output Card 2 × 0–10 V', cat: 'PLC Rack', view: 'cabinet', prefix: 'AO', w: 130, h: 160, slot: true, analog: 'O', chans: 2,
+    props: { slot: '4' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
+    info: 'Two 0–10 V outputs AO0, AO1 (common COM). O:slot.ch = 0 … 32767 gives 0 … 10 V. Wire AO0 to the speed reference (AI) of a VFD.',
+    terms: [{ id: 'AO0', x: 25, y: 160, l: '0' }, { id: 'AO1', x: 60, y: 160, l: '1' }, { id: 'COM', x: 100, y: 160 }],
+    init: () => ({ v: [0, 0] }),
+    transient: ['v'],
+    evaluate(c, api, ctx) {
+      const on = cardOn(c, ctx) && rackOn(ctx), s = Number(c.props.slot);
+      c.state.v = [0, 1].map(i => (on ? Math.max(0, Math.min(10, (ctx.plcOutX[PLCcore.ANA(s, i)] || 0) / 32767 * 10)) : 0));
+      if (!ctx.anaOut) ctx.anaOut = {};
+      c.state.v.forEach((v, i) => { ctx.anaOut[c.id + ':AO' + i] = v; });
+      return false;
+    },
+    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.v || []).map(v => v.toFixed(2))}`,
+    draw(c, ctx) {
+      const on = cardOn(c, ctx) && rackOn(ctx);
+      let s = cardBody(130, 160, 'ANALOG OUT', '0–10 V') + band(138, 130, 22, '#1e1d1a') + slotTag(130, 'SLOT ' + c.props.slot);
+      (c.state.v || []).forEach((v, i) => { s += T(12, 90 + i * 16, `AO${i}`, 'dt light xs', 'start') + R(40, 82 + i * 16, 50, 9, '#2a2925', 2, '#111') + R(41, 83 + i * 16, v / 10 * 48, 7, '#2f6fd6', 1, 'none') + T(124, 90 + i * 16, on ? v.toFixed(1) + 'V' : '—', 'dt light xs', 'end'); });
+      return s + T(65, 128, `O:${c.props.slot}.0 – O:${c.props.slot}.1`, 'dt light xs') + led(118, 128, on, '#3ddc63', 3);
+    },
+    status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: AO0 ${(c.state.v[0] || 0).toFixed(2)} V, AO1 ${(c.state.v[1] || 0).toFixed(2)} V` : 'Rack not powered',
+  });
+  /* level transmitter: 3-wire, 24 V DC; OUT gives 4–20 mA for 0–100 % of the tank it measures (by tag), or its own test level */
+  def('ltx', {
+    name: 'Level Transmitter 4–20 mA', cat: 'Sensors', view: 'plant', prefix: 'LT', w: 70, h: 110,
+    props: { tank: 'TK1', pv: 50 },
+    pdefs: [{ k: 'tank', n: 'Tank it measures (tag)' }, { k: 'pv', n: 'Level when no tank is found (%)', type: 'number' }],
+    info: 'Analog level transmitter: + (24 V DC), OUT (4–20 mA), − (0 V). It measures the tank named in its properties (TK1); without that tank it sends its own level. Wire OUT to a channel of an analog input card.',
+    terms: [{ id: 'P', x: 15, y: 110, l: '+' }, { id: 'OUT', x: 35, y: 110 }, { id: 'M', x: 55, y: 110, l: '−' }],
+    init: () => ({ lvl: 0, mA: 0 }),
+    transient: ['mA'],
+    evaluate(c, api, ctx) {
+      const v = api.v(c, 'P', 'M'), t = ctx && ctx.tanks ? ctx.tanks[c.props.tank] : undefined;
+      c.state.lvl = Math.max(0, Math.min(100, t != null ? t : Number(c.props.pv) || 0));
+      const mA = v && v.kind === 'DC' && !v.rev ? 4 + 16 * c.state.lvl / 100 : 0;
+      const ch = set(c, 'mA', Math.round(mA * 100) / 100);
+      if (ctx) { if (!ctx.anaSrc) ctx.anaSrc = {}; ctx.anaSrc[c.id + ':OUT'] = c.state.mA; }
+      return ch;
+    },
+    draw(c) {
+      const s = c.state;
+      return R(10, 0, 50, 70, '#d9dcd6', 6, '#5f5b53') + R(16, 8, 38, 22, '#24303a', 3, '#111') + T(35, 23, s.mA ? s.mA.toFixed(1) + 'mA' : '—', 'dt light xs') +
+        T(35, 44, 'LT', 'dt big') + T(35, 60, Math.round(s.lvl) + ' %', 'dt xs') + R(30, 70, 10, 30, '#8a8f96', 2, '#555');
+    },
+    status: c => (c.state.mA ? `${c.state.lvl.toFixed(0)} % → ${c.state.mA.toFixed(2)} mA` : 'No 24 V DC on + / −'),
+  });
+  /* VFD: 400 V in L1 L2 L3, motor out U V W; FWD / REV inputs (24 V DC to DCOM); speed reference AI 0–10 V (to ACOM) or the keypad */
+  def('vfd', {
+    name: 'Variable Frequency Drive (VFD)', cat: 'Control', view: 'cabinet', prefix: 'VFD', w: 170, h: 200,
+    props: { hz: 50, ramp: 3 },
+    pdefs: [{ k: 'hz', n: 'Keypad speed (Hz) when AI is not wired', type: 'number' }, { k: 'ramp', n: 'Ramp time 0 → 60 Hz (s)', type: 'number' }],
+    info: 'Supply L1 L2 L3 (400 V) → motor U V W. Runs forward while FWD has 24 V DC (to DCOM), reverse with REV (both = stop). Speed: AI 0–10 V = 0–60 Hz from an analog output card, else the keypad speed. Ramps up and down.',
+    terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'L2', x: 40, y: 0 }, { id: 'L3', x: 60, y: 0 }, { id: 'PE', x: 85, y: 0 },
+      { id: 'FWD', x: 110, y: 0 }, { id: 'REV', x: 130, y: 0 }, { id: 'DCOM', x: 150, y: 0, l: 'COM' },
+      { id: 'U', x: 20, y: 200 }, { id: 'V', x: 40, y: 200 }, { id: 'W', x: 60, y: 200 }, { id: 'AI', x: 120, y: 200 }, { id: 'ACOM', x: 145, y: 200, l: 'COM' }],
+    init: () => ({ pw: false, dir: 0, hz: 0, ref: 0 }),
+    transient: ['hz', 'dir'],
+    conduct(c) {
+      if (!c.state.pw || !c.state.dir || c.state.hz < 0.5) return null;
+      return c.state.dir > 0 ? [['L1', 'U'], ['L2', 'V'], ['L3', 'W']] : [['L1', 'U'], ['L2', 'W'], ['L3', 'V']];
+    },
+    evaluate(c, api, ctx) {
+      const v = api.v(c, 'L1', 'L2'), s = c.state;
+      const pw = !!(v && v.label === '400VAC');
+      const din = t => { const x = api.v(c, t, 'DCOM'); return !!(x && x.kind === 'DC' && !x.rev); };
+      const f = din('FWD'), r = din('REV');
+      let ref = null;
+      for (const k in (ctx && ctx.anaOut) || {}) if (api.sameNet(c.id + ':AI', k)) ref = ctx.anaOut[k] * 6;
+      s.ref = Math.max(0, Math.min(60, ref != null ? ref : Number(c.props.hz) || 0));
+      const want = pw && f !== r ? (f ? 1 : -1) : 0;
+      // the direction changes only after the motor has ramped down
+      const ch = set(c, 'pw', pw) | set(c, 'dir', s.hz < 0.5 ? want : s.dir);
+      if (ctx) { if (!ctx.vfdOut) ctx.vfdOut = {}; ctx.vfdOut[c.id + ':U'] = s.dir ? s.hz : 0; }
+      return !!ch;
+    },
+    tick(c, api, dt) {
+      const s = c.state, f = api.v(c, 'FWD', 'DCOM'), r = api.v(c, 'REV', 'DCOM');
+      const fw = !!(f && f.kind === 'DC' && !f.rev), rv = !!(r && r.kind === 'DC' && !r.rev);
+      const want = s.pw && fw !== rv ? (fw ? 1 : -1) : 0;
+      const target = want && want === s.dir ? s.ref : 0, rate = 60 / Math.max(0.2, Number(c.props.ramp) || 3);
+      s.hz = s.hz < target ? Math.min(target, s.hz + rate * dt) : Math.max(target, s.hz - rate * dt);
+      s.hz = Math.round(s.hz * 10) / 10;
+    },
+    draw(c) {
+      const s = c.state;
+      return R(0, 0, 170, 200, '#2b2d30', 6, '#111') + band(0, 170, 22, '#1e1d1a') + band(178, 170, 22, '#1e1d1a') +
+        T(12, 42, 'VFD', 'dt light brand', 'start') + T(12, 56, '0–60 Hz', 'dt light xs', 'start') +
+        R(20, 66, 130, 40, s.pw ? '#c9d86c' : '#8f9a5a', 3, '#2d3a1e') + `<text class="lcd" x="140" y="94" text-anchor="end">${s.pw ? s.hz.toFixed(1) + ' Hz' : ''}</text>` +
+        led(30, 122, s.pw, '#3ddc63') + T(40, 125, 'PWR', 'dt light xs', 'start') + led(80, 122, s.dir > 0 && s.hz > 0, '#3ddc63') + T(90, 125, 'FWD', 'dt light xs', 'start') +
+        led(125, 122, s.dir < 0 && s.hz > 0, '#f2c230') + T(135, 125, 'REV', 'dt light xs', 'start') + T(85, 150, `ref ${s.ref.toFixed(1)} Hz`, 'dt light xs');
+    },
+    status: c => (!c.state.pw ? 'No 400 V on L1 L2 L3' : c.state.hz > 0 ? `${c.state.dir > 0 ? 'FWD' : 'REV'} ${c.state.hz.toFixed(1)} Hz (ref ${c.state.ref.toFixed(1)})` : 'Stopped'),
+  });
+
   /* ---------- CABINET: backplate, door, cable duct, HMI terminal ----------
      Plates (layer 'back') are drawn behind everything; moving one moves the devices mounted on it. */
   const SIZES_W = ['400', '600', '800', '1000', '1200', '1600'], SIZES_H = ['300', '400', '600', '800', '1000', '1200'];
@@ -1177,7 +1298,14 @@
     terms: [{ id: 'U1', x: 30, y: 0 }, { id: 'V1', x: 50, y: 0 }, { id: 'W1', x: 70, y: 0 }, { id: 'PE', x: 100, y: 0 }],
     init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false }),
     transient: ['spd', 'drive', 'dir'],
-    evaluate: (c, api) => motorEval(c, api, 'U1', 'V1', 'W1'),
+    evaluate(c, api, ctx) {
+      const r = motorEval(c, api, 'U1', 'V1', 'W1');
+      // fed by a VFD: the speed follows its frequency (60 Hz = full speed)
+      let k = 1;
+      for (const key in (ctx && ctx.vfdOut) || {}) if (api.sameNet(c.id + ':U1', key)) k = ctx.vfdOut[key] / 60;
+      c.state.k = k;
+      return r;
+    },
     tick: (c, api, dt) => motorTick(c, dt),
     onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
     draw(c) {
@@ -1444,7 +1572,11 @@
       { id: 'H1', x: 125, y: 0, l: '1' }, { id: 'H2', x: 145, y: 0, l: '2' }, { id: 'L1', x: 175, y: 0, l: '1' }, { id: 'L2', x: 195, y: 0, l: '2' }],
     init: () => ({ lvl: 30, fill: false, drain: false, use: false, burnt: false, flow: 0 }),
     conduct(c) { const o = []; if (c.state.lvl >= 80) o.push(['H1', 'H2']); if (c.state.lvl >= 20) o.push(['L1', 'L2']); return o; },
-    evaluate(c, api) { return set(c, 'fill', coilOn(c, api, 'FV1', 'FV2')) | set(c, 'drain', coilOn(c, api, 'DV1', 'DV2')); },
+    evaluate(c, api, ctx) {
+      // a level transmitter finds this tank by its tag
+      if (ctx) { if (!ctx.tanks) ctx.tanks = {}; ctx.tanks[c.props.label] = c.state.lvl; }
+      return set(c, 'fill', coilOn(c, api, 'FV1', 'FV2')) | set(c, 'drain', coilOn(c, api, 'DV1', 'DV2'));
+    },
     tick(c, api, dt) {
       const s = c.state;
       s.lvl = Math.max(0, Math.min(100, s.lvl + ((s.fill ? 9 : 0) - (s.drain ? 12 : 0) - (s.use ? 4 : 0)) * dt));
@@ -1784,7 +1916,7 @@
   }
 
   const CARDS = () => ORDER.filter(t => DEFS[t].slot);
-  const ioFile = t => (t.startsWith('mdi') ? 'I' : 'O');
+  const ioFile = t => (DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'));
   /* keep only valid slots and card types of a saved I/O configuration */
   function cleanIo(io) {
     const slots = {}, src = io && typeof io === 'object' && io.slots && typeof io.slots === 'object' ? io.slots : {};
@@ -1811,7 +1943,8 @@
     if (!r.cpu) return [{ file: 'I', word: 0, n: 12 }, { file: 'O', word: 0, n: 8 }];
     return SLOTS.filter(s => r.conf[s]).map(s => {
       const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]);
-      return { file: ioFile(r.conf[s]), word: Number(s), n: 8, label: c && c.type === r.conf[s] ? c.props.label : '(missing)', name: DEFS[r.conf[s]].name };
+      const d = DEFS[r.conf[s]];
+      return { file: ioFile(r.conf[s]), word: Number(s), n: d.analog ? d.chans : 8, analog: !!d.analog, label: c && c.type === r.conf[s] ? c.props.label : '(missing)', name: d.name };
     });
   }
   /* Address styles (display only; programs are always stored file-based):
@@ -1820,7 +1953,7 @@
   const STYLES = { file: 'File-based (I:1/0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
   function addrBook(circ, io, style) {
     const idx = { I: [], O: [] };
-    for (const m of ioMap(circ, io)) for (let b = 0; b < m.n; b++) idx[m.file].push(`${m.file}:${m.word}/${b}`);
+    for (const m of ioMap(circ, io)) if (!m.analog) for (let b = 0; b < m.n; b++) idx[m.file].push(`${m.file}:${m.word}/${b}`);
     const L = f => (f === 'I' ? 'I' : 'Q');
     const name = (f, i) => style === 'basic' ? `${L(f)}${i + 1}` : `${L(f)}${i >> 3}.${i & 7}`;
     const fwd = new Map();
@@ -1848,8 +1981,15 @@
       if (a.word !== 0 || (a.kind === 'bit' && a.bit >= n)) return { warn: true, msg: `${a.norm} is not on the compact PLC (${a.file}:0/0–${n - 1})` };
       return null;
     }
+    if (a.ana) {
+      const s = (a.word - 8) >> 2, ch = (a.word - 8) & 3, t = r.conf[s];
+      if (!t || !DEFS[t].analog || ioFile(t) !== a.file) return { msg: `${a.norm}: slot ${s} is not configured as an analog ${a.file === 'I' ? 'input' : 'output'} card (I/O Configuration)` };
+      if (ch >= DEFS[t].chans) return { msg: `${a.norm}: the card in slot ${s} has ${DEFS[t].chans} channels` };
+      return null;
+    }
     if (a.word === 0) return { msg: `${a.norm}: slot 0 is the CPU, it has no I/O` };
     const t = r.conf[a.word];
+    if (t && DEFS[t].analog) return { msg: `${a.norm}: slot ${a.word} is an analog card — use ${a.file}:${a.word}.0 … words` };
     if (!t || ioFile(t) !== a.file) return { msg: `${a.norm}: slot ${a.word} is not configured as ${a.file === 'I' ? 'an input' : 'an output'} card (I/O Configuration)` };
     if (a.kind === 'bit' && a.bit >= 8) return { msg: `${a.norm}: the card in slot ${a.word} has 8 points (${a.file}:${a.word}/0–7)` };
     return null;

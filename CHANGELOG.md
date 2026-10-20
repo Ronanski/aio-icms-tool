@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **New instructions (v1.8)**: **OSR / OSF** (one-shot rising / falling with storage and output bits), **MCR** zones, **JSR / SBR / RET** with **program files** (LAD 2 main + subroutine files LAD 3–9: *File* list and *＋ File* in the Ladder toolbar, saved with the project), **COP / FLL** (copy / fill a block of words, file addresses `#N7:0`), **SQO** (sequencer output with a mask, control file **R6**: EN, DN, LEN, POS; new R6 tab in the data table). Verify checks JSR targets and MCR pairs.
+- **Analog I/O (v1.8)**: **Analog Input Card 4 × 4–20 mA** (I:slot.ch, 4 mA = 0 … 20 mA = 32767, wire break < 3.6 mA = 0) and **Analog Output Card 2 × 0–10 V** (O:slot.ch). The data table shows the analog words; Verify and the I/O Configuration know them.
+- **Level Transmitter 4–20 mA** (3-wire, 24 V DC): measures the tank with the tag in its properties, or its own test level.
+- **VFD**: 400 V in, motor out; FWD / REV inputs (24 V DC), speed reference 0–10 V on AI (0–60 Hz) or the keypad speed, ramp up and down; the motor speed follows the frequency, REV swaps two phases.
+- Example **Analog: tank level transmitter and VFD pump**.
+- **Tagalog / English** (EN/TL button in the top bar): menus, buttons, common messages and help texts in Tagalog; technical terms stay in English. Remembered in this browser.
 - **HMI v1.7**:
   - **▶ Machine** (runtime, as on the machine) and **✎ Studio** (designer) modes, replacing Operate / Design; **⛶ full screen** for the terminal.
   - **Terminal type**: 4.3" 480×272, 6" 640×480, 7" 800×480 (default, as before), 10" 1024×600, 12" 1280×800, 15" 1024×768 or a PC screen 1280×720. The screen, the zoom and the HMI terminal on the cabinet door follow it.

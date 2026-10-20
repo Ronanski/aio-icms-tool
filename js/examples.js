@@ -460,6 +460,41 @@
     },
   };
 
+  EX.analog = {
+    title: 'Analog: tank level transmitter and VFD pump', desc: 'Modular PLC with an analog input card (level transmitter LT1 on tank TK1, 4–20 mA) and an analog output card (0–10 V speed reference to a VFD). The fill valve keeps the level between 30 % and 80 %; with S1 on, the pump runs at a speed that follows the level.',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply3', 60, 20, { label: 'Q0' });
+      const qf = B.add('mcb2', 200, 20, { label: 'QF1' }, { on: true });
+      B.add('din', 50, 252, { label: 'RAIL1', len: '1000' });
+      const ps = B.add('mpsu', 60, 190, { label: 'PS1' });
+      B.add('mcpu', 170, 190, { label: 'CPU1' });
+      const di = B.add('mdi8', 300, 190, { label: 'DI1', slot: '1' });
+      const dq = B.add('mdo8', 500, 190, { label: 'DO1', slot: '2' });
+      const ai = B.add('mai4', 720, 190, { label: 'AI1', slot: '3' });
+      const ao = B.add('mao2', 880, 190, { label: 'AO1', slot: '4' });
+      B.w(q0, 'L1', qf, '1', C.L1); B.w(q0, 'N', qf, '3', C.N);
+      B.w(qf, '2', ps, 'L1', C.L1); B.w(qf, '4', ps, 'N', C.N); B.w(q0, 'PE', ps, 'PE', C.PE);
+      const s1 = B.add('sel2', 330, 20, { label: 'S1', text: 'PUMP' });
+      B.w(ps, 'V24', s1, '13', C.DC); B.w(s1, '14', di, 'I0', C.DC); B.w(ps, 'C24', di, 'COM', C.DC0);
+      const tk = B.add('tank', 720, 470, { label: 'TK1', coil: '24VDC' }, { lvl: 40, use: true });
+      const lt = B.add('ltx', 980, 470, { label: 'LT1', tank: 'TK1' });
+      B.w(ps, 'V24', dq, 'VAC0', C.DC); B.w(dq, 'O0', tk, 'FV1', C.DC); B.w(tk, 'FV2', ps, 'C24', C.DC0);
+      B.w(ps, 'V24', lt, 'P', C.DC); B.w(lt, 'M', ps, 'C24', C.DC0); B.w(lt, 'OUT', ai, 'CH0', C.DC); B.w(ai, 'COM', ps, 'C24', C.DC0);
+      const vfd = B.add('vfd', 300, 470, { label: 'VFD1' });
+      const m1 = B.add('motor', 300, 760, { label: 'M1' });
+      B.w(q0, 'L1', vfd, 'L1', C.L1); B.w(q0, 'L2', vfd, 'L2', C.L2); B.w(q0, 'L3', vfd, 'L3', C.L3); B.w(q0, 'PE', vfd, 'PE', C.PE);
+      B.w(vfd, 'U', m1, 'U1', C.L1); B.w(vfd, 'V', m1, 'V1', C.L2); B.w(vfd, 'W', m1, 'W1', C.L3); B.w(vfd, 'PE', m1, 'PE', C.PE);
+      B.w(dq, 'O1', vfd, 'FWD', C.DC); B.w(vfd, 'DCOM', ps, 'C24', C.DC0);
+      B.w(ao, 'AO0', vfd, 'AI', C.DC); B.w(ao, 'COM', vfd, 'ACOM', C.DC0);
+      return proj('Analog tank and VFD pump', B.circ, [
+        { text: 'BST LES I:3.0 6554 NXB XIC O:2/0 BND LES I:3.0 24576 OTE O:2/0', comment: 'Fill valve: opens below 30 % (I:3.0 < 6554 = 4 + 0.3·16 mA) and closes at 80 % (24576)' },
+        { text: 'XIC I:1/0 OTE O:2/1', comment: 'Pump: VFD FWD while S1 is on' },
+        { text: 'MOV I:3.0 O:4.0', comment: 'Pump speed follows the level: 0–100 % → 0–10 V → 0–60 Hz' },
+      ], { 'I:1/0': 'PUMP S1', 'O:2/0': 'FILL VALVE', 'O:2/1': 'VFD FWD', 'I:3.0': 'LEVEL LT1', 'O:4.0': 'VFD SPEED' }, [], { slots: { 1: 'mdi8', 2: 'mdo8', 3: 'mai4', 4: 'mao2' } });
+    },
+  };
+
   EX.cabinet = {
     title: 'Motor starter cabinet (modular PLC, door with HMI)', desc: 'A 2D control cabinet: inside, DIN rails and cable ducts with breakers, the modular PLC, contactor, overload and terminal block; on the door, START/STOP, pilot lamps and an HMI terminal that runs the HMI screen.',
     build() {

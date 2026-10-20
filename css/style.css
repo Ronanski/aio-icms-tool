@@ -112,6 +112,7 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .btn.ghost:hover { background: var(--surface-2); }
 .btn:disabled { opacity: .45; cursor: default; }
 .icon-btn { border: 0; background: transparent; width: 32px; height: 32px; border-radius: 8px; font-size: 18px; color: var(--muted); }
+.icon-btn.lang-btn { font: 700 12px var(--mono); width: 36px; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .tbtn { border: 1px solid var(--border); background: var(--surface); padding: 5px 9px; border-radius: 8px; font-size: 13px; line-height: 1.2; white-space: nowrap; }
 .tbtn:hover { border-color: var(--border-strong); background: var(--surface-2); }
@@ -211,6 +212,7 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .rung-svg .hlr { fill: transparent; }
 .rung-svg .ins.on .hlr { fill: var(--lad-hl); }
 .rung-svg .clbl { font: 700 10px var(--mono); fill: var(--lad-text); text-anchor: middle; }
+.rung-svg .clbl.sm { font-size: 7.5px; }
 .rung-svg .addr { font: 600 11.5px var(--mono); fill: var(--lad-text); text-anchor: middle; }
 .rung-svg .addr.bad { fill: var(--danger); }
 .rung-svg .desc { font: 500 10px var(--sans); fill: var(--muted); text-anchor: middle; text-transform: uppercase; letter-spacing: .02em; }
