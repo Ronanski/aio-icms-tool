@@ -205,7 +205,8 @@
       d[a.file][a.word] = i16(v);
     }
     /* string helpers used by HMI and data table */
-    read(str) { const a = parse(str); if (!a) return 0; return a.kind === 'bit' ? this.getBit(a) : this.getWord(a); }
+    // only data addresses have a value (U:3, T4:0, #N7:0 read as 0, so an HMI with such a tag cannot throw)
+    read(str) { const a = parse(str); if (!a) return 0; return a.kind === 'bit' ? this.getBit(a) : a.kind === 'word' || a.kind === 'const' ? this.getWord(a) : 0; }
     write(str, v) {
       const a = parse(str); if (!a) return;
       if (a.kind === 'bit') this.setBit(a, v); else if (a.kind === 'word') this.setWord(a, v);
@@ -226,13 +227,16 @@
 
     isForceable(a) { return a && a.kind === 'bit' && (a.file === 'I' || a.file === 'O'); }
     setForce(norm, val) {
-      if (val === null || val === undefined) delete this.forces[norm];
+      // a force is kept under its address, so an alias tag and its address share one force
+      const a = parse(norm), key = a ? a.addr || a.norm : norm;
+      if (val === null || val === undefined) { delete this.forces[norm]; delete this.forces[key]; }
       else {
         // only physical I/O bits (I:s/b, O:s/b) can be forced
-        const a = parse(norm);
         if (!this.isForceable(a)) return;
-        this.forces[norm] = val ? 1 : 0;
+        this.forces[key] = val ? 1 : 0;
       }
+      // tag-named forces (older projects): move them to the address (an address force wins)
+      for (const k in this.forces) { const b = parse(k), ak = b && (b.addr || b.norm); if (ak && ak !== k) { if (!(ak in this.forces)) this.forces[ak] = this.forces[k]; delete this.forces[k]; } }
       this._fm = { I: {}, O: {} };
       for (const k in this.forces) {
         const a = parse(k);
@@ -324,7 +328,10 @@
         for (const n in this.periodic || {}) {
           const per = this.periodic[n], sub = this.subs[n]; if (!per || !sub) continue;
           this.pt[n] = (this.pt[n] || 0) + dt * 1000;
+          // each pass is one period long: its timers count the period, not the whole scan
+          const dt0 = this.dt; this.dt = per / 1000;
           while (this.pt[n] >= per) { this.pt[n] -= per; this.runRungs(sub, 1); }
+          this.dt = dt0;
         }
         this.first = false;
         this.scans++;
@@ -499,18 +506,20 @@
       if (!a || a.kind !== 'struct' || a.file !== 'C5') return;
       const c = this.data.C5[a.word];
       if (t === 'CTU') {
-        if (p && !c.CU) { c.ACC++; if (c.ACC > 32767) { c.ACC = -32768; c.OV = 1; } }
+        if (p && !c.CU) { c.ACC++; if (c.ACC > 32767) { c.ACC = -32768; if (c.UN) c.UN = 0; else c.OV = 1; } }  // counting back up from underflow clears UN
         c.CU = p ? 1 : 0;
       } else {
-        if (p && !c.CD) { c.ACC--; if (c.ACC < -32768) { c.ACC = 32767; c.UN = 1; } }
+        if (p && !c.CD) { c.ACC--; if (c.ACC < -32768) { c.ACC = 32767; if (c.OV) c.OV = 0; else c.UN = 1; } }  // counting back down from overflow clears OV
         c.CD = p ? 1 : 0;
       }
       c.DN = c.ACC >= c.PRE ? 1 : 0;
     }
 
-    /* Static program checks: invalid operands and duplicate OTE addresses. */
-    verify(rungs) {
+    /* Static program checks: invalid operands and duplicate OTE addresses.
+       fileNums: the program files that exist (the project's, which online may differ from the loaded ones) */
+    verify(rungs, fileNums) {
       const errs = [], warns = [];
+      const files = fileNums ? new Set([...fileNums].map(Number)) : null, hasFile = n => files ? files.has(n) : !!(this.subs && this.subs[n]);
       const otes = {}, structs = {};
       rungs.forEach((r, ri) => {
         const walk = arr => arr.forEach(e => {
@@ -528,10 +537,11 @@
             const io = p && (p.file === 'I' || p.file === 'O') && this.ioCheck(p);
             if (io) (io.warn ? warns : errs).push({ ri, id: e.id, msg: io.msg });
           });
-          if (e.t === 'JSR') { const p = parse(e.a[0]); if (p && p.kind === 'prog' && !(this.subs && this.subs[p.n])) errs.push({ ri, id: e.id, msg: `JSR ${p.norm}: there is no program file LAD ${p.n}` }); }
+          if (e.t === 'JSR') { const p = parse(e.a[0]); if (p && p.kind === 'prog' && !hasFile(p.n)) errs.push({ ri, id: e.id, msg: `JSR ${p.norm}: there is no program file LAD ${p.n}` }); }
           if (e.t === 'OTE') {
             const p = parse(e.a[0]);
-            if (p) (otes[p.norm] = otes[p.norm] || []).push(ri);
+            // keyed by address: an alias tag and its address are the same output
+            if (p) { const k = p.addr || p.norm; (otes[k] = otes[k] || []).push(ri); }
           }
           // file instructions must stay inside their file (N7 and B3 have 32 words; SQO uses words 0…LEN of its file)
           const inFile = (k, n, extra, what) => {
@@ -553,7 +563,7 @@
           }
           if (['TON', 'TOF', 'RTO', 'CTU', 'CTD'].includes(e.t)) {
             const p = parse(e.a[0]);
-            if (p && p.kind === 'struct') (structs[p.norm] = structs[p.norm] || []).push({ ri, t: e.t, pre: e.a[p.file === 'T4' ? 2 : 1] });
+            if (p && p.kind === 'struct') { const k = p.addr || p.norm; (structs[k] = structs[k] || []).push({ ri, t: e.t, file: p.file, pre: e.a[p.file === 'T4' ? 2 : 1] }); }
           }
           if (e.t === 'OTE' || e.t === 'OTL' || e.t === 'OTU') {
             const p = parse(e.a[0]);
@@ -567,7 +577,7 @@
       // one timer used by two timer instructions shares one ACC; a CTU/CTD pair must agree on the preset
       for (const k in structs) {
         const L = structs[k], rr = L.map(x => String(x.ri).padStart(4, '0')).join(', ');
-        if (k.startsWith('T4') && L.length > 1) warns.push({ ri: L[1].ri, msg: `${k} is used by ${L.length} timer instructions (rungs ${rr}) — they share one accumulator` });
+        if (L[0].file === 'T4' && L.length > 1) warns.push({ ri: L[1].ri, msg: `${k} is used by ${L.length} timer instructions (rungs ${rr}) — they share one accumulator` });
         else if (new Set(L.map(x => String(x.pre))).size > 1) warns.push({ ri: L[1].ri, msg: `${k} has different presets in rungs ${rr} — the last one scanned wins` });
       }
       if (rungs.filter(r => r.elems.some(e => e.t === 'MCR')).length % 2) warns.push({ ri: rungs.length - 1, msg: 'MCR zones come in pairs: an MCR rung with conditions starts a zone, an MCR rung alone ends it' });

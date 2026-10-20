@@ -65,6 +65,16 @@
       .slice(0, 16).map(l => { const n = int(l.n, 1, 16, 1); return { dir: l.dir, node: l.node, remote: int(l.remote, 0, 32 - n, 0), local: int(l.local, 0, 32 - n, 0), n }; });
     return { remotes, links };
   }
+  /* the controller's own program (Realistic connection) is checked like the project's: its rungs, files and tags are
+     rebuilt through buildProject, so a hand-edited file cannot carry bad tags or markup into Upload or the ladder */
+  function cleanCtl(s) {
+    if (typeof s !== 'string' || s.length >= 400000) return null;
+    let o; try { o = JSON.parse(s); } catch (e) { return null; }
+    if (!isObj(o) || !Array.isArray(o.main)) return null;
+    const rungs = list => arr(list).filter(isObj).map(r => ({ text: str(r.t, 20000), comment: str(r.c) }));
+    const sub = buildProject({ name: 'controller', ladder: { rungs: rungs(o.main), files: arr(o.files).filter(isObj).map(f => ({ n: f.n, name: f.name, period: f.period, rungs: rungs(f.r) })) }, tags: o.tags });
+    return progSnap(sub);
+  }
   function buildProject(p) {
     if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
     const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
@@ -91,30 +101,32 @@
     }
     const desc = {};
     if (isObj(lad.desc)) for (const k in lad.desc) { const v = str(lad.desc[k], 80); if (v) desc[k] = v; }
-    const comps = arr(cir.comps).filter(c => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && ID.test(c.id))
+    // ids are a letter and a number below 1e9 (the counter stays exact), each id once
+    const idOk = (x, i, a) => ID.test(x.id) && (Number(String(x.id).replace(/\D/g, '')) || 0) < 1e9 && a.findIndex(y => isObj(y) && y.id === x.id) === i;
+    const comps = arr(cir.comps).filter((c, i, a) => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && idOk(c, i, a))
       .map(c => Circuit.normalize(JSON.parse(JSON.stringify(c))));
     const ids = new Set(comps.map(c => c.id));
     const termOk = k => typeof k === 'string' && ids.has(k.split(':')[0]) && Circuit.DEFS[comps.find(c => c.id === k.split(':')[0]).type].terms.some(t => t.id === k.split(':')[1]);
-    const wires = arr(cir.wires).filter(w => isObj(w) && ID.test(w.id) && termOk(w.a) && termOk(w.b)).map(w => ({
+    const wires = arr(cir.wires).filter((w, i, a) => isObj(w) && idOk(w, i, a) && termOk(w.a) && termOk(w.b)).map(w => ({
       id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d', ...(w.sch === true ? { sch: true } : {}),
       ...(typeof w.tag === 'string' && w.tag.trim() ? { tag: w.tag.trim().slice(0, 12) } : {}),
       pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
     }));
     const maxNum = list => list.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
-    const seq = v => (Number.isFinite(v) ? v : 0);
+    const seq = v => (Number.isInteger(v) && v >= 0 && v < 1e9 ? v : 0);
     return {
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc, files },
       tags,
       net: cleanNet(p.net),
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
-      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) && typeof p.conn.ctl === 'string' && p.conn.ctl.length < 400000 ? p.conn.ctl : null },
+      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: HMI.cleanAll(hm),
       schematic: Schematic.clean(p.schematic, termOk),
       io: Circuit.cleanIo(p.io),
       addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : 'file',
-      events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && KINDS[e.kind]).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
+      events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && Object.prototype.hasOwnProperty.call(KINDS, e.kind)).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
     };
   }
   App.buildProject = buildProject;
@@ -184,31 +196,36 @@
   };
   /* write any pending change now, before switching to another project */
   App.flushSave = function () {
-    if (saveT === null) return true;
+    // nothing pending and the last save worked; a failed save is tried again
+    if (saveT === null && !saveFailed) return true;
     clearTimeout(saveT); saveT = null;
     return store();
+  };
+  /* leaving the current project (open another, update): if it cannot be saved, ask before its changes are lost */
+  App.leaveProject = function (go) {
+    if (App.flushSave()) { go(); return true; }
+    UI.confirm('Changes not saved', 'The current project could not be saved (browser storage is full or blocked). Use File → Export to file first to keep it, or continue and lose its latest changes.', go, 'Continue without saving');
+    return false;
   };
   /* open project data as a new saved project (examples, imports, New project).
      The data is checked first, so a broken file leaves the current project as it was. */
   App.openNew = function (data) {
     const proj = buildProject(data);
-    App.flushSave();
+    return App.leaveProject(() => openProject(proj));
+  };
+  function openProject(proj) {
     App.currentId = Store.newId();
     Store.setCurrent(App.currentId);
     applyProject(proj);
     // an example (or file) with diagram rungs but no diagram wires yet: let the Electrical Diagram wire them now
     const sp = proj.schematic.power;
     if ((proj.schematic.rungs.length || sp.main.length || sp.feeders.some(f => f.elems.length) || proj.schematic.free.wires.length) && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
-  };
+  }
   App.openSaved = function (id) {
     let proj = null;
     try { const data = Store.load(id); if (data) proj = buildProject(data); } catch (err) { proj = null; }
     if (!proj) { UI.toast('That project could not be read', 'danger'); return false; }
-    App.flushSave();
-    App.currentId = id;
-    Store.setCurrent(id);
-    applyProject(proj);
-    return true;
+    return App.leaveProject(() => { App.currentId = id; Store.setCurrent(id); applyProject(proj); });
   };
   /* ---------- v2.0: controller tags and the controller organizer ---------- */
   const TAG_TYPES = { BOOL: 'BOOL (one bit)', INT: 'INT (16-bit integer)', TIMER: 'TIMER', COUNTER: 'COUNTER', ALIAS: 'ALIAS (another name for an address)' };
@@ -622,6 +639,7 @@
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
     }
     plc.scan(dt);
+    HMI.sample(now);   // trends keep their history while the HMI is not on screen
     // produced / consumed data: copied every scan while the controller runs
     const net = App.project.net;
     if (net && net.links.length && plc.mode === 'RUN' && plc.powered) for (const l of net.links) {

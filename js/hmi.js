@@ -66,7 +66,9 @@
   /* the whole HMI of a project: objects, screens, terminal type and log-in PIN */
   HMI.cleanAll = function (hm) {
     const h = hm && typeof hm === 'object' ? hm : {};
-    const objects = (Array.isArray(h.objects) ? h.objects : []).map(HMI.clean).filter(Boolean);
+    // ids below h1e9 (the counter stays exact), each id once
+    const objects = (Array.isArray(h.objects) ? h.objects : []).map(HMI.clean).filter(Boolean)
+      .filter((o, i, a) => (Number(String(o.id).replace(/\D/g, '')) || 0) < 1e9 && a.findIndex(x => x.id === o.id) === i);
     let screens = (Array.isArray(h.screens) ? h.screens : []).filter(s => s && /^s\d{1,3}$/.test(s.id)).slice(0, 30).map(s => ({ id: s.id, name: String(s.name || s.id).slice(0, 30) || s.id }));
     if (!screens.some(s => s.id === 's1')) screens = [{ id: 's1', name: 'Main' }, ...screens];
     const ids = new Set(screens.map(s => s.id));
@@ -75,7 +77,7 @@
     return {
       objects, screens, res: Object.prototype.hasOwnProperty.call(RES, h.res) ? h.res : 't7',
       pin: typeof h.pin === 'string' && /^\d{4,8}$/.test(h.pin) ? h.pin : '1234',
-      seq: Math.max(Number.isFinite(h.seq) ? h.seq : 0, n(objects)),
+      seq: Math.max(Number.isInteger(h.seq) && h.seq >= 0 && h.seq < 1e9 ? h.seq : 0, n(objects)),
     };
   };
 
@@ -116,7 +118,11 @@
     HMI.watchSize();
   };
 
+  /* Studio can switch “Needs log-in” off, so with secured objects it needs the PIN; back on the Machine you are logged out */
+  const secured = () => hmi().objects.some(o => o.sec === 'yes');
   function setMode(m) {
+    if (App.project && m === 'edit' && mode !== 'edit' && secured() && !user) { login(() => setMode('edit')); return; }
+    if (m === 'run' && mode === 'edit' && user) { user = false; App.log('operator', 'HMI: logged out (back to Machine)'); }
     mode = m;
     root.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
     root.querySelector('.hmi-add').classList.toggle('hidden', m !== 'edit');
@@ -170,10 +176,7 @@
     if (o.type === 'nav') { HMI.goto(o.target); return null; }
     if (o.type === 'login') {
       if (user) { user = false; App.log('operator', 'HMI: logged out'); HMI.render(); return null; }
-      UI.form('Log in', [{ key: 'p', label: 'PIN', value: '', type: 'password' }], v => {
-        if (v.p !== hmi().pin) { App.log('operator', 'HMI: wrong PIN'); return 'Wrong PIN'; }
-        user = true; App.log('operator', 'HMI: logged in'); HMI.render(); return undefined;
-      });
+      login(() => HMI.render());
       return null;
     }
     if (o.type === 'pb') {
@@ -193,6 +196,12 @@
     }
     return mom;
   }
+  function login(done) {
+    UI.form('Log in', [{ key: 'p', label: 'PIN', value: '', type: 'password' }], v => {
+      if (v.p !== hmi().pin) { App.log('operator', 'HMI: wrong PIN'); return 'Wrong PIN'; }
+      user = true; App.log('operator', 'HMI: logged in'); done(); return undefined;
+    });
+  }
   const held = new Map();
   /* press / release an object by id (the HMI terminal mounted in the Wiring) */
   HMI.pressId = function (id, ev) {
@@ -201,10 +210,12 @@
     else if (held.has(id)) { held.get(id)(); held.delete(id); }
   };
   /* the screen as SVG in its 800×480 coordinates, with live values: key changes whenever the picture does */
+  let ver = 0;
   HMI.mini = function () {
     const plc = App.plc, [W, Hh] = dims(), objs = hmi().objects.filter(o => (o.scr || 's1') === cur && visible(o));
     const vals = objs.map(o => (o.tag ? plc.read(o.tag) : 0));
-    const key = vals.join(',') + '|' + cur + '|' + W + '|' + user + '|' + JSON.stringify(objs) + (objs.some(o => o.blink === 'yes') ? '|' + Math.floor(performance.now() / 500) % 2 : '');
+    // ver changes on every edit: cheaper than comparing the objects (pictures are big data URLs) every frame
+    const key = vals.join(',') + '|' + cur + '|' + W + '|' + user + '|' + ver + '|' + hmi().objects.length + '|' + objs.map(o => o.id).join(',') + (objs.some(o => o.blink === 'yes') ? '|' + Math.floor(performance.now() / 500) % 2 : '');
     const on = (o, v) => !!v && !(o.blink === 'yes' && Math.floor(performance.now() / 500) % 2);
     const T = (x, y, s, size, fill = '#e8eef3', anchor = 'middle') => `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" text-anchor="${anchor}" font-family="sans-serif">${esc(s)}</text>`;
     const svg = objs.map((o, i) => {
@@ -247,6 +258,7 @@
     const [W, Hh] = dims();
     if (drag.rs) { o.w = Math.max(10, g(drag.ow + dx)); o.h = Math.max(10, g(drag.oh + dy)); }
     else { o.x = Math.max(0, Math.min(W - o.w, g(drag.ox + dx))); o.y = Math.max(0, Math.min(Hh - o.h, g(drag.oy + dy))); }
+    ver++;
     const el = screen.querySelector(`[data-id="${o.id}"]`);
     if (el) Object.assign(el.style, { left: o.x + 'px', top: o.y + 'px', width: o.w + 'px', height: o.h + 'px' });
   }
@@ -287,6 +299,7 @@
   }
 
   HMI.render = function () {
+    ver++;   // every edit ends here
     if (!screen) return;
     if (!hmi().screens.some(s => s.id === cur)) cur = 's1';
     const [W, Hh] = dims();
@@ -334,12 +347,17 @@
   HMI.watchSize = () => { if (!hmiRO && root) { hmiRO = new ResizeObserver(() => { if (root.offsetParent) fitScreen(); }); hmiRO.observe(root.querySelector('.hmi-stage')); } };
   window.addEventListener('resize', () => { if (root && root.offsetParent) fitScreen(); });
 
-  HMI.update = function () {
-    const plc = App.plc, now = performance.now();
-    // trends sample all the time (every 200 ms), whichever screen is on display
+  /* trends sample all the time (every 200 ms), whichever screen or view is on display: the app tick calls this too */
+  HMI.sample = function (now = performance.now()) {
+    if (!App.project || !App.plc) return;
+    const plc = App.plc;
     for (const o of hmi().objects) if (o.type === 'trend') {
       const h = hist.get(o.id) || []; if (!h.length || now - h[h.length - 1][0] >= 200) { h.push([now, plc.read(o.tag)]); while (h.length && now - h[0][0] > 120000) h.shift(); hist.set(o.id, h); }
     }
+  };
+  HMI.update = function () {
+    const plc = App.plc, now = performance.now();
+    HMI.sample(now);
     const blinkOff = Math.floor(now / 500) % 2;
     for (const x of els) {
       const o = x.o;
@@ -441,15 +459,16 @@
       <label class="field"><span>Terminal type</span><select data-res>${Object.entries(RES).map(([k, [w, hh, n]]) => `<option value="${k}" ${h.res === k ? 'selected' : ''}>${n} · ${w}×${hh}</option>`).join('')}</select></label>
       <h5>Screens</h5><ul class="taglist">${h.screens.map(x => `<li>${x.id === cur ? '▶ ' : ''}<a href="#" data-go="${x.id}">${esc(x.name)}</a> <small>(${h.objects.filter(o => (o.scr || 's1') === x.id).length} objects)</small></li>`).join('')}</ul>
       <div class="btn-row"><button class="btn" data-sadd>＋ Screen</button><button class="btn" data-sren>Rename “${esc(s.name)}”</button>${cur !== 's1' ? '<button class="btn danger" data-sdel>Delete screen</button>' : ''}</div>
-      <label class="field"><span>Log-in PIN (4–8 digits)</span><input data-pin value="${esc(h.pin)}" inputmode="numeric" autocomplete="off"></label>
+      <label class="field"><span>Log-in PIN (4–8 digits)</span><input data-pin type="password" value="${esc(h.pin)}" inputmode="numeric" autocomplete="new-password"></label>
       <p class="help">Add objects from the toolbar, then select one to bind a tag. <b>Go to Screen</b> buttons move between screens; <b>Log in / out</b> unlocks buttons marked “Needs log-in”. Any object can be shown only while a tag is 1 (Visible when…).</p></div>`;
     propsEl.querySelector('[data-res]').onchange = ev => { h.res = ev.target.value; App.log('system', `HMI terminal: ${RES[h.res][2]}`); App.save(); HMI.render(); };
     propsEl.querySelectorAll('[data-go]').forEach(a => { a.onclick = ev => { ev.preventDefault(); HMI.goto(a.dataset.go); }; });
-    propsEl.querySelector('[data-sadd]').onclick = () => UI.form('New screen', [{ key: 'n', label: 'Name', value: 'Screen ' + (h.screens.length + 1) }], v => {
+    // a saved HMI keeps 30 screens (cleanAll)
+    propsEl.querySelector('[data-sadd]').onclick = () => (h.screens.length >= 30 ? UI.toast('An HMI has at most 30 screens', 'warn') : UI.form('New screen', [{ key: 'n', label: 'Name', value: 'Screen ' + (h.screens.length + 1) }], v => {
       const n = v.n.trim().slice(0, 30); if (!n) return 'Type a name';
       let i = 2; while (h.screens.some(x => x.id === 's' + i)) i++;
       h.screens.push({ id: 's' + i, name: n }); cur = 's' + i; App.save(); HMI.render(); return undefined;
-    });
+    }));
     propsEl.querySelector('[data-sren]').onclick = () => UI.form('Rename screen', [{ key: 'n', label: 'Name', value: s.name }], v => { const n = v.n.trim().slice(0, 30); if (!n) return 'Type a name'; s.name = n; App.save(); HMI.render(); return undefined; });
     const del = propsEl.querySelector('[data-sdel]');
     if (del) del.onclick = () => { h.objects = h.objects.filter(o => (o.scr || 's1') !== cur); h.objects.forEach(o => { if (o.type === 'nav' && o.target === cur) o.target = 's1'; }); h.screens = h.screens.filter(x => x.id !== cur); cur = 's1'; App.save(); HMI.render(); };
@@ -475,6 +494,6 @@
     };
     inp.click();
   }
-  HMI.resetSel = () => { sel = null; cur = 's1'; user = false; hist.clear(); };
+  HMI.resetSel = () => { sel = null; cur = 's1'; user = false; hist.clear(); ver++; if (root && mode === 'edit' && App.project && secured()) setMode('run'); };   // a project with a PIN opens on the Machine
   window.HMI = HMI;
 })();

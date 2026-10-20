@@ -736,22 +736,28 @@
   });
   /* VFD: 400 V in L1 L2 L3, motor out U V W; FWD / REV inputs (24 V DC to DCOM); speed reference AI 0–10 V (to ACOM) or the keypad */
   def('vfd', {
-    name: 'Variable Frequency Drive (VFD)', cat: 'Control', view: 'cabinet', prefix: 'VFD', w: 170, h: 200,
+    name: 'Variable Frequency Drive (VFD)', cat: 'Control', view: 'cabinet', prefix: 'VFD', w: 170, h: 200, breaker: 0.2,
     props: { hz: 50, ramp: 3 },
     pdefs: [{ k: 'hz', n: 'Keypad speed (Hz) when AI is not wired', type: 'number' }, { k: 'ramp', n: 'Ramp time 0 → 60 Hz (s)', type: 'number' }],
     info: 'Supply L1 L2 L3 (400 V) → motor U V W. Runs forward while FWD has 24 V DC (to DCOM), reverse with REV (both = stop). Speed: AI 0–10 V = 0–60 Hz from an analog output card, else the keypad speed. Ramps up and down.',
     terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'L2', x: 40, y: 0 }, { id: 'L3', x: 60, y: 0 }, { id: 'PE', x: 85, y: 0 },
       { id: 'FWD', x: 110, y: 0 }, { id: 'REV', x: 130, y: 0 }, { id: 'DCOM', x: 150, y: 0, l: 'COM' },
       { id: 'U', x: 20, y: 200 }, { id: 'V', x: 40, y: 200 }, { id: 'W', x: 60, y: 200 }, { id: 'AI', x: 120, y: 200 }, { id: 'ACOM', x: 145, y: 200, l: 'COM' }],
-    init: () => ({ pw: false, dir: 0, hz: 0, ref: 0 }),
+    init: () => ({ pw: false, dir: 0, hz: 0, ref: 0, tripped: false }),
     transient: ['hz', 'dir'],
-    conduct(c) {
-      if (!c.state.pw || !c.state.dir || c.state.hz < 0.5) return null;
-      return c.state.dir > 0 ? [['L1', 'U'], ['L2', 'V'], ['L3', 'W']] : [['L1', 'U'], ['L2', 'W'], ['L3', 'V']];
+    // an output short trips the drive (its own electronic protection, before any breaker); it resets when its power is removed
+    closed: c => !c.state.tripped,
+    /* the drive makes its own output (it does not pass the mains through): U V W in sequence, V and W swapped for REV,
+       so the input phase order does not change the rotation and a motor on the mains is not mixed up with it */
+    sources(c) {
+      if (!c.state.pw || c.state.tripped || !c.state.dir || c.state.hz < 0.5) return null;
+      return c.state.dir > 0 ? { U: 'L1', V: 'L2', W: 'L3' } : { U: 'L1', V: 'L3', W: 'L2' };
     },
     evaluate(c, api, ctx) {
-      const v = api.v(c, 'L1', 'L2'), s = c.state;
-      const pw = !!(v && v.label === '400VAC');
+      const s = c.state, ph = ['L1', 'L2', 'L3'].map(t => api.phase(c, t));
+      // input phase loss: the drive does not run
+      const pw = ph.every(Boolean) && new Set(ph).size === 3;
+      if (!pw && s.tripped) s.tripped = false;
       const din = t => { const x = api.v(c, t, 'DCOM'); return !!(x && x.kind === 'DC' && !x.rev); };
       const f = din('FWD'), r = din('REV');
       let ref = null;
@@ -779,7 +785,7 @@
         led(30, 122, s.pw, '#3ddc63') + T(40, 125, 'PWR', 'dt light xs', 'start') + led(80, 122, s.dir > 0 && s.hz > 0, '#3ddc63') + T(90, 125, 'FWD', 'dt light xs', 'start') +
         led(125, 122, s.dir < 0 && s.hz > 0, '#f2c230') + T(135, 125, 'REV', 'dt light xs', 'start') + T(85, 150, `ref ${s.ref.toFixed(1)} Hz`, 'dt light xs');
     },
-    status: c => (!c.state.pw ? 'No 400 V on L1 L2 L3' : c.state.hz > 0 ? `${c.state.dir > 0 ? 'FWD' : 'REV'} ${c.state.hz.toFixed(1)} Hz (ref ${c.state.ref.toFixed(1)})` : 'Stopped'),
+    status: c => (c.state.tripped ? 'FAULT: output short circuit — switch its supply off to reset' : !c.state.pw ? 'No 400 V on L1 L2 L3 (or a phase missing)' : c.state.hz > 0 ? `${c.state.dir > 0 ? 'FWD' : 'REV'} ${c.state.hz.toFixed(1)} Hz (ref ${c.state.ref.toFixed(1)})` : 'Stopped'),
   });
 
   /* ---------- CABINET: backplate, door, cable duct, HMI terminal ----------
@@ -833,7 +839,7 @@
     info: 'Touch panel for the cabinet door. It shows the screen made in the HMI workspace, live, and its buttons can be pressed here. Needs 24 VDC on + / M (0 V).',
     terms: [{ id: 'P', x: 250, y: 220, l: '+' }, { id: 'M', x: 275, y: 220 }],
     init: () => ({ pw: false }),
-    evaluate(c, api) { const v = api.v(c, 'P', 'M'); return set(c, 'pw', !!(v && v.kind === 'DC')); },
+    evaluate(c, api) { const v = api.v(c, 'P', 'M'); return set(c, 'pw', !!(v && v.kind === 'DC' && !v.rev)); },
     onPart(c, p, ev, ctx) { if (c.state.pw && p.startsWith('h:') && ctx && ctx.hmiPress) { ctx.hmiPress(p.slice(2), ev); return true; } },
     ctxSig: (c, ctx) => '|' + (c.state.pw && ctx.hmiMini ? ctx.hmiMini().key : ''),
     draw(c, ctx) {
@@ -1332,9 +1338,11 @@
     const a = ['U1', 'V1', 'W1'].map(p), b = ['U2', 'V2', 'W2'].map(p);
     if (!a.every(Boolean)) return a.some(Boolean) ? 'single' : 'off';
     if (new Set(a).size < 3) return 'single';
-    const starPt = r('U2') === r('V2') && r('V2') === r('W2') && !b.some(Boolean) && !api.pots(c, 'U2').size;
+    // a star point may be tied to N or PE (it carries no current when balanced)
+    const starPt = r('U2') === r('V2') && r('V2') === r('W2') && !b.some(Boolean) && ![...api.pots(c, 'U2')].some(livePot);
     if (starPt) return 'star';
-    if (b.every((x, i) => x && x !== a[i])) return 'delta';
+    // delta: every winding across two different phases, each phase once at the winding ends
+    if (b.every((x, i) => x && x !== a[i]) && new Set(b).size === 3) return 'delta';
     return b.some(Boolean) ? 'single' : 'open';
   }
   def('motor6', {
@@ -1679,6 +1687,7 @@
   /* ---------- Solver ---------- */
   const EMPTY = new Set();
   const isPh = p => p === 'L1' || p === 'L2' || p === 'L3';
+  const livePot = p => isPh(p) || p.startsWith('DC');
   const V400 = { kind: 'AC', v: 400, label: '400VAC' }, V230 = { kind: 'AC', v: 230, label: '230VAC' };
   const V24 = { kind: 'DC', v: 24, label: '24VDC' }, V24R = { kind: 'DC', v: -24, label: '24VDC', rev: true };
 
@@ -1717,7 +1726,8 @@
     }
     if (ac.length > 1) return ac.includes('N') ? 'Short circuit (line to neutral)' : 'Short circuit (phase to phase)';
     if (pe && ac.some(isPh)) return 'Ground fault (line to earth)';
-    if (dc && ac.length) return 'AC mains connected to a DC circuit';
+    // 0 V tied to N or PE is bad practice but no fault current; a phase on a DC circuit is a fault
+    if (dc && ac.some(isPh)) return 'AC mains connected to a DC circuit';
     return null;
   }
   function shorts(net) {
@@ -1757,14 +1767,66 @@
       if (fixed) { fixed.state.tripped = true; net = bestNet; sh = bestSh; }
       if (fixed) alerts.push({ msg: `${fixed.props.label} TRIPPED — ${reason}`, kind: 'danger' });
       else {
+        // no single device clears it: trip them together only if that clears it, else the fault is before all protection
         cands.forEach(c => { c.state.tripped = true; });
-        alerts.push({ msg: `${cands.map(c => c.props.label).join(', ')} TRIPPED — ${reason}`, kind: 'danger' });
-        net = build(circ, ctx); sh = shorts(net);
+        const n2 = build(circ, ctx), s2 = shorts(n2);
+        if (s2.size < sh.size) { alerts.push({ msg: `${cands.map(c => c.props.label).join(', ')} TRIPPED — ${reason}`, kind: 'danger' }); net = n2; sh = s2; }
+        else { cands.forEach(c => { c.state.tripped = false; }); alerts.push({ msg: `${reason} before any breaker or fuse: nothing can clear it — remove the fault`, kind: 'danger' }); break; }
       }
     }
     net.short = sh;
     for (const r of sh.keys()) net.pots.set(r, new Set());
     return net;
+  }
+  /* which devices does an overloaded motor draw its current through? A device feeds it when opening that device alone
+     cuts a motor terminal off from every source of its phase (or DC pole): a bridge between the terminal and the
+     sources in the graph of wire nets joined by closed device contacts. One pass per potential, not a rebuild per device. */
+  function feeders(circ, ctx, net, overM, api) {
+    const n = net.idx.size, par = new Int32Array(n);
+    for (let i = 0; i < n; i++) par[i] = i;
+    const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    for (const w of circ.wires) { const a = net.idx.get(w.a), b = net.idx.get(w.b); if (a != null && b != null) par[find(a)] = find(b); }
+    const node = k => { const i = net.idx.get(k); return i == null ? -1 : find(i); };
+    const edges = [], seen = new Set(), src = new Map();
+    for (const c of circ.comps) {
+      const d = DEFS[c.type]; if (!d) continue;
+      if (d.conduct) for (const [a, b] of d.conduct(c, ctx) || []) {
+        const u = node(c.id + ':' + a), v = node(c.id + ':' + b), key = c.id + '|' + Math.min(u, v) + '|' + Math.max(u, v);
+        if (u >= 0 && v >= 0 && u !== v && !seen.has(key)) { seen.add(key); edges.push({ id: c.id, u, v }); }
+      }
+      if (d.sources) { const sm = d.sources(c, ctx); if (sm) for (const k in sm) { const u = node(c.id + ':' + k); if (u >= 0) { if (!src.has(sm[k])) src.set(sm[k], new Set()); src.get(sm[k]).add(u); } } }
+    }
+    const out = new Set(), S = n;   // S: one extra node joined to every source of the potential
+    const done = new Set();
+    for (const m of overM) for (const t of m.t) {
+      let p = null; for (const q of api.pots(m.c, t)) if (livePot(q)) { p = q; break; }
+      const T = node(m.c.id + ':' + t);
+      if (!p || T < 0 || !src.has(p) || done.has(p + '|' + T)) continue;
+      done.add(p + '|' + T);
+      // adjacency with the extra source node
+      const adj = new Map(), add = (u, v, e) => { if (!adj.has(u)) adj.set(u, []); adj.get(u).push([v, e]); };
+      edges.forEach((e, i) => { add(e.u, e.v, i); add(e.v, e.u, i); });
+      let k = edges.length;
+      for (const u of src.get(p)) { add(S, u, k); add(u, S, k); k++; }
+      // iterative DFS from S: discovery time, low link, tree parent edge
+      const tin = new Map(), low = new Map(), pe = new Map(), stack = [[S, -1, 0]];
+      let time = 0; tin.set(S, 0); low.set(S, 0);
+      while (stack.length) {
+        const top = stack[stack.length - 1], [u, from] = top, list = adj.get(u) || [];
+        if (top[2] < list.length) {
+          const [v, e] = list[top[2]++];
+          if (e === from) continue;
+          if (tin.has(v)) { low.set(u, Math.min(low.get(u), tin.get(v))); continue; }
+          tin.set(v, ++time); low.set(v, time); pe.set(v, [u, e]); stack.push([v, e, 0]);
+        } else {
+          stack.pop();
+          const q = pe.get(u); if (q) low.set(q[0], Math.min(low.get(q[0]), low.get(u)));
+        }
+      }
+      // the bridges on the tree path from the motor terminal up to the sources
+      for (let v = T; pe.has(v); v = pe.get(v)[0]) { const [u, e] = pe.get(v); if (low.get(v) > tin.get(u) && e < edges.length) out.add(edges[e].id); }
+    }
+    return out;
   }
   function makeApi(net, alerts, circ, ctx) {
     function voltR(ra, rb) {
@@ -1797,35 +1859,40 @@
       /* does an overloaded motor draw its current through device c? Open c and see whether the motor loses a phase. */
       feedsOverload(c) {
         if (!this.overM.length) return false;
-        const n2 = build(circ, ctx, c.id);
-        const ph = k => { const i = n2.idx.get(k); const st = i == null ? null : n2.pots.get(n2.find(i)); if (st) for (const p of st) if (isPh(p)) return p; return null; };
-        return this.overM.some(m => m.t.some(t => { const p = this.phase(m.c, t); return p && ph(m.c.id + ':' + t) !== p; }));
+        if (!this._feed) this._feed = feeders(circ, ctx, net, this.overM, this);
+        return this._feed.has(c.id);
       },
       alert(msg, kind) { alerts.push({ msg, kind }); },
     };
   }
 
-  /* earth leakage: a working load fed between a phase and PE (not N) sends its current to earth. An RCD in front of it
-     trips; without one the load works on, which is dangerous, so it is reported. */
-  const working = st => !!(st.on || st.pulled || st.pw || st.drive === 'run');
+  /* earth leakage, as an RCD sees it: the current of a working load must come back through the RCD it was fed through.
+     It does not when the load returns to PE (phase-to-earth load), to an N that bypasses the RCD (borrowed neutral)
+     or to an N that is bonded to PE after the RCD. That RCD trips; a phase-to-PE load with no RCD is reported. */
+  const working = st => !!(st.on || st.pulled || st.pw || st.ok || st.open || st.sol || st.fill || st.drain || st.drive === 'run');
   function earthLeak(circ, ctx, api) {
+    const rcds = circ.comps.filter(r => DEFS[r.type].earthOnly && DEFS[r.type].closed(r)), out = [];
+    const potsIn = (n, k) => { const i = n.idx.get(k); return i == null ? null : n.pots.get(n.find(i)); };
+    let trial = null;   // nets with each RCD tripped, built only when a load needs them
     for (const c of circ.comps) {
       const d = DEFS[c.type];
-      if (!d || d.sources || d.breaker || d.junction || !d.evaluate || !working(c.state)) continue;
-      const pots = t => api.pots(c, t.id), peOnly = t => t.id !== 'PE' && pots(t).has('PE') && !pots(t).has('N');
-      const live = d.terms.find(t => [...pots(t)].some(isPh));
-      if (!live || !d.terms.some(peOnly)) continue;
-      // the RCD that takes the phase away from the load
-      const rcds = circ.comps.filter(r => DEFS[r.type].earthOnly && DEFS[r.type].closed(r));
-      const rcd = rcds.find(r => {
-        r.state.tripped = true;
-        const n2 = build(circ, ctx), i = n2.idx.get(c.id + ':' + live.id), st = i == null ? null : n2.pots.get(n2.find(i));
-        r.state.tripped = false;
-        return !st || ![...st].some(isPh);
+      if (!d || d.breaker || d.junction || !d.evaluate || !working(c.state)) continue;
+      const live = d.terms.find(t => [...api.pots(c, t.id)].some(isPh));
+      // return terminals: on N or PE and no phase (a 3-phase load returns on the other phases: balanced)
+      const ret = d.terms.filter(t => t.id !== 'PE' && t !== live && (api.pots(c, t.id).has('N') || api.pots(c, t.id).has('PE')) && ![...api.pots(c, t.id)].some(isPh));
+      if (!live || !ret.length) continue;
+      if (!trial) trial = rcds.map(r => { r.state.tripped = true; const n = build(circ, ctx); r.state.tripped = false; return n; });
+      let rcd = null;
+      rcds.forEach((r, i) => {
+        const n = trial[i], st = potsIn(n, c.id + ':' + live.id);
+        if (st && [...st].some(isPh)) return;   // not fed through this RCD
+        // fed through it: the return must lose its N/PE too when the RCD opens, else the current goes around it
+        if (ret.some(t => { const rs = potsIn(n, c.id + ':' + t.id); return rs && (rs.has('N') || rs.has('PE')); })) rcd = rcd || r;
       });
-      return { c, rcd };
+      if (rcd) out.push({ c, rcd });
+      else if (ret.some(t => api.pots(c, t.id).has('PE') && !api.pots(c, t.id).has('N'))) out.push({ c, rcd: null });
     }
-    return null;
+    return out;
   }
   function solve(circ, dt, ctx) {
     const alerts = [];
@@ -1839,11 +1906,18 @@
         if (!ch) break;
         if (it === 15) alerts.push({ msg: 'The circuit does not settle: a relay or contactor keeps switching. Is a coil fed through its own N.C. contact?', kind: 'warn' });
       }
-      const lk = earthLeak(circ, ctx, api);
-      if (!lk) break;
-      if (!lk.rcd) { alerts.push({ msg: `${lk.c.props.label} is fed between a phase and PE: its current leaks to earth and no RCD protects it`, kind: 'warn' }); break; }
-      lk.rcd.state.tripped = true;
-      alerts.push({ msg: `${lk.rcd.props.label} TRIPPED — earth leakage through ${lk.c.props.label} (phase to PE)`, kind: 'danger' });
+      const leaks = earthLeak(circ, ctx, api);
+      leaks.filter(l => !l.rcd).forEach(l => alerts.push({ msg: `${l.c.props.label} is fed between a phase and PE: its current leaks to earth and no RCD protects it`, kind: 'warn' }));
+      const trips = leaks.filter(l => l.rcd && !l.rcd.state.tripped);
+      if (!trips.length) break;
+      trips.forEach(l => { if (l.rcd.state.tripped) return; l.rcd.state.tripped = true; alerts.push({ msg: `${l.rcd.props.label} TRIPPED — earth leakage through ${l.c.props.label}`, kind: 'danger' }); });
+    }
+    // signals published by devices (tank levels, analog values, VFD speeds) of devices that are gone or renamed are dropped
+    if (ctx) {
+      const ids = new Set(circ.comps.map(c => c.id)), tanks = new Set(circ.comps.filter(c => c.type === 'tank').map(c => c.props.label));
+      const prune = (o, ok) => { if (o) for (const k in o) if (!ok(k)) delete o[k]; };
+      prune(ctx.tanks, k => tanks.has(k));
+      [ctx.anaSrc, ctx.anaOut, ctx.vfdOut].forEach(o => prune(o, k => ids.has(k.split(':')[0])));
     }
     for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.tick) d.tick(c, api, dt, ctx); }
     return { api, alerts };

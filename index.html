@@ -17,9 +17,35 @@
         var m = /^#import=(.+)$/.exec(location.hash);
         if (m) {
           try {
-            var d = JSON.parse(decodeURIComponent(m[1]));
-            // only keys this app owns, only text, and never over something already here
-            for (var k in d) if (/^plc-trainer\./.test(k) && typeof d[k] === 'string' && ls.getItem(k) === null) ls.setItem(k, d[k]);
+            var d = JSON.parse(decodeURIComponent(m[1])), IDX = 'plc-trainer.projects.v2', P = 'plc-trainer.proj.';
+            // only projects (merged by id, the newer copy wins), the current project and the channel; nothing else is taken
+            // from a link, and every project is checked again by the app when it is opened
+            var list = function (v) { try { var a = JSON.parse(v || '[]'); return Object.prototype.toString.call(a) === '[object Array]' ? a : []; } catch (e) { return []; } };
+            var mine = list(ls.getItem(IDX)), theirs = list(d[IDX]), changed = false;
+            for (var i = 0; i < theirs.length; i++) {
+              var t = theirs[i], id = t && t.id, data = typeof id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(id) ? d[P + id] : null;
+              if (typeof data !== 'string' || data.length > 4000000) continue;
+              try { if (!JSON.parse(data) || typeof JSON.parse(data) !== 'object') continue; } catch (e) { continue; }
+              var up = Number(t.updated) || 0, here = null;
+              for (var j = 0; j < mine.length; j++) if (mine[j] && mine[j].id === id) here = mine[j];
+              if (here && (Number(here.updated) || 0) >= up) continue;
+              if (here && ls.getItem(P + id) !== null) {
+                // the hosted copy changed too: keep it as a copy before the newer one from the device takes its place
+                var keep = id.slice(0, 34) + '-web';
+                ls.setItem(P + keep, ls.getItem(P + id));
+                mine.push({ id: keep, name: String(here.name || 'Untitled').slice(0, 70) + ' (web copy)', updated: Number(here.updated) || 0 });
+                mine = mine.filter(function (x) { return x !== here; });
+              }
+              ls.setItem(P + id, data);
+              mine = mine.filter(function (x) { return !x || x.id !== id; });
+              mine.push({ id: id, name: String(t.name || 'Untitled').slice(0, 80), updated: up });
+              changed = true;
+            }
+            if (changed) ls.setItem(IDX, JSON.stringify(mine));
+            var cur = d['plc-trainer.current'];
+            if (ls.getItem('plc-trainer.current') === null && typeof cur === 'string' && ls.getItem(P + cur) !== null) ls.setItem('plc-trainer.current', cur);
+            var c = d['plc-trainer.channel'];
+            if (ls.getItem('plc-trainer.channel') === null && (c === 'stable' || c === 'beta')) ls.setItem('plc-trainer.channel', c);
           } catch (e) { /* a broken hand-over is ignored */ }
           history.replaceState(null, '', location.pathname + location.search);
           ch = ls.getItem('plc-trainer.channel');

@@ -289,7 +289,7 @@
     // clicking an existing wire while wiring ends the new wire there, on a junction dot
     if (wiring && wireEl && tool === 'select') {
       const w = circ().wires.find(x => x.id === wireEl.dataset.wid);
-      if (w && w.a !== wiring.from && w.b !== wiring.from) { onTerm(splitWire(w, pt)); return; }
+      if (w && w.a !== wiring.from && w.b !== wiring.from) { const k = splitWire(w, pt); if (k) onTerm(k); return; }
     }
     if (wiring) { wiring.pts.push([snap(pt.x), snap(pt.y)]); renderTemp(); return; }
     if (compEl) {
@@ -438,7 +438,7 @@
     } else if (wireEl) {
       select({ kind: 'wire', id: wireEl.dataset.wid });
       const pt = toWorld(e), w0 = circ().wires.find(w => w.id === sel.id);
-      UI.menu(e.clientX, e.clientY, [{ label: 'Start a new wire from here (junction)', onClick: () => { const key = splitWire(w0, pt); wiring = { from: key, pts: [], cur: null }; select(null); renderTemp(); } },
+      UI.menu(e.clientX, e.clientY, [{ label: 'Start a new wire from here (junction)', onClick: () => { const key = splitWire(w0, pt); if (!key) return; wiring = { from: key, pts: [], cur: null }; select(null); renderTemp(); } },
         { label: 'Add a bend here', onClick: () => addBend(w0, pt) }, { label: 'Straighten (remove bends)', onClick: () => { const w = circ().wires.find(w => w.id === sel.id); if (w) { w.pts = []; App.circuitChanged(); } } }, { label: 'Delete wire', danger: true, onClick: () => delSel() }]);
     }
   }
@@ -566,6 +566,8 @@
   const dedupe = pts => pts.filter((p, i) => !i || p[0] !== pts[i - 1][0] || p[1] !== pts[i - 1][1]);
   /* split wire w at the point nearest pt: a junction dot there and two wires that keep the old route; returns the junction terminal */
   function splitWire(w, pt) {
+    // a wire of the Electrical Diagram is made again on every diagram change: a hand-made half would stay behind
+    if (w.sch) { UI.toast('This wire comes from the Electrical Diagram: change the diagram instead, or start the new wire from a terminal', 'warn', 5000); return null; }
     const n = nearestOnWire(w, pt);
     // stay on the segment; snap only along it
     const x = n.horiz ? snap(n.x) : n.x, y = n.horiz ? n.y : snap(n.y);
@@ -685,6 +687,7 @@
         <div class="btn-row">${d.junction ? '' : '<button class="btn" data-same title="Give every device in the circuit this size">Same size for all</button>'}<button class="btn" data-dup>Duplicate</button><button class="btn" data-rep ${c.state.burnt || c.state.badIn ? '' : 'disabled'}>Repair</button><button class="btn danger" data-del>Delete</button></div></div>`;
       propsEl.querySelectorAll('[data-pk]').forEach(i => i.addEventListener('change', () => {
         const k = i.dataset.pk;
+        if (k === 'label') { setLabel(c, i); return; }
         c.props[k] = i.type === 'number' || k === 'size' ? Number(i.value) : i.value;
         if (k === 'size') App.circuitChanged(); else App.save();
       }));
@@ -721,6 +724,21 @@
     }
   }
 
+  /* a tag is unique (the Electrical Diagram and the address book find devices by it); symbols that use it follow the rename */
+  const LABEL = /^[A-Za-z0-9_+.-]{1,20}$/, SCHTAG = /^[A-Za-z0-9_-]{1,20}$/;
+  function setLabel(c, inp) {
+    const old = c.props.label, v = inp.value.trim(), S = window.Schematic, refs = S && S.refs ? S.refs(old) : 0;
+    const no = msg => { UI.toast(msg, 'warn'); inp.value = old; };
+    if (v === old) { inp.value = old; return; }
+    if (!LABEL.test(v)) return no('A tag is 1 to 20 letters, numbers or + . - _ (no spaces)');
+    if (circ().comps.some(x => x !== c && x.props.label === v)) return no(`${v} is already the tag of another device`);
+    if (refs && !SCHTAG.test(v)) return no(`${old} is used in the Electrical Diagram: use letters, numbers, - or _ only`);
+    c.props.label = v;
+    App.log('operator', `Device ${old} renamed ${v}`);
+    if (refs) { S.renameTag(old, v); UI.toast(`${old} renamed ${v} — the Electrical Diagram follows`, 'ok'); }
+    else if (S && S.refs(v)) S.sync();
+    else App.save();
+  }
   WS.selectComp = id => select({ kind: 'comp', id });
   WS.onShow = function () { if (!WS._fitted) { WS._fitted = true; requestAnimationFrame(() => WS.fit()); } };
   WS.refit = () => { WS._fitted = false; };

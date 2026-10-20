@@ -26,14 +26,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: v
+        # branch and tag names come in through env, never pasted into the script
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           v="$(node -p "require('./package.json').version")"
           echo "version=$v" >> "$GITHUB_OUTPUT"
           # a pushed tag must match package.json; a stable (no suffix) release must come from main
-          if [ "${{ github.event_name }}" = push ] && [ "${{ github.ref_name }}" != "v$v" ]; then
-            echo "::error::Tag ${{ github.ref_name }} does not match package.json version $v"; exit 1; fi
-          if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "${{ inputs.publish }}" = true ] && [ "${v#*-}" = "$v" ] && [ "${{ github.ref }}" != refs/heads/main ]; then
-            echo "::error::Stable releases are published from main only (this is ${{ github.ref }})"; exit 1; fi
+          if [ "$EVENT" = push ] && [ "$REF_NAME" != "v$v" ]; then
+            echo "::error::Tag $REF_NAME does not match package.json version $v"; exit 1; fi
+          if [ "$EVENT" = workflow_dispatch ] && [ "$PUBLISH" = true ] && [ "${v#*-}" = "$v" ] && [ "$REF" != refs/heads/main ]; then
+            echo "::error::Stable releases are published from main only (this is $REF)"; exit 1; fi
 
   web:
     needs: version
@@ -80,10 +86,6 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       BUILD_ID: v${{ needs.version.outputs.version }}
-      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -103,10 +105,17 @@ jobs:
           grep -E "versionCode|versionName" android/app/build.gradle
       - name: Build APK
         working-directory: mobile/android
+        # the signing key is given to this step only (not to npm install), and never to pull request builds
+        env:
+          KEYSTORE_B64: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_ALIAS || '' }}
+          KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_PASSWORD || '' }}
+          EVENT: ${{ github.event_name }}
         run: |
           chmod +x gradlew
           # a published APK must be release-signed, or it will not install over the app users have
-          if [ -z "$KEYSTORE_B64" ] && [ "${{ github.event_name }}" != pull_request ]; then
+          if [ -z "$KEYSTORE_B64" ] && [ "$EVENT" != pull_request ]; then
             echo "::error::Android signing secrets are missing: not publishing a debug-signed APK. See RELEASING.md."; exit 1; fi
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"

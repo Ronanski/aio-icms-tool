@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 391/391.
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 428/428.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -188,6 +188,9 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] **v2.1 — learning**: live checklists for lessons 8–16 (the wiring is checked, not only the ladder; lesson 12 checks the hardwired 21-22 interlock and the ladder XIO interlock); new lessons 13 rack + I/O Configuration, 14 analog + VFD, 15 HMI screens/trends, 16 download + online edits.
 - [ ] **v2.2 — publishing**: Play Store build (`.aab`) and listing, final product name and logo; release workflow refuses a debug-signed APK.
 - [ ] Owner's checks on real devices (Beta) and the owner's v1.2 bug list → fixes as they come.
+
+**v2.1.1 — full audit (owner: "PERFORM FULL AUDIT. INITIATE FIX"; "AYUSIN MO LAHAT")**
+- [x] Audit in 4 parts (PLC engine/ladder, electrical solver, app/storage/security, diagram/HMI/wiring): 40 findings, all fixed with tests (see CHANGELOG [Unreleased] "Fixed (full audit)")
 
 ## Audit findings not fixed yet
 - [x] Math status flags S:0 (carry, overflow, zero, sign) and S:5/0 on divide by zero (v1.2.1)

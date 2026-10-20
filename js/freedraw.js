@@ -167,7 +167,7 @@
       return pts.length ? { id: w.id, a: w.a, b: w.b, pts } : { id: w.id, a: w.a, b: w.b };
     });
     const n = s => Number(String(s).replace(/\D/g, '')) || 0;
-    const seq = Math.max(Number.isFinite(o.seq) ? o.seq : 0, ...items.map(i => n(i.id)), ...wires.map(w => n(w.id)), 0);
+    const seq = Math.max(Number.isInteger(o.seq) && o.seq >= 0 && o.seq < 999999 ? o.seq : 0, ...items.map(i => n(i.id)), ...wires.map(w => n(w.id)), 0);
     return { items, wires, seq };
   };
 
@@ -209,21 +209,33 @@
     for (const [t, term] of POT[p] || []) { const c = H.circ().comps.find(x => x.type === t); if (c) return c.id + ':' + term; }
     return null;
   }
-  function check() {
+  /* typeErr(tag, type, what) and take(tag, terminals, view, dry) come from the Schematic, which checks the whole diagram:
+     one type per tag, and a device terminal wired by one view only (the current paths, the power circuit or this drawing) */
+  const SRC = ['src', 'conv', 'gen', 'batt'];
+  FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
+    if (!H) return errs;
+    const te = typeErr || ((tag, type, what) => { const d = H.devOf(tag); return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null; });
     for (const it of fr().items) {
-      const S = K[it.k], dev = H.devOf(it.tag);
+      const S = K[it.k];
       if (!S.type) continue;
       if (S.pot && !potKey(S.pot)) { errs.set(it, `${POTNAME[S.pot] || S.pot}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
-      if (S.jct) { if (dev && dev.type !== 'jct') errs.set(it, `${it.tag} is a ${DEFS[dev.type].name} in the Wiring, not a wire point`); continue; }
-      if (dev && dev.type !== S.type) { errs.set(it, `${it.tag} is a ${DEFS[dev.type].name} in the Wiring, not a ${DEFS[S.type].name}`); continue; }
+      if (S.jct) { const m = te(it.tag, 'jct', 'wire point'); if (m) errs.set(it, m); continue; }
+      const m = te(it.tag, S.type); if (m) { errs.set(it, m); continue; }
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
-      if (used.has(key) && !['src', 'conv', 'gen', 'batt'].includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
+      if (used.has(key) && !SRC.includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
       used.set(key, it);
     }
+    // terminals the other views wire (a supply may be drawn in every view): this symbol is not wired
+    if (take) for (const it of fr().items) {
+      const S = K[it.k]; if (!S.type || S.jct || SRC.includes(S.look) || errs.has(it)) continue;
+      const ids = S.terms.map(t => t.id), m = take(it.tag, ids, 'f', true);
+      if (m) errs.set(it, m); else take(it.tag, ids, 'f');
+    }
     return errs;
-  }
+  };
+  const check = () => (H.checks ? H.checks() : FD.check());
   FD.sync = function (addWire, ensureType, ctlColor) {
     if (!H) return;
     const F = fr(), col = Circuit.POT_COLORS;
@@ -527,6 +539,7 @@
         // ending a wire on another wire: a junction dot there, and both wires meet on it
         const w = fr().wires.find(x => x.id === wEl.dataset.fw);
         if (w && w.a !== wiring.from && w.b !== wiring.from) {
+          if (full()) { wiring = null; FD.render(body); return; }
           H.snap();
           const j = splitWire(w, { x: snap10(p.x), y: snap10(p.y) }), F = fr();
           F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: j });
@@ -603,9 +616,13 @@
     }
     return { x: cx, y: cy };
   }
+  // a saved drawing keeps 400 symbols (FD.clean)
+  const MAXI = 400, full = () => { if (fr().items.length < MAXI) return false; UI.toast(`The drawing is full (${MAXI} symbols)`, 'warn'); return true; };
   FD.add = function (k, tag, x, y) {
+    if (full()) return undefined;
     const go = t => {
       if (k === 'text') { if (!t) return 'Type some text'; } else if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
+      if (full()) return undefined;
       H.snap();
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
@@ -638,14 +655,37 @@
     const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
     H.snap(); it.r = (it.r + 90) % 360; H.changed();
   };
+  /* another actuator for the same contact. Its device follows: one the diagram added for this symbol alone changes type;
+     a device you placed in the Wiring, or one other symbols use too, is left as it is and this symbol gets a new tag */
   FD.cycleType = function () {
     const it = sel && sel.i && itemOf(sel.i); if (!it) return;
     const list = TYPES.find(l => l.includes(it.k)); if (!list) { UI.toast('Only switch contacts and sensors have types'); return; }
-    H.snap(); it.k = list[(list.indexOf(it.k) + 1) % list.length]; H.changed();
+    const nk = list[(list.indexOf(it.k) + 1) % list.length], S0 = K[it.k], S1 = K[nk], d = H.devOf(it.tag), C = H.circ();
+    H.snap();
+    // the drawn wires keep their place: first terminal to first, second to second (11-12 → 21-22…)
+    const map = Object.fromEntries(S0.terms.map((t, i) => [t.id, S1.terms[i] ? S1.terms[i].id : t.id]));
+    fr().wires.forEach(w => ['a', 'b'].forEach(e => { const [id, t] = w[e].split(':'); if (id === it.id && map[t]) w[e] = id + ':' + map[t]; }));
+    it.k = nk;
+    if (d && d.type !== S1.type) {
+      if (d.schAuto && H.refs(it.tag) === 1) {
+        Circuit.retype(d, S1.type, C); Circuit.normalize(d);
+        // a hand-made wire on a terminal the new type does not have is dropped (it would point nowhere)
+        const ok = new Set(DEFS[S1.type].terms.map(t => t.id));
+        C.wires = C.wires.filter(w => [w.a, w.b].every(k => { const [id, t] = k.split(':'); return id !== d.id || ok.has(t); }));
+        App.log('system', `Electrical Diagram: ${it.tag} is now a ${DEFS[S1.type].name}`);
+      } else {
+        const used = new Set([...C.comps.map(c => c.props.label), ...fr().items.map(i => i.tag)]), old = it.tag;
+        let n = 1; while (used.has(S1.pre + n)) n++;
+        it.tag = S1.pre + n;
+        UI.toast(`${old} ${d.schAuto ? 'is also used by other symbols' : 'is a device placed in the Wiring'}, so it stays a ${DEFS[d.type].name}: this symbol is now ${it.tag}, a new ${DEFS[S1.type].name}`, 'warn', 5000);
+      }
+    }
+    H.changed();
   };
   /* a copy of the selected symbol next to it, with a new tag (a text keeps its text) */
   FD.copy = function () {
     const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
+    if (full()) return;
     const F = fr(), S = K[it.k];
     let tag = it.tag;
     if (S.type) { const used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }

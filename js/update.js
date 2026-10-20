@@ -90,10 +90,11 @@
   }
   /* the new files are loaded network-first, so a reload is the whole update; projects are saved first */
   function apply(info) {
-    App.log('system', `Updating to v${info.version}${info.channel === 'beta' ? ' (beta)' : ''}`);
-    App.flushSave();
-    if (servedHere(info.channel)) location.reload();
-    else location.href = channelUrl(info.channel);
+    App.leaveProject(() => {
+      App.log('system', `Updating to v${info.version}${info.channel === 'beta' ? ' (beta)' : ''}`);
+      if (servedHere(info.channel)) location.reload();
+      else location.href = channelUrl(info.channel);
+    });
   }
   U.apply = apply;
   /* release notes as plain text with simple headings and bullets (never raw HTML) */

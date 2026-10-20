@@ -47,7 +47,8 @@ self.addEventListener('fetch', e => {
   // no-cache: revalidate with the server instead of using the browser HTTP cache (a navigation request takes no options, so use its URL)
   const net = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache' }) : fetch(req, { cache: 'no-cache' });
   e.respondWith(net.then(r => {
-    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
-    return r;
+    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return r; }
+    // an error page from the server (outage, a copy being deployed): the cached app is better, if there is one
+    return caches.match(req).then(hit => hit || r);
   }).catch(() => caches.match(req).then(hit => hit || caches.match('index.html'))));
 });

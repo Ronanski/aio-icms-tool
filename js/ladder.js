@@ -110,7 +110,7 @@
     o.push(hw(x, cx - sw, wy, 'i' + id), hw(cx + sw, x + CW, wy, 'o' + id));
     descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - 30 - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
     if (!noArg) o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(App.fmt(norm))}</text>`);
-    o.push(`<text class="fbadge" data-f="${esc(norm)}" x="${cx}" y="${wy + 26}"></text>`);
+    o.push(`<text class="fbadge" data-f="${esc(p && p.addr || norm)}" x="${cx}" y="${wy + 26}"></text>`);
     o.push(`<g class="ins" data-h="${id}">`);
     if (d && d.k === 'coil') {
       o.push(`<rect class="hlr" x="${cx - 12}" y="${wy - 11}" width="24" height="22" rx="11"/>`);
@@ -160,7 +160,8 @@
     o.push(hw(rx, x + BW, wy, 'o' + id));
     if (d.bits) {
       const p0 = parse(e.a[e.t === 'SQO' ? 3 : e.t === 'MSG' ? 5 : 0]);
-      const base = p0 && p0.kind === 'struct' ? p0.norm : '';
+      // a TIMER/COUNTER tag's bits are read at its address (PUMP/DN does not parse)
+      const base = p0 && p0.kind === 'struct' ? (p0.tag ? p0.addr : p0.norm) : '';
       d.bits.forEach((b, k) => {
         const yy = wy + k * 22;
         if (k > 0) o.push(`<line class="w stub" x1="${rx}" y1="${yy}" x2="${rx + 8}" y2="${yy}"/>`);
@@ -576,7 +577,7 @@
     // every program file; the messages say which file a rung is in
     const errs = [], warns = [];
     [[2, App.project.ladder.rungs], ...(App.project.ladder.files || []).map(f => [f.n, f.rungs])].forEach(([n, list]) => {
-      const r = App.plc.verify(list);
+      const r = App.plc.verify(list, (App.project.ladder.files || []).map(f => f.n));  // JSR targets: the project's files, not the engine's
       const tag = x => ({ ...x, msg: n === 2 ? x.msg : `LAD ${n}: ${x.msg}` });
       errs.push(...r.errs.map(tag)); warns.push(...r.warns.map(tag));
     });
@@ -621,7 +622,7 @@
     if (e.t !== 'BST') {
       const p = parse(e.a[0]);
       if (p && p.kind === 'bit') {
-        items.push(...forceItems(p.norm));
+        items.push(...forceItems(p.addr || p.norm));  // forces live at the address, not the tag name
         if (!App.plc.isForceable(p)) items.push({ sep: true }, { label: `Toggle bit ${p.norm}`, onClick: () => { App.plc.setBit(p, !App.plc.getBit(p)); } });
       }
     }
