@@ -469,8 +469,9 @@
       const pw = c.state.pw, run = me && pw && ctx.mode === 'RUN';
       const inW = me ? ctx.plcInRaw : 0, outW = me ? ctx.plcOut : 0;
       let s = R(0, 0, 440, 200, 'url(#gPlc)', 6, '#3a3833') + band(0, 440, 22, '#1e1d1a') + band(178, 440, 22, '#1e1d1a');
-      s += T(48, 36, 'AC POWER', 'dt light xs') + T(101, 36, '24VDC OUT', 'dt light xs') + T(300, 36, 'INPUTS  I:0/0 – I:0/11  (24 VDC)', 'dt light xs');
-      s += T(90, 170, 'RELAY OUT  O:0/0–3', 'dt light xs') + T(225, 170, 'RELAY OUT  O:0/4–7', 'dt light xs');
+      const fmt = (ctx && ctx.fmt) || (a => a);
+      s += T(48, 36, 'AC POWER', 'dt light xs') + T(101, 36, '24VDC OUT', 'dt light xs') + T(300, 36, `INPUTS  ${fmt('I:0/0')} – ${fmt('I:0/11')}  (24 VDC)`, 'dt light xs');
+      s += T(90, 170, `RELAY OUT  ${fmt('O:0/0')} – ${fmt('O:0/3')}`, 'dt light xs') + T(225, 170, `RELAY OUT  ${fmt('O:0/4')} – ${fmt('O:0/7')}`, 'dt light xs');
       s += T(22, 66, 'PLC-20', 'dt light brand', 'start') + T(22, 80, 'Compact controller', 'dt light xs', 'start');
       const st = [['POWER', pw, '#3ddc63'], ['RUN', run, '#3ddc63'], ['FAULT', !!c.state.burnt, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230']];
       st.forEach(([n, on, col], i) => { s += led(28, 98 + i * 15, on, col, 3.6) + T(38, 101 + i * 15, n, 'dt light xs', 'start'); });
@@ -506,6 +507,8 @@
     return want ? `I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
   };
   const cardBody = (w, h, title, sub) => R(0, 0, w, h, 'url(#gPlc)', 4, '#3a3833') + T(8, 48, title, 'dt light brand', 'start') + T(8, 62, sub, 'dt light xs', 'start');
+  // the card's address range in the chosen address style (ctx.fmt), e.g. I:1/0 – I:1/7 or I0.0 – I0.7
+  const rng = (ctx, f, s) => { const fmt = (ctx && ctx.fmt) || (a => a); return `${fmt(`${f}:${s}/0`)} – ${fmt(`${f}:${s}/7`)}`; };
   const slotTag = (w, s) => R(w - 46, 36, 38, 16, '#e8e6df', 3, '#555') + T(w - 27, 47.5, s, 'dt xs');
   def('mpsu', {
     name: 'Rack Power Supply 230VAC / 24VDC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PS', w: 100, h: 160, unique: 'psu', uniqueMsg: 'Only one rack power supply per project',
@@ -570,12 +573,12 @@
         ctx.plcInX[s] = w;
         return false;
       },
-      ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcInX[c.props.slot]}`,
+      ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcInX[c.props.slot]}|${ctx.fmt && ctx.fmt(`I:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcInX[c.props.slot] || 0 : 0;
         let s = cardBody(190, 160, 'INPUT 8', sub) + band(0, 190, 22, '#1e1d1a') + slotTag(190, 'SLOT ' + c.props.slot);
         for (let i = 0; i < 8; i++) { const b = (c.state.badIn >> i) & 1; s += led(20 + i * 20, 92, b || ((w >> i) & 1), b ? '#ff4b3a' : '#f2c230', 4) + T(20 + i * 20, 108, String(i), 'dt light xs'); }
-        return s + T(95, 140, `I:${c.props.slot}/0 – I:${c.props.slot}/7`, 'dt light xs') + led(178, 140, on, '#3ddc63', 3);
+        return s + T(95, 140, rng(ctx, 'I', c.props.slot), 'dt light xs') + led(178, 140, on, '#3ddc63', 3);
       },
       status: (c, ctx) => (c.state.badIn ? 'Damaged input(s) — right-click → Repair. ' : '') + (!cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: I:${c.props.slot}/0–7` : 'Rack not powered'),
     });
@@ -596,12 +599,12 @@
       for (let k = 0; k < 8; k++) if ((w >> k) & 1) out.push([k < 4 ? 'VAC0' : 'VAC1', 'O' + k]);
       return out;
     },
-    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}`,
+    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
       let s = cardBody(210, 160, 'OUTPUT 8', 'Relay') + band(138, 210, 22, '#1e1d1a') + slotTag(210, 'SLOT ' + c.props.slot);
       for (let i = 0; i < 8; i++) s += led(22 + i * 22, 92, (w >> i) & 1, '#f2c230', 4) + T(22 + i * 22, 108, String(i), 'dt light xs');
-      return s + T(105, 128, `O:${c.props.slot}/0 – O:${c.props.slot}/7`, 'dt light xs') + led(196, 128, on, '#3ddc63', 3);
+      return s + T(105, 128, rng(ctx, 'O', c.props.slot), 'dt light xs') + led(196, 128, on, '#3ddc63', 3);
     },
     status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
   });
@@ -622,12 +625,12 @@
       if (v && v.kind === 'AC' && !c.state.burnt) { c.state.burnt = true; api.alert(`${c.props.label}: destroyed — ${v.label} applied to a 24 VDC output card`, 'danger'); return true; }
       return false;
     },
-    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}`,
+    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx) && !c.state.burnt, w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
       let s = cardBody(210, 160, 'OUTPUT 8', '24 VDC source') + band(138, 210, 22, '#1e1d1a') + slotTag(210, 'SLOT ' + c.props.slot);
       for (let i = 0; i < 8; i++) s += led(22 + i * 22, 92, (w >> i) & 1, '#f2c230', 4) + T(22 + i * 22, 108, String(i), 'dt light xs');
-      return s + T(105, 128, `O:${c.props.slot}/0 – O:${c.props.slot}/7`, 'dt light xs') + led(196, 128, on, '#3ddc63', 3) + (c.state.burnt ? burnt(210, 160) : '');
+      return s + T(105, 128, rng(ctx, 'O', c.props.slot), 'dt light xs') + led(196, 128, on, '#3ddc63', 3) + (c.state.burnt ? burnt(210, 160) : '');
     },
     status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–7` : 'Rack not powered',
   });
@@ -1642,7 +1645,7 @@
   }
   function sig(c, ctx) {
     let s = c.type + JSON.stringify(c.state) + JSON.stringify(c.props);
-    if (c.type === 'plc' && ctx) s += `|${ctx.plcId}|${ctx.plcInRaw}|${ctx.plcOut}|${ctx.mode}|${ctx.forces}`;
+    if (c.type === 'plc' && ctx) s += `|${ctx.plcId}|${ctx.plcInRaw}|${ctx.plcOut}|${ctx.mode}|${ctx.forces}|${ctx.fmt && ctx.fmt('I:0/0')}`;
     else if (ctx && DEFS[c.type] && DEFS[c.type].ctxSig) s += DEFS[c.type].ctxSig(c, ctx);
     return s;
   }
@@ -1703,6 +1706,32 @@
       return { file: ioFile(r.conf[s]), word: Number(s), n: 8, label: c && c.type === r.conf[s] ? c.props.label : '(missing)', name: DEFS[r.conf[s]].name };
     });
   }
+  /* Address styles (display only; programs are always stored file-based):
+     file 'I:1/0', bit/byte 'I0.0' / 'Q0.0', basic 'I1' / 'Q1'. Bit/byte and basic number the I/O points
+     of the hardware in order (compact PLC, or the configured rack slots), inputs and outputs separately. */
+  const STYLES = { file: 'File-based (I:1/0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
+  function addrBook(circ, io, style) {
+    const idx = { I: [], O: [] };
+    for (const m of ioMap(circ, io)) for (let b = 0; b < m.n; b++) idx[m.file].push(`${m.file}:${m.word}/${b}`);
+    const L = f => (f === 'I' ? 'I' : 'Q');
+    const name = (f, i) => style === 'basic' ? `${L(f)}${i + 1}` : `${L(f)}${i >> 3}.${i & 7}`;
+    const fwd = new Map();
+    for (const f of ['I', 'O']) idx[f].forEach((a, i) => fwd.set(a, name(f, i)));
+    return {
+      style,
+      // file-based address → the address in this style (unchanged when it is not a hardware I/O point)
+      fmt: a => (style === 'file' ? a : fwd.get(a) || a),
+      // address typed in any style → file-based (unchanged when it is not a bit/byte or basic I/O address)
+      toFile(s) {
+        const t = String(s).trim().toUpperCase().replace(/^%/, '');
+        let m;
+        if ((m = t.match(/^([IQ])X?(\d+)\.([0-7])$/))) return idx[m[1] === 'I' ? 'I' : 'O'][Number(m[2]) * 8 + Number(m[3])] || t;
+        if ((m = t.match(/^([IQ])(\d+)$/)) && Number(m[2]) > 0) return idx[m[1] === 'I' ? 'I' : 'O'][Number(m[2]) - 1] || t;
+        return t;
+      },
+      points: idx,
+    };
+  }
   /* is an I/O address real hardware? null when it is, else the reason (used by Verify) */
   function ioCheck(a, circ, io) {
     const r = rack(circ, io);
@@ -1717,5 +1746,5 @@
     if (a.kind === 'bit' && a.bit >= 8) return { msg: `${a.norm}: the card in slot ${a.word} has 8 points (${a.file}:${a.word}/0–7)` };
     return null;
   }
-  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS };
+  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
 })();
