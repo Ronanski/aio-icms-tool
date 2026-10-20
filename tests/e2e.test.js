@@ -2118,6 +2118,51 @@ function check(name, cond, info = '') {
   check('image: Save as SVG and Save as PNG download the drawing', !!svgFile && /\.svg$/.test(svgFile.suggestedFilename()) && !!pngFile && /\.png$/.test(pngFile.suggestedFilename()), `${svgFile && svgFile.suggestedFilename()} ${pngFile && pngFile.suggestedFilename()}`);
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  console.log('Electrical Diagram: more parts (changeover, crossover, NO+NC selector, 1-2 pole protection, RCBO 4P, bell, siren)');
+  check('parts: the new devices are in the Wiring parts list and the new symbols in the diagram library', await page.evaluate(() => {
+    const devs = ['pb_cx', 'sel_cx', 'sel_co', 'pb_x', 'sel_x', 'rcbo4', 'isol1', 'isol2', 'bell', 'siren'];
+    const syms = ['esno', 'pbcx', 'selcx', 'selcono', 'selconc', 'pbx', 'selx', 'ka1co', 'ka2co', 'ktco', 'kfco', 'ltco', 'bell', 'siren', 'km1', 'rcbo4', 'qs1', 'qs2', 'ol1', 'ol2', 'qm1', 'qm2', 'fsw1', 'fsw2'];
+    return devs.every(t => Circuit.DEFS[t] && !Circuit.DEFS[t].hidden) && syms.every(k => FreeDraw.KINDS[k] && Circuit.DEFS[FreeDraw.KINDS[k].type].terms && FreeDraw.KINDS[k].terms.every(t => Circuit.DEFS[FreeDraw.KINDS[k].type].terms.some(x => x.id === t.id)));
+  }));
+  check('parts: a changeover push button joins 11-12 at rest and 11-14 while pressed', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('pb_cx'), a = add('lamp', { coil: '230VAC' }), b = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '11'); w(s, '12', a, 'X1'); w(s, '14', b, 'X1'); w(a, 'X2', q, 'N'); w(b, 'X2', q, 'N');
+    run(); const rest = a.state.on && !b.state.on; s.state.pressed = true; run(); return rest && !a.state.on && b.state.on;`)));
+  check('parts: a NO+NC selector closes 13-14 and opens 21-22 in position I, and stays there', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('sel_co'), a = add('lamp', { coil: '230VAC' }), b = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '13'); w(q, 'L', s, '21'); w(s, '14', a, 'X1'); w(s, '22', b, 'X1'); w(a, 'X2', q, 'N'); w(b, 'X2', q, 'N');
+    run(); const p0 = !a.state.on && b.state.on; Circuit.part(s, 'knob', 'down'); run(); const p1 = a.state.on && !b.state.on; Circuit.part(s, 'knob', 'up'); run(); return p0 && p1 && a.state.on;`)));
+  check('parts: a crossover switch reverses a DC motor (1-4 / 3-2 at rest, 1-2 / 3-4 operated)', await page.evaluate(new Function(solveKit + `
+    const t = type => { circ.comps.length = 0; circ.wires.length = 0; const b = add('battery'), s = add(type), m = add('motordc');
+      w(b, 'P', s, '1'); w(b, 'M', s, '3'); w(s, '2', m, 'A1'); w(s, '4', m, 'A2'); for (let i = 0; i < 30; i++) Circuit.solve(circ, 0.1, ctx); const d0 = m.state.dir;
+      if (type === 'pb_x') s.state.pressed = true; else s.state.pos = 1; for (let i = 0; i < 30; i++) Circuit.solve(circ, 0.1, ctx); return [d0, m.state.dir]; };
+    const a = t('pb_x'), b = t('sel_x'); return !!a[0] && a[0] === -a[1] && !!b[0] && b[0] === -b[1];`)));
+  check('parts: 1- and 2-pole disconnectors switch their poles; an RCBO 4P trips on a short behind it', await page.evaluate(new Function(solveKit + `
+    const q = add('supply3'), i1 = add('isol1'), h = add('lamp', { coil: '230VAC' }); w(q, 'L1', i1, '1'); w(i1, '2', h, 'X1'); w(h, 'X2', q, 'N');
+    run(); const off = !h.state.on; i1.state.on = true; run(); const on = h.state.on;
+    const i2 = add('isol2', {}, { on: true }), h2 = add('lamp', { coil: '230VAC' }); w(q, 'L2', i2, '1'); w(q, 'N', i2, '3'); w(i2, '2', h2, 'X1'); w(i2, '4', h2, 'X2'); run();
+    const r = add('rcbo4', {}, { on: true }); w(q, 'L1', r, '1'); w(q, 'L2', r, '3'); w(q, 'L3', r, '5'); w(q, 'N', r, '7'); w(r, '2', r, '8'); run();
+    return off && on && h2.state.on && r.state.tripped;`)));
+  check('parts: a bell and a siren sound at their rated voltage', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), b = add('bell', { coil: '230VAC' }), s = add('siren', { coil: '230VAC' });
+    w(q, 'L', b, 'X1'); w(b, 'X2', q, 'N'); w(q, 'L', s, 'X1'); w(s, 'X2', q, 'N'); run(); return b.state.on && s.state.on && !b.state.burnt;`)));
+  // a relay changeover contact drawn in the diagram: KA1 pulled moves 11 from 12 (H1) to 14 (H2); the symbol shows it
+  const coP = { name: 'Changeover', circuit: { seq: 5, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
+    schematic: { free: { seq: 40, items: [fi('d1', 'pL1', 'XP1', 0, 0), fi('d2', 'pbno', 'S1', 0, 100), fi('d3', 'kacoil', 'KA1', 0, 220), fi('d4', 'pN', 'XP2', 0, 340),
+      fi('d5', 'pL1', 'XP3', 200, 0), fi('d6', 'ka1co', 'KA1', 200, 100), fi('d7', 'lamp', 'H1', 160, 220), fi('d8', 'lamp', 'H2', 240, 220), fi('d9', 'pN', 'XP4', 200, 340), fi('d10', 'esno', 'S9', 400, 100), fi('d11', 'lamp', 'H3', 400, 220)],
+    wires: [fw('fw1', 'd1:J', 'd2:13'), fw('fw2', 'd2:14', 'd3:A1'), fw('fw3', 'd3:A2', 'd4:J'), fw('fw4', 'd5:J', 'd6:11'), fw('fw5', 'd6:12', 'd7:X1'), fw('fw6', 'd6:14', 'd8:X1'),
+      fw('fw7', 'd7:X2', 'd9:J'), fw('fw8', 'd8:X2', 'd9:J'), fw('fw9', 'd5:J', 'd10:13'), fw('fw10', 'd10:14', 'd11:X1'), fw('fw11', 'd11:X2', 'd9:J')] } } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, coP);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(250);
+  check('parts: a drawn relay changeover contact feeds H1 at rest and no error is reported', await until(is("d('H1').on && !d('H2').on")) && await page.evaluate(() => FreeDraw.errs.size === 0 && App.project.circuit.comps.find(c => c.props.label === 'KA1').type === 'relay'));
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  check('parts: with KA1 pulled in it switches to H2, and the changeover symbol shows it operated', await until(is("d('KA1').pulled && !d('H1').on && d('H2').on")) && await (async () => { await wait(150); return page.evaluate(() => document.querySelector('#view-schematic [data-fi="d6"] .ssym').classList.contains('on')); })());
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S9'), 'btn'));
+  check('parts: the E-stop N.O. 13-14 symbol closes when the E-stop is pushed (H3 on)', await until(is("d('S9').latched && d('H3').on")));
+  check('parts: a drawing with the new symbols survives save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize()))); return ['ka1co', 'esno'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.items.length === 11 && !(p.keep && p.keep.free.items.length); }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

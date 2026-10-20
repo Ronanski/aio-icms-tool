@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -206,7 +206,8 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
   - [ ] Hindi pa: PLC symbols sa IEC current-path editor; analog cards; CI run
 - [x] Phase 3 — inline properties panel, comments, IEC naming and numbering, duplicate warnings, editing (copy/paste, nudge, multi-select, touch, search, grid, image export) (21 checks; branch `feature/fd-properties-editing`, hindi merged)
   - Hindi pa: rename ng device mula sa diagram (sa Wiring pa rin), multi-prefix IEC naming, PNG/SVG download sa loob ng Android app
-- [ ] Phase 4 — missing parts in small batches (see the Simurelay comparison)
+- [x] Phase 4 — missing parts in small batches (see the Simurelay comparison) (10 checks; branch `feature/fd-more-parts`, hindi merged): changeover/crossover push buttons at selectors, selector NO+NC, E-stop NO, relay/timer/latch changeover contacts, contactor 1P, disconnector 1P/2P, RCBO 4P, 1-2 pole overload/MPCB/fuse switch symbols, bell, siren
+  - Hindi pa: NC main contactor poles, roller changeover, multi-voltage PSU, 4P MPCB / fuse switch; mga bagong parts sa IEC current-path editor
 - [ ] Phase 5 — flasher, on/off-delay timer, flashing lamp, phase-failure relay, countdown on the drawing, conductor-coloured live wires
 - [ ] Phase 6 — new example: hardwired 95-96 in the coil circuit, KM1 aux to a PLC input, HMI shows the real running status, discrepancy alarm; end-to-end checks
 - [ ] Separate, needs its own approval: diode (one-way conduction in the solver)

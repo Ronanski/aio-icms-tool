@@ -17,6 +17,10 @@
   });
   const sens = (type, out, n, photo) => ({ type, pre: 'B', look: 'sens', label: out, photo, part: 'tgt', n, terms: [{ id: 'BN', x: 0, y: -30 }, { id: 'BU', x: 0, y: 30 }, { id: 'BK', x: 30, y: 0 }] });
   const row = (ids, y, gap = 20) => ids.map((t, i) => ({ id: t, x: (i - (ids.length - 1) / 2) * gap, y, src: true }));
+  // a changeover contact: common on top, N.C. bottom left, N.O. bottom right
+  const co = (type, c, nc, no, pre, extra) => ({ type, pre, look: 'co', terms: [{ id: c, x: 0, y: -30 }, { id: nc, x: -10, y: 30 }, { id: no, x: 10, y: 30 }], ...extra });
+  // a crossover (reversing) contact: 1-4 and 3-2 at rest, 1-2 and 3-4 operated
+  const xov = (type, extra) => ({ type, pre: 'S', look: 'xover', terms: [{ id: '1', x: -10, y: -30 }, { id: '3', x: 10, y: -30 }, { id: '2', x: -10, y: 30 }, { id: '4', x: 10, y: 30 }], ...extra });
   // a potential point (L1, N, +24 V…): a junction wired to that conductor of the supply in the Wiring
   const pot = (p, n) => ({ n, type: 'jct', pre: 'XP', look: 'pot', pot: p, jct: true, auto: true, terms: [{ id: 'J', x: 0, y: -30 }] });
   // wire pieces: junctions with several ends (all one point); a link arrow joins every arrow with the same tag
@@ -56,6 +60,13 @@
       footnc: two('foot', '21', '22', 'nc', 'S', { act: 'foot', part: 'btn', mom: true, n: 'Foot switch N.C.' }),
       sel3h: two('sel3', '13', '14', 'no', 'S', { act: 'turn', part: 'l', n: 'Selector H-O-A — HAND 13-14' }),
       sel3a: two('sel3', '23', '24', 'no', 'S', { act: 'turn', part: 'r', n: 'Selector H-O-A — AUTO 23-24' }),
+      esno: two('estop', '13', '14', 'no', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop N.O. 13-14' }),
+      pbcx: co('pb_cx', '11', '12', '14', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button changeover 11-12 / 11-14' }),
+      selcx: co('sel_cx', '11', '12', '14', 'S', { act: 'turn', part: 'knob', n: 'Selector changeover 11-12 / 11-14' }),
+      selcono: two('sel_co', '13', '14', 'no', 'S', { act: 'turn', part: 'knob', n: 'Selector NO+NC — N.O. 13-14' }),
+      selconc: two('sel_co', '21', '22', 'nc', 'S', { act: 'turn', part: 'knob', n: 'Selector NO+NC — N.C. 21-22' }),
+      pbx: xov('pb_x', { act: 'push', part: 'btn', mom: true, n: 'Push button crossover' }),
+      selx: xov('sel_x', { act: 'turn', part: 'knob', n: 'Selector crossover' }),
     },
     Sensors: {
       pswno: two('pswitch', '13', '14', 'no', 'SP', { act: 'press', part: 'pv', n: 'Pressure switch N.O.' }),
@@ -91,6 +102,11 @@
       kinc: two('impulse', '3', '4', 'nc', 'KI', { n: 'Impulse relay contact N.C.', part: 'lever' }),
       ltno: two('latch', '11', '14', 'no', 'KA', { n: 'Latching relay contact N.O.' }),
       ltnc: two('latch', '11', '12', 'nc', 'KA', { n: 'Latching relay contact N.C.' }),
+      ka1co: co('relay', '11', '12', '14', 'KA', { n: 'Relay changeover contact 1 (11-12 / 11-14)' }),
+      ka2co: co('relay', '21', '22', '24', 'KA', { n: 'Relay changeover contact 2 (21-22 / 21-24)' }),
+      ktco: co('timer', '15', '16', '18', 'KT', { act: 'delay', n: 'On-delay changeover contact (15-16 / 15-18)' }),
+      kfco: co('timer_off', '15', '16', '18', 'KT', { act: 'delayoff', n: 'Off-delay changeover contact (15-16 / 15-18)' }),
+      ltco: co('latch', '11', '12', '14', 'KA', { n: 'Latching relay changeover contact (11-12 / 11-14)' }),
     },
     Coils: {
       kmcoil: two('contactor', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor coil' }),
@@ -109,12 +125,15 @@
       heater: two('heater', 'X1', 'X2', 'heat', 'EH', { n: 'Heater' }),
       hmeter: two('hourmeter', 'X1', 'X2', 'meter', 'P', { n: 'Hour meter', label: 'h' }),
       vmeter: two('vmeter', 'V1', 'V2', 'meter', 'PV', { n: 'Voltmeter', label: 'V' }),
+      bell: two('bell', 'X1', 'X2', 'bell', 'HA', { n: 'Bell' }),
+      siren: two('siren', 'X1', 'X2', 'siren', 'HA', { n: 'Siren' }),
       fan: { n: 'Fan 1~ 230V', type: 'fan', pre: 'M', look: 'motor', label: 'FAN\n1~', terms: [...row(['L', 'N'], -34), { id: 'PE', x: 40, y: 0 }] },
     },
     Contactors: {
       km3: poles('contactor', ['1', '3', '5'], ['2', '4', '6'], 'km', 'KM', { n: 'Contactor main contacts 3P' }),
       km2: poles('contactor', ['1', '3'], ['2', '4'], 'km', 'KM', { n: 'Contactor main contacts 2P' }),
       km4: poles('contactor4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'km', 'KM', { n: 'Contactor main contacts 4P' }),
+      km1: poles('contactor', ['1'], ['2'], 'km', 'KM', { n: 'Contactor main contact 1P' }),
     },
     Protections: {
       fu1: poles('fuse', ['1'], ['2'], 'fuse', 'FU', { n: 'Fuse 1P', part: 'f' }),
@@ -134,6 +153,16 @@
       rcd: poles('rcd', ['1', '3'], ['2', '4'], 'rcd', 'FI', { n: 'RCD 2P 30 mA', part: 'h' }),
       rcd4: poles('rcd4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'rcd', 'FI', { n: 'RCD 4P 30 mA', part: 'h' }),
       rcbo: poles('rcbo', ['1', '3'], ['2', '4'], 'rcd', 'QF', { n: 'RCBO 2P (RCD + MCB)', part: 'h' }),
+      rcbo4: poles('rcbo4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'rcd', 'QF', { n: 'RCBO 4P (RCD + MCB)', part: 'h' }),
+      qs1: poles('isol1', ['1'], ['2'], 'isol', 'QS', { n: 'Disconnector 1P', part: 'h' }),
+      qs2: poles('isol2', ['1', '3'], ['2', '4'], 'isol', 'QS', { n: 'Disconnector 2P', part: 'h' }),
+      // 1- and 2-pole symbols of the 3-pole devices (as wired in a panel: the other poles stay unused)
+      ol1: poles('olr', ['1'], ['2'], 'ol', 'F', { n: 'Overload relay, 1 pole used', part: 'ol' }),
+      ol2: poles('olr', ['1', '3'], ['2', '4'], 'ol', 'F', { n: 'Overload relay, 2 poles used', part: 'ol' }),
+      qm1: poles('mpcb', ['1'], ['2'], 'qm', 'QM', { n: 'Motor protection breaker, 1 pole used', part: 'h' }),
+      qm2: poles('mpcb', ['1', '3'], ['2', '4'], 'qm', 'QM', { n: 'Motor protection breaker, 2 poles used', part: 'h' }),
+      fsw1: poles('fsw3', ['1'], ['2'], 'fsw', 'QS', { n: 'Fuse disconnector, 1 pole used', part: 'h' }),
+      fsw2: poles('fsw3', ['1', '3'], ['2', '4'], 'fsw', 'QS', { n: 'Fuse disconnector, 2 poles used', part: 'h' }),
     },
     Others: {
       node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', jct: true, auto: true, terms: [{ id: 'J', x: 0, y: 0 }] },
@@ -337,7 +366,7 @@
     const d = H.devOf(it.tag);
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
-    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
+    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
     if (S.jct) return { on: live(d.id + ':J') };
     if (S.look === 'motor') return { on: st.drive === 'run' || (S.type === 'fan' && !!st.on) };
     if (S.look === 'sens') return { on: !!st.act };
@@ -349,6 +378,10 @@
       return { on: !!((w >> S.io.n) & 1) };
     }
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];
+    // a changeover is operated when common and N.O. are joined; a crossover when 1-2 is
+    const has = (a, b) => pr.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+    if (S.look === 'co') return { on: has(S.terms[0].id, S.terms[2].id) };
+    if (S.look === 'xover') return { on: has('1', '2') };
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
     return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
   }
@@ -375,6 +408,18 @@
       o.push(stub(0, -30, -14), stub(0, 14, 30));
       o.push(S.look === 'nc' ? `<path d="M0 -14 H10 M0 14 L13 -17"/>` : `<path d="M0 14 L-11 -13"/>`);
       if (S.act) o.push(`<path class="thin dash" d="M${S.look === 'nc' ? 6 : -6} 0 H-26"/>`, actMark(S.act, -26));
+    } else if (S.look === 'co') {
+      // changeover: the blade rests on the N.C. side and moves to the N.O. side when operated
+      o.push(stub(0, -30, -14), stub(-10, 12, 30), stub(10, 12, 30), `<path class="thin" d="M-10 12 H-5"/>`, `<path d="M0 -14 L${st.on ? 10 : -9} 12"/>`);
+      if (S.act) o.push(`<path class="thin dash" d="M-4 -1 H-26"/>`, actMark(S.act, -26));
+    } else if (S.look === 'xover') {
+      o.push(stub(-10, -30, -14), stub(10, -30, -14), stub(-10, 14, 30), stub(10, 14, 30));
+      o.push(st.on ? `<path d="M-10 -14 V14 M10 -14 V14"/>` : `<path d="M-10 -14 L10 14 M10 -14 L-10 14"/>`);
+      if (S.act) o.push(`<path class="thin dash" d="M-10 0 H-30"/>`, actMark(S.act, -30));
+    } else if (S.look === 'bell') {
+      o.push(stub(0, -30, -8), stub(0, 8, 30), `<path d="M-12 8 a12 14 0 0 1 24 0 Z"/><circle cx="0" cy="11" r="2.5" class="jdot"/>`);
+    } else if (S.look === 'siren') {
+      o.push(stub(0, -30, -12), stub(0, 12, 30), `<path d="M-12 -6 H-2 L10 -12 V12 L-2 6 H-12 Z"/><path class="thin" d="M14 -6 q4 6 0 12"/>`);
     } else if (S.look === 'node') {
       o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
     } else if (S.look === 'pot') {
@@ -457,7 +502,7 @@
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
-    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
+    const isPole = !['no', 'nc', 'co', 'xover', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
@@ -540,6 +585,7 @@
     if (S.jct) { const set = api.potsR(api.rootK(d.id + ':J')); return set && set.size ? Circuit.potText(set) : '—'; }
     const st = stateOf(it);
     if (['no', 'nc', 'km', 'brk', 'qm', 'rcd', 'isol', 'fsw', 'fuse', 'ol'].includes(S.look)) return st.on ? 'closed' : 'open';
+    if (S.look === 'co' || S.look === 'xover') return st.on ? 'operated' : 'at rest';
     if (['src', 'gen', 'conv', 'batt'].includes(S.look)) return st.on ? 'on' : 'off';
     const a = S.terms[0], b = S.terms.find(t => t !== a && t.id !== 'PE');
     return a && b ? vText(api.v(d, a.id, b.id)) : '';

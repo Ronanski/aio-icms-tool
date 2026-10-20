@@ -965,6 +965,44 @@
     },
     status: c => ['HAND (13-14)', 'OFF', 'AUTO (23-24)'][c.state.pos + 1],
   });
+  /* more pilot devices: a button (momentary) or a knob (maintained, 2 positions) with any set of contacts.
+     o.conduct(operated) gives the closed terminal pairs */
+  function pilotX(type, o) {
+    const n = o.terms.length, w = n > 3 ? 80 : 60, knob = !!o.knob;
+    def(type, {
+      name: o.name, cat: 'Pilot Devices', view: 'panel', prefix: 'S', w, h: 90,
+      props: knob ? { text: o.text || 'OFF  ON' } : { color: o.color || 'black', text: o.text || '' },
+      pdefs: [...(knob ? [] : [{ k: 'color', n: 'Color', opts: Object.keys(COLORS) }]), { k: 'text', n: 'Legend' }],
+      info: o.info,
+      terms: o.terms.map((id, i) => ({ id, x: Math.round(w / (n + 1) * (i + 1)), y: 90 })),
+      init: () => (knob ? { pos: 0 } : { pressed: false }),
+      ...(knob ? {} : { transient: ['pressed'] }),
+      conduct: c => o.conduct(knob ? !!c.state.pos : !!c.state.pressed),
+      onPart(c, p, ev) {
+        if (knob) { if (p === 'knob' && ev === 'down') { c.state.pos = c.state.pos ? 0 : 1; return true; } return undefined; }
+        if (p === 'btn') { c.state.pressed = ev === 'down'; return true; }
+        return undefined;
+      },
+      draw(c) {
+        const x = w / 2, on = knob ? !!c.state.pos : c.state.pressed, col = COLORS[c.props.color] || COLORS.black;
+        const head = knob
+          ? `<g class="part" data-part="knob"><circle cx="${x}" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="${x}" cy="42" r="15" fill="#222"/><rect x="${x - 4}" y="26" width="8" height="32" rx="3" fill="#e9e5dc" transform="rotate(${on ? 45 : -45} ${x} 42)"/></g>`
+          : `<g class="part" data-part="btn"><circle cx="${x}" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="${x}" cy="42" r="${on ? 13.5 : 15}" fill="${col}" stroke="rgba(0,0,0,.4)"/></g>`;
+        return R(0, 0, w, 90, '#2b2a28', 6, '#111') + R(6, 4, w - 12, 13, '#f2efe6', 2, '#999') + T(x, 13.5, c.props.text || '', 'dt xs') + head + R(8, 66, w - 16, 12, '#d7d3ca', 2, '#777') + T(x, 75, (knob ? (on ? 'I · ' : '0 · ') : '') + o.label, 'dt xs');
+      },
+      status: c => (knob ? (c.state.pos ? 'Position I' : 'Position 0') : c.state.pressed ? 'Pressed' : 'Released'),
+    });
+  }
+  pilotX('pb_cx', { name: 'Push Button Changeover', label: 'C/O', color: 'black', text: 'PB', terms: ['11', '12', '14'],
+    info: 'Momentary push button with one changeover contact: 11-12 closed at rest, 11-14 closed while pressed.', conduct: on => [on ? ['11', '14'] : ['11', '12']] });
+  pilotX('sel_cx', { name: 'Selector Switch Changeover', label: 'C/O', knob: true, terms: ['11', '12', '14'],
+    info: 'Maintained 2-position selector with one changeover contact: 11-12 closed in position 0, 11-14 in position I.', conduct: on => [on ? ['11', '14'] : ['11', '12']] });
+  pilotX('sel_co', { name: 'Selector Switch NO + NC', label: 'NO + NC', knob: true, terms: ['13', '14', '21', '22'],
+    info: 'Maintained 2-position selector with two contact blocks: 13-14 N.O. closes and 21-22 N.C. opens in position I.', conduct: on => [on ? ['13', '14'] : ['21', '22']] });
+  pilotX('pb_x', { name: 'Push Button Crossover', label: 'CROSS', color: 'black', text: 'PB', terms: ['1', '2', '3', '4'],
+    info: 'Momentary crossover (reversing) contact: 1-4 and 3-2 at rest, 1-2 and 3-4 while pressed (swaps two wires: DC polarity, two-way lighting).', conduct: on => (on ? [['1', '2'], ['3', '4']] : [['1', '4'], ['3', '2']]) });
+  pilotX('sel_x', { name: 'Selector Switch Crossover', label: 'CROSS', knob: true, terms: ['1', '2', '3', '4'],
+    info: 'Maintained crossover (reversing) switch: 1-4 and 3-2 in position 0, 1-2 and 3-4 in position I.', conduct: on => (on ? [['1', '2'], ['3', '4']] : [['1', '4'], ['3', '2']]) });
   def('lamp', {
     name: 'Pilot Lamp', cat: 'Pilot Devices', view: 'panel', prefix: 'H', w: 50, h: 80,
     props: { color: 'green', coil: '24VDC' },
@@ -1138,6 +1176,34 @@
     draw: c => DEFS.rcd.draw(c).replace('>30mA<', '>B16 30mA<'),
     status: c => c.state.tripped ? 'TRIPPED — click the handle to reset' : c.state.on ? 'ON' : 'OFF',
   });
+  def('rcbo4', {
+    name: 'RCBO 4-Pole (RCD + MCB)', cat: 'Protection', view: 'power', prefix: 'QF', w: 130, h: 100, breaker: 0.9,
+    info: 'Residual current breaker with overcurrent protection for 3-phase + N: 1-3-5-7 → 2-4-6-8 (7-8 = N). Trips on an earth fault and on a short circuit, before the MCBs in front of it. T = test.',
+    terms: polesTerms(P4.ins, P4.outs, 130, 100),
+    init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
+    conduct: c => (c.state.on && !c.state.tripped) ? pairs(P4.ins, P4.outs) : null,
+    onPart: (c, p, ev) => DEFS.rcd.onPart(c, p, ev),
+    draw: c => DEFS.rcd4.draw(c).replace('>30mA<', '>B16 30mA<'),
+    status: c => DEFS.rcbo.status(c),
+  });
+  /* disconnectors with 1 or 2 poles (the 3- and 4-pole ones are above) */
+  function isolN(type, n) {
+    const ins = P4.ins.slice(0, n), outs = P4.outs.slice(0, n), w = n === 1 ? 50 : 70;
+    def(type, {
+      name: `Disconnector ${n}-Pole`, cat: 'Protection', view: 'power', prefix: 'QS', w, h: 100,
+      info: `Load-break switch / isolator: ${ins.join('-')} → ${outs.join('-')}. No protection: it never trips. Click the knob to switch ON/OFF.`,
+      terms: polesTerms(ins, outs, w, 100),
+      init: () => ({ on: false }),
+      conduct: c => c.state.on ? pairs(ins, outs) : null,
+      onPart(c, p, ev) { if (p === 'h' && ev === 'down') { c.state.on = !c.state.on; return true; } return undefined; },
+      draw(c) {
+        const on = c.state.on, x = w / 2;
+        return modBody(w, 100, 'ISOL', 16, 16) + `<g class="part" data-part="h"><circle cx="${x}" cy="58" r="${n === 1 ? 15 : 18}" fill="#f2c230" stroke="#8a6a10"/><rect x="${x - 4}" y="44" width="8" height="28" rx="3" fill="#d33a2c" stroke="#6b201a" transform="rotate(${on ? 90 : 0} ${x} 58)"/></g>` + T(x, 92, on ? 'ON' : 'OFF', 'dt xs');
+      },
+      status: c => (c.state.on ? 'ON' : 'OFF'),
+    });
+  }
+  isolN('isol1', 1); isolN('isol2', 2);
   def('buzzer', {
     name: 'Buzzer / Horn', cat: 'Pilot Devices', view: 'panel', prefix: 'HA', w: 50, h: 80,
     props: { coil: '24VDC' },
@@ -1155,6 +1221,18 @@
     },
     status: c => c.state.burnt ? 'Burnt out' : c.state.on ? 'SOUNDING' : 'Silent',
   });
+  /* more audible alarms: they work like the buzzer (rated voltage on X1-X2), only the look differs */
+  const audible = (type, name, look) => def(type, {
+    ...DEFS.buzzer, name,
+    info: `${name} X1-X2. Sounds at its rated voltage; over-voltage burns it.`,
+    draw(c) {
+      const on = c.state.on;
+      return R(0, 0, 50, 80, '#2b2a28', 6, '#111') + look(on) + (on ? `<path d="M44 18 q6 12 0 24 M48 12 q10 18 0 36" fill="none" stroke="#f2c230" stroke-width="2" class="blink"/>` : '') +
+        R(8, 56, 34, 12, '#d7d3ca', 2, '#777') + T(25, 65, c.props.coil, 'dt xs') + (c.state.burnt ? burnt(50, 80) : '');
+    },
+  });
+  audible('bell', 'Bell', () => `<path d="M10 42 a15 17 0 0 1 30 0 Z" fill="#c9a227" stroke="#6b5310"/><circle cx="25" cy="44" r="3" fill="#6b5310"/><rect x="23" y="18" width="4" height="7" fill="#6b5310"/>`);
+  audible('siren', 'Siren', on => `<rect x="9" y="22" width="32" height="20" rx="4" fill="${on ? '#e04a3a' : '#7a2a22'}" stroke="#3b120d"/><path d="M13 22 V42 M21 22 V42 M29 22 V42 M37 22 V42" stroke="rgba(0,0,0,.35)"/>`);
   def('selkey', {
     name: 'Key Selector 2-Pos', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 60, h: 90,
     props: { text: 'OFF  ON' },
