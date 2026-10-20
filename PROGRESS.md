@@ -197,7 +197,11 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [x] Phase 0 — integration baseline tests (26 checks; branch `feature/integration-baseline-tests`, approved, not merged)
 - [x] Phase 1 — project compatibility: keep unknown parts, symbols and wires on load and save; format version; warning (branch `feature/project-compatibility`, not merged)
   - [x] Review corrections: reserved tags of kept content, kept main power circuit and rails protected and saved as they were, kept paths/feeders anchored to their neighbours
-  - [x] Kept-rail fix: walang ibang supply na ipinapalit sa kept rail; hindi pinapagana ang current paths na umaasa dito (26 checks sa kabuuan; naghihintay ng final approval)
+  - [x] Kept-rail fix: walang ibang supply na ipinapalit sa kept rail; hindi pinapagana ang current paths na umaasa dito (26 checks sa kabuuan)
+  - [x] **Approved sa code-review level** (owner, 2026-10-20): commit `89d084158c9424c709ef93c1c6ea9a1cde2c9d70`, `480 passed, 0 failed` sa tatlong run, local Chrome lang
+  - [ ] CI run (kailangan ng push/PR — hiwalay na go signal ng owner); hindi pa CI-verified at hindi pa merge-ready
+  - [ ] Merge sa `main` at Stable release (hiwalay na go signal; dapat mauna sa Phase 4 para hindi itapon ng lumang app ang bagong part types)
+  - Hindi pa direktang tested: 3-phase fallback ng `autoRails()`, kept content na walang kept rail, `renderRungs` rail path, at ang `main`/v2.0.0 file comparison (scratch script lang). Mga limitation: nasa `HANDOFF.md`.
 - [ ] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals
 - [ ] Phase 3 — inline properties panel, comments, IEC naming and numbering, duplicate warnings, editing (copy/paste, nudge, multi-select, touch, search, grid, image export)
 - [ ] Phase 4 — missing parts in small batches (see the Simurelay comparison)
