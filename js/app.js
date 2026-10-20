@@ -602,8 +602,9 @@
     const r = Circuit.solve(circ, dt, ctx);
     App.api = r.api;
     for (const a of r.alerts) {
-      const t = alertSeen.get(a.msg) || 0;
-      if (now - t > 4000) { UI.toast(a.msg, a.kind || 'warn', 4200); App.log('alarm', a.msg); }
+      // the same alarm is shown again after 4 s at the earliest (also in the first seconds after the app starts)
+      const t = alertSeen.get(a.msg);
+      if (t === undefined || now - t > 4000) { UI.toast(a.msg, a.kind || 'warn', 4200); App.log('alarm', a.msg); }
       alertSeen.set(a.msg, now);
     }
     if (r.alerts.length) App.save();

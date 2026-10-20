@@ -1805,16 +1805,45 @@
     };
   }
 
+  /* earth leakage: a working load fed between a phase and PE (not N) sends its current to earth. An RCD in front of it
+     trips; without one the load works on, which is dangerous, so it is reported. */
+  const working = st => !!(st.on || st.pulled || st.pw || st.drive === 'run');
+  function earthLeak(circ, ctx, api) {
+    for (const c of circ.comps) {
+      const d = DEFS[c.type];
+      if (!d || d.sources || d.breaker || d.junction || !d.evaluate || !working(c.state)) continue;
+      const pots = t => api.pots(c, t.id), peOnly = t => t.id !== 'PE' && pots(t).has('PE') && !pots(t).has('N');
+      const live = d.terms.find(t => [...pots(t)].some(isPh));
+      if (!live || !d.terms.some(peOnly)) continue;
+      // the RCD that takes the phase away from the load
+      const rcds = circ.comps.filter(r => DEFS[r.type].earthOnly && DEFS[r.type].closed(r));
+      const rcd = rcds.find(r => {
+        r.state.tripped = true;
+        const n2 = build(circ, ctx), i = n2.idx.get(c.id + ':' + live.id), st = i == null ? null : n2.pots.get(n2.find(i));
+        r.state.tripped = false;
+        return !st || ![...st].some(isPh);
+      });
+      return { c, rcd };
+    }
+    return null;
+  }
   function solve(circ, dt, ctx) {
     const alerts = [];
     let api = null;
-    for (let it = 0; it < 16; it++) {
-      const net = solveNet(circ, ctx, alerts);
-      api = makeApi(net, alerts, circ, ctx);
-      let ch = false;
-      for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.evaluate && d.evaluate(c, api, ctx)) ch = true; }
-      if (!ch) break;
-      if (it === 15) alerts.push({ msg: 'The circuit does not settle: a relay or contactor keeps switching. Is a coil fed through its own N.C. contact?', kind: 'warn' });
+    for (let round = 0; round < 3; round++) {
+      for (let it = 0; it < 16; it++) {
+        const net = solveNet(circ, ctx, alerts);
+        api = makeApi(net, alerts, circ, ctx);
+        let ch = false;
+        for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.evaluate && d.evaluate(c, api, ctx)) ch = true; }
+        if (!ch) break;
+        if (it === 15) alerts.push({ msg: 'The circuit does not settle: a relay or contactor keeps switching. Is a coil fed through its own N.C. contact?', kind: 'warn' });
+      }
+      const lk = earthLeak(circ, ctx, api);
+      if (!lk) break;
+      if (!lk.rcd) { alerts.push({ msg: `${lk.c.props.label} is fed between a phase and PE: its current leaks to earth and no RCD protects it`, kind: 'warn' }); break; }
+      lk.rcd.state.tripped = true;
+      alerts.push({ msg: `${lk.rcd.props.label} TRIPPED — earth leakage through ${lk.c.props.label} (phase to PE)`, kind: 'danger' });
     }
     for (const c of circ.comps) { const d = DEFS[c.type]; if (d && d.tick) d.tick(c, api, dt, ctx); }
     return { api, alerts };

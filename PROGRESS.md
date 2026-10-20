@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (release in progress 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 380/380.
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 384/384.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -62,7 +62,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Portable `.exe` updates with the portable file (the desktop shell passes `?build=portable|installed`)
 - [x] Verify: timer preset/accum ≥ 0, whole-number constants in range; warnings for shared timers and CTU/CTD preset mismatch
 - [x] 24 VDC PSU: output short → DC OK off + alarm; overload trip delay 0 s trips at once; workflow permissions least-privilege
-- [ ] Still open (low): DIV rounding of negative halves (needs a check against the instruction manual); earth-leakage teaching case (L-PE feed)
+- [x] DIV rounding of negative halves; earth-leakage teaching case (L-PE feed) (v2.0.1)
 - [ ] Owner's own list of v1.2 bugs/gaps (not received yet)
 
 ## In progress: v1.3.0 builder overhaul, part 1 (owner: "gawin na ang mga pwedeng gawin na")
@@ -184,18 +184,18 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 
 **Next (owner: GO on v2.0.0, v2.0.1 and v2.1, 2026-10-20)**
 - [x] **Release v2.0.0** (owner: GO, 2026-10-20): ships v1.6.1, v1.7, v1.8 and v2.0 from `main` together. Project format changes (tags, program files): older apps cannot open new projects.
-- [ ] **v2.0.1 — accuracy fixes** from the audit list below: S:0 math flags and S:5/0 divide by zero, breaker selectivity with equal rank, oscillating-circuit warning, operand range checks, DIV rounding.
+- [x] **v2.0.1 — accuracy fixes**: DIV rounds halves away from zero; Verify checks COP/FLL/SQO/MSG lengths against the file end; earth leakage (L–PE load) trips the RCD or is reported; alarms in the first 4 s after start are no longer lost. (S:0/S:5 flags, breaker selectivity, the oscillation warning, constant range checks and DC OK were already fixed in v1.2.1; the audit list below was out of date.)
 - [ ] **v2.1 — learning**: auto-check for the circuit lessons 8–12 (verify the wiring, not only the ladder); new lessons for the rack, analog/VFD, HMI and online editing.
 - [ ] **v2.2 — publishing**: Play Store build (`.aab`) and listing, final product name and logo; release workflow refuses a debug-signed APK.
 - [ ] Owner's checks on real devices (Beta) and the owner's v1.2 bug list → fixes as they come.
 
 ## Audit findings not fixed yet
-- [ ] Math status flags S:0 (carry, overflow, zero, sign) and S:5/0 on divide by zero
+- [x] Math status flags S:0 (carry, overflow, zero, sign) and S:5/0 on divide by zero (v1.2.1)
 - [x] PLC inputs accept any voltage (230 VAC on a 24 VDC input): an AC voltage on a 24 VDC input destroys the input (compact PLC and rack cards)
-- [ ] Breaker selectivity: with equal rank, the upstream breaker can trip first
-- [ ] No warning for an oscillating circuit (relay fed through its own NC contact)
+- [x] Breaker selectivity: with equal rank, the breaker nearest the fault trips (v1.2.1)
+- [x] Warning for an oscillating circuit (relay fed through its own NC contact) (v1.2.1)
 - [ ] Release workflow publishes a debug-signed APK when signing secrets are missing
-- [ ] Low: operand range checks, DIV rounding of negative halves, PSU "DC OK" during a short, Electron `will-navigate` guard, workflow permissions and lockfiles
+- [x] Low: operand range checks, DIV rounding of negative halves (v2.0.1), PSU "DC OK" during a short, Electron `will-navigate` guard, workflow permissions · [ ] lockfiles
 
 ## Earlier plans
 - [ ] Play Store build (`.aab`) and listing
