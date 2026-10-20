@@ -179,7 +179,9 @@
       if (!unique(i)) { kp.dropped++; continue; }
       if (Object.prototype.hasOwnProperty.call(K, i.k)) {
         if (typeof i.tag !== 'string' || !TAG.test(i.tag) || items.length >= 400) { kp.dropped++; continue; }
-        items.push({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}) });
+        items.push({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}),
+          // a comment on the symbol (Properties), drawn under its tag
+          ...(typeof i.c === 'string' && i.c.trim() ? { c: i.c.trim().slice(0, 80) } : {}) });
       } else if (typeof i.k === 'string' && i.k && kp.free.items.length < 400 && kp.fits(i)) { kp.free.items.push(JSON.parse(JSON.stringify(i))); kp.kinds.push(i.k); }
       else kp.dropped++;
     }
@@ -323,6 +325,9 @@
 
   /* ---------- view ---------- */
   let body = null, svg = null, gv = null, view = { x: 60, y: 60, k: 1 }, sel = null, wiring = null, drag = null, lastSig = '';
+  // several symbols selected (Shift+click, Shift+drag a box, Ctrl+A); sel.i stays the one the side panel shows
+  let group = new Set(), clip = null;
+  const many = () => (group.size ? [...group] : sel && sel.i ? [sel.i] : []).filter(id => itemOf(id));
   FD.init = function (hooks) { H = hooks; window.addEventListener('pointerup', () => { if (held) { held(); held = null; } }); };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
@@ -460,6 +465,8 @@
     if (S.look === 'plcpw') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">PLC ~</text>`); }
     // the PLC address of an I/O point, in the project's address style (I:0/3, I0.3…)
     if (S.io) { const [ax, ay] = at(-30, 4); o.push(`<text class="ftag faddr" x="${ax}" y="${ay}">${esc(addrOf(it))}</text>`); }
+    // the comment: a line under the tag (two when the address is there)
+    if (it.c) o.push(`<text class="ftag fcmt" x="${tx}" y="${ty + (S.io ? 28 : 14)}">${esc(it.c)}</text>`);
     // meter letter, S/R of a latching coil (in the symbol), PNP/NPN of a sensor (beside it)
     if (S.label && ['meter', 'coil', 'sens'].includes(S.look)) { const [mx, my] = S.look === 'sens' ? at(26, -16) : at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     S.terms.forEach(t => {
@@ -482,15 +489,23 @@
     const x1 = Math.min(-big, ...xs) - 10, x2 = Math.max(big, ...xs) + 10, y1 = Math.min(-30, ...ys) - 10, y2 = Math.max(30, ...ys) + 10;
     return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg></button>`;
   }
+  // search: words in the symbol's name or group, in every group (the group choice applies when the box is empty)
+  let libQ = '';
+  const libKeys = () => {
+    const q = libQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return Object.keys(K).filter(k => !K[k].hide && (q.length ? q.every(w => (K[k].n + ' ' + K[k].g).toLowerCase().includes(w)) : libUi.grp === 'All' || K[k].g === libUi.grp));
+  };
+  const gridHtml = () => { const ks = libKeys(); return ks.length ? ks.map(icon).join('') : '<p class="help">No symbol matches.</p>'; };
   function libHtml() {
-    const ks = Object.keys(K).filter(k => !K[k].hide && (libUi.grp === 'All' || K[k].g === libUi.grp));
-    return `<select class="fd-grp" aria-label="Symbol group"><option value="All">All</option>${GROUPS.map(g => `<option value="${g}" ${g === libUi.grp ? 'selected' : ''}>${g}</option>`).join('')}</select><div class="fd-grid">${ks.map(icon).join('')}</div>`;
+    return `<input class="fd-search" type="search" placeholder="Search symbols" aria-label="Search symbols" value="${esc(libQ)}"><select class="fd-grp" aria-label="Symbol group"><option value="All">All</option>${GROUPS.map(g => `<option value="${g}" ${g === libUi.grp ? 'selected' : ''}>${g}</option>`).join('')}</select><div class="fd-grid">${gridHtml()}</div>`;
   }
+  FD.search = function (q) { libQ = String(q || ''); const g = body && body.querySelector('.fd-grid'); if (g) g.innerHTML = gridHtml(); };
   function shell(el) {
     el.innerHTML = `<div class="fd-wrap${libUi.open ? '' : ' nolib'}"><aside class="fd-lib">${libHtml()}</aside><div class="fd-canvas"><div class="fd-host"></div>
       <div class="fd-zoom"><button class="tbtn" data-fz="out" title="Zoom out" aria-label="Zoom out">−</button><button class="tbtn" data-fz="fit" title="Fit the drawing">⤢</button><button class="tbtn" data-fz="in" title="Zoom in" aria-label="Zoom in">＋</button></div></div></div>`;
     const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
     lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
+    lib.addEventListener('input', ev => { if (ev.target.matches('.fd-search')) FD.search(ev.target.value); });
     lib.addEventListener('click', ev => { const b = ev.target.closest('[data-fk]'); if (b && H.mode() === 'edit') FD.add(b.dataset.fk); });
     lib.addEventListener('dragstart', ev => { const b = ev.target.closest('[data-fk]'); if (b) { ev.dataTransfer.setData('text/fd-sym', b.dataset.fk); ev.dataTransfer.effectAllowed = 'copy'; } });
     host.addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('text/fd-sym')) ev.preventDefault(); });
@@ -536,7 +551,7 @@
     const F = fr();
     FD.errs = check();
     const o = [];
-    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="url(#fdGrid2)"/>`);
+    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
@@ -550,7 +565,7 @@
         : S.look === 'text' ? `<rect class="hit" x="${it.x - 6}" y="${it.y - 12}" width="${(it.txt || '').length * 7.5 + 12}" height="22" rx="4"/>`
         : S.look === 'gnd' ? `<rect class="hit" x="${it.x - 14}" y="${it.y - 24}" width="28" height="36" rx="4"/>`
         : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`;
-      o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
+      o.push(`<g class="fitem${(sel && sel.i === it.id) || group.has(it.id) ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
@@ -558,6 +573,7 @@
       o.push('</g>');
     }
     if (wiring && wiring.cur) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${wirePath(a, wiring.cur)}"/>`); }
+    if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
     if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — click or drag symbols from the Library, then click a terminal and another to wire them</text>`);
     o.push('</g></svg>');
     host.innerHTML = o.join('');
@@ -569,9 +585,22 @@
   FD.update = function () { if (body && sig() !== lastSig) FD.render(body); };
   const world = ev => { const r = svg.getBoundingClientRect(); return { x: (ev.clientX - r.left - view.x) / view.k, y: (ev.clientY - r.top - view.y) / view.k }; };
   const snap10 = v => Math.round(v / 10) * 10;
+  const boxOf = d => ({ x1: Math.min(d.x0, d.x1), y1: Math.min(d.y0, d.y1), x2: Math.max(d.x0, d.x1), y2: Math.max(d.y0, d.y1) });
   let held = null, lastTap = { k: '', t: 0 };
+  // touch: two fingers on the drawing zoom it (pinch) around their middle
+  const touches = new Map();
+  let pinch = null, longT = null;
   function bind() {
     svg.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'touch') {
+        touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (touches.size === 2) {
+          const [a, b] = [...touches.values()];
+          pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: view.k, vx: view.x, vy: view.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+          drag = null; wiring = null; clearTimeout(longT); if (held) { held(); held = null; }
+          return;
+        }
+      }
       const p = world(ev), term = ev.target.closest('[data-ft]'), itEl = ev.target.closest('[data-fi]'), wEl = ev.target.closest('[data-fw]'), bEl = ev.target.closest('[data-fb]');
       // double click / double tap (the drawing is redrawn between the two clicks, so the browser's dblclick is not used)
       const tapKey = bEl ? 'b' + bEl.dataset.fb : wEl ? 'w' + wEl.dataset.fw : itEl ? 'i' + itEl.dataset.fi : '';
@@ -620,15 +649,41 @@
       if (wiring) { wiring = null; FD.render(body); return; }
       if (itEl) {
         const it = itemOf(itEl.dataset.fi);
-        sel = { i: it.id }; drag = { item: it, ox: p.x - it.x, oy: p.y - it.y, moved: false, snapped: false };
+        // Shift+click adds the symbol to the selection, or takes it out
+        if (ev.shiftKey) {
+          if (sel && sel.i && !group.size) group.add(sel.i);
+          if (group.has(it.id)) group.delete(it.id); else group.add(it.id);
+          sel = group.size ? { i: group.has(it.id) ? it.id : [...group][0] } : null;
+          FD.render(body); H.side(); return;
+        }
+        if (!group.has(it.id)) group.clear();
+        sel = { i: it.id };
+        // dragging one symbol of the selection moves them all
+        const others = [...group].filter(id => id !== it.id).map(id => itemOf(id)).filter(Boolean).map(o => ({ o, dx: o.x - it.x, dy: o.y - it.y }));
+        drag = { item: it, others, ox: p.x - it.x, oy: p.y - it.y, moved: false, snapped: false };
+        // a long press on a touch screen opens the symbol's tag form (as a double click does)
+        if (ev.pointerType === 'touch' && K[it.k].look !== 'node') { clearTimeout(longT); longT = setTimeout(() => { if (drag && drag.item === it && !drag.moved) { drag = null; FD.retag(it); } }, 600); }
         svg.setPointerCapture(ev.pointerId); FD.render(body); H.side(); return;
       }
-      if (wEl) { sel = { w: wEl.dataset.fw }; FD.render(body); H.side(); return; }
-      sel = null; H.side();
+      if (wEl) { sel = { w: wEl.dataset.fw }; group.clear(); FD.render(body); H.side(); return; }
+      // Shift+drag on the background selects the symbols inside a box
+      if (ev.shiftKey) { drag = { box: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y }; svg.setPointerCapture(ev.pointerId); return; }
+      sel = null; group.clear(); H.side();
       drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(ev.pointerId);
       FD.render(body);
     });
     svg.addEventListener('pointermove', ev => {
+      if (ev.pointerType === 'touch' && touches.has(ev.pointerId)) {
+        touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (pinch && touches.size === 2) {
+          const [a, b] = [...touches.values()], r = svg.getBoundingClientRect(), mx = pinch.mx - r.left, my = pinch.my - r.top;
+          const k = Math.max(0.3, Math.min(3, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+          view = { k, x: mx - (mx - pinch.vx) * k / pinch.k, y: my - (my - pinch.vy) * k / pinch.k };
+          gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+          return;
+        }
+      }
+      if (drag && drag.box) { const q = world(ev); drag.x1 = q.x; drag.y1 = q.y; FD.render(body); return; }
       if (wiring) { const p = world(ev); wiring.cur = { x: snap10(p.x), y: snap10(p.y) }; const t = svg.querySelector('.wtemp'); const a = endPos(wiring.from); if (t && a) t.setAttribute('d', wirePath(a, wiring.cur)); else if (a) FD.render(body); }
       if (!drag) return;
       if (drag.bend) {
@@ -638,9 +693,23 @@
       }
       if (drag.pan) { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`); return; }
       const p = world(ev), nx = snap10(p.x - drag.ox), ny = snap10(p.y - drag.oy);
-      if (nx !== drag.item.x || ny !== drag.item.y) { if (!drag.snapped) { H.snap(); drag.snapped = true; } drag.item.x = nx; drag.item.y = ny; drag.moved = true; FD.render(body); }
+      if (nx !== drag.item.x || ny !== drag.item.y) {
+        if (!drag.snapped) { H.snap(); drag.snapped = true; }
+        drag.item.x = nx; drag.item.y = ny; drag.others.forEach(q => { q.o.x = nx + q.dx; q.o.y = ny + q.dy; });
+        drag.moved = true; clearTimeout(longT); FD.render(body);
+      }
     });
-    const up = () => { if (held) { held(); held = null; } if (drag && drag.moved) { drag = null; H.changed(); return; } drag = null; };
+    const up = ev => {
+      if (ev && ev.pointerType === 'touch') { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; }
+      clearTimeout(longT);
+      if (held) { held(); held = null; }
+      if (drag && drag.box) {
+        const b = boxOf(drag), ins = fr().items.filter(i => i.x >= b.x1 && i.x <= b.x2 && i.y >= b.y1 && i.y <= b.y2).map(i => i.id);
+        drag = null; group = new Set(ins); sel = ins.length ? { i: ins[0] } : null; FD.render(body); H.side(); return;
+      }
+      if (drag && drag.moved) { drag = null; H.changed(); return; }
+      drag = null;
+    };
     svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
     svg.addEventListener('wheel', ev => {
       ev.preventDefault();
@@ -748,8 +817,54 @@
     });
   };
   FD.rotate = function () {
-    const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
-    H.snap(); it.r = (it.r + 90) % 360; H.changed();
+    const ids = many(); if (!ids.length) { UI.toast('Select a symbol first'); return; }
+    H.snap(); ids.forEach(id => { const it = itemOf(id); it.r = (it.r + 90) % 360; }); H.changed();
+  };
+  /* move the selection by a grid step (arrow keys; with Shift five steps) */
+  FD.nudge = function (dx, dy) {
+    const ids = many(); if (!ids.length) return false;
+    H.snap(); ids.forEach(id => { const it = itemOf(id); it.x += dx; it.y += dy; }); H.changed();
+    return true;
+  };
+  FD.selectAll = function () { group = new Set(fr().items.map(i => i.id)); sel = group.size ? { i: [...group][0] } : null; if (body) FD.render(body); H.side(); };
+  FD.selection = () => many();
+  /* clipboard: the selected symbols and the wires between them */
+  FD.copySel = function () {
+    const ids = many(); if (!ids.length) { UI.toast('Select a symbol first'); return false; }
+    const set = new Set(ids), F = fr();
+    clip = { items: ids.map(id => JSON.parse(JSON.stringify(itemOf(id)))), wires: F.wires.filter(w => set.has(w.a.split(':')[0]) && set.has(w.b.split(':')[0])).map(w => JSON.parse(JSON.stringify(w))) };
+    return true;
+  };
+  FD.hasClip = () => !!(clip && clip.items.length);
+  /* paste a copy beside the original: new devices with new tags, but a coil and its contacts copied together stay one
+     device (one new tag for one old tag); a PLC symbol stays on its controller, a text keeps its text */
+  FD.paste = function (dx = 40, dy = 40) {
+    if (!FD.hasClip()) return false;
+    const F = fr();
+    if (F.items.length + clip.items.length > MAXI) { UI.toast(`The drawing is full (${MAXI} symbols)`, 'warn'); return false; }
+    H.snap();
+    const used = taken(), tags = new Map(), ids = new Map(), added = [];
+    for (const it of clip.items) {
+      const S = K[it.k]; if (!S) continue;
+      let tag = it.tag;
+      if (S.type && !S.types) {
+        if (!tags.has(it.tag)) { let n = 1; while (used.has(S.pre + n)) n++; used.add(S.pre + n); tags.set(it.tag, S.pre + n); }
+        tag = tags.get(it.tag);
+      }
+      F.seq++; ids.set(it.id, 'd' + F.seq);
+      F.items.push({ ...it, id: 'd' + F.seq, tag, x: it.x + dx, y: it.y + dy }); added.push('d' + F.seq);
+    }
+    for (const w of clip.wires) {
+      const [a, ta] = w.a.split(':'), [b, tb] = w.b.split(':'); if (!ids.has(a) || !ids.has(b)) continue;
+      F.seq++; const nw = { id: 'fw' + F.seq, a: ids.get(a) + ':' + ta, b: ids.get(b) + ':' + tb };
+      if (w.pts && w.pts.length) nw.pts = w.pts.map(([x, y]) => [x + dx, y + dy]);
+      F.wires.push(nw);
+    }
+    // the next paste lands further on
+    clip.items.forEach(i => { i.x += dx; i.y += dy; }); clip.wires.forEach(w => (w.pts || []).forEach(q => { q[0] += dx; q[1] += dy; }));
+    group = new Set(added); sel = added.length ? { i: added[0] } : null;
+    H.changed();
+    return true;
   };
   /* another actuator for the same contact. Its device follows: one the diagram added for this symbol alone changes type;
      a device you placed in the Wiring, or one other symbols use too, is left as it is and this symbol gets a new tag */
@@ -778,17 +893,13 @@
     }
     H.changed();
   };
-  /* a copy of the selected symbol next to it, with a new tag (a text keeps its text) */
+  /* a copy of the selected symbols next to them (D): the clipboard's rules (FD.paste); the clipboard itself is kept */
   FD.copy = function () {
-    const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
+    if (!many().length) { UI.toast('Select a symbol first'); return; }
     if (full()) return;
-    const F = fr(), S = K[it.k];
-    let tag = it.tag;
-    // a PLC symbol stays on the same controller (pick another point with Tag…)
-    if (S.type && !S.types) { const used = taken(); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
-    H.snap(); F.seq++;
-    const c = { ...it, id: 'd' + F.seq, tag, x: it.x + 40, y: it.y + 40 };
-    F.items.push(c); sel = { i: c.id }; H.changed();
+    const keep = clip;
+    if (FD.copySel()) FD.paste();
+    clip = keep;
   };
   /* drawing order: to the front (drawn last) or to the back */
   FD.order = function (front) {
@@ -799,38 +910,143 @@
   };
   FD.del = function () {
     const F = fr();
+    if (group.size > 1) {
+      const ids = new Set(many()); H.snap();
+      F.items = F.items.filter(i => !ids.has(i.id)); F.wires = F.wires.filter(w => !ids.has(w.a.split(':')[0]) && !ids.has(w.b.split(':')[0]));
+      group.clear(); sel = null; H.changed(); return true;
+    }
+    group.clear();
     if (sel && sel.i) { H.snap(); F.items = F.items.filter(i => i.id !== sel.i); F.wires = F.wires.filter(w => !w.a.startsWith(sel.i + ':') && !w.b.startsWith(sel.i + ':')); sel = null; H.changed(); return true; }
     if (sel && sel.w) { H.snap(); F.wires = F.wires.filter(w => w.id !== sel.w); sel = null; H.changed(); return true; }
     return false;
   };
+  const STEP = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   FD.onKey = function (ev) {
-    const k = ev.key;
-    if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); FD.del(); }
+    const k = ev.key, c = ev.ctrlKey || ev.metaKey, lk = k.toLowerCase();
+    if (c) {
+      if (lk === 'c') { if (FD.copySel()) { ev.preventDefault(); UI.toast(`${clip.items.length} symbol${clip.items.length === 1 ? '' : 's'} copied`, 'ok', 1500); } }
+      else if (lk === 'v') { ev.preventDefault(); FD.paste(); }
+      else if (lk === 'a') { ev.preventDefault(); FD.selectAll(); }
+      return;
+    }
+    if (STEP[k]) { const s = ev.shiftKey ? 50 : 10; if (FD.nudge(STEP[k][0] * s, STEP[k][1] * s)) ev.preventDefault(); }
+    else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); FD.del(); }
     else if (k === 'r' || k === 'R') { ev.preventDefault(); FD.rotate(); }
     else if (k === 'd' || k === 'D') { ev.preventDefault(); FD.copy(); }
-    else if (k === 'Escape') { wiring = null; sel = null; if (body) FD.render(body); H.side(); }
+    else if (k === 'Escape') { wiring = null; sel = null; group.clear(); if (body) FD.render(body); H.side(); }
   };
-  FD.resetSel = () => { sel = null; wiring = null; drag = null; lastSig = ''; };
+  FD.resetSel = () => { sel = null; group.clear(); wiring = null; drag = null; lastSig = ''; };
   FD.selected = () => (sel && sel.i ? itemOf(sel.i) : null);
+  /* Properties of the selected symbol: its tag (and PLC point), a comment, and the settings of its device — the same
+     settings the Wiring shows (one place: the device's props), so a delay or coil voltage changed here is the Wiring's too */
+  const field = (n, html) => `<label class="field"><span>${esc(n)}</span>${html}</label>`;
+  function propsHtml(it, S, d) {
+    if (it.k === 'text') return '';
+    const f = [];
+    if (S.type && !S.jct) f.push(field('Tag', `<input data-fp="tag" value="${esc(it.tag)}" maxlength="20" list="fd-tags" autocomplete="off"><datalist id="fd-tags">${suggest(it.k).list.map(t => `<option value="${esc(t)}">`).join('')}</datalist>`));
+    if (S.io) {
+      const b = base(it.k), pts = Object.keys(K).filter(k => base(k) === b && K[k].io).map(k => K[k].io.n);
+      f.push(field('Point', `<select data-fp="point">${pts.map(n => `<option value="${n}" ${n === S.io.n ? 'selected' : ''}>${S.io.d}${n}</option>`).join('')}</select>`));
+    }
+    f.push(field('Comment', `<input data-fp="c" value="${esc(it.c || '')}" maxlength="80" placeholder="e.g. Pump 1 start">`));
+    // a PLC or I/O card keeps its settings (slot…) in the Wiring and the I/O Configuration
+    if (d && !S.types) for (const p of DEFS[d.type].pdefs || []) {
+      f.push(field(p.n, p.opts ? `<select data-fpd="${p.k}">${p.opts.map(o => `<option ${String(d.props[p.k]) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
+        : `<input data-fpd="${p.k}" type="${p.type || 'text'}" value="${esc(d.props[p.k] ?? '')}">`));
+    }
+    return `<div class="props fd-props">${f.join('')}</div>`;
+  }
+  /* grid: lines and dots, dots only, or none (this browser) */
+  const GRIDS = { lines: 'Lines and dots', dots: 'Dots', none: 'None' };
+  let grid = 'lines';
+  try { const g = localStorage.getItem('plc-trainer.fdGrid'); if (GRIDS[g]) grid = g; } catch (e) { /* private mode */ }
+  FD.setGrid = function (g) { if (!GRIDS[g]) return; grid = g; try { localStorage.setItem('plc-trainer.fdGrid', g); } catch (e) { /* private mode */ } if (body) FD.render(body); };
+  FD.grid = () => grid;
+  /* the drawing as a picture: an SVG of the symbols and wires with their colours written in (no grid, no handles) */
+  FD.imageSvg = function () {
+    if (!svg || !gv) return null;
+    const its = fr().items; if (!its.length) return null;
+    const PROPS = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'opacity', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor'];
+    const src = gv.querySelectorAll('*'), copy = gv.cloneNode(true), dst = copy.querySelectorAll('*');
+    src.forEach((e, i) => { const cs = getComputedStyle(e); dst[i].setAttribute('style', PROPS.map(p => `${p}:${cs.getPropertyValue(p)}`).join(';')); dst[i].removeAttribute('class'); });
+    copy.querySelectorAll('[data-ft], [data-fb]').forEach(e => e.remove());
+    // the background and the click areas (filled with the grid pattern or nothing visible) are not part of the picture
+    [...copy.querySelectorAll('rect')].filter(e => { const o = e.getAttribute('style') || ''; return /fill:\s*(url|transparent|rgba\(0, 0, 0, 0\))/.test(o) && !/stroke:\s*rgb/.test(o); }).forEach(e => e.remove());
+    copy.removeAttribute('transform');
+    const x1 = Math.min(...its.map(i => i.x)) - 80, x2 = Math.max(...its.map(i => i.x)) + 80, y1 = Math.min(...its.map(i => i.y)) - 60, y2 = Math.max(...its.map(i => i.y)) + 60;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--lad-bg').trim() || '#fff';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${x2 - x1}" height="${y2 - y1}" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="${bg}"/>${copy.innerHTML}</svg>`;
+  };
+  const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+  FD.exportImage = function (kind) {
+    const s = FD.imageSvg(); if (!s) { UI.toast('The drawing is empty', 'warn'); return; }
+    const name = (App.project.name || 'diagram').replace(/[^\w-]+/g, '_');
+    if (kind === 'svg') { download(new Blob([s], { type: 'image/svg+xml' }), name + '.svg'); return; }
+    const img = new Image(), url = URL.createObjectURL(new Blob([s], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = img.width * 2; c.height = img.height * 2;
+      const g = c.getContext('2d'); g.scale(2, 2); g.drawImage(img, 0, 0); URL.revokeObjectURL(url);
+      c.toBlob(b => { if (b) download(b, name + '.png'); }, 'image/png');
+    };
+    img.src = url;
+  };
   /* side panel for the free drawing */
   FD.side = function () {
-    const it = FD.selected(), errs = FD.errs ? [...FD.errs.values()] : [];
-    const d = it && H.devOf(it.tag);
-    return `${it ? `<h5>${esc(K[it.k].n)} <code>-${esc(it.tag)}</code></h5>
-      <div class="btn-row"><button class="btn" data-fd="retag">${it.k === 'text' ? 'Edit text…' : K[it.k].io ? 'Tag / point…' : 'Tag…'}</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Copy (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
-      <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>` : '<p class="help">Select a symbol to rotate it, change its tag or its type.</p>'}
+    const it = FD.selected(), errs = FD.errs ? [...FD.errs.values()] : [], ids = many();
+    const d = it && H.devOf(it.tag), S = it && K[it.k];
+    const head = ids.length > 1 ? `<h5>${ids.length} symbols selected</h5>
+      <div class="btn-row"><button class="btn" data-fd="rot">⟳ Rotate (R)</button><button class="btn" data-fd="copy">⧉ Duplicate (D)</button><button class="btn" data-fd="clip">Copy (Ctrl+C)</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <p class="help">Drag one of them to move them all. Arrow keys move them one grid step (Shift: five).</p>`
+      : it ? `<h5>${esc(S.n)} <code>-${esc(it.tag)}</code></h5>
+      ${propsHtml(it, S, d)}
+      <div class="btn-row">${it.k === 'text' ? '<button class="btn" data-fd="retag">Edit text…</button>' : ''}<button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Duplicate (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>`
+      : `<p class="help">Select a symbol to change its tag, comment and settings. Shift+click or Shift+drag selects several.</p>
+      ${FD.hasClip() ? '<div class="btn-row"><button class="btn" data-fd="paste">Paste (Ctrl+V)</button></div>' : ''}
+      <div class="props fd-props">${field('Grid', `<select data-fgrid>${Object.entries(GRIDS).map(([k, n]) => `<option value="${k}" ${k === grid ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}</div>
+      <div class="btn-row"><button class="btn" data-fd="png">Save as PNG</button><button class="btn" data-fd="svg">Save as SVG</button></div>`;
+    return `${head}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
       <ul class="tips"><li><b>▦ Library</b>: pick a group, then click a symbol or drag it onto the drawing. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
       <li>Click a terminal ● then another to draw a wire. Every drawn wire is wired in the Wiring for you.</li>
       <li>End a wire on another wire to branch it (a junction dot). Double-click a wire to add a bend, drag the bend, double-click it to remove it.</li>
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
-      <li><b>D</b> copies the selected symbol. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
+      <li><b>Shift</b>+click or Shift+drag a box selects several symbols; <b>Ctrl+A</b> selects all. Arrow keys move the selection (Shift: five steps).</li>
+      <li><b>D</b> duplicates the selection; <b>Ctrl+C</b> / <b>Ctrl+V</b> copy and paste it — a pasted coil and its contacts become one new device. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
+      <li>Properties (on the right when one symbol is selected): its tag, a comment, and the settings of its device — the same ones as in the Wiring. On a touch screen, a long press opens the tag form; pinch to zoom.</li>
       <li>Sources › Point L1, N, PE, +24 V… is wired to that conductor of the supply. Others › wire pieces (straight, corner, T, cross) join wires; link arrows with the same tag are connected.</li>
       <li>PLC › outputs, inputs and power are terminals of the PLC or I/O card placed in the Wiring: pick its tag and the point. They show the live state of the point; the ladder decides the outputs.</li>
       <li>▶ Play: press buttons, switch breakers and trip overloads on the drawing. ✎ Values shows the voltage on each load and open/closed on each contact.</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
-    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del })[b.dataset.fd](); });
+    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,
+      clip: () => { if (FD.copySel()) UI.toast('Copied', 'ok', 1500); }, paste: () => FD.paste(), png: () => FD.exportImage('png'), svg: () => FD.exportImage('svg') })[b.dataset.fd](); });
+    const gs = sideEl.querySelector('[data-fgrid]'); if (gs) gs.onchange = () => FD.setGrid(gs.value);
+    const it = FD.selected(); if (!it) return;
+    sideEl.querySelectorAll('[data-fp]').forEach(i => { i.onchange = () => FD.setProp(it, i.dataset.fp, i.value); });
+    sideEl.querySelectorAll('[data-fpd]').forEach(i => { i.onchange = () => FD.setDevProp(it, i.dataset.fpd, i.value); });
+  };
+  /* Properties: the symbol's tag (another tag = another device, as Tag… does), PLC point or comment */
+  FD.setProp = function (it, k, v) {
+    if (!it) return false;
+    if (k === 'tag') {
+      const t = String(v).trim();
+      if (t === it.tag) return true;
+      if (!TAG.test(t)) { UI.toast('Use letters, numbers, - or _ (up to 20)', 'warn'); H.side(); return false; }
+      H.snap(); it.tag = t; H.changed(); return true;
+    }
+    if (k === 'point') { const nk = base(it.k) + Number(v); if (!K[nk] || nk === it.k) return false; H.snap(); setKind(it, nk); H.changed(); return true; }
+    if (k === 'c') { const c = String(v).trim().slice(0, 80); H.snap(); if (c) it.c = c; else delete it.c; H.changed(); return true; }
+    return false;
+  };
+  /* a device setting from the Properties: written to the device itself, as the Wiring does */
+  FD.setDevProp = function (it, k, v) {
+    const d = it && H.devOf(it.tag), p = d && (DEFS[d.type].pdefs || []).find(f => f.k === k);
+    if (!p) return false;
+    if (p.opts && !p.opts.includes(v)) return false;
+    d.props[k] = p.type === 'number' ? Number(v) : v;
+    App.circuitChanged(); if (body) FD.render(body); H.side();
+    return true;
   };
   window.FreeDraw = FD;
 })();

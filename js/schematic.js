@@ -1036,7 +1036,8 @@
   };
   SC.onKey = function (ev) {
     const c = ev.ctrlKey || ev.metaKey, k = ev.key;
-    if (style === 'free' && !c) { FreeDraw.onKey(ev); return; }
+    // the free drawing takes its own keys and Ctrl+C / Ctrl+V / Ctrl+A; Ctrl+Z / Ctrl+Y stay the diagram's undo / redo
+    if (style === 'free' && (!c || ['c', 'v', 'a'].includes(k.toLowerCase()))) { FreeDraw.onKey(ev); return; }
     if (c && k.toLowerCase() === 'z') { ev.preventDefault(); SC.undo(); }
     else if (c && k.toLowerCase() === 'y') { ev.preventDefault(); SC.redo(); }
     else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); SC.del(); }

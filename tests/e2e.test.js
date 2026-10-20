@@ -2038,6 +2038,86 @@ function check(name, cond, info = '') {
   await setMode('PROG');
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  console.log('Electrical Diagram: properties and editing');
+  const editP = { name: 'Editing', circuit: { seq: 5, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
+    schematic: { free: { seq: 30, items: [fi('d1', 'pL1', 'XP1', 0, 0), fi('d2', 'ktcoil', 'KT1', 0, 120), fi('d3', 'ktno', 'KT1', 160, 120), fi('d4', 'lamp', 'H1', 160, 240), fi('d5', 'pN', 'XP2', 0, 240)],
+      wires: [fw('fw1', 'd1:J', 'd2:A1'), fw('fw2', 'd2:A2', 'd5:J'), fw('fw3', 'd2:A1', 'd3:15'), fw('fw4', 'd3:18', 'd4:X1'), fw('fw5', 'd4:X2', 'd5:J')] } } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, editP);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(250);
+  // a selector click (retried): the drawing is redrawn whenever its live state changes. Two clicks on one symbol within
+  // 400 ms are a double click (the tag form), so each click waits that long
+  const clickSym = async id => { await page.click(`#view-schematic [data-fi="${id}"] .hit`); await wait(450); };
+  await clickSym('d2');
+  check('properties: one selected symbol shows its tag, a comment and its device settings (coil voltage, delay) in the side panel', await page.evaluate(() => ['[data-fp="tag"]', '[data-fp="c"]', '[data-fpd="coil"]', '[data-fpd="t"]'].every(s => document.querySelector('#view-schematic ' + s))));
+  await page.fill('#view-schematic [data-fpd="t"]', '3'); await page.dispatchEvent('#view-schematic [data-fpd="t"]', 'change'); await wait(150);
+  check('properties: a delay set in the diagram is the device setting (the Wiring shows the same value)', await page.evaluate(() => { const d = App.project.circuit.comps.find(c => c.props.label === 'KT1'); App.showView('wiring'); Workspace.selectComp(d.id); const v = document.querySelector('[data-pk="t"]').value; App.showView('schematic'); return d.props.t === 3 && v === '3'; }));
+  await page.evaluate(() => { App.showView('wiring'); }); await wait(100);
+  await page.selectOption('[data-pk="coil"]', '24VDC'); await wait(100);
+  await page.evaluate(() => App.showView('schematic')); await wait(150); await clickSym('d2');
+  check('properties: a coil voltage changed in the Wiring shows in the diagram properties', await page.evaluate(() => document.querySelector('#view-schematic [data-fpd="coil"]').value === '24VDC'));
+  await page.fill('#view-schematic [data-fp="c"]', 'Star-delta changeover'); await page.dispatchEvent('#view-schematic [data-fp="c"]', 'change'); await wait(150);
+  check('properties: a comment is saved on the symbol and drawn under its tag', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd2').c === 'Star-delta changeover' && [...document.querySelectorAll('#view-schematic .fcmt')].some(t => t.textContent === 'Star-delta changeover')));
+  check('properties: the comment survives save and reload', await page.evaluate(() => App.buildProject(JSON.parse(JSON.stringify(App.serialize()))).schematic.free.items.find(i => i.id === 'd2').c === 'Star-delta changeover'));
+  await clickSym('d4');
+  await page.fill('#view-schematic [data-fp="tag"]', 'KT1'); await page.dispatchEvent('#view-schematic [data-fp="tag"]', 'change'); await wait(150);
+  check('properties: a tag of another kind of device is reported (one tag, one device) and nothing is rewired', await page.evaluate(() => { const it = App.project.schematic.free.items.find(i => i.id === 'd4'); return it.tag === 'KT1' && /KT1 is a .* not a Pilot Lamp/.test(FreeDraw.errs.get(it) || ''); }));
+  await page.evaluate(() => Schematic.undo()); await wait(100);
+  check('properties: Undo takes the tag back', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd4').tag === 'H1' && FreeDraw.errs.size === 0));
+  // selection: all, nudge, Shift+click, box
+  check('editing: Ctrl+A selects every symbol and an arrow key moves them all one grid step; Undo moves them back', await page.evaluate(() => {
+    FreeDraw.selectAll(); const all = FreeDraw.selection().length, x0 = App.project.schematic.free.items.map(i => i.x);
+    FreeDraw.nudge(10, 0); const moved = App.project.schematic.free.items.every((i, n) => i.x === x0[n] + 10);
+    Schematic.undo(); return all === 5 && moved && App.project.schematic.free.items.every((i, n) => i.x === x0[n]);
+  }));
+  await page.evaluate(() => FreeDraw.resetSel());
+  await clickSym('d2'); await page.keyboard.press('ArrowDown'); await wait(120);
+  check('editing: the arrow keys move the selected symbol on the drawing', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd2').y === 130));
+  await page.evaluate(() => Schematic.undo()); await wait(100);
+  await clickSym('d2'); await page.keyboard.down('Shift'); await clickSym('d3'); await page.keyboard.up('Shift');
+  check('editing: Shift+click adds a symbol to the selection', await page.evaluate(() => FreeDraw.selection().sort().join() === 'd2,d3' && document.querySelectorAll('#view-schematic .fitem.sel').length === 2));
+  const bx = await page.evaluate(() => { const r = id => document.querySelector(`#view-schematic [data-fi="${id}"] .hit`).getBoundingClientRect(); const a = r('d3'), b = r('d4'); return { x1: Math.min(a.left, b.left) - 15, y1: Math.min(a.top, b.top) - 15, x2: Math.max(a.right, b.right) + 15, y2: Math.max(a.bottom, b.bottom) + 15 }; });
+  await page.evaluate(() => FreeDraw.resetSel());
+  await page.keyboard.down('Shift'); await page.mouse.move(bx.x2, bx.y1); await page.mouse.down(); await page.mouse.move((bx.x1 + bx.x2) / 2, (bx.y1 + bx.y2) / 2, { steps: 3 }); await page.mouse.move(bx.x1 + 5, bx.y2, { steps: 3 }); await page.mouse.up(); await page.keyboard.up('Shift'); await wait(150);
+  check('editing: Shift+drag on the drawing selects the symbols inside the box', await page.evaluate(() => FreeDraw.selection().sort().join() === 'd3,d4'), await page.evaluate(() => FreeDraw.selection().join()));
+  check('editing: Delete removes the whole selection with its wires; Undo brings it all back', await page.evaluate(() => {
+    const F = () => App.project.schematic.free; FreeDraw.del(); const gone = !F().items.some(i => i.id === 'd3' || i.id === 'd4') && !F().wires.some(w => /d[34]:/.test(w.a + w.b));
+    Schematic.undo(); return gone && F().items.length === 5 && F().wires.length === 5;
+  }));
+  // clipboard
+  await page.evaluate(() => FreeDraw.resetSel()); await clickSym('d2'); await page.keyboard.down('Shift'); await clickSym('d3'); await page.keyboard.up('Shift');
+  await page.keyboard.press('Control+C'); await page.keyboard.press('Control+V'); await wait(200);
+  check('editing: Ctrl+C / Ctrl+V pastes the coil and its contact as one new device, with the wire between them', await page.evaluate(() => {
+    const F = App.project.schematic.free, nw = F.items.filter(i => !['d1', 'd2', 'd3', 'd4', 'd5'].includes(i.id)), tags = [...new Set(nw.map(i => i.tag))];
+    const d = App.project.circuit.comps.find(c => c.props.label === tags[0]);
+    return nw.length === 2 && tags.length === 1 && tags[0] !== 'KT1' && !!d && d.type === 'timer' && F.wires.some(w => nw.some(i => w.a.startsWith(i.id + ':')) && nw.some(i => w.b.startsWith(i.id + ':'))) && FreeDraw.selection().length === 2 && FreeDraw.errs.size === 0;
+  }));
+  await page.evaluate(() => Schematic.undo()); await wait(100);
+  check('editing: D duplicates one symbol with the next free tag, as before', await page.evaluate(() => { FreeDraw.resetSel(); return true; }) && await (async () => { await clickSym('d4'); await page.keyboard.press('d'); await wait(150); return page.evaluate(() => App.project.schematic.free.items.some(i => i.k === 'lamp' && i.tag === 'H2')); })());
+  await page.evaluate(() => Schematic.undo());
+  // library search and grid
+  await page.fill('#view-schematic .fd-search', 'timer coil'); await wait(100);
+  check('library: the search finds symbols by name in every group', await page.evaluate(() => { const k = [...document.querySelectorAll('#view-schematic .fd-ico')].map(b => b.dataset.fk); return k.length >= 2 && k.includes('ktcoil') && k.includes('kfcoil') && k.every(x => /timer coil/i.test(FreeDraw.KINDS[x].n)); }));
+  await page.fill('#view-schematic .fd-search', 'zzzz'); await wait(100);
+  check('library: a search with no match says so', await page.evaluate(() => !document.querySelector('#view-schematic .fd-ico') && document.querySelector('#view-schematic .fd-grid').textContent.includes('No symbol matches')));
+  await page.fill('#view-schematic .fd-search', ''); await wait(100);
+  check('grid: lines, dots or no grid, remembered in this browser', await page.evaluate(() => {
+    const fill = () => document.querySelector('#view-schematic .fbg').getAttribute('fill');
+    FreeDraw.setGrid('none'); const a = fill() === 'transparent' && localStorage.getItem('plc-trainer.fdGrid') === 'none';
+    FreeDraw.setGrid('dots'); const b = fill() === 'url(#fdGrid)'; FreeDraw.setGrid('lines'); return a && b && fill() === 'url(#fdGrid2)';
+  }));
+  // picture of the drawing
+  check('image: the drawing as an SVG has its symbols, tags and colours but no grid or terminal handles', await page.evaluate(() => {
+    FreeDraw.resetSel(); Schematic.render(); const s = FreeDraw.imageSvg(), doc = new DOMParser().parseFromString(s, 'image/svg+xml');
+    return !doc.querySelector('parsererror') && doc.documentElement.nodeName === 'svg' && s.includes('-KT1') && s.includes('-H1') && !/data-ft|class=|url\(#fdGrid/.test(s) && doc.querySelectorAll('path').length > 5;
+  }));
+  await page.evaluate(() => { FreeDraw.resetSel(); Schematic.render(); }); await wait(100);
+  const dlSvg = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+  await page.click('#view-schematic [data-fd="svg"]'); const svgFile = await dlSvg;
+  const dlPng = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+  await page.click('#view-schematic [data-fd="png"]'); const pngFile = await dlPng;
+  check('image: Save as SVG and Save as PNG download the drawing', !!svgFile && /\.svg$/.test(svgFile.suggestedFilename()) && !!pngFile && /\.png$/.test(pngFile.suggestedFilename()), `${svgFile && svgFile.suggestedFilename()} ${pngFile && pngFile.suggestedFilename()}`);
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
@@ -2073,6 +2153,26 @@ function check(name, cond, info = '') {
   const scale = t => Number(/scale\(([\d.]+)\)/.exec(t)[1]);
   const k1 = await phone.evaluate(() => document.querySelector('.ws-svg .vp').getAttribute('transform'));
   check('pinch zooms the wiring canvas', scale(k1) > scale(k0) * 1.5, `${scale(k0)} → ${scale(k1)}`);
+  // the free drawing on a phone: pinch zooms it, a long press on a symbol opens its tag form
+  await phone.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew({ name: 'Phone free', circuit: { comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [], seq: 1 }, schematic: { free: { seq: 2, items: [{ id: 'd1', k: 'lamp', tag: 'H1', x: 60, y: 80, r: 0 }], wires: [] } } }); App.showView('schematic'); });
+  await phone.waitForTimeout(300);
+  await phone.evaluate(() => { const b = document.querySelector('#view-schematic [data-sstyle="free"]'); if (b) b.click(); }); await phone.waitForTimeout(300);
+  const phFv = () => phone.evaluate(() => { const g = document.querySelector('#view-schematic .fd-host .fv'); return g ? g.getAttribute('transform') : ''; });
+  const phF0 = await phFv(), phFb = await (await phone.$('#view-schematic .fd-host svg')).boundingBox();
+  const phX = phFb.x + phFb.width / 2, phY = phFb.y + phFb.height * 0.7;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: phX - 30, y: phY, id: 1 }, { x: phX + 30, y: phY, id: 2 }] });
+  for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: phX - 30 - i * 15, y: phY, id: 1 }, { x: phX + 30 + i * 15, y: phY, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const phF1 = await phFv();
+  check('pinch zooms the free drawing', !!phF0 && !!phF1 && scale(phF1) > scale(phF0) * 1.5, `${phF0} → ${phF1}`);
+  await phone.evaluate(() => FreeDraw.zoom('fit')); await phone.waitForTimeout(150);
+  const lb = await (await phone.$('#view-schematic [data-fi="d1"] .hit')).boundingBox();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lb.x + lb.width / 2, y: lb.y + lb.height / 2, id: 3 }] });
+  await phone.waitForTimeout(800);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  check('a long press on a symbol in the free drawing opens its tag form', await phone.evaluate(() => !!document.querySelector('.modal #f_t')));
+  await phone.evaluate(() => { const c = [...document.querySelectorAll('.modal .btn')].find(b => /cancel/i.test(b.textContent)); if (c) c.click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); });
+  await phone.waitForTimeout(150);
   await phone.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setMode('RUN'); App.showView('hmi'); });
   await phone.waitForTimeout(400);
   const hp = await (await phone.$('.hmi-screen .t-pb')).boundingBox();

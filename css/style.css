@@ -651,7 +651,7 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .fd-wrap { display: flex; height: 100%; min-height: 420px; }
 .fd-lib { position: relative; z-index: 1; width: 212px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-right: 1px solid var(--border); background: var(--surface); overflow: hidden; }
 .fd-wrap.nolib .fd-lib { display: none; }
-.fd-grp { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.fd-grp, .fd-search { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 .fd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; overflow-y: auto; padding-right: 2px; }
 .fd-ico { aspect-ratio: 1; padding: 4px 4px 7px; border: 1px solid var(--border); border-bottom: 3px solid var(--g, var(--muted)); border-radius: 4px; background: var(--lad-bg); cursor: grab; }
 .fd-ico:hover { border-color: var(--accent); }
@@ -678,8 +678,10 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fwire.sel .w { stroke: var(--accent); stroke-width: 2.6; }
 .free-svg .ftag { font: 600 11.5px var(--mono); fill: var(--lad-text); text-anchor: end; pointer-events: none; }
 .free-svg .ftag.faddr { font-weight: 400; font-size: 10px; }
+.free-svg .ftag.fcmt { font: italic 400 10px var(--sans); fill: var(--muted); }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
+.free-svg .fbox { fill: color-mix(in srgb, var(--accent-soft) 45%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
 .sch-body.operate .free-svg .fitem { cursor: pointer; }
 .free-svg .fbend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
 .free-svg .ssym .jdot { fill: var(--lad-wire); stroke: none; }
