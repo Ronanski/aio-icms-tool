@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 465/465 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 474/474 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -195,7 +195,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 ## Electrical Diagram roadmap (Simurelay-inspired; owner approves each phase separately)
 Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one existing simulation. No new solver, no Ladder/HMI rewrite, one device-settings source shared with the Wiring, the HMI reads PLC data only.
 - [x] Phase 0 — integration baseline tests (26 checks; branch `feature/integration-baseline-tests`, approved, not merged)
-- [x] Phase 1 — project compatibility: keep unknown parts, symbols and wires on load and save; format version; warning (11 checks; branch `feature/project-compatibility`, awaiting review, not merged)
+- [x] Phase 1 — project compatibility: keep unknown parts, symbols and wires on load and save; format version; warning (branch `feature/project-compatibility`, not merged)
+  - [x] Review corrections: reserved tags of kept content, kept main power circuit and rails protected and saved as they were, kept paths/feeders anchored to their neighbours (20 checks in all; awaiting review)
 - [ ] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals
 - [ ] Phase 3 — inline properties panel, comments, IEC naming and numbering, duplicate warnings, editing (copy/paste, nudge, multi-select, touch, search, grid, image export)
 - [ ] Phase 4 — missing parts in small batches (see the Simurelay comparison)

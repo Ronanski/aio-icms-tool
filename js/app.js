@@ -138,7 +138,29 @@
     const seq = v => (Number.isInteger(v) && v >= 0 && v < 1e9 ? v : 0);
     const schematic = Schematic.clean(p.schematic, termOk, keep);
     delete keep.fits; delete keep.railOk;
+    // tags of what was kept are reserved: a new device never takes one. A kept part or symbol without a readable tag is
+    // counted, because its tag (if it has one in the newer version) cannot be reserved
+    const reserved = new Set();
+    keep.untagged = 0;
+    const tagOk = t => typeof t === 'string' && t.trim() !== '';
+    keep.comps.forEach(c => { if (isObj(c.props) && tagOk(c.props.label)) reserved.add(c.props.label); else keep.untagged++; });
+    keep.free.items.forEach(i => { if (tagOk(i.tag)) reserved.add(i.tag); else keep.untagged++; });
+    const walk = a => arr(a).forEach(e => {
+      if (!isObj(e)) return;
+      if (e.k === 'br') { arr(e.legs).forEach(walk); return; }
+      if (tagOk(e.tag)) reserved.add(e.tag); else keep.untagged++;
+      ['delta', 'star'].forEach(q => { if (tagOk(e[q])) reserved.add(e[q]); });
+    });
+    keep.rungs.forEach(x => walk(x.r.elems)); keep.feeders.forEach(x => walk(x.f.elems)); walk(keep.main);
+    // a tag of a device this version knows (a kept path may use a known contactor) belongs to that device: not reserved.
+    // Only devices count: a saved project holds the devices its symbols use, and a symbol drawn here with a reserved tag
+    // was refused, so it must not free the tag when the project is opened again
+    comps.forEach(c => reserved.delete(c.props.label));
+    keep.tags = [...reserved];
     const format = Number.isInteger(p.format) && p.format > 0 ? p.format : 1;
+    const circuit = { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires), maxNum(keep.comps), maxNum(keep.wires)) };
+    // read by Circuit.create, the Wiring and the Electrical Diagram; not saved (App.serialize lists the circuit's fields)
+    Object.defineProperty(circuit, 'reserved', { value: reserved, enumerable: false });
     return {
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc, files },
@@ -146,8 +168,8 @@
       net: cleanNet(p.net),
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
       conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null },
-      // new parts and wires never reuse the id of one that was put aside
-      circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires), maxNum(keep.comps), maxNum(keep.wires)) },
+      // new parts and wires never reuse the id or the tag of one that was put aside
+      circuit,
       hmi: HMI.cleanAll(hm),
       schematic,
       io: Circuit.cleanIo(p.io),
@@ -164,6 +186,7 @@
     const names = [...new Set(k.kinds.map(s => String(s).replace(/[^A-Za-z0-9 _.-]/g, '').slice(0, 24)).filter(Boolean))].slice(0, 5);
     if (proj.format > FORMAT) msgs.push(`This project was saved by a newer PLC Trainer (project format ${proj.format}; this version reads format ${FORMAT}). Update the app to use everything in it.`);
     if (n || w) msgs.push(`${n} part${n === 1 ? '' : 's'} or symbol${n === 1 ? '' : 's'} and ${w} wire${w === 1 ? '' : 's'} are not known to this version${names.length ? ` (${names.join(', ')})` : ''}. They are kept and saved back unchanged, but not shown or simulated.`);
+    if (k.untagged) msgs.push(`${k.untagged} of them ${k.untagged === 1 ? 'has' : 'have'} no tag this version can read, so ${k.untagged === 1 ? 'its tag' : 'their tags'} could not be reserved: a device you add here could get the same tag.`);
     if (k.dropped) msgs.push(`${k.dropped} damaged entr${k.dropped === 1 ? 'y' : 'ies'} in the project could not be read and ${k.dropped === 1 ? 'was' : 'were'} left out.`);
     return msgs;
   }
@@ -211,7 +234,10 @@
       events: LOG.slice(-LOG_KEEP),
     }, p);
   };
-  /* the saved form: what this version keeps aside goes back where it was (a current path or feeder at its old place).
+  /* the saved form: what this version keeps aside goes back where it was. A kept current path or feeder goes right after
+     the one it followed when the project was opened (`prev`, by identity); if that one was deleted, or Undo replaced the
+     diagram, it goes back at its old count (`at`). The kept main power circuit and rails are written back as they were:
+     the Electrical Diagram refuses to replace them, and rails it chose by itself meanwhile are not saved over them.
      A kept wire whose other end was deleted here is left out. The format is never lowered. */
   function withKept(out, p) {
     const k = p.keep;
@@ -221,14 +247,20 @@
     C.comps.push(...cp.comps);
     const cids = new Set(C.comps.map(c => c.id)), on = (e, ids) => typeof e === 'string' && ids.has(e.split(':')[0]);
     C.wires = C.wires.concat(cp.wires.filter(w => on(w.a, cids) && on(w.b, cids)));
-    const put = (list, kept, key) => { const a = list.slice(); kept.forEach(x => a.splice(Math.min(x.at, a.length), 0, x[key])); return a; };
-    S.rungs = put(S.rungs, cp.rungs, 'r');
+    // list: the saved copies of `src` (the project's own objects, same order); kept[j].prev is one of `src` or null
+    const put = (list, src, kept, copies, key) => {
+      const a = list.slice();
+      kept.map((x, j) => { const i = x.prev ? src.indexOf(x.prev) : -1; return { j, at: x.prev === null ? 0 : i >= 0 ? i + 1 : Math.min(x.at, list.length) }; })
+        .sort((u, v) => u.at - v.at || u.j - v.j).forEach((q, o) => a.splice(q.at + o, 0, copies[q.j][key]));
+      return a;
+    };
+    S.rungs = put(S.rungs, p.schematic.rungs, k.rungs, cp.rungs, 'r');
     if (S.power) {
-      S.power.feeders = put(S.power.feeders || [], cp.feeders, 'f');
-      if (cp.main && !(S.power.main || []).length) S.power.main = cp.main;
+      S.power.feeders = put(S.power.feeders || [], (p.schematic.power && p.schematic.power.feeders) || [], k.feeders, cp.feeders, 'f');
+      if (cp.main) S.power.main = cp.main;
     }
-    if (!S.L && cp.L) S.L = cp.L;
-    if (!S.N && cp.N) S.N = cp.N;
+    if (cp.L) S.L = cp.L;
+    if (cp.N) S.N = cp.N;
     if (S.free && (cp.free.items.length || cp.free.wires.length)) {
       S.free.items = S.free.items.concat(cp.free.items);
       const fids = new Set(S.free.items.map(i => i.id));

@@ -1824,7 +1824,63 @@ function check(name, cond, info = '') {
       && k.dropped >= 15 && /damaged entries/.test(m) && s.schematic.L === 'c5:L' && s.schematic.power.main[0].k === 'futureMain'
       && App.compat().every(x => !/damaged/.test(x)) && App.project.keep.comps.length === 1;
   }));
-  check('compat: a file that is not a project is still refused and the open project stays', await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
+  // tags of kept parts and symbols are reserved; a tag the known part of the file also uses is not
+  const reserveP = { name: 'Reserved tags', format: 3,
+    circuit: { seq: 10, comps: [
+      { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+      { id: 'c2', type: 'contactor', x: 0, y: 0, props: { label: 'KM2' } },
+      { id: 'c5', type: 'quantumRelay', x: 0, y: 0, props: { label: 'KA1' } },
+      { id: 'c6', type: 'mysteryBox', x: 0, y: 0 }], wires: [] },
+    schematic: { L: 'c5:L',
+      rungs: [{ elems: [{ k: 'pbno', tag: 'S3' }], comment: 'A' }, { elems: [{ k: 'pbno', tag: 'S1' }, { k: 'hyperCoil', tag: 'KM1' }, { k: 'kmcoil', tag: 'KM2' }], comment: 'kept' }, { elems: [{ k: 'pbno', tag: 'S4' }], comment: 'B' }],
+      power: { main: [{ k: 'futureMain', tag: 'QS1' }], feeders: [{ elems: [{ k: 'km3', tag: 'KM5' }] }, { elems: [{ k: 'futureVfd', tag: 'U1' }] }, { elems: [{ k: 'km3', tag: 'KM6' }] }] },
+      free: { seq: 5, items: [{ id: 'd1', k: 'warpLamp', tag: 'H1', x: 0, y: 0, r: 0 }], wires: [] } } };
+  check('compat: tags of kept parts, symbols, paths and feeders are reserved; one of a device this version knows is not',await page.evaluate(p => {
+    const prev = App.currentId; if (!App.openNew(JSON.parse(JSON.stringify(p)))) return false; if (prev) Store.remove(prev);
+    const R = App.project.circuit.reserved;
+    return ['KA1', 'H1', 'S1', 'KM1', 'U1', 'QS1'].every(t => R.has(t)) && !['KM2', 'S3', 'S4', 'Q1'].some(t => R.has(t)) && App.project.keep.untagged === 1
+      && Object.keys(App.project.circuit).indexOf('reserved') < 0 && !('reserved' in App.serialize().circuit);
+  }, reserveP));
+  check('compat: a kept part with no readable tag is reported (its tag could not be reserved)', await page.evaluate(() => App.compat().some(m => /1 of them has no tag this version can read/.test(m))));
+  check('compat: new devices skip reserved tags (relay KA2, lamp H2, push button S2, contactor KM3)', await page.evaluate(() => {
+    const C = App.project.circuit, lab = t => Circuit.create(t, 0, 0, C).props.label;
+    return lab('relay') === 'KA2' && lab('lamp') === 'H2' && lab('pb_no') === 'S2' && lab('contactor') === 'KM3';
+  }));
+  await page.evaluate(() => { App.showView('wiring'); Workspace.selectComp(App.project.circuit.comps.find(c => c.props.label === 'KM2').id); }); await wait(300);
+  await page.fill('[data-pk="label"]', 'KA1'); await page.dispatchEvent('[data-pk="label"]', 'change'); await wait(100);
+  check('compat: renaming a device to a reserved tag is refused', await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'KM2') && !App.project.circuit.comps.some(c => c.props.label === 'KA1')));
+  check('compat: a diagram symbol given a reserved tag by hand is reported and makes no device (free draw and current paths)', await page.evaluate(() => {
+    App.showView('schematic'); FreeDraw.add('lamp', 'H1', 300, 300);
+    const it = App.project.schematic.free.items.find(i => i.tag === 'H1' && i.k === 'lamp');
+    App.project.schematic.rungs.push({ elems: [{ k: 'pbno', tag: 'S1' }], comment: '' }); Schematic.sync();
+    const C = App.project.circuit.comps, msgF = FreeDraw.errs.get(it) || '', msgR = [...Schematic.errs.values()].join(' ');
+    return !!it && /H1 is the tag of a part this version does not know/.test(msgF) && /S1 is the tag of a part/.test(msgR) && !C.some(c => c.props.label === 'H1' || c.props.label === 'S1');
+  }));
+  check('compat: the kept main power circuit cannot be replaced here and is saved as it was', await page.evaluate(() => {
+    const r = Schematic.addMain('qf3', 'Q9');
+    return typeof r === 'string' && /main power circuit holds parts/.test(r) && App.project.schematic.power.main.length === 0 && App.serialize().schematic.power.main[0].k === 'futureMain';
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); Schematic.resetSel(); Schematic.render(); }); await wait(200);
+  check('compat: a kept rail cannot be changed here, and is saved as it was even after the diagram chose rails itself', await page.evaluate(() => {
+    const sel = document.querySelector('#view-schematic [data-rail="L"]'); if (!sel) return 'no rail selector';
+    const opt = [...sel.options].find(o => o.value && o.value !== App.project.schematic.L); const before = App.project.schematic.L;
+    if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change')); }
+    return App.project.schematic.L === before && App.serialize().schematic.L === 'c5:L' && document.getElementById('toast-root').textContent.includes('rail is on a part this version does not know');
+  }));
+  check('compat: kept paths and feeders stay right after the ones they followed when others are inserted or deleted', await page.evaluate(() => {
+    const S = App.project.schematic, P = S.power;
+    S.rungs = S.rungs.filter(r => r.comment !== 'B' && r.comment !== ''); S.rungs.unshift({ elems: [], comment: 'X' });
+    P.feeders.unshift({ elems: [] });
+    const s = App.serialize();
+    return s.schematic.rungs.map(r => r.comment).join() === 'X,A,kept' && s.schematic.power.feeders.map(f => (f.elems[0] ? f.elems[0].tag : '-')).join() === '-,KM5,U1,KM6';
+  }));
+  check('compat: save → reload keeps the kept content and its reserved tags (a symbol refused for a reserved tag does not free it)',await page.evaluate(new Function('p', canonJs + `
+    const s = JSON.parse(JSON.stringify(App.serialize())), prev = App.currentId; if (!App.openNew(s)) return false; if (prev) Store.remove(prev);
+    const t = JSON.parse(JSON.stringify(App.serialize())), byId = (l, id) => l.find(x => x.id === id), R = App.project.circuit.reserved;
+    return canon(byId(t.circuit.comps, 'c5')) === canon(p.circuit.comps[2]) && canon(byId(t.circuit.comps, 'c6')) === canon(p.circuit.comps[3])
+      && canon(t.schematic.rungs.find(r => r.comment === 'kept')) === canon(p.schematic.rungs[1]) && t.schematic.power.main[0].k === 'futureMain' && t.schematic.L === 'c5:L'
+      && canon(byId(t.schematic.free.items, 'd1')) === canon(p.schematic.free.items[0]) && ['KA1', 'H1', 'S1', 'KM1', 'U1', 'QS1'].every(x => R.has(x));`), reserveP));
+  check('compat: a file that is not a project is still refused and the open project stays',await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
   await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); });
 
   check('no page errors', errors.length === 0, errors.join(' | '));

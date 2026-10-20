@@ -244,7 +244,11 @@
   FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
     if (!H) return errs;
-    const te = typeErr || ((tag, type, what) => { const d = H.devOf(tag); return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null; });
+    const te = typeErr || ((tag, type, what) => {
+      const d = H.devOf(tag), R = H.circ().reserved;
+      if (!d && R && R.has(tag)) return window.Schematic.reservedMsg(tag);
+      return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null;
+    });
     for (const it of fr().items) {
       const S = K[it.k];
       if (!S.type) continue;
@@ -609,8 +613,10 @@
   }
 
   /* ---------- editing ---------- */
+  // tags in use: the Wiring's, this drawing's and those of parts a newer version made (kept in the project)
+  const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
   function suggest(k) {
-    const S = K[k], used = new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag)]);
+    const S = K[k], used = taken();
     const same = H.circ().comps.filter(c => c.type === S.type).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
@@ -625,7 +631,7 @@
     H.snap(); w.pts = [...pts.slice(0, best), pt, ...pts.slice(best)]; H.changed();
   }
   function splitWire(w, pt) {
-    const F = fr(), used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]);
+    const F = fr(), used = taken();
     let n = 1; while (used.has('J' + n)) n++;
     F.seq++;
     const node = { id: 'd' + F.seq, k: 'node', tag: 'J' + n, x: pt.x, y: pt.y, r: 0 }, j = node.id + ':J';
@@ -703,7 +709,7 @@
         C.wires = C.wires.filter(w => [w.a, w.b].every(k => { const [id, t] = k.split(':'); return id !== d.id || ok.has(t); }));
         App.log('system', `Electrical Diagram: ${it.tag} is now a ${DEFS[S1.type].name}`);
       } else {
-        const used = new Set([...C.comps.map(c => c.props.label), ...fr().items.map(i => i.tag)]), old = it.tag;
+        const used = taken(), old = it.tag;
         let n = 1; while (used.has(S1.pre + n)) n++;
         it.tag = S1.pre + n;
         UI.toast(`${old} ${d.schAuto ? 'is also used by other symbols' : 'is a device placed in the Wiring'}, so it stays a ${DEFS[d.type].name}: this symbol is now ${it.tag}, a new ${DEFS[S1.type].name}`, 'warn', 5000);
@@ -717,7 +723,7 @@
     if (full()) return;
     const F = fr(), S = K[it.k];
     let tag = it.tag;
-    if (S.type) { const used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
+    if (S.type) { const used = taken(); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
     H.snap(); F.seq++;
     const c = { ...it, id: 'd' + F.seq, tag, x: it.x + 40, y: it.y + 40 };
     F.items.push(c); sel = { i: c.id }; H.changed();

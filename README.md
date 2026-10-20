@@ -86,13 +86,13 @@ desktop/          Windows app (Electron wrapper)
 mobile/           Android app (Capacitor wrapper)
 ```
 
-Use **File ▾ → New project…** to start from a blank sheet or any example, and **File ▾ → Open project…** (Ctrl+O) to switch between saved projects. Projects save automatically in the browser; the label next to the project name shows *Saved* / *Saving…*. **Save** (Ctrl+S) saves at once, **Save as…** (Ctrl+Shift+S) makes a copy under a new name. **Export to file** and **Import from file** move projects between devices as `.plc.json`. A project made with a newer version opens too: parts and symbols this version does not know are kept and saved back unchanged (you get a warning), they are just not shown or simulated.
+Use **File ▾ → New project…** to start from a blank sheet or any example, and **File ▾ → Open project…** (Ctrl+O) to switch between saved projects. Projects save automatically in the browser; the label next to the project name shows *Saved* / *Saving…*. **Save** (Ctrl+S) saves at once, **Save as…** (Ctrl+Shift+S) makes a copy under a new name. **Export to file** and **Import from file** move projects between devices as `.plc.json`. A project made with a newer version opens too: parts and symbols this version does not know are kept and saved back unchanged (you get a warning), they are just not shown or simulated, and their tags stay reserved so a new device never takes one.
 
 ## Development
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 465 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
+npm test                                 # 474 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 
