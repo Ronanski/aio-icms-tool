@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 384/384.
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 391/391.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -185,7 +185,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 **Next (owner: GO on v2.0.0, v2.0.1 and v2.1, 2026-10-20)**
 - [x] **Release v2.0.0** (owner: GO, 2026-10-20): ships v1.6.1, v1.7, v1.8 and v2.0 from `main` together. Project format changes (tags, program files): older apps cannot open new projects.
 - [x] **v2.0.1 — accuracy fixes**: DIV rounds halves away from zero; Verify checks COP/FLL/SQO/MSG lengths against the file end; earth leakage (L–PE load) trips the RCD or is reported; alarms in the first 4 s after start are no longer lost. (S:0/S:5 flags, breaker selectivity, the oscillation warning, constant range checks and DC OK were already fixed in v1.2.1; the audit list below was out of date.)
-- [ ] **v2.1 — learning**: auto-check for the circuit lessons 8–12 (verify the wiring, not only the ladder); new lessons for the rack, analog/VFD, HMI and online editing.
+- [x] **v2.1 — learning**: live checklists for lessons 8–16 (the wiring is checked, not only the ladder; lesson 12 checks the hardwired 21-22 interlock and the ladder XIO interlock); new lessons 13 rack + I/O Configuration, 14 analog + VFD, 15 HMI screens/trends, 16 download + online edits.
 - [ ] **v2.2 — publishing**: Play Store build (`.aab`) and listing, final product name and logo; release workflow refuses a debug-signed APK.
 - [ ] Owner's checks on real devices (Beta) and the owner's v1.2 bug list → fixes as they come.
 
@@ -200,7 +200,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 ## Earlier plans
 - [ ] Play Store build (`.aab`) and listing
 - [ ] Final product name and logo, replacing the placeholder icon
-- [ ] Auto-check for the circuit lessons (8–12): verify wiring, not only the ladder
+- [x] Auto-check for the circuit lessons (8–12): verify wiring, not only the ladder (v2.1)
 
 ## Backlog (v1.2+)
 - [ ] More instructions: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, BTD, SCP, analog I/O (I:1.0 words)

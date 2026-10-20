@@ -630,7 +630,7 @@ XIO I:0/1 RES C5:0</pre>
     {
       id: 'l9', level: 'Circuits', title: '9 · PLC motor control + HMI', ex: 'plcmotor',
       body: `<p>The same motor, now controlled by the PLC. The contactor coil is switched by relay output <code>O:0/0</code>. The overload’s NC contact is wired to input <code>I:0/2</code>.</p>
-      <ol><li>Put the PLC in RUN. Start the motor from the push button in the Wiring <i>and</i> from the HMI tab.</li><li>Jam the motor and watch the HMI alarm banner.</li><li>Open the HMI in <b>Edit</b> mode and add a numeric entry for <code>T4:0.ACC</code>.</li></ol>`,
+      <ol><li>Put the PLC in RUN. Start the motor from the push button in the Wiring <i>and</i> from the HMI tab.</li><li>Jam the motor and watch the HMI alarm banner.</li><li>Open the HMI in <b>✎ Studio</b> mode and add a <b>numeric entry</b> for <code>T4:0.ACC</code>.</li></ol>`,
     },
     {
       id: 'l10', level: 'Circuits', title: '10 · Conveyor batching', ex: 'conveyor',
@@ -650,7 +650,136 @@ XIO I:0/1 RES C5:0</pre>
       <li>If both close at once you get a phase-to-phase short — the MCCB will trip. Try it!</li></ul>
       <p>Hint: place a 3-phase supply, MCCB, two contactors, an overload relay and a motor from the palette.</p>`,
     },
+    {
+      id: 'l13', level: 'Hardware', title: '13 · Modular PLC rack and I/O Configuration', ex: 'rack',
+      body: `<p>A modular PLC is a <b>rack</b>: a power supply, the <b>CPU</b> in slot 0 and I/O cards in slots 1–7. The address follows the slot: a card in slot 1 is <code>I:1/0…7</code>, in slot 2 <code>O:2/0…7</code>.</p>
+      <p>The CPU only runs when every card is in its <b>I/O Configuration</b> (Ladder → <b>I/O Config</b>). A card that is installed but not configured, or configured but missing, is a <b>CPU fault</b>: the FLT light is on and the CPU refuses RUN.</p>
+      <ol><li>Put the PLC in RUN and press START: <code>O:2/0</code> turns on.</li>
+      <li>In the Wiring, add a <b>relay output card</b> from <i>PLC Rack</i> and set its <b>slot</b> to 3. Try RUN: the CPU faults.</li>
+      <li>In PROG, open <b>I/O Config</b>, press <b>Read I/O Config</b>, save, and run again.</li>
+      <li>Change the <b>Address</b> style in the Ladder toolbar to bit/byte: <code>I:1/0</code> is shown as <code>I0.0</code>.</li></ol>`,
+    },
+    {
+      id: 'l14', level: 'Hardware', title: '14 · Analog input, analog output and a VFD', ex: 'analog',
+      body: `<p>An analog input card turns <b>4–20 mA</b> into a number: 4 mA = 0, 20 mA = 32767 (<code>I:3.0</code> is slot 3, channel 0). An analog output card turns a number into <b>0–10 V</b> (<code>O:4.0</code>). The VFD runs the pump at the speed given by that 0–10 V signal.</p>
+      <ol><li>Put the PLC in RUN. Watch <code>I:3.0</code> (level LT1) in the data table while the tank fills and drains.</li>
+      <li>Switch <b>S1 PUMP</b> on: the VFD starts the motor; its frequency follows the level (<code>MOV I:3.0 O:4.0</code>).</li>
+      <li>Click the VFD to see the frequency ramp, and the motor speed follow it.</li></ol>`,
+    },
+    {
+      id: 'l15', level: 'HMI', title: '15 · HMI screens, trends and navigation', ex: 'plcmotor',
+      body: `<p>A real HMI has several <b>screens</b> and buttons to move between them. A <b>trend</b> draws a tag over time.</p>
+      <ol><li>Open the HMI in <b>✎ Studio</b>. Add a <b>second screen</b> (Screens → ＋).</li>
+      <li>On the first screen, add a <b>Go to Screen</b> button that opens the second screen.</li>
+      <li>On the second screen, add a <b>Trend</b> of <code>T4:0.ACC</code> (run time).</li>
+      <li>Switch to <b>▶ Machine</b>, start the motor and press your Go to Screen button: the trend rises.</li></ol>`,
+    },
+    {
+      id: 'l16', level: 'Online', title: '16 · Download and online edits', ex: 'plcmotor',
+      body: `<p>With real PLC software, the controller keeps the program that was last <b>downloaded</b>. Editing the project does not change the running machine until you download, or make an <b>online edit</b>.</p>
+      <ol><li>Ladder → <b>Online</b>: choose <b>Realistic</b>.</li>
+      <li>In PROG, <b>⇄ Go Online</b> and <b>Download</b>. Then put the PLC in RUN.</li>
+      <li>While running, change a rung (for example the run lamp). The edit is pending: press <b>▶ Test edits</b> and check the machine.</li>
+      <li>Press <b>✓ Assemble</b> to keep it in the controller.</li></ol>`,
+    },
   ];
+
+  /* ---------- Lesson goals: checked live while you work (Wiring, Ladder, HMI), one after the other ----------
+     G: dev(label), of(type), mode(), read(addr), project, ev(text) (an event since the lesson started), rack(), rungs(), screen() */
+  const run = (G, l) => { const m = G.dev(l); return !!m && m.state.drive === 'run'; };
+  /* two contactors are interlocked when the N.C. contact 21-22 of each is the only way to feed the other's coil */
+  function interlocked(G) {
+    const C = G.project.circuit, D = Circuit.DEFS, km = C.comps.filter(c => c.type === 'contactor');
+    if (km.length < 2) return false;
+    const ctx = { ...App.ctx, plcOut: 0xFF, plcOutX: new Array(40).fill(0xFFFF) };
+    // every terminal pair a device can close in some state (a contact pressed or not, a contactor pulled in or not, a breaker on…)
+    const pairs = [];
+    for (const c of C.comps) {
+      const d = D[c.type]; if (!d || !d.conduct) continue;
+      const keys = Object.keys(c.state).filter(k => typeof c.state[k] === 'boolean');
+      for (const st of [c.state, ...keys.map(k => ({ ...c.state, [k]: !c.state[k] }))]) {
+        let p = null; try { p = d.conduct({ ...c, state: st }, { ...ctx, plcId: c.id }); } catch (e) { p = null; }
+        (p || []).forEach(([a, b]) => pairs.push([c, a, b]));
+      }
+    }
+    const src = [];
+    for (const c of C.comps) {
+      const d = D[c.type]; if (!d || !d.sources) continue;
+      const m = d.sources({ ...c, state: { ...c.state, on: true } }, ctx) || {};
+      for (const t in m) if (/^L[123]$/.test(m[t]) || String(m[t]).startsWith('DC+')) src.push(c.id + ':' + t);
+    }
+    const fed = (coil, cut) => {
+      const P = new Map(), f = k => { while (P.has(k) && P.get(k) !== k) k = P.get(k); return k; }, u = (a, b) => { P.set(f(a), f(b)); };
+      C.wires.forEach(w => u(w.a, w.b));
+      pairs.forEach(([c, a, b]) => { if (!(c === cut && [a, b].sort().join() === '21,22')) u(c.id + ':' + a, c.id + ':' + b); });
+      return ['A1', 'A2'].some(t => src.some(s => f(s) === f(coil.id + ':' + t)));
+    };
+    for (const a of km) for (const b of km) if (a !== b && fed(a, null) && fed(b, null) && !fed(b, a) && !fed(a, b)) return true;
+    return false;
+  }
+  /* each of two outputs has an XIO of the other in its rung */
+  function ladderInterlock(G) {
+    const R = G.rungs(), outs = R.map(t => [...t.matchAll(/OTE (\S+)/g)].map(m => m[1]));
+    for (let i = 0; i < R.length; i++) for (let j = 0; j < R.length; j++) {
+      if (i === j) continue;
+      for (const a of outs[i]) for (const b of outs[j]) if (a !== b && R[i].includes('XIO ' + b) && R[j].includes('XIO ' + a)) return true;
+    }
+    return false;
+  }
+  const GOALS = {
+    l8: [
+      { say: 'Press START: KM1 pulls in and stays in after you let go (seal-in 13-14)', ok: G => G.dev('KM1').state.pulled && !G.dev('S1').state.pressed },
+      { say: 'Jam the motor: F1 trips and the amber lamp H2 lights (97-98)', ok: G => G.dev('F1').state.tripped && G.dev('H2').state.on },
+      { say: 'Reset F1 and start again: the motor runs', ok: G => !G.dev('F1').state.tripped && run(G, 'M1') },
+      { say: 'Press STOP: KM1 drops out', ok: G => !G.dev('KM1').state.pulled },
+    ],
+    l9: [
+      { say: 'PLC in RUN and the motor runs', ok: G => G.mode() === 'RUN' && run(G, 'M1') },
+      { say: 'Jam the motor: the overload alarm B3:0/15 is on (HMI banner)', ok: G => G.read('B3:0/15') === 1 },
+      { say: 'HMI Studio: a numeric entry for T4:0.ACC', ok: G => G.project.hmi.objects.some(o => o.type === 'entry' && String(o.tag).toUpperCase() === 'T4:0.ACC') },
+    ],
+    l10: [
+      { say: 'RUN and START: the conveyor runs (B3:0/10, O:0/0)', ok: G => G.mode() === 'RUN' && G.read('B3:0/10') === 1 && G.read('O:0/0') === 1 },
+      { say: 'A batch of 5 boxes is done: the batch lamp lights (C5:0/DN)', ok: G => G.read('C5:0/DN') === 1 },
+      { say: 'Change the batch size on the HMI (C5:0.PRE is not 5)', ok: G => G.read('C5:0.PRE') !== 5 },
+      { say: 'Jam the infeed: the jam alarm B3:0/14 is on', ok: G => G.read('B3:0/14') === 1 },
+    ],
+    l11: [
+      { say: 'RUN in AUTO: the PLC opens the fill valve Y1 by itself (O:0/4)', ok: G => G.mode() === 'RUN' && G.read('O:0/4') === 1 },
+      { say: 'Switch S1 to MAN: the fill valve closes', ok: G => G.read('I:0/0') === 0 && G.read('O:0/4') === 0 },
+      { say: 'Back in AUTO, force O:0/4 OFF while filling: the fill timeout alarm B3:0/15 comes on', ok: G => G.read('B3:0/15') === 1 },
+    ],
+    l12: [
+      { say: 'Build it: two contactors and a 3-phase motor in the Wiring', ok: G => G.of('contactor').length >= 2 && G.of('motor').length >= 1 },
+      { say: 'The motor runs forward', ok: G => G.of('motor').some(m => m.state.drive === 'run' && m.state.dir > 0) },
+      { say: 'The motor runs in reverse (two phases swapped)', ok: G => G.of('motor').some(m => m.state.drive === 'run' && m.state.dir < 0) },
+      { say: 'Electrical interlock: the N.C. 21-22 of each contactor is in the other one\'s coil circuit', ok: interlocked },
+      { say: 'Ladder interlock (with a PLC): each output rung has an XIO of the other output', ok: ladderInterlock },
+    ],
+    l13: [
+      { say: 'PLC in RUN, START pressed: O:2/0 is on', ok: G => G.mode() === 'RUN' && G.read('O:2/0') === 1 },
+      { say: 'A card in slot 3 that is not configured yet: the CPU faults', ok: G => G.rack().bad.some(b => b.slot === '3') },
+      { say: 'Slot 3 in the I/O Configuration and the CPU runs again', ok: G => !!G.rack().conf['3'] && !G.rack().bad.length && G.mode() === 'RUN' },
+      { say: 'Address style bit/byte (I0.0, Q0.0)', ok: G => G.project.addr === 'bitbyte' },
+    ],
+    l14: [
+      { say: 'PLC in RUN: the level LT1 reads more than 0 in I:3.0', ok: G => G.mode() === 'RUN' && G.read('I:3.0') > 0 },
+      { say: 'S1 PUMP on: the VFD runs (frequency above 0 Hz)', ok: G => G.of('vfd').some(v => v.state.hz > 0.5) },
+      { say: 'The pump motor turns', ok: G => run(G, 'M1') },
+    ],
+    l15: [
+      { say: 'Studio: a second screen', ok: G => (G.project.hmi.screens || []).length >= 2 },
+      { say: 'A Go to Screen button', ok: G => G.project.hmi.objects.some(o => o.type === 'nav') },
+      { say: 'A Trend on another screen than the first', ok: G => G.project.hmi.objects.some(o => o.type === 'trend' && o.scr && o.scr !== 's1') },
+      { say: 'Machine mode: you went to the other screen', ok: G => !!G.screen() && G.screen() !== 's1' },
+    ],
+    l16: [
+      { say: 'Connection mode Realistic', ok: G => G.project.conn && G.project.conn.mode === 'real' },
+      { say: 'Download to the controller', ok: G => G.ev('Download: the project was written to the controller') },
+      { say: 'Online edit in RUN: Test edits', ok: G => G.ev('Online edits: testing') },
+      { say: 'Assemble the edits', ok: G => G.ev('Online edits assembled') },
+    ],
+  };
 
   /* ---------- Lesson auto-check ----------
      Each test is a list of steps: hold inputs `in` (I:0 bit → 1) for `t` seconds,
@@ -690,7 +819,7 @@ XIO I:0/1 RES C5:0</pre>
       { in: {}, t: 0.1, expect: { 3: 0 }, say: 'Press S2 STOP: counter resets, H4 off' },
     ],
   };
-  LESSONS.forEach(l => { if (TESTS[l.id]) l.test = TESTS[l.id]; });
+  LESSONS.forEach(l => { if (TESTS[l.id]) l.test = TESTS[l.id]; if (GOALS[l.id]) l.goals = GOALS[l.id]; });
 
   /* Runs the steps against a private PLC engine. Returns [{say, ok, got}] or {error}. */
   function gradeLesson(lesson, rungTexts) {
