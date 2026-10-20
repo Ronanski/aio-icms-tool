@@ -9,7 +9,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 | **Tags** | `v2.0.0`, `v1.6.0`, `v1.5.0`, `v1.4.1`, `v1.4.0`, `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0`, `v1.1.0`. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-20 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 480 passed on `feature/project-compatibility` (428 from the v2.1.1 audit + 26 integration baseline + 26 project compatibility). Locally: `CHROMIUM_PATH` = an installed Chrome works, no browser download needed. |
+| **Tests** | `npm test`: 495 passed on `feature/plc-io-symbols` (428 from the v2.1.1 audit + 26 integration baseline + 26 project compatibility + 15 PLC symbols); 480 on `feature/project-compatibility`. Locally: `CHROMIUM_PATH` = an installed Chrome works, no browser download needed. |
 | **Pull requests** | #1–#33 merged (#3 closed). #23–#26 = v1.6 hardware (rack, I/O Configuration, address styles, cabinet); #27 = free draw like SimuRelay; #28 = Release v1.6.0; #29 = v1.6.1 fixes; #30 = v1.7 HMI; #31 = v1.8; #32–#33 = v2.0 parts A–C. |
 | **Downloads** | GitHub Releases: `PLC-Trainer-X.Y.Z-portable.exe`, `PLC-Trainer-X.Y.Z-android.apk`, `PLC-Trainer-X.Y.Z-web.zip` (portable only since v1.4.1). Web app: https://ronanski.github.io/aio-icms-tool/ (Stable) and `/beta/` (Beta = `main`). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
@@ -18,7 +18,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## How to resume in 2 minutes
 1. `git checkout <branch>` and `git pull`
 2. Open `index.html` in Chrome, or run `npm start` and go to http://localhost:8080
-3. Run `npm install`, then `npm test`. All checks (480) should pass before you change anything.
+3. Run `npm install`, then `npm test`. All checks (495) should pass before you change anything.
 4. Read `CONTRIBUTING.md` (rules), then `PROGRESS.md` (what's next).
 
 ## Architecture in one screen
@@ -74,6 +74,10 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 
 ## Start of next session (read first)
 - **Wika (owner, 2026-10-20):** Taglish ang explanations, progress reports, handoff reports at review discussions. English pa rin ang code, filenames, Git commands, technical identifiers at test output. Ang mga lumang entry sa ibaba ay naka-English pa; ang bago ay Taglish.
+- **Phase 2: PLC I/O symbols (owner: "phase 2 go", 2026-10-20) — tapos, naghihintay ng review.** Branch `feature/plc-io-symbols`, mula sa Phase 1 approval commit `fdb6a7e`; hindi pa merged, walang push. `npm test`: 495 passed, 0 failed (local Chrome).
+  - **Disenyo:** bagong `PLC` group sa free-draw `LIB` (`js/freedraw.js`): `plcpw` (L1/N; `plc` o `mpsu`), `plcq0–7` (relay output: VAC0/VAC1 → O; `plc` o `mdo8`), `plct0–7` (transistor: VP → O; `mdo8t`), `plci0–11` (input: I → COM; `plc`, `mdi8`, `mdi8ac`). Isang kind bawat point para hindi galawin ang mahigit 20 lugar na umaasa sa `K[it.k].terms`; point 0 lang ang nasa library (`hide`), ang iba ay pinipili sa `plcForm()` (tag + point). `S.types` = mga device na puwede; `plcErr()` sa `FD.check`: kailangang nasa Wiring na ang PLC/card (hindi gumagawa ng controller ang diagram), tamang type, at may terminal ng point. Live state: output = totoong `conduct()` ng device; input = `ctx.plcInRaw` (compact) o `ctx.plcInX[slot]` (card); power = `state.pw`. `addrOf()` → address sa address style (`App.fmt`). `setKind()` = paglipat ng point, sumusunod ang wires ayon sa terminal order. Copy ay hindi nagpapalit ng tag ng PLC symbol. Walang binago sa solver, PLC, Ladder, HMI, Wiring o `schematic.js`.
+  - **Hindi sakop / limitations:** (1) free draw lang — wala pang PLC symbols sa IEC current-path (rail/rung) editor; (2) hindi nag-o-operate ng PLC key switch mula sa diagram; (3) analog cards (`mai4`, `mao2`) at CPU module ay walang symbol; (4) hindi tinaasan ang `FORMAT` (2): ang Phase 1 at Phase 2 ay ilalabas nang magkasama, kaya walang released version na nakakabasa ng `format` pa; kung ilalabas muna ang Phase 1 nang mag-isa, itaas ang `FORMAT` sa 3 sa Phase 2 bago ito i-release; (5) CI not yet run (local Chrome lang).
+  - Binago rin ang isang existing test ("every symbol under All"): binibilang na lang ang mga symbol na nasa library (`!S.hide`), dahil sinadyang nakatago ang mga PLC point variant.
 - **Phase 1: APPROVED sa code-review level (owner, 2026-10-20).** Hindi pa ito CI-verified at hindi pa merge-ready.
   - Branch: `feature/project-compatibility` · Latest commit: `89d084158c9424c709ef93c1c6ea9a1cde2c9d70` · Test result: `480 passed, 0 failed` sa tatlong run.
   - **CI not yet run:** local Chrome lang ang ginamit (`CHROMIUM_PATH`), hindi ang Playwright's own Chromium ng CI. Walang push, merge sa `main` o release; hiwalay na go signal ng owner ang kailangan para doon. Hindi pa sinisimulan ang Phase 2.

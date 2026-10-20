@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -202,7 +202,8 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
   - [ ] CI run (kailangan ng push/PR — hiwalay na go signal ng owner); hindi pa CI-verified at hindi pa merge-ready
   - [ ] Merge sa `main` at Stable release (hiwalay na go signal; dapat mauna sa Phase 4 para hindi itapon ng lumang app ang bagong part types)
   - Hindi pa direktang tested: 3-phase fallback ng `autoRails()`, kept content na walang kept rail, `renderRungs` rail path, at ang `main`/v2.0.0 file comparison (scratch script lang). Mga limitation: nasa `HANDOFF.md`.
-- [ ] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals
+- [x] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals (free draw: PLC power, relay output, transistor output, input; 15 checks; branch `feature/plc-io-symbols`, naghihintay ng review, hindi merged)
+  - [ ] Hindi pa: PLC symbols sa IEC current-path editor; analog cards; CI run
 - [ ] Phase 3 — inline properties panel, comments, IEC naming and numbering, duplicate warnings, editing (copy/paste, nudge, multi-select, touch, search, grid, image export)
 - [ ] Phase 4 — missing parts in small batches (see the Simurelay comparison)
 - [ ] Phase 5 — flasher, on/off-delay timer, flashing lamp, phase-failure relay, countdown on the drawing, conductor-coloured live wires

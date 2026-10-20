@@ -1231,7 +1231,7 @@ function check(name, cond, info = '') {
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'free'); localStorage.removeItem('plc-trainer.fdLib'); App.openNew({ name: 'Free v2', circuit: { comps: [], wires: [], seq: 0 } }); App.setLayout('single'); App.showView('schematic'); });
   await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
   await page.selectOption('#view-schematic .fd-grp', 'All'); await wait(100);
-  check('free draw: the library is an icon grid beside the drawing, with every symbol under All', await page.evaluate(() => !!document.querySelector('#view-schematic .fd-lib .fd-grp') && document.querySelectorAll('#view-schematic .fd-ico').length === Object.keys(FreeDraw.KINDS).length && document.querySelectorAll('#view-schematic .fd-ico svg .ssym').length > 50));
+  check('free draw: the library is an icon grid beside the drawing, with every symbol under All', await page.evaluate(() => !!document.querySelector('#view-schematic .fd-lib .fd-grp') && document.querySelectorAll('#view-schematic .fd-ico').length === Object.values(FreeDraw.KINDS).filter(S => !S.hide).length &&document.querySelectorAll('#view-schematic .fd-ico svg .ssym').length > 50));
   await page.selectOption('#view-schematic .fd-grp', 'Motors'); await wait(100);
   check('free draw: the group list shows one group (Motors, with the DC motor)', await page.evaluate(() => { const k = [...document.querySelectorAll('#view-schematic .fd-ico')].map(b => b.dataset.fk); return k.length === 6 && k.includes('mdc') && document.querySelector('#view-schematic .fd-ico').classList.contains('g-motors'); }));
   check('free draw: the new sources and wire pieces are in the library', await page.evaluate(() => ['pL1', 'pL2', 'pL3', 'pN', 'pPE', 'pP', 'pM', 'batt', 'gen', 'psu', 'wline', 'wcorner', 'wtee', 'wcross', 'wlink', 'mdc'].every(k => FreeDraw.KINDS[k])));
@@ -1945,6 +1945,98 @@ function check(name, cond, info = '') {
     && rAuto.sch > 0 && rAuto.lit === true && rAuto.msgs === 0, JSON.stringify(rAuto));
   check('compat: a file that is not a project is still refused and the open project stays', await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
   await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); });
+
+  console.log('Electrical Diagram: PLC I/O symbols on the real controller and I/O cards');
+  // a circuit drawn only in free draw: PLC power from L1/N points, S1 from +24 V into input 0, output 0 switching lamp H1 from L1
+  const fi = (id, k, tag, x, y) => ({ id, k, tag, x, y, r: 0 }), fw = (id, a, b) => ({ id, a, b });
+  const plcDrawn = { name: 'PLC drawn', circuit: { seq: 5, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'plc', x: 0, y: 300, props: { label: 'PLC' } }], wires: [] },
+    ladder: { rungs: [{ text: 'XIC I:0/0 OTE O:0/0', comment: '' }] },
+    schematic: { free: { seq: 40, items: [fi('d1', 'pL1', 'XP1', 0, 0), fi('d3', 'plcpw', 'PLC', 0, 100), fi('d2', 'pN', 'XP2', 0, 200),
+      fi('d4', 'pP', 'XP3', 200, 0), fi('d5', 'pbno', 'S1', 200, 100), fi('d6', 'plci0', 'PLC', 200, 200), fi('d7', 'pM', 'XP4', 200, 300),
+      fi('d8', 'pL1', 'XP5', 400, 0), fi('d9', 'plcq0', 'PLC', 400, 100), fi('d10', 'lamp', 'H1', 400, 200), fi('d11', 'pN', 'XP6', 400, 300)],
+    wires: [fw('fw1', 'd1:J', 'd3:L1'), fw('fw2', 'd3:N', 'd2:J'), fw('fw3', 'd4:J', 'd5:13'), fw('fw4', 'd5:14', 'd6:I0'), fw('fw5', 'd6:COM', 'd7:J'),
+      fw('fw6', 'd8:J', 'd9:VAC0'), fw('fw7', 'd9:O0', 'd10:X1'), fw('fw8', 'd10:X2', 'd11:J')] } } };
+  // wires the diagram made, as tag:terminal pairs
+  const schPairs = () => page.evaluate(() => { const C = App.project.circuit, lab = k => { const [id, t] = k.split(':'); const c = C.comps.find(x => x.id === id); return (c ? c.props.label : id) + ':' + t; }; return C.wires.filter(w => w.sch).map(w => lab(w.a) + '-' + lab(w.b)); });
+  const ssym = id => page.evaluate(id => { const g = document.querySelector(`#view-schematic [data-fi="${id}"] .ssym`); return g ? g.classList.contains('on') : null; }, id);
+  const fdAddrs = () => page.evaluate(() => [...document.querySelectorAll('#view-schematic .fd-host .faddr')].map(x => x.textContent).sort().join());
+  await page.evaluate(p => { Store.list().forEach(x => { if (x.id !== App.currentId) Store.remove(x.id); }); localStorage.setItem('plc-trainer.schStyle', 'free'); localStorage.removeItem('plc-trainer.fdLib'); App.openNew(JSON.parse(JSON.stringify(p))); App.showView('schematic'); }, plcDrawn);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  await page.selectOption('#view-schematic .fd-grp', 'PLC'); await wait(100);
+  check('PLC symbols: the library shows one PLC power, relay output, transistor output and input symbol (other points are picked in the form)', await page.evaluate(() => {
+    const ks = [...document.querySelectorAll('#view-schematic .fd-lib [data-fk^="plc"]')].map(b => b.dataset.fk).sort().join();
+    return ks === 'plci0,plcpw,plcq0,plct0' && Object.keys(FreeDraw.KINDS).filter(k => /^plc[qti]\d+$/.test(k)).length === 28;
+  }));
+  const pairs = await schPairs();
+  check('PLC symbols: a circuit drawn only in the diagram is wired to the real PLC terminals, and no second PLC is added', await page.evaluate(() => App.project.circuit.comps.filter(c => c.type === 'plc').length === 1 && FreeDraw.errs.size === 0)
+    && ['XP1:J-PLC:L1', 'PLC:N-XP2:J', 'S1:14-PLC:I0', 'PLC:COM-XP4:J', 'XP4:J-PLC:C24', 'XP5:J-PLC:VAC0', 'PLC:O0-H1:X1'].every(x => pairs.includes(x)), pairs.join(' '));
+  check('PLC symbols: the drawn PLC power symbol powers the PLC', await until(() => App.project.circuit.comps.find(c => c.type === 'plc').state.pw === true));
+  await setMode('RUN'); await wait(200);
+  const idle = [await ssym('d6'), await ssym('d9')];
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  const ran = await until(is("r('I:0/0') === 1 && r('O:0/0') === 1 && d('H1').on"));
+  await wait(150);
+  check('PLC symbols: pressing the drawn S1 sets I:0/0, the rung sets O:0/0, the drawn output contact closes and H1 lights', ran);
+  check('PLC symbols: the input and output symbols show the live state of their points', idle[0] === false && idle[1] === false && (await ssym('d6')) === true && (await ssym('d9')) === true);
+  const a0 = await fdAddrs();
+  check('PLC symbols: each I/O symbol shows its address (I:0/0, O:0/0)', a0 === 'I:0/0,O:0/0', a0);
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('PLC symbols: releasing S1 drops I:0/0, O:0/0 and the lamp', await until(is("r('I:0/0') === 0 && r('O:0/0') === 0 && !d('H1').on")));
+  await page.evaluate(() => { App.setAddrStyle('bitbyte'); Schematic.render(); }); await wait(100);
+  check('PLC symbols: the address follows the project address style', await page.evaluate(() => { const t = [...document.querySelectorAll('#view-schematic .fd-host .faddr')].map(x => x.textContent); return t.length === 2 && !t.includes('I:0/0') && t.every(x => x === App.fmt('I:0/0') || x === App.fmt('O:0/0')); }));
+  await page.evaluate(() => { App.setAddrStyle('file'); Schematic.render(); });
+  // another point through the form: output 0 → output 5 (common VAC1); the drawn wires follow the terminals
+  await page.evaluate(() => FreeDraw.retag(App.project.schematic.free.items.find(i => i.id === 'd9'))); await wait(150);
+  await page.selectOption('.modal #f_p', '5'); await page.click('.modal .btn.primary'); await wait(250);
+  const p5 = await schPairs();
+  check('PLC symbols: Tag / point… moves the symbol to O5; its wires follow to VAC1 and O5', await page.evaluate(() => { const F = App.project.schematic.free, it = F.items.find(i => i.id === 'd9'); return it.k === 'plcq5' && F.wires.some(w => w.id === 'fw6' && w.b === 'd9:VAC1') && F.wires.some(w => w.id === 'fw7' && w.a === 'd9:O5'); })
+    && p5.includes('XP5:J-PLC:VAC1') && p5.includes('PLC:O5-H1:X1') && !p5.some(x => x.includes('PLC:O0')), p5.join(' '));
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  await until(is("r('O:0/0') === 1")); await wait(300);
+  check('PLC symbols: now O:0/0 no longer lights H1 (it hangs on O5, which the ladder does not set)', await page.evaluate(is("r('O:0/0') === 1 && !d('H1').on")));
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('PLC symbols: a drawn PLC circuit survives save and reload (symbols, points, diagram wires)', await page.evaluate(() => {
+    const s = JSON.parse(JSON.stringify(App.serialize())), n = App.project.circuit.wires.filter(w => w.sch).length, prev = App.currentId;
+    if (!App.openNew(s)) return false; if (prev) Store.remove(prev);
+    const F = App.project.schematic.free; Schematic.sync();
+    return F.items.find(i => i.id === 'd9').k === 'plcq5' && F.items.find(i => i.id === 'd6').k === 'plci0' && App.project.circuit.wires.filter(w => w.sch).length === n && FreeDraw.errs.size === 0 && App.compat().length === 0;
+  }));
+  await setMode('PROG');
+  check('PLC symbols: no controller, the wrong device, or a point the card lacks is reported and nothing is wired or added', await page.evaluate(() => {
+    const prev = App.currentId;
+    App.openNew({ name: 'PLC errors', circuit: { seq: 5, comps: [{ id: 'c1', type: 'lamp', x: 0, y: 0, props: { label: 'H9' } }, { id: 'c2', type: 'mdi8', x: 0, y: 0, props: { label: 'DI1', slot: '1' } }], wires: [] } });
+    if (prev) Store.remove(prev);
+    FreeDraw.add('plcq0', 'PLC9', 0, 0); FreeDraw.add('plci0', 'H9', 100, 0); FreeDraw.add('plci9', 'DI1', 200, 0); FreeDraw.add('plci3', 'DI1', 300, 0);
+    const F = App.project.schematic.free, e = id => FreeDraw.errs.get(F.items.find(i => i.k === id)) || '';
+    return /PLC9: there is no PLC or I\/O card with this tag/.test(e('plcq0')) && /H9 is a Pilot Lamp, not a/.test(e('plci0')) && /has no terminal I9/.test(e('plci9')) && e('plci3') === ''
+      && !App.project.circuit.comps.some(c => c.props.label === 'PLC9') && App.project.circuit.comps.length === 2;
+  }));
+  // the modular rack: input card DI1 (slot 1), relay card DO1 (slot 2), transistor card DT1 (slot 3), all drawn in the diagram
+  const rack = { name: 'Rack drawn', io: { slots: { '1': 'mdi8', '2': 'mdo8', '3': 'mdo8t' } },
+    circuit: { seq: 10, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'mpsu', x: 0, y: 0, props: { label: 'PS1' } },
+      { id: 'c3', type: 'mcpu', x: 0, y: 0, props: { label: 'CPU' } }, { id: 'c4', type: 'mdi8', x: 0, y: 0, props: { label: 'DI1', slot: '1' } },
+      { id: 'c5', type: 'mdo8', x: 0, y: 0, props: { label: 'DO1', slot: '2' } }, { id: 'c6', type: 'mdo8t', x: 0, y: 0, props: { label: 'DT1', slot: '3' } },
+      { id: 'c7', type: 'lamp', x: 0, y: 0, props: { label: 'H2', coil: '24VDC' } }], wires: [] },
+    ladder: { rungs: [{ text: 'XIC I:1/0 BST OTE O:2/0 NXB OTE O:3/0 BND', comment: '' }] },
+    schematic: { free: { seq: 60, items: [fi('d1', 'pL1', 'XP1', 0, 0), fi('d2', 'plcpw', 'PS1', 0, 100), fi('d3', 'pN', 'XP2', 0, 200),
+      fi('d4', 'pP', 'XP3', 200, 0), fi('d5', 'pbno', 'S1', 200, 100), fi('d6', 'plci0', 'DI1', 200, 200), fi('d7', 'pM', 'XP4', 200, 300),
+      fi('d8', 'pL1', 'XP5', 400, 0), fi('d9', 'plcq0', 'DO1', 400, 100), fi('d10', 'lamp', 'H1', 400, 200), fi('d11', 'pN', 'XP6', 400, 300),
+      fi('d12', 'pP', 'XP7', 600, 0), fi('d13', 'plct0', 'DT1', 600, 100), fi('d14', 'lamp', 'H2', 600, 200), fi('d15', 'pM', 'XP8', 600, 300)],
+    wires: [fw('fw1', 'd1:J', 'd2:L1'), fw('fw2', 'd2:N', 'd3:J'), fw('fw3', 'd4:J', 'd5:13'), fw('fw4', 'd5:14', 'd6:I0'), fw('fw5', 'd6:COM', 'd7:J'),
+      fw('fw6', 'd8:J', 'd9:VAC0'), fw('fw7', 'd9:O0', 'd10:X1'), fw('fw8', 'd10:X2', 'd11:J'), fw('fw9', 'd12:J', 'd13:VP'), fw('fw10', 'd13:O0', 'd14:X1'), fw('fw11', 'd14:X2', 'd15:J')] } } };
+  await page.evaluate(p => { const prev = App.currentId; App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, rack); await wait(300);
+  const rp = await schPairs();
+  check('PLC symbols: on a rack the symbols wire the rack power supply, the input card, the relay card and the transistor card', await page.evaluate(() => FreeDraw.errs.size === 0)
+    && ['XP1:J-PS1:L1', 'S1:14-DI1:I0', 'DI1:COM-XP4:J', 'XP5:J-DO1:VAC0', 'DO1:O0-H1:X1', 'XP7:J-DT1:VP', 'DT1:O0-H2:X1'].every(x => rp.includes(x)), rp.join(' '));
+  await setMode('RUN'); await wait(200);
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  check('PLC symbols: on the rack, S1 sets I:1/0 and the rung drives O:2/0 (H1 on the relay card) and O:3/0 (H2 on the transistor card)', await until(is("r('I:1/0') === 1 && r('O:2/0') === 1 && r('O:3/0') === 1 && d('H1').on && d('H2').on")));
+  await wait(150);
+  const ra = await fdAddrs();
+  check('PLC symbols: the rack symbols show their slot addresses and live state', ra === 'I:1/0,O:2/0,O:3/0' && (await ssym('d6')) === true && (await ssym('d9')) === true && (await ssym('d13')) === true, ra);
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  await setMode('PROG');
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 

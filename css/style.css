@@ -677,6 +677,7 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fwire .fwh { stroke: transparent; stroke-width: 10; cursor: pointer; }
 .free-svg .fwire.sel .w { stroke: var(--accent); stroke-width: 2.6; }
 .free-svg .ftag { font: 600 11.5px var(--mono); fill: var(--lad-text); text-anchor: end; pointer-events: none; }
+.free-svg .ftag.faddr { font-weight: 400; font-size: 10px; }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .sch-body.operate .free-svg .fitem { cursor: pointer; }

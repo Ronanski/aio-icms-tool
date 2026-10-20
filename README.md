@@ -46,7 +46,7 @@ Installing needs the app served over https; the included GitHub Pages workflow d
   - Overload relay trips on a jammed or single-phasing motor
 - Live voltage overlay, a terminal hover tooltip, and a **multimeter**
 
-**Electrical Diagram** (schematic): draw the control circuit the IEC way — L on top, N at the bottom, one numbered current path per column, with terminal numbers and -KM1-style tags (a horizontal ladder view is also available) — plus the power circuit: supply, main switch and motor feeders (breaker → contactor → overload → motor). It is drawn in one line colour like the ladder (live paths light up), as in a CAD drawing; the wires it makes in the Wiring follow Philippine colours (L1 red, L2 yellow, L3 blue, N white, PE green). **✎ Free draw** places symbols anywhere on a grid (rotate, copy, wire terminal to terminal), like a relay-circuit simulator, from a library of 90 IEC 60617 symbols: switches and sensors, contacts and coils, lamps and loads, contactors, fuses, breakers, RCD/RCBO, disconnectors, motors, earth and text notes. Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic.
+**Electrical Diagram** (schematic): draw the control circuit the IEC way — L on top, N at the bottom, one numbered current path per column, with terminal numbers and -KM1-style tags (a horizontal ladder view is also available) — plus the power circuit: supply, main switch and motor feeders (breaker → contactor → overload → motor). It is drawn in one line colour like the ladder (live paths light up), as in a CAD drawing; the wires it makes in the Wiring follow Philippine colours (L1 red, L2 yellow, L3 blue, N white, PE green). **✎ Free draw** places symbols anywhere on a grid (rotate, copy, wire terminal to terminal), like a relay-circuit simulator, from a library of 90 IEC 60617 symbols: switches and sensors, contacts and coils, lamps and loads, contactors, fuses, breakers, RCD/RCBO, disconnectors, motors, earth and text notes. Every symbol becomes a real device in the Wiring and the rungs are wired for you, so the same electrical simulator runs it; operate buttons right on the schematic. The **PLC** group adds the PLC's power, relay and transistor outputs and inputs: they are terminals of the PLC or I/O card you placed in the Wiring, so a PLC-controlled circuit can be drawn next to a hardwired one, and the ladder runs it.
 
 **Four workspaces**: Ladder, Electrical Diagram, Wiring and HMI. Push buttons, selectors, breakers, overloads and equipment are operated right in the Wiring (the separate Operator Panel was removed in v1.4). Lessons and keyboard shortcuts are in **Help ▾**.
 
@@ -92,7 +92,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 480 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
+npm test                                 # 495 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 

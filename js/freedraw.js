@@ -21,6 +21,15 @@
   const pot = (p, n) => ({ n, type: 'jct', pre: 'XP', look: 'pot', pot: p, jct: true, auto: true, terms: [{ id: 'J', x: 0, y: -30 }] });
   // wire pieces: junctions with several ends (all one point); a link arrow joins every arrow with the same tag
   const wire = (n, ends, extra) => ({ n, type: 'jct', pre: 'J', look: 'wire', jct: true, auto: true, terms: ends.map(([x, y], i) => ({ id: 'J' + i, x, y })), ...extra });
+  /* PLC I/O: one symbol per point of the real controller or I/O card in the Wiring, found by its tag (`types`: the devices
+     it may be). The diagram never adds a controller. Only point 0 is in the library; the others are picked in its form. */
+  const plcIO = (base, n, name, types, d, terms, look) => [base + n, { n: name, type: types[0], types, io: { d, n }, pre: 'PLC', look, hide: n > 0, terms }];
+  const PLCLIB = Object.fromEntries([
+    ['plcpw', { n: 'PLC power supply L1 / N', type: 'plc', types: ['plc', 'mpsu'], pre: 'PLC', look: 'plcpw', terms: [{ id: 'L1', x: 0, y: -30 }, { id: 'N', x: 0, y: 30 }] }],
+    ...Array.from({ length: 8 }, (_, n) => plcIO('plcq', n, 'PLC relay output', ['plc', 'mdo8'], 'O', [{ id: n < 4 ? 'VAC0' : 'VAC1', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
+    ...Array.from({ length: 8 }, (_, n) => plcIO('plct', n, 'PLC transistor output 24 VDC', ['mdo8t'], 'O', [{ id: 'VP', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
+    ...Array.from({ length: 12 }, (_, n) => plcIO('plci', n, 'PLC input', ['plc', 'mdi8', 'mdi8ac'], 'I', [{ id: 'I' + n, x: 0, y: -30 }, { id: 'COM', x: 0, y: 30 }], 'plcin')),
+  ]);
   const LIB = {
     Sources: {
       // supply terminals line up with the poles of the devices under them (L1 L2 L3 at -20 0 20)
@@ -146,6 +155,7 @@
       mdc: { n: 'Motor DC 24 V', type: 'motordc', pre: 'M', look: 'motor', label: 'M\n=', terms: row(['A1', 'A2'], -34), part: 'jam' },
       mdh: { n: 'Motor Dahlander', type: 'dahlander', pre: 'M', look: 'motor', label: 'M 3~\nDahlander', terms: [...row(['1U', '1V', '1W'], -34), ...row(['2U', '2V', '2W'], 34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
     },
+    PLC: PLCLIB,
   };
   const K = {};
   Object.entries(LIB).forEach(([g, o]) => Object.entries(o).forEach(([k, v]) => { K[k] = { ...v, g, n: v.n || k }; }));
@@ -241,6 +251,14 @@
   /* typeErr(tag, type, what) and take(tag, terminals, view, dry) come from the Schematic, which checks the whole diagram:
      one type per tag, and a device terminal wired by one view only (the current paths, the power circuit or this drawing) */
   const SRC = ['src', 'conv', 'gen', 'batt'];
+  /* a PLC symbol needs the controller or I/O card in the Wiring already, of a fitting type, with the terminals of its point */
+  function plcErr(it, S) {
+    const d = H.devOf(it.tag), R = H.circ().reserved;
+    if (!d) return R && R.has(it.tag) ? window.Schematic.reservedMsg(it.tag) : `${it.tag}: there is no PLC or I/O card with this tag in the Wiring — add it there first (the diagram does not add controllers)`;
+    if (!S.types.includes(d.type)) return `${it.tag} is a ${DEFS[d.type].name}, not a ${S.types.map(t => DEFS[t].name).join(' or ')}`;
+    const miss = S.terms.find(t => !DEFS[d.type].terms.some(x => x.id === t.id));
+    return miss ? `${it.tag} (${DEFS[d.type].name}) has no terminal ${miss.id}` : null;
+  }
   FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
     if (!H) return errs;
@@ -254,7 +272,7 @@
       if (!S.type) continue;
       if (S.pot && !potKey(S.pot)) { errs.set(it, `${POTNAME[S.pot] || S.pot}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
       if (S.jct) { const m = te(it.tag, 'jct', 'wire point'); if (m) errs.set(it, m); continue; }
-      const m = te(it.tag, S.type); if (m) { errs.set(it, m); continue; }
+      const m = S.types ? plcErr(it, S) : te(it.tag, S.type); if (m) { errs.set(it, m); continue; }
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
       if (used.has(key) && !SRC.includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
@@ -319,6 +337,12 @@
     if (S.look === 'motor') return { on: st.drive === 'run' || (S.type === 'fan' && !!st.on) };
     if (S.look === 'sens') return { on: !!st.act };
     if (['src', 'conv', 'gen', 'batt'].includes(S.look)) return { on: !!(st.on || st.ok || S.look === 'batt') };
+    if (S.look === 'plcpw') return { on: !!st.pw };
+    // a PLC input is ON when the controller reads it (this tick's input word: the compact PLC's, or the card's slot)
+    if (S.look === 'plcin') {
+      const c = App.ctx, w = d.type === 'plc' ? (c.plcId === d.id ? c.plcInRaw : 0) : ((c.plcInX || [])[Number(d.props.slot)] || 0);
+      return { on: !!((w >> S.io.n) & 1) };
+    }
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
     return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
@@ -362,6 +386,11 @@
       o.push(`<circle cx="0" cy="0" r="22"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} 20"/>`), `<path class="pe" d="M22 0 H44"/>`);
     } else if (S.look === 'gnd') {
       o.push(`<path class="pe" d="M0 -20 V0 M-10 0 H10 M-6 4 H6 M-2 8 H2"/>`);
+    } else if (S.look === 'plcin') {
+      // a PLC input: a box with an arrow into the controller
+      o.push(stub(0, -30, -10), stub(0, 10, 30), `<rect x="-16" y="-10" width="32" height="20"/><path class="thin" d="M-9 0 H7 M3 -4 L7 0 L3 4"/>`);
+    } else if (S.look === 'plcpw') {
+      o.push(stub(0, -30, -12), stub(0, 12, 30), `<rect x="-20" y="-12" width="40" height="24" rx="3"/>`);
     } else if (S.look === 'text') {
       // drawn by labels()
     } else if (S.look === 'heat') {
@@ -408,6 +437,12 @@
     }
     return o.join('');
   }
+  /* the address of a PLC I/O symbol: the compact PLC is slot 0, a card its own slot */
+  function addrOf(it) {
+    const S = K[it.k], d = H && it.tag ? H.devOf(it.tag) : null;
+    const a = `${S.io.d}:${d && d.type !== 'plc' ? Number(d.props.slot) || 0 : 0}/${S.io.n}`;
+    return App.fmt ? App.fmt(a) : a;
+  }
   function labels(it, S) {
     if (S.look === 'node' || (S.look === 'wire' && !S.arrow)) return '';
     if (S.look === 'pot') return `<text class="mtxt sm" x="${it.x}" y="${it.y + 4}">${esc(POTNAME[S.pot] ? (S.pot === '+' ? '+' : '−') : S.pot)}</text>`;
@@ -417,11 +452,14 @@
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
-    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter', 'sens'].includes(S.look);
+    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
+    if (S.look === 'plcpw') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">PLC ~</text>`); }
+    // the PLC address of an I/O point, in the project's address style (I:0/3, I0.3…)
+    if (S.io) { const [ax, ay] = at(-30, 4); o.push(`<text class="ftag faddr" x="${ax}" y="${ay}">${esc(addrOf(it))}</text>`); }
     // meter letter, S/R of a latching coil (in the symbol), PNP/NPN of a sensor (beside it)
     if (S.label && ['meter', 'coil', 'sens'].includes(S.look)) { const [mx, my] = S.look === 'sens' ? at(26, -16) : at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     S.terms.forEach(t => {
@@ -445,7 +483,7 @@
     return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg></button>`;
   }
   function libHtml() {
-    const ks = Object.keys(K).filter(k => libUi.grp === 'All' || K[k].g === libUi.grp);
+    const ks = Object.keys(K).filter(k => !K[k].hide && (libUi.grp === 'All' || K[k].g === libUi.grp));
     return `<select class="fd-grp" aria-label="Symbol group"><option value="All">All</option>${GROUPS.map(g => `<option value="${g}" ${g === libUi.grp ? 'selected' : ''}>${g}</option>`).join('')}</select><div class="fd-grid">${ks.map(icon).join('')}</div>`;
   }
   function shell(el) {
@@ -617,7 +655,7 @@
   const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
   function suggest(k) {
     const S = K[k], used = taken();
-    const same = H.circ().comps.filter(c => c.type === S.type).map(c => c.props.label);
+    const same = H.circ().comps.filter(c => (S.types || [S.type]).includes(c.type)).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
     let n = 1; while (used.has(S.pre + n)) n++;
@@ -668,6 +706,8 @@
       return undefined;
     };
     if (tag) return go(tag);
+    // a PLC symbol: the controller or card from the Wiring, and the point (its kind)
+    if (K[k].types) return plcForm(K[k], null, (t, nk) => FD.add(nk, t, x, y));
     // wire pieces, junctions and potential points need no tag of their own
     if (K[k].auto) return go(suggest(k).def);
     if (k === 'text') { UI.form('Text', [{ key: 't', label: 'Text', value: '' }], v => go(v.t.trim())); return undefined; }
@@ -675,8 +715,29 @@
     UI.form(K[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
       '<p class="help">Use the tag of a device in the Wiring (its contacts and coil share the tag), or a new tag: the device is added to the Wiring for you.</p>');
   };
+  /* form for a PLC symbol: which PLC or I/O card (from the Wiring) and, for an I/O point, which point. done(tag, kind) */
+  const base = k => k.replace(/\d+$/, '');
+  function plcForm(S, it, done) {
+    const devs = H.circ().comps.filter(c => S.types.includes(c.type)).map(c => c.props.label);
+    if (!devs.length && !it) { UI.toast(`Add a ${S.types.map(t => DEFS[t].name).join(' or ')} in the Wiring first: the diagram uses the real controller`, 'warn', 6000); return undefined; }
+    const b = it ? base(it.k) : base(Object.keys(K).find(k => K[k] === S)), pts = Object.keys(K).filter(k => base(k) === b && K[k].io).map(k => K[k].io.n);
+    const fields = [{ key: 't', label: 'PLC or I/O card tag (from the Wiring)', value: it ? it.tag : devs[0], list: devs }];
+    if (S.io) fields.push({ key: 'p', label: 'Point', value: String(it ? S.io.n : 0), options: pts.map(n => ({ v: String(n), l: `${S.io.d}${n}` })) });
+    UI.form(S.n, fields, v => {
+      const t = String(v.t || '').trim(); if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
+      return done(t, S.io ? b + Number(v.p) : (it ? it.k : b));
+    }, '<p class="help">A PLC symbol is a terminal of the controller or I/O card placed in the Wiring: its wires are wired to that terminal, and it shows the live state of the point.</p>');
+    return undefined;
+  }
+  /* a symbol gets another kind with terminals in the same order: its drawn wires follow (first terminal to first…) */
+  function setKind(it, nk) {
+    const S0 = K[it.k], S1 = K[nk], map = Object.fromEntries(S0.terms.map((t, i) => [t.id, S1.terms[i] ? S1.terms[i].id : t.id]));
+    fr().wires.forEach(w => ['a', 'b'].forEach(e => { const [id, t] = w[e].split(':'); if (id === it.id && map[t]) w[e] = id + ':' + map[t]; }));
+    it.k = nk;
+  }
   FD.retag = function (it) {
     if (!it) return;
+    if (K[it.k].types) return plcForm(K[it.k], it, (t, nk) => { H.snap(); if (nk !== it.k) setKind(it, nk); it.tag = t; H.changed(); return undefined; });
     if (it.k === 'text') {
       UI.form('Edit text', [{ key: 't', label: 'Text', value: it.txt || '' }], v => { const t = v.t.trim(); if (!t) return 'Type some text'; H.snap(); it.txt = t.slice(0, 80); H.changed(); return undefined; });
       return;
@@ -723,7 +784,8 @@
     if (full()) return;
     const F = fr(), S = K[it.k];
     let tag = it.tag;
-    if (S.type) { const used = taken(); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
+    // a PLC symbol stays on the same controller (pick another point with Tag…)
+    if (S.type && !S.types) { const used = taken(); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
     H.snap(); F.seq++;
     const c = { ...it, id: 'd' + F.seq, tag, x: it.x + 40, y: it.y + 40 };
     F.items.push(c); sel = { i: c.id }; H.changed();
@@ -755,7 +817,7 @@
     const it = FD.selected(), errs = FD.errs ? [...FD.errs.values()] : [];
     const d = it && H.devOf(it.tag);
     return `${it ? `<h5>${esc(K[it.k].n)} <code>-${esc(it.tag)}</code></h5>
-      <div class="btn-row"><button class="btn" data-fd="retag">${it.k === 'text' ? 'Edit text…' : 'Tag…'}</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Copy (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <div class="btn-row"><button class="btn" data-fd="retag">${it.k === 'text' ? 'Edit text…' : K[it.k].io ? 'Tag / point…' : 'Tag…'}</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Copy (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
       <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>` : '<p class="help">Select a symbol to rotate it, change its tag or its type.</p>'}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
       <ul class="tips"><li><b>▦ Library</b>: pick a group, then click a symbol or drag it onto the drawing. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
@@ -764,6 +826,7 @@
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
       <li><b>D</b> copies the selected symbol. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
       <li>Sources › Point L1, N, PE, +24 V… is wired to that conductor of the supply. Others › wire pieces (straight, corner, T, cross) join wires; link arrows with the same tag are connected.</li>
+      <li>PLC › outputs, inputs and power are terminals of the PLC or I/O card placed in the Wiring: pick its tag and the point. They show the live state of the point; the ladder decides the outputs.</li>
       <li>▶ Play: press buttons, switch breakers and trip overloads on the drawing. ✎ Values shows the voltage on each load and open/closed on each contact.</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
