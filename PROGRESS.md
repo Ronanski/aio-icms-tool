@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -212,6 +212,8 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
   - Hindi pa: star-delta / multifunction timer, phase relay na may under-voltage o asymmetry, colours sa IEC current-path view
 - [x] Phase 6 — new example: hardwired 95-96 in the coil circuit, KM1 aux to a PLC input, HMI shows the real running status, discrepancy alarm; end-to-end checks (13 checks, lesson 17; branch `feature/feedback-example`, hindi merged)
   - Hindi pa: drawing ng example sa Electrical Diagram; feedback mula sa motor mismo (speed/current) sa halip na KM1 13-14
+- [x] Consolidated final audit: review + 7 fixes (3 checks, branch `fix/fd-audit`), 554/554 local, Windows portable at Android debug APK na-build nang local, Electron smoke test pass; CI hindi pa (walang push)
+- [ ] Push, PR, CI, merge sa `main` (Beta) — kailangan ng GO ng owner; Stable release — hiwalay na GO
 - [ ] Separate, needs its own approval: diode (one-way conduction in the solver)
 
 ## Audit findings not fixed yet

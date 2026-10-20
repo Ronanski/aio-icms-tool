@@ -2218,6 +2218,25 @@ function check(name, cond, info = '') {
   await page.evaluate(() => { document.querySelector('#view-schematic [data-fdact="colors"]').click(); });
   await wait(100);
   check('timing: with 🎨 Colours off the wires are drawn in the one line colour again', await page.evaluate(() => !FreeDraw.colors && !document.querySelector('#view-schematic .fwire .w[class*="pc-"]')));
+  // audit fixes: a finger lifted off the redrawn drawing, editing keys in ▶ Play, a stale multi-selection
+  check('audit: a touch lifted outside the redrawn drawing does not block the next tap (no false pinch)', await page.evaluate(async () => {
+    const pe = (el, type, id, it) => { const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: true, bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); };
+    const sym = id => document.querySelector(`#view-schematic [data-fi="${id}"] .hit`);
+    pe(sym('d13'), 'pointerdown', 41); await new Promise(r => setTimeout(r, 50));
+    document.body.dispatchEvent(new PointerEvent('pointerup', { pointerId: 41, pointerType: 'touch', bubbles: true }));
+    await new Promise(r => setTimeout(r, 500));
+    pe(sym('d11'), 'pointerdown', 42); await new Promise(r => setTimeout(r, 30)); pe(sym('d11'), 'pointerup', 42); await new Promise(r => setTimeout(r, 100));
+    const it = FreeDraw.selected(); return !!it && it.id === 'd11';
+  }));
+  check('audit: in ▶ Play, Delete and Ctrl+A do not edit the drawing', await page.evaluate(async () => {
+    const n = App.project.schematic.free.items.length; document.querySelector('#view-schematic [data-smode="run"]').click(); await new Promise(r => setTimeout(r, 100));
+    FreeDraw.onKey(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })); FreeDraw.onKey(new KeyboardEvent('keydown', { key: 'Delete' }));
+    const same = App.project.schematic.free.items.length === n; document.querySelector('#view-schematic [data-smode="edit"]').click(); await new Promise(r => setTimeout(r, 100)); return same;
+  }));
+  check('audit: after Ctrl+A, a newly added symbol is the only one selected, so Delete removes just it', await page.evaluate(() => {
+    const n = App.project.schematic.free.items.length; FreeDraw.selectAll(); FreeDraw.add('lamp', 'H77', 800, 400); const added = App.project.schematic.free.items.length === n + 1;
+    FreeDraw.del(); const F = App.project.schematic.free; return added && F.items.length === n && !F.items.some(i => i.tag === 'H77');
+  }));
   check('timing: a drawing with the new symbols survives save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
     return ['kpmon', 'kpno', 'lampfl'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.items.length === 15 && ['phasemon', 'lamp_fl'].every(t => p.circuit.comps.some(c => c.type === t)) && !(p.keep && p.keep.free.items.length); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); localStorage.removeItem('plc-trainer.fdColors'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });

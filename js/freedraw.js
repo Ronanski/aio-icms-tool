@@ -370,7 +370,14 @@
   // several symbols selected (Shift+click, Shift+drag a box, Ctrl+A); sel.i stays the one the side panel shows
   let group = new Set(), clip = null;
   const many = () => (group.size ? [...group] : sel && sel.i ? [sel.i] : []).filter(id => itemOf(id));
-  FD.init = function (hooks) { H = hooks; window.addEventListener('pointerup', () => { if (held) { held(); held = null; } }); };
+  FD.init = function (hooks) {
+    H = hooks;
+    window.addEventListener('pointerup', () => { if (held) { held(); held = null; } });
+    // a finger lifted off the drawing (it was redrawn, or a form opened under the finger) must not count as still down,
+    // or every later tap would look like the second finger of a pinch
+    const lift = ev => { if (ev.pointerType === 'touch') { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; } };
+    window.addEventListener('pointerup', lift); window.addEventListener('pointercancel', lift);
+  };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
   function stateOf(it) {
@@ -663,7 +670,7 @@
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
-      const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
+      const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" data-fc="${it.id}" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
       S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
       o.push('</g>');
     }
@@ -676,13 +683,20 @@
     bind();
     lastSig = sig();
   };
-  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(countOf).join(',') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return (ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0) + wireCls(w); }).join(''); };
-  FD.update = function () { if (body && sig() !== lastSig) FD.render(body); };
+  // a countdown only redraws the drawing when it appears or goes away; its value is written in place by FD.update
+  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => (countOf(it) ? 1 : 0)).join('') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return (ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0) + wireCls(w); }).join(''); };
+  FD.update = function () {
+    if (!body) return;
+    if (sig() !== lastSig) { FD.render(body); return; }
+    if (svg) svg.querySelectorAll('[data-fc]').forEach(e => { const it = itemOf(e.dataset.fc), t = it ? countOf(it) : ''; if (e.textContent !== t) e.textContent = t; });
+  };
   const world = ev => { const r = svg.getBoundingClientRect(); return { x: (ev.clientX - r.left - view.x) / view.k, y: (ev.clientY - r.top - view.y) / view.k }; };
   const snap10 = v => Math.round(v / 10) * 10;
   const boxOf = d => ({ x1: Math.min(d.x0, d.x1), y1: Math.min(d.y0, d.y1), x2: Math.max(d.x0, d.x1), y2: Math.max(d.y0, d.y1) });
   let held = null, lastTap = { k: '', t: 0 };
   // touch: two fingers on the drawing zoom it (pinch) around their middle
+  // pointer capture keeps a drag going outside the drawing; a pointer that is already gone cannot be captured, which is harmless
+  const capture = ev => { try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* pointer already released */ } };
   const touches = new Map();
   let pinch = null, longT = null;
   function bind() {
@@ -692,6 +706,8 @@
         if (touches.size === 2) {
           const [a, b] = [...touches.values()];
           pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: view.k, vx: view.x, vy: view.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+          // a symbol the first finger already moved is kept (synced and saved) before the pinch takes over
+          if (drag && drag.snapped) H.changed();
           drag = null; wiring = null; clearTimeout(longT); if (held) { held(); held = null; }
           return;
         }
@@ -709,7 +725,7 @@
       }
       if (bEl && H.mode() === 'edit') {
         const [wid, i] = bEl.dataset.fb.split(':'), w = fr().wires.find(x => x.id === wid);
-        if (w) { drag = { bend: w, i: Number(i), moved: false, snapped: false }; svg.setPointerCapture(ev.pointerId); }
+        if (w) { drag = { bend: w, i: Number(i), moved: false, snapped: false }; capture(ev); }
         return;
       }
       if (H.mode() === 'run') {
@@ -719,11 +735,11 @@
           else if (d && S.part) { ev.preventDefault(); held = App.operate(d, S.part); }
           return;
         }
-        drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(ev.pointerId); return;
+        drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; capture(ev); return;
       }
       if (term) {
         const key = term.dataset.ft;
-        if (!wiring) { wiring = { from: key, cur: null }; sel = null; FD.render(body); return; }
+        if (!wiring) { wiring = { from: key, cur: null }; sel = null; group.clear(); FD.render(body); return; }
         if (key !== wiring.from && !fr().wires.some(w => (w.a === wiring.from && w.b === key) || (w.b === wiring.from && w.a === key))) {
           H.snap(); const F = fr(); F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: key });
           wiring = null; H.changed(); return;
@@ -758,13 +774,13 @@
         drag = { item: it, others, ox: p.x - it.x, oy: p.y - it.y, moved: false, snapped: false };
         // a long press on a touch screen opens the symbol's tag form (as a double click does)
         if (ev.pointerType === 'touch' && K[it.k].look !== 'node') { clearTimeout(longT); longT = setTimeout(() => { if (drag && drag.item === it && !drag.moved) { drag = null; FD.retag(it); } }, 600); }
-        svg.setPointerCapture(ev.pointerId); FD.render(body); H.side(); return;
+        capture(ev); FD.render(body); H.side(); return;
       }
       if (wEl) { sel = { w: wEl.dataset.fw }; group.clear(); FD.render(body); H.side(); return; }
       // Shift+drag on the background selects the symbols inside a box
-      if (ev.shiftKey) { drag = { box: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y }; svg.setPointerCapture(ev.pointerId); return; }
+      if (ev.shiftKey) { drag = { box: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y }; capture(ev); return; }
       sel = null; group.clear(); H.side();
-      drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(ev.pointerId);
+      drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; capture(ev);
       FD.render(body);
     });
     svg.addEventListener('pointermove', ev => {
@@ -865,7 +881,7 @@
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
       const c = x != null ? { x, y } : freeSpot(snap10((r.width / 2 - view.x) / view.k), snap10((r.height / 2 - view.y) / view.k)), cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
-      F.items.push(it); sel = { i: it.id };
+      F.items.push(it); sel = { i: it.id }; group.clear();
       H.changed();
       return undefined;
     };
@@ -1018,8 +1034,11 @@
   const STEP = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   FD.onKey = function (ev) {
     const k = ev.key, c = ev.ctrlKey || ev.metaKey, lk = k.toLowerCase();
+    // ▶ Play operates the drawing: no editing keys there (Escape still clears the selection)
+    if (H.mode() === 'run' && k !== 'Escape') return;
     if (c) {
-      if (lk === 'c') { if (FD.copySel()) { ev.preventDefault(); UI.toast(`${clip.items.length} symbol${clip.items.length === 1 ? '' : 's'} copied`, 'ok', 1500); } }
+      // Ctrl+C copies text selected on the page as usual; it copies symbols only when symbols are selected
+      if (lk === 'c') { if (String(window.getSelection ? window.getSelection() : '') || !many().length) return; if (FD.copySel()) { ev.preventDefault(); UI.toast(`${clip.items.length} symbol${clip.items.length === 1 ? '' : 's'} copied`, 'ok', 1500); } }
       else if (lk === 'v') { ev.preventDefault(); FD.paste(); }
       else if (lk === 'a') { ev.preventDefault(); FD.selectAll(); }
       return;
@@ -1040,7 +1059,9 @@
     const f = [];
     if (S.type && !S.jct) f.push(field('Tag', `<input data-fp="tag" value="${esc(it.tag)}" maxlength="20" list="fd-tags" autocomplete="off"><datalist id="fd-tags">${suggest(it.k).list.map(t => `<option value="${esc(t)}">`).join('')}</datalist>`));
     if (S.io) {
-      const b = base(it.k), pts = Object.keys(K).filter(k => base(k) === b && K[k].io).map(k => K[k].io.n);
+      // only the points the placed controller or card has (an 8-input card has no I8–I11)
+      const b = base(it.k), pts = Object.keys(K).filter(k => base(k) === b && K[k].io).map(k => K[k].io.n)
+        .filter(n => n === S.io.n || !d || !DEFS[d.type] || DEFS[d.type].terms.some(t => t.id === S.io.d + n));
       f.push(field('Point', `<select data-fp="point">${pts.map(n => `<option value="${n}" ${n === S.io.n ? 'selected' : ''}>${S.io.d}${n}</option>`).join('')}</select>`));
     }
     f.push(field('Comment', `<input data-fp="c" value="${esc(it.c || '')}" maxlength="80" placeholder="e.g. Pump 1 start">`));

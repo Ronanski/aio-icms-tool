@@ -32,6 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Verify** rejects COP, FLL, SQO and MSG instructions whose length runs past the end of their file (N7 and B3 have 32 words; a remote PLC too).
 
 ### Fixed
+- **Electrical Diagram (free draw)**: on a touch screen, a finger lifted off the drawing after it was redrawn (always after a long press, which opens the tag form) no longer blocks every later tap as a false pinch. A symbol moved just before a pinch is kept. A symbol added after Ctrl+A is the only one selected, so Delete or R no longer acts on the whole drawing. In **▶ Play**, editing keys (Delete, R, D, arrows, Ctrl+V, Ctrl+A) do nothing. Ctrl+C copies selected page text as usual and copies symbols only when symbols are selected. The Point list of a PLC input symbol offers only the points of the placed card (no I8–I11 on an 8-input card). A timing countdown updates in place instead of redrawing the whole drawing ten times a second.
 - **DIV** rounds a half away from zero, like the controller: −5 ÷ 2 = −3 (was −2).
 - Alarms raised in the first seconds after the app starts (a breaker trip, a short) were shown and logged only from the 4th second on; they are now shown at once.
 
@@ -46,6 +47,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A kept current path or feeder is saved right after the one it followed, also when you insert or delete others before it.
 
 ### Tests
+- **Audit fixes** (3 checks): a touch lifted outside the redrawn drawing does not block the next tap (fails without the fix); Delete and Ctrl+A do nothing in ▶ Play; a symbol added after Ctrl+A is the only one deleted.
 - **Running feedback example** (13 checks, through the real tick loop): the wiring (95-96 in the coil circuit, coil after QF1, 13-14 to I:0/3); the HMI reads PLC data only and follows the feedback; HMI START and STOP with RUNNING / NOT RUNNING on the HMI; QF1 off shows COMMAND ON and NOT RUNNING, then the discrepancy alarm latches, drops the command and shows its banner; START is refused while latched; RESET clears it; the motor runs again; an overload trip is reported as an overload, not as a discrepancy; lesson 17; save and reload.
 - **Timing and monitoring** (12 checks): parts list and symbol terminals; the solver runs the flasher, the on/off delay, the flashing lamp and the phase failure relay (healthy, lost phase, wrong sequence, sequence check off); a drawn phase relay lights its lamp, a drawn flashing lamp flashes, a timing coil counts down and the countdown goes away, 🎨 Colours colours the wires by conductor and turns off again; save and reload.
 - **More parts** (10 checks): every new device is in the parts list and every new symbol fits its device's terminals; the solver runs the changeover push button, the NO+NC selector, both crossovers (a DC motor reverses), the 1- and 2-pole disconnectors, the RCBO 4P (trips on a short), the bell and the siren; a drawn relay changeover contact swaps two lamps and shows it; the drawn E-stop N.O. closes; save and reload.
