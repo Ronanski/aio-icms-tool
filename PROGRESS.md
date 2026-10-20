@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 1.5.0 (stable release authorized 2026-10-19 with "GO STABLE v1.5.0": free draw, full IEC library, diagram in one line colour and in proportion. Before it 1.4.1.)
-**Status:** Stable v1.5.0 (released 2026-10-19). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 250/250.
+**Current version:** 1.6.0 (stable release authorized 2026-10-20 with "GO STABLE v1.6.0": modular PLC rack, I/O Configuration, address styles, 2D cabinet, free draw like SimuRelay. Before it 1.5.0.)
+**Status:** Stable v1.6.0 (release in progress 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 310/310.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -142,10 +142,10 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Part 3: address styles: file-based / bit-byte / basic (display only, typed in any style, stored file-based; saved per project)
 - [x] Part 4: 2D cabinet: backplate, door, cable duct, HMI terminal on the door (live HMI screen, operable); plates carry their devices; example *Motor starter cabinet*
 - [x] Free draw like SimuRelay (owner: "GO dito"): library panel with icon grid and groups, drag or click to add, no more stacking, Points L1/L2/L3/N/PE/+24V/0V, battery, generator, AC/DC converter, DC motor, wire pieces and link arrows, toolbar order with Play and Values, zoom bottom right, major grid lines
-- [ ] Owner to point out the spacing issue in the IEC diagram screenshots (sent 2026-10-20)
-- [ ] Stable v1.6.0: waiting for the owner's "GO STABLE v1.6.0"
+- [x] Stable v1.6.0 authorized ("GO STABLE v1.6.0", 2026-10-20)
+- [ ] Owner to point out the spacing issue in the IEC diagram screenshots (sent 2026-10-20) → fix in v1.6.1
 
-## Roadmap agreed with the owner (updated 2026-10-19, after the owner's EduVolt-style screenshots)
+## Roadmap agreed with the owner (updated 2026-10-20, after v1.6.0)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
 - [x] Part 1: flat device graphics, DIN rail + snap, terminal block, motor protection breaker, wire labels
 - [x] Part 2: only 4 workspaces — Ladder, Wiring, Electrical Diagram (Schematic), HMI; Operator Panel removed (operate in the Wiring); Learn moves to Help
@@ -158,11 +158,19 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] I/O Configuration: a module works only after it is configured (part 2)
 - [x] Addressing display: Basic, file-based or bit/byte style (part 3)
 - [x] 2D cabinet: door with pilot devices and HMI, inside layout on DIN rails (part 4)
+- [x] Free draw like SimuRelay: icon library panel, new sources, wire pieces, Play / Values, zoom
+- [x] Stable v1.6.0 (GO STABLE, 2026-10-20)
+
+**v1.6.1 — fixes from the owner's checks**
+- [ ] IEC diagram spacing issue (owner to point it out on the screenshots)
+- [ ] Owner's feedback from Beta / real devices; owner's v1.2 bug list
+- [ ] Address styles also in the ASCII rung editor, HMI tags and Verify messages
 
 **v1.7.0 — HMI**
 - [ ] Studio (designer) vs Machine (runtime) modes
 - [ ] Pick resolution and terminal type (PC or 4"–15" terminal)
 - [ ] More objects: shapes, images, trends, multi-screen navigation, animation, security
+- [ ] HMI terminal on the cabinet door with its own screen size (today it mirrors the HMI workspace screen)
 
 **v1.8.0 — more instructions and devices**
 - [ ] OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, analog I/O; VFD, analog level transmitter; Tagalog/English toggle

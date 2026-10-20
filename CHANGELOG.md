@@ -5,8 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Fixed
-- Free draw: symbols added one after another no longer land on top of each other; each goes to the nearest free spot.
+## [1.6.0] - 2026-10-20
+
+Hardware: a modular PLC rack with I/O Configuration, address styles and a 2D control cabinet; and a free-draw Electrical Diagram reworked with an icon library panel.
 
 ### Added
 - **Modular PLC rack** (Wiring → *PLC Rack*): a rack power supply (230 VAC in, 24 VDC out for sensors), a **CPU module** (slot 0, key switch PROG/RUN, PWR/RUN/FLT/FORCE lights) and I/O cards: **input card 8 × 24 VDC**, **input card 8 × 230 VAC**, **relay output card 8** and **transistor output card 8 × 24 VDC**. Snap them on a DIN rail.
@@ -31,6 +32,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - New devices in the Wiring: **Battery 24 V**, **3-Phase Generator** (START/STOP) and **DC Motor 24 V** (reverses with the polarity).
 - Example **Motor starter cabinet (modular PLC, door with HMI)**: breakers, the modular PLC, contactor, overload and terminal block on DIN rails between cable ducts; START/STOP, pilot lamps and the HMI terminal on the door; START/STOP from the door or the HMI.
 - Example **Modular PLC rack (PSU, CPU, I/O cards)**: START/STOP with a seal-in on I:1/0, I:1/1 and O:2/0.
+
+### Fixed
+- Free draw: symbols added one after another no longer land on top of each other; each goes to the nearest free spot.
 
 ## [1.5.0] - 2026-10-19
 
