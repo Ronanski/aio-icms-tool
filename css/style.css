@@ -405,7 +405,7 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .hmi-main { flex: 1; min-height: 0; display: flex; }
 .hmi-stage { flex: 1; min-width: 0; overflow: auto; display: flex; justify-content: flex-start; align-items: flex-start; padding: 20px; background: var(--canvas); }
 .hmi-zoom { display: flex; gap: 4px; align-items: center; }
-.hmi-bezel { --k: 1; margin: 0 auto; width: calc(860px * var(--k)); height: calc(580px * var(--k)); background: linear-gradient(180deg, #3a3b3e, #232427); border-radius: calc(18px * var(--k)); position: relative; box-shadow: var(--shadow-lg); flex-shrink: 0; }
+.hmi-bezel { --k: 1; --w: 800px; --h: 480px; margin: 0 auto; width: calc((var(--w) + 60px) * var(--k)); height: calc((var(--h) + 100px) * var(--k)); background: linear-gradient(180deg, #3a3b3e, #232427); border-radius: calc(18px * var(--k)); position: relative; box-shadow: var(--shadow-lg); flex-shrink: 0; }
 .hmi-brand { position: absolute; top: calc(8px * var(--k)); left: calc(30px * var(--k)); font: 600 11px var(--sans); color: #9a9ca2; transform-origin: left top; transform: scale(var(--k)); }
 .hmi-screen { position: absolute; left: calc(30px * var(--k)); top: calc(30px * var(--k)); width: 800px; height: 480px; transform: scale(var(--k)); transform-origin: left top; background: linear-gradient(180deg, #1d2a38, #16202b); border: 2px solid #0b0f14; border-radius: 4px; overflow: hidden; font-family: var(--sans); color: #e8eef5; }
 .hmi-keys { position: absolute; bottom: calc(18px * var(--k)); left: 50%; transform: translateX(-50%); display: flex; gap: calc(14px * var(--k)); }
@@ -446,6 +446,20 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .h-alarm { width: 100%; height: 100%; border-radius: 8px; display: flex; align-items: center; padding: 0 16px; font-weight: 700; font-size: 16px; background: #2a333d; color: #9aa5b0; border: 2px solid #3d4a57; }
 .t-alarm.on .h-alarm { background: #b3261e; color: #fff; border-color: #ff7a6b; animation: blink 1s steps(2) infinite; }
 .h-text { width: 100%; height: 100%; display: flex; align-items: center; font-weight: 700; letter-spacing: .02em; }
+.h-shape { width: 100%; height: 100%; border-radius: 4px; background: #3d4a57; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
+.h-shape.round { border-radius: 50%; }
+.h-shape.pipe { border-radius: 999px; }
+.h-trend { position: relative; width: 100%; height: 100%; background: #0f171f; border: 2px solid #3d4a57; border-radius: 6px; overflow: hidden; }
+.h-trend small { position: absolute; left: 8px; top: 4px; font-weight: 700; color: #9fb0bd; }
+.h-trend b { position: absolute; right: 8px; top: 2px; font: 700 16px var(--mono); }
+.h-trend svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.h-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.h-img.empty { display: flex; align-items: center; justify-content: center; border: 2px dashed #4a5a66; color: #9fb0bd; }
+.h-pb.login { --c: #5b5953; } .t-login.on .h-pb.login { --c: #2fa84f; }
+.hmi.editing .hobj.hid { opacity: .45; }
+.hmi-scr { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+.hmi-bezel:fullscreen { --k: 1 !important; width: 100vw; height: 100vh; border-radius: 0; display: flex; align-items: center; justify-content: center; }
+.hmi-bezel:fullscreen .hmi-screen { position: static; transform: none; }
 .hmi-props { width: 270px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); overflow: auto; }
 .taglist { padding-left: 16px; font-size: 12.5px; }
 

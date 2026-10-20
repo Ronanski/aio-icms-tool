@@ -718,7 +718,7 @@
     draw(c, ctx) {
       const pw = c && c.state.pw, m = pw && ctx && ctx.hmiMini ? ctx.hmiMini() : null;
       return R(0, 0, 300, 220, '#2a2b2d', 10, '#111') + R(18, 16, 264, 158.4, pw ? '#10161c' : '#050607', 2, '#000') +
-        (m ? `<g transform="translate(18 16) scale(0.33)">${m.svg}</g>` : T(150, 100, pw ? '' : 'NO POWER', 'dt light xs')) +
+        (m ? (() => { const k = Math.min(264 / m.w, 158.4 / m.h), ox = 18 + (264 - m.w * k) / 2, oy = 16 + (158.4 - m.h * k) / 2; return `<g transform="translate(${ox} ${oy}) scale(${k})">${m.svg}</g>`; })() : T(150, 100, pw ? '' : 'NO POWER', 'dt light xs')) +
         T(22, 196, 'Operator terminal', 'dt light xs', 'start') + [0, 1, 2, 3].map(i => R(150 + i * 22, 186, 16, 12, '#45474a', 2, '#111')).join('') + led(140, 192, pw, '#3ddc63', 3);
     },
     status: c => (c.state.pw ? 'On — shows the HMI screen' : 'No 24 VDC on + / M'),

@@ -166,11 +166,11 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [ ] Owner's feedback from Beta / real devices; owner's v1.2 bug list
 - [x] Address styles also in HMI tags, Verify messages and the event log (the ASCII rung editor stays file-based: it is the program text)
 
-**v1.7.0 — HMI**
-- [ ] Studio (designer) vs Machine (runtime) modes
-- [ ] Pick resolution and terminal type (PC or 4"–15" terminal)
-- [ ] More objects: shapes, images, trends, multi-screen navigation, animation, security
-- [ ] HMI terminal on the cabinet door with its own screen size (today it mirrors the HMI workspace screen)
+**v1.7.0 — HMI** (done on `main`, not released)
+- [x] Studio (designer) vs Machine (runtime) modes, full screen
+- [x] Pick resolution and terminal type (PC or 4.3"–15" terminal)
+- [x] More objects: shapes (rectangle, ellipse, line/pipe), images, trends, multi-screen navigation, animation (visibility, ON colour, blink), security (log-in PIN)
+- [x] HMI terminal on the cabinet door follows the terminal type and the screen on display
 
 **v1.8.0 — more instructions and devices**
 - [ ] OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, analog I/O; VFD, analog level transmitter; Tagalog/English toggle

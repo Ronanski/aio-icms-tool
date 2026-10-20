@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **HMI v1.7**:
+  - **▶ Machine** (runtime, as on the machine) and **✎ Studio** (designer) modes, replacing Operate / Design; **⛶ full screen** for the terminal.
+  - **Terminal type**: 4.3" 480×272, 6" 640×480, 7" 800×480 (default, as before), 10" 1024×600, 12" 1280×800, 15" 1024×768 or a PC screen 1280×720. The screen, the zoom and the HMI terminal on the cabinet door follow it.
+  - **Several screens**: add, rename and delete screens in Studio; **Go to Screen** buttons move between them in Machine.
+  - New objects: **Rectangle**, **Ellipse**, **Line / pipe** (ON/OFF colour by a tag, optional blink), **Trend** (history of a tag over a time span), **Image** (a picture from a file, scaled to 400 px and saved in the project), **Go to Screen**, **Log in / out**.
+  - **Animation**: every object can be visible only while a tag is 1.
+  - **Security**: push buttons, numeric entries and Go to Screen buttons can need a log-in; **Log in / out** asks for the PIN (4–8 digits, set in Studio, default 1234). Log-ins and refusals go to the event log.
+
 ### Changed
 - The address style (file-based, bit/byte, basic) is also used in the **Verify** messages and the event log (with the file address in brackets, e.g. `I0.0 (I:1/0)`) and in the **HMI** tag field, its suggestions (the real I/O points) and the runtime tag list. An HMI tag can be typed in any style; it is stored file-based.
 
