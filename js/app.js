@@ -51,11 +51,16 @@
   function buildProject(p) {
     if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
     const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
-    const rungs = arr(lad.rungs).filter(isObj).map(r => {
+    const parseRungs = list => arr(list).filter(isObj).map(r => {
       const text = str(r.text, 20000), comment = str(r.comment);
       try { return Ladder.newRung(Ladder.parseRung(text), comment); }
       catch (err) { return Ladder.newRung([], `${comment} [could not parse: ${text}]`); }
     });
+    const rungs = parseRungs(lad.rungs);
+    // subroutine files LAD 3–9
+    const files = arr(lad.files).filter(f => isObj(f) && Number.isInteger(f.n) && f.n >= 3 && f.n <= 9)
+      .filter((f, i, a) => a.findIndex(g => g.n === f.n) === i).sort((a, b) => a.n - b.n)
+      .map(f => ({ n: f.n, name: str(f.name, 10).toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'SUB' + f.n, rungs: parseRungs(f.rungs) }));
     const desc = {};
     if (isObj(lad.desc)) for (const k in lad.desc) { const v = str(lad.desc[k], 80); if (v) desc[k] = v; }
     const comps = arr(cir.comps).filter(c => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && ID.test(c.id))
@@ -71,7 +76,7 @@
     const seq = v => (Number.isFinite(v) ? v : 0);
     return {
       name: str(p.name, 80).trim() || 'Untitled',
-      ladder: { rungs, desc },
+      ladder: { rungs, desc, files },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: HMI.cleanAll(hm),
       schematic: Schematic.clean(p.schematic, termOk),
@@ -86,14 +91,13 @@
     App.project = proj;
     App.addrChanged(false);
     LOG.length = 0; LOG.push(...proj.events); unseen = 0;
-    const rungs = proj.ladder.rungs;
     const plc = App.plc;
     plc.setMode('PROG');
     plc.resetData();
     Object.keys(plc.forces).forEach(k => plc.setForce(k, null));
     plc.forcesEnabled = true;
     lastForces = {}; lastFen = true;
-    plc.setProgram(rungs);
+    App.loadProgram();
     plc.applyAll(true);
     Ladder.resetSel(); Workspace.resetView(); HMI.resetSel(); Schematic.resetSel();
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
@@ -107,7 +111,8 @@
     const p = App.project;
     return {
       version: 1, name: p.name,
-      ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc },
+      ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc,
+        files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
@@ -200,7 +205,12 @@
       ],
     });
   };
-  App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
+  /* the program in the PLC: LAD 2 and the subroutine files */
+  App.loadProgram = function () {
+    const subs = {}; (App.project.ladder.files || []).forEach(f => { subs[f.n] = f.rungs; });
+    App.plc.setProgram(App.project.ladder.rungs, subs);
+  };
+  App.programChanged = function () { App.loadProgram(); App.save(); };
   App.circuitChanged = function () { App.addrChanged(false); App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
   /* address style of the project (display only): App.fmt(norm) shows an address, App.addrIn(text) reads one typed in any style */
   let book = null;
@@ -566,7 +576,7 @@
     fb.classList.toggle('warn', st.force);
     // one group of I/O lights per input word and output word (compact: I:0/O:0, rack: one per card)
     const word = (f, w) => f === 'I' ? plc.data.I[w] & 0xFFFF : w ? plc.physOutX[w] : plc.physOut;
-    document.querySelector('[data-io]').innerHTML = Circuit.ioMap(App.project.circuit, App.project.io).map(({ file: f, word: w, n }) =>
+    document.querySelector('[data-io]').innerHTML = Circuit.ioMap(App.project.circuit, App.project.io).filter(m => !m.analog).map(({ file: f, word: w, n }) =>
       `<span class="iol">${App.project.addr === 'file' || !App.project.addr ? `${f}:${w}` : (f === 'I' ? 'I' : 'Q')}</span>${Array.from({ length: n }, (_, i) => `<i class="${(word(f, w) >> i) & 1 ? 'on ' + (f === 'I' ? 'in' : 'out') : ''}${plc.forces[`${f}:${w}/${i}`] !== undefined ? ' f' : ''}" title="${App.fmt(`${f}:${w}/${i}`)}"></i>`).join('')}`).join('');
     document.querySelector('[data-scan]').textContent = `scan ${plc.scanMs.toFixed(2)} ms`;
     const msg = document.querySelector('[data-msg]');
@@ -628,7 +638,7 @@
         UI.confirm('Insert solution', 'Replace the current ladder program with the lesson solution?', () => {
           App.plc.setMode('PROG');
           App.project.ladder.rungs = cur.solution.map(t => Ladder.newRung(Ladder.parseRung(t)));
-          App.plc.setProgram(App.project.ladder.rungs); App.plc.applyAll(true);
+          App.loadProgram(); App.plc.applyAll(true);
           Ladder.resetSel(); App.dirty.ladder = true; App.save();
           UI.toast('Solution inserted — switch to RUN and try it');
           App.showView('ladder');
@@ -704,6 +714,7 @@
       f.text().then(t => { App.openNew(JSON.parse(t)); UI.toast('Project imported as a new project', 'ok'); }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
       e.target.value = '';
     });
+    document.querySelector('[data-lang-btn]').addEventListener('click', () => { I18N.set(I18N.lang === 'tl' ? 'en' : 'tl'); App.log('system', `Language: ${I18N.lang === 'tl' ? 'Tagalog' : 'English'}`); });
     document.querySelector('[data-theme-btn]').addEventListener('click', () => {
       const cur = document.documentElement.dataset.theme || 'auto';
       const next = cur === 'auto' ? 'dark' : cur === 'dark' ? 'light' : 'auto';
@@ -840,6 +851,7 @@
     bindGutters();
     ['.plcbar', '.lad-toolbar', '.ws-toolbar', '.hmi-toolbar'].forEach(q => document.querySelectorAll(q).forEach(UI.scrollCue));
     setTheme(theme);
+    I18N.apply();
     Store.migrate();
     const cur = Store.current();
     const saved = cur ? Store.load(cur) : null;

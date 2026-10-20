@@ -101,20 +101,20 @@
 
   function renderCell(e, d, x, y, o) {
     const cx = x + CW / 2, wy = y + WY, id = e.id;
-    const p = parse(e.a[0]);
-    const norm = p ? p.norm : (e.a[0] || '?');
+    const p = parse(e.a[0]), noArg = d && !d.args.length;
+    const norm = noArg ? '' : p ? p.norm : (e.a[0] || '?');
     const sw = e.t === 'ONS' ? 18 : 13;
     o.push(`<g class="el${selCls(id)}" data-uid="${id}">`);
     o.push(`<rect class="hit" x="${x + 2}" y="${y + 4}" width="${CW - 4}" height="${RH - 8}" rx="6"/>`);
     o.push(hw(x, cx - sw, wy, 'i' + id), hw(cx + sw, x + CW, wy, 'o' + id));
     descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - 30 - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
-    o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(App.fmt(norm))}</text>`);
+    if (!noArg) o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(App.fmt(norm))}</text>`);
     o.push(`<text class="fbadge" data-f="${esc(norm)}" x="${cx}" y="${wy + 26}"></text>`);
     o.push(`<g class="ins" data-h="${id}">`);
     if (d && d.k === 'coil') {
       o.push(`<rect class="hlr" x="${cx - 12}" y="${wy - 11}" width="24" height="22" rx="11"/>`);
       o.push(`<path class="sym" d="M${cx - 6} ${wy - 11} Q${cx - 15} ${wy} ${cx - 6} ${wy + 11} M${cx + 6} ${wy - 11} Q${cx + 15} ${wy} ${cx + 6} ${wy + 11}"/>`);
-      if (d.lbl) o.push(`<text class="clbl" x="${cx}" y="${wy + 3.5}">${d.lbl}</text>`);
+      if (d.lbl) o.push(`<text class="clbl${d.lbl.length > 2 ? ' sm' : ''}" x="${cx}" y="${wy + 3.5}">${d.lbl}</text>`);
     } else if (e.t === 'ONS') {
       o.push(`<rect class="hlr" x="${cx - 17}" y="${wy - 10}" width="34" height="20" rx="2"/>`);
       o.push(`<path class="sym" d="M${cx - 18} ${wy - 10} H${cx - 14} V${wy + 10} H${cx - 18} M${cx + 18} ${wy - 10} H${cx + 14} V${wy + 10} H${cx + 18}"/>`);
@@ -132,6 +132,7 @@
     const n = p0 && p0.kind === 'struct' ? p0.norm : null;
     if (['TON', 'TOF', 'RTO'].includes(e.t) && n) { if (k === 2) return n + '.PRE'; if (k === 3) return n + '.ACC'; }
     if (['CTU', 'CTD'].includes(e.t) && n) { if (k === 1) return n + '.PRE'; if (k === 2) return n + '.ACC'; }
+    if (e.t === 'SQO') { const c = parse(e.a[3]); if (c && c.kind === 'struct') { if (k === 4) return c.norm + '.LEN'; if (k === 5) return c.norm + '.POS'; } }
     return null;
   }
 
@@ -157,7 +158,7 @@
     const rx = bx + BOXW;
     o.push(hw(rx, x + BW, wy, 'o' + id));
     if (d.bits) {
-      const p0 = parse(e.a[0]);
+      const p0 = parse(e.a[e.t === 'SQO' ? 3 : 0]);
       const base = p0 && p0.kind === 'struct' ? p0.norm : '';
       d.bits.forEach((b, k) => {
         const yy = wy + k * 22;
@@ -219,7 +220,22 @@
   const Ladder = {};
   let root, rungsEl, sideEl, cache = null;
   let undo = [], redo = [], clip = null;
-  const rungs = () => App.project.ladder.rungs;
+  /* program files: LAD 2 is the main program, LAD 3–9 are subroutines (App.project.ladder.files) called by JSR */
+  let curFile = 2;
+  const fileOf = n => (App.project.ladder.files || []).find(f => f.n === n);
+  const rungs = () => (curFile === 2 || !fileOf(curFile) ? App.project.ladder.rungs : fileOf(curFile).rungs);
+  function setRungs(list) { if (curFile === 2 || !fileOf(curFile)) App.project.ladder.rungs = list; else fileOf(curFile).rungs = list; }
+  Ladder.file = () => curFile;
+  Ladder.openFile = function (n) { if (n !== 2 && !fileOf(n)) return; curFile = n; SEL = { r: -1, id: null, leg: null }; undo = []; redo = []; Ladder.render(); };
+  Ladder.newFile = function () {
+    const used = new Set((App.project.ladder.files || []).map(f => f.n)); let n = 3; while (used.has(n)) n++;
+    if (n > 9) { UI.toast('Program files go up to LAD 9', 'warn'); return; }
+    UI.form(`New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: 'SUB' + n }], v => {
+      const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
+      App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [] }].sort((a, b) => a.n - b.n);
+      curFile = n; App.programChanged(); Ladder.render(); return undefined;
+    }, '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
+  };
 
   function snapshot() {
     undo.push(JSON.stringify(rungs().map(r => ({ c: r.comment, t: serialize(r.elems) }))));
@@ -233,8 +249,8 @@
   }
   function restore(s) {
     const data = JSON.parse(s);
-    App.project.ladder.rungs = data.map(d => newRung(parseRung(d.t), d.c));
-    applyPresets(App.project.ladder.rungs);
+    setRungs(data.map(d => newRung(parseRung(d.t), d.c)));
+    applyPresets(rungs());
   }
   function changed() { App.programChanged(); Ladder.render(); }
 
@@ -535,14 +551,20 @@
       snapshot();
       assignIds(elems);
       r.elems = elems; r.comment = vals.cm.trim();
-      App.plc.setProgram(rungs()); applyPresets([r]);
+      App.programChanged(); applyPresets([r]);
       SEL = { r: ri, id: null, leg: null };
       changed();
     }, `<p class="help">Example: <code>BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 OTE O:0/0</code><br>BST = branch start, NXB = next branch, BND = branch end.</p>`);
   };
 
   Ladder.verify = function (quiet) {
-    const { errs, warns } = App.plc.verify(rungs());
+    // every program file; the messages say which file a rung is in
+    const errs = [], warns = [];
+    [[2, App.project.ladder.rungs], ...(App.project.ladder.files || []).map(f => [f.n, f.rungs])].forEach(([n, list]) => {
+      const r = App.plc.verify(list);
+      const tag = x => ({ ...x, msg: n === 2 ? x.msg : `LAD ${n}: ${x.msg}` });
+      errs.push(...r.errs.map(tag)); warns.push(...r.warns.map(tag));
+    });
     ERR_IDS = new Set(errs.filter(x => x.id).map(x => x.id));
     Ladder.render();
     if (quiet) return errs.length === 0;
@@ -604,19 +626,22 @@
 
   /* ---------- View ---------- */
   const TB = [
-    ['Bit', ['XIC', 'XIO', 'ONS', 'OTE', 'OTL', 'OTU']],
+    ['Bit', ['XIC', 'XIO', 'ONS', 'OTE', 'OTL', 'OTU', 'OSR', 'OSF']],
     ['Timer/Counter', ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES']],
     ['Compare', ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM']],
     ['Math/Move', ['MOV', 'ADD', 'SUB', 'MUL', 'DIV', 'CLR']],
+    ['File/Seq', ['COP', 'FLL', 'SQO']],
+    ['Program', ['JSR', 'SBR', 'RET', 'MCR']],
   ];
   const ICON = {
-    XIC: '-] [-', XIO: '-]/[-', ONS: '-[ONS]-', OTE: '-( )-', OTL: '-(L)-', OTU: '-(U)-', RES: '-(RES)-',
+    XIC: '-] [-', XIO: '-]/[-', ONS: '-[ONS]-', OTE: '-( )-', OTL: '-(L)-', OTU: '-(U)-', RES: '-(RES)-', MCR: '-(MCR)-', RET: '-(RET)-',
   };
 
   Ladder.init = function (el) {
     root = el;
     el.innerHTML = `
       <div class="lad-toolbar">
+        <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-act="data" title="Data files and forces">▤ Data</button>
           <button class="tbtn" data-act="rung" title="New rung (Ctrl+R)">＋ Rung</button>
@@ -647,13 +672,14 @@
     rungsEl = el.querySelector('.lad-rungs');
     sideEl = el.querySelector('.lad-side');
     el.querySelector('[data-addr]').addEventListener('change', ev => App.setAddrStyle(ev.target.value));
+    el.querySelector('[data-lfile]').addEventListener('change', ev => Ladder.openFile(Number(ev.target.value)));
     el.querySelector('.lad-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.ins) return Ladder.insert(b.dataset.ins);
       ({
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
-        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(),
+        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile,
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
     });
@@ -795,6 +821,9 @@
     if (zl) zl.textContent = Math.round(LZ * 100) + '%';
     const as = root.querySelector('[data-addr]');
     if (as) as.value = App.project.addr || 'file';
+    if (curFile !== 2 && !fileOf(curFile)) curFile = 2;
+    const lf = root.querySelector('[data-lfile]');
+    if (lf) lf.innerHTML = [`<option value="2">LAD 2 · MAIN</option>`, ...(App.project.ladder.files || []).map(f => `<option value="${f.n}" ${f.n === curFile ? 'selected' : ''}>LAD ${f.n} · ${esc(f.name)}</option>`)].join('');
     const list = rungs();
     const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
@@ -835,7 +864,7 @@
     DataTable.update();
   };
 
-  Ladder.resetSel = () => { SEL = { r: -1, id: null, leg: null }; ERR_IDS = new Set(); undo = []; redo = []; };
+  Ladder.resetSel = () => { SEL = { r: -1, id: null, leg: null }; ERR_IDS = new Set(); undo = []; redo = []; curFile = 2; };
 
   /* ---------- Data table ---------- */
   const DataTable = {};
@@ -843,8 +872,8 @@
   DataTable.init = function (el) { dtEl = el; };
   DataTable.render = function () {
     if (!dtEl || !App.project) return;
-    const files = ['I', 'O', 'B3', 'T4', 'C5', 'N7'];
-    const names = { I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', N7: 'N7 Integer' };
+    const files = ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
+    const names = { I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', R6: 'R6 Control (sequencers)', N7: 'N7 Integer' };
     let body = '';
     const bitHead = `<tr><th></th>${Array.from({ length: 16 }, (_, i) => `<th>${15 - i}</th>`).join('')}</tr>`;
     const bitRow = (f, w, n) => `<tr><th class="rowh">${f}:${w}</th>${Array.from({ length: 16 }, (_, i) => {
@@ -855,8 +884,11 @@
     if (dtFile === 'I' || dtFile === 'O') {
       // one word per I/O slot: the compact PLC's I:0/O:0, or each rack card in its slot
       const words = Circuit.ioMap(App.project.circuit, App.project.io).filter(m => m.file === dtFile);
-      body = words.length ? `<table class="dt bits">${bitHead}${words.map(m => bitRow(dtFile, m.word, m.n)).join('')}</table>
+      const dig = words.filter(m => !m.analog);
+      body = words.length ? `${dig.length ? `<table class="dt bits">${bitHead}${dig.map(m => bitRow(dtFile, m.word, m.n)).join('')}</table>` : ''}
       <div class="io-list">${words.map(m => (m.label ? `<div class="io-slot">Slot ${m.word}: ${esc(m.label)} — ${esc(m.name)}</div>` : '') + Array.from({ length: m.n }, (_, i) => {
+        // analog card: one word per channel (I:s.c / O:s.c), shown as a number
+        if (m.analog) { const a = `${dtFile}:${m.word}.${i}`; return `<div class="io-row ana"><span></span><code>${a}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="num" data-word="${a}">0</span></div>`; }
         const a = `${dtFile}:${m.word}/${i}`;
         return `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code title="${a}">${esc(App.fmt(a))}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
       }).join('')).join('')}</div>
@@ -868,6 +900,8 @@
       body = `<table class="dt"><tr><th></th><th>EN</th><th>TT</th><th>DN</th><th>BASE</th><th>PRE</th><th>ACC</th></tr>${Array.from({ length: 12 }, (_, i) => `<tr><th class="rowh">T4:${i}</th><td class="bit" data-bit="T4:${i}/EN">0</td><td class="bit" data-bit="T4:${i}/TT">0</td><td class="bit" data-bit="T4:${i}/DN">0</td><td data-tb="${i}"></td><td class="num" data-word="T4:${i}.PRE">0</td><td class="num" data-word="T4:${i}.ACC">0</td></tr>`).join('')}</table><p class="help">Click PRE/ACC to edit.</p>`;
     } else if (dtFile === 'C5') {
       body = `<table class="dt"><tr><th></th><th>CU</th><th>CD</th><th>DN</th><th>OV</th><th>UN</th><th>PRE</th><th>ACC</th></tr>${Array.from({ length: 12 }, (_, i) => `<tr><th class="rowh">C5:${i}</th>${['CU', 'CD', 'DN', 'OV', 'UN'].map(b => `<td class="bit" data-bit="C5:${i}/${b}">0</td>`).join('')}<td class="num" data-word="C5:${i}.PRE">0</td><td class="num" data-word="C5:${i}.ACC">0</td></tr>`).join('')}</table><p class="help">Click PRE/ACC to edit.</p>`;
+    } else if (dtFile === 'R6') {
+      body = `<table class="dt"><tr><th></th><th>EN</th><th>DN</th><th>ER</th><th>LEN</th><th>POS</th></tr>${Array.from({ length: 8 }, (_, i) => `<tr><th class="rowh">R6:${i}</th>${['EN', 'DN', 'ER'].map(b => `<td class="bit" data-bit="R6:${i}/${b}">0</td>`).join('')}<td class="num" data-word="R6:${i}.LEN">0</td><td class="num" data-word="R6:${i}.POS">0</td></tr>`).join('')}</table><p class="help">Sequencer controls (SQO). Click LEN/POS to edit.</p>`;
     } else {
       body = `<table class="dt"><tr><th></th>${Array.from({ length: 4 }, (_, i) => `<th>${i}</th>`).join('')}</tr>${Array.from({ length: 8 }, (_, r) => `<tr><th class="rowh">N7:${r * 4}</th>${Array.from({ length: 4 }, (_, i) => `<td class="num" data-word="N7:${r * 4 + i}">0</td>`).join('')}</tr>`).join('')}</table><p class="help">Click a value to edit.</p>`;
     }
