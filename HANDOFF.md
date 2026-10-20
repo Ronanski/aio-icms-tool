@@ -5,11 +5,11 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v2.0.0 (stable), released and verified 2026-10-20** (owner: GO on "Release v2.0.0"). Release run #63 from `main` (`473e1c4`): 3 assets; APK cert `27:5F:A5:15:06:CC:46…` (checked); Pages `version.json` = 2.0.0 (checked). v1.6.0 was the previous stable. Next: v2.0.1 accuracy fixes (Beta), then v2.1 lessons (Beta). |
+| **Version** | **v2.0.0 (stable), released and verified 2026-10-20** (owner: GO on "Release v2.0.0"). Release run #63 from `main` (`473e1c4`): 3 assets; APK cert `27:5F:A5:15:06:CC:46…` (checked); Pages `version.json` = 2.0.0 (checked). v1.6.0 was the previous stable. v2.0.1 accuracy fixes merged (PR #36, Beta); v2.1 lessons with live checklists (Beta). Next on the roadmap: v2.2 publishing (Play Store, name, logo) — needs the owner's GO. |
 | **Tags** | `v2.0.0`, `v1.6.0`, `v1.5.0`, `v1.4.1`, `v1.4.0`, `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0`, `v1.1.0`. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-20 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |
-| **Tests** | `npm test`: 384 passed (v2.0.1). |
+| **Tests** | `npm test`: 391 passed (v2.1 lessons). |
 | **Pull requests** | #1–#33 merged (#3 closed). #23–#26 = v1.6 hardware (rack, I/O Configuration, address styles, cabinet); #27 = free draw like SimuRelay; #28 = Release v1.6.0; #29 = v1.6.1 fixes; #30 = v1.7 HMI; #31 = v1.8; #32–#33 = v2.0 parts A–C. |
 | **Downloads** | GitHub Releases: `PLC-Trainer-X.Y.Z-portable.exe`, `PLC-Trainer-X.Y.Z-android.apk`, `PLC-Trainer-X.Y.Z-web.zip` (portable only since v1.4.1). Web app: https://ronanski.github.io/aio-icms-tool/ (Stable) and `/beta/` (Beta = `main`). |
 | **Android signing** | Release key in repo secrets (alias `plctrainer`, cert SHA-256 starts `27:5F:A5:15:06:CC:46`). The v1.2.0 APK was checked to carry this certificate. The owner keeps the keystore and passwords offline; they are not in the repo. |
@@ -73,6 +73,7 @@ desktop/  Electron wrapper → Windows installer   mobile/  Capacitor wrapper �
 4. **Next target** after going live: circuit-lesson auto-check, or a Play Store listing.
 
 ## Start of next session (read first)
+- **v2.0.0 stable + v2.0.1 + v2.1 (2026-10-20):** owner GO on the three roadmap rows. v2.0.0 released and verified; v2.0.1 (PR #36: DIV rounding, file-length Verify, earth leakage, alarms in the first 4 s) and v2.1 (lesson goals) on Beta only. Lesson goals: `goals: [{say, ok(G)}]` in `js/examples.js` (`GOALS`), checked in order every 250 ms by `checkGoals()` in `js/app.js` for the tracked lesson (`goals = {id, done, t0}`, set when a lesson is opened or its example loaded); `App.goalApi()` gives G (dev, of, mode, read, project, ev, rack, rungs, screen). Lesson 12's `interlocked()` unions wires and every pair a device can close in some state, then checks that cutting a contactor's 21-22 un-feeds the other coil.
 - **GO STABLE v1.6.0 given (2026-10-20).** Steps: release PR (version bump to 1.6.0 in package.json, desktop/, mobile/, `VERSION` in js/app.js, `VER` in sw.js; CHANGELOG `[1.6.0]`) → merge when CI is green → run Release workflow on `main` (publish) → verify release assets, APK cert and Pages `version.json`. If a step is not done when you resume, finish it.
 - **v1.6.0 released and verified (2026-10-20):** release run #53; 3 assets; APK cert `27:5F:A5:15:06:CC:46…` (checked); Pages `version.json` = 1.6.0. v1.6.1 (address style in Verify/event log/HMI tags) merged (PR #29).
 - **Owner (2026-10-20): "go proceed v1.6.1 fixes up to 2.0.0 -- provide update here after".** Work through the roadmap, merge each part into `main` (Beta). No stable release without a new "GO STABLE".

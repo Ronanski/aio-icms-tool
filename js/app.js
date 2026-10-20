@@ -570,6 +570,7 @@
 
   /* ---------- loop ---------- */
   const alertSeen = new Map();
+  let lastGoal = 0;
   let last = performance.now();
   /* App.later(n, fn) runs fn once n more ticks (circuit solve + PLC scan) have passed.
      Momentary buttons release through it, so even a quick tap is seen by at least one scan. */
@@ -608,6 +609,7 @@
       alertSeen.set(a.msg, now);
     }
     if (r.alerts.length) App.save();
+    if (now - lastGoal > 250) { lastGoal = now; checkGoals(); }
     if (pc) { plc.powered = ctx.plcPowered; plc.physIn = ctx.plcIn; } else { plc.powered = true; plc.physIn = 0; }
     plc.physInX = ctx.plcInX;
     if (pc && plc.powered !== lastPw && App.ticks > 0) App.log(plc.powered ? 'system' : 'alarm', plc.powered ? 'PLC power restored' : 'PLC lost its power');
@@ -859,6 +861,51 @@
 
   /* ---------- learn ---------- */
   let lessonId = 'l1';
+  /* lesson goals: checked a few times a second while you work, one after the other; a goal stays done */
+  const goals = { id: null, done: 0, t0: 0 };
+  function goalApi() {
+    const C = App.project.circuit, none = { state: {}, props: {} };
+    return {
+      dev: l => C.comps.find(c => c.props.label === l) || none,
+      of: t => C.comps.filter(c => c.type === t),
+      mode: () => App.plc.mode,
+      read: a => { try { return App.plc.read(a); } catch (e) { return 0; } },
+      project: App.project,
+      ev: txt => LOG.some(e => e.t >= goals.t0 && e.msg.includes(txt)),
+      rack: () => Circuit.rack(C, App.project.io),
+      rungs: () => App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)),
+      screen: () => HMI.screen(),
+    };
+  }
+  function trackLesson(id) {
+    if (goals.id === id) return;
+    goals.id = id; goals.done = 0; goals.t0 = Date.now();
+  }
+  App.lessonGoals = () => ({ ...goals });
+  App.goalApi = goalApi;
+  function checkGoals() {
+    const l = goals.id && Examples.LESSONS.find(x => x.id === goals.id);
+    if (!l || !l.goals || goals.done >= l.goals.length) return;
+    const G = goalApi();
+    let ch = false;
+    while (goals.done < l.goals.length) {
+      let ok = false;
+      try { ok = !!l.goals[goals.done].ok(G); } catch (e) { ok = false; }
+      if (!ok) break;
+      const g = l.goals[goals.done++];
+      ch = true;
+      App.log('system', `Lesson ${l.title.split(' ·')[0]}: ✓ ${g.say}`);
+      UI.toast(goals.done === l.goals.length ? `✓ ${g.say} — lesson complete!` : `✓ ${g.say}`, 'ok', 3500);
+    }
+    if (ch && App.view === 'learn') renderGoals();
+  }
+  function renderGoals() {
+    const box = document.querySelector('#view-learn [data-goals]'), l = Examples.LESSONS.find(x => x.id === lessonId);
+    if (!box || !l || !l.goals) return;
+    const n = goals.id === l.id ? goals.done : 0;
+    box.innerHTML = `<h3 class="mt">Your checklist</h3><p class="help">${goals.id === l.id ? (n === l.goals.length ? '✓ Lesson complete. Well done!' : 'Checked live while you work in the Wiring, Ladder and HMI, in this order.') : 'Load the example (or start working) to begin: each step is ticked off live while you work.'}</p>
+      <ul class="grade-list">${l.goals.map((g, i) => `<li class="${i < n ? 'ok' : i === n ? 'next' : ''}">${i < n ? '✓' : i === n ? '▸' : '○'} ${esc(g.say)}</li>`).join('')}</ul>`;
+  }
   function renderLearn() {
     const el = document.getElementById('view-learn');
     const L = Examples.LESSONS;
@@ -873,6 +920,7 @@
         <div class="lesson">${cur.body}</div>
         <div class="btn-row">${ex ? `<button class="btn${cur.test ? '' : ' primary'}" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.test ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
         ${cur.test ? '<div class="grade" data-grade></div>' : ''}
+        ${cur.goals ? '<div class="grade" data-goals></div>' : ''}
         <h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
         <h3 class="mt">Addressing (file-based style)</h3>
@@ -887,10 +935,11 @@
         <h3 class="mt">Keyboard</h3>
         <table class="ref"><tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save · Save as · Open project</td></tr><tr><td><kbd>Ctrl</kbd>+scroll</td><td>Zoom the ladder or the HMI (scroll alone zooms the wiring)</td></tr><tr><td>Drag an instruction</td><td>Move it to another place or rung (mouse). Right-click → Change to… swaps XIC ↔ XIO, TON ↔ TOF and so on.</td></tr><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>
       </article></div>`;
+    renderGoals();
     el.onclick = e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.lesson) { lessonId = b.dataset.lesson; renderLearn(); el.querySelector('.learn-body').scrollTop = 0; }
-      if (b.dataset.load) loadExample(b.dataset.load);
+      if (b.dataset.lesson) { lessonId = b.dataset.lesson; if (cur.goals || Examples.LESSONS.find(x => x.id === lessonId).goals) trackLesson(lessonId); renderLearn(); el.querySelector('.learn-body').scrollTop = 0; }
+      if (b.dataset.load) { loadExample(b.dataset.load); if (cur.goals) { goals.id = null; trackLesson(cur.id); } }
       if (b.dataset.ex) loadExample(b.dataset.ex);
       if (b.hasAttribute('data-check')) {
         const res = Examples.gradeLesson(cur, App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)));

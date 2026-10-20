@@ -493,6 +493,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .grade-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .grade-list li { padding: 6px 10px; border-radius: 8px; background: var(--surface-2); }
 .grade-list li.bad { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
+.grade-list li.ok { background: color-mix(in srgb, var(--ok, #2fa84f) 14%, var(--surface)); }
+.grade-list li.next { outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 600; }
 .grade-list small { color: var(--muted); }
 
 /* ---------- project list ---------- */

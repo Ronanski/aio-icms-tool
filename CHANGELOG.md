@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **Lessons with a live checklist** (Help → Lessons): lessons 8–16 list their steps and tick each one off **while you work** in the Wiring, Ladder and HMI (a toast and an event-log line per step; *lesson complete* at the end). The circuit lessons now check the wiring itself, not only the ladder: lesson 12 checks that the N.C. 21-22 of each contactor is really in the other one's coil circuit, and the XIO interlock in the ladder.
+- New lessons: **13 Modular PLC rack and I/O Configuration**, **14 Analog input, analog output and a VFD**, **15 HMI screens, trends and navigation**, **16 Download and online edits**.
 - **Earth leakage**: a load fed between a phase and PE (instead of N) sends its current to earth. The RCD in front of it trips (*FI1 TRIPPED — earth leakage through H1*); without an RCD the load keeps working and a warning says that nothing protects it.
 - **Verify** rejects COP, FLL, SQO and MSG instructions whose length runs past the end of their file (N7 and B3 have 32 words; a remote PLC too).
 

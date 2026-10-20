@@ -1515,6 +1515,34 @@ function check(name, cond, info = '') {
   await wait(400);
   check('without an RCD the leaking lamp stays on and a warning says so', (await get('H1', 'state.on')) && !(await get('QF1', 'state.tripped')) && await page.evaluate(() => App.events().some(e => e.msg.includes('no RCD protects it'))));
 
+  console.log('v2.1: lessons with live checklists');
+  check('lessons 13-16 exist and lessons 8-16 have a live checklist', await page.evaluate(() => ['l13', 'l14', 'l15', 'l16'].every(id => Examples.LESSONS.some(l => l.id === id)) &&
+    ['l8', 'l9', 'l10', 'l11', 'l12', 'l13', 'l14', 'l15', 'l16'].every(id => Examples.LESSONS.find(l => l.id === id).goals.length >= 3)));
+  await page.evaluate(() => App.showView('learn'));
+  await page.click('#view-learn [data-lesson="l8"]');
+  await page.click('#view-learn [data-load="dol"]'); await wait(300);
+  check('lesson 8: the checklist starts at step 1', await page.evaluate(() => App.lessonGoals().id === 'l8' && App.lessonGoals().done === 0));
+  await tap('S1'); await wait(400);
+  check('lesson 8: pressing START ticks off the seal-in step live', await page.evaluate(() => App.lessonGoals().done === 1 && App.events().some(e => e.msg.includes('✓ Press START'))));
+  await page.evaluate(() => App.showView('learn'));
+  check('the Learn view shows the checklist with the done step', await page.evaluate(() => { const li = document.querySelectorAll('#view-learn [data-goals] li'); return li.length === 4 && li[0].classList.contains('ok') && li[1].classList.contains('next'); }));
+  check('lesson 12: the forward/reverse example is interlocked in the wiring and in the ladder', await page.evaluate(() => {
+    App.openNew(Examples.EX.fwdrev.build());
+    const g = Examples.LESSONS.find(l => l.id === 'l12').goals, G = App.goalApi();
+    return g[3].ok(G) && g[4].ok(G);
+  }));
+  check('lesson 12: without the N.C. 21-22 wires the interlock check fails', await page.evaluate(() => {
+    const C = App.project.circuit, km = C.comps.filter(c => c.type === 'contactor').map(c => c.id);
+    C.wires = C.wires.filter(w => !km.some(id => [w.a, w.b].some(k => k === id + ':21' || k === id + ':22')));
+    return !Examples.LESSONS.find(l => l.id === 'l12').goals[3].ok(App.goalApi());
+  }));
+  check('lesson 13: a card in slot 3 that is not configured is a CPU fault step', await page.evaluate(() => {
+    App.openNew(Examples.EX.rack.build());
+    const g = Examples.LESSONS.find(l => l.id === 'l13').goals, before = g[1].ok(App.goalApi());
+    const c = Circuit.create('mdo8', 0, 0, App.project.circuit); c.props.slot = '3'; App.project.circuit.comps.push(c);
+    return !before && g[1].ok(App.goalApi());
+  }));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
