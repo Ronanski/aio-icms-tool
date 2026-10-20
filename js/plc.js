@@ -52,6 +52,13 @@
   };
 
   /* ---------- Addressing ---------- */
+  /* controller tags (v2.0): a name stands for a data-table address. BOOL, INT, TIMER and COUNTER tags get their own
+     address (B3, N7, T4, C5 from the top down), an ALIAS tag points at any address (I:1/0, O:2/0 …).
+     Members: TIMER .EN .TT .DN .PRE .ACC, COUNTER .CU .CD .DN .OV .UN .PRE .ACC */
+  let TAGS = new Map();
+  const TAGRE = /^[A-Z_][A-Z0-9_]{0,39}$/;
+  function setTags(list) { TAGS = new Map((list || []).map(t => [t.name.toUpperCase(), t])); cache.clear(); }
+  const tagOf = name => TAGS.get(String(name || '').toUpperCase());
   const cache = new Map();
   function parse(raw) {
     if (raw == null) return null;
@@ -78,6 +85,12 @@
     if ((m = s.match(/^([IO]):([1-7])\.([0-3])$/))) return { kind: 'word', file: m[1], word: ANA(+m[2], +m[3]), ana: true, norm: `${m[1]}:${m[2]}.${m[3]}` };
     if ((m = s.match(/^#(N7|B3):(\d+)$/))) return +m[2] < SIZES[m[1]] ? { kind: 'file', file: m[1], word: +m[2], norm: `#${m[1]}:${+m[2]}` } : null;
     if ((m = s.match(/^U:([3-9])$/))) return { kind: 'prog', n: +m[1], norm: `U:${m[1]}` };
+    if ((m = s.match(/^([A-Z_][A-Z0-9_]*)(?:\.([A-Z]+))?$/)) && TAGS.has(m[1])) {
+      const t = TAGS.get(m[1]), struct = t.type === 'TIMER' || t.type === 'COUNTER';
+      if (m[2] && !struct) return null;
+      const a = parse0(m[2] ? t.addr + (['ACC', 'PRE'].includes(m[2]) ? '.' : '/') + m[2] : t.addr);
+      return a ? { ...a, norm: s, tag: m[1], addr: a.norm } : null;
+    }
     if ((m = s.match(/^R6:(\d+)$/))) return +m[1] < SIZES.R6 ? { kind: 'struct', file: 'R6', word: +m[1], norm: `R6:${+m[1]}` } : null;
     if ((m = s.match(/^R6:(\d+)[./]([A-Z]+)$/))) {
       const w = +m[1], sub = m[2];
@@ -236,8 +249,8 @@
     }
 
     /* rungs = LAD 2 (main), subs = { 3: rungs, … } subroutine files called by JSR */
-    setProgram(rungs, subs = {}) {
-      this.rungs = rungs; this.subs = subs;
+    setProgram(rungs, subs = {}, periodic = {}) {
+      this.rungs = rungs; this.subs = subs; this.periodic = periodic; this.pt = {};
       this.pw = Object.create(null); this.hl = Object.create(null);
       const prep = arr => arr.forEach(e => {
         if (e.t === 'BST') e.legs.forEach(prep);
@@ -296,6 +309,12 @@
       if (this.mode === 'RUN') {
         d.S[1] = asI16(this.first ? d.S[1] | (1 << 15) : d.S[1] & ~(1 << 15));
         this.runRungs(this.rungs, 0);
+        // periodic tasks: a program file that runs every period ms on its own (not through JSR)
+        for (const n in this.periodic || {}) {
+          const per = this.periodic[n], sub = this.subs[n]; if (!per || !sub) continue;
+          this.pt[n] = (this.pt[n] || 0) + dt * 1000;
+          while (this.pt[n] >= per) { this.pt[n] -= per; this.runRungs(sub, 1); }
+        }
         this.first = false;
         this.scans++;
       } else {
@@ -522,5 +541,15 @@
     }
   }
 
-  window.PLCcore = { INSTR, SIZES, NUM_IN, NUM_OUT, ANA, parse, validArg, Engine, i16 };
+  /* a free address for a new tag of this type: from the top of its file down, not used by another tag */
+  function allocTag(type, list) {
+    const used = new Set((list || []).filter(t => t.type !== 'ALIAS').map(t => t.addr));
+    if (type === 'BOOL') { for (let w = 31; w >= 16; w--) for (let b = 15; b >= 0; b--) if (!used.has(`B3:${w}/${b}`)) return `B3:${w}/${b}`; }
+    const f = { INT: 'N7', TIMER: 'T4', COUNTER: 'C5' }[type];
+    if (f) for (let w = 31; w >= 16; w--) if (!used.has(`${f}:${w}`)) return `${f}:${w}`;
+    return null;
+  }
+  /* a name that cannot be read as an address or an instruction */
+  const tagNameOk = n => { const s = String(n || '').toUpperCase(); return TAGRE.test(s) && !/^[A-Z]\d*$/.test(s) && !/^(B3|N7|T4|C5|R6|S2|BST|NXB|BND|SOR|EOR)$/.test(s) && !INSTR[s]; };
+  window.PLCcore = { INSTR, SIZES, NUM_IN, NUM_OUT, ANA, parse, validArg, Engine, i16, setTags, tagOf, allocTag, tagNameOk };
 })();

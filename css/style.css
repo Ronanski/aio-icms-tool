@@ -682,3 +682,7 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .ssym .jdot { fill: var(--lad-wire); stroke: none; }
 .free-svg .ssym.on .jdot { fill: var(--lad-on); }
 .free-svg .ftext { font: 600 13px var(--sans); fill: var(--lad-text); pointer-events: none; }
+.org, .org ul { list-style: none; margin: 0; padding-left: 18px; }
+.org { padding-left: 0; font-size: 13px; line-height: 1.9; }
+.org small { color: var(--muted); }
+.tag-tbl td, .tag-tbl th { white-space: nowrap; }
