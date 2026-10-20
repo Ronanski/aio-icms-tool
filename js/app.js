@@ -60,7 +60,18 @@
     // subroutine files LAD 3–9
     const files = arr(lad.files).filter(f => isObj(f) && Number.isInteger(f.n) && f.n >= 3 && f.n <= 9)
       .filter((f, i, a) => a.findIndex(g => g.n === f.n) === i).sort((a, b) => a.n - b.n)
-      .map(f => ({ n: f.n, name: str(f.name, 10).toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'SUB' + f.n, rungs: parseRungs(f.rungs) }));
+      .map(f => ({ n: f.n, name: str(f.name, 10).toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'SUB' + f.n, period: Number.isInteger(f.period) && f.period >= 10 && f.period <= 10000 ? f.period : 0, rungs: parseRungs(f.rungs) }));
+    // controller tags: unique valid names; base tags keep a valid address of their type, an alias needs a valid address
+    const TT = { BOOL: 'bit', INT: 'word', TIMER: 'struct', COUNTER: 'struct', ALIAS: null };
+    const tags = [];
+    for (const t of arr(p.tags).filter(isObj)) {
+      const name = str(t.name, 40).toUpperCase();
+      if (!PLCcore.tagNameOk(name) || tags.some(x => x.name === name) || !Object.prototype.hasOwnProperty.call(TT, t.type)) continue;
+      const a = PLCcore.parse(str(t.addr, 20));
+      const okA = a && !a.tag && (t.type === 'ALIAS' ? (a.kind === 'bit' || a.kind === 'word') : a.kind === TT[t.type] && ({ BOOL: 'B3', INT: 'N7', TIMER: 'T4', COUNTER: 'C5' }[t.type] === a.file));
+      const addr = okA ? a.norm : t.type === 'ALIAS' ? null : PLCcore.allocTag(t.type, tags);
+      if (addr) tags.push({ name, type: t.type, addr, desc: str(t.desc, 80) });
+    }
     const desc = {};
     if (isObj(lad.desc)) for (const k in lad.desc) { const v = str(lad.desc[k], 80); if (v) desc[k] = v; }
     const comps = arr(cir.comps).filter(c => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && ID.test(c.id))
@@ -77,6 +88,7 @@
     return {
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc, files },
+      tags,
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: HMI.cleanAll(hm),
       schematic: Schematic.clean(p.schematic, termOk),
@@ -112,7 +124,8 @@
     return {
       version: 1, name: p.name,
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc,
-        files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
+        files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
+      tags: p.tags || [],
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
@@ -174,6 +187,87 @@
     applyProject(proj);
     return true;
   };
+  /* ---------- v2.0: controller tags and the controller organizer ---------- */
+  const TAG_TYPES = { BOOL: 'BOOL (one bit)', INT: 'INT (16-bit integer)', TIMER: 'TIMER', COUNTER: 'COUNTER', ALIAS: 'ALIAS (another name for an address)' };
+  App.tagChanged = function () { App.loadProgram(); App.plc.applyAll(false); Ladder.render(); Ladder.DataTable.render(); App.save(); };
+  function tagForm(t) {
+    const tags = App.project.tags, esc = UI.esc;
+    UI.form(t ? `Tag ${t.name}` : 'New tag', [
+      { key: 'name', label: 'Name (letters, digits, _)', value: t ? t.name : '' },
+      { key: 'type', label: 'Type', value: t ? t.type : 'BOOL', options: Object.entries(TAG_TYPES).map(([v, l]) => ({ v, l })) },
+      { key: 'alias', label: 'Alias for (ALIAS only, e.g. I:1/0 or I0.0)', value: t && t.type === 'ALIAS' ? App.fmt(t.addr) : '' },
+      { key: 'desc', label: 'Description', value: t ? t.desc : '' },
+    ], v => {
+      const name = v.name.trim().toUpperCase();
+      if (!PLCcore.tagNameOk(name)) return 'A name starts with a letter or _, has letters, digits and _ only, and is not an address or an instruction';
+      if (tags.some(x => x !== t && x.name === name)) return `${name} already exists`;
+      let addr;
+      if (v.type === 'ALIAS') {
+        const a = PLCcore.parse(App.addrIn(v.alias));
+        if (!a || a.tag || (a.kind !== 'bit' && a.kind !== 'word')) return 'Type the address it stands for, e.g. I:1/0, O:2/3, N7:5';
+        addr = a.norm;
+      } else addr = t && t.type === v.type ? t.addr : PLCcore.allocTag(v.type, tags.filter(x => x !== t));
+      if (!addr) return 'No free address left for this type';
+      // renaming a tag renames it in the program too
+      if (t && t.name !== name) renameInProgram(t.name, name);
+      const n = { name, type: v.type, addr, desc: v.desc.trim().slice(0, 80) };
+      if (t) Object.assign(t, n); else tags.push(n);
+      App.log('system', `Tag ${name} (${v.type}) ${t ? 'changed' : 'created'} → ${addr}`);
+      App.tagChanged(); App.tagsDialog(); return undefined;
+    }, `<p class="help">BOOL, INT, TIMER and COUNTER tags get their own address (shown in the list). Use a tag name in an instruction instead of an address: <code>XIC START_PB</code>, <code>TON PUMP_DELAY 1.0 5 0</code>, <code>XIC PUMP_DELAY.DN</code>.</p>`);
+  }
+  function renameInProgram(from, to) {
+    const re = new RegExp(`^${from}(\\.[A-Z]+)?$`);
+    const fix = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(fix); else e.a = e.a.map(x => (re.test(String(x).toUpperCase()) ? to + String(x).toUpperCase().slice(from.length) : x)); });
+    [App.project.ladder.rungs, ...(App.project.ladder.files || []).map(f => f.rungs)].forEach(list => list.forEach(r => fix(r.elems)));
+  }
+  App.tagsDialog = function () {
+    document.querySelectorAll('.modal-wrap[data-tags]').forEach(m => m.remove());
+    const tags = App.project.tags, esc = UI.esc;
+    const m = UI.modal({
+      title: 'Controller Tags', wide: true,
+      body: `${tags.length ? `<table class="io-cfg tag-tbl"><tr><th>Name</th><th>Type</th><th>Address</th><th>Value</th><th>Description</th><th></th></tr>${tags.map((t, i) => `<tr><td><a href="#" data-tedit="${i}"><code>${esc(t.name)}</code></a></td><td>${t.type}</td><td><code>${esc(App.fmt(t.addr))}</code></td><td class="num" data-tval="${esc(t.name)}"></td><td>${esc(t.desc)}</td><td><button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No tags yet. A tag is a name for a bit, an integer, a timer or a counter, so the program reads like the machine: <code>XIC START_PB</code> instead of <code>XIC I:1/0</code>.</p>'}`,
+      buttons: [{ label: '＋ New tag', onClick: () => { tagForm(null); return false; } }, { label: 'Close', primary: true }],
+      onOpen: el => {
+        el.closest('.modal-wrap').dataset.tags = '1';
+        el.querySelectorAll('[data-tedit]').forEach(a => { a.onclick = ev => { ev.preventDefault(); tagForm(tags[Number(a.dataset.tedit)]); }; });
+        el.querySelectorAll('[data-tdel]').forEach(b => { b.onclick = () => { const t = tags[Number(b.dataset.tdel)]; UI.confirm('Delete tag', `Delete ${t.name}? Instructions that use it become invalid until you fix them.`, () => { tags.splice(tags.indexOf(t), 1); App.log('system', `Tag ${t.name} deleted`); App.tagChanged(); App.tagsDialog(); }, 'Delete'); }; });
+        const upd = () => { if (!el.isConnected) { clearInterval(tm); return; } el.querySelectorAll('[data-tval]').forEach(c => { const t = PLCcore.tagOf(c.dataset.tval); c.textContent = t ? (t.type === 'TIMER' || t.type === 'COUNTER' ? `ACC ${App.plc.read(t.name + '.ACC')} · DN ${App.plc.read(t.name + '.DN')}` : String(App.plc.read(t.name))) : ''; }); };
+        const tm = setInterval(upd, 250); upd();
+      },
+    });
+    return m;
+  };
+  App.organizer = function () {
+    const lad = App.project.ladder, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io);
+    const PER = [0, 10, 50, 100, 250, 500, 1000];
+    const per = lad.files.filter(f => f.period);
+    const body = `<ul class="org">
+      <li>🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? 'modular rack' : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}
+        <ul>
+          <li>🏷 <a href="#" data-org="tags">Controller Tags</a> <small>(${App.project.tags.length})</small></li>
+          <li>⚙ Tasks<ul>
+            <li>↻ <b>MainTask</b> <small>continuous</small><ul><li>▤ <b>MainProgram</b><ul>
+              <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>LAD 2</small></li>
+              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>LAD ${f.n} · runs on JSR U:${f.n}</small></li>`).join('')}
+            </ul></li></ul></li>
+            ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>LAD ${f.n}</small></li></ul></li>`).join('')}
+          </ul></li>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a></li>
+        </ul></li></ul>
+      ${lad.files.length ? `<h5>Routine tasks</h5><table class="io-cfg">${lad.files.map(f => `<tr><td>LAD ${f.n} ${esc(f.name)}</td><td><select data-per="${f.n}">${PER.map(p => `<option value="${p}" ${p === (f.period || 0) ? 'selected' : ''}>${p ? `Periodic task, every ${p} ms` : 'Called by JSR'}</option>`).join('')}</select></td></tr>`).join('')}</table>` : '<p class="help">Add a subroutine file with ＋ File in the Ladder: it runs on a JSR, or on its own as a periodic task.</p>'}`;
+    UI.modal({
+      title: 'Controller Organizer', body, wide: true,
+      onOpen: el => {
+        el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
+          ev.preventDefault(); el.closest('.modal-wrap').remove();
+          const k = a.dataset.org;
+          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
+        }; });
+        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); el.closest('.modal-wrap').remove(); App.organizer(); }; });
+      },
+    });
+  };
   /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
   App.ioConfig = function () {
     const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc;
@@ -207,8 +301,9 @@
   };
   /* the program in the PLC: LAD 2 and the subroutine files */
   App.loadProgram = function () {
-    const subs = {}; (App.project.ladder.files || []).forEach(f => { subs[f.n] = f.rungs; });
-    App.plc.setProgram(App.project.ladder.rungs, subs);
+    PLCcore.setTags(App.project.tags);
+    const subs = {}, per = {}; (App.project.ladder.files || []).forEach(f => { subs[f.n] = f.rungs; if (f.period) per[f.n] = f.period; });
+    App.plc.setProgram(App.project.ladder.rungs, subs, per);
   };
   App.programChanged = function () { App.loadProgram(); App.save(); };
   App.circuitChanged = function () { App.addrChanged(false); App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };

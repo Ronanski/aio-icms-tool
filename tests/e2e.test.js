@@ -1398,6 +1398,37 @@ function check(name, cond, info = '') {
   await page.click('[data-lang-btn]'); await wait(200);
   check('switching back restores English', await page.evaluate(() => I18N.lang === 'en' && document.querySelector('[data-examples]').textContent === 'Examples ▾' && document.querySelector('#view-wiring .ws-search').placeholder === 'Search components…'));
 
+  console.log('v2.0 part A: controller tags, organizer, periodic task');
+  await page.evaluate(() => {
+    App.openNew({ name: 'Tags', tags: [{ name: 'start_pb', type: 'ALIAS', addr: 'I:0/0' }, { name: 'MOTOR', type: 'ALIAS', addr: 'O:0/0', desc: 'Main motor' }, { name: 'RUN_T', type: 'TIMER', addr: 'T4:31' }, { name: 'PARTS', type: 'COUNTER' }, { name: 'B3', type: 'BOOL' }, { name: 'BAD', type: 'ALIAS', addr: 'X:9' }, { name: 'SEEN', type: 'BOOL' }],
+      ladder: { rungs: [{ text: 'XIC START_PB TON RUN_T 1.0 1 0' }, { text: 'XIC RUN_T.DN OTE MOTOR' }, { text: 'XIC START_PB OTE SEEN' }],
+        files: [{ n: 3, name: 'tick', period: 100, rungs: [{ text: 'ADD N7:0 1 N7:0' }] }] } });
+    App.setLayout('single'); App.showView('ladder');
+  }); await wait(200);
+  check('tags are cleaned on load: names upper case, bad names and aliases dropped, base tags get an address', await page.evaluate(() => { const t = App.project.tags; return t.map(x => x.name).join() === 'START_PB,MOTOR,RUN_T,PARTS,SEEN' && t.find(x => x.name === 'PARTS').addr === 'C5:31' && t.find(x => x.name === 'SEEN').addr === 'B3:31/15'; }));
+  check('the ladder shows tag names and the tag description', await page.evaluate(() => { const t = [...document.querySelectorAll('#view-ladder .addr')].map(x => x.textContent); return t.includes('START_PB') && t.includes('MOTOR') && t.includes('RUN_T.DN') && [...document.querySelectorAll('#view-ladder .desc')].some(x => x.textContent === 'Main motor'); }));
+  check('a program written with tags verifies', await page.evaluate(() => Ladder.verify(true)));
+  await page.evaluate(() => { App.plc.write('N7:0', 0); App.setMode('RUN'); App.force('I:0/0', 1); window._t0 = performance.now(); }); await wait(1500);
+  check('tags run like their addresses: alias input, timer members, alias output', await page.evaluate(() => App.plc.read('O:0/0') === 1 && App.plc.read('RUN_T.DN') === 1 && App.plc.read('SEEN') === 1 && App.plc.read('B3:31/15') === 1));
+  check('a periodic task (LAD 3 every 100 ms) runs on its own, about 10 times a second', await page.evaluate(() => { const n = App.plc.read('N7:0'), want = (performance.now() - window._t0) / 100; return n >= want * 0.6 && n <= want * 1.4; }));
+  await page.evaluate(() => { App.force('I:0/0', null); App.setMode('PROG'); });
+  await page.click('#view-ladder [data-act="tags"]'); await wait(200);
+  check('Controller Tags lists every tag with its address', await page.evaluate(() => document.querySelectorAll('.tag-tbl [data-tedit]').length === 5));
+  await page.click('.modal-foot button:has-text("New tag")'); await wait(100);
+  await page.fill('#f_name', 'level_sp'); await page.selectOption('#f_type', 'INT'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+  check('a new INT tag gets a free N7 word from the top', await page.evaluate(() => { const t = App.project.tags.find(x => x.name === 'LEVEL_SP'); return !!t && t.addr === 'N7:31'; }));
+  await page.evaluate(() => document.querySelectorAll('.modal-wrap').forEach(m => m.remove()));
+  await page.evaluate(() => { const t = App.project.tags.find(x => x.name === 'MOTOR'); App.tagsDialog(); }); await wait(100);
+  await page.click('.tag-tbl [data-tedit="1"]'); await wait(100);
+  await page.fill('#f_name', 'PUMP'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+  check('renaming a tag renames it in the program', await page.evaluate(() => App.serialize().ladder.rungs[1].text === 'XIC RUN_T.DN OTE PUMP'));
+  await page.evaluate(() => document.querySelectorAll('.modal-wrap').forEach(m => m.remove()));
+  await page.click('#view-ladder [data-act="org"]'); await wait(150);
+  check('the Controller Organizer shows MainTask, MainProgram, MainRoutine and the periodic task', await page.evaluate(() => { const t = document.querySelector('.org').textContent; return t.includes('MainTask') && t.includes('MainProgram') && t.includes('MainRoutine') && t.includes('PeriodicTask 3') && t.includes('every 100 ms'); }));
+  await page.selectOption('[data-per="3"]', '0'); await wait(150);
+  check('a routine can be switched from periodic to called by JSR', await page.evaluate(() => App.project.ladder.files[0].period === 0 && !App.plc.periodic[3]));
+  await page.evaluate(() => { document.querySelectorAll('.modal-wrap').forEach(m => m.remove()); App.openNew(Examples.EX.plcmotor.build()); });
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });

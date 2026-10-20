@@ -81,7 +81,8 @@
   const vw = (x, y1, y2, k) => `<line class="w" data-p="${k}" x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>`;
 
   function descLines(norm) {
-    const d = App.project.ladder.desc[norm];
+    const t = PLCcore.tagOf(norm);
+    const d = App.project.ladder.desc[norm] || (t && t.desc);
     if (!d) return [];
     const words = String(d).split(/\s+/); const lines = []; let cur = '';
     for (const w of words) {
@@ -641,7 +642,7 @@
     root = el;
     el.innerHTML = `
       <div class="lad-toolbar">
-        <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button></div>
+        <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-act="data" title="Data files and forces">▤ Data</button>
           <button class="tbtn" data-act="rung" title="New rung (Ctrl+R)">＋ Rung</button>
@@ -679,7 +680,7 @@
       ({
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
-        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile,
+        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(), tags: () => App.tagsDialog(),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
     });
