@@ -108,7 +108,7 @@
     o.push(`<rect class="hit" x="${x + 2}" y="${y + 4}" width="${CW - 4}" height="${RH - 8}" rx="6"/>`);
     o.push(hw(x, cx - sw, wy, 'i' + id), hw(cx + sw, x + CW, wy, 'o' + id));
     descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - 30 - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
-    o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(norm)}</text>`);
+    o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(App.fmt(norm))}</text>`);
     o.push(`<text class="fbadge" data-f="${esc(norm)}" x="${cx}" y="${wy + 26}"></text>`);
     o.push(`<g class="ins" data-h="${id}">`);
     if (d && d.k === 'coil') {
@@ -470,8 +470,9 @@
   function suggestions(ty) {
     const L = [];
     if (ty === 'bit') {
-      for (let i = 0; i < 12; i++) L.push(`I:0/${i}`);
-      for (let i = 0; i < 8; i++) L.push(`O:0/${i}`);
+      // the real I/O points of the hardware, in the project's address style
+      const io = Circuit.addrBook(App.project.circuit, App.project.io, App.project.addr || 'file').points;
+      L.push(...io.I.map(App.fmt), ...io.O.map(App.fmt));
       for (let i = 0; i < 16; i++) L.push(`B3:0/${i}`);
       for (let i = 0; i < 6; i++) L.push(`T4:${i}/DN`, `T4:${i}/TT`, `T4:${i}/EN`);
       for (let i = 0; i < 6; i++) L.push(`C5:${i}/DN`);
@@ -493,12 +494,13 @@
     const e = f.e, d = INSTR[e.t];
     const first = parse(e.a[0]);
     const descKey = first && first.kind !== 'const' ? first.norm : null;
-    const fields = d.args.map((spec, k) => ({ key: 'a' + k, label: spec.n, value: e.a[k], list: suggestions(spec.ty) }));
+    const fields = d.args.map((spec, k) => ({ key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
     fields.push({ key: 'desc', label: 'Address description (optional)', value: descKey ? (App.project.ladder.desc[descKey] || '') : '', hint: 'Shown above the instruction, e.g. "START PB" or "MOTOR RUN".' });
     const m = UI.form(`${e.t} — ${d.name}`, fields, vals => {
       const a = [];
       for (let k = 0; k < d.args.length; k++) {
-        const v = String(vals['a' + k] || '').trim().toUpperCase();
+        // a bit address can be typed in any address style; it is stored file-based
+        const v = d.args[k].ty === 'bit' ? App.addrIn(vals['a' + k] || '') : String(vals['a' + k] || '').trim().toUpperCase();
         const err = validArg(d.args[k].ty, v);
         if (err) return `${d.args[k].n}: ${err}`;
         const p = parse(v);
@@ -517,7 +519,7 @@
     // keep the description field in sync with the address being typed
     const a0 = m.el.querySelector('#f_a0'), dIn = m.el.querySelector('#f_desc');
     if (a0 && dIn) a0.addEventListener('input', () => {
-      const p = parse(a0.value);
+      const p = parse(App.addrIn(a0.value));
       dIn.value = p && p.kind !== 'const' ? (App.project.ladder.desc[p.norm] || '') : '';
     });
   };
@@ -628,6 +630,7 @@
           <button class="tbtn" data-act="ascii" title="Edit selected rung as text">ASCII</button>
           <button class="tbtn accent" data-act="verify" title="Verify project">✓ Verify</button>
           <button class="tbtn" data-act="iocfg" title="I/O Configuration: the card the CPU expects in each rack slot">I/O Config</button>
+          <label class="tb-addr" title="How I/O addresses are shown. You can type an address in any style; the program is stored file-based."><span class="tb-lbl">Address</span><select data-addr>${Object.entries(Circuit.STYLES).map(([k, n]) => `<option value="${k}">${esc(n)}</option>`).join('')}</select></label>
         </div>
         <div class="tb-group zoom-group"><span class="tb-lbl">Zoom</span>
           <button class="tbtn" data-act="zout" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button>
@@ -642,6 +645,7 @@
       </div>`;
     rungsEl = el.querySelector('.lad-rungs');
     sideEl = el.querySelector('.lad-side');
+    el.querySelector('[data-addr]').addEventListener('change', ev => App.setAddrStyle(ev.target.value));
     el.querySelector('.lad-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.ins) return Ladder.insert(b.dataset.ins);
@@ -788,6 +792,8 @@
     if (!rungsEl) return;
     const zl = root.querySelector('[data-lz]');
     if (zl) zl.textContent = Math.round(LZ * 100) + '%';
+    const as = root.querySelector('[data-addr]');
+    if (as) as.value = App.project.addr || 'file';
     const list = rungs();
     const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
@@ -851,7 +857,7 @@
       body = words.length ? `<table class="dt bits">${bitHead}${words.map(m => bitRow(dtFile, m.word, m.n)).join('')}</table>
       <div class="io-list">${words.map(m => (m.label ? `<div class="io-slot">Slot ${m.word}: ${esc(m.label)} — ${esc(m.name)}</div>` : '') + Array.from({ length: m.n }, (_, i) => {
         const a = `${dtFile}:${m.word}/${i}`;
-        return `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code>${a}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
+        return `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code title="${a}">${esc(App.fmt(a))}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
       }).join('')).join('')}</div>
       <p class="help">${dtFile === 'I' ? 'Inputs follow field wiring. Force to test logic without hardware.' : 'Outputs are written by the ladder; forcing overrides the physical output terminal.'}</p>`
         : `<p class="help">No ${dtFile === 'I' ? 'input' : 'output'} card in the I/O configuration. Add cards from the PLC Rack parts in the Wiring, then <button class="tbtn sm" data-act="iocfg">I/O Configuration</button>.</p>`;
@@ -871,7 +877,7 @@
       <div class="side-head"><h4>Forces <span class="count">${forces.length}</span></h4>
         <button class="tbtn sm" data-act="fen">${App.plc.forcesEnabled ? 'Disable' : 'Enable'}</button>
         <button class="tbtn sm" data-act="fclr" ${forces.length ? '' : 'disabled'}>Remove all</button></div>
-      <div class="force-list">${forces.length ? forces.map(k => `<div><code>${k}</code> <b class="${App.plc.forces[k] ? 'fon' : 'foff'}">${App.plc.forces[k] ? 'ON' : 'OFF'}</b> <button data-frm="${k}">✕</button></div>`).join('') : '<p class="help">No forces installed. Right-click an I/O instruction or use F1/F0 above.</p>'}</div>`;
+      <div class="force-list">${forces.length ? forces.map(k => `<div><code title="${k}">${esc(App.fmt(k))}</code> <b class="${App.plc.forces[k] ? 'fon' : 'foff'}">${App.plc.forces[k] ? 'ON' : 'OFF'}</b> <button data-frm="${k}">✕</button></div>`).join('') : '<p class="help">No forces installed. Right-click an I/O instruction or use F1/F0 above.</p>'}</div>`;
     dtCache = [...dtEl.querySelectorAll('[data-bit]')].map(el => ({ el, a: parse(el.dataset.bit), led: el.classList.contains('io-led'), on: null, f: null }))
       .concat([...dtEl.querySelectorAll('[data-word]')].map(el => ({ el, a: parse(el.dataset.word), word: true, t: null })))
       .concat([...dtEl.querySelectorAll('[data-tb]')].map(el => ({ el, tb: Number(el.dataset.tb), t: null })))

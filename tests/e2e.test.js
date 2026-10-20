@@ -1170,6 +1170,26 @@ function check(name, cond, info = '') {
   }));
   check('a saved I/O configuration is cleaned on load', await page.evaluate(() => JSON.stringify(App.buildProject({ name: 'x', io: { slots: { 1: 'mdo8', 9: 'mdi8', 2: 'lamp', 3: 5 } } }).io) === JSON.stringify({ slots: { 1: 'mdo8' } })));
 
+  console.log('v1.6 part 3: address styles');
+  await page.evaluate(() => { App.openNew(Examples.EX.rack.build()); App.setLayout('single'); App.showView('ladder'); }); await wait(300);
+  const addrs = () => page.evaluate(() => [...document.querySelectorAll('#view-ladder .addr')].map(t => t.textContent).join());
+  check('file-based is the default style', (await addrs()).startsWith('I:1/0') && await page.evaluate(() => App.project.addr === 'file'));
+  await page.selectOption('#view-ladder [data-addr]', 'bitbyte'); await wait(200);
+  check('bit/byte style: I:1/0 → I0.0, O:2/0 → Q0.0 in the ladder', await page.evaluate(() => { const t = [...document.querySelectorAll('#view-ladder .addr')].map(x => x.textContent); return t.includes('I0.0') && t.includes('I0.1') && t.includes('Q0.0') && t.includes('Q0.1'); }));
+  check('the program is still stored file-based', await page.evaluate(() => App.serialize().ladder.rungs[0].text.includes('I:1/0') && App.serialize().addr === 'bitbyte'));
+  check('the wiring card shows its range in the chosen style', await page.evaluate(() => Circuit.draw(App.project.circuit.comps.find(c => c.props.label === 'DI1'), App.ctx).includes('I0.0 – I0.7')));
+  check('the data table shows the chosen style', await page.evaluate(() => { document.querySelector('[data-file="I"]').click(); return document.querySelector('[data-io="I:1/0"] code').textContent === 'I0.0'; }));
+  await page.selectOption('#view-ladder [data-addr]', 'basic'); await wait(200);
+  check('basic style: I1, I2, Q1, Q2', await page.evaluate(() => { const t = [...document.querySelectorAll('#view-ladder .addr')].map(x => x.textContent); return ['I1', 'I2', 'Q1', 'Q2'].every(a => t.includes(a)); }));
+  check('an address typed in any style is read as file-based', await page.evaluate(() => App.addrIn('I0.1') === 'I:1/1' && App.addrIn('q2') === 'O:2/1' && App.addrIn('%IX0.0') === 'I:1/0' && App.addrIn('B3:0/1') === 'B3:0/1' && App.addrIn('I9') === 'I9'));
+  await page.evaluate(() => Ladder.edit(App.project.ladder.rungs[1].elems[0].id)); await wait(150);
+  check('the edit dialog shows the address in the chosen style', await page.evaluate(() => document.querySelector('#f_a0').value === 'Q1'));
+  await page.fill('#f_a0', 'I2'); await page.click('.modal-foot button:has-text("OK")'); await wait(150);
+  check('typing I2 in basic style stores I:1/1', await page.evaluate(() => App.serialize().ladder.rungs[1].text.startsWith('XIO I:1/1')));
+  check('the address style is cleaned on load', await page.evaluate(() => App.buildProject({ name: 'x', addr: 'evil' }).addr === 'file' && App.buildProject({ name: 'x', addr: 'basic' }).addr === 'basic'));
+  check('compact PLC in bit/byte style: I:0/9 is I1.1', await page.evaluate(() => { App.openNew({ ...Examples.EX.practice.build(), addr: 'bitbyte' }); return App.fmt('I:0/9') === 'I1.1' && App.fmt('O:0/7') === 'Q0.7' && App.fmt('B3:0/1') === 'B3:0/1'; }));
+  await page.evaluate(() => App.setAddrStyle('file'));
+
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.view', 'panel'); localStorage.setItem('plc-trainer.layout', 'wp'); localStorage.setItem('plc-trainer.floats', '[["panel",{"x":10,"y":10,"w":300,"h":200}]]'); });

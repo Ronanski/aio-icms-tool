@@ -74,6 +74,7 @@
       hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
       schematic: Schematic.clean(p.schematic, termOk),
       io: Circuit.cleanIo(p.io),
+      addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : 'file',
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && KINDS[e.kind]).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
     };
   }
@@ -81,6 +82,7 @@
   App.loadProject = function (p) { applyProject(buildProject(p)); };
   function applyProject(proj) {
     App.project = proj;
+    App.addrChanged(false);
     LOG.length = 0; LOG.push(...proj.events); unseen = 0;
     const rungs = proj.ladder.rungs;
     const plc = App.plc;
@@ -108,6 +110,7 @@
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
       io: p.io,
+      addr: p.addr,
       events: LOG.slice(-LOG_KEEP),
     };
   };
@@ -188,6 +191,7 @@
           const slots = {};
           el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.value) slots[sel.dataset.slot] = sel.value; });
           App.project.io = Circuit.cleanIo({ slots });
+          App.addrChanged();
           App.log('system', 'I/O configuration changed: ' + (Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`).join(', ') || 'empty'));
           Ladder.DataTable.render(); updateBar(true); App.dirty.wiring = true; App.save();
         } }]),
@@ -195,7 +199,25 @@
     });
   };
   App.programChanged = function () { App.plc.setProgram(App.project.ladder.rungs); App.save(); };
-  App.circuitChanged = function () { App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
+  App.circuitChanged = function () { App.addrChanged(false); App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
+  /* address style of the project (display only): App.fmt(norm) shows an address, App.addrIn(text) reads one typed in any style */
+  let book = null;
+  App.addrChanged = function (redraw = true) {
+    const old = book;
+    book = Circuit.addrBook(App.project.circuit, App.project.io, App.project.addr || 'file');
+    App.ctx.fmt = book.fmt;
+    // the hardware changed the numbering of a bit/byte or basic style: redraw the addresses too
+    if (!redraw && old && book.style !== 'file' && JSON.stringify(old.points) !== JSON.stringify(book.points)) redraw = true;
+    if (redraw) { App.dirty.wiring = true; App.dirty.ladder = true; renderVisible(); Ladder.render(); Ladder.DataTable.render(); updateBar(true); }
+  };
+  App.fmt = a => (book ? book.fmt(a) : a);
+  App.addrIn = s => (book ? book.toFile(s) : String(s).trim().toUpperCase());
+  App.setAddrStyle = function (st) {
+    if (!Object.prototype.hasOwnProperty.call(Circuit.STYLES, st) || App.project.addr === st) return;
+    App.project.addr = st;
+    App.log('system', `Address style: ${Circuit.STYLES[st]}`);
+    App.addrChanged(); App.save();
+  };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
   /* compare with the last known forces so every change is logged, whichever control made it */
   let lastForces = {}, lastFen = true;
@@ -541,7 +563,7 @@
     // one group of I/O lights per input word and output word (compact: I:0/O:0, rack: one per card)
     const word = (f, w) => f === 'I' ? plc.data.I[w] & 0xFFFF : w ? plc.physOutX[w] : plc.physOut;
     document.querySelector('[data-io]').innerHTML = Circuit.ioMap(App.project.circuit, App.project.io).map(({ file: f, word: w, n }) =>
-      `<span class="iol">${f}:${w}</span>${Array.from({ length: n }, (_, i) => `<i class="${(word(f, w) >> i) & 1 ? 'on ' + (f === 'I' ? 'in' : 'out') : ''}${plc.forces[`${f}:${w}/${i}`] !== undefined ? ' f' : ''}" title="${f}:${w}/${i}"></i>`).join('')}`).join('');
+      `<span class="iol">${App.project.addr === 'file' || !App.project.addr ? `${f}:${w}` : (f === 'I' ? 'I' : 'Q')}</span>${Array.from({ length: n }, (_, i) => `<i class="${(word(f, w) >> i) & 1 ? 'on ' + (f === 'I' ? 'in' : 'out') : ''}${plc.forces[`${f}:${w}/${i}`] !== undefined ? ' f' : ''}" title="${App.fmt(`${f}:${w}/${i}`)}"></i>`).join('')}`).join('');
     document.querySelector('[data-scan]').textContent = `scan ${plc.scanMs.toFixed(2)} ms`;
     const msg = document.querySelector('[data-msg]');
     let m = '';
