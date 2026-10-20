@@ -403,7 +403,8 @@
             if (e.t === 'ADD') { r = a + b; carry = u(a) + u(b) > 0xFFFF; }
             else if (e.t === 'SUB') { r = a - b; carry = u(a) < u(b); }
             else if (e.t === 'MUL') r = a * b;
-            else r = b === 0 ? Infinity : Math.round(a / b);   // divide by zero: overflow, result 32767
+            // divide by zero: overflow, result 32767; a half rounds away from zero (-2.5 → -3), as the controller does
+            else r = b === 0 ? Infinity : Math.sign(a / b) * Math.round(Math.abs(a / b));
             this.setWord(A[2], Number.isFinite(r) ? r : 32767);
             this.mathFlags(r, carry);
           }
@@ -531,6 +532,20 @@
           if (e.t === 'OTE') {
             const p = parse(e.a[0]);
             if (p) (otes[p.norm] = otes[p.norm] || []).push(ri);
+          }
+          // file instructions must stay inside their file (N7 and B3 have 32 words; SQO uses words 0…LEN of its file)
+          const inFile = (k, n, extra, what) => {
+            const p = parse(e.a[k]);
+            if (p && p.kind === 'file' && n > 0 && p.word + n + extra > SIZES[p.file]) errs.push({ ri, id: e.id, msg: `${e.t} ${what} ${p.norm} with length ${n} runs past the end of ${p.file} (${SIZES[p.file]} words)` });
+          };
+          const len = k => Math.floor(Number(e.a[k])) || 0;
+          if (e.t === 'COP') { inFile(0, len(2), 0, 'source'); inFile(1, len(2), 0, 'dest'); }
+          if (e.t === 'FLL') inFile(1, len(2), 0, 'dest');
+          if (e.t === 'SQO') inFile(0, len(4), 1, 'file');
+          if (e.t === 'MSG') {
+            inFile(1, len(4), 0, 'local file');
+            const p = parse(e.a[3]);
+            if (p && p.kind === 'file' && p.word + len(4) > 32) errs.push({ ri, id: e.id, msg: `MSG remote file ${p.norm} with length ${len(4)} runs past the end of the remote PLC's 32 words` });
           }
           // a timer's preset and accum are 0…32767 (a negative preset faults a real controller)
           if (['TON', 'TOF', 'RTO'].includes(e.t)) {

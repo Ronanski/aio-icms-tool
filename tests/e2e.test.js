@@ -1492,6 +1492,29 @@ function check(name, cond, info = '') {
   await page.evaluate(() => { App.setLayout('single'); App.showView('wiring'); });
   check('terminals are drawn as screw heads', await page.evaluate(() => document.querySelector('.ws-svg .comps .term').querySelectorAll('line').length === 2));
 
+  console.log('v2.0.1: accuracy fixes');
+  check('DIV rounds a half away from zero (-5 / 2 = -3, 5 / 2 = 3, 7 / 2 = 4)', await page.evaluate(() => {
+    const run = t => { const e = new PLCcore.Engine(); e.setProgram([Ladder.newRung(Ladder.parseRung(t))]); e.setMode('RUN'); e.scan(0.02); return e.read('N7:0'); };
+    return run('DIV -5 2 N7:0') === -3 && run('DIV 5 2 N7:0') === 3 && run('DIV 7 2 N7:0') === 4 && run('DIV -7 3 N7:0') === -2;
+  }));
+  check('Verify rejects file instructions that run past the end of their file', await page.evaluate(() => {
+    const e = new PLCcore.Engine(), v = t => e.verify([Ladder.newRung(Ladder.parseRung(t))]).errs.filter(x => x.msg.includes('runs past the end')).length;
+    return v('XIC I:0/0 COP #N7:30 #N7:0 4') === 1 && v('XIC I:0/0 COP #N7:0 #N7:28 4') === 0 && v('XIC I:0/0 FLL 0 #N7:29 4') === 1 &&
+      v('XIC I:0/0 SQO #N7:28 -1 O:0 R6:0 4 0') === 1 && v('XIC I:0/0 SQO #N7:27 -1 O:0 R6:0 4 0') === 0;
+  }));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), r = add('rcd', { label: 'FI1' }, { on: true }), h = add('lamp', { label: 'H1', coil: '230VAC' });
+    w(q, 'L', f, '1'); w(f, '2', r, '1'); w(q, 'N', r, '3'); w(r, '2', h, 'X1'); w(h, 'X2', q, 'PE');
+    App.openNew({ name: 'Earth leakage', circuit: circ });`));
+  await wait(400);
+  check('a lamp fed from L to PE leaks to earth: the RCD in front of it trips, the MCB stays on', (await get('FI1', 'state.tripped')) && !(await get('QF1', 'state.tripped')) && !(await get('H1', 'state.on')) && await page.evaluate(() => App.events().some(e => e.msg.includes('earth leakage through H1'))));
+  await build(new Function(kit + `
+    const q = add('supply1', { label: 'Q0' }), f = add('mcb1', { label: 'QF1' }, { on: true }), h = add('lamp', { label: 'H1', coil: '230VAC' });
+    w(q, 'L', f, '1'); w(f, '2', h, 'X1'); w(h, 'X2', q, 'PE');
+    App.openNew({ name: 'Earth leakage, no RCD', circuit: circ });`));
+  await wait(400);
+  check('without an RCD the leaking lamp stays on and a warning says so', (await get('H1', 'state.on')) && !(await get('QF1', 'state.tripped')) && await page.evaluate(() => App.events().some(e => e.msg.includes('no RCD protects it'))));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');
