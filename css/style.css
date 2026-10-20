@@ -664,6 +664,16 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .fd-host { position: absolute; inset: 0; overflow: hidden; }
 .fd-zoom { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; box-shadow: var(--shadow); }
 .free-svg .fval { font: 600 10px var(--mono); fill: var(--accent-text); pointer-events: none; }
+.free-svg .fval.fcount { fill: var(--warn); }
+/* conductor colours (🎨 Colours): Philippine practice as in the Wiring; N is grey so it shows on white paper */
+.free-svg .fwire .w.pc-L1 { stroke: #b3261e; }
+.free-svg .fwire .w.pc-L2 { stroke: #d4a20c; }
+.free-svg .fwire .w.pc-L3 { stroke: #2b6fe0; }
+.free-svg .fwire .w.pc-N { stroke: #8d8d86; }
+.free-svg .fwire .w.pc-PE { stroke: #58a83a; }
+.free-svg .fwire .w.pc-dcp { stroke: #d33a2c; }
+.free-svg .fwire .w.pc-dcm { stroke: #1f4fa8; }
+.free-svg .fwire .w.on[class*="pc-"] { stroke-width: 2.6; }
 .free-svg .ftag.start { text-anchor: start; }
 .sch-svg .ssym path.fill { fill: var(--lad-wire); }
 @media (max-width: 760px) { .fd-lib { width: 150px; } .fd-grid { grid-template-columns: repeat(2, 1fr); } }

@@ -409,6 +409,80 @@
     draw: c => DEFS.timer.draw({ ...c, state: { ...c.state, done: c.state.on } }) + T(45, 104, 'OFF-DELAY', 'dt xs'),
     status: c => c.state.pw ? 'Coil on — 15-18 closed' : c.state.on ? `Delay ${(c.state.elD || 0).toFixed(1)} s — 15-18 still closed` : 'Idle',
   });
+  /* on- and off-delay in one relay: 15-18 closes t s after the coil comes on and opens t2 s after it drops */
+  def('timer_onoff', {
+    name: 'On/Off-Delay Timer Relay', cat: 'Control', view: 'cabinet', prefix: 'KT', w: 90, h: 110,
+    props: { coil: '230VAC', t: 5, t2: 5 },
+    pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }, { k: 't', n: 'On delay (s)', type: 'number' }, { k: 't2', n: 'Off delay (s)', type: 'number' }],
+    info: 'Coil A1-A2. 15-18 closes (NO) and 15-16 opens (NC) after the on delay; when the coil drops they go back after the off delay. Click − / + to set the on delay.',
+    terms: [{ id: 'A1', x: 12, y: 0 }, { id: '15', x: 55, y: 0 }, { id: 'A2', x: 12, y: 110 }, { id: '16', x: 45, y: 110 }, { id: '18', x: 72, y: 110 }],
+    init: () => ({ pw: false, el: 0, on: false, burnt: false }),
+    conduct: c => c.state.on ? [['15', '18']] : [['15', '16']],
+    evaluate(c, api) {
+      const on = coilOn(c, api, 'A1', 'A2');
+      if (on !== c.state.pw) c.state.el = 0;
+      return set(c, 'pw', on);
+    },
+    tick(c, api, dt) {
+      const s = c.state, t = Number(s.pw ? c.props.t : c.props.t2) || 0;
+      if (s.pw !== s.on) { s.el = Math.min(t, s.el + dt); if (s.el >= t) { s.on = s.pw; s.el = 0; } } else s.el = 0;
+      s.elD = Math.round(s.el * 10) / 10;
+    },
+    onPart: (c, p, ev) => DEFS.timer.onPart(c, p, ev),
+    draw: c => DEFS.timer.draw({ ...c, state: { ...c.state, done: c.state.on } }) + T(45, 104, 'ON/OFF', 'dt xs'),
+    status: c => { const s = c.state, x = (s.elD || 0).toFixed(1); return s.pw === s.on ? (s.on ? 'Timed out — 15-18 closed' : 'Idle') : s.pw ? `On delay ${x} s` : `Off delay ${x} s — 15-18 still closed`; },
+  });
+  /* flasher (cyclic timer): while the coil is on, 15-18 is closed for t s, open for t2 s, and so on (starts closed) */
+  def('flasher', {
+    name: 'Flasher Timer Relay (cyclic)', cat: 'Control', view: 'cabinet', prefix: 'KT', w: 90, h: 110,
+    props: { coil: '230VAC', t: 1, t2: 1 },
+    pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }, { k: 't', n: 'Time closed (s)', type: 'number' }, { k: 't2', n: 'Time open (s)', type: 'number' }],
+    info: 'Coil A1-A2. While the coil is on, 15-18 (NO) and 15-16 (NC) switch over and back again: closed for the first time, open for the second. Stops at rest when the coil drops.',
+    terms: [{ id: 'A1', x: 12, y: 0 }, { id: '15', x: 55, y: 0 }, { id: 'A2', x: 12, y: 110 }, { id: '16', x: 45, y: 110 }, { id: '18', x: 72, y: 110 }],
+    init: () => ({ pw: false, el: 0, on: false, burnt: false }),
+    conduct: c => c.state.on ? [['15', '18']] : [['15', '16']],
+    evaluate(c, api) {
+      const on = coilOn(c, api, 'A1', 'A2');
+      let ch = false;
+      if (on && !c.state.pw) { c.state.el = 0; ch = set(c, 'on', true); }
+      if (!on) { c.state.el = 0; ch = set(c, 'on', false) || ch; }
+      return set(c, 'pw', on) || ch;
+    },
+    tick(c, api, dt) {
+      const s = c.state;
+      if (s.pw) {
+        // a zero time would flip every tick: at least one tick each way
+        const t = Math.max(0.02, Number(s.on ? c.props.t : c.props.t2) || 0);
+        s.el += dt; if (s.el >= t) { s.on = !s.on; s.el = 0; }
+      }
+      s.elD = Math.round(s.el * 10) / 10;
+    },
+    onPart: (c, p, ev) => DEFS.timer.onPart(c, p, ev),
+    draw: c => DEFS.timer.draw({ ...c, state: { ...c.state, done: c.state.on } }) + T(45, 104, 'FLASHER', 'dt xs'),
+    status: c => c.state.pw ? `Flashing — 15-18 ${c.state.on ? 'closed' : 'open'}` : 'Idle',
+  });
+  /* phase-failure / phase-sequence relay: 11-14 closes while L1 L2 L3 carry three phases in the right order */
+  def('phasemon', {
+    name: 'Phase Failure Relay', cat: 'Control', view: 'cabinet', prefix: 'KF', w: 90, h: 110,
+    props: { seq: 'on' },
+    pdefs: [{ k: 'seq', n: 'Check phase sequence', opts: ['on', 'off'] }],
+    info: 'Monitors L1 L2 L3 (powered from them). With all three phases present (and in the right sequence, if checked), 11-14 closes and 11-12 opens; on a lost phase or a wrong sequence it drops out. Wire 11-14 into the contactor coil circuit.',
+    terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'L2', x: 45, y: 0 }, { id: 'L3', x: 70, y: 0 }, { id: '11', x: 20, y: 110 }, { id: '12', x: 45, y: 110 }, { id: '14', x: 70, y: 110 }],
+    init: () => ({ ok: false, fault: '' }),
+    conduct: c => c.state.ok ? [['11', '14']] : [['11', '12']],
+    evaluate(c, api) {
+      const { drive, dir } = motorDrive(c, api, 'L1', 'L2', 'L3');
+      const fault = drive === 'run' ? (dir < 0 && c.props.seq !== 'off' ? 'sequence' : '') : ['L1', 'L2', 'L3'].some(t => api.phase(c, t)) ? 'phase loss' : 'no supply';
+      set(c, 'fault', fault);
+      return set(c, 'ok', !fault);
+    },
+    draw(c) {
+      const s = c.state;
+      return modBody(90, 110, 'PHASE', 18, 18) + led(20, 40, s.fault !== 'no supply', '#3ddc63') + T(20, 52, 'U', 'dt xs') + led(70, 40, s.ok, '#f2c230') + T(70, 52, 'R', 'dt xs') +
+        T(45, 72, s.ok ? 'OK' : s.fault === 'no supply' ? 'OFF' : s.fault.toUpperCase(), 'dt xs') + T(45, 86, 'L1 L2 L3', 'dt xs');
+    },
+    status: c => c.state.ok ? 'Phases OK — 11-14 closed' : c.state.fault === 'no supply' ? 'No supply — 11-12 closed' : `Fault: ${c.state.fault} — 11-12 closed`,
+  });
   def('tblock', {
     name: 'Terminal Strip (6)', cat: 'Control', view: 'none', prefix: 'X', w: 140, h: 60,
     info: 'Six feed-through terminals: top n is connected to bottom n. Use as junction points / bus.',
@@ -1019,6 +1093,27 @@
         R(8, 56, 34, 12, '#d7d3ca', 2, '#777') + T(25, 65, c.props.coil, 'dt xs') + (c.state.burnt ? burnt(50, 80) : '');
     },
     status: c => c.state.burnt ? 'Burnt out' : c.state.on ? 'ON' : 'OFF',
+  });
+  /* flashing pilot lamp (built-in flasher): powered like the lamp, it lights `hz` times a second */
+  def('lamp_fl', {
+    ...DEFS.lamp, name: 'Flashing Pilot Lamp',
+    props: { color: 'amber', coil: '24VDC', hz: '1' },
+    pdefs: [...DEFS.lamp.pdefs, { k: 'hz', n: 'Flashes per second', opts: ['0.5', '1', '2'] }],
+    info: 'Indicator lamp X1-X2 with a built-in flasher: at its rated voltage it flashes; over-voltage burns it.',
+    init: () => ({ on: false, lit: false, ph: 0, burnt: false }),
+    evaluate(c, api) {
+      const on = coilOn(c, api, 'X1', 'X2');
+      if (on && !c.state.on) { c.state.ph = 0; c.state.lit = true; }
+      if (!on) c.state.lit = false;
+      return set(c, 'on', on);
+    },
+    tick(c, api, dt) {
+      const s = c.state, half = 0.5 / (Number(c.props.hz) || 1);
+      if (!s.on) return;
+      s.ph += dt; if (s.ph >= half) { s.ph = 0; s.lit = !s.lit; }
+    },
+    draw: c => DEFS.lamp.draw({ ...c, state: { ...c.state, on: c.state.lit } }) + T(25, 76, 'FLASH', 'dt xs'),
+    status: c => c.state.burnt ? 'Burnt out' : c.state.on ? 'FLASHING' : 'OFF',
   });
 
   def('fuse', {

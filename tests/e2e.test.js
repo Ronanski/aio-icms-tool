@@ -2163,6 +2163,65 @@ function check(name, cond, info = '') {
   check('parts: a drawing with the new symbols survives save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize()))); return ['ka1co', 'esno'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.items.length === 11 && !(p.keep && p.keep.free.items.length); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  console.log('Electrical Diagram: timing and monitoring (flasher, on/off delay, flashing lamp, phase failure relay, countdown, conductor colours)');
+  check('timing: the new devices are in the Wiring parts list and the new symbols fit their terminals', await page.evaluate(() => {
+    const devs = ['timer_onoff', 'flasher', 'phasemon', 'lamp_fl'];
+    const syms = ['kdno', 'kdnc', 'kdco', 'flno', 'flnc', 'flco', 'kpno', 'kpnc', 'kpco', 'kdcoil', 'flcoil', 'kpmon', 'lampfl'];
+    return devs.every(t => Circuit.DEFS[t] && !Circuit.DEFS[t].hidden) && syms.every(k => FreeDraw.KINDS[k] && FreeDraw.KINDS[k].terms.every(t => Circuit.DEFS[FreeDraw.KINDS[k].type].terms.some(x => x.id === t.id)));
+  }));
+  check('timing: a flasher relay switches 15-18 on and off while its coil is on, and rests on 15-16 when it drops', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('isol1'), k = add('flasher', { t: 0.5, t2: 0.3 }), a = add('lamp', { coil: '230VAC' }), b = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '1'); w(s, '2', k, 'A1'); w(k, 'A2', q, 'N'); w(q, 'L', k, '15'); w(k, '18', a, 'X1'); w(k, '16', b, 'X1'); w(a, 'X2', q, 'N'); w(b, 'X2', q, 'N');
+    run(2); const rest = !a.state.on && b.state.on; s.state.on = true; const seq = [];
+    for (let i = 0; i < 24; i++) { Circuit.solve(circ, 0.1, ctx); seq.push(a.state.on ? 1 : 0); }
+    const flips = seq.slice(1).filter((x, i) => x !== seq[i]).length, ons = seq.filter(Boolean).length;
+    s.state.on = false; run(2);
+    return rest && seq[0] === 1 && flips >= 4 && ons > seq.length / 2 && !a.state.on && b.state.on;`)));
+  check('timing: an on/off-delay relay closes after the on delay and opens after the off delay', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('isol1'), k = add('timer_onoff', { t: 1, t2: 2 }), h = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '1'); w(s, '2', k, 'A1'); w(k, 'A2', q, 'N'); w(q, 'L', k, '15'); w(k, '18', h, 'X1'); w(h, 'X2', q, 'N');
+    run(2); s.state.on = true; run(5); const early = !h.state.on; run(7); const on = h.state.on;
+    s.state.on = false; run(10); const held = h.state.on; run(12); return early && on && held && !h.state.on;`)));
+  check('timing: a flashing lamp flashes at its rated voltage and is dark without power', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('isol1'), h = add('lamp_fl', { coil: '230VAC', hz: '1' });
+    w(q, 'L', s, '1'); w(s, '2', h, 'X1'); w(h, 'X2', q, 'N'); run(2); const dark = !h.state.lit;
+    s.state.on = true; const seq = []; for (let i = 0; i < 25; i++) { Circuit.solve(circ, 0.1, ctx); seq.push(h.state.lit ? 1 : 0); }
+    s.state.on = false; run(2); return dark && seq.includes(1) && seq.includes(0) && seq.slice(1).filter((x, i) => x !== seq[i]).length >= 3 && !h.state.lit && !h.state.burnt;`)));
+  check('timing: a phase failure relay closes 11-14 on a healthy supply and drops on a lost phase or a wrong sequence', await page.evaluate(new Function(solveKit + `
+    const t = (order, cut, seq) => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply3'), k = add('phasemon', { seq }), h = add('lamp', { coil: '230VAC' });
+      ['L1', 'L2', 'L3'].forEach((p, i) => { if (p !== cut) w(q, order[i], k, p); }); w(q, 'L1', k, '11'); w(k, '14', h, 'X1'); w(h, 'X2', q, 'N'); run(3); return [k.state.ok, h.state.on, k.state.fault]; };
+    const ok = t(['L1', 'L2', 'L3'], '', 'on'), loss = t(['L1', 'L2', 'L3'], 'L3', 'on'), rev = t(['L2', 'L1', 'L3'], '', 'on'), revOff = t(['L2', 'L1', 'L3'], '', 'off');
+    return ok[0] && ok[1] && !loss[0] && !loss[1] && loss[2] === 'phase loss' && !rev[1] && rev[2] === 'sequence' && revOff[1];`)));
+  // drawn: S1 → on-delay timer KT1 (1 s); a flashing lamp H1 straight on L1-N; a phase failure relay KF1 on the 3-phase supply with its contact feeding H2
+  const tmP = { name: 'Timing', circuit: { seq: 5, comps: [{ id: 'c1', type: 'supply3', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+    { id: 'c2', type: 'timer', x: 0, y: 200, props: { label: 'KT1', coil: '230VAC', t: 1 }, state: {} }, { id: 'c3', type: 'lamp_fl', x: 0, y: 300, props: { label: 'H1', coil: '230VAC', hz: '2' }, state: {} },
+    { id: 'c4', type: 'lamp', x: 0, y: 400, props: { label: 'H2', coil: '230VAC', color: 'green' }, state: {} }], wires: [] },
+    schematic: { free: { seq: 40, items: [fi('d1', 'pL1', 'XP1', 0, 0), fi('d2', 'pbno', 'S1', 0, 100), fi('d3', 'ktcoil', 'KT1', 0, 220), fi('d4', 'pN', 'XP2', 0, 340),
+      fi('d5', 'pL1', 'XP3', 200, 0), fi('d6', 'lampfl', 'H1', 200, 160), fi('d7', 'pN', 'XP4', 200, 340),
+      fi('d8', 'pL1', 'XP5', 380, 0), fi('d9', 'pL2', 'XP6', 420, 0), fi('d10', 'pL3', 'XP7', 460, 0), fi('d11', 'kpmon', 'KF1', 420, 100), fi('d12', 'kpno', 'KF1', 560, 120), fi('d13', 'lamp', 'H2', 560, 230), fi('d14', 'pN', 'XP8', 560, 340), fi('d15', 'pL1', 'XP9', 560, 0)],
+    wires: [fw('fw1', 'd1:J', 'd2:13'), fw('fw2', 'd2:14', 'd3:A1'), fw('fw3', 'd3:A2', 'd4:J'), fw('fw4', 'd5:J', 'd6:X1'), fw('fw5', 'd6:X2', 'd7:J'),
+      fw('fw6', 'd8:J', 'd11:L1'), fw('fw7', 'd9:J', 'd11:L2'), fw('fw8', 'd10:J', 'd11:L3'), fw('fw9', 'd15:J', 'd12:11'), fw('fw10', 'd12:14', 'd13:X1'), fw('fw11', 'd13:X2', 'd14:J')] } } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); FreeDraw.setColors(false); }, tmP);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(250);
+  check('timing: the drawn phase failure relay sees the healthy supply and its N.O. contact lights H2; no error is reported', await until(is("d('KF1').ok && d('H2').on")) && await page.evaluate(() => FreeDraw.errs.size === 0 && App.project.circuit.comps.find(c => c.props.label === 'KF1').type === 'phasemon'));
+  check('timing: the drawn flashing lamp flashes on the drawing', await page.evaluate(() => new Promise(res => { const seen = new Set(); let n = 0;
+    const t = setInterval(() => { const g = document.querySelector('#view-schematic [data-fi="d6"] .ssym'); if (g) seen.add(g.classList.contains('on')); if (++n > 40 || seen.size === 2) { clearInterval(t); res(seen.size === 2 && App.project.circuit.comps.find(c => c.props.label === 'H1').state.on); } }, 50); })));
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  check('timing: while KT1 times, its coil shows the time left counting down', await page.evaluate(() => new Promise(res => { const vals = []; let n = 0;
+    const t = setInterval(() => { const e = document.querySelector('#view-schematic [data-fi="d3"] .fcount'); if (e) vals.push(parseFloat(e.textContent)); if (++n > 16) { clearInterval(t); res(vals.length >= 2 && vals[0] <= 1 && vals[vals.length - 1] < vals[0] && /^\d\.\d s$/.test(e ? e.textContent : '0.0 s')); } }, 50); })));
+  check('timing: when KT1 has timed out the countdown is gone', await until(is("d('KT1').done")) && await (async () => { await wait(150); return page.evaluate(() => !document.querySelector('#view-schematic [data-fi="d3"] .fcount')); })());
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  await page.evaluate(() => { const b = document.querySelector('#view-schematic [data-fdact="colors"]'); if (b) b.click(); });
+  await wait(150);
+  check('timing: 🎨 Colours colours each drawn wire by its conductor (L1, L2, L3, N) and is remembered', await page.evaluate(() => { const q = s => document.querySelectorAll('#view-schematic .fwire .w.' + s).length;
+    return FreeDraw.colors && q('pc-L1') >= 3 && q('pc-L2') === 1 && q('pc-L3') === 1 && q('pc-N') >= 2 && localStorage.getItem('plc-trainer.fdColors') === '1'; }));
+  await page.evaluate(() => { document.querySelector('#view-schematic [data-fdact="colors"]').click(); });
+  await wait(100);
+  check('timing: with 🎨 Colours off the wires are drawn in the one line colour again', await page.evaluate(() => !FreeDraw.colors && !document.querySelector('#view-schematic .fwire .w[class*="pc-"]')));
+  check('timing: a drawing with the new symbols survives save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
+    return ['kpmon', 'kpno', 'lampfl'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.items.length === 15 && ['phasemon', 'lamp_fl'].every(t => p.circuit.comps.some(c => c.type === t)) && !(p.keep && p.keep.free.items.length); }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); localStorage.removeItem('plc-trainer.fdColors'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

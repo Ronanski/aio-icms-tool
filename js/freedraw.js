@@ -107,12 +107,24 @@
       ktco: co('timer', '15', '16', '18', 'KT', { act: 'delay', n: 'On-delay changeover contact (15-16 / 15-18)' }),
       kfco: co('timer_off', '15', '16', '18', 'KT', { act: 'delayoff', n: 'Off-delay changeover contact (15-16 / 15-18)' }),
       ltco: co('latch', '11', '12', '14', 'KA', { n: 'Latching relay changeover contact (11-12 / 11-14)' }),
+      kdno: two('timer_onoff', '15', '18', 'no', 'KT', { act: 'delayboth', n: 'On/off-delay contact N.O.' }),
+      kdnc: two('timer_onoff', '15', '16', 'nc', 'KT', { act: 'delayboth', n: 'On/off-delay contact N.C.' }),
+      kdco: co('timer_onoff', '15', '16', '18', 'KT', { act: 'delayboth', n: 'On/off-delay changeover contact (15-16 / 15-18)' }),
+      flno: two('flasher', '15', '18', 'no', 'KT', { act: 'flash', n: 'Flasher contact N.O.' }),
+      flnc: two('flasher', '15', '16', 'nc', 'KT', { act: 'flash', n: 'Flasher contact N.C.' }),
+      flco: co('flasher', '15', '16', '18', 'KT', { act: 'flash', n: 'Flasher changeover contact (15-16 / 15-18)' }),
+      kpno: two('phasemon', '11', '14', 'no', 'KF', { n: 'Phase failure relay contact N.O.' }),
+      kpnc: two('phasemon', '11', '12', 'nc', 'KF', { n: 'Phase failure relay contact N.C.' }),
+      kpco: co('phasemon', '11', '12', '14', 'KF', { n: 'Phase failure relay changeover contact (11-12 / 11-14)' }),
     },
     Coils: {
       kmcoil: two('contactor', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor coil' }),
       kacoil: two('relay', 'A1', 'A2', 'coil', 'KA', { n: 'Relay coil' }),
       ktcoil: two('timer', 'A1', 'A2', 'tcoil', 'KT', { n: 'On-delay timer coil' }),
       kfcoil: two('timer_off', 'A1', 'A2', 'tcoiloff', 'KT', { n: 'Off-delay timer coil' }),
+      kdcoil: two('timer_onoff', 'A1', 'A2', 'tcoilboth', 'KT', { n: 'On/off-delay timer coil' }),
+      flcoil: two('flasher', 'A1', 'A2', 'tcoilfl', 'KT', { n: 'Flasher timer coil' }),
+      kpmon: poles('phasemon', ['L1', 'L2', 'L3'], [], 'phm', 'KF', { n: 'Phase failure relay (monitors L1 L2 L3)' }),
       km4coil: two('contactor4', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor 4P coil' }),
       kicoil: two('impulse', 'A1', 'A2', 'icoil', 'KI', { n: 'Impulse relay coil' }),
       ltset: two('latch', 'A1', 'A2', 'coil', 'KA', { n: 'Latching relay SET coil', label: 'S' }),
@@ -120,6 +132,7 @@
     },
     Loads: {
       lamp: two('lamp', 'X1', 'X2', 'lamp', 'H', { n: 'Pilot lamp' }),
+      lampfl: two('lamp_fl', 'X1', 'X2', 'lamp', 'H', { n: 'Flashing pilot lamp', label: 'FL' }),
       horn: two('buzzer', 'X1', 'X2', 'horn', 'HA', { n: 'Buzzer / horn' }),
       valve: two('valve', 'A1', 'A2', 'coil', 'Y', { n: 'Solenoid valve' }),
       heater: two('heater', 'X1', 'X2', 'heat', 'EH', { n: 'Heater' }),
@@ -366,7 +379,9 @@
     const d = H.devOf(it.tag);
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
-    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
+    if (d.type === 'lamp_fl') return { on: !!st.lit };
+    if (S.look === 'phm') return { on: !!st.ok };
+    if (['coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
     if (S.jct) return { on: live(d.id + ':J') };
     if (S.look === 'motor') return { on: st.drive === 'run' || (S.type === 'fan' && !!st.on) };
     if (S.look === 'sens') return { on: !!st.act };
@@ -398,6 +413,8 @@
       therm: `<path class="thin" d="M${ax} -6 h-5 v6 h5 v6"/>`,
       delay: `<path class="thin" d="M${ax} -7 a7 7 0 0 0 0 14"/>`,
       delayoff: `<path class="thin" d="M${ax - 7} -7 a7 7 0 0 1 0 14"/>`,
+      delayboth: `<path class="thin" d="M${ax} -7 a7 7 0 0 0 0 14 M${ax - 9} -7 a7 7 0 0 1 0 14"/>`,
+      flash: `<path class="thin" d="M${ax} 4 h-3 v-8 h-4 v8 h-4 v-8 h-3"/>`,
       foot: `<path class="thin" d="M${ax} -6 V5 h-7 l-2 -4"/>`,
       press: `<rect class="thin" x="${ax - 10}" y="-5" width="10" height="10"/><path class="thin" d="M${ax - 7} 3 V-3 h3 a1.5 1.5 0 0 1 0 3 h-3"/>`,
       float: `<path class="thin" d="M${ax} 0 h-4"/><circle class="thin" cx="${ax - 8}" cy="0" r="4"/><path class="thin" d="M${ax - 14} 6 h12"/>`,
@@ -420,6 +437,9 @@
       o.push(stub(0, -30, -8), stub(0, 8, 30), `<path d="M-12 8 a12 14 0 0 1 24 0 Z"/><circle cx="0" cy="11" r="2.5" class="jdot"/>`);
     } else if (S.look === 'siren') {
       o.push(stub(0, -30, -12), stub(0, 12, 30), `<path d="M-12 -6 H-2 L10 -12 V12 L-2 6 H-12 Z"/><path class="thin" d="M14 -6 q4 6 0 12"/>`);
+    } else if (S.look === 'phm') {
+      // phase failure relay: a box on L1 L2 L3 (its measuring circuit); its contacts are drawn on their own
+      o.push(...S.terms.map(t => stub(t.x, -30, -12)), `<rect x="-30" y="-12" width="60" height="24"/>`);
     } else if (S.look === 'node') {
       o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
     } else if (S.look === 'pot') {
@@ -452,10 +472,13 @@
       o.push(stub(0, -30, -12), stub(0, 12, 30), `<path d="M12 0 H30"/><rect x="-12" y="-12" width="24" height="24"/>`);
       o.push(S.photo ? `<path class="thin" d="M-22 -10 l8 6 m-4 0 h4 v-3 M-22 2 l8 6 m-4 0 h4 v-3"/>` : `<path class="thin" d="M-7 0 L0 -7 L7 0 L0 7 Z"/>`);
       if (st.on) o.push(`<path class="thin" d="M3 9 L9 3"/>`);
-    } else if (['coil', 'tcoil', 'tcoiloff', 'icoil'].includes(S.look)) {
+    } else if (['coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil'].includes(S.look)) {
       o.push(stub(0, -30, -9), stub(0, 9, 30), `<rect x="-14" y="-9" width="28" height="18"/>`);
       if (S.look === 'icoil') o.push(`<path class="thin" d="M-8 5 V-5 H0 V5 H8 V-5"/>`);
-      if (S.look !== 'coil') o.push(`<rect x="-26" y="-9" width="12" height="18"${S.look === 'tcoiloff' ? ' class="fill"' : ''}/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
+      // the timing box beside the coil: on/off delay half filled, flasher a square wave
+      if (S.look === 'tcoilfl') o.push(`<rect x="-26" y="-9" width="12" height="18"/><path class="thin" d="M-25 4 h2 v-8 h4 v8 h2 v-8"/>`);
+      else if (S.look === 'tcoilboth') o.push(`<rect x="-26" y="-9" width="6" height="18" class="fill"/><rect x="-26" y="-9" width="12" height="18"/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
+      else if (S.look !== 'coil') o.push(`<rect x="-26" y="-9" width="12" height="18"${S.look === 'tcoiloff' ? ' class="fill"' : ''}/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
     } else if (S.look === 'lamp') {
       o.push(stub(0, -30, -11), stub(0, 11, 30), `<circle cx="0" cy="0" r="11"/><path class="thin" d="M-8 -8 L8 8 M8 -8 L-8 8"/>`);
     } else if (S.look === 'horn') {
@@ -502,12 +525,14 @@
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
-    const isPole = !['no', 'nc', 'co', 'xover', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
+    const isPole = !['no', 'nc', 'co', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     if (S.look === 'plcpw') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">PLC ~</text>`); }
+    if (S.look === 'phm') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">3~ L1-L2-L3</text>`); }
+    if (S.look === 'lamp' && S.label) { const [mx, my] = at(20, -12); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     // the PLC address of an I/O point, in the project's address style (I:0/3, I0.3…)
     if (S.io) { const [ax, ay] = at(-30, 4); o.push(`<text class="ftag faddr" x="${ax}" y="${ay}">${esc(addrOf(it))}</text>`); }
     // the comment: a line under the tag (two when the address is there)
@@ -590,6 +615,29 @@
     const a = S.terms[0], b = S.terms.find(t => t !== a && t.id !== 'PE');
     return a && b ? vText(api.v(d, a.id, b.id)) : '';
   }
+  /* the time left on a timer relay that is timing, shown beside its coil (one decimal, so the drawing redraws ten times a second) */
+  const TIMERS = ['tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl'];
+  function countOf(it) {
+    const S = K[it.k], d = TIMERS.includes(S.look) && H.devOf(it.tag);
+    if (!d || !DEFS[d.type] || (FD.errs && FD.errs.has(it))) return '';
+    const s = d.state, p = d.props;
+    const t = d.type === 'timer' ? (s.pw && !s.done ? p.t : null)
+      : d.type === 'timer_off' ? (!s.pw && s.on ? p.t : null)
+      : d.type === 'timer_onoff' ? (s.pw !== s.on ? (s.pw ? p.t : p.t2) : null)
+      : d.type === 'flasher' ? (s.pw ? (s.on ? p.t : p.t2) : null) : null;
+    return t == null ? '' : `${Math.max(0, (Number(t) || 0) - (s.el || 0)).toFixed(1)} s`;
+  }
+  /* conductor colours: a wire takes the colour of what its net carries (L1 L2 L3 N PE, +24 V, 0 V), as in the Wiring */
+  FD.colors = false;
+  try { FD.colors = localStorage.getItem('plc-trainer.fdColors') === '1'; } catch (e) { /* private mode */ }
+  FD.setColors = function (on) { FD.colors = !!on; try { localStorage.setItem('plc-trainer.fdColors', FD.colors ? '1' : '0'); } catch (e) { /* private mode */ } if (body) FD.render(body); };
+  const PC = { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N', PE: 'PE', 'DC+': 'dcp', 'DC-': 'dcm' };
+  function wireCls(w) {
+    const api = App.api, ia = itemOf(w.a.split(':')[0]), k = ia && devKey(ia, w.a.split(':')[1]);
+    if (!FD.colors || !api || !k) return '';
+    const p = PC[Circuit.potClass(api.potsR(api.rootK(k)))];
+    return p ? ' pc-' + p : '';
+  }
   FD.render = function (el) {
     body = el;
     if (!el.querySelector('.fd-host')) shell(el);
@@ -602,7 +650,7 @@
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
       const d = wirePath(a, b, w.pts);
-      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}" d="${d}"/></g>`);
+      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}${wireCls(w)}" d="${d}"/></g>`);
       if (sel && sel.w === w.id) (w.pts || []).forEach(([x, y], i) => o.push(`<circle class="fbend" data-fb="${w.id}:${i}" cx="${x}" cy="${y}" r="5"><title>Drag to move · double-click to remove</title></circle>`));
     }
     for (const it of F.items) {
@@ -615,6 +663,7 @@
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
+      const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
       S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
       o.push('</g>');
     }
@@ -627,7 +676,7 @@
     bind();
     lastSig = sig();
   };
-  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0; }).join(''); };
+  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(countOf).join(',') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return (ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0) + wireCls(w); }).join(''); };
   FD.update = function () { if (body && sig() !== lastSig) FD.render(body); };
   const world = ev => { const r = svg.getBoundingClientRect(); return { x: (ev.clientX - r.left - view.x) / view.k, y: (ev.clientY - r.top - view.y) / view.k }; };
   const snap10 = v => Math.round(v / 10) * 10;
