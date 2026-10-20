@@ -1755,6 +1755,78 @@ function check(name, cond, info = '') {
   await hmiTap('STOP'); await setMode('PROG');
   await page.evaluate(() => App.showView('ladder'));
 
+  console.log('Project compatibility: parts, symbols and wires a newer version made');
+  await page.evaluate(() => Store.list().forEach(p => { if (p.id !== App.currentId) Store.remove(p.id); }));
+  // a project saved by a newer version: format 3, a part type, a rail/rung symbol, a free-draw symbol and wires this version does not know
+  const future = { name: 'From a newer version', format: 3,
+    circuit: { seq: 60, comps: [
+      { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+      { id: 'c2', type: 'lamp', x: 100, y: 0, props: { label: 'H1', coil: '230VAC' } },
+      { id: 'c50', type: 'quantumRelay', x: 200, y: 0, props: { label: 'K9', future: { a: 1 } }, state: { x: 2 }, extra: 'kept as it is' }],
+    wires: [{ id: 'w1', a: 'c1:L', b: 'c2:X1', color: '#d32f2f', pts: [] }, { id: 'w2', a: 'c2:X2', b: 'c1:N', color: '#1d1d1d', pts: [] },
+      { id: 'w3', a: 'c1:L', b: 'c50:A1', color: '#d32f2f', pts: [[10, 10]], future: true },
+      { id: 'w4', a: 'c2:Z9', b: 'c1:N', color: '#123456', pts: [] }] },
+    schematic: { rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H3' }], comment: 'known' }, { elems: [{ k: 'pbno', tag: 'S2' }, { k: 'hyperCoil', tag: 'K9' }], comment: 'future' }],
+      free: { seq: 10, items: [{ id: 'd1', k: 'lamp', tag: 'H5', x: 0, y: 0, r: 0 }, { id: 'd7', k: 'warpDrive', tag: 'W1', x: 100, y: 0, r: 0, extra: { n: 1 } }],
+        wires: [{ id: 'fw3', a: 'd1:X1', b: 'd7:P' }] } } };
+  const canonJs = 'const canon = v => JSON.stringify(v, (q, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, z) => { o[z] = x[z]; return o; }, {}) : x));';
+  check('compat: a project from a newer version opens; its known parts are in the Wiring, the unknown ones are kept aside', await page.evaluate(f => {
+    if (!App.openNew(JSON.parse(JSON.stringify(f)))) return false;
+    const C = App.project.circuit, k = App.project.keep;
+    return C.comps.some(c => c.id === 'c2') && !C.comps.some(c => c.id === 'c50') && C.wires.some(w => w.id === 'w1') && !C.wires.some(w => w.id === 'w3' || w.id === 'w4')
+      && k.comps.length === 1 && k.wires.length === 2 && k.rungs.length === 1 && k.free.items.length === 1 && k.free.wires.length === 1 && App.project.schematic.free.items.length === 1;
+  }, future));
+  check('compat: the known circuit still simulates (H1 lights)', await until(() => App.project.circuit.comps.find(c => c.props.label === 'H1').state.on));
+  check('compat: a current path holding an unknown symbol is kept whole — its other symbols are not joined or wired', await page.evaluate(() => App.project.schematic.rungs.length === 1 && !App.project.circuit.comps.some(c => c.props.label === 'S2')));
+  check('compat: saving writes every unknown part, symbol and wire back unchanged and in place, and keeps the newer format', await page.evaluate(new Function('f', canonJs + `
+    const s = JSON.parse(JSON.stringify(App.serialize())), byId = (l, id) => l.find(x => x.id === id);
+    return s.format === 3 && canon(byId(s.circuit.comps, 'c50')) === canon(f.circuit.comps[2]) && canon(byId(s.circuit.wires, 'w3')) === canon(f.circuit.wires[2])
+      && canon(byId(s.circuit.wires, 'w4')) === canon(f.circuit.wires[3]) && canon(s.schematic.rungs[1]) === canon(f.schematic.rungs[1])
+      && canon(byId(s.schematic.free.items, 'd7')) === canon(f.schematic.free.items[1]) && canon(byId(s.schematic.free.wires, 'fw3')) === canon(f.schematic.free.wires[0]);`), future));
+  check('compat: save → reload → save gives the same project (two round trips)', await page.evaluate(new Function(canonJs + `
+    const save = () => { const s = JSON.parse(JSON.stringify(App.serialize())); delete s.events; return canon(s); };
+    const a = save(); if (!App.openNew(JSON.parse(a))) return false; const b = save(); if (!App.openNew(JSON.parse(b))) return false;
+    return a === b && b === save() && App.project.keep.comps.length === 1 && App.project.keep.free.items.length === 1;`)));
+  check('compat: new parts and diagram symbols never reuse the id of a kept one', await page.evaluate(() => {
+    const n = id => Number(String(id).replace(/\D/g, '')), c = Circuit.create('lamp', 0, 0, App.project.circuit);
+    return n(c.id) > 50 && App.project.schematic.free.seq >= 7;
+  }));
+  check('compat: a warning names the newer format and the unknown kinds, in a toast and in the event log', await page.evaluate(() => {
+    const m = App.compat().join(' '), t = document.getElementById('toast-root').textContent;
+    return /newer PLC Trainer \(project format 3/.test(m) && m.includes('quantumRelay') && m.includes('warpDrive') && m.includes('current path')
+      && t.includes('not known to this version') && App.events().some(e => e.msg.includes('not known to this version'));
+  }));
+  check('compat: deleting a known part leaves out the kept wires that ended on it (no broken references saved)', await page.evaluate(() => {
+    const C = App.project.circuit, h = C.comps.find(c => c.props.label === 'H1');
+    C.comps = C.comps.filter(c => c !== h); C.wires = C.wires.filter(w => ![w.a, w.b].some(e => e.startsWith(h.id + ':')));
+    const s = App.serialize(); return !s.circuit.wires.some(w => w.id === 'w4') && s.circuit.wires.some(w => w.id === 'w3') && s.circuit.comps.some(c => c.id === 'c50');
+  }));
+  check('compat: every example and a v2.0.0 project open with no compatibility warning; saved projects carry format 2', await page.evaluate(() => {
+    const quiet = Object.keys(Examples.EX).every(k => { const prev = App.currentId, ok = App.openNew(Examples.EX[k].build()); if (ok && prev) Store.remove(prev); return ok && App.compat().length === 0; });
+    const old = { version: 1, name: 'v2.0.0 file', circuit: { comps: [{ id: 'c1', type: 'lamp', x: 0, y: 0, props: { label: 'H1' }, state: {} }], wires: [], seq: 1 } };
+    const prev = App.currentId, ok = App.openNew(old); if (ok && prev) Store.remove(prev);
+    return quiet && ok && App.compat().length === 0 && App.project.format === 1 && App.serialize().format === 2;
+  }));
+  // damaged data: wrong types, missing or duplicate ids, oversized entries, wires to nothing — none of it may crash or spoil the rest
+  check('compat: damaged data loads without errors; damaged entries are left out and reported, readable unknown ones kept', await page.evaluate(() => {
+    const bad = { name: 'Damaged', circuit: { comps: [null, 5, 'x', { type: 'lamp' }, { id: 'c1', type: 'lamp', props: { label: 'H1' } }, { id: 'c1', type: 'lamp' }, { id: 'c2' }, { id: 'c3', type: {} },
+      { id: 'c4', type: 'bigThing', blob: 'x'.repeat(30000) }, { id: 'c' + '9'.repeat(30), type: 'zz' }, { id: 'c5', type: 'futureThing', props: { label: 'U1' } }],
+    wires: [{ id: 'w1', a: 'c1:X1', b: 'c99:A' }, { id: 'w2' }, 'w', { id: 'w3', a: 5, b: null }, { id: 'w4', a: 'c5:A', b: 'c1:X2' }] },
+    schematic: { L: 'c5:L', rungs: [null, { elems: 'nope' }, { elems: [{ k: 'br', legs: 'x' }, { k: 'mystery' }] }], power: { main: [{ k: 'futureMain', tag: 'Q0' }], feeders: [null, { elems: [{ k: 'futureFeeder', tag: 'M1' }] }] },
+      free: { items: [null, { id: 'd1' }, { id: 'd2', k: 'lamp', tag: 'bad tag!' }, { id: 'd3', k: {} }, { id: 'd4', k: 'futureSym', tag: 'X' }], wires: [{ id: 'fw1', a: 'd4:A', b: 'd9:B' }, { id: 'bad' }, null] } } };
+    let ok;
+    try { ok = App.openNew(bad); } catch (e) { return 'threw: ' + e.message; }
+    const P = App.project, k = P.keep, m = App.compat().join(' ');
+    const s = JSON.parse(JSON.stringify(App.serialize()));
+    const again = App.openNew(JSON.parse(JSON.stringify(s)));
+    return ok && again && P.circuit.comps.length === 1 && k.comps.map(c => c.id).join() === 'c5' && k.wires.map(w => w.id).join() === 'w4'
+      && k.rungs.length === 1 && !!k.main && k.feeders.length === 1 && k.free.items.map(i => i.id).join() === 'd4' && k.L === 'c5:L'
+      && k.dropped >= 15 && /damaged entries/.test(m) && s.schematic.L === 'c5:L' && s.schematic.power.main[0].k === 'futureMain'
+      && App.compat().every(x => !/damaged/.test(x)) && App.project.keep.comps.length === 1;
+  }));
+  check('compat: a file that is not a project is still refused and the open project stays', await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
+  await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); });
+
   check('no page errors', errors.length === 0, errors.join(' | '));
 
   console.log('Phone (touch)');

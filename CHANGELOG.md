@@ -24,7 +24,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **DIV** rounds a half away from zero, like the controller: −5 ÷ 2 = −3 (was −2).
 - Alarms raised in the first seconds after the app starts (a breaker trip, a short) were shown and logged only from the 4th second on; they are now shown at once.
 
+### Project compatibility
+- **Nothing is lost when a project from a newer version is opened.** Parts, Electrical Diagram symbols and wires that this version does not know are kept as they are and saved back unchanged and in place (a current path or motor feeder holding an unknown symbol stays where it was), so the newer version still finds them. They are not shown or simulated here; everything else in the project works as before.
+- A current path holding an unknown symbol is kept whole: before, the unknown symbol was dropped and its neighbours were joined, which changed the circuit.
+- Projects now record a **file format** (`format: 2`). A project from a newer format, unknown parts or symbols, or damaged entries that could not be read are reported when the project opens (a warning and an event-log line), instead of being dropped silently.
+- A part or wire with no id in a damaged file is no longer loaded (a missing id was read as the text “undefined”).
+
 ### Tests
+- **Project compatibility** (11 checks): unknown parts, symbols and wires survive save → reload → save; the known circuit still runs; a current path with an unknown symbol is not joined; new parts never reuse a kept id; the warning names the newer format and the unknown kinds; deleting a known part leaves out kept wires that ended on it; every example and a v2.0.0 project open with no warning; damaged data loads without errors and is reported; a file that is not a project is still refused.
 - **Integration baseline** (26 checks, no change to the app): HMI START/STOP → PLC → output contact → contactor → motor through the real 20 ms tick loop; the Wiring push button on the same rung; overload trip, alarm bit, event log, reset and restart; PROG drops the outputs; a hardwired DOL starter working with the PLC in PROG; a seal-in circuit drawn only in the Electrical Diagram (devices and wires made for you, live wires shown); free-draw Undo/Redo and Delete; save and reload of every example, of device state and of the drawn circuit. One check records current behaviour on purpose: with the main breaker off, the *PLC motor* example's HMI follows the PLC command, because that example has no running feedback.
 
 ## [2.0.0] - 2026-10-20

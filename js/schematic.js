@@ -67,15 +67,33 @@
       .map(e => (PK[e.k].sd ? { k: e.k, tag: e.tag, delta: e.delta, star: e.star } : { k: e.k, tag: e.tag })).slice(0, 12);
     return { src: typeof o.src === 'string' && TAG.test(o.src) ? o.src : 'Q0', main: seq(o.main), feeders: (Array.isArray(o.feeders) ? o.feeders : []).filter(f => f && typeof f === 'object').slice(0, 20).map(f => ({ elems: seq(f.elems) })) };
   }
-  SC.clean = function (s, termOk) {
+  /* a symbol of a kind this version does not know, anywhere in a sequence (branches included) */
+  const unknownIn = (a, depth, KINDS) => (Array.isArray(a) ? a : []).some(e => e && typeof e === 'object' && (e.k === 'br' && depth < 4
+    ? (Array.isArray(e.legs) ? e.legs : []).some(l => unknownIn(l, depth + 1, KINDS))
+    : typeof e.k === 'string' && e.k !== 'br' && e.k !== '' && !Object.prototype.hasOwnProperty.call(KINDS, e.k)));
+  /* keep (optional, from App.buildProject): a current path or power feeder holding a symbol this version does not know is
+     put aside whole with its position (dropping just the symbol would join its neighbours and change the circuit), and so
+     is a main power sequence or a rail on a part that was put aside. App.serialize puts them back. */
+  SC.clean = function (s, termOk, keep) {
     const o = s && typeof s === 'object' ? s : {};
-    return {
-      L: typeof o.L === 'string' && termOk(o.L) ? o.L : null,
-      N: typeof o.N === 'string' && termOk(o.N) ? o.N : null,
-      rungs: (Array.isArray(o.rungs) ? o.rungs : []).filter(r => r && typeof r === 'object').map(r => ({ elems: cleanSeq(r.elems, 0), comment: typeof r.comment === 'string' ? r.comment.slice(0, 200) : '' })),
-      power: cleanPower(o.power),
-      free: FreeDraw.clean(o.free),
-    };
+    const kp = keep || { rungs: [], feeders: [], kinds: [], fits: () => true, railOk: () => false };
+    const rungs = [];
+    (Array.isArray(o.rungs) ? o.rungs : []).forEach((r, at) => {
+      if (!r || typeof r !== 'object') return;
+      if (unknownIn(r.elems, 0, SK) && kp.rungs.length < 200 && kp.fits(r)) { kp.rungs.push({ at, r: JSON.parse(JSON.stringify(r)) }); kp.kinds.push('current path'); return; }
+      rungs.push({ elems: cleanSeq(r.elems, 0), comment: typeof r.comment === 'string' ? r.comment.slice(0, 200) : '' });
+    });
+    const p = o.power && typeof o.power === 'object' ? o.power : {}, live = { ...p };
+    if (unknownIn(p.main, 0, PK) && kp.fits(p.main)) { kp.main = JSON.parse(JSON.stringify(p.main)); live.main = []; kp.kinds.push('main power circuit'); }
+    if (Array.isArray(p.feeders)) {
+      live.feeders = [];
+      p.feeders.forEach((f, at) => {
+        if (f && typeof f === 'object' && unknownIn(f.elems, 0, PK) && kp.feeders.length < 20 && kp.fits(f)) { kp.feeders.push({ at, f: JSON.parse(JSON.stringify(f)) }); kp.kinds.push('motor feeder'); }
+        else live.feeders.push(f);
+      });
+    }
+    const rail = k => { if (typeof o[k] !== 'string') return null; if (termOk(o[k])) return o[k]; if (kp.railOk(o[k])) kp[k] = o[k]; return null; };
+    return { L: rail('L'), N: rail('N'), rungs, power: cleanPower(live), free: FreeDraw.clean(o.free, keep) };
   };
 
   /* ---------- supply rails ---------- */

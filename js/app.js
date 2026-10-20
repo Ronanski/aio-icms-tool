@@ -5,6 +5,9 @@
   const VERSION = '2.0.0';
   // build id: 'dev' in the repository; the Pages and release builds stamp it (scripts/copy-web.sh) so the updater can tell builds apart
   const BUILD = 'dev';
+  /* project file format: raise it when a saved project gains content older versions cannot read. Files without it are 1.
+     A part, symbol or wire this version does not know is kept as it is, up to KEEP_MAX characters each. */
+  const FORMAT = 2, KEEP_MAX = 20000;
   /* four workspaces; Learn opens from the Help menu */
   const VIEWS = ['ladder', 'schematic', 'wiring', 'hmi', 'learn'];
   /* several views side by side; areas a/b/c are laid out by #main.panes-N in the CSS */
@@ -101,19 +104,41 @@
     }
     const desc = {};
     if (isObj(lad.desc)) for (const k in lad.desc) { const v = str(lad.desc[k], 80); if (v) desc[k] = v; }
-    // ids are a letter and a number below 1e9 (the counter stays exact), each id once
-    const idOk = (x, i, a) => ID.test(x.id) && (Number(String(x.id).replace(/\D/g, '')) || 0) < 1e9 && a.findIndex(y => isObj(y) && y.id === x.id) === i;
-    const comps = arr(cir.comps).filter((c, i, a) => isObj(c) && Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type) && idOk(c, i, a))
-      .map(c => Circuit.normalize(JSON.parse(JSON.stringify(c))));
-    const ids = new Set(comps.map(c => c.id));
+    // ids are a letter and a number below 1e9 (the counter stays exact), each id once; a missing id is not the text "undefined"
+    const idOk = (x, i, a) => typeof x.id === 'string' && ID.test(x.id) && (Number(String(x.id).replace(/\D/g, '')) || 0) < 1e9 && a.findIndex(y => isObj(y) && y.id === x.id) === i;
+    /* parts, symbols and wires this version does not know (a newer version made them) are put aside unchanged in `keep`
+       and written back by App.serialize: they are not shown or simulated, and never lost. Damaged entries are counted. */
+    const keep = { comps: [], wires: [], rungs: [], feeders: [], free: { items: [], wires: [] }, kinds: [], dropped: 0,
+      fits: x => { try { return JSON.stringify(x).length <= KEEP_MAX; } catch (e) { return false; } } };
+    const isKnown = c => Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type);
+    const comps = [];
+    arr(cir.comps).forEach((c, i, a) => {
+      if (!isObj(c) || !idOk(c, i, a)) { keep.dropped++; return; }
+      if (isKnown(c)) comps.push(Circuit.normalize(JSON.parse(JSON.stringify(c))));
+      else if (typeof c.type === 'string' && c.type && keep.comps.length < 1000 && keep.fits(c)) { keep.comps.push(JSON.parse(JSON.stringify(c))); keep.kinds.push(c.type); }
+      else keep.dropped++;
+    });
+    const ids = new Set(comps.map(c => c.id)), keptIds = new Set(keep.comps.map(c => c.id));
     const termOk = k => typeof k === 'string' && ids.has(k.split(':')[0]) && Circuit.DEFS[comps.find(c => c.id === k.split(':')[0]).type].terms.some(t => t.id === k.split(':')[1]);
-    const wires = arr(cir.wires).filter((w, i, a) => isObj(w) && idOk(w, i, a) && termOk(w.a) && termOk(w.b)).map(w => ({
-      id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d', ...(w.sch === true ? { sch: true } : {}),
-      ...(typeof w.tag === 'string' && w.tag.trim() ? { tag: w.tag.trim().slice(0, 12) } : {}),
-      pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
-    }));
+    // a wire end on a part that was put aside, or on a terminal this version does not know
+    const endKept = k => typeof k === 'string' && (keptIds.has(k.split(':')[0]) || ids.has(k.split(':')[0]));
+    keep.railOk = k => keptIds.has(String(k).split(':')[0]);
+    const wires = [];
+    arr(cir.wires).forEach((w, i, a) => {
+      if (!isObj(w) || !idOk(w, i, a)) { keep.dropped++; return; }
+      if (termOk(w.a) && termOk(w.b)) wires.push({
+        id: w.id, a: w.a, b: w.b, color: HEX.test(w.color) ? w.color : '#1d1d1d', ...(w.sch === true ? { sch: true } : {}),
+        ...(typeof w.tag === 'string' && w.tag.trim() ? { tag: w.tag.trim().slice(0, 12) } : {}),
+        pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
+      });
+      else if (endKept(w.a) && endKept(w.b) && keep.wires.length < 4000 && keep.fits(w)) keep.wires.push(JSON.parse(JSON.stringify(w)));
+      else keep.dropped++;
+    });
     const maxNum = list => list.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
     const seq = v => (Number.isInteger(v) && v >= 0 && v < 1e9 ? v : 0);
+    const schematic = Schematic.clean(p.schematic, termOk, keep);
+    delete keep.fits; delete keep.railOk;
+    const format = Number.isInteger(p.format) && p.format > 0 ? p.format : 1;
     return {
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc, files },
@@ -121,14 +146,28 @@
       net: cleanNet(p.net),
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
       conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null },
-      circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
+      // new parts and wires never reuse the id of one that was put aside
+      circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires), maxNum(keep.comps), maxNum(keep.wires)) },
       hmi: HMI.cleanAll(hm),
-      schematic: Schematic.clean(p.schematic, termOk),
+      schematic,
       io: Circuit.cleanIo(p.io),
       addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : 'file',
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && Object.prototype.hasOwnProperty.call(KINDS, e.kind)).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
+      keep, format,
     };
   }
+  /* what to tell the user when a project holds things this version does not know */
+  function compatMsg(proj) {
+    const k = proj.keep, msgs = [];
+    if (!k) return msgs;
+    const n = k.comps.length + k.free.items.length + k.rungs.length + k.feeders.length + (k.main ? 1 : 0), w = k.wires.length + k.free.wires.length;
+    const names = [...new Set(k.kinds.map(s => String(s).replace(/[^A-Za-z0-9 _.-]/g, '').slice(0, 24)).filter(Boolean))].slice(0, 5);
+    if (proj.format > FORMAT) msgs.push(`This project was saved by a newer PLC Trainer (project format ${proj.format}; this version reads format ${FORMAT}). Update the app to use everything in it.`);
+    if (n || w) msgs.push(`${n} part${n === 1 ? '' : 's'} or symbol${n === 1 ? '' : 's'} and ${w} wire${w === 1 ? '' : 's'} are not known to this version${names.length ? ` (${names.join(', ')})` : ''}. They are kept and saved back unchanged, but not shown or simulated.`);
+    if (k.dropped) msgs.push(`${k.dropped} damaged entr${k.dropped === 1 ? 'y' : 'ies'} in the project could not be read and ${k.dropped === 1 ? 'was' : 'were'} left out.`);
+    return msgs;
+  }
+  App.compat = () => compatMsg(App.project);
   App.buildProject = buildProject;
   App.loadProject = function (p) { applyProject(buildProject(p)); };
   function applyProject(proj) {
@@ -151,10 +190,13 @@
     clearTimeout(saveT); saveT = null;
     store();
     App.log('system', `Opened project “${App.project.name}”`);
+    const cm = compatMsg(proj);
+    cm.forEach(m => App.log('system', m));
+    if (cm.length) UI.toast(cm.join(' '), 'warn', 9000);
   }
   App.serialize = function () {
     const p = App.project;
-    return {
+    return withKept({
       version: 1, name: p.name,
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc,
         files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
@@ -167,8 +209,33 @@
       io: p.io,
       addr: p.addr,
       events: LOG.slice(-LOG_KEEP),
-    };
+    }, p);
   };
+  /* the saved form: what this version keeps aside goes back where it was (a current path or feeder at its old place).
+     A kept wire whose other end was deleted here is left out. The format is never lowered. */
+  function withKept(out, p) {
+    const k = p.keep;
+    out.format = Math.max(FORMAT, p.format || 0);
+    if (!k) return out;
+    const cp = JSON.parse(JSON.stringify(k)), C = out.circuit, S = out.schematic;
+    C.comps.push(...cp.comps);
+    const cids = new Set(C.comps.map(c => c.id)), on = (e, ids) => typeof e === 'string' && ids.has(e.split(':')[0]);
+    C.wires = C.wires.concat(cp.wires.filter(w => on(w.a, cids) && on(w.b, cids)));
+    const put = (list, kept, key) => { const a = list.slice(); kept.forEach(x => a.splice(Math.min(x.at, a.length), 0, x[key])); return a; };
+    S.rungs = put(S.rungs, cp.rungs, 'r');
+    if (S.power) {
+      S.power.feeders = put(S.power.feeders || [], cp.feeders, 'f');
+      if (cp.main && !(S.power.main || []).length) S.power.main = cp.main;
+    }
+    if (!S.L && cp.L) S.L = cp.L;
+    if (!S.N && cp.N) S.N = cp.N;
+    if (S.free && (cp.free.items.length || cp.free.wires.length)) {
+      S.free.items = S.free.items.concat(cp.free.items);
+      const fids = new Set(S.free.items.map(i => i.id));
+      S.free.wires = S.free.wires.concat(cp.free.wires.filter(w => on(w.a, fids) && on(w.b, fids)));
+    }
+    return out;
+  }
   let saveT = null, saveFailed = false;
   /* write the project to browser storage; warn once if it fails (storage full or blocked) */
   function store() {
