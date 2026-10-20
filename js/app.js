@@ -187,6 +187,7 @@
     if (proj.format > FORMAT) msgs.push(`This project was saved by a newer PLC Trainer (project format ${proj.format}; this version reads format ${FORMAT}). Update the app to use everything in it.`);
     if (n || w) msgs.push(`${n} part${n === 1 ? '' : 's'} or symbol${n === 1 ? '' : 's'} and ${w} wire${w === 1 ? '' : 's'} are not known to this version${names.length ? ` (${names.join(', ')})` : ''}. They are kept and saved back unchanged, but not shown or simulated.`);
     if (k.untagged) msgs.push(`${k.untagged} of them ${k.untagged === 1 ? 'has' : 'have'} no tag this version can read, so ${k.untagged === 1 ? 'its tag' : 'their tags'} could not be reserved: a device you add here could get the same tag.`);
+    if (k.L || k.N) msgs.push(`The supply rail of the current paths is on a part this version does not know: those current paths are not powered or simulated here, and no other supply is used in its place.`);
     if (k.dropped) msgs.push(`${k.dropped} damaged entr${k.dropped === 1 ? 'y' : 'ies'} in the project could not be read and ${k.dropped === 1 ? 'was' : 'were'} left out.`);
     return msgs;
   }

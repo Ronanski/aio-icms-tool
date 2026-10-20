@@ -1870,7 +1870,7 @@ function check(name, cond, info = '') {
     sel.value = opt.value; sel.dispatchEvent(new Event('change'));
     return App.project.schematic.L === before && App.serialize().schematic.L === 'c5:L' && document.getElementById('toast-root').textContent.includes('rail is on a part this version does not know');
   });
-  check('compat: a kept rail cannot be changed here, and is saved as it was even after the diagram chose rails itself', railR === true, String(railR));
+  check('compat: a kept rail cannot be changed here, and is saved as it was', railR === true, String(railR));
   check('compat: kept paths and feeders stay right after the ones they followed when others are inserted or deleted', await page.evaluate(() => {
     const S = App.project.schematic, P = S.power;
     S.rungs = S.rungs.filter(r => r.comment !== 'B' && r.comment !== ''); S.rungs.unshift({ elems: [], comment: 'X' });
@@ -1884,7 +1884,66 @@ function check(name, cond, info = '') {
     return canon(byId(t.circuit.comps, 'c5')) === canon(p.circuit.comps[2]) && canon(byId(t.circuit.comps, 'c6')) === canon(p.circuit.comps[3])
       && canon(t.schematic.rungs.find(r => r.comment === 'kept')) === canon(p.schematic.rungs[1]) && t.schematic.power.main[0].k === 'futureMain' && t.schematic.L === 'c5:L'
       && canon(byId(t.schematic.free.items, 'd1')) === canon(p.schematic.free.items[0]) && ['KA1', 'H1', 'S1', 'KM1', 'U1', 'QS1'].every(x => R.has(x));`), reserveP));
-  check('compat: a file that is not a project is still refused and the open project stays',await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
+  // a supply rail on a part this version does not know: no other supply takes its place (Cases A, B, C). The projects hold
+  // S1 and H1 already, as a newer version saves them, so S1 can be pressed and H1 watched. Opening syncs the diagram;
+  // render and sync run again here so every place that picks rails is passed through.
+  const railCase = (name, extra, L, N) => ({ name, format: 3, circuit: { seq: 30, comps: [{ id: 'c5', type: 'futureUps', x: 0, y: 0, props: { label: 'G9' } }, ...extra,
+    { id: 'c21', type: 'pb_no', x: 0, y: 0, props: { label: 'S1' } }, { id: 'c23', type: 'lamp', x: 0, y: 0, props: { label: 'H1', coil: '230VAC' } }], wires: [] },
+  schematic: { L, N, rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H1' }], comment: 'lamp' }] } });
+  const Q1 = { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, G1 = { id: 'c2', type: 'psu24', x: 0, y: 0, props: { label: 'G1' } };
+  const railRun = d => page.evaluate(async d => {
+    const prev = App.currentId; if (!App.openNew(JSON.parse(JSON.stringify(d)))) return null; if (prev) Store.remove(prev);
+    App.showView('schematic'); Schematic.render(); Schematic.sync();
+    const C = App.project.circuit, S = App.project.schematic, dev = l => C.comps.find(c => c.props.label === l);
+    const up = App.operate(dev('S1'), 'btn'); await new Promise(r => setTimeout(r, 400));
+    const lit = dev('H1').state.on; if (typeof up === 'function') up(); await new Promise(r => setTimeout(r, 150));
+    const s = JSON.parse(JSON.stringify(App.serialize()));
+    return { L: S.L, N: S.N, lit, sch: C.wires.filter(w => w.sch).length, savedL: s.schematic.L, savedN: s.schematic.N, savedSch: s.circuit.wires.filter(w => w.sch).length,
+      coil: dev('H1').props.coil, labels: C.comps.map(c => c.props.label).sort().join(), msg: App.compat().join(' ') };
+  }, d);
+  const rA = await railRun(railCase('Rail case A', [Q1], 'c5:L', 'c5:N'));
+  check('kept rail, case A: no substitute rail; pressing S1 does not light H1 from Q1; no diagram wires to Q1; L/N saved unchanged', !!rA && rA.L === null && rA.N === null && rA.lit === false
+    && rA.sch === 0 && rA.savedSch === 0 && rA.savedL === 'c5:L' && rA.savedN === 'c5:N' && rA.labels === 'H1,Q1,S1', JSON.stringify(rA));
+  check('kept rail: the warning says the current paths on that rail are not powered or simulated here', !!rA && rA.msg.includes('supply rail of the current paths is on a part this version does not know') && rA.msg.includes('not powered or simulated here'));
+  const rB = await railRun(railCase('Rail case B', [Q1, G1], 'c5:P', 'c1:N'));
+  check('kept rail, case B: N stays c1:N; no diagram wires to the 24 V PSU; H1 keeps its 230 VAC coil and no device is added', !!rB && rB.L === null && rB.N === 'c1:N' && rB.lit === false
+    && rB.sch === 0 && rB.savedSch === 0 && rB.savedL === 'c5:P' && rB.savedN === 'c1:N' && rB.coil === '230VAC' && rB.labels === 'G1,H1,Q1,S1', JSON.stringify(rB));
+  const rC = await railRun(railCase('Rail case C', [], 'c5:L', 'c5:N'));
+  check('kept rail, case C: with no other supply nothing is powered, nothing is wired, and L/N are saved unchanged', !!rC && rC.L === null && rC.N === null && rC.lit === false
+    && rC.sch === 0 && rC.savedL === 'c5:L' && rC.savedN === 'c5:N' && rC.labels === 'H1,S1', JSON.stringify(rC));
+  // save → reload → save: the saved form is compared with sorted keys and without the event log (the log grows on every
+  // open; key order can differ for re-made objects); rails, devices, wires and the kept part are also checked against the file
+  const railTrip = await page.evaluate(new Function('cases', canonJs + `
+    const out = [];
+    for (const d of cases) {
+      const save = () => { const s = JSON.parse(JSON.stringify(App.serialize())); delete s.events; return s; };
+      const open = x => { const prev = App.currentId, ok = App.openNew(JSON.parse(JSON.stringify(x))); if (ok && prev) Store.remove(prev); return ok; };
+      if (!open(d)) { out.push(d.name + ': not opened'); continue; }
+      const a = save(); if (!open(a)) { out.push(d.name + ': reload refused'); continue; }
+      const b = save(), dev = (s, id) => s.circuit.comps.find(c => c.id === id);
+      const ok = canon(a) === canon(b) && b.schematic.L === d.schematic.L && b.schematic.N === d.schematic.N && !b.circuit.wires.length
+        && canon(dev(b, 'c5')) === canon(d.circuit.comps[0]) && b.circuit.comps.length === d.circuit.comps.length && dev(b, 'c23').props.coil === '230VAC'
+        && d.circuit.comps.every(c => dev(b, c.id) && (dev(b, c.id).props || {}).label === (c.props || {}).label);
+      if (!ok) out.push(d.name + ': differs');
+    }
+    return out.length ? out.join('; ') : true;`), [railCase('Rail case A', [Q1], 'c5:L', 'c5:N'), railCase('Rail case B', [Q1, G1], 'c5:P', 'c1:N'), railCase('Rail case C', [], 'c5:L', 'c5:N')]);
+  check('kept rail: save → reload → save keeps rails, devices, wires and the kept part the same (cases A, B, C)', railTrip === true, String(railTrip));
+  // without a kept rail the diagram still picks the rails itself: a 24 V PSU fed from the 1-phase supply comes first
+  const rAuto = await page.evaluate(async () => {
+    const prev = App.currentId, ok = App.openNew({ name: 'Auto rails', circuit: { seq: 5, comps: [
+      { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'psu24', x: 0, y: 0, props: { label: 'G1' } }],
+    wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }] },
+    schematic: { rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H1' }], comment: '' }] } });
+    if (!ok) return null; if (prev) Store.remove(prev);
+    const C = App.project.circuit, S = App.project.schematic, dev = l => C.comps.find(c => c.props.label === l);
+    await new Promise(r => setTimeout(r, 200));
+    const up = App.operate(dev('S1'), 'btn'); await new Promise(r => setTimeout(r, 400));
+    const lit = dev('H1').state.on; if (typeof up === 'function') up();
+    return { L: S.L, N: S.N, coil: dev('H1').props.coil, sch: C.wires.filter(w => w.sch).length, lit, msgs: App.compat().length };
+  });
+  check('no kept rail: the diagram still picks the rails itself (24 V PSU first), wires the path, and S1 lights H1', !!rAuto && rAuto.L === 'c2:P2' && rAuto.N === 'c2:M2' && rAuto.coil === '24VDC'
+    && rAuto.sch > 0 && rAuto.lit === true && rAuto.msgs === 0, JSON.stringify(rAuto));
+  check('compat: a file that is not a project is still refused and the open project stays', await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
   await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); });
 
   check('no page errors', errors.length === 0, errors.join(' | '));

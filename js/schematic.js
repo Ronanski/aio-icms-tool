@@ -123,6 +123,9 @@
     return [null, null];
   }
   const railOk = k => { if (!k) return false; const [cid, tid] = k.split(':'); const c = circ().comps.find(x => x.id === cid); return !!c && DEFS[c.type].terms.some(t => t.id === tid); };
+  /* a rail on a part this version does not know (kept in App.project.keep): no other supply is put in its place, so the
+     current paths that need it stay unpowered here instead of running from a supply the project does not use */
+  const pickRails = () => !(App.project && App.project.keep && (App.project.keep.L || App.project.keep.N));
   function controlVoltage() {
     const k = sch().L; const c = k && circ().comps.find(x => x.id === k.split(':')[0]);
     return c && c.type === 'psu24' ? '24VDC' : '230VAC';
@@ -313,7 +316,7 @@
     const kOf = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
     const old = new Map(C.wires.filter(w => w.sch).map(w => [kOf(w.a, w.b), w]));
     C.wires = C.wires.filter(w => !w.sch);
-    if (!railOk(s.L) || !railOk(s.N)) { [s.L, s.N] = autoRails(); }
+    if ((!railOk(s.L) || !railOk(s.N)) && pickRails()) { [s.L, s.N] = autoRails(); }
     checks();
     const seen = new Set();
     const tOk = k => { const [id, t] = k.split(':'), c = C.comps.find(x => x.id === id); return !!c && DEFS[c.type].terms.some(x => x.id === t); };
@@ -336,7 +339,7 @@
     };
     syncPower(addWire);
     FreeDraw.sync(addWire, ensureType, controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d');
-    if (!railOk(s.L) || !railOk(s.N)) { [s.L, s.N] = autoRails(); }
+    if ((!railOk(s.L) || !railOk(s.N)) && pickRails()) { [s.L, s.N] = autoRails(); }
     if (railOk(s.L) && railOk(s.N)) {
       const color = controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d';   // control wiring: 24 V red, 230 V black
       const wire = (a, b) => addWire(a, b, color);
@@ -872,7 +875,7 @@
   SC.render = function () { renderRungs(); renderSide(); };
   function renderRungs() {
     if (!body || !App.project || !sch()) return;
-    if (!railOk(sch().L) || !railOk(sch().N)) { const [l, n] = autoRails(); sch().L = l; sch().N = n; }
+    if ((!railOk(sch().L) || !railOk(sch().N)) && pickRails()) { const [l, n] = autoRails(); sch().L = l; sch().N = n; }
     checks();
     const sl = body.scrollLeft, stp = body.scrollTop;
     const s = sch();
