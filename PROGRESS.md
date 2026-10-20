@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 1.6.0 (stable release authorized 2026-10-20 with "GO STABLE v1.6.0": modular PLC rack, I/O Configuration, address styles, 2D cabinet, free draw like SimuRelay. Before it 1.5.0.)
-**Status:** Stable v1.6.0 (release in progress 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 310/310.
+**Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
+**Status:** Stable v2.0.0 (release in progress 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 380/380.
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -182,8 +182,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Go Online, Download / Upload with compare, Online Edit (test, assemble, cancel) — Realistic connection mode; Simple stays the default
 - [x] Simulated network: who-active browser, controller ↔ HMI ↔ software, remote PLCs, MSG and produced/consumed data (no real ports)
 
-**Proposed next (2026-10-20, waiting for the owner's pick; not started)**
-- [ ] **Release v2.0.0** (needs "GO STABLE v2.0.0"): ships v1.6.1, v1.7, v1.8 and v2.0 from `main` together. Project format changes (tags, program files): older apps cannot open new projects.
+**Next (owner: GO on v2.0.0, v2.0.1 and v2.1, 2026-10-20)**
+- [x] **Release v2.0.0** (owner: GO, 2026-10-20): ships v1.6.1, v1.7, v1.8 and v2.0 from `main` together. Project format changes (tags, program files): older apps cannot open new projects.
 - [ ] **v2.0.1 — accuracy fixes** from the audit list below: S:0 math flags and S:5/0 divide by zero, breaker selectivity with equal rank, oscillating-circuit warning, operand range checks, DIV rounding.
 - [ ] **v2.1 — learning**: auto-check for the circuit lessons 8–12 (verify the wiring, not only the ladder); new lessons for the rack, analog/VFD, HMI and online editing.
 - [ ] **v2.2 — publishing**: Play Store build (`.aab`) and listing, final product name and logo; release workflow refuses a debug-signed APK.

@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-20
+
+A major release: controller tags and the Controller Organizer, online work with the controller (download, upload, compare, online edits), a simulated network with MSG, new instructions and analog I/O with a VFD, a much bigger HMI (screens, terminal types, trends, security), and Tagalog. **Projects saved with 2.0.0 can use tags, program files and a controller program that older versions do not know: open them with 2.0.0 or newer.**
+
 ### Added
 - **Simulated network (v2.0)** (Ladder → *🖧 Network*): **Who Active** list (this computer, the controller, the HMI terminal, remote PLCs with their IP addresses and status); **remote PLCs** (nodes 2–8, 32 N7 words each, editable); **produced / consumed** links that copy words every scan while the controller runs. No real ports are opened.
 - **MSG** instruction: READ / WRITE a block of N7 words of a remote PLC over the simulated network, with EN / DN / ER in an R6 control (ER when the node does not answer).
