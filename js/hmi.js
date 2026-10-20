@@ -278,13 +278,18 @@
     }
   };
 
+  /* the real I/O points of the hardware, in the project's address style */
+  function hwTags() {
+    const io = Circuit.addrBook(App.project.circuit, App.project.io, App.project.addr || 'file').points;
+    return [...io.O, ...io.I].map(App.fmt);
+  }
   function renderProps() {
     if (!propsEl) return;
     const o = hmi().objects.find(o => o.id === sel);
     if (mode !== 'edit') {
       propsEl.innerHTML = `<div class="side-head"><h4>HMI Runtime</h4></div><div class="props"><p class="help">☝ Operate mode: touch the buttons on the screen. HMI buttons write to PLC tags (use <code>B3</code> bits — never physical inputs). Indicators read any tag.</p>
       <p class="help">Switch to <b>✎ Design</b> to add objects, drag to move, drag the corner to resize, <b>Del</b> to delete.</p>
-      <h5>Tags on this screen</h5><ul class="taglist">${hmi().objects.filter(o => o.tag).map(o => `<li><code>${esc(o.tag)}</code> ${esc(o.label)}</li>`).join('') || '<li class="help">none</li>'}</ul></div>`;
+      <h5>Tags on this screen</h5><ul class="taglist">${hmi().objects.filter(o => o.tag).map(o => `<li><code title="${esc(o.tag)}">${esc(App.fmt(o.tag))}</code> ${esc(o.label)}</li>`).join('') || '<li class="help">none</li>'}</ul></div>`;
       return;
     }
     if (!o) { propsEl.innerHTML = `<div class="side-head"><h4>Edit screen</h4></div><div class="props"><p class="help">Add an object from the toolbar, then select it to bind a tag.</p></div>`; return; }
@@ -295,10 +300,10 @@
       if (k === 'mode') input = `<select data-k="mode">${MODES.map(m => `<option ${v === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
       else if (k === 'shape') input = `<select data-k="shape">${SHAPES.map(m => `<option ${v === m ? 'selected' : ''}>${m}</option>`).join('')}</select>`;
       else if (/color/i.test(k)) input = `<div class="swatches">${COLORS.map(c => `<button class="sw${v === c ? ' on' : ''}" data-ck="${k}" data-cv="${c}" style="background:${c}"></button>`).join('')}</div>`;
-      else input = `<input data-k="${k}" value="${esc(v)}" ${k === 'tag' ? 'list="hmiTags" spellcheck="false"' : ''}>`;
+      else input = `<input data-k="${k}" value="${esc(k === 'tag' ? App.fmt(v) : v)}" ${k === 'tag' ? 'list="hmiTags" spellcheck="false"' : ''}>`;
       return `<label class="field"><span>${PROPS[k] || k}</span>${input}</label>`;
     }).join('')}
-      <datalist id="hmiTags">${['B3:0/0', 'B3:0/1', 'B3:0/2', 'B3:0/3', 'O:0/0', 'O:0/1', 'O:0/2', 'I:0/0', 'I:0/1', 'I:0/2', 'N7:0', 'N7:1', 'T4:0.ACC', 'T4:0.PRE', 'C5:0.ACC', 'C5:0.PRE', 'T4:0/DN', 'C5:0/DN'].map(t => `<option value="${t}">`).join('')}</datalist>
+      <datalist id="hmiTags">${[...hwTags(), 'B3:0/0', 'B3:0/1', 'B3:0/2', 'B3:0/3', 'N7:0', 'N7:1', 'T4:0.ACC', 'T4:0.PRE', 'C5:0.ACC', 'C5:0.PRE', 'T4:0/DN', 'C5:0/DN'].map(t => `<option value="${esc(t)}">`).join('')}</datalist>
       <p class="help warn-txt" data-w></p>
       <div class="btn-row"><button class="btn" data-dup>Duplicate</button><button class="btn danger" data-del>Delete</button></div></div>`;
     const warn = () => {
@@ -310,7 +315,8 @@
     warn();
     propsEl.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', () => {
       let v = i.value;
-      if (i.dataset.k === 'tag') { const p = PLCcore.parse(v); if (p) v = p.norm; }
+      // a tag can be typed in any address style; it is stored file-based
+      if (i.dataset.k === 'tag') { v = App.addrIn(v); const p = PLCcore.parse(v); if (p) v = p.norm; }
       o[i.dataset.k] = v; App.save(); HMI.render();
     }));
     propsEl.querySelectorAll('[data-ck]').forEach(b => b.onclick = () => { o[b.dataset.ck] = b.dataset.cv; App.save(); HMI.render(); });

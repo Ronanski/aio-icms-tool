@@ -546,7 +546,8 @@
     ERR_IDS = new Set(errs.filter(x => x.id).map(x => x.id));
     Ladder.render();
     if (quiet) return errs.length === 0;
-    const row = (x, k) => `<li class="${k}"><b>Rung ${String(x.ri).padStart(4, '0')}</b> — ${esc(x.msg)}</li>`;
+    // I/O addresses in the messages follow the project's address style
+    const row = (x, k) => `<li class="${k}"><b>Rung ${String(x.ri).padStart(4, '0')}</b> — ${esc(App.fmtText(x.msg))}</li>`;
     UI.modal({
       title: 'Verify project',
       body: errs.length || warns.length
