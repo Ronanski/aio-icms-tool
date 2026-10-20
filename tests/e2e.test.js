@@ -1636,6 +1636,123 @@ function check(name, cond, info = '') {
   check('free draw: no more than 400 symbols can be added', await page.evaluate(() => { App.openNew({ name: 'F400', schematic: { free: { items: Array.from({ length: 400 }, (_, i) => ({ id: 'd' + (i + 1), k: 'text', tag: 'TXT', x: i * 10, y: 0, r: 0, txt: 'x' })), wires: [] } } }); FreeDraw.add('lamp', 'H1', 0, 0); return App.project.schematic.free.items.length === 400; }));
   check('HMI.mini is keyed on a version counter, and an edit changes its key', await page.evaluate(() => { App.openNew({ name: 'M', hmi: { objects: [{ id: 'h1', type: 'lamp', scr: 's1', x: 10, y: 10, w: 80, h: 90, label: 'RUN', tag: 'O:0/0' }] } }); const k1 = HMI.mini().key; HMI.render(); const k2 = HMI.mini().key; return k1 !== k2 && !k2.includes('"label"'); }));
   check('HMI.sample records trend history while the HMI view is hidden', await page.evaluate(() => { App.openNew({ name: 'TR', hmi: { objects: [{ id: 'h5', type: 'trend', scr: 's1', x: 0, y: 0, w: 320, h: 160, label: 'N7', tag: 'N7:0', min: 0, max: 100, span: 30 }] } }); App.showView('ladder'); const t = performance.now(); HMI.sample(t); HMI.sample(t + 300); HMI.sample(t + 600); App.showView('hmi'); return (document.querySelector('#view-hmi .hobj[data-id="h5"] [data-p]').getAttribute('d') || '').split('L').length > 2; }));
+
+  console.log('Integration baseline: HMI → PLC → Wiring → Electrical Diagram, through the real tick loop');
+  // these drive the running app (20 ms ticks): HMI writes PLC data, the scan drives the PLC output contacts, the solver moves the devices
+  const until = (fn, arg, ms = 3000) => page.waitForFunction(fn, arg, { timeout: ms, polling: 50 }).then(() => true, () => false);
+  const hmiTap = l => page.evaluate(async l => { const o = App.project.hmi.objects.find(x => x.label === l); HMI.pressId(o.id, 'down'); await new Promise(r => setTimeout(r, 30)); HMI.pressId(o.id, 'up'); }, l);
+  const op = async (l, p = 'btn') => { await page.evaluate(([l, p]) => { const up = App.operate(App.project.circuit.comps.find(c => c.props.label === l), p); if (typeof up === 'function') setTimeout(up, 40); }, [l, p]); await wait(100); };
+  const ST = 'const d = l => App.project.circuit.comps.find(c => c.props.label === l).state, r = a => App.plc.read(a);';
+  const is = body => new Function(ST + 'return ' + body + ';');
+  // every opened example is stored as a new project: drop the older ones so a full storage cannot block opening the next
+  await page.evaluate(() => Store.list().forEach(p => { if (p.id !== App.currentId) Store.remove(p.id); }));
+  await load('plcmotor'); await setMode('RUN');
+  check('integration: in RUN, STOP (N.C.) and overload OK read 1 and the motor is off', await until(is("r('I:0/1') === 1 && r('I:0/2') === 1 && r('O:0/0') === 0 && d('M1').drive === 'off'")));
+  await hmiTap('START');
+  check('integration: a 30 ms HMI START tap sets O:0/0, pulls in KM1 through the PLC output contact, runs M1 and lights H1', await until(is("r('O:0/0') === 1 && d('KM1').pulled && d('M1').drive === 'run' && d('H1').on")));
+  check('integration: the HMI START bit is released after the tap and the rung holds O:0/0', await until(is("r('B3:0/0') === 0 && r('O:0/0') === 1")));
+  await hmiTap('STOP');
+  check('integration: HMI STOP drops O:0/0, KM1 and the motor', await until(is("r('O:0/0') === 0 && !d('KM1').pulled && d('M1').drive === 'off'")));
+  await op('S1');
+  check('integration: the Wiring push button S1 starts the same motor through I:0/0', await until(is("r('O:0/0') === 1 && d('KM1').pulled && d('M1').drive === 'run'")));
+  const ev0 = await page.evaluate(() => App.events().length);
+  await op('M1', 'jam');
+  check('integration: a jammed motor trips F1; 95-96 opens I:0/2, the rung drops O:0/0 and KM1, O:0/2 lights H2 and sets the HMI alarm bit B3:0/15', await until(is("d('F1').tripped && r('I:0/2') === 0 && r('O:0/0') === 0 && !d('KM1').pulled && r('O:0/2') === 1 && d('H2').on && r('B3:0/15') === 1"), null, 10000));
+  check('integration: the overload trip is logged as an alarm', await page.evaluate(n => App.events().slice(n).some(e => e.kind === 'alarm' && e.msg.includes('F1')), ev0));
+  await op('M1', 'jam'); await op('F1', 'reset');
+  check('integration: after unjam and F1 reset the alarm clears and the motor stays off', await until(is("!d('F1').tripped && r('I:0/2') === 1 && r('B3:0/15') === 0 && r('O:0/2') === 0 && r('O:0/0') === 0")));
+  await hmiTap('START');
+  check('integration: the motor restarts from the HMI after the reset', await until(is("r('O:0/0') === 1 && d('M1').drive === 'run'")));
+  await setMode('PROG');
+  check('integration: PROG turns the PLC outputs off and KM1 drops', await until(is("r('O:0/0') === 0 && !d('KM1').pulled")));
+  await setMode('RUN'); await op('QF1', 'h');
+  await hmiTap('START');
+  const qf1Off = await until(is("!d('QF1').on && r('O:0/0') === 1 && d('KM1').pulled"));
+  await wait(600);
+  check('integration (current behaviour): with QF1 off, O:0/0 = 1 and KM1 pull in but M1 stays off — this example has no running feedback, so its HMI motor follows the command', qf1Off && await page.evaluate(is("r('O:0/0') === 1 && d('M1').drive === 'off' && d('M1').spd === 0")));
+  await hmiTap('STOP'); await op('QF1', 'h'); await setMode('PROG');
+
+  // hardwired: no PLC at all, the PLC stays in PROG
+  await load('dol'); await setMode('PROG');
+  await op('S1');
+  const sealed = await until(is("d('KM1').pulled && d('M1').drive === 'run' && d('H1').on"));
+  await wait(500);
+  check('hardwired: in PROG, S1 pulls in KM1 and KM1 13-14 holds it after the button is released', sealed && await page.evaluate(is("d('KM1').pulled && !d('S1').pressed")));
+  await op('S0');
+  check('hardwired: S0 drops KM1 and the motor', await until(is("!d('KM1').pulled && d('M1').drive === 'off'")));
+  await op('S1'); await until(is("d('KM1').pulled")); await op('M1', 'jam');
+  check('hardwired: a jammed motor trips F1; its 95-96 drops the coil and its 97-98 lights H2', await until(is("d('F1').tripped && !d('KM1').pulled && d('H2').on"), null, 10000));
+  await op('M1', 'jam'); await op('F1', 'reset');
+  const reset = await until(is("!d('F1').tripped && !d('H2').on"));
+  await wait(300);
+  check('hardwired: after the reset the starter stays off until START', reset && await page.evaluate(is("!d('KM1').pulled")));
+
+  // a circuit drawn only in the Electrical Diagram (free draw): the diagram makes the devices and wires, the same solver runs them
+  const sealIn = { name: 'Free draw seal-in', schematic: { free: { seq: 20, items: [
+    { id: 'd1', k: 'src1', tag: 'Q1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'pbnc', tag: 'S0', x: 0, y: 100, r: 0 }, { id: 'd3', k: 'pbno', tag: 'S1', x: 0, y: 200, r: 0 },
+    { id: 'd4', k: 'kmno', tag: 'KM1', x: 100, y: 200, r: 0 }, { id: 'd5', k: 'kmcoil', tag: 'KM1', x: 0, y: 300, r: 0 }, { id: 'd6', k: 'lamp', tag: 'H1', x: 100, y: 300, r: 0 }],
+  wires: [{ id: 'fw1', a: 'd1:L', b: 'd2:11' }, { id: 'fw2', a: 'd2:12', b: 'd3:13' }, { id: 'fw3', a: 'd3:13', b: 'd4:13' }, { id: 'fw4', a: 'd3:14', b: 'd4:14' },
+    { id: 'fw5', a: 'd3:14', b: 'd5:A1' }, { id: 'fw6', a: 'd5:A2', b: 'd1:N' }, { id: 'fw7', a: 'd4:14', b: 'd6:X1' }, { id: 'fw8', a: 'd6:X2', b: 'd1:N' }] } } };
+  await page.evaluate(p => { localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); App.showView('schematic'); }, sealIn);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('free draw: a seal-in drawn only in the diagram creates its devices and 8 wires in the Wiring on load', await page.evaluate(() => {
+    const C = App.project.circuit, t = l => (C.comps.find(c => c.props.label === l) || {}).type;
+    return t('Q1') === 'supply1' && t('S0') === 'pb_nc' && t('S1') === 'pb_no' && t('KM1') === 'contactor' && t('H1') === 'lamp' && C.comps.length === 5 && C.wires.filter(w => w.sch).length === 8 && FreeDraw.errs.size === 0;
+  }));
+  const LIVE = '#view-schematic .fd-host svg .w.on';
+  const live0 = await page.evaluate(s => document.querySelectorAll(s).length, LIVE);
+  await op('S1');
+  check('free draw: the drawn START pulls in the coil and the drawn KM1 N.O. contact holds it', await until(is("d('KM1').pulled && d('H1').on && !d('S1').pressed")));
+  check('free draw: the diagram shows more live wires while the circuit is sealed in', live0 > 0 && await until(([s, n]) => document.querySelectorAll(s).length > n, [LIVE, live0]));
+  await op('S0');
+  check('free draw: the drawn STOP drops the coil and the live wires go back', await until(([s, n]) => !App.project.circuit.comps.find(c => c.props.label === 'KM1').state.pulled && document.querySelectorAll(s).length === n, [LIVE, live0]));
+  check('free draw: Undo removes an added symbol and the device the diagram made for it; Redo brings both back', await page.evaluate(() => {
+    const dev = () => App.project.circuit.comps.some(c => c.props.label === 'H7'), sym = () => App.project.schematic.free.items.some(i => i.tag === 'H7');
+    FreeDraw.add('lamp', 'H7', 300, 0); const a = dev() && sym();
+    Schematic.undo(); const b = !dev() && !sym();
+    Schematic.redo(); return a && b && dev() && sym();
+  }));
+  await (await page.$('#view-schematic [data-fi="d3"] .hit')).click(); await wait(100);
+  check('free draw: Delete removes a symbol and its wires from the diagram and the Wiring; Undo restores all of them', await page.evaluate(() => {
+    const F = () => App.project.schematic.free, sw = () => App.project.circuit.wires.filter(w => w.sch).length, n0 = [F().items.length, F().wires.length, sw()];
+    if (!FreeDraw.selected() || FreeDraw.selected().id !== 'd3') return false;
+    FreeDraw.del(); const gone = F().items.length === n0[0] - 1 && F().wires.length < n0[1] && sw() < n0[2];
+    Schematic.undo(); return gone && F().items.length === n0[0] && F().wires.length === n0[1] && sw() === n0[2];
+  }));
+  check('free draw (current behaviour): after Undo removes the selected symbol, Delete does not throw and removes nothing', await page.evaluate(() => {
+    FreeDraw.add('lamp', 'H8', 300, 100); Schematic.undo(); const before = JSON.stringify(App.project.schematic.free);
+    try { FreeDraw.del(); } catch (e) { return false; }
+    return FreeDraw.selected() === null && JSON.stringify(App.project.schematic.free) === before;
+  }));
+  check('save/load: the drawn circuit, its devices and diagram wires survive a save and reload', await page.evaluate(() => {
+    const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
+    return JSON.stringify(p.schematic.free) === JSON.stringify(App.project.schematic.free) && p.circuit.comps.length === App.project.circuit.comps.length && p.circuit.wires.filter(w => w.sch).length === App.project.circuit.wires.filter(w => w.sch).length;
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); }); await page.click('#view-schematic [data-sstyle="iec"]'); await wait(150);
+
+  // save / load
+  // compare the saved form (loading rebuilds rungs from their text with new runtime ids) with sorted keys: a wire the diagram
+  // re-made lists its fields in another order. The event log grows on every open. openNew refuses to leave a project that
+  // cannot be saved, so the projects made here are removed again to keep storage free.
+  const unstable = await page.evaluate(() => Object.keys(Examples.EX).filter(k => {
+    const canon = v => JSON.stringify(v, (q, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, z) => { o[z] = x[z]; return o; }, {}) : x));
+    const save = () => { const s = JSON.parse(JSON.stringify(App.serialize())); delete s.events; return canon(s); };
+    const open = data => { const prev = App.currentId, ok = App.openNew(data); if (ok && prev) Store.remove(prev); return ok; };
+    if (!open(Examples.EX[k].build())) return true;
+    const a = save();
+    return !open(JSON.parse(JSON.stringify(App.serialize()))) || save() !== a;
+  }));
+  check('save/load: every example saves the same after a reload (the saved project is stable)', unstable.length === 0, unstable.join(', '));
+  check('save/load: device state is kept (a tripped overload stays tripped), a momentary press is not', await page.evaluate(() => {
+    App.openNew(Examples.EX.dol.build()); const d = l => App.project.circuit.comps.find(c => c.props.label === l);
+    d('F1').state.tripped = true; d('S1').state.pressed = true;
+    const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize()))), e = l => p.circuit.comps.find(c => c.props.label === l);
+    return e('F1').state.tripped === true && e('S1').state.pressed === false;
+  }));
+  await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.openNew(JSON.parse(JSON.stringify(App.serialize()))); App.setMode('RUN'); });
+  await hmiTap('START');
+  check('save/load: a reloaded PLC motor project still runs the motor from the HMI', await until(is("r('O:0/0') === 1 && d('KM1').pulled && d('M1').drive === 'run'")));
+  await hmiTap('STOP'); await setMode('PROG');
   await page.evaluate(() => App.showView('ladder'));
 
   check('no page errors', errors.length === 0, errors.join(' | '));

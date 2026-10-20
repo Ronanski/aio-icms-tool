@@ -24,6 +24,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **DIV** rounds a half away from zero, like the controller: −5 ÷ 2 = −3 (was −2).
 - Alarms raised in the first seconds after the app starts (a breaker trip, a short) were shown and logged only from the 4th second on; they are now shown at once.
 
+### Tests
+- **Integration baseline** (26 checks, no change to the app): HMI START/STOP → PLC → output contact → contactor → motor through the real 20 ms tick loop; the Wiring push button on the same rung; overload trip, alarm bit, event log, reset and restart; PROG drops the outputs; a hardwired DOL starter working with the PLC in PROG; a seal-in circuit drawn only in the Electrical Diagram (devices and wires made for you, live wires shown); free-draw Undo/Redo and Delete; save and reload of every example, of device state and of the drawn circuit. One check records current behaviour on purpose: with the main breaker off, the *PLC motor* example's HMI follows the PLC command, because that example has no running feedback.
+
 ## [2.0.0] - 2026-10-20
 
 A major release: controller tags and the Controller Organizer, online work with the controller (download, upload, compare, online edits), a simulated network with MSG, new instructions and analog I/O with a VFD, a much bigger HMI (screens, terminal types, trends, security), and Tagalog. **Projects saved with 2.0.0 can use tags, program files and a controller program that older versions do not know: open them with 2.0.0 or newer.**

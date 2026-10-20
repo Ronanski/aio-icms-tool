@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 428/428.
+**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 454/454 on `feature/integration-baseline-tests` (428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -191,6 +191,17 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 
 **v2.1.1 — full audit (owner: "PERFORM FULL AUDIT. INITIATE FIX"; "AYUSIN MO LAHAT")**
 - [x] Audit in 4 parts (PLC engine/ladder, electrical solver, app/storage/security, diagram/HMI/wiring): 40 findings, all fixed with tests (see CHANGELOG [Unreleased] "Fixed (full audit)")
+
+## Electrical Diagram roadmap (Simurelay-inspired; owner approves each phase separately)
+Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one existing simulation. No new solver, no Ladder/HMI rewrite, one device-settings source shared with the Wiring, the HMI reads PLC data only.
+- [x] Phase 0 — integration baseline tests (26 checks; branch `feature/integration-baseline-tests`, awaiting review, not merged)
+- [ ] Phase 1 — project compatibility: keep unknown parts, symbols and wires on load and save; format version; warning
+- [ ] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals
+- [ ] Phase 3 — inline properties panel, comments, IEC naming and numbering, duplicate warnings, editing (copy/paste, nudge, multi-select, touch, search, grid, image export)
+- [ ] Phase 4 — missing parts in small batches (see the Simurelay comparison)
+- [ ] Phase 5 — flasher, on/off-delay timer, flashing lamp, phase-failure relay, countdown on the drawing, conductor-coloured live wires
+- [ ] Phase 6 — new example: hardwired 95-96 in the coil circuit, KM1 aux to a PLC input, HMI shows the real running status, discrepancy alarm; end-to-end checks
+- [ ] Separate, needs its own approval: diode (one-way conduction in the solver)
 
 ## Audit findings not fixed yet
 - [x] Math status flags S:0 (carry, overflow, zero, sign) and S:5/0 on divide by zero (v1.2.1)
