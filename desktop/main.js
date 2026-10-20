@@ -4,10 +4,13 @@
    cached, the built-in copy is used. */
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 const PAGES = 'https://ronanski.github.io/aio-icms-tool/';
 const LOCAL = path.join(__dirname, 'app', 'index.html');
-const ours = url => url.startsWith(PAGES) || url.startsWith('file:');
+const LOCAL_URL = pathToFileURL(LOCAL).href;
+// the window may show the hosted app or the built-in copy's own page, nothing else
+const ours = url => url.startsWith(PAGES) || url.split(/[?#]/)[0] === LOCAL_URL;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -27,6 +30,7 @@ function createWindow() {
     return { action: 'deny' };
   });
   // the window only shows the app (built-in or hosted); anything else opens in the normal browser
+  win.webContents.on('will-redirect', (e, url) => { if (!ours(url)) e.preventDefault(); });
   win.webContents.on('will-navigate', (e, url) => {
     if (ours(url)) return;
     e.preventDefault();

@@ -104,12 +104,12 @@
   }
 
   /* ---------- checks: one device per tag; a contact pole is used once ---------- */
-  function check() {
+  function check(typeErr, take) {
     const errs = new Map(), use = new Map();   // element -> message ; tag -> {kinds}
     const walk = arr => arr.forEach(e => {
       if (e.k === 'br') { e.legs.forEach(walk); return; }
-      const K = SK[e.k], dev = devOf(e.tag);
-      if (dev && dev.type !== K.type) { errs.set(e, `${e.tag} is a ${DEFS[dev.type].name} in the Wiring, not a ${DEFS[K.type].name}`); return; }
+      const K = SK[e.k], m = typeErr(e.tag, K.type);
+      if (m) { errs.set(e, m); return; }
       const u = use.get(e.tag) || { list: [] }; u.list.push(e); use.set(e.tag, u);
     });
     sch().rungs.forEach(r => walk(r.elems));
@@ -126,8 +126,65 @@
         seen.set(sk, e);
       }
     }
+    // terminals another view already wires: the rung is not wired (its wires would merge with the other drawing)
+    const flat = arr => arr.flatMap(e => (e.k === 'br' ? e.legs.flatMap(flat) : [e]));
+    for (const r of sch().rungs) {
+      const es = flat(r.elems); if (es.some(e => errs.has(e))) continue;
+      const bad = es.map(e => [e, take(e.tag, termIds(e), 'r', true)]).filter(x => x[1]);
+      if (bad.length) bad.forEach(([e, m]) => errs.set(e, m)); else es.forEach(e => take(e.tag, termIds(e), 'r'));
+    }
     return errs;
   }
+  /* the whole diagram (current paths, power circuit, free drawing) is checked together. A tag is one device: its type is
+     the device's in the Wiring, else the first symbol's (even before the device exists). A device terminal is wired by one
+     view only. The view on screen is checked last, so a clash is reported where you are editing. */
+  const WHERE = { r: 'current paths', p: 'power circuit', f: 'free drawing' };
+  function checks() {
+    const want = new Map(), use = new Map(), free = style === 'free';
+    const typeErr = (tag, type, what) => {
+      const d = devOf(tag), t = d ? d.type : want.get(tag);
+      if (!t) { want.set(tag, type); return null; }
+      return t === type ? null : `${tag} is a ${DEFS[t].name} ${d ? 'in the Wiring' : 'elsewhere in the diagram'}, not a ${what || DEFS[type].name}`;
+    };
+    // dry: only test; else take the terminals for view v
+    const take = (tag, ids, v, dry) => {
+      const hit = ids.find(t => { const u = use.get(tag + ':' + t); return u && u !== v; });
+      if (hit) return `${tag} ${ids.join('-')}: already wired by the ${WHERE[use.get(tag + ':' + hit)]} (terminal ${hit}) — use another contact or device`;
+      if (!dry) ids.forEach(t => { if (!use.has(tag + ':' + t)) use.set(tag + ':' + t, v); });
+      return null;
+    };
+    let ferrs = free ? null : FreeDraw.check(typeErr, take);
+    SC.errs = check(typeErr, take);
+    SC.perrs = checkPower(typeErr, take);
+    if (free) ferrs = FreeDraw.check(typeErr, take);
+    FreeDraw.errs = ferrs;
+    return ferrs;
+  }
+  /* tags the diagram uses: tag -> number of symbols */
+  function tagSet(s = sch()) {
+    const m = new Map(), add = t => { if (t) m.set(t, (m.get(t) || 0) + 1); };
+    const walk = a => a.forEach(e => (e.k === 'br' ? e.legs.forEach(walk) : add(e.tag)));
+    s.rungs.forEach(r => walk(r.elems));
+    const P = s.power;
+    if (P) { if (P.main.length || P.feeders.some(f => f.elems.length)) add(P.src); [...P.main, ...P.feeders.flatMap(f => f.elems)].forEach(e => { add(e.tag); add(e.delta); add(e.star); }); }
+    if (s.free) s.free.items.forEach(i => { if (FreeDraw.KINDS[i.k] && FreeDraw.KINDS[i.k].type) add(i.tag); });
+    return m;
+  }
+  SC.refs = tag => (App.project && sch() ? tagSet().get(tag) || 0 : 0);
+  /* a device was renamed in the Wiring: the symbols follow it (also in the undo history, so Undo does not cut it off) */
+  SC.renameTag = function (a, b) {
+    const fix = s => {
+      const walk = arr => arr.forEach(e => { if (e.k === 'br') e.legs.forEach(walk); else if (e.tag === a) e.tag = b; });
+      (s.rungs || []).forEach(r => walk(r.elems || []));
+      const P = s.power;
+      if (P) { if (P.src === a) P.src = b; [...(P.main || []), ...(P.feeders || []).flatMap(f => f.elems || [])].forEach(e => ['tag', 'delta', 'star'].forEach(k => { if (e[k] === a) e[k] = b; })); }
+      if (s.free) (s.free.items || []).forEach(i => { if (i.k !== 'text' && i.tag === a) i.tag = b; });
+      return s;
+    };
+    fix(sch());
+    undo = undo.map(j => JSON.stringify(fix(JSON.parse(j)))); redo = redo.map(j => JSON.stringify(fix(JSON.parse(j))));
+    changed();
+  };
 
   /* ---------- create devices and wire the rungs ---------- */
   function freeSpot() {
@@ -153,27 +210,33 @@
   const pw = () => { const s = sch(); if (!s.power) s.power = cleanPower(null); return s.power; };
   const hasPower = () => { const p = pw(); return p.main.length > 0 || p.feeders.some(f => f.elems.length); };
   /* power checks: right device type, main contacts used once, the motor ends its feeder */
-  function checkPower() {
+  function checkPower(typeErr, take) {
     const errs = new Map(), used = new Map(), P = pw();
     const one = (e, last) => {
-      const K = PK[e.k], dev = devOf(e.tag);
-      if (dev && dev.type !== K.type) { errs.set(e, `${e.tag} is a ${DEFS[dev.type].name} in the Wiring, not a ${DEFS[K.type].name}`); return; }
+      const K = PK[e.k], m = typeErr(e.tag, K.type);
+      if (m) { errs.set(e, m); return; }
       if (used.has(e.tag)) { errs.set(e, `${e.tag}: its main contacts are already used in the power circuit`); return; }
       used.set(e.tag, e);
       if (PK[e.k].ins[0] === 'U1' && !last) errs.set(e, `${e.tag}: the motor must be the last device of its feeder`);
       if (K.sd) for (const t of [e.delta, e.star]) {
-        const d = devOf(t);
-        if (d && d.type !== 'contactor') errs.set(e, `${t} is a ${DEFS[d.type].name} in the Wiring, not a contactor`);
+        const dm = typeErr(t, 'contactor', 'contactor');
+        if (dm) errs.set(e, dm);
         else if (used.has(t) || t === e.tag || e.delta === e.star) errs.set(e, `${t}: its main contacts are already used in the power circuit`);
         else used.set(t, e);
       }
     };
+    // the supply must be a 3-phase supply, else nothing of the power circuit is wired (key: the power section itself)
+    if (hasPower()) { const m = typeErr(P.src, 'supply3'); if (m) errs.set(P, m); }
     P.main.forEach(e => { if (PK[e.k].ins[0] === 'U1') errs.set(e, 'A motor cannot be in the main supply section'); else one(e, false); });
     P.feeders.forEach(f => f.elems.forEach((e, i) => one(e, i === f.elems.length - 1)));
+    // terminals another view already wires: that device and the rest of its feeder are not wired (as syncPower stops there)
+    const ids = e => { const K = PK[e.k], six = ['1', '2', '3', '4', '5', '6']; return [[e.tag, [...K.ins, ...(K.outs || (K.sd ? ['W2', 'U2', 'V2', 'PE'] : ['PE']))]], ...(K.sd ? [[e.delta, six], [e.star, six]] : [])]; };
+    const run = arr => { for (const e of arr) { if (errs.has(e)) break; const m = ids(e).map(([t, l]) => take(t, l, 'p', true)).find(Boolean); if (m) { errs.set(e, m); break; } ids(e).forEach(([t, l]) => take(t, l, 'p')); } };
+    if (!errs.has(P)) { run(P.main); P.feeders.forEach(f => run(f.elems)); }
     return errs;
   }
   function syncPower(wire) {
-    if (!hasPower()) return;
+    if (!hasPower() || SC.perrs.has(pw())) return;
     const P = pw(), src = ensureType('supply3', P.src), perrs = SC.perrs;
     let cur = PH3.map(t => src.id + ':' + t);
     const col = Circuit.POT_COLORS;
@@ -212,22 +275,36 @@
     const p2 = K.type === 'relay' && !K.out && e.p === 2;
     return [c.id + ':' + (p2 ? K.a2 : K.a), c.id + ':' + (p2 ? K.b2 : K.b)];
   }
+  // colour the diagram last gave each of its wires (this session): a wire whose colour differs was recoloured by the user
+  const autoCol = new Map();
+  let recolor = false;
   SC.sync = function () {
     if (!App.project || !sch()) return;
     const s = sch(), C = circ();
+    // the diagram's wires are made again; one between the same two terminals keeps its id, bends, marker and user colour
+    const kOf = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+    const old = new Map(C.wires.filter(w => w.sch).map(w => [kOf(w.a, w.b), w]));
     C.wires = C.wires.filter(w => !w.sch);
     if (!railOk(s.L) || !railOk(s.N)) { [s.L, s.N] = autoRails(); }
-    const errs = check();
-    SC.errs = errs;
-    SC.perrs = checkPower();
+    checks();
     const seen = new Set();
+    const tOk = k => { const [id, t] = k.split(':'), c = C.comps.find(x => x.id === id); return !!c && DEFS[c.type].terms.some(x => x.id === t); };
     const addWire = (a, b, color) => {
       if (!a || !b || a === b) return;
-      const k = a < b ? a + '|' + b : b + '|' + a;
-      if (seen.has(k)) return;
+      const k = kOf(a, b);
+      if (seen.has(k) || !tOk(a) || !tOk(b)) return;   // never a wire to a terminal the device does not have
       seen.add(k);
+      const o = old.get(k);
+      if (o) {
+        // after a reload the last colour is not known: a colour other than the one it gets now is taken as the user's
+        const was = autoCol.has(o.id) ? autoCol.get(o.id) : recolor ? o.color : color;
+        C.wires.push({ id: o.id, a: o.a, b: o.b, pts: o.pts || [], color: o.color !== was ? o.color : color, ...(o.tag ? { tag: o.tag } : {}), sch: true });
+        autoCol.set(o.id, color);
+        return;
+      }
       C.seq = (C.seq || 0) + 1;
       C.wires.push({ id: 'w' + C.seq, a, b, pts: [], color, sch: true });
+      autoCol.set('w' + C.seq, color);
     };
     syncPower(addWire);
     FreeDraw.sync(addWire, ensureType, controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d');
@@ -252,8 +329,16 @@
         });
         wire(cur, to);
       };
-      const bad = arr => arr.some(e => (e.k === 'br' ? e.legs.some(bad) : errs.has(e)));
+      const errs = SC.errs, bad = arr => arr.some(e => (e.k === 'br' ? e.legs.some(bad) : errs.has(e)));
       s.rungs.forEach(r => { if (r.elems.length && !bad(r.elems)) seq(r.elems, s.L, s.N); });
+    }
+    recolor = false;
+    // devices the diagram added and no symbol uses any more (deleted or retagged) leave the Wiring, unless wired by hand or a rail
+    const used = tagSet(), on = (w, c) => w.a.split(':')[0] === c.id || w.b.split(':')[0] === c.id;
+    const gone = C.comps.filter(c => c.schAuto && !used.has(c.props.label) && ![s.L, s.N].some(k => k && k.split(':')[0] === c.id) && !C.wires.some(w => on(w, c)));
+    if (gone.length) {
+      C.comps = C.comps.filter(c => !gone.includes(c));
+      gone.forEach(c => App.log('system', `Electrical Diagram removed ${DEFS[c.type].name} ${c.props.label} from the wiring (no symbol uses it)`));
     }
     App.circuitChanged();
   };
@@ -576,7 +661,7 @@
   let root, body, side, undo = [], redo = [];
   SC.init = function (el) {
     root = el;
-    FreeDraw.init({ sch, circ, devOf, snap: () => snap(), changed: () => changed(), mode: () => mode, side: () => renderSide() });
+    FreeDraw.init({ sch, circ, devOf, snap: () => snap(), changed: () => changed(), mode: () => mode, side: () => renderSide(), checks, refs: SC.refs });
     const groups = {};
     Object.entries(SK).forEach(([k, K]) => { (groups[K.g] = groups[K.g] || []).push(k); });
     el.innerHTML = `
@@ -626,7 +711,8 @@
       if (pg || pf) {
         SEL = { r: -1, e: null, leg: null };
         if (pf) { SELP = { f: Number(pf.dataset.pf), i: null, path: null }; SC.render(); return; }
-        const { e, f, i } = pByPath(pg.dataset.pp), K = PK[e.k], c = devOf(e.tag);
+        const pp = pByPath(pg.dataset.pp); if (!pp) return;
+        const { e, f, i } = pp, K = PK[e.k], c = devOf(e.tag);
         if (mode === 'run') {
           if (c && K.part) { ev.preventDefault(); held = App.operate(c, K.part); }
           else if (c && e.k === 'ol3') App.operate(c, c.state.tripped ? 'reset' : 'test')();
@@ -655,13 +741,13 @@
     });
     const up = () => { if (held) { held(); held = null; } };
     window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-    body.addEventListener('dblclick', ev => { if (style === 'free') return; const pg = ev.target.closest('[data-pp]'); if (pg && mode === 'edit') { SC.retagPower(pByPath(pg.dataset.pp).e); return; } const g = ev.target.closest('[data-path]'); if (g && !g.dataset.li && mode === 'edit') SC.retag(byPath(g.dataset.path).e); });
+    body.addEventListener('dblclick', ev => { if (style === 'free') return; const pg = ev.target.closest('[data-pp]'); if (pg && mode === 'edit') { const pp = pByPath(pg.dataset.pp); if (pp) SC.retagPower(pp.e); return; } const g = ev.target.closest('[data-path]'); if (g && !g.dataset.li && mode === 'edit') SC.retag(byPath(g.dataset.path).e); });
     UI.longPress(body);
     body.addEventListener('contextmenu', ev => {
       if (style === 'free') return;
       const g = ev.target.closest('[data-path]'); if (!g || g.dataset.li) return;
       ev.preventDefault();
-      const { e } = byPath(g.dataset.path); SEL = { r: byPath(g.dataset.path).ri, e, leg: null }; SC.render();
+      const { e } = byPath(g.dataset.path); SEL = { r: byPath(g.dataset.path).ri, e, leg: null }; SELP = null; SC.render();
       const c = devOf(e.tag);
       UI.menu(ev.clientX, ev.clientY, [{ head: `${e.tag} · ${SK[e.k].n}` }, { label: 'Change tag…', onClick: () => SC.retag(e) },
         { label: 'Branch around this', onClick: SC.branch }, { label: 'Show in Wiring', disabled: !c, onClick: () => { App.showView('wiring'); Workspace.selectComp(c.id); } },
@@ -675,12 +761,12 @@
     root.classList.toggle('free-style', style === 'free');
     const lb = root.querySelector('[data-fdact="lib"]'); if (lb) lb.classList.toggle('on', FreeDraw.libOpen());
   }
-  /* power elements are found by "m.i" (main section) or "f.feeder.i" */
+  /* power elements are found by "m.i" (main section) or "f.feeder.i"; null when it is gone (after Undo) */
   function pByPath(p) {
-    const n = p.split('.'), P = pw();
-    if (n[0] === 'm') return { e: P.main[Number(n[1])], arr: P.main, f: -1, i: Number(n[1]) };
-    const f = Number(n[1]), arr = P.feeders[f].elems;
-    return { e: arr[Number(n[2])], arr, f, i: Number(n[2]) };
+    const n = String(p).split('.'), P = pw();
+    if (n[0] === 'm') { const i = Number(n[1]); return P.main[i] ? { e: P.main[i], arr: P.main, f: -1, i } : null; }
+    const f = Number(n[1]), i = Number(n[2]), arr = P.feeders[f] && P.feeders[f].elems;
+    return arr && arr[i] ? { e: arr[i], arr, f, i } : null;
   }
   SC.addFeeder = function () {
     snap();
@@ -752,8 +838,7 @@
   function renderRungs() {
     if (!body || !App.project || !sch()) return;
     if (!railOk(sch().L) || !railOk(sch().N)) { const [l, n] = autoRails(); sch().L = l; sch().N = n; }
-    SC.errs = check();
-    SC.perrs = checkPower();
+    checks();
     const sl = body.scrollLeft, stp = body.scrollTop;
     const s = sch();
     if (style === 'free') {
@@ -824,12 +909,13 @@
     bindSide();
   }
   function bindSide() {
-    side.querySelectorAll('[data-rail]').forEach(sel => { sel.onchange = () => { snap(); sch()[sel.dataset.rail] = sel.value; changed(); }; });
+    // another supply: the diagram's wires take its colour (24 V red, 230 V black)
+    side.querySelectorAll('[data-rail]').forEach(sel => { sel.onchange = () => { snap(); sch()[sel.dataset.rail] = sel.value; recolor = true; changed(); }; });
   }
 
   /* ---------- editing ---------- */
   const snap = () => { undo.push(JSON.stringify(sch())); if (undo.length > 80) undo.shift(); redo = []; };
-  const restore = s => { const o = JSON.parse(s); App.project.schematic = o; SEL = { r: -1, e: null, leg: null }; changed(); };
+  const restore = s => { const o = JSON.parse(s); App.project.schematic = o; SEL = { r: -1, e: null, leg: null }; SELP = null; changed(); };
   SC.undo = () => { if (!undo.length) return; redo.push(JSON.stringify(sch())); restore(undo.pop()); };
   SC.redo = () => { if (!redo.length) return; undo.push(JSON.stringify(sch())); restore(redo.pop()); };
   function changed() { SC.sync(); SC.render(); }
@@ -837,7 +923,7 @@
     snap();
     const at = SEL.r < 0 ? sch().rungs.length : SEL.r + 1;
     sch().rungs.splice(at, 0, { elems: [], comment: '' });
-    SEL = { r: at, e: null, leg: null };
+    SEL = { r: at, e: null, leg: null }; SELP = null;   // Delete acts on the control circuit now
     changed();
   };
   function suggestTag(k) {
@@ -860,7 +946,7 @@
       if (f) f.arr.splice(f.idx + 1, 0, e);
       else if (SEL.leg) SEL.leg.legs[SEL.li].push(e);
       else { const arr = sch().rungs[SEL.r].elems; if (K.out) arr.push(e); else { let i = arr.length; while (i > 0 && isOut(arr[i - 1])) i--; arr.splice(i, 0, e); } }
-      SEL = { r: SEL.r, e, leg: null };
+      SEL = { r: SEL.r, e, leg: null }; SELP = null;
       changed();
     };
     if (tag) return go(tag);
@@ -875,6 +961,7 @@
     });
   };
   SC.branch = function () {
+    SELP = null;
     if (SEL.leg) { snap(); SEL.leg.legs.push([]); SEL.li = SEL.leg.legs.length - 1; changed(); return; }
     const f = SEL.e && locate(SEL.e);
     if (!f) { UI.toast('Select a symbol first'); return; }
@@ -886,13 +973,14 @@
   };
   SC.move = function (d) {
     const f = SEL.e && locate(SEL.e); if (!f) return;
+    SELP = null;
     const j = f.idx + d; if (j < 0 || j >= f.arr.length) return;
     snap(); [f.arr[f.idx], f.arr[j]] = [f.arr[j], f.arr[f.idx]]; changed();
   };
   SC.del = function () {
     if (SELP) {
       const P = pw();
-      if (SELP.path) { const f = pByPath(SELP.path); snap(); f.arr.splice(f.i, 1); }
+      if (SELP.path) { const f = pByPath(SELP.path); if (f) { snap(); f.arr.splice(f.i, 1); } }
       else if (SELP.f >= 0 && P.feeders[SELP.f]) { snap(); P.feeders.splice(SELP.f, 1); }
       SELP = null; changed(); return;
     }
@@ -913,7 +1001,7 @@
     else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); SC.del(); }
     else if (k === 'Escape') { SEL = { r: -1, e: null, leg: null }; SELP = null; SC.render(); }
   };
-  SC.resetSel = () => { FreeDraw.resetSel(); SEL = { r: -1, e: null, leg: null }; SELP = null; undo = []; redo = []; SC.errs = null; lastSig = ''; };
+  SC.resetSel = () => { FreeDraw.resetSel(); SEL = { r: -1, e: null, leg: null }; SELP = null; undo = []; redo = []; SC.errs = null; lastSig = ''; autoCol.clear(); };
   SC.state = state;
   window.Schematic = SC;
 })();

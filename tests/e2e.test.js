@@ -603,10 +603,10 @@ function check(name, cond, info = '') {
   const el = await elCtx.newPage();
   await el.goto(URL + '?local=1'); await el.waitForTimeout(300);
   check('the Windows app with ?local=1 stays on its built-in copy', el.url().startsWith('file:'));
-  await el.evaluate(() => { localStorage.setItem('plc-trainer.handoverTest', 'from the old app'); localStorage.setItem('plc-trainer.channel', 'stable'); });
+  await el.evaluate(() => { App.openNew({ name: 'From the old app' }); App.saveNow(); localStorage.setItem('plc-trainer.handoverTest', 'not a project'); localStorage.setItem('plc-trainer.channel', 'stable'); });
   await el.goto(URL); await el.waitForTimeout(1200);
   check('the Windows app moves to the hosted app (in-app updates)', el.url() === 'https://ronanski.github.io/aio-icms-tool/', el.url());
-  check('projects and settings of the old app are brought along', await el.evaluate(() => localStorage.getItem('plc-trainer.handoverTest') === 'from the old app' && !location.hash && !!window.App && !!App.project));
+  check('projects and the channel of the old app are brought along, other keys are not', await el.evaluate(() => Store.list().some(p => p.name === 'From the old app') && localStorage.getItem('plc-trainer.channel') === 'stable' && localStorage.getItem('plc-trainer.handoverTest') === null && !location.hash && !!window.App && !!App.project));
   await el.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'beta'); location.reload(); });
   await el.waitForTimeout(1200);
   check('the Beta channel opens the Beta copy (/beta/)', el.url() === 'https://ronanski.github.io/aio-icms-tool/beta/', el.url());
@@ -1542,6 +1542,101 @@ function check(name, cond, info = '') {
     const c = Circuit.create('mdo8', 0, 0, App.project.circuit); c.props.slot = '3'; App.project.circuit.comps.push(c);
     return !before && g[1].ok(App.goalApi());
   }));
+
+  console.log('v2.1.1: full audit fixes');
+  // PLC engine
+  check('periodic task timers count with the task period, not the scan time', await page.evaluate(() => { const R = s => Ladder.newRung(Ladder.parseRung(s)); const mk = per => { const e = new PLCcore.Engine(); e.setProgram([R('XIC I:0/0 OTE O:0/0')], { 3: [R('TON T4:1 0.01 10000 0')] }, { 3: per }); e.data.T4[1].base = 0.01; e.data.T4[1].PRE = 10000; e.setMode('RUN'); for (let i = 0; i < 10; i++) e.scan(0.1); return e.data.T4[1].ACC; }; return mk(10) === 100 && mk(1000) === 100; }));
+  check('verify finds duplicate OTE and shared timer through tags', await page.evaluate(() => { PLCcore.setTags([{ name: 'MOTOR', type: 'ALIAS', addr: 'O:0/0' }, { name: 'TMR', type: 'TIMER', addr: 'T4:31' }]); const R = s => Ladder.newRung(Ladder.parseRung(s)); const w = new PLCcore.Engine().verify([R('XIC I:0/0 OTE O:0/0'), R('XIC I:0/1 OTE MOTOR'), R('XIC I:0/2 TON TMR 1.0 5 0'), R('XIC I:0/3 TON T4:31 1.0 5 0')]).warns.map(x => x.msg); PLCcore.setTags(App.project.tags); return w.some(m => /Duplicate OTE O:0\/0/.test(m)) && w.some(m => /T4:31 is used by 2 timer/.test(m)); }));
+  check('forcing an alias tag stores one force at the address', await page.evaluate(() => { PLCcore.setTags([{ name: 'MOTOR', type: 'ALIAS', addr: 'O:0/0' }]); const e = new PLCcore.Engine(); e.setForce('MOTOR', 1); const a = JSON.stringify(e.forces) === '{"O:0/0":1}'; e.setForce('O:0/0', 0); const b = e.forceCount() === 1 && e.forces['O:0/0'] === 0; e.setForce('MOTOR', null); const c = e.forceCount() === 0; PLCcore.setTags(App.project.tags); return a && b && c; }));
+  check('read/write of non-data addresses is 0 / no-op and does not throw', await page.evaluate(() => { const e = new PLCcore.Engine(); try { e.write('U:3', 1); e.write('T4:0', 1); e.write('#N7:0', 1); return e.read('U:3') === 0 && e.read('T4:0') === 0 && e.read('#N7:0') === 0 && e.read('5') === 5; } catch (x) { return false; } }));
+  check('verify checks JSR targets against the given program files', await page.evaluate(() => { const R = s => Ladder.newRung(Ladder.parseRung(s)); const e = new PLCcore.Engine(); e.setProgram([]); const r = [R('XIC I:0/0 JSR U:3')]; return e.verify(r, [3]).errs.length === 0 && e.verify(r, []).errs.length === 1; }));
+  check('CTD back across overflow clears OV; CTU back across underflow clears UN', await page.evaluate(() => { const R = s => Ladder.newRung(Ladder.parseRung(s)); const e = new PLCcore.Engine(); e.setProgram([R('XIC I:0/0 CTU C5:0 10 0'), R('XIC I:0/1 CTD C5:0 10 0')]); e.setMode('RUN'); const c = e.data.C5[0]; const pulse = bit => { e.physIn = 1 << bit; e.scan(0.02); e.physIn = 0; e.scan(0.02); }; c.ACC = 32767; pulse(0); const ov = c.ACC === -32768 && c.OV === 1; pulse(1); const back = c.ACC === 32767 && c.OV === 0 && c.UN === 0; c.ACC = -32768; pulse(1); const un = c.UN === 1; pulse(0); return ov && back && un && c.UN === 0 && c.OV === 0; }));
+  // circuit
+  const solveKit = `const circ = { comps: [], wires: [], seq: 0 };
+    const add = (t, props = {}, state = {}) => { const c = Circuit.create(t, 0, 0, circ); Object.assign(c.props, props); Object.assign(c.state, state); circ.comps.push(c); return c; };
+    const w = (a, ta, b, tb) => { circ.seq++; circ.wires.push({ id: 'w' + circ.seq, a: a.id + ':' + ta, b: b.id + ':' + tb, pts: [] }); };
+    const ctx = { plcId: null, rack: Circuit.rack(circ, { slots: {} }), plcOut: 0, plcOutX: new Array(64).fill(0), plcInX: new Array(64).fill(0) };
+    const run = (n = 6) => { const all = []; for (let i = 0; i < n; i++) all.push(...Circuit.solve(circ, 0.1, ctx).alerts.map(a => a.msg)); return all; };`;
+  check('a short before any breaker trips nothing downstream and says so', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), f = add('mcb1', {}, { on: true }), h = add('lamp', { coil: '230VAC' });
+    w(q, 'L', q, 'N'); w(q, 'L', f, '1'); w(f, '2', h, 'X1'); w(h, 'X2', q, 'N');
+    const a = run(); return !f.state.tripped && a.some(m => m.includes('before any breaker'));`)));
+  check('a VFD output keeps its rotation whatever the input phase order, and needs all three phases', await page.evaluate(new Function(solveKit + `
+    const t = swap => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply3'), g = add('psu24'), v = add('vfd', { hz: 50 }), m = add('motor');
+      w(q, swap ? 'L2' : 'L1', v, 'L1'); w(q, swap ? 'L1' : 'L2', v, 'L2'); w(q, 'L3', v, 'L3'); w(q, 'L1', g, 'L'); w(q, 'N', g, 'N'); w(g, 'P1', v, 'FWD'); w(g, 'M1', v, 'DCOM');
+      ['U', 'V', 'W'].forEach((o, i) => w(v, o, m, ['U1', 'V1', 'W1'][i])); for (let i = 0; i < 40; i++) Circuit.solve(circ, 0.1, ctx); return m.state; };
+    const a = t(false), b = t(true); return a.drive === 'run' && b.drive === 'run' && a.dir === b.dir;`)));
+  check('a 24 V supply fed L to PE behind an RCD trips the RCD (earth leakage)', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), r = add('rcd', {}, { on: true }), g = add('psu24');
+    w(q, 'L', r, '1'); w(q, 'N', r, '3'); w(r, '2', g, 'L'); w(g, 'N', q, 'PE'); run(); return r.state.tripped;`)));
+  check('a borrowed neutral (load returns to N around the RCD) trips the RCD', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), r = add('rcd', {}, { on: true }), h = add('lamp', { coil: '230VAC' });
+    w(q, 'L', r, '1'); w(q, 'N', r, '3'); w(r, '2', h, 'X1'); w(h, 'X2', q, 'N'); run(); return r.state.tripped;`)));
+  check('0 V tied to N is not a short', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), f = add('mcb2', {}, { on: true }), g = add('psu24');
+    w(q, 'L', f, '1'); w(q, 'N', f, '3'); w(f, '2', g, 'L'); w(f, '4', g, 'N'); w(g, 'M1', q, 'N'); run(); return !f.state.tripped && g.state.ok;`)));
+  check('a jammed DC motor trips its motor protection breaker', await page.evaluate(new Function(solveKit + `
+    const b = add('battery'), qm = add('mpcb', { trip: 0.2 }, { on: true }), m = add('motordc', {}, { jam: true });
+    w(b, 'P', qm, '1'); w(qm, '2', m, 'A1'); w(m, 'A2', b, 'M'); for (let i = 0; i < 40; i++) Circuit.solve(circ, 0.1, ctx); return qm.state.tripped;`)));
+  check('one overloaded motor among 200 feeders keeps the solver fast', await page.evaluate(new Function(solveKit + `
+    const q = add('supply3');
+    for (let i = 0; i < 200; i++) { const o = add('olr'), m = add('motor'); w(q, 'L1', o, '1'); w(q, 'L2', o, '3'); if (i) w(q, 'L3', o, '5'); w(o, '2', m, 'U1'); w(o, '4', m, 'V1'); w(o, '6', m, 'W1'); }
+    run(2); const t0 = performance.now(); run(5); return (performance.now() - t0) / 5 < 40;`)));
+  // app
+  check('a controller snapshot with bad tags and markup is cleaned on load', await page.evaluate(() => {
+    const p = App.buildProject({ name: 'x', conn: { mode: 'real', ctl: JSON.stringify({ main: [], files: [{ n: '3"><img src=x>', name: 'X', period: '<img>', r: [] }], tags: [{ name: 5 }, { name: 'T1', type: '<img>', addr: 'B3:0/0' }] }) } });
+    const o = JSON.parse(p.conn.ctl); return o.files.length === 0 && o.tags.length === 0;
+  }));
+  check('ids and counters from a file stay exact (no 1e21 ids, no duplicates)', await page.evaluate(() => {
+    const p = App.buildProject({ name: 'x', circuit: { seq: 1e21, comps: [{ id: 'c1', type: 'lamp' }, { id: 'c1', type: 'lamp' }, { id: 'c' + '9'.repeat(30), type: 'lamp' }], wires: [] }, events: [{ t: 1, kind: 'constructor', msg: 'x' }] });
+    return p.circuit.comps.length === 1 && p.circuit.seq === 1 && p.events.length === 0;
+  }));
+
+  // diagram, HMI, wiring
+  await page.evaluate(() => App.showView('schematic'));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'free'); }); await page.click('#view-schematic [data-sstyle="free"]');
+  await page.evaluate(() => { App.openNew({ name: 'T1' }); App.showView('schematic'); const C = App.project.circuit; C.comps.push(Circuit.create('supply1', 0, 0, C)); FreeDraw.add('pL1', 'XP1', 0, -100); FreeDraw.add('pbnc', 'S1', 0, 0); FreeDraw.add('lamp', 'H1', 0, 100); FreeDraw.add('pN', 'XP2', 0, 200); const F = App.project.schematic.free, [pl, pb, la, pn] = F.items; F.wires.push({ id: 'fw90', a: pl.id + ':J', b: pb.id + ':11' }, { id: 'fw91', a: pb.id + ':12', b: la.id + ':X1' }, { id: 'fw92', a: la.id + ':X2', b: pn.id + ':J' }); Schematic.sync(); Schematic.render(); }); await wait(200);
+  await (await page.$('#view-schematic [data-fi="d2"] .hit')).click(); await wait(100);
+  check('free draw: Type ⇄ retypes the device the diagram made for this symbol, and its wires follow (11-12 → 21-22)', await page.evaluate(() => { FreeDraw.cycleType(); FreeDraw.cycleType(); FreeDraw.cycleType(); const F = App.project.schematic.free, C = App.project.circuit, it = F.items.find(i => i.id === 'd2'), d = C.comps.find(c => c.props.label === 'S1'); const p = App.buildProject(JSON.parse(JSON.stringify(App.project))); return it.k === 'lsnc' && d.type === 'limit' && FreeDraw.errs.size === 0 && F.wires.some(w => w.b === 'd2:21') && F.wires.some(w => w.a === 'd2:22') && C.wires.filter(w => w.sch).length === 5 && p.schematic.free.wires.length === 3; }));
+  check('free draw: Type ⇄ on a device other symbols use gives this symbol a new tag', await page.evaluate(() => { const F = App.project.schematic.free; F.items.push({ id: 'd50', k: 'lsnc', tag: 'S1', x: 300, y: 0, r: 0 }); Schematic.sync(); FreeDraw.cycleType(); const it = F.items.find(i => i.id === 'd2'); return it.k === 'pbconc' && it.tag !== 'S1' && App.project.circuit.comps.find(c => c.props.label === 'S1').type === 'limit' && FreeDraw.errs.size === 0; }));
+  check('a device terminal used by both the current paths and the free drawing is reported in the free drawing and not wired twice', await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); const s = App.project.schematic; s.free.items.push({ id: 'd1', k: 'kmno', tag: 'KM1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'lamp', tag: 'H9', x: 0, y: 100, r: 0 }); s.free.wires.push({ id: 'fw1', a: 'd1:14', b: 'd2:X1' }); Schematic.sync(); const C = App.project.circuit, h9 = C.comps.find(c => c.props.label === 'H9'); return [...FreeDraw.errs.values()].some(m => m.includes('KM1') && m.includes('current paths')) && Schematic.errs.size === 0 && !C.wires.some(w => [w.a, w.b].includes(h9.id + ':X1')); }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); }); await page.click('#view-schematic [data-sstyle="iec"]'); await wait(200);
+  check('in the IEC view the same clash is reported on the current path instead', await page.evaluate(() => { Schematic.sync(); return [...Schematic.errs.values()].some(m => m.includes('KM1') && m.includes('free drawing')) && FreeDraw.errs.size === 0; }));
+  await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); }); await wait(300);
+  await (await page.$('#view-schematic [data-pp="f.0.0"] .hit')).click(); await page.evaluate(() => Schematic.insert('lamp', 'H5')); await page.keyboard.press('Delete'); await wait(150);
+  check('Delete after adding a control symbol deletes that symbol, not the power device selected before', await page.evaluate(() => App.project.schematic.power.feeders[0].elems.length === 3 && !JSON.stringify(App.project.schematic.rungs).includes('"H5"')));
+  check('Undo clears the power selection: Delete after Undo does not throw', await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); Schematic.addFeeder(); Schematic.insertPower('km3', 'KM7'); Schematic.undo(); Schematic.undo(); try { Schematic.del(); return App.project.schematic.power.feeders.length === 1; } catch (e) { return false; } }));
+  check('a diagram wire keeps its id, bends, marker and user colour when the diagram changes', await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); const C = App.project.circuit, w = C.wires.find(x => x.sch); w.pts = [[10, 10]]; w.color = '#f39c1e'; w.tag = '101'; const w0 = C.wires.filter(x => x.sch && x !== w)[3], c0 = w0.color; Schematic.addRung(); const w2 = App.project.circuit.wires.find(x => x.id === w.id), w3 = App.project.circuit.wires.find(x => x.id === w0.id); return !!w2 && w2.sch && w2.pts.length === 1 && w2.color === '#f39c1e' && w2.tag === '101' && !!w3 && w3.color === c0; }));
+  await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); App.showView('wiring'); }); await wait(600);
+  const swPt = await page.evaluate(() => { for (const w of App.project.circuit.wires.filter(w => w.sch)) { const g = document.querySelector(`.wire[data-wid="${w.id}"] .wh`); if (!g) continue; const q = g.getPointAtLength(g.getTotalLength() / 2), m = g.getScreenCTM(), x = q.x * m.a + q.y * m.c + m.e, y = q.x * m.b + q.y * m.d + m.f; const h = document.elementFromPoint(x, y); if (h && h.closest('.wire') && h.closest('.wire').dataset.wid === w.id) return { x, y }; } });
+  const swN = await page.evaluate(() => [App.project.circuit.comps.length, App.project.circuit.wires.length]);
+  await page.mouse.click(swPt.x, swPt.y, { button: 'right' }); await wait(150); await page.click('text=Start a new wire from here'); await wait(150);
+  check('a wire made by the Electrical Diagram is not split in the Wiring', await page.evaluate(n => App.project.circuit.comps.length === n[0] && App.project.circuit.wires.length === n[1] && document.body.textContent.includes('comes from the Electrical Diagram'), swN));
+  await page.keyboard.press('Escape');
+  check('one tag used for two kinds is reported on the first sync, and no wire goes to a terminal the device lacks', await page.evaluate(() => { App.openNew({ name: 'T7' }); const C = App.project.circuit; C.comps.push(Circuit.create('psu24', 0, 0, C)); App.project.schematic.rungs = [{ elems: [{ k: 'pbno', tag: 'X1' }, { k: 'kmcoil', tag: 'X1' }], comment: '' }]; Schematic.sync(); const D = Circuit.DEFS, P = App.project.circuit; return !P.wires.some(w => [w.a, w.b].some(k => { const [id, t] = k.split(':'); const c = P.comps.find(c => c.id === id); return !c || !D[c.type].terms.some(x => x.id === t); })) && [...Schematic.errs.values()].some(m => m.includes('X1')); }));
+  check('a power supply tag that is not a 3-phase supply is reported and the power circuit is not wired', await page.evaluate(() => { App.openNew({ name: 'T8' }); const C = App.project.circuit, q = Circuit.create('mccb3', 0, 0, C); q.props.label = 'Q0'; C.comps.push(q); Schematic.insertPower('km3', 'KM1'); return [...Schematic.perrs.values()].some(m => m.includes('Q0') && m.includes('3-Phase Supply')) && !App.project.circuit.wires.some(w => w.sch); }));
+  await page.evaluate(() => { App.openNew(Examples.EX.stardelta.build()); App.showView('wiring'); Workspace.selectComp(App.project.circuit.comps.find(c => c.props.label === 'KM1').id); }); await wait(300);
+  await page.fill('[data-pk="label"]', 'KM2'); await page.dispatchEvent('[data-pk="label"]', 'change'); await wait(100);
+  check('a device tag already used by another device is refused', await page.evaluate(() => App.project.circuit.comps.filter(c => c.props.label === 'KM2').length === 1 && App.project.circuit.comps.some(c => c.props.label === 'KM1')));
+  await page.fill('[data-pk="label"]', ''); await page.dispatchEvent('[data-pk="label"]', 'change'); await wait(100);
+  check('an empty device tag is refused', await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'KM1')));
+  const nComps = await page.evaluate(() => App.project.circuit.comps.length);
+  await page.fill('[data-pk="label"]', 'KM9'); await page.dispatchEvent('[data-pk="label"]', 'change'); await wait(200);
+  check('renaming a device the diagram uses renames its symbols too (no new device, wires kept)', await page.evaluate(n => { const s = JSON.stringify(App.project.schematic), km = App.project.circuit.comps.find(c => c.props.label === 'KM9'); return !s.includes('"KM1"') && s.includes('"KM9"') && App.project.circuit.comps.length === n && App.project.circuit.wires.some(w => w.sch && w.a.startsWith(km.id + ':')) && Schematic.errs.size === 0; }, nComps));
+  await page.evaluate(() => { App.openNew({ name: 'HMI sec', hmi: { pin: '4321', objects: [{ id: 'h2', type: 'pb', scr: 's1', x: 200, y: 10, w: 130, h: 64, label: 'RESET', tag: 'B3:0/3', mode: 'momentary', color: '#2fa84f', sec: 'yes' }] } }); App.showView('hmi'); }); await wait(200);
+  await page.click('#view-hmi [data-mode="edit"]'); await wait(150);
+  check('HMI: with a button that needs log-in, Studio asks for the PIN first', await page.evaluate(() => !!document.querySelector('.modal #f_p') && !document.querySelector('#view-hmi .hmi').classList.contains('editing')));
+  await page.fill('#f_p', '4321'); await page.click('.modal .btn.primary'); await wait(150);
+  check('HMI: the right PIN opens Studio, and the PIN field is masked', await page.evaluate(() => document.querySelector('#view-hmi .hmi').classList.contains('editing') && document.querySelector('#view-hmi [data-pin]').type === 'password'));
+  await page.click('#view-hmi [data-mode="run"]'); await wait(100);
+  check('HMI: back on the Machine you are logged out', await page.evaluate(() => document.querySelector('#view-hmi .hmi-props').textContent.includes('Not logged in')));
+  check('retagging a symbol removes the device the diagram added for it', await page.evaluate(() => { App.openNew({ name: 'T11' }); const C = App.project.circuit; C.comps.push(Circuit.create('psu24', 0, 0, C)); App.project.schematic.rungs = [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H1' }], comment: '' }]; Schematic.sync(); const had = App.project.circuit.comps.some(c => c.props.label === 'S1'); App.project.schematic.rungs[0].elems[0].tag = 'S2'; Schematic.sync(); const L = App.project.circuit.comps.map(c => c.props.label); return had && !L.includes('S1') && L.includes('S2') && L.includes('H1'); }));
+  check('free draw: deleting a potential point removes its junction device from the Wiring', await page.evaluate(() => { App.openNew({ name: 'J' }); const C = App.project.circuit; C.comps.push(Circuit.create('supply1', 0, 0, C)); App.project.schematic.free.items.push({ id: 'd1', k: 'pL1', tag: 'XP1', x: 0, y: 0, r: 0 }); Schematic.sync(); const had = App.project.circuit.comps.some(c => c.props.label === 'XP1' && c.type === 'jct'); App.project.schematic.free.items = []; Schematic.sync(); return had && !App.project.circuit.comps.some(c => c.props.label === 'XP1'); }));
+  check('HMI: ＋ Screen stops at 30 screens', await page.evaluate(() => { App.openNew({ name: 'S30', hmi: { screens: Array.from({ length: 30 }, (_, i) => ({ id: 's' + (i + 1), name: 'S' + (i + 1) })) } }); App.showView('hmi'); document.querySelector('#view-hmi [data-mode="edit"]').click(); document.querySelector('#view-hmi [data-sadd]').click(); const r = !document.querySelector('.modal #f_n') && App.project.hmi.screens.length === 30; document.querySelector('#view-hmi [data-mode="run"]').click(); return r; }));
+  check('free draw: no more than 400 symbols can be added', await page.evaluate(() => { App.openNew({ name: 'F400', schematic: { free: { items: Array.from({ length: 400 }, (_, i) => ({ id: 'd' + (i + 1), k: 'text', tag: 'TXT', x: i * 10, y: 0, r: 0, txt: 'x' })), wires: [] } } }); FreeDraw.add('lamp', 'H1', 0, 0); return App.project.schematic.free.items.length === 400; }));
+  check('HMI.mini is keyed on a version counter, and an edit changes its key', await page.evaluate(() => { App.openNew({ name: 'M', hmi: { objects: [{ id: 'h1', type: 'lamp', scr: 's1', x: 10, y: 10, w: 80, h: 90, label: 'RUN', tag: 'O:0/0' }] } }); const k1 = HMI.mini().key; HMI.render(); const k2 = HMI.mini().key; return k1 !== k2 && !k2.includes('"label"'); }));
+  check('HMI.sample records trend history while the HMI view is hidden', await page.evaluate(() => { App.openNew({ name: 'TR', hmi: { objects: [{ id: 'h5', type: 'trend', scr: 's1', x: 0, y: 0, w: 320, h: 160, label: 'N7', tag: 'N7:0', min: 0, max: 100, span: 30 }] } }); App.showView('ladder'); const t = performance.now(); HMI.sample(t); HMI.sample(t + 300); HMI.sample(t + 600); App.showView('hmi'); return (document.querySelector('#view-hmi .hobj[data-id="h5"] [data-p]').getAttribute('d') || '').split('L').length > 2; }));
+  await page.evaluate(() => App.showView('ladder'));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 
