@@ -45,6 +45,7 @@
     COP: { k: 'box', out: true, name: 'Copy File', grp: 'File/Seq', args: [A('Source', 'file', '#N7:0'), A('Dest', 'file', '#N7:10'), A('Length', 'len', '4')], help: 'Copies Length words from the Source file to the Dest file while the rung is true.' },
     FLL: { k: 'box', out: true, name: 'Fill File', grp: 'File/Seq', args: [A('Source', 'src', '0'), A('Dest', 'file', '#N7:10'), A('Length', 'len', '4')], help: 'Writes Source into Length words of the Dest file while the rung is true.' },
     SQO: { k: 'box', out: true, name: 'Sequencer Output', grp: 'File/Seq', bits: ['EN', 'DN'], args: [A('File', 'file', '#N7:20'), A('Mask', 'src', '-1'), A('Dest', 'dest', 'O:0'), A('Control', 'ctl', 'R6:0'), A('Length', 'len', '4'), A('Position', 'int', '0')], help: 'On each false-to-true rung: POS steps to the next word of the File (back to 1 after LEN) and writes it through the Mask into Dest. Step 0 is the reset state.' },
+    MSG: { k: 'box', out: true, name: 'Message', grp: 'File/Seq', bits: ['EN', 'DN', 'ER'], args: [A('Read/Write', 'mtype', 'READ'), A('Local file', 'file', '#N7:0'), A('Remote node', 'int', '2'), A('Remote file', 'file', '#N7:0'), A('Length', 'len', '4'), A('Control', 'ctl', 'R6:1')], help: 'On a false-to-true rung, reads Length words from the remote PLC (node, file) into the local file, or writes them there, over the simulated network (Network…). DN when done, ER if the node does not answer.' },
     MCR: { k: 'coil', out: true, lbl: 'MCR', name: 'Master Control Reset', grp: 'Program', args: [], help: 'Put MCR rungs around a zone: when the first MCR rung is false, every rung in the zone is false (non-retentive outputs off). The closing MCR rung has no conditions.' },
     JSR: { k: 'box', out: true, name: 'Jump to Subroutine', grp: 'Program', args: [A('SBR file number', 'prog', 'U:3')], help: 'Runs program file LAD n (a subroutine) while the rung is true, then comes back.' },
     SBR: { k: 'box', name: 'Subroutine', grp: 'Program', args: [], help: 'Marks the start of a subroutine (first instruction of its first rung; optional).' },
@@ -137,6 +138,7 @@
       case 'len': return p && p.kind === 'const' && Number.isInteger(p.value) && p.value >= 1 && p.value <= 32 ? null : 'Length is 1 to 32';
       case 'ctl': return p && p.kind === 'struct' && p.file === 'R6' ? null : 'Expected a control, e.g. R6:0';
       case 'prog': return p && p.kind === 'prog' ? null : 'Expected a program file U:3 … U:9';
+      case 'mtype': return /^(READ|WRITE)$/i.test(String(str || '').trim()) ? null : 'READ or WRITE';
     }
     return null;
   }
@@ -309,6 +311,15 @@
       if (this.mode === 'RUN') {
         d.S[1] = asI16(this.first ? d.S[1] | (1 << 15) : d.S[1] & ~(1 << 15));
         this.runRungs(this.rungs, 0);
+        // messages in flight: done after their delay, through the network hook (App sets this.net)
+        if (this.msgs && this.msgs.length) this.msgs = this.msgs.filter(m => {
+          m.t -= dt; if (m.t > 0) return true;
+          const f = this.data[m.local.file], ok = this.net && this.net.has(m.node);
+          if (!ok) { m.c.ER = 1; return false; }
+          if (m.write) this.net.write(m.node, m.roff, f.slice(m.local.word, m.local.word + m.n));
+          else this.net.read(m.node, m.roff, m.n).forEach((v, k) => { if (m.local.word + k < f.length) f[m.local.word + k] = i16(v); });
+          m.c.DN = 1; return false;
+        });
         // periodic tasks: a program file that runs every period ms on its own (not through JSR)
         for (const n in this.periodic || {}) {
           const per = this.periodic[n], sub = this.subs[n]; if (!per || !sub) continue;
@@ -425,6 +436,15 @@
           if (p && A[1]) { const n = Number(e.a[2]) || 1, v = i16(this.getWord(A[0])), dst = this.data[A[1].file]; for (let k = 0; k < n && A[1].word + k < dst.length; k++) dst[A[1].word + k] = v; }
           hl[e.id] = p; return p;
         }
+        case 'MSG': {
+          // the network answers after a short delay (scan() moves pending messages on)
+          const c = A[5] && A[5].file === 'R6' ? this.data.R6[A[5].word] : null;
+          if (c && A[1] && A[3]) {
+            if (p && !c.EN) { c.EN = 1; c.DN = 0; c.ER = 0; (this.msgs || (this.msgs = [])).push({ c, t: 0.1, write: /^WRITE$/i.test(e.a[0]), local: A[1], node: Number(e.a[2]) || 0, roff: A[3].word, n: Number(e.a[4]) || 1 }); }
+            if (!p && (c.DN || c.ER)) c.EN = 0;
+          }
+          hl[e.id] = p; return p;
+        }
         case 'SQO': {
           const c = A[3] && A[3].file === 'R6' ? this.data.R6[A[3].word] : null;
           if (c && A[0] && A[2]) {
@@ -526,7 +546,7 @@
           }
         });
         walk(r.elems);
-        const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR|OSR|OSF|COP|FLL|SQO|MCR|JSR|RET)"/);
+        const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR|OSR|OSF|COP|FLL|SQO|MCR|JSR|RET|MSG)"/);
         if (r.elems.length && !hasOut) warns.push({ ri, msg: 'Rung has no output instruction' });
       });
       // one timer used by two timer instructions shares one ACC; a CTU/CTD pair must agree on the preset

@@ -34,6 +34,13 @@
   };
   window.App = App;
   App.ctx.setMode = m => App.setMode(m);
+  // MSG instructions reach the remote PLCs of the simulated network through this hook
+  const remote = node => App.project && App.project.net && App.project.net.remotes.find(r => r.node === node);
+  App.plc.net = {
+    has: node => !!remote(node),
+    read: (node, off, n) => remote(node).data.slice(off, off + n),
+    write: (node, off, vals) => { const r = remote(node); vals.forEach((v, k) => { if (off + k < 32) r.data[off + k] = v; }); },
+  };
   // the HMI terminal in the Wiring shows and operates the HMI screen
   App.ctx.hmiMini = () => HMI.mini();
   App.ctx.hmiPress = (id, ev) => HMI.pressId(id, ev);
@@ -48,6 +55,16 @@
   const ID = /^[A-Za-z0-9_-]{1,40}$/;
   const HEX = /^#[0-9a-fA-F]{3,8}$/;
   const str = (v, n = 400) => (typeof v === 'string' || typeof v === 'number' ? String(v).slice(0, n) : '');
+  /* simulated network: remote PLCs (node 2–8, 32 N7 words each) and produced / consumed links */
+  function cleanNet(n) {
+    const o = isObj(n) ? n : {}, int = (v, lo, hi, d) => (Number.isInteger(v) && v >= lo && v <= hi ? v : d);
+    const remotes = arr(o.remotes).filter(isObj).filter(r => Number.isInteger(r.node) && r.node >= 2 && r.node <= 8)
+      .filter((r, i, a) => a.findIndex(x => x.node === r.node) === i).slice(0, 7)
+      .map(r => ({ node: r.node, name: str(r.name, 16).toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'PLC_' + r.node, data: Array.from({ length: 32 }, (_, i) => int(arr(r.data)[i], -32768, 32767, 0)) }));
+    const links = arr(o.links).filter(isObj).filter(l => (l.dir === 'consume' || l.dir === 'produce') && remotes.some(r => r.node === l.node))
+      .slice(0, 16).map(l => { const n = int(l.n, 1, 16, 1); return { dir: l.dir, node: l.node, remote: int(l.remote, 0, 32 - n, 0), local: int(l.local, 0, 32 - n, 0), n }; });
+    return { remotes, links };
+  }
   function buildProject(p) {
     if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
     const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
@@ -89,6 +106,9 @@
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc, files },
       tags,
+      net: cleanNet(p.net),
+      // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
+      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) && typeof p.conn.ctl === 'string' && p.conn.ctl.length < 400000 ? p.conn.ctl : null },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
       hmi: HMI.cleanAll(hm),
       schematic: Schematic.clean(p.schematic, termOk),
@@ -101,6 +121,7 @@
   App.loadProject = function (p) { applyProject(buildProject(p)); };
   function applyProject(proj) {
     App.project = proj;
+    conn.online = false; conn.testing = false;
     App.addrChanged(false);
     LOG.length = 0; LOG.push(...proj.events); unseen = 0;
     const plc = App.plc;
@@ -126,6 +147,8 @@
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc,
         files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
       tags: p.tags || [],
+      net: p.net && (p.net.remotes.length || p.net.links.length) ? p.net : undefined,
+      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl } : undefined,
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
@@ -268,6 +291,49 @@
       },
     });
   };
+  /* ---------- v2.0 part C: simulated network (who active, remote PLCs, produced / consumed) ---------- */
+  App.network = function () {
+    document.querySelectorAll('.modal-wrap[data-net]').forEach(m => m.remove());
+    const net = App.project.net, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io), c = App.project.conn;
+    const ip = n => `192.168.1.${10 + n}`;
+    const hmi = App.project.circuit.comps.some(x => x.type === 'hmiterm') || App.project.hmi.objects.length > 0;
+    const nodes = [
+      ['💻', 'This computer (programming)', '192.168.1.100', '—', c && c.mode === 'real' ? (App.conn.online ? 'Online with the controller' : 'Offline') : 'Simple connection'],
+      ['🖥', `Controller “${esc(App.project.name)}”`, ip(1), '1', `${r.cpu ? 'Modular rack' : r.ctl ? 'Compact PLC' : 'Soft PLC (no PLC in the Wiring)'} · ${App.plc.mode}${App.plc.powered ? '' : ' · no power'}`],
+      ...(hmi ? [['▭', 'HMI terminal', ip(9), '9', `${App.project.hmi.objects.length} objects · reads the controller tags`]] : []),
+      ...net.remotes.map(x => ['🖥', `Remote PLC ${esc(x.name)}`, ip(x.node), String(x.node), 'RUN · 32 words N7:0–31 for MSG and produced / consumed data']),
+    ];
+    const free = [2, 3, 4, 5, 6, 7, 8].find(n => !net.remotes.some(x => x.node === n));
+    const body = `<h5>Who Active</h5><table class="io-cfg"><tr><th></th><th>Device</th><th>IP address</th><th>Node</th><th>Status</th></tr>${nodes.map(n => `<tr><td>${n[0]}</td><td>${n[1]}</td><td><code>${n[2]}</code></td><td>${n[3]}</td><td>${n[4]}</td></tr>`).join('')}</table>
+      <h5>Remote PLCs</h5>${net.remotes.length ? net.remotes.map(x => `<div class="net-remote"><b>${esc(x.name)}</b> <small>node ${x.node}</small> <button class="tbtn sm" data-rdel="${x.node}">✕ Remove</button>
+        <div class="net-words">${x.data.slice(0, 16).map((v, i) => `<label><small>N7:${i}</small><input type="number" data-rw="${x.node}:${i}" value="${v}"></label>`).join('')}</div></div>`).join('') : '<p class="help">No remote PLC yet. A remote PLC is another controller on the network: MSG instructions read and write its N7 words, and produced / consumed links copy them every scan.</p>'}
+      ${free ? `<button class="btn" data-radd="${free}">＋ Remote PLC (node ${free})</button>` : ''}
+      <h5>Produced / consumed data</h5>${net.links.length ? `<table class="io-cfg"><tr><th></th><th>Remote</th><th></th><th>Local</th><th>Words</th><th></th></tr>${net.links.map((l, i) => `<tr><td>${l.dir === 'consume' ? 'Consumed' : 'Produced'}</td><td>${esc((net.remotes.find(x => x.node === l.node) || {}).name)} N7:${l.remote}</td><td>${l.dir === 'consume' ? '→' : '←'}</td><td>N7:${l.local}</td><td>${l.n}</td><td><button class="tbtn sm" data-ldel="${i}">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No links.</p>'}
+      ${net.remotes.length ? '<button class="btn" data-ladd>＋ Link</button>' : ''}
+      <p class="help">The network is simulated: no real ports are opened. Addresses follow 192.168.1.(10 + node).</p>`;
+    UI.modal({
+      title: 'Network', wide: true, body,
+      onOpen: el => {
+        el.closest('.modal-wrap').dataset.net = '1';
+        const done = () => { App.save(); App.network(); };
+        el.querySelectorAll('[data-rw]').forEach(i => { i.onchange = () => { const [n, w] = i.dataset.rw.split(':').map(Number), x = net.remotes.find(q => q.node === n); x.data[w] = Math.max(-32768, Math.min(32767, Math.round(Number(i.value) || 0))); App.save(); }; });
+        el.querySelectorAll('[data-rdel]').forEach(b => { b.onclick = () => { const n = Number(b.dataset.rdel); net.remotes = net.remotes.filter(x => x.node !== n); net.links = net.links.filter(l => l.node !== n); App.log('system', `Network: remote PLC node ${n} removed`); done(); }; });
+        const add = el.querySelector('[data-radd]');
+        if (add) add.onclick = () => UI.form('New remote PLC', [{ key: 'n', label: 'Name', value: 'PLC_' + add.dataset.radd }], v => { net.remotes.push({ node: Number(add.dataset.radd), name: v.n.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 16) || 'PLC_' + add.dataset.radd, data: new Array(32).fill(0) }); App.log('system', `Network: remote PLC node ${add.dataset.radd} added`); done(); return undefined; });
+        el.querySelectorAll('[data-ldel]').forEach(b => { b.onclick = () => { net.links.splice(Number(b.dataset.ldel), 1); done(); }; });
+        const la = el.querySelector('[data-ladd]');
+        if (la) la.onclick = () => UI.form('New produced / consumed link', [
+          { key: 'dir', label: 'Direction', value: 'consume', options: [{ v: 'consume', l: 'Consumed: remote → this controller' }, { v: 'produce', l: 'Produced: this controller → remote' }] },
+          { key: 'node', label: 'Remote PLC', value: net.remotes[0].node, options: net.remotes.map(x => ({ v: x.node, l: `${x.name} (node ${x.node})` })) },
+          { key: 'remote', label: 'Remote first word N7:', value: '0', type: 'number' }, { key: 'local', label: 'Local first word N7:', value: '10', type: 'number' }, { key: 'n', label: 'Words', value: '4', type: 'number' },
+        ], v => {
+          const n = Math.round(Number(v.n)), ro = Math.round(Number(v.remote)), lo = Math.round(Number(v.local));
+          if (!(n >= 1 && n <= 16) || !(ro >= 0 && ro + n <= 32) || !(lo >= 0 && lo + n <= 32)) return 'Words 1–16, and every word within N7:0–31';
+          net.links.push({ dir: v.dir, node: Number(v.node), remote: ro, local: lo, n }); App.log('system', `Network: ${v.dir} link added`); done(); return undefined;
+        });
+      },
+    });
+  };
   /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
   App.ioConfig = function () {
     const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc;
@@ -302,9 +368,109 @@
   /* the program in the PLC: LAD 2 and the subroutine files */
   App.loadProgram = function () {
     PLCcore.setTags(App.project.tags);
+    const c = App.project.conn;
+    if (c && c.mode === 'real') {
+      let same = progSnap() === c.ctl;
+      // online in PROG: an edit is written to the controller at once (online edit in PROG)
+      if (conn.online && App.plc.mode === 'PROG' && !same) { c.ctl = progSnap(); same = true; App.log('system', 'Online edit written to the controller (PROG)'); }
+      conn.same = same;
+      if (!same && !conn.testing) { loadSnap(c.ctl); updateConn(); return; }
+    }
     const subs = {}, per = {}; (App.project.ladder.files || []).forEach(f => { subs[f.n] = f.rungs; if (f.period) per[f.n] = f.period; });
     App.plc.setProgram(App.project.ladder.rungs, subs, per);
+    updateConn();
   };
+  /* ---------- v2.0 part B: connection to the controller (Realistic mode) ----------
+     The controller keeps the program last downloaded (project.conn.ctl, a snapshot). Offline, edits change the project only.
+     Go Online compares them; Download writes the project into the controller (in PROG), Upload reads it back.
+     Online in RUN, edits are pending: Test edits runs them, Assemble keeps them, Cancel goes back to the controller program. */
+  const conn = { online: false, testing: false, same: true };
+  App.conn = conn;
+  const ladText = list => list.map(r => ({ c: r.comment || '', t: Ladder.serialize(r.elems) }));
+  function progSnap(p = App.project) {
+    return JSON.stringify({ main: ladText(p.ladder.rungs), files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, r: ladText(f.rungs) })), tags: p.tags });
+  }
+  const readSnap = s => { try { const o = JSON.parse(s); return o && Array.isArray(o.main) ? o : null; } catch (e) { return null; } };
+  const rungsOf = list => (Array.isArray(list) ? list : []).map(r => { try { return Ladder.newRung(Ladder.parseRung(String(r.t || '')), String(r.c || '')); } catch (e) { return Ladder.newRung([], String(r.c || '')); } });
+  /* run the controller's own program (its tags resolve while the program is prepared, then the project's tags come back) */
+  function loadSnap(s) {
+    const o = readSnap(s) || { main: [], files: [], tags: [] };
+    PLCcore.setTags(Array.isArray(o.tags) ? o.tags : []);
+    const subs = {}, per = {};
+    (o.files || []).forEach(f => { subs[f.n] = rungsOf(f.r); if (f.period) per[f.n] = f.period; });
+    App.plc.setProgram(rungsOf(o.main), subs, per);
+    App.plc.applyAll(false);
+    PLCcore.setTags(App.project.tags);
+  }
+  App.setConnMode = function (m) {
+    const c = App.project.conn || (App.project.conn = { mode: 'simple', ctl: null });
+    if (c.mode === m) return;
+    c.mode = m; conn.online = false; conn.testing = false;
+    if (m === 'real') c.ctl = progSnap();   // as if the project had just been downloaded
+    App.log('system', `Connection: ${m === 'real' ? 'Realistic (download / upload)' : 'Simple (edits run at once)'}`);
+    App.loadProgram(); App.save(); Ladder.render();
+  };
+  function needProg(what, go) {
+    if (App.plc.mode === 'PROG') { go(); return; }
+    UI.confirm(what, `The controller must be in PROG to ${what.toLowerCase()}. Switch to PROG now?`, () => { App.setMode('PROG'); go(); }, 'Switch to PROG');
+  }
+  App.download = function () {
+    const c = App.project.conn; if (!c || c.mode !== 'real') return;
+    if (!Ladder.verify(true)) { UI.toast('The project has errors — Verify and fix them before downloading', 'danger'); Ladder.verify(false); return; }
+    needProg('Download', () => { c.ctl = progSnap(); conn.online = true; conn.testing = false; App.log('system', 'Download: the project was written to the controller'); App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); });
+  };
+  App.upload = function () {
+    const c = App.project.conn, o = c && readSnap(c.ctl); if (!o) { UI.toast('The controller has no program', 'warn'); return; }
+    const L = App.project.ladder;
+    L.rungs = rungsOf(o.main);
+    L.files = (o.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: rungsOf(f.r) }));
+    App.project.tags = Array.isArray(o.tags) ? JSON.parse(JSON.stringify(o.tags)) : [];
+    conn.online = true; conn.testing = false;
+    App.log('system', 'Upload: the controller program was read into the project');
+    Ladder.resetSel(); App.loadProgram(); App.save(); Ladder.render(); Ladder.DataTable.render(); UI.toast('Uploaded — online', 'ok');
+  };
+  App.goOnline = function () {
+    const c = App.project.conn; if (!c || c.mode !== 'real') return;
+    if (conn.online) { conn.online = false; conn.testing = false; App.log('system', 'Went offline'); App.loadProgram(); Ladder.render(); return; }
+    if (progSnap() === c.ctl) { conn.online = true; App.log('system', 'Went online'); App.loadProgram(); Ladder.render(); return; }
+    UI.modal({
+      title: 'Go Online', body: '<p>The project in this computer and the program in the controller are <b>different</b>.</p><p class="help">Download writes the project into the controller (needs PROG). Upload reads the controller program into the project (the project ladder and tags are replaced).</p>',
+      buttons: [{ label: 'Compare…', onClick: () => { App.compare(); return false; } }, { label: 'Upload', onClick: () => App.upload() }, { label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => App.download() }],
+    });
+  };
+  /* what differs between the project and the controller: rungs by file, and tags */
+  App.diff = function () {
+    const c = App.project.conn, o = readSnap(c && c.ctl) || { main: [], files: [], tags: [] }, p = JSON.parse(progSnap()), out = [];
+    const cmp = (label, a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) { const x = a[i], y = b[i]; if (!x || !y || x.t !== y.t || x.c !== y.c) out.push({ where: `${label} rung ${String(i).padStart(4, '0')}`, proj: x ? x.t : '(none)', ctl: y ? y.t : '(none)' }); } };
+    cmp('LAD 2', p.main, o.main);
+    const ns = [...new Set([...p.files.map(f => f.n), ...(o.files || []).map(f => f.n)])].sort();
+    for (const n of ns) { const a = p.files.find(f => f.n === n), b = (o.files || []).find(f => f.n === n); cmp(`LAD ${n}`, a ? a.r : [], b ? b.r : []); if (a && b && (a.period || 0) !== (b.period || 0)) out.push({ where: `LAD ${n} task`, proj: a.period ? `every ${a.period} ms` : 'JSR', ctl: b.period ? `every ${b.period} ms` : 'JSR' }); }
+    const tk = t => `${t.type} ${t.addr}`, pt = new Map(p.tags.map(t => [t.name, t])), ct = new Map((o.tags || []).map(t => [t.name, t]));
+    for (const n of new Set([...pt.keys(), ...ct.keys()])) { const a = pt.get(n), b = ct.get(n); if (!a || !b || tk(a) !== tk(b)) out.push({ where: `Tag ${n}`, proj: a ? tk(a) : '(none)', ctl: b ? tk(b) : '(none)' }); }
+    return out;
+  };
+  App.compare = function () {
+    const d = App.diff(), esc = UI.esc;
+    UI.modal({ title: 'Compare project ↔ controller', wide: true, body: d.length ? `<table class="io-cfg"><tr><th>Where</th><th>Project (this computer)</th><th>Controller</th></tr>${d.map(x => `<tr><td>${esc(x.where)}</td><td><code>${esc(x.proj)}</code></td><td><code>${esc(x.ctl)}</code></td></tr>`).join('')}</table>` : '<p class="ok-msg">✓ The project and the controller are the same.</p>' });
+  };
+  /* online edits while running */
+  App.testEdits = function () { conn.testing = true; App.log('system', 'Online edits: testing'); App.loadProgram(); App.plc.applyAll(false); Ladder.render(); };
+  App.assembleEdits = function () { const c = App.project.conn; c.ctl = progSnap(); conn.testing = false; App.log('system', 'Online edits assembled into the controller'); App.loadProgram(); App.save(); Ladder.render(); };
+  App.cancelEdits = function () {
+    conn.testing = false;
+    const o = readSnap(App.project.conn.ctl); if (o) { App.project.ladder.rungs = rungsOf(o.main); App.project.ladder.files = (o.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: rungsOf(f.r) })); App.project.tags = o.tags || []; }
+    App.log('system', 'Online edits cancelled'); Ladder.resetSel(); App.loadProgram(); App.save(); Ladder.render();
+  };
+  /* status: Simple / OFFLINE / ONLINE / edits pending */
+  function updateConn() {
+    const el = document.querySelector('[data-conn]'); if (!el || !App.project) return;
+    const c = App.project.conn, real = c && c.mode === 'real';
+    const txt = !real ? '' : !conn.online ? 'OFFLINE' + (conn.same ? '' : ' · project ≠ controller') : conn.testing ? 'ONLINE · testing edits' : conn.same ? 'ONLINE' : 'ONLINE · edits pending';
+    el.textContent = txt; el.hidden = !real;
+    el.className = 'conn-chip ' + (!real ? '' : !conn.online ? 'off' : conn.same ? 'on' : 'edit');
+    if (window.Ladder && Ladder.connUi) Ladder.connUi();
+  }
+  App.updateConn = updateConn;
   App.programChanged = function () { App.loadProgram(); App.save(); };
   App.circuitChanged = function () { App.addrChanged(false); App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
   /* address style of the project (display only): App.fmt(norm) shows an address, App.addrIn(text) reads one typed in any style */
@@ -344,10 +510,10 @@
       const msg = `I/O configuration does not match the rack: ${rk.bad.map(b => b.msg).join('; ')}`;
       UI.toast(msg + ' — open I/O Configuration', 'danger', 6000); App.log('system', 'Go to RUN refused: ' + msg); return;
     }
-    if (m === 'RUN' && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
+    if (m === 'RUN' && (!App.project.conn || App.project.conn.mode !== 'real' || conn.same || conn.testing) && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
     if (App.plc.mode !== m) App.log('mode', `Controller mode changed to ${m}`);
     App.plc.setMode(m);
-    updateBar(true);
+    updateBar(true); updateConn();
   };
   /* operate a device part (button, breaker handle, selector…) from the wiring or panel view.
      Returns the release function for momentary parts (see App.hold). */
@@ -453,6 +619,12 @@
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
     }
     plc.scan(dt);
+    // produced / consumed data: copied every scan while the controller runs
+    const net = App.project.net;
+    if (net && net.links.length && plc.mode === 'RUN' && plc.powered) for (const l of net.links) {
+      const r = net.remotes.find(x => x.node === l.node); if (!r) continue;
+      for (let k = 0; k < l.n; k++) { if (l.dir === 'consume') plc.data.N7[l.local + k] = r.data[l.remote + k]; else r.data[l.remote + k] = plc.data.N7[l.local + k]; }
+    }
     App.ticks++;
     for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= App.ticks) pending.splice(i, 1)[0].fn();
   }
