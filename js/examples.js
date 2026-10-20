@@ -460,6 +460,70 @@
     },
   };
 
+  EX.cabinet = {
+    title: 'Motor starter cabinet (modular PLC, door with HMI)', desc: 'A 2D control cabinet: inside, DIN rails and cable ducts with breakers, the modular PLC, contactor, overload and terminal block; on the door, START/STOP, pilot lamps and an HMI terminal that runs the HMI screen.',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply3', 60, -200, { label: 'Q0' });
+      B.add('encl', 0, 0, { label: '+CP1', w: '1200', h: '800', title: 'CONTROL CABINET +CP1' });
+      B.add('duct', 40, 60, { label: 'WD1', len: '1000' });
+      B.add('din', 40, 260, { label: 'RAIL1', len: '1000' });
+      B.add('duct', 40, 380, { label: 'WD2', len: '1000' });
+      B.add('din', 40, 540, { label: 'RAIL2', len: '600' });
+      B.add('duct', 40, 700, { label: 'WD3', len: '1000' });
+      const qf1 = B.add('mccb3', 50, 218, { label: 'QF1' }, { on: true });
+      const qf2 = B.add('mcb2', 160, 228, { label: 'QF2' }, { on: true });
+      const ps = B.add('mpsu', 250, 198, { label: 'PS1' });
+      B.add('mcpu', 360, 198, { label: 'CPU1' });
+      const di = B.add('mdi8', 490, 198, { label: 'DI1', slot: '1' });
+      const dq = B.add('mdo8', 690, 198, { label: 'DO1', slot: '2' });
+      const km = B.add('contactor', 60, 488, { label: 'KM1', coil: '230VAC' });
+      const f1 = B.add('olr', 220, 503, { label: 'F1' });
+      const x1 = B.add('tb5', 420, 518, { label: 'X1' });
+      const m1 = B.add('motor', 400, 880, { label: 'M1' });
+      B.add('door', 1300, 0, { label: '+CD1', w: '600', h: '800', title: 'MOTOR M1' });
+      const hmi = B.add('hmiterm', 1450, 90, { label: 'HMI1' });
+      const s1 = B.add('pb_no', 1380, 420, { label: 'S1', color: 'green', text: 'START' });
+      const s0 = B.add('pb_nc', 1470, 420, { label: 'S0', color: 'red', text: 'STOP' });
+      const h1 = B.add('lamp', 1580, 425, { label: 'H1', color: 'green', coil: '230VAC' });
+      const h2 = B.add('lamp', 1660, 425, { label: 'H2', color: 'amber', coil: '230VAC' });
+      // power circuit
+      B.w(q0, 'L1', qf1, '1', C.L1); B.w(q0, 'L2', qf1, '3', C.L2); B.w(q0, 'L3', qf1, '5', C.L3);
+      B.w(qf1, '2', km, '1', C.L1); B.w(qf1, '4', km, '3', C.L2); B.w(qf1, '6', km, '5', C.L3);
+      B.w(km, '2', f1, '1', C.L1); B.w(km, '4', f1, '3', C.L2); B.w(km, '6', f1, '5', C.L3);
+      B.w(f1, '2', x1, 'L1', C.L1); B.w(f1, '4', x1, 'L2', C.L2); B.w(f1, '6', x1, 'L3', C.L3);
+      B.w(x1, 'L1b', m1, 'U1', C.L1); B.w(x1, 'L2b', m1, 'V1', C.L2); B.w(x1, 'L3b', m1, 'W1', C.L3);
+      B.w(q0, 'PE', x1, 'PE', C.PE); B.w(x1, 'PEb', m1, 'PE', C.PE);
+      // control supply and PLC power
+      B.w(q0, 'L1', qf2, '1', C.L1); B.w(q0, 'N', qf2, '3', C.N);
+      B.w(qf2, '2', ps, 'L1', C.L1); B.w(qf2, '4', ps, 'N', C.N); B.w(q0, 'PE', ps, 'PE', C.PE);
+      // inputs: START, STOP (N.C.), overload 95-96 (N.C.)
+      B.w(ps, 'V24', s1, '13', C.DC); B.w(s1, '14', di, 'I0', C.DC);
+      B.w(ps, 'V24', s0, '11', C.DC); B.w(s0, '12', di, 'I1', C.DC);
+      B.w(ps, 'V24', f1, '95', C.DC); B.w(f1, '96', di, 'I2', C.DC);
+      B.w(ps, 'C24', di, 'COM', C.DC0);
+      // outputs: contactor coil, run lamp, trip lamp
+      B.w(qf2, '2', dq, 'VAC0', C.AC);
+      B.w(dq, 'O0', km, 'A1', C.AC); B.w(km, 'A2', qf2, '4', C.N);
+      B.w(dq, 'O1', h1, 'X1', C.AC); B.w(h1, 'X2', qf2, '4', C.N);
+      B.w(dq, 'O2', h2, 'X1', C.AC); B.w(h2, 'X2', qf2, '4', C.N);
+      // HMI terminal on 24 VDC
+      B.w(ps, 'V24', hmi, 'P', C.DC); B.w(ps, 'C24', hmi, 'M', C.DC0);
+      return proj('Motor starter cabinet', B.circ, [
+        { text: 'BST XIC I:1/0 NXB XIC B3:0/0 NXB XIC O:2/0 BND XIC I:1/1 XIO B3:0/1 XIC I:1/2 OTE O:2/0', comment: 'START (door or HMI) with seal-in; STOP (door N.C. or HMI) and the overload 95-96 (N.C.) stop it' },
+        { text: 'XIC O:2/0 OTE O:2/1', comment: 'Run lamp on the door' },
+        { text: 'XIO I:1/2 OTE O:2/2', comment: 'Overload tripped lamp on the door' },
+      ], { 'I:1/0': 'START', 'I:1/1': 'STOP (N.C.)', 'I:1/2': 'OVERLOAD (N.C.)', 'B3:0/0': 'HMI START', 'B3:0/1': 'HMI STOP', 'O:2/0': 'KM1 MOTOR', 'O:2/1': 'RUN LAMP', 'O:2/2': 'TRIP LAMP' }, [
+        { type: 'text', x: 30, y: 20, w: 400, h: 40, label: 'MOTOR M1', size: 26 },
+        { type: 'motor', x: 560, y: 40, w: 160, h: 160, label: 'M1', tag: 'O:2/0' },
+        { type: 'ind', x: 30, y: 90, w: 220, h: 80, label: 'MOTOR', tag: 'O:2/0', onText: 'RUNNING', offText: 'STOPPED' },
+        { type: 'pb', x: 30, y: 240, w: 200, h: 90, label: 'START', tag: 'B3:0/0', color: '#2fa84f' },
+        { type: 'pb', x: 270, y: 240, w: 200, h: 90, label: 'STOP', tag: 'B3:0/1', color: '#d33a2c' },
+        { type: 'alarm', x: 30, y: 380, w: 740, h: 60, label: 'OVERLOAD TRIPPED', tag: 'O:2/2' },
+      ], { slots: { 1: 'mdi8', 2: 'mdo8' } });
+    },
+  };
+
   EX.blank = {
     title: 'Empty project', desc: 'Start from scratch: empty workspace and program.',
     build: () => proj('Untitled', { comps: [], wires: [], seq: 0 }, []),

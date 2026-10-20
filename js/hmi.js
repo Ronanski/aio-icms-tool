@@ -110,10 +110,16 @@
       return;
     }
     if (!o) return;
+    if (o.type === 'pb') e.preventDefault();
+    const mom = press(o);
+    if (mom) drag = { mom };
+  }
+  /* operate a runtime object (screen or the HMI terminal in the Wiring); returns the release for a momentary button */
+  function press(o) {
     const plc = App.plc;
+    let mom = null;
     if (o.type === 'pb') {
-      e.preventDefault();
-      if (o.mode === 'momentary') { plc.write(o.tag, 1); const tag = o.tag; drag = { mom: App.hold('hmi:' + tag, () => App.plc.write(tag, 0)) }; }
+      if (o.mode === 'momentary') { plc.write(o.tag, 1); const tag = o.tag; mom = App.hold('hmi:' + tag, () => App.plc.write(tag, 0)); }
       else if (o.mode === 'toggle') plc.write(o.tag, plc.read(o.tag) ? 0 : 1);
       else if (o.mode === 'set') plc.write(o.tag, 1);
       else if (o.mode === 'reset') plc.write(o.tag, 0);
@@ -127,7 +133,40 @@
         App.log('operator', `HMI entry “${o.label}”: ${o.tag} set to ${plc.read(o.tag)}`);
       });
     }
+    return mom;
   }
+  const held = new Map();
+  /* press / release an object by id (the HMI terminal mounted in the Wiring) */
+  HMI.pressId = function (id, ev) {
+    const o = hmi().objects.find(x => x.id === id); if (!o) return;
+    if (ev === 'down') { const r = press(o); if (r) held.set(id, r); }
+    else if (held.has(id)) { held.get(id)(); held.delete(id); }
+  };
+  /* the screen as SVG in its 800×480 coordinates, with live values: key changes whenever the picture does */
+  HMI.mini = function () {
+    const plc = App.plc, objs = hmi().objects;
+    const vals = objs.map(o => (o.tag ? plc.read(o.tag) : 0));
+    const key = vals.join(',') + '|' + JSON.stringify(objs);
+    const T = (x, y, s, size, fill = '#e8eef3', anchor = 'middle') => `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}" text-anchor="${anchor}" font-family="sans-serif">${esc(s)}</text>`;
+    const svg = objs.map((o, i) => {
+      const v = vals[i], { x, y, w, h } = o, cx = x + w / 2;
+      switch (o.type) {
+        case 'pb': return `<g class="part" data-part="h:${esc(o.id)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${col(o.color)}" opacity="${v ? 1 : 0.85}" stroke="${v ? '#fff' : '#000'}" stroke-width="${v ? 4 : 2}"/>${T(cx, y + h / 2 + 8, o.label, 22, '#fff')}</g>`;
+        case 'ind': return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${o.shape === 'round' ? h / 2 : 6}" fill="${col(v ? o.onColor : o.offColor)}"/>${T(cx, y + 20, o.label, 14)}${T(cx, y + h - 12, v ? o.onText : o.offText, 20, '#fff')}`;
+        case 'lamp': return `<circle cx="${cx}" cy="${y + h * 0.4}" r="${Math.min(w, h) * 0.3}" fill="${col(v ? o.onColor : o.offColor)}" stroke="#000" stroke-width="2"/>${T(cx, y + h - 6, o.label, 14)}`;
+        case 'num': case 'entry': return `<g ${o.type === 'entry' ? `class="part" data-part="h:${esc(o.id)}"` : ''}><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#1f2a33" stroke="#4a5a66"/>${T(x + 8, y + 18, o.label, 14, '#9fb0bd', 'start')}${T(x + w - 8, y + h - 12, (v * (Number(o.scale) || 1)).toFixed(Number(o.dec) || 0) + (o.units ? ' ' + o.units : ''), 24, '#fff', 'end')}</g>`;
+        case 'bar': case 'tank': {
+          const lo = Number(o.min) || 0, hi = Number(o.max) || 100, f = Math.max(0, Math.min(1, (v - lo) / (hi - lo || 1)));
+          return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#1f2a33" stroke="#4a5a66"/><rect x="${x + 6}" y="${y + 6 + (h - 12) * (1 - f)}" width="${w - 12}" height="${(h - 12) * f}" fill="${col(o.color, '#2f6fd6')}"/>${T(cx, y + 18, o.label, 14)}`;
+        }
+        case 'motor': return `<circle cx="${cx}" cy="${y + h / 2}" r="${Math.min(w, h) * 0.42}" fill="${v ? '#2fa84f' : '#5b5953'}" stroke="#000" stroke-width="2"/>${T(cx, y + h / 2 + 7, o.label, 18, '#fff')}`;
+        case 'alarm': return v ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="#d33a2c"/>${T(cx, y + h / 2 + 7, '⚠ ' + o.label, 20, '#fff')}` : '';
+        case 'text': return T(x, y + (Number(o.size) || 18), o.label, Number(o.size) || 18, col(o.color, '#ffffff'), 'start');
+      }
+      return '';
+    }).join('');
+    return { key, svg };
+  };
   function onMove(e) {
     if (!drag || !drag.o) return;
     const dx = (e.clientX - drag.sx) / drag.k, dy = (e.clientY - drag.sy) / drag.k;
