@@ -614,7 +614,7 @@ function check(name, cond, info = '') {
   await elCtx.close();
 
   await page.evaluate(() => App.showView('hmi'));
-  check('HMI modes are named Operate / Design (not Run)', (await page.textContent('.hmi-toolbar .seg')).includes('Operate') && !(await page.textContent('.hmi-toolbar .seg')).includes('Run'));
+  check('HMI modes are named Machine / Studio (not Run)', (await page.textContent('.hmi-toolbar .seg')).includes('Machine') && (await page.textContent('.hmi-toolbar .seg')).includes('Studio') && !(await page.textContent('.hmi-toolbar .seg')).includes('Run'));
 
   console.log('v1.3 wiring and windows');
   await load('practice');
@@ -1284,6 +1284,51 @@ function check(name, cond, info = '') {
   }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await page.click('#view-schematic [data-sstyle="iec"]');
+
+  console.log('v1.7: HMI Studio / Machine, screens, terminal types, new objects, log-in');
+  await page.evaluate(() => {
+    App.openNew({ name: 'HMI v1.7', hmi: { res: 't10', pin: '4321', screens: [{ id: 's1', name: 'Main' }, { id: 's2', name: 'Alarms' }], objects: [
+      { id: 'h1', type: 'nav', scr: 's1', x: 10, y: 10, w: 150, h: 56, label: 'ALARMS', target: 's2', color: '#2f6fd6' },
+      { id: 'h2', type: 'pb', scr: 's1', x: 200, y: 10, w: 130, h: 64, label: 'RESET', tag: 'B3:0/3', mode: 'momentary', color: '#2fa84f', sec: 'yes' },
+      { id: 'h3', type: 'login', scr: 's1', x: 400, y: 10, w: 150, h: 56, label: 'LOGIN' },
+      { id: 'h4', type: 'rect', scr: 's1', x: 10, y: 200, w: 100, h: 60, tag: 'B3:0/4', onColor: '#2fa84f', offColor: '#3d4a57', vis: 'B3:0/5' },
+      { id: 'h5', type: 'trend', scr: 's1', x: 300, y: 200, w: 320, h: 160, label: 'N7', tag: 'N7:0', min: 0, max: 100, span: 30, color: '#f2c230' },
+      { id: 'h6', type: 'nav', scr: 's2', x: 10, y: 10, w: 150, h: 56, label: 'BACK', target: 's9', color: '#2f6fd6' },
+      { id: 'h7', type: 'image', scr: 's2', x: 10, y: 100, w: 100, h: 100, src: 'javascript:alert(1)' },
+    ] } });
+    App.setLayout('single'); App.showView('hmi');
+  });
+  await wait(300);
+  check('HMI: the terminal type sets the screen size (10" = 1024×600)', await page.evaluate(() => { const s = document.querySelector('#view-hmi .hmi-screen'); return s.style.width === '1024px' && s.style.height === '600px' && document.querySelector('#view-hmi .hmi-brand').textContent.includes('1024×600'); }));
+  check('HMI: saved screens, PIN and objects are cleaned (bad link target → Main, bad picture dropped)', await page.evaluate(() => { const h = App.project.hmi; return h.screens.length === 2 && h.pin === '4321' && h.objects.find(o => o.id === 'h6').target === 's1' && h.objects.find(o => o.id === 'h7').src === ''; }));
+  check('HMI: only the objects of the screen on display are drawn', await page.evaluate(() => !!document.querySelector('#view-hmi .hobj[data-id="h1"]') && !document.querySelector('#view-hmi .hobj[data-id="h6"]')));
+  const hClick = id => page.evaluate(id => { const el = document.querySelector(`#view-hmi .hobj[data-id="${id}"]`); const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, button: 0, pointerId: 1 })); window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })); }, id);
+  await page.evaluate(() => App.setMode('RUN'));
+  await page.evaluate(() => { const el = document.querySelector('#view-hmi .hobj[data-id="h2"]'); const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.x + 5, clientY: r.y + 5, button: 0, pointerId: 1 })); }); await wait(120);
+  check('HMI security: a button that needs log-in does nothing before logging in', await page.evaluate(() => App.plc.read('B3:0/3') === 0 && App.events().some(e => e.msg.includes('not logged in'))));
+  await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })));
+  await hClick('h3'); await wait(100);
+  await page.fill('#f_p', '0000'); await page.click('.modal .btn.primary'); await wait(100);
+  check('HMI security: a wrong PIN is refused', await page.evaluate(() => !!document.querySelector('.modal .form-err') && document.querySelector('.modal .form-err').textContent.includes('Wrong')));
+  await page.fill('#f_p', '4321'); await page.click('.modal .btn.primary'); await wait(150);
+  await page.evaluate(() => { const el = document.querySelector('#view-hmi .hobj[data-id="h2"]'); const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: r.x + 5, clientY: r.y + 5, button: 0, pointerId: 1 })); }); await wait(120);
+  check('HMI security: after log-in with the PIN the button works', await page.evaluate(() => App.plc.read('B3:0/3') === 1));
+  await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))); await wait(150);
+  check('HMI animation: a shape is hidden while its visibility tag is 0', await page.evaluate(() => document.querySelector('#view-hmi .hobj[data-id="h4"]').style.visibility === 'hidden'));
+  await page.evaluate(() => { App.plc.write('B3:0/5', 1); App.plc.write('B3:0/4', 1); }); await wait(150);
+  check('HMI animation: it shows when the tag is 1 and takes its ON colour', await page.evaluate(() => { const el = document.querySelector('#view-hmi .hobj[data-id="h4"]'); return el.style.visibility === '' && el.querySelector('[data-s]').style.background.includes('47, 168, 79'); }));
+  await page.evaluate(() => App.plc.write('N7:0', 60)); await wait(700);
+  check('HMI trend: draws the history of its tag', await page.evaluate(() => (document.querySelector('#view-hmi .hobj[data-id="h5"] [data-p]').getAttribute('d') || '').split('L').length > 2));
+  await hClick('h1'); await wait(150);
+  check('HMI: a Go to Screen button changes the screen', await page.evaluate(() => HMI.screen() === 's2' && !!document.querySelector('#view-hmi .hobj[data-id="h6"]') && !document.querySelector('#view-hmi .hobj[data-id="h1"]')));
+  await hClick('h6'); await wait(150);
+  await page.click('#view-hmi [data-mode="edit"]'); await wait(150);
+  check('HMI Studio: with nothing selected, the side panel has terminal type, screens and PIN', await page.evaluate(() => !!document.querySelector('#view-hmi [data-res]') && document.querySelectorAll('#view-hmi [data-go]').length === 2 && document.querySelector('#view-hmi [data-pin]').value === '4321'));
+  await page.selectOption('#view-hmi [data-res]', 't4'); await wait(150);
+  check('HMI Studio: changing the terminal type resizes the screen (4.3" = 480×272)', await page.evaluate(() => App.project.hmi.res === 't4' && document.querySelector('#view-hmi .hmi-screen').style.width === '480px'));
+  check('HMI Studio: the add list has the new objects', await page.evaluate(() => ['rect', 'ellipse', 'line', 'trend', 'image', 'nav', 'login'].every(t => !!document.querySelector(`#view-hmi [data-add="${t}"]`))));
+  check('HMI terminal in the Wiring follows the screen size', await page.evaluate(() => { const m = HMI.mini(); return m.w === 480 && m.h === 272; }));
+  await page.click('#view-hmi [data-mode="run"]'); await page.evaluate(() => { App.setMode('PROG'); App.openNew(Examples.EX.plcmotor.build()); });
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));

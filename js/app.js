@@ -67,14 +67,13 @@
       ...(typeof w.tag === 'string' && w.tag.trim() ? { tag: w.tag.trim().slice(0, 12) } : {}),
       pts: arr(w.pts).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).map(q => [q[0], q[1]]),
     }));
-    const objects = arr(hm.objects).map(HMI.clean).filter(Boolean);
     const maxNum = list => list.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
     const seq = v => (Number.isFinite(v) ? v : 0);
     return {
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
-      hmi: { objects, seq: Math.max(seq(hm.seq), maxNum(objects)) },
+      hmi: HMI.cleanAll(hm),
       schematic: Schematic.clean(p.schematic, termOk),
       io: Circuit.cleanIo(p.io),
       addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : 'file',
