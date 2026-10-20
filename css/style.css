@@ -694,3 +694,9 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .lad-comm select { font-size: 12px; padding: 3px 4px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .lad-comm-real { display: inline-flex; gap: 2px; }
 .lad-comm-real[hidden] { display: none; }
+.net-remote { border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin: 6px 0; }
+.net-words { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; margin-top: 6px; }
+.net-words label { display: flex; flex-direction: column; font-size: 11px; }
+.net-words input { width: 100%; min-width: 0; padding: 2px 4px; font: 12px var(--mono); border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
+@media (max-width: 760px) { .net-words { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.lad-banner[hidden] { display: none; }

@@ -1431,7 +1431,7 @@ function check(name, cond, info = '') {
 
   console.log('v2.0 part B: Go Online, Download / Upload, Compare, online edits');
   await page.evaluate(() => { App.openNew({ name: 'Comms', ladder: { rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); }); await wait(150);
-  check('Simple connection by default: no online chip', await page.evaluate(() => document.querySelector('[data-conn]').hidden && document.querySelector('#view-ladder .lad-comm-real').hidden));
+  check('Simple connection by default: no online chip, no edit banner on screen', await page.evaluate(() => document.querySelector('[data-conn]').hidden && document.querySelector('#view-ladder .lad-comm-real').hidden && getComputedStyle(document.querySelector('#view-ladder [data-lbanner]')).display === 'none'));
   await page.selectOption('#view-ladder [data-cmode]', 'real'); await wait(150);
   check('Realistic: starts OFFLINE with the project as the controller program', await page.evaluate(() => document.querySelector('[data-conn]').textContent === 'OFFLINE' && !document.querySelector('#view-ladder .lad-comm-real').hidden));
   const addRung = t => page.evaluate(t => { App.project.ladder.rungs.push(Ladder.newRung(Ladder.parseRung(t))); App.programChanged(); Ladder.render(); }, t);
@@ -1462,6 +1462,27 @@ function check(name, cond, info = '') {
   check('offline again, Upload brings the controller program back into the project', await page.evaluate(() => { App.upload(); return App.project.ladder.rungs.length === 3 && App.conn.online && App.diff().length === 0; }));
   check('the connection mode and the controller program are saved with the project', await page.evaluate(() => { const s = App.serialize(); const b = App.buildProject(s); return s.conn.mode === 'real' && JSON.parse(b.conn.ctl).main.length === 3; }));
   await page.evaluate(() => { App.setMode('PROG'); App.openNew(Examples.EX.plcmotor.build()); });
+
+  console.log('v2.0 part C: simulated network, MSG, produced / consumed');
+  await page.evaluate(() => {
+    App.openNew({ name: 'Net', net: { remotes: [{ node: 2, name: 'filler', data: [5, 6, 7, 8] }, { node: 2, name: 'dup' }, { node: 12, name: 'bad' }], links: [{ dir: 'consume', node: 2, remote: 0, local: 20, n: 2 }, { dir: 'produce', node: 2, remote: 10, local: 0, n: 1 }, { dir: 'consume', node: 5, remote: 0, local: 0, n: 1 }] },
+      ladder: { rungs: [{ text: 'XIC B3:0/0 MSG READ #N7:10 2 #N7:0 4 R6:1' }, { text: 'XIC B3:0/1 MSG WRITE #N7:4 2 #N7:20 2 R6:2' }, { text: 'XIC B3:0/2 MSG READ #N7:12 7 #N7:0 1 R6:3' }] } });
+    App.setLayout('single'); App.showView('ladder');
+  }); await wait(150);
+  check('the network is cleaned on load (one node 2, links to missing nodes dropped)', await page.evaluate(() => { const n = App.project.net; return n.remotes.length === 1 && n.remotes[0].name === 'FILLER' && n.links.length === 2; }));
+  check('MSG verifies (READ / WRITE, files, node, control)', await page.evaluate(() => Ladder.verify(true)));
+  await page.evaluate(() => { App.setMode('RUN'); App.plc.write('N7:0', 99); App.plc.write('N7:4', 41); App.plc.write('N7:5', 42); App.plc.write('B3:0/0', 1); App.plc.write('B3:0/1', 1); App.plc.write('B3:0/2', 1); }); await wait(400);
+  check('MSG READ copies remote words into the local file and sets DN', await page.evaluate(() => [10, 11, 12, 13].map(i => App.plc.read('N7:' + i)).join() === '5,6,7,8' && App.plc.read('R6:1/DN') === 1));
+  check('MSG WRITE puts local words into the remote PLC', await page.evaluate(() => { const d = App.project.net.remotes[0].data; return d[20] === 41 && d[21] === 42 && App.plc.read('R6:2/DN') === 1; }));
+  check('MSG to a node that is not there sets ER', await page.evaluate(() => App.plc.read('R6:3/ER') === 1 && App.plc.read('R6:3/DN') === 0));
+  check('consumed words are copied in every scan, produced words go out', await page.evaluate(() => App.plc.read('N7:20') === 5 && App.plc.read('N7:21') === 6 && App.project.net.remotes[0].data[10] === 99));
+  await page.click('#view-ladder [data-act="network"]'); await wait(150);
+  check('Network shows Who Active with this computer, the controller and the remote PLC', await page.evaluate(() => { const t = document.querySelector('.modal .io-cfg').textContent; return t.includes('This computer') && t.includes('192.168.1.11') && t.includes('Remote PLC FILLER') && t.includes('192.168.1.12'); }));
+  await page.fill('.modal [data-rw="2:3"]', '77'); await page.dispatchEvent('.modal [data-rw="2:3"]', 'change'); await wait(100);
+  check('a remote word can be edited in the Network window', await page.evaluate(() => App.project.net.remotes[0].data[3] === 77));
+  await page.click('.modal [data-radd]'); await wait(100); await page.click('.modal-wrap:last-child .btn.primary'); await wait(150);
+  check('a remote PLC can be added (next free node)', await page.evaluate(() => App.project.net.remotes.some(r => r.node === 3)));
+  await page.evaluate(() => { document.querySelectorAll('.modal-wrap').forEach(m => m.remove()); App.setMode('PROG'); App.openNew(Examples.EX.plcmotor.build()); });
 
   console.log('v1.4 part 2: four workspaces');
   check('the Operator Panel is gone', !(await page.$('#view-panel')) && !(await page.$('.tabs [data-view="panel"]')) && !(await page.evaluate(() => 'PanelView' in window)));

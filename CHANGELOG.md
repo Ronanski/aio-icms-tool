@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **Simulated network (v2.0)** (Ladder → *🖧 Network*): **Who Active** list (this computer, the controller, the HMI terminal, remote PLCs with their IP addresses and status); **remote PLCs** (nodes 2–8, 32 N7 words each, editable); **produced / consumed** links that copy words every scan while the controller runs. No real ports are opened.
+- **MSG** instruction: READ / WRITE a block of N7 words of a remote PLC over the simulated network, with EN / DN / ER in an R6 control (ER when the node does not answer).
 - **Online with the controller (v2.0)** (Ladder → *Online*): **Simple** (as before: edits run at once) or **Realistic**: the controller keeps the program last downloaded, as with real PLC software.
   - Offline, edits change the project only; the status bar shows **OFFLINE · project ≠ controller**.
   - **⇄ Go Online** compares them and offers **Download** (writes the project into the controller; needs PROG and a project without errors), **Upload** (reads the controller program into the project) or **Compare**.

@@ -34,6 +34,13 @@
   };
   window.App = App;
   App.ctx.setMode = m => App.setMode(m);
+  // MSG instructions reach the remote PLCs of the simulated network through this hook
+  const remote = node => App.project && App.project.net && App.project.net.remotes.find(r => r.node === node);
+  App.plc.net = {
+    has: node => !!remote(node),
+    read: (node, off, n) => remote(node).data.slice(off, off + n),
+    write: (node, off, vals) => { const r = remote(node); vals.forEach((v, k) => { if (off + k < 32) r.data[off + k] = v; }); },
+  };
   // the HMI terminal in the Wiring shows and operates the HMI screen
   App.ctx.hmiMini = () => HMI.mini();
   App.ctx.hmiPress = (id, ev) => HMI.pressId(id, ev);
@@ -48,6 +55,16 @@
   const ID = /^[A-Za-z0-9_-]{1,40}$/;
   const HEX = /^#[0-9a-fA-F]{3,8}$/;
   const str = (v, n = 400) => (typeof v === 'string' || typeof v === 'number' ? String(v).slice(0, n) : '');
+  /* simulated network: remote PLCs (node 2–8, 32 N7 words each) and produced / consumed links */
+  function cleanNet(n) {
+    const o = isObj(n) ? n : {}, int = (v, lo, hi, d) => (Number.isInteger(v) && v >= lo && v <= hi ? v : d);
+    const remotes = arr(o.remotes).filter(isObj).filter(r => Number.isInteger(r.node) && r.node >= 2 && r.node <= 8)
+      .filter((r, i, a) => a.findIndex(x => x.node === r.node) === i).slice(0, 7)
+      .map(r => ({ node: r.node, name: str(r.name, 16).toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'PLC_' + r.node, data: Array.from({ length: 32 }, (_, i) => int(arr(r.data)[i], -32768, 32767, 0)) }));
+    const links = arr(o.links).filter(isObj).filter(l => (l.dir === 'consume' || l.dir === 'produce') && remotes.some(r => r.node === l.node))
+      .slice(0, 16).map(l => { const n = int(l.n, 1, 16, 1); return { dir: l.dir, node: l.node, remote: int(l.remote, 0, 32 - n, 0), local: int(l.local, 0, 32 - n, 0), n }; });
+    return { remotes, links };
+  }
   function buildProject(p) {
     if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
     const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
@@ -89,6 +106,7 @@
       name: str(p.name, 80).trim() || 'Untitled',
       ladder: { rungs, desc, files },
       tags,
+      net: cleanNet(p.net),
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
       conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) && typeof p.conn.ctl === 'string' && p.conn.ctl.length < 400000 ? p.conn.ctl : null },
       circuit: { comps, wires, seq: Math.max(seq(cir.seq), maxNum(comps), maxNum(wires)) },
@@ -129,6 +147,7 @@
       ladder: { rungs: p.ladder.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })), desc: p.ladder.desc,
         files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
       tags: p.tags || [],
+      net: p.net && (p.net.remotes.length || p.net.links.length) ? p.net : undefined,
       conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl } : undefined,
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
@@ -269,6 +288,49 @@
           if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
         el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); el.closest('.modal-wrap').remove(); App.organizer(); }; });
+      },
+    });
+  };
+  /* ---------- v2.0 part C: simulated network (who active, remote PLCs, produced / consumed) ---------- */
+  App.network = function () {
+    document.querySelectorAll('.modal-wrap[data-net]').forEach(m => m.remove());
+    const net = App.project.net, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io), c = App.project.conn;
+    const ip = n => `192.168.1.${10 + n}`;
+    const hmi = App.project.circuit.comps.some(x => x.type === 'hmiterm') || App.project.hmi.objects.length > 0;
+    const nodes = [
+      ['💻', 'This computer (programming)', '192.168.1.100', '—', c && c.mode === 'real' ? (App.conn.online ? 'Online with the controller' : 'Offline') : 'Simple connection'],
+      ['🖥', `Controller “${esc(App.project.name)}”`, ip(1), '1', `${r.cpu ? 'Modular rack' : r.ctl ? 'Compact PLC' : 'Soft PLC (no PLC in the Wiring)'} · ${App.plc.mode}${App.plc.powered ? '' : ' · no power'}`],
+      ...(hmi ? [['▭', 'HMI terminal', ip(9), '9', `${App.project.hmi.objects.length} objects · reads the controller tags`]] : []),
+      ...net.remotes.map(x => ['🖥', `Remote PLC ${esc(x.name)}`, ip(x.node), String(x.node), 'RUN · 32 words N7:0–31 for MSG and produced / consumed data']),
+    ];
+    const free = [2, 3, 4, 5, 6, 7, 8].find(n => !net.remotes.some(x => x.node === n));
+    const body = `<h5>Who Active</h5><table class="io-cfg"><tr><th></th><th>Device</th><th>IP address</th><th>Node</th><th>Status</th></tr>${nodes.map(n => `<tr><td>${n[0]}</td><td>${n[1]}</td><td><code>${n[2]}</code></td><td>${n[3]}</td><td>${n[4]}</td></tr>`).join('')}</table>
+      <h5>Remote PLCs</h5>${net.remotes.length ? net.remotes.map(x => `<div class="net-remote"><b>${esc(x.name)}</b> <small>node ${x.node}</small> <button class="tbtn sm" data-rdel="${x.node}">✕ Remove</button>
+        <div class="net-words">${x.data.slice(0, 16).map((v, i) => `<label><small>N7:${i}</small><input type="number" data-rw="${x.node}:${i}" value="${v}"></label>`).join('')}</div></div>`).join('') : '<p class="help">No remote PLC yet. A remote PLC is another controller on the network: MSG instructions read and write its N7 words, and produced / consumed links copy them every scan.</p>'}
+      ${free ? `<button class="btn" data-radd="${free}">＋ Remote PLC (node ${free})</button>` : ''}
+      <h5>Produced / consumed data</h5>${net.links.length ? `<table class="io-cfg"><tr><th></th><th>Remote</th><th></th><th>Local</th><th>Words</th><th></th></tr>${net.links.map((l, i) => `<tr><td>${l.dir === 'consume' ? 'Consumed' : 'Produced'}</td><td>${esc((net.remotes.find(x => x.node === l.node) || {}).name)} N7:${l.remote}</td><td>${l.dir === 'consume' ? '→' : '←'}</td><td>N7:${l.local}</td><td>${l.n}</td><td><button class="tbtn sm" data-ldel="${i}">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No links.</p>'}
+      ${net.remotes.length ? '<button class="btn" data-ladd>＋ Link</button>' : ''}
+      <p class="help">The network is simulated: no real ports are opened. Addresses follow 192.168.1.(10 + node).</p>`;
+    UI.modal({
+      title: 'Network', wide: true, body,
+      onOpen: el => {
+        el.closest('.modal-wrap').dataset.net = '1';
+        const done = () => { App.save(); App.network(); };
+        el.querySelectorAll('[data-rw]').forEach(i => { i.onchange = () => { const [n, w] = i.dataset.rw.split(':').map(Number), x = net.remotes.find(q => q.node === n); x.data[w] = Math.max(-32768, Math.min(32767, Math.round(Number(i.value) || 0))); App.save(); }; });
+        el.querySelectorAll('[data-rdel]').forEach(b => { b.onclick = () => { const n = Number(b.dataset.rdel); net.remotes = net.remotes.filter(x => x.node !== n); net.links = net.links.filter(l => l.node !== n); App.log('system', `Network: remote PLC node ${n} removed`); done(); }; });
+        const add = el.querySelector('[data-radd]');
+        if (add) add.onclick = () => UI.form('New remote PLC', [{ key: 'n', label: 'Name', value: 'PLC_' + add.dataset.radd }], v => { net.remotes.push({ node: Number(add.dataset.radd), name: v.n.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 16) || 'PLC_' + add.dataset.radd, data: new Array(32).fill(0) }); App.log('system', `Network: remote PLC node ${add.dataset.radd} added`); done(); return undefined; });
+        el.querySelectorAll('[data-ldel]').forEach(b => { b.onclick = () => { net.links.splice(Number(b.dataset.ldel), 1); done(); }; });
+        const la = el.querySelector('[data-ladd]');
+        if (la) la.onclick = () => UI.form('New produced / consumed link', [
+          { key: 'dir', label: 'Direction', value: 'consume', options: [{ v: 'consume', l: 'Consumed: remote → this controller' }, { v: 'produce', l: 'Produced: this controller → remote' }] },
+          { key: 'node', label: 'Remote PLC', value: net.remotes[0].node, options: net.remotes.map(x => ({ v: x.node, l: `${x.name} (node ${x.node})` })) },
+          { key: 'remote', label: 'Remote first word N7:', value: '0', type: 'number' }, { key: 'local', label: 'Local first word N7:', value: '10', type: 'number' }, { key: 'n', label: 'Words', value: '4', type: 'number' },
+        ], v => {
+          const n = Math.round(Number(v.n)), ro = Math.round(Number(v.remote)), lo = Math.round(Number(v.local));
+          if (!(n >= 1 && n <= 16) || !(ro >= 0 && ro + n <= 32) || !(lo >= 0 && lo + n <= 32)) return 'Words 1–16, and every word within N7:0–31';
+          net.links.push({ dir: v.dir, node: Number(v.node), remote: ro, local: lo, n }); App.log('system', `Network: ${v.dir} link added`); done(); return undefined;
+        });
       },
     });
   };
@@ -557,6 +619,12 @@
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
     }
     plc.scan(dt);
+    // produced / consumed data: copied every scan while the controller runs
+    const net = App.project.net;
+    if (net && net.links.length && plc.mode === 'RUN' && plc.powered) for (const l of net.links) {
+      const r = net.remotes.find(x => x.node === l.node); if (!r) continue;
+      for (let k = 0; k < l.n; k++) { if (l.dir === 'consume') plc.data.N7[l.local + k] = r.data[l.remote + k]; else r.data[l.remote + k] = plc.data.N7[l.local + k]; }
+    }
     App.ticks++;
     for (let i = pending.length - 1; i >= 0; i--) if (pending[i].at <= App.ticks) pending.splice(i, 1)[0].fn();
   }

@@ -154,12 +154,12 @@
       else if (p && p.kind === 'word') {
         o.push(`<text class="baddr" x="${bx + 78}" y="${ry}">${esc(p.norm)}</text>`);
         o.push(`<text class="bval" data-v="${p.norm}" x="${bx + BOXW - 8}" y="${ry}">0</text>`);
-      } else o.push(`<text class="bval${p ? '' : ' bad'}" x="${bx + BOXW - 8}" y="${ry}">${esc(p ? p.norm : raw)}</text>`);
+      } else o.push(`<text class="bval${p || !validArg(spec.ty, raw) ? '' : ' bad'}" x="${bx + BOXW - 8}" y="${ry}">${esc(p ? p.norm : String(raw).toUpperCase())}</text>`);
     });
     const rx = bx + BOXW;
     o.push(hw(rx, x + BW, wy, 'o' + id));
     if (d.bits) {
-      const p0 = parse(e.a[e.t === 'SQO' ? 3 : 0]);
+      const p0 = parse(e.a[e.t === 'SQO' ? 3 : e.t === 'MSG' ? 5 : 0]);
       const base = p0 && p0.kind === 'struct' ? p0.norm : '';
       d.bits.forEach((b, k) => {
         const yy = wy + k * 22;
@@ -525,7 +525,7 @@
     const e = f.e, d = INSTR[e.t];
     const first = parse(e.a[0]);
     const descKey = first && first.kind !== 'const' ? first.norm : null;
-    const fields = d.args.map((spec, k) => ({ key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
+    const fields = d.args.map((spec, k) => (spec.ty === 'mtype' ? { key: 'a' + k, label: spec.n, value: e.a[k], options: ['READ', 'WRITE'] } : { key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
     fields.push({ key: 'desc', label: 'Address description (optional)', value: descKey ? (App.project.ladder.desc[descKey] || '') : '', hint: 'Shown above the instruction, e.g. "START PB" or "MOTOR RUN".' });
     const m = UI.form(`${e.t} — ${d.name}`, fields, vals => {
       const a = [];
@@ -535,7 +535,7 @@
         const err = validArg(d.args[k].ty, v);
         if (err) return `${d.args[k].n}: ${err}`;
         const p = parse(v);
-        a.push(p.kind === 'const' ? v : p.norm);
+        a.push(!p || p.kind === 'const' ? v : p.norm);   // READ / WRITE of a MSG are not addresses
       }
       if (!isNew) snapshot();
       e.a = a;
@@ -645,7 +645,7 @@
     ['Timer/Counter', ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES']],
     ['Compare', ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM']],
     ['Math/Move', ['MOV', 'ADD', 'SUB', 'MUL', 'DIV', 'CLR']],
-    ['File/Seq', ['COP', 'FLL', 'SQO']],
+    ['File/Seq', ['COP', 'FLL', 'SQO', 'MSG']],
     ['Program', ['JSR', 'SBR', 'RET', 'MCR']],
   ];
   const ICON = {
@@ -657,7 +657,7 @@
     el.innerHTML = `
       <div class="lad-toolbar">
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
-        <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
+        <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><button class="tbtn" data-act="network" title="Network: who active, remote PLCs, produced / consumed data">🖧 Network</button><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-act="data" title="Data files and forces">▤ Data</button>
           <button class="tbtn" data-act="rung" title="New rung (Ctrl+R)">＋ Rung</button>
@@ -699,7 +699,7 @@
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
         ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(), tags: () => App.tagsDialog(),
-        online: () => App.goOnline(), download: () => App.download(), upload: () => UI.confirm('Upload', 'Replace the ladder and the tags of the project with the program in the controller?', () => App.upload(), 'Upload'), compare: () => App.compare(),
+        network: () => App.network(), online: () => App.goOnline(), download: () => App.download(), upload: () => UI.confirm('Upload', 'Replace the ladder and the tags of the project with the program in the controller?', () => App.upload(), 'Upload'), compare: () => App.compare(),
         test: () => App.testEdits(), assemble: () => App.assembleEdits(), cancel: () => App.cancelEdits(),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
