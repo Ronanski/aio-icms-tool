@@ -73,6 +73,32 @@
         `<g class="part" data-part="sw" transform="translate(56 34)"><circle r="12" fill="#e3e0d8" stroke="#222"/><rect x="-3" y="-10" width="6" height="20" rx="3" fill="${on ? '#c0392b' : '#4a4a4a'}" transform="rotate(${on ? 90 : 0})"/></g>`;
     },
   });
+  def('battery', {
+    name: 'Battery 24 V', cat: 'Power', view: 'power', prefix: 'GB', w: 90, h: 60,
+    info: '24 V DC battery: + and −. A DC source on its own, like the 24 V supply, for DC control circuits and DC motors.',
+    terms: [{ id: 'P', x: 25, y: 0, l: '+' }, { id: 'M', x: 65, y: 0, l: '−' }],
+    init: () => ({ on: true }),
+    sources: c => ({ P: 'DC+:' + c.id, M: 'DC-:' + c.id }),
+    draw() {
+      return R(0, 8, 90, 52, '#2b2d30', 6, '#111') + R(14, 0, 22, 10, '#c0392b', 2, '#111') + R(54, 0, 22, 10, '#2b2d30', 2, '#111') +
+        T(45, 38, '24 V', 'dt light big') + T(25, 24, '+', 'dt light') + T(65, 24, '−', 'dt light');
+    },
+    status: () => '24 V DC',
+  });
+  def('gen3', {
+    name: '3-Phase Generator', cat: 'Power', view: 'power', prefix: 'G', w: 140, h: 80,
+    info: 'Generator set 400/230 V, 60 Hz: L1 L2 L3 N PE. Click START/STOP to run it; it supplies like the 3-phase supply while it runs.',
+    terms: [{ id: 'L1', x: 20, y: 80 }, { id: 'L2', x: 40, y: 80 }, { id: 'L3', x: 60, y: 80 }, { id: 'N', x: 90, y: 80 }, { id: 'PE', x: 120, y: 80 }],
+    init: () => ({ on: false }),
+    sources: c => c.state.on ? { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N', PE: 'PE' } : null,
+    onPart(c, p, ev) { if (ev === 'down' && p === 'run') { c.state.on = !c.state.on; return true; } },
+    draw(c) {
+      const on = c.state.on;
+      return R(0, 0, 140, 80, '#c9a227', 6, '#6b5512') + R(8, 8, 76, 52, '#2b2d30', 4, '#111') + T(46, 30, 'GS 3~', 'dt light big') + T(46, 48, '400/230 V', 'dt light xs') +
+        led(110, 18, on, '#3ddc63') + btn('run', 92, 32, 42, 18, on ? 'STOP' : 'START', on);
+    },
+    status: c => (c.state.on ? 'Running — 400/230 V' : 'Stopped'),
+  });
   def('psu24', {
     name: '24VDC Power Supply', cat: 'Power', view: 'cabinet', prefix: 'G', w: 110, h: 90,
     info: 'Switch-mode PSU. Input L/N 230 VAC → output +24 V / 0 V. Two terminals each for convenience.',
@@ -1247,6 +1273,25 @@
     tick: (c, api, dt) => motorTick(c, dt),
     onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
     draw: c => motorBox(c, 100, 'M 1~', '230 V') + (c.state.burnt ? burnt(100, 120) : ''),
+    status: c => c.state.burnt ? 'Burnt' : motorStatus(c.state),
+  });
+  def('motordc', {
+    name: 'DC Motor 24 V', cat: 'Equipment', view: 'plant', prefix: 'M', w: 100, h: 120,
+    info: 'Permanent-magnet DC motor: A1 (+) and A2 (−). Runs on 24 V DC; swap the polarity to reverse it. AC destroys it. Click JAM to simulate a jam.',
+    terms: [{ id: 'A1', x: 30, y: 0, l: 'A1+' }, { id: 'A2', x: 60, y: 0, l: 'A2−' }],
+    init: () => ({ spd: 0, ang: 0, drive: 'off', dir: 0, jam: false, burnt: false }),
+    transient: ['spd', 'drive', 'dir'],
+    evaluate(c, api) {
+      const v = api.v(c, 'A1', 'A2'), s = c.state;
+      if (v && v.kind === 'AC' && !s.burnt) { s.burnt = true; api.alert(`${c.props.label}: DC motor burnt — ${v.label} on a 24 V DC motor`, 'danger'); }
+      const run = !!(v && v.kind === 'DC') && !s.burnt;
+      s.drive = run ? 'run' : 'off'; s.dir = run ? (v.rev ? -1 : 1) : 0;
+      if (run && s.jam) api.overM.push({ c, t: ['A1'] });
+      return false;
+    },
+    tick: (c, api, dt) => motorTick(c, dt),
+    onPart(c, p, ev) { if (p === 'jam' && ev === 'down') { c.state.jam = !c.state.jam; return true; } },
+    draw: c => motorBox(c, 100, 'M =', '24 V DC') + (c.state.burnt ? burnt(100, 120) : ''),
     status: c => c.state.burnt ? 'Burnt' : motorStatus(c.state),
   });
   /* two speeds: separate windings (1U 1V 1W slow, 2U 2V 2W fast) or Dahlander (one tapped winding:

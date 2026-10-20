@@ -583,7 +583,7 @@
       <div class="lad-toolbar sch-toolbar">
         <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select">✎ Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols">☝ Operate</button></div>
           <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit">⇵ IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung">⇄ Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal">✎ Free draw</button></div></div>
-        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Add a symbol">＋ Library ▾</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="copy" title="Copy the selected symbol (D)">⧉</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦ Library</button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶ Play</button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎ Values</button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉ Duplicate</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑 Delete</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶ Undo</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷ Redo</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -601,9 +601,20 @@
     UI.drawer(el.querySelector('[data-sact="side"]'), side);
     el.querySelector('.sch-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
-      if (b.dataset.smode) { mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run'); return; }
+      if (b.dataset.smode) {
+        mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run');
+        const pl = el.querySelector('[data-fdact="play"]'); pl.classList.toggle('on', mode === 'run'); pl.textContent = mode === 'run' ? '■ Stop' : '▶ Play';
+        return;
+      }
       if (b.dataset.sstyle) { style = b.dataset.sstyle; try { localStorage.setItem('plc-trainer.schStyle', style); } catch (err) { /* private mode */ } setStyleUi(); SC.render(); return; }
-      if (b.dataset.fdact) { if (b.dataset.fdact === 'lib') { const r = b.getBoundingClientRect(); FreeDraw.library(r.left, r.bottom + 4); } else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, copy: FreeDraw.copy, del: FreeDraw.del })[b.dataset.fdact](); return; }
+      if (b.dataset.fdact) {
+        const a = b.dataset.fdact;
+        if (a === 'lib') b.classList.toggle('on', FreeDraw.toggleLib());
+        else if (a === 'play') el.querySelector(`[data-smode="${mode === 'run' ? 'edit' : 'run'}"]`).click();
+        else if (a === 'values') { FreeDraw.values = !FreeDraw.values; b.classList.toggle('on', FreeDraw.values); renderRungs(); }
+        else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, copy: FreeDraw.copy, del: FreeDraw.del, front: () => FreeDraw.order(true), back: () => FreeDraw.order(false) })[a]();
+        return;
+      }
       if (b.dataset.skind) return SC.insert(b.dataset.skind);
       if (b.dataset.pkind) return SC.insertPower(b.dataset.pkind);
       ({ feeder: () => SC.addFeeder(), rung: () => SC.addRung(), branch: SC.branch, ml: () => SC.move(-1), mr: () => SC.move(1), del: SC.del, undo: SC.undo, redo: SC.redo })[b.dataset.sact]?.();
@@ -662,6 +673,7 @@
     root.querySelectorAll('[data-sstyle]').forEach(x => x.classList.toggle('on', x.dataset.sstyle === style));
     root.querySelector('.pw-group').hidden = style !== 'iec';
     root.classList.toggle('free-style', style === 'free');
+    const lb = root.querySelector('[data-fdact="lib"]'); if (lb) lb.classList.toggle('on', FreeDraw.libOpen());
   }
   /* power elements are found by "m.i" (main section) or "f.feeder.i" */
   function pByPath(p) {

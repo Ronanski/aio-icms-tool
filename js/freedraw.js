@@ -17,12 +17,20 @@
   });
   const sens = (type, out, n, photo) => ({ type, pre: 'B', look: 'sens', label: out, photo, part: 'tgt', n, terms: [{ id: 'BN', x: 0, y: -30 }, { id: 'BU', x: 0, y: 30 }, { id: 'BK', x: 30, y: 0 }] });
   const row = (ids, y, gap = 20) => ids.map((t, i) => ({ id: t, x: (i - (ids.length - 1) / 2) * gap, y, src: true }));
+  // a potential point (L1, N, +24 V…): a junction wired to that conductor of the supply in the Wiring
+  const pot = (p, n) => ({ n, type: 'jct', pre: 'XP', look: 'pot', pot: p, jct: true, auto: true, terms: [{ id: 'J', x: 0, y: -30 }] });
+  // wire pieces: junctions with several ends (all one point); a link arrow joins every arrow with the same tag
+  const wire = (n, ends, extra) => ({ n, type: 'jct', pre: 'J', look: 'wire', jct: true, auto: true, terms: ends.map(([x, y], i) => ({ id: 'J' + i, x, y })), ...extra });
   const LIB = {
     Sources: {
       // supply terminals line up with the poles of the devices under them (L1 L2 L3 at -20 0 20)
       src3: { n: '3-phase supply', type: 'supply3', pre: 'Q', look: 'src', label: '3~ 400/230V', terms: ['L1', 'L2', 'L3', 'N', 'PE'].map((t, i) => ({ id: t, x: -20 + i * 20, y: 20, src: true })), part: 'sw' },
       src1: { n: '1-phase supply 230V', type: 'supply1', pre: 'Q', look: 'src', label: '1~ 230V', terms: ['L', 'N', 'PE'].map((t, i) => ({ id: t, x: -10 + i * 20, y: 20, src: true })), part: 'sw' },
-      psu: { n: '24 V DC power supply', type: 'psu24', pre: 'G', look: 'src', label: '230V~ / 24V=', terms: [...row(['L', 'N'], -20), ...row(['P1', 'M1'], 20)] },
+      psu: { n: 'AC/DC converter 230V~ / 24V= (power supply)', type: 'psu24', pre: 'G', look: 'conv', terms: [...row(['L', 'N'], -30), ...row(['P1', 'M1'], 30)] },
+      gen: { n: 'Generator 3~ (GS)', type: 'gen3', pre: 'G', look: 'gen', label: 'GS\n3~', terms: [...row(['L1', 'L2', 'L3', 'N'], 34), { id: 'PE', x: 44, y: 0, src: true }], part: 'run' },
+      batt: { n: 'Battery 24 V', type: 'battery', pre: 'GB', look: 'batt', terms: [{ id: 'P', x: 0, y: -30, src: true }, { id: 'M', x: 0, y: 30, src: true }] },
+      pL1: pot('L1', 'Point L1'), pL2: pot('L2', 'Point L2'), pL3: pot('L3', 'Point L3'), pN: pot('N', 'Point N'), pPE: pot('PE', 'Point PE'),
+      pP: pot('+', 'Point +24 V'), pM: pot('-', 'Point 0 V'),
     },
     Switches: {
       pbno: two('pb_no', '13', '14', 'no', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button N.O.' }),
@@ -119,9 +127,14 @@
       rcbo: poles('rcbo', ['1', '3'], ['2', '4'], 'rcd', 'QF', { n: 'RCBO 2P (RCD + MCB)', part: 'h' }),
     },
     Others: {
-      node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', terms: [{ id: 'J', x: 0, y: 0 }] },
+      node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', jct: true, auto: true, terms: [{ id: 'J', x: 0, y: 0 }] },
+      wline: wire('Wire (straight)', [[0, -30], [0, 30]]),
+      wcorner: wire('Wire corner', [[0, -30], [30, 0]]),
+      wtee: wire('Wire T (junction)', [[-30, 0], [30, 0], [0, 30]]),
+      wcross: wire('Wire cross (junction)', [[-30, 0], [30, 0], [0, -30], [0, 30]]),
+      wlink: wire('Link arrow (same tag = connected)', [[0, -30]], { pre: 'W', auto: false, arrow: true }),
       // protective earth: wired to the PE of the supply
-      gnd: { n: 'Protective earth (PE)', type: 'jct', pre: 'PE', look: 'gnd', terms: [{ id: 'J', x: 0, y: -20, pe: true }] },
+      gnd: { n: 'Protective earth (PE)', type: 'jct', pre: 'PE', look: 'gnd', jct: true, auto: true, pot: 'PE', terms: [{ id: 'J', x: 0, y: -20 }] },
       // a note on the drawing, no device
       text: { n: 'Text', type: null, pre: 'TXT', look: 'text', terms: [] },
     },
@@ -130,6 +143,7 @@
       m3: { n: 'Motor 3~', type: 'motor', pre: 'M', look: 'motor', label: 'M\n3~', terms: [...row(['U1', 'V1', 'W1'], -34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
       m6: { n: 'Motor star-delta', type: 'motor6', pre: 'M', look: 'motor', label: 'M 3~\nY-Δ', terms: [...row(['U1', 'V1', 'W1'], -34), ...row(['W2', 'U2', 'V2'], 34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
       m2s: { n: 'Motor two speeds', type: 'motor2s', pre: 'M', look: 'motor', label: 'M 3~\n2 speeds', terms: [...row(['1U', '1V', '1W'], -34), ...row(['2U', '2V', '2W'], 34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
+      mdc: { n: 'Motor DC 24 V', type: 'motordc', pre: 'M', look: 'motor', label: 'M\n=', terms: row(['A1', 'A2'], -34), part: 'jam' },
       mdh: { n: 'Motor Dahlander', type: 'dahlander', pre: 'M', look: 'motor', label: 'M 3~\nDahlander', terms: [...row(['1U', '1V', '1W'], -34), ...row(['2U', '2V', '2W'], 34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
     },
   };
@@ -184,41 +198,62 @@
   const routeLen = (a, pts, b) => { const P = [a, ...pts.map(([x, y]) => ({ x, y })), b]; let n = 0; for (let i = 1; i < P.length; i++) n += Math.abs(P[i].x - P[i - 1].x) + Math.abs(P[i].y - P[i - 1].y); return n; };
 
   /* ---------- checks and wiring into the circuit ---------- */
+  // the supply terminal a potential point is wired to: [device type, terminal] in order of preference
+  const POT = {
+    L1: [['supply3', 'L1'], ['supply1', 'L'], ['gen3', 'L1']], L2: [['supply3', 'L2'], ['gen3', 'L2']], L3: [['supply3', 'L3'], ['gen3', 'L3']],
+    N: [['supply3', 'N'], ['supply1', 'N'], ['gen3', 'N']], PE: [['supply3', 'PE'], ['supply1', 'PE'], ['gen3', 'PE']],
+    '+': [['psu24', 'P1'], ['mpsu', 'V24'], ['plc', 'V24'], ['battery', 'P']], '-': [['psu24', 'M1'], ['mpsu', 'C24'], ['plc', 'C24'], ['battery', 'M']],
+  };
+  const POTNAME = { '+': '+24 V', '-': '0 V' };
+  function potKey(p) {
+    for (const [t, term] of POT[p] || []) { const c = H.circ().comps.find(x => x.type === t); if (c) return c.id + ':' + term; }
+    return null;
+  }
   function check() {
     const errs = new Map(), used = new Map();
     for (const it of fr().items) {
       const S = K[it.k], dev = H.devOf(it.tag);
       if (!S.type) continue;
+      if (S.pot && !potKey(S.pot)) { errs.set(it, `${POTNAME[S.pot] || S.pot}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
+      if (S.jct) { if (dev && dev.type !== 'jct') errs.set(it, `${it.tag} is a ${DEFS[dev.type].name} in the Wiring, not a wire point`); continue; }
       if (dev && dev.type !== S.type) { errs.set(it, `${it.tag} is a ${DEFS[dev.type].name} in the Wiring, not a ${DEFS[S.type].name}`); continue; }
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
-      if (used.has(key) && S.look !== 'src') errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
+      if (used.has(key) && !['src', 'conv', 'gen', 'batt'].includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
       used.set(key, it);
     }
     return errs;
   }
   FD.sync = function (addWire, ensureType, ctlColor) {
     if (!H) return;
-    const F = fr(), errs = check(), col = Circuit.POT_COLORS;
+    const F = fr(), col = Circuit.POT_COLORS;
+    // devices first (a supply drawn on this sheet must exist before a potential point looks for it), then the checks
+    const e0 = check();
+    for (const it of F.items) if (K[it.k].type && !K[it.k].pot && !e0.has(it)) ensureType(K[it.k].type, it.tag);
+    const errs = check();
     FD.errs = errs;
     const key = e => {
       const [id, t] = e.split(':'), it = itemOf(id);
       if (!it || errs.has(it)) return null;
-      const c = ensureType(K[it.k].type, it.tag);
-      const tm = K[it.k].terms.find(q => q.id === t);
-      return { k: c.id + ':' + t, pole: tm && tm.pole, src: tm && tm.src ? t : tm && tm.pe ? 'PE' : null };
+      const S = K[it.k], c = ensureType(S.type, it.tag);
+      const tm = S.terms.find(q => q.id === t);
+      // every end of a wire piece or potential point is the one terminal J of its junction
+      const src = S.pot ? { '+': 'P1', '-': 'M1' }[S.pot] || S.pot : tm && tm.src ? t : null;
+      return { k: c.id + ':' + (S.jct ? 'J' : t), pole: tm && tm.pole, src };
     };
-    // a placed symbol is a device in the Wiring even before it is wired; an earth symbol is wired to the PE of the supply
+    // a placed symbol is a device in the Wiring even before it is wired; a potential point (earth, L1, +24 V…) is wired to that supply conductor
     const ok = F.items.filter(it => !errs.has(it) && K[it.k].type);
     for (const it of ok) ensureType(K[it.k].type, it.tag);
-    const sup = H.circ().comps.find(c => c.type === 'supply3' || c.type === 'supply1');
-    if (sup) for (const it of ok) if (K[it.k].look === 'gnd') addWire(ensureType('jct', it.tag).id + ':J', sup.id + ':PE', col.PE);
+    for (const it of ok) {
+      const p = K[it.k].pot, sk = p && potKey(p);
+      if (sk) addWire(ensureType('jct', it.tag).id + ':J', sk, col[{ '+': 'DC+', '-': 'DC-' }[p] || p]);
+    }
     for (const w of F.wires) {
       const a = key(w.a), b = key(w.b);
       if (!a || !b) continue;
       // colour: the supply conductor it starts from, a pole of a 3-pole device (L1 L2 L3), else control wiring
       const s = a.src || b.src, p = a.pole != null && K[itemOf(w.a.split(':')[0]).k].np === 3 ? a.pole : b.pole != null && K[itemOf(w.b.split(':')[0]).k].np === 3 ? b.pole : null;
-      const ph = s === 'L' ? 'L1' : s === 'P1' ? 'DC+' : s === 'M1' ? 'DC-' : s;
+      const ph = s === 'L' ? 'L1' : s === 'P1' || s === 'P' ? 'DC+' : s === 'M1' || s === 'M' ? 'DC-' : s;
       addWire(a.k, b.k, (ph && col[ph]) || (p != null ? col[['L1', 'L2', 'L3'][p]] : ctlColor));
     }
   };
@@ -227,7 +262,7 @@
   let body = null, svg = null, gv = null, view = { x: 60, y: 60, k: 1 }, sel = null, wiring = null, drag = null, lastSig = '';
   FD.init = function (hooks) { H = hooks; window.addEventListener('pointerup', () => { if (held) { held(); held = null; } }); };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
-  function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + t : null; }
+  function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
   function stateOf(it) {
     const S = K[it.k];
     if (!S.type) return { on: false };
@@ -235,10 +270,10 @@
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
     if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
-    if (S.look === 'node' || S.look === 'gnd') return { on: live(d.id + ':J') };
+    if (S.jct) return { on: live(d.id + ':J') };
     if (S.look === 'motor') return { on: st.drive === 'run' || (S.type === 'fan' && !!st.on) };
     if (S.look === 'sens') return { on: !!st.act };
-    if (S.look === 'src') return { on: !!(st.on || st.ok) };
+    if (['src', 'conv', 'gen', 'batt'].includes(S.look)) return { on: !!(st.on || st.ok || S.look === 'batt') };
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
     return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
@@ -268,6 +303,18 @@
       if (S.act) o.push(`<path class="thin dash" d="M${S.look === 'nc' ? 6 : -6} 0 H-26"/>`, actMark(S.act, -26));
     } else if (S.look === 'node') {
       o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
+    } else if (S.look === 'pot') {
+      o.push(stub(0, -30, -11), `<circle cx="0" cy="0" r="11"/>`);
+    } else if (S.look === 'wire') {
+      o.push(...S.terms.map(t => `<path d="M0 0 L${t.x} ${t.y}"/>`));
+      if (S.terms.length > 2) o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
+      if (S.arrow) o.push(`<path d="M-8 0 L8 0 L0 14 Z" class="fill"/>`);
+    } else if (S.look === 'conv') {
+      o.push(stub(-10, -30, -18), stub(10, -30, -18), stub(-10, 18, 30), stub(10, 18, 30), `<rect x="-24" y="-18" width="48" height="36"/><path class="thin" d="M-24 18 L24 -18 M-18 -8 q3 -5 6 0 t6 0 M6 8 h12 M6 12 h12"/>`);
+    } else if (S.look === 'batt') {
+      o.push(stub(0, -30, -6), stub(0, 4, 30), `<path d="M-14 -6 H14"/><path d="M-7 4 H7" stroke-width="4"/><path class="thin" d="M10 -16 h6 M13 -19 v6"/>`);
+    } else if (S.look === 'gen') {
+      o.push(`<circle cx="0" cy="0" r="22"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} 20"/>`), `<path class="pe" d="M22 0 H44"/>`);
     } else if (S.look === 'gnd') {
       o.push(`<path class="pe" d="M0 -20 V0 M-10 0 H10 M-6 4 H6 M-2 8 H2"/>`);
     } else if (S.look === 'text') {
@@ -294,7 +341,7 @@
       o.push(`<rect x="${x1}" y="-12" width="${x2 - x1}" height="24" rx="4"/>`, ...S.terms.map(t => stub(t.x, t.y < 0 ? -20 : 12, t.y < 0 ? -12 : 20)));
     } else if (S.look === 'motor') {
       o.push(`<circle cx="0" cy="0" r="22" class="${st.on ? 'mon' : ''}"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} ${t.y < 0 ? -20 : 20}"/>`));
-      o.push(`<path class="pe" d="M22 0 H40 M40 0 V8 M33 8 H47 M36 12 H44 M39 16 H41"/>`);
+      if (S.terms.some(t => t.id === 'PE')) o.push(`<path class="pe" d="M22 0 H40 M40 0 V8 M33 8 H47 M36 12 H44 M39 16 H41"/>`);
     } else {
       // multi-pole power device: one symbol per pole and a dashed link
       S.terms.filter(t => t.y < 0).forEach(t => {
@@ -317,32 +364,96 @@
     return o.join('');
   }
   function labels(it, S) {
-    if (S.look === 'node') return '';
+    if (S.look === 'node' || (S.look === 'wire' && !S.arrow)) return '';
+    if (S.look === 'pot') return `<text class="mtxt sm" x="${it.x}" y="${it.y + 4}">${esc(POTNAME[S.pot] ? (S.pot === '+' ? '+' : '−') : S.pot)}</text>`;
+    if (S.arrow) { const [x, y] = rot(14, 10, it.r); return `<text class="ftag start" x="${it.x + x}" y="${it.y + y}">${esc(it.tag)}</text>`; }
     if (S.look === 'text') return `<text class="ftext" x="${it.x}" y="${it.y + 4}">${esc(it.txt || '')}</text>`;
     // upright text at rotated positions
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
     const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter', 'sens'].includes(S.look);
-    const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' ? at(-30, -14) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
+    const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
-    if (S.look === 'motor') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
+    if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     // meter letter, S/R of a latching coil (in the symbol), PNP/NPN of a sensor (beside it)
     if (S.label && ['meter', 'coil', 'sens'].includes(S.look)) { const [mx, my] = S.look === 'sens' ? at(26, -16) : at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     S.terms.forEach(t => {
-      const lx = t.x + (t.id === 'PE' && S.look === 'motor' ? 2 : 5), ly = t.y + (t.y < 0 ? -2 : t.y > 0 ? 10 : -6);
+      const lx = t.x + (t.id === 'PE' && (S.look === 'motor' || S.look === 'gen') ? 2 : 5), ly = t.y + (t.y < 0 ? -2 : t.y > 0 ? 10 : -6);
       const [x, y] = at(lx, ly);
       o.push(`<text class="sterm" x="${x}" y="${y}">${esc(t.id)}</text>`);
     });
     return o.join('');
   }
+  /* ---------- library panel (icon grid by group) and zoom buttons around the drawing ---------- */
+  const GROUPS = Object.keys(LIB);
+  let libUi = { open: innerWidth > 760, grp: 'All' };
+  try { const v = JSON.parse(localStorage.getItem('plc-trainer.fdLib') || 'null'); if (v && typeof v === 'object') libUi = { open: v.open !== false, grp: GROUPS.includes(v.grp) ? v.grp : 'All' }; } catch (e) { /* private mode */ }
+  const saveLib = () => { try { localStorage.setItem('plc-trainer.fdLib', JSON.stringify(libUi)); } catch (e) { /* private mode */ } };
+  const slug = g => g.toLowerCase();
+  function icon(k) {
+    const S = K[k], it = { id: 'i', k, tag: '', x: 0, y: 0, r: 0, txt: 'Text' };
+    const xs = S.terms.map(t => t.x), ys = S.terms.map(t => t.y);
+    const big = ['motor', 'gen'].includes(S.look) ? 48 : 30;
+    const x1 = Math.min(-big, ...xs) - 10, x2 = Math.max(big, ...xs) + 10, y1 = Math.min(-30, ...ys) - 10, y2 = Math.max(30, ...ys) + 10;
+    return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg></button>`;
+  }
+  function libHtml() {
+    const ks = Object.keys(K).filter(k => libUi.grp === 'All' || K[k].g === libUi.grp);
+    return `<select class="fd-grp" aria-label="Symbol group"><option value="All">All</option>${GROUPS.map(g => `<option value="${g}" ${g === libUi.grp ? 'selected' : ''}>${g}</option>`).join('')}</select><div class="fd-grid">${ks.map(icon).join('')}</div>`;
+  }
+  function shell(el) {
+    el.innerHTML = `<div class="fd-wrap${libUi.open ? '' : ' nolib'}"><aside class="fd-lib">${libHtml()}</aside><div class="fd-canvas"><div class="fd-host"></div>
+      <div class="fd-zoom"><button class="tbtn" data-fz="out" title="Zoom out" aria-label="Zoom out">−</button><button class="tbtn" data-fz="fit" title="Fit the drawing">⤢</button><button class="tbtn" data-fz="in" title="Zoom in" aria-label="Zoom in">＋</button></div></div></div>`;
+    const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
+    lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
+    lib.addEventListener('click', ev => { const b = ev.target.closest('[data-fk]'); if (b && H.mode() === 'edit') FD.add(b.dataset.fk); });
+    lib.addEventListener('dragstart', ev => { const b = ev.target.closest('[data-fk]'); if (b) { ev.dataTransfer.setData('text/fd-sym', b.dataset.fk); ev.dataTransfer.effectAllowed = 'copy'; } });
+    host.addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('text/fd-sym')) ev.preventDefault(); });
+    host.addEventListener('drop', ev => { const k = ev.dataTransfer.getData('text/fd-sym'); if (!K[k] || !svg) return; ev.preventDefault(); const p = world(ev); FD.add(k, undefined, snap10(p.x), snap10(p.y)); });
+    el.querySelector('.fd-zoom').addEventListener('click', ev => { const b = ev.target.closest('[data-fz]'); if (b) FD.zoom(b.dataset.fz); });
+  }
+  FD.toggleLib = function () { libUi.open = !libUi.open; saveLib(); const w = body && body.querySelector('.fd-wrap'); if (w) w.classList.toggle('nolib', !libUi.open); return libUi.open; };
+  FD.libOpen = () => libUi.open;
+  FD.zoom = function (how) {
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    if (how === 'fit') {
+      const its = fr().items;
+      if (!its.length) { view = { x: 60, y: 60, k: 1 }; }
+      else {
+        const x1 = Math.min(...its.map(i => i.x)) - 70, x2 = Math.max(...its.map(i => i.x)) + 70, y1 = Math.min(...its.map(i => i.y)) - 70, y2 = Math.max(...its.map(i => i.y)) + 70;
+        const k = Math.max(0.3, Math.min(2, Math.min(r.width / (x2 - x1), r.height / (y2 - y1))));
+        view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: (r.height - (y2 - y1) * k) / 2 - y1 * k };
+      }
+    } else {
+      const k = Math.max(0.3, Math.min(3, view.k * (how === 'in' ? 1.2 : 1 / 1.2))), mx = r.width / 2, my = r.height / 2;
+      view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k;
+    }
+    gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+  };
+  /* Values: the voltage on a load, open/closed for a contact, the conductor on a wire point */
+  FD.values = false;
+  const vText = v => (!v ? '0 V' : v.kind === 'AC' ? `${v.v} V~` : `${v.rev ? '−' : ''}24 V=`);
+  function valueOf(it) {
+    const S = K[it.k], d = S.type && H.devOf(it.tag), api = App.api;
+    if (!d || !api || (FD.errs && FD.errs.has(it))) return '';
+    if (S.jct) { const set = api.potsR(api.rootK(d.id + ':J')); return set && set.size ? Circuit.potText(set) : '—'; }
+    const st = stateOf(it);
+    if (['no', 'nc', 'km', 'brk', 'qm', 'rcd', 'isol', 'fsw', 'fuse', 'ol'].includes(S.look)) return st.on ? 'closed' : 'open';
+    if (['src', 'gen', 'conv', 'batt'].includes(S.look)) return st.on ? 'on' : 'off';
+    const a = S.terms[0], b = S.terms.find(t => t !== a && t.id !== 'PE');
+    return a && b ? vText(api.v(d, a.id, b.id)) : '';
+  }
   FD.render = function (el) {
     body = el;
+    if (!el.querySelector('.fd-host')) shell(el);
+    const host = el.querySelector('.fd-host');
     const F = fr();
     FD.errs = check();
     const o = [];
-    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="url(#fdGrid)"/>`);
+    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="url(#fdGrid2)"/>`);
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
@@ -359,18 +470,19 @@
       o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
+      if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
       S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
       o.push('</g>');
     }
     if (wiring && wiring.cur) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${wirePath(a, wiring.cur)}"/>`); }
-    if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — add symbols with ＋ Library, then click a terminal and another to wire them</text>`);
+    if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — click or drag symbols from the Library, then click a terminal and another to wire them</text>`);
     o.push('</g></svg>');
-    el.innerHTML = o.join('');
-    svg = el.querySelector('svg'); gv = svg.querySelector('.fv');
+    host.innerHTML = o.join('');
+    svg = host.querySelector('svg'); gv = svg.querySelector('.fv');
     bind();
     lastSig = sig();
   };
-  const sig = () => { const F = fr(); return F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0; }).join(''); };
+  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0; }).join(''); };
   FD.update = function () { if (body && sig() !== lastSig) FD.render(body); };
   const world = ev => { const r = svg.getBoundingClientRect(); return { x: (ev.clientX - r.left - view.x) / view.k, y: (ev.clientY - r.top - view.y) / view.k }; };
   const snap10 = v => Math.round(v / 10) * 10;
@@ -481,19 +593,31 @@
     w.b = j; delete w.pts;
     return j;
   }
+  /* the nearest place to (cx, cy), on an 80 px grid around it, where no symbol is yet */
+  function freeSpot(cx, cy) {
+    const its = fr().items, ok = (x, y) => its.every(i => Math.abs(i.x - x) >= 70 || Math.abs(i.y - y) >= 70);
+    for (let ring = 0; ring < 12; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+      const x = cx + dx * 80, y = cy + dy * 80;
+      if (ok(x, y)) return { x, y };
+    }
+    return { x: cx, y: cy };
+  }
   FD.add = function (k, tag, x, y) {
     const go = t => {
       if (k === 'text') { if (!t) return 'Type some text'; } else if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
       H.snap();
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
-      const cx = x != null ? x : snap10((r.width / 2 - view.x) / view.k) + (F.items.length % 5) * 20, cy = y != null ? y : snap10((r.height / 2 - view.y) / view.k);
+      const c = x != null ? { x, y } : freeSpot(snap10((r.width / 2 - view.x) / view.k), snap10((r.height / 2 - view.y) / view.k)), cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
       F.items.push(it); sel = { i: it.id };
       H.changed();
       return undefined;
     };
     if (tag) return go(tag);
+    // wire pieces, junctions and potential points need no tag of their own
+    if (K[k].auto) return go(suggest(k).def);
     if (k === 'text') { UI.form('Text', [{ key: 't', label: 'Text', value: '' }], v => go(v.t.trim())); return undefined; }
     const sg = suggest(k);
     UI.form(K[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
@@ -549,10 +673,6 @@
     else if (k === 'd' || k === 'D') { ev.preventDefault(); FD.copy(); }
     else if (k === 'Escape') { wiring = null; sel = null; if (body) FD.render(body); H.side(); }
   };
-  /* the library: pick a group, then a symbol (one long list would not fit a phone screen) */
-  FD.library = function (x, y) {
-    UI.menu(x, y, [{ head: 'Library' }, ...Object.entries(LIB).map(([g, o]) => ({ label: `${g} (${Object.keys(o).length}) ›`, onClick: () => setTimeout(() => UI.menu(x, y, [{ head: g }, ...Object.keys(o).map(k => ({ label: K[k].n, onClick: () => FD.add(k) }))]), 0) }))]);
-  };
   FD.resetSel = () => { sel = null; wiring = null; drag = null; lastSig = ''; };
   FD.selected = () => (sel && sel.i ? itemOf(sel.i) : null);
   /* side panel for the free drawing */
@@ -563,12 +683,13 @@
       <div class="btn-row"><button class="btn" data-fd="retag">${it.k === 'text' ? 'Edit text…' : 'Tag…'}</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Copy (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
       <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>` : '<p class="help">Select a symbol to rotate it, change its tag or its type.</p>'}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
-      <ul class="tips"><li><b>＋ Library</b> adds a symbol. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
+      <ul class="tips"><li><b>▦ Library</b>: pick a group, then click a symbol or drag it onto the drawing. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
       <li>Click a terminal ● then another to draw a wire. Every drawn wire is wired in the Wiring for you.</li>
       <li>End a wire on another wire to branch it (a junction dot). Double-click a wire to add a bend, drag the bend, double-click it to remove it.</li>
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
       <li><b>D</b> copies the selected symbol. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
-      <li>☝ Operate: press buttons, switch breakers and trip overloads on the drawing.</li></ul>`;
+      <li>Sources › Point L1, N, PE, +24 V… is wired to that conductor of the supply. Others › wire pieces (straight, corner, T, cross) join wires; link arrows with the same tag are connected.</li>
+      <li>▶ Play: press buttons, switch breakers and trip overloads on the drawing. ✎ Values shows the voltage on each load and open/closed on each contact.</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
     sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del })[b.dataset.fd](); });
