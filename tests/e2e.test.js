@@ -2382,6 +2382,56 @@ function check(name, cond, info = '') {
     return F.items.length === n + 1 && added.k === 'plci0' && FreeDraw.check().has(added) && toast; }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  console.log('IEC current paths: the newer devices and the PLC points');
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); });
+  await page.click('#view-schematic [data-sstyle="iec"]'); await wait(200);
+  check('iec: the newer symbols are in one "More symbols…" list, grouped, and are not toolbar buttons', await page.evaluate(() => {
+    const sel = document.querySelector('#view-schematic [data-smore]'), more = Object.entries(Schematic.KINDS).filter(([, K]) => K.more).map(([k]) => k);
+    return !!sel && sel.querySelectorAll('option[value]:not([value=""])').length === more.length && more.length >= 40 && !more.some(k => document.querySelector(`#view-schematic [data-skind="${k}"]`)) && sel.querySelectorAll('optgroup').length >= 4;
+  }));
+  check('iec: picking a symbol in the list asks for its tag, like a toolbar button', await page.evaluate(async () => {
+    const sel = document.querySelector('#view-schematic [data-smore]'); sel.value = 'flcoil'; sel.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 150)); const m = document.querySelector('#modal-root .modal'); const ok = !!m && m.textContent.includes('Flasher timer coil') && sel.value === '';
+    const x = document.querySelector('#modal-root [data-x]'); if (x) x.click(); return ok;
+  }));
+  await page.evaluate(() => { const m = document.querySelector('#modal-root'); if (m) m.innerHTML = ''; });
+  // a flasher in the current paths: S1 → flasher coil KT1; its N.O. 15-18 → lamp H1; a second path: off-delay coil KT2 and its N.C.
+  await page.evaluate(() => { const prev = App.currentId; App.openNew({ name: 'IEC timing' }); if (prev) Store.remove(prev); const C = App.project.circuit; C.comps.push(Circuit.create('supply1', 0, 0, C)); C.comps[0].state.on = true;
+    App.project.schematic.rungs = [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'flcoil', tag: 'KT1' }], comment: '' }, { elems: [{ k: 'flno', tag: 'KT1' }, { k: 'lamp', tag: 'H1' }], comment: '' },
+      { elems: [{ k: 'sel', tag: 'S2' }, { k: 'kfcoil', tag: 'KT2' }], comment: '' }, { elems: [{ k: 'kfno', tag: 'KT2' }, { k: 'lampfl', tag: 'H2' }], comment: '' }];
+    Schematic.sync(); App.circuitChanged(); const d = l => App.project.circuit.comps.find(c => c.props.label === l); d('KT1').props.t = 0.3; d('KT1').props.t2 = 0.3; d('KT2').props.t = 1; App.showView('schematic'); });
+  await wait(300);
+  check('iec: the diagram makes a flasher, an off-delay relay and a flashing lamp, with no problem reported', await page.evaluate(() => { const t = l => (App.project.circuit.comps.find(c => c.props.label === l) || {}).type; return t('KT1') === 'flasher' && t('KT2') === 'timer_off' && t('H2') === 'lamp_fl' && Schematic.errs.size === 0; }));
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  check('iec: holding S1 runs the flasher and its N.O. flashes H1', await page.evaluate(() => new Promise(res => { const seen = new Set(); let n = 0; const t = setInterval(() => { seen.add(App.project.circuit.comps.find(c => c.props.label === 'H1').state.on); if (++n > 40 || seen.size === 2) { clearInterval(t); res(seen.size === 2); } }, 50); })));
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S2'), 'knob'));
+  check('iec: S2 on pulls the off-delay relay in at once and its N.O. powers the flashing lamp H2', await until(is("d('KT2').on && d('H2').on")));
+  await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S2'), 'knob'));
+  check('iec: S2 off: H2 stays powered for the off delay, then goes off', await (async () => { await wait(300); const held = await page.evaluate(is("d('H2').on && !d('KT2').pw")); return held && await until(is("!d('H2').on"), null, 2500); })());
+  check('iec: an N.O. and an N.C. of one changeover timer are reported (they share terminal 15)', await page.evaluate(() => { App.project.schematic.rungs.push({ elems: [{ k: 'kfnc', tag: 'KT2' }, { k: 'horn', tag: 'HA1' }], comment: '' }); Schematic.sync();
+    const m = [...Schematic.errs.values()].some(x => x.includes('KT2') && x.includes('already used')); App.project.schematic.rungs.pop(); Schematic.sync(); return m; }));
+  check('iec: a PLC symbol never adds a PLC: with none in the Wiring it is reported', await page.evaluate(() => { App.project.schematic.rungs.push({ elems: [{ k: 'pbno', tag: 'S9' }, { k: 'plci0', tag: 'PLC' }], comment: '' }); Schematic.sync();
+    const m = [...Schematic.errs.values()].some(x => /no PLC with this tag/.test(x)) && !App.project.circuit.comps.some(c => c.type === 'plc'); App.project.schematic.rungs.pop(); Schematic.sync(); return m; }));
+  // PLC points in the current paths: +24 V → S1 → I0; O0 (relay, VAC0 from +24 V) → H1; the ladder joins them
+  const iecPlc = { name: 'IEC PLC', ladder: { rungs: [{ text: 'XIC I:0/0 OTE O:0/0', comment: '' }], desc: {} },
+    circuit: { seq: 10, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'psu24', x: 0, y: 200, props: { label: 'G1' }, state: {} }, { id: 'c3', type: 'plc', x: 300, y: 200, props: { label: 'PLC' }, state: {} }],
+      wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }, { id: 'w3', a: 'c1:L', b: 'c3:L1', pts: [] }, { id: 'w4', a: 'c1:N', b: 'c3:N', pts: [] }] },
+    schematic: { L: 'c2:P1', N: 'c2:M1', rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'plci0', tag: 'PLC' }], comment: '' }, { elems: [{ k: 'plcq0', tag: 'PLC' }, { k: 'lamp', tag: 'H1' }], comment: '' }] } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'iec'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, iecPlc);
+  await wait(300); await setMode('RUN');
+  check('iec: PLC input and relay output points are wired to the placed PLC, with no problem reported', await page.evaluate(() => { const C = App.project.circuit, plc = C.comps.find(c => c.type === 'plc'), has = t => C.wires.some(w => w.sch && (w.a === plc.id + ':' + t || w.b === plc.id + ':' + t));
+    return Schematic.errs.size === 0 && C.comps.filter(c => c.type === 'plc').length === 1 && ['I0', 'COM', 'VAC0', 'O0'].every(has); }));
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  check('iec: S1 sets I:0/0, the ladder sets O:0/0, the drawn output contact closes and H1 lights; the input symbol shows ON', await until(is("r('I:0/0') === 1 && r('O:0/0') === 1 && d('H1').on")) &&
+    await (async () => { await wait(200); return page.evaluate(() => [...document.querySelectorAll('#view-schematic .ssym.on')].length >= 3); })());
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('iec: released, the input and the output drop', await until(is("r('I:0/0') === 0 && r('O:0/0') === 0 && !d('H1').on")));
+  await setMode('PROG');
+  check('iec: the current paths with the new symbols survive save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize()))); const ks = p.schematic.rungs.flatMap(r => r.elems.map(e => e.k));
+    return ['plci0', 'plcq0'].every(k => ks.includes(k)) && !(p.keep && p.keep.rungs && p.keep.rungs.length); }));
+  await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 
