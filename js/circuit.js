@@ -719,11 +719,12 @@
   const SLOTS = ['1', '2', '3', '4', '5', '6', '7'];
   const rackOn = ctx => !!(ctx && ctx.rack && ctx.rack.pw);
   // the card works: a CPU is present, the card is the first one in its slot and the I/O configuration expects it there
-  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type);
+  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type && !ctx.rack.chBad);
   // why a card does not work (for its status line)
   const cardWhy = (c, ctx) => {
     const r = ctx && ctx.rack;
     if (!r || !r.cpu) return 'No CPU module in the rack';
+    if (r.chBad) return `Module fault: the ${r.chassis ? r.chassis.props.slots + '-slot ' : ''}chassis does not match the I/O configuration`;
     if (r.slots[c.props.slot] !== c.id) return `Slot ${c.props.slot} is already taken — inactive`;
     const want = r.conf[c.props.slot];
     return want ? `I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
@@ -831,7 +832,7 @@
       let s = modBody1756(MW, 'L7', 'Controller · slot 0', AB.SYS);
       // 4-character display, status LEDs, key switch
       s += R(9, 48, 52, 16, '#0d1a0d', 2, '#000') + T(35, 60, pw ? (me ? ctx.mode : 'IDLE') : '', 'dt light xs');
-      const st = [['RUN', run, '#3ddc63'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['I/O', me && pw && !(ctx.rack && ctx.rack.bad.length), '#3ddc63'], ['OK', pw && !(me && ctx.rack && ctx.rack.bad.length), me && ctx.rack && ctx.rack.bad.length ? '#ff4b3a' : '#3ddc63']];
+      const st = [['RUN', run, '#3ddc63'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['I/O', me && pw, me && ctx.rack && ctx.rack.bad.length ? '#ff4b3a' : '#3ddc63'], ['OK', pw, '#3ddc63']];
       st.forEach(([n, on, col], i) => { s += led(14, 80 + i * 13, on, col, 3) + T(22, 83 + i * 13, n, 'dt light xs', 'start'); });
       s += `<g class="part" data-part="mode"><rect x="13" y="140" width="44" height="58" rx="4" fill="#3a3a37" stroke="#111"/><circle cx="35" cy="162" r="11" fill="#c9c5bb" stroke="#111"/><rect x="33" y="152" width="4" height="20" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 35 162)"/>${T(35, 191, 'RUN · PROG', 'dt light xs')}</g>`;
       return s + R(13, 220, 44, 60, '#232322', 3, '#111') + T(35, 254, 'SD', 'dt light xs');
@@ -2560,7 +2561,7 @@
     // a chassis of another size than the configured one is a fault, as on real hardware
     const chassis = circ.comps.find(c => c.type === 'chassis') || null;
     if (cpu && io && io.chassis && (!chassis || chassis.props.slots !== io.chassis)) bad.push({ slot: 'ch', want: io.chassis, have: chassis ? chassis.props.slots : '', msg: chassis ? `chassis: ${io.chassis} slots configured, ${chassis.props.slots} installed` : `chassis: ${io.chassis} slots configured, no chassis installed` });
-    return { ctl, cpu, slots, conf, bad, chassis, pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
+    return { ctl, cpu, slots, conf, bad, chassis, chBad: bad.some(b => b.slot === 'ch'), pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
   }
   /* I/O words the data table shows: the compact PLC's I:0/O:0, or the configured rack slots */
   function ioMap(circ, io) {

@@ -2755,7 +2755,12 @@ function check(name, cond, info = '') {
     const org = await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-lorg]'); return { open: !b.hidden, modal: !!document.querySelector('.modal-wrap'), text: b.textContent }; });
     check('PLC module: the Organizer opens docked on the left of the ladder (no dialog), with the path to the controller found in the Wiring', org.open && !org.modal && /Path: Backplane, slot 0 · CPU1/.test(org.text) && org.text.includes('MainRoutine'), org.text.slice(0, 200));
     check('PLC module: the I/O tree shows the chassis and each module, and marks a module that does not match (⚠ slot 2) and the chassis size (⚠ 7 configured, 10 installed)', /⚠[^⚠]*7 slots configured, 10 installed/.test(org.text) && /\[2\][^\[]*⚠/.test(org.text) && !/\[1\][^\[]*⚠/.test(org.text.split('[2]')[0]), org.text);
-    check('PLC module: a chassis of another size is a fault — RUN is refused', await page.evaluate(() => { App.setMode('RUN'); const m = App.plc.mode; App.setMode('PROG'); return m === 'PROG' && Circuit.rack(App.project.circuit, App.project.io).bad.some(b => b.slot === 'ch'); }));
+    check('PLC module: a chassis of another size is a fault — file-based: RUN is refused; tag-based: the controller runs and every module faults', await page.evaluate(async () => {
+      App.project.target = 'file'; App.setMode('RUN'); const fileMode = App.plc.mode; App.project.target = 'tag';
+      App.setMode('RUN'); await new Promise(q => setTimeout(q, 300)); const tagMode = App.plc.mode, di = App.project.circuit.comps.find(c => c.type === 'mdi16');
+      const st = Circuit.status(di, App.ctx); App.setMode('PROG');
+      return fileMode === 'PROG' && tagMode === 'RUN' && /Module fault: the 10-slot chassis/.test(st) && App.events().some(e => e.kind === 'alarm' && /Module fault — chassis/.test(e.msg));
+    }));
     await page.click('#view-ladder [data-lorg] [data-org="f3"]'); await wait(200);
     check('PLC module: a routine clicked in the Organizer opens in the ladder and the Organizer stays open', await page.evaluate(() => Ladder.file() === 3 && !document.querySelector('#view-ladder [data-lorg]').hidden));
     await page.evaluate(() => App.ioConfig()); await wait(150);
@@ -2828,6 +2833,47 @@ function check(name, cond, info = '') {
     check('comms: a Realistic project with no controller in the Wiring needs no path (virtual controller)', await page.evaluate(() => { App.openNew({ name: 'Virtual', conn: { mode: 'real' }, ladder: { rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] } }); App.setMode('PROG'); App.download(); const ok = App.conn.online; App.goOnline(); return ok && App.pathErr() === null; }));
     check('comms: no brand names in Who Active, the PC or the Ethernet module', await page.evaluate(() => { App.whoActive(); const h = document.documentElement.outerHTML + Circuit.DEFS.epc.info + Circuit.DEFS.meth.info; document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); return !/Allen.?Bradley|Rockwell|RSLogix|RSLinx|MicroLogix|PanelView|SLC 500|ControlLogix|CompactLogix|Logix Designer|Studio 5000|EtherNet\/IP/i.test(h); }));
     await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay3); });
+  }
+  console.log('I/O Configuration per target: module fault (tag-based) or major fault (file-based)');
+  {
+    const proj = target => ({ name: 'Faults ' + target, target, io: { slots: { 1: 'mdi16', 2: 'mdo16' } }, ladder: { rungs: [{ text: 'XIC B3:0/2 OTE O:2/0' }, { text: 'XIC B3:0/0 OTE B3:0/1' }] },
+      circuit: { seq: 8, comps: [{ id: 'c0', type: 'supply1', x: -260, y: 60, props: { label: 'Q1' }, state: { on: true } }, { id: 'c1', type: 'chassis', x: 0, y: 0, props: { label: 'RACK1', slots: '4' }, state: {} },
+        { id: 'c2', type: 'mpsu', x: 10, y: 52, props: { label: 'PS1' }, state: {} }, { id: 'c3', type: 'mcpu', x: 102, y: 52, props: { label: 'CPU1' }, state: {} },
+        { id: 'c4', type: 'mdo16t', x: 176, y: 52, props: { label: 'DQ1', slot: '1' }, state: {} }, { id: 'c5', type: 'mdo16', x: 250, y: 52, props: { label: 'DO1', slot: '2' }, state: {} }],
+        wires: [{ id: 'w1', a: 'c0:L', b: 'c2:L1', pts: [] }, { id: 'w2', a: 'c0:N', b: 'c2:N', pts: [] }] } });
+    const tagRun = await page.evaluate(async p => {
+      const prev = App.currentId; App.openNew(p); if (prev) Store.remove(prev);
+      window._lay4 = App.layout; App.setLayout('single'); App.showView('ladder');
+      await new Promise(q => setTimeout(q, 300));
+      App.setMode('RUN'); await new Promise(q => setTimeout(q, 400));
+      App.plc.write('B3:0/0', 1); await new Promise(q => setTimeout(q, 200));
+      const C = App.project.circuit.comps, dq = C.find(c => c.props.label === 'DQ1'), dout = C.find(c => c.props.label === 'DO1');
+      const r = { mode: App.plc.mode, logic: App.plc.read('B3:0/1') === 1, faulted: /expects PLC Input Card 16/.test(Circuit.status(dq, App.ctx)), other: /Slot 2: O:2\/0/.test(Circuit.status(dout, App.ctx)),
+        alarms: App.events().filter(e => e.kind === 'alarm' && /Module fault — slot 1/.test(e.msg)).length };
+      await new Promise(q => setTimeout(q, 300));
+      r.once = App.events().filter(e => e.kind === 'alarm' && /Module fault — slot 1/.test(e.msg)).length === 1;
+      App.organizer(); r.tree = /\[1\][^\[]*⚠/.test(document.querySelector('#view-ladder [data-lorg]').textContent) && !!document.querySelector('#view-ladder [data-lorg] .org-add');
+      return r;
+    }, proj('tag'));
+    check('tag-based: a module in the wrong slot is a module fault — the controller keeps running the logic, the other module works', tagRun.mode === 'RUN' && tagRun.logic && tagRun.faulted && tagRun.other, JSON.stringify(tagRun));
+    check('tag-based: the module fault is logged once as an alarm and marked ⚠ in the Organizer (with ＋ New Module…)', tagRun.alarms === 1 && tagRun.once && tagRun.tree, JSON.stringify(tagRun));
+    await page.click('#view-ladder [data-lorg] .org-add'); await wait(150);
+    check('tag-based: ＋ New Module… opens the I/O Configuration', await page.evaluate(() => /I\/O Configuration/.test(document.querySelector('.modal-head').textContent)));
+    await page.evaluate(() => { App.setMode('PROG'); }); await wait(100);
+    await page.evaluate(() => document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()));
+    await page.evaluate(() => App.ioConfig()); await wait(150);
+    await page.click('.modal-foot button:has-text("Read I/O Config")'); await page.click('.modal-foot button:has-text("Apply")'); await wait(300);
+    check('tag-based: once the configuration matches, the fault clears (logged) and the module works', await page.evaluate(() => App.events().some(e => /Module fault cleared — slot 1/.test(e.msg)) && Circuit.rack(App.project.circuit, App.project.io).bad.length === 0));
+    const fileRun = await page.evaluate(async p => {
+      App.openNew(p); await new Promise(q => setTimeout(q, 300));
+      App.setMode('RUN'); const refused = App.plc.mode === 'PROG';
+      App.project.io = Circuit.cleanIo({ slots: { 1: 'mdo16t', 2: 'mdo16' } }); App.addrChanged(); App.setMode('RUN'); await new Promise(q => setTimeout(q, 200));
+      const ran = App.plc.mode === 'RUN';
+      App.project.io = Circuit.cleanIo({ slots: { 1: 'mdi16', 2: 'mdo16' } }); await new Promise(q => setTimeout(q, 300));
+      return { refused, ran, stopped: App.plc.mode === 'PROG' && App.events().some(e => /CPU fault: I\/O configuration mismatch/.test(e.msg)) };
+    }, proj('file'));
+    check('file-based: the same mismatch is a major fault — RUN is refused, and a running processor stops', fileRun.refused && fileRun.ran && fileRun.stopped, JSON.stringify(fileRun));
+    await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay4); });
   }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {

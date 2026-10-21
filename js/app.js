@@ -425,11 +425,11 @@
             </ul></li></ul></li>
             ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a></li></ul></li>`).join('')}
           </ul></li>
-          <li>🔌 <a href="#" data-org="io">I/O Configuration</a><ul><li>▭ 1756-style backplane<ul><li>▭ [0] Controller</li>${slots}</ul></li></ul></li>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a><ul><li>▭ 1756-style backplane<ul><li>▭ [0] Controller</li>${slots}<li><a href="#" data-org="io" class="org-add">＋ New Module…</a></li></ul></li></ul></li>
         </ul></li></ul>` : `<ul class="org">
       <li>${ctl}
         <ul>
-          <li>🔌 <a href="#" data-org="io">I/O Configuration</a>${slots ? `<ul><li>▭ [0] CPU</li>${slots}</ul>` : ''}</li>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a>${slots ? `<ul><li>▭ [0] CPU</li>${slots}<li><a href="#" data-org="io" class="org-add">＋ New Module…</a></li></ul>` : ''}</li>
           <li>🏷 <a href="#" data-org="tags">Tags (symbols)</a> <small>(${App.project.tags.length})</small></li>
           <li>📁 <b>Program Files</b><ul>
             <li>▤ SYS 0 <small>system</small></li><li>▤ SYS 1 <small>reserved</small></li>
@@ -748,7 +748,8 @@
     Ladder.DataTable.render(); updateBar(true);
   };
   App.setMode = function (m) {
-    const rk = m === 'RUN' && Circuit.rack(App.project.circuit, App.project.io);
+    // a file-based processor will not run with an I/O mismatch; a tag-based controller runs and faults the modules
+    const rk = m === 'RUN' && App.project.target !== 'tag' && Circuit.rack(App.project.circuit, App.project.io);
     if (rk && rk.cpu && rk.bad.length) {
       const msg = `I/O configuration does not match the rack: ${rk.bad.map(b => b.msg).join('; ')}`;
       UI.toast(msg + ' — open I/O Configuration', 'danger', 6000); App.log('system', 'Go to RUN refused: ' + msg); return;
@@ -859,7 +860,14 @@
     lastPw = plc.powered;
     ctx.plcInRaw = ctx.plcIn;
     // the rack no longer matches the I/O configuration while running: major fault, the CPU stops
-    if (rack.cpu && rack.bad.length && plc.mode === 'RUN' && plc.powered) {
+    // tag-based: each new module fault is logged once, the controller keeps running
+    if (App.project.target === 'tag') {
+      const now2 = new Set(rack.cpu ? rack.bad.map(b => b.msg) : []);
+      for (const m of now2) if (!modFaults.has(m)) { App.log('alarm', `Module fault — ${m}`); if (App.ticks > 0) UI.toast(`Module fault — ${m}`, 'warn', 5000); }
+      for (const m of modFaults) if (!now2.has(m)) App.log('system', `Module fault cleared — ${m}`);
+      modFaults = now2;
+    } else modFaults = new Set();
+    if (rack.cpu && rack.bad.length && plc.mode === 'RUN' && plc.powered && App.project.target !== 'tag') {
       plc.setMode('PROG');
       const msg = `CPU fault: I/O configuration mismatch (${rack.bad.map(b => b.msg).join('; ')}) — the controller stopped`;
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
@@ -1073,6 +1081,7 @@
 
   /* ---------- status bar ---------- */
   let barCache = {};
+  let modFaults = new Set();
   function updateBar(force) {
     const plc = App.plc, ctx = App.ctx;
     const st = {
