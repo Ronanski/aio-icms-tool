@@ -19,6 +19,8 @@
   const row = (ids, y, gap = 20) => ids.map((t, i) => ({ id: t, x: (i - (ids.length - 1) / 2) * gap, y, src: true }));
   // a changeover contact: common on top, N.C. bottom left, N.O. bottom right
   const co = (type, c, nc, no, pre, extra) => ({ type, pre, look: 'co', terms: [{ id: c, x: 0, y: -30 }, { id: nc, x: -10, y: 30 }, { id: no, x: 10, y: 30 }], ...extra });
+  // N.C. + N.O. in one symbol (one actuator): N.C. on the left, N.O. on the right
+  const nonc = (type, nc1, nc2, no1, no2, pre, extra) => ({ type, pre, look: 'nonc', terms: [{ id: nc1, x: -10, y: -30 }, { id: nc2, x: -10, y: 30 }, { id: no1, x: 10, y: -30 }, { id: no2, x: 10, y: 30 }], ...extra });
   // a crossover (reversing) contact: 1-4 and 3-2 at rest, 1-2 and 3-4 operated
   const xov = (type, extra) => ({ type, pre: 'S', look: 'xover', terms: [{ id: '1', x: -10, y: -30 }, { id: '3', x: 10, y: -30 }, { id: '2', x: -10, y: 30 }, { id: '4', x: 10, y: 30 }], ...extra });
   // a potential point (L1, N, +24 V…): a junction wired to that conductor of the supply in the Wiring
@@ -40,7 +42,7 @@
       src3: { n: '3-phase supply', type: 'supply3', pre: 'Q', look: 'src', label: '3~ 400/230V', terms: ['L1', 'L2', 'L3', 'N', 'PE'].map((t, i) => ({ id: t, x: -20 + i * 20, y: 20, src: true })), part: 'sw' },
       src1: { n: '1-phase supply 230V', type: 'supply1', pre: 'Q', look: 'src', label: '1~ 230V', terms: ['L', 'N', 'PE'].map((t, i) => ({ id: t, x: -10 + i * 20, y: 20, src: true })), part: 'sw' },
       psu: { n: 'AC/DC converter 230V~ / 24V= (power supply)', type: 'psu24', pre: 'G', look: 'conv', terms: [...row(['L', 'N'], -30), ...row(['P1', 'M1'], 30)] },
-      gen: { n: 'Generator 3~ (GS)', type: 'gen3', pre: 'G', look: 'gen', label: 'GS\n3~', terms: [...row(['L1', 'L2', 'L3', 'N'], 34), { id: 'PE', x: 44, y: 0, src: true }], part: 'run' },
+      gen: { n: 'Generator 3~ (GS), C1-C2 remote start', type: 'gen3', pre: 'G', look: 'gen', label: 'GS\n3~', terms: [...row(['L1', 'L2', 'L3', 'N'], 34), { id: 'PE', x: 44, y: 0, src: true }, { id: 'C1', x: -10, y: -34 }, { id: 'C2', x: 10, y: -34 }], part: 'run' },
       batt: { n: 'Battery 24 V', type: 'battery', pre: 'GB', look: 'batt', terms: [{ id: 'P', x: 0, y: -30, src: true }, { id: 'M', x: 0, y: 30, src: true }] },
       pL1: pot('L1', 'Point L1'), pL2: pot('L2', 'Point L2'), pL3: pot('L3', 'Point L3'), pN: pot('N', 'Point N'), pPE: pot('PE', 'Point PE'),
       pP: pot('+', 'Point +24 V'), pM: pot('-', 'Point 0 V'),
@@ -66,6 +68,12 @@
       selcono: two('sel_co', '13', '14', 'no', 'S', { act: 'turn', part: 'knob', n: 'Selector NO+NC — N.O. 13-14' }),
       selconc: two('sel_co', '21', '22', 'nc', 'S', { act: 'turn', part: 'knob', n: 'Selector NO+NC — N.C. 21-22' }),
       pbx: xov('pb_x', { act: 'push', part: 'btn', mom: true, n: 'Push button crossover' }),
+      pbnonc: nonc('pb_co', '21', '22', '13', '14', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button N.C. + N.O. (21-22 / 13-14)' }),
+      selnonc: nonc('sel_co', '21', '22', '13', '14', 'S', { act: 'turn', part: 'knob', n: 'Selector N.C. + N.O. (21-22 / 13-14)' }),
+      esnonc: nonc('estop', '11', '12', '13', '14', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop N.C. + N.O. (11-12 / 13-14)' }),
+      esco: co('estop_co', '11', '12', '14', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop changeover 11-12 / 11-14' }),
+      lsnonc: nonc('limit', '21', '22', '13', '14', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch N.C. + N.O. (21-22 / 13-14)' }),
+      lsco: co('limit_co', '11', '12', '14', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch changeover 11-12 / 11-14' }),
       selx: xov('sel_x', { act: 'turn', part: 'knob', n: 'Selector crossover' }),
     },
     Sensors: {
@@ -107,6 +115,16 @@
       ktco: co('timer', '15', '16', '18', 'KT', { act: 'delay', n: 'On-delay changeover contact (15-16 / 15-18)' }),
       kfco: co('timer_off', '15', '16', '18', 'KT', { act: 'delayoff', n: 'Off-delay changeover contact (15-16 / 15-18)' }),
       ltco: co('latch', '11', '12', '14', 'KA', { n: 'Latching relay changeover contact (11-12 / 11-14)' }),
+      kmnonc: nonc('contactor', '21', '22', '13', '14', 'KM', { n: 'Contactor aux N.C. + N.O. (21-22 / 13-14)' }),
+      kanonc: nonc('relay', '11', '12', '21', '24', 'KA', { n: 'Relay N.C. + N.O. (11-12 / 21-24)' }),
+      olco: co('olr', '95', '96', '98', 'F', { act: 'therm', part: 'ol', olco: true, n: 'Overload changeover 95-96-98' }),
+      // the time-delay contact block on a contactor: 55-56 N.C., 67-68 N.O., 55-56-58 changeover (coil and main poles: the contactor's own symbols)
+      ...Object.fromEntries([['kbon', 'contactor_ton', 'delay', 'On'], ['kbof', 'contactor_tof', 'delayoff', 'Off']].flatMap(([p, type, act, w]) => [
+        [p + 'nc', two(type, '55', '56', 'nc', 'KM', { act, n: `${w}-delay block N.C. 55-56` })],
+        [p + 'no', two(type, '67', '68', 'no', 'KM', { act, n: `${w}-delay block N.O. 67-68` })],
+        [p + 'co', co(type, '55', '56', '58', 'KM', { act, n: `${w}-delay block changeover 55-56 / 55-58` })],
+        [p + 'nonc', nonc(type, '55', '56', '67', '68', 'KM', { act, n: `${w}-delay block N.C. + N.O. (55-56 / 67-68)` })],
+      ])),
       kdno: two('timer_onoff', '15', '18', 'no', 'KT', { act: 'delayboth', n: 'On/off-delay contact N.O.' }),
       kdnc: two('timer_onoff', '15', '16', 'nc', 'KT', { act: 'delayboth', n: 'On/off-delay contact N.C.' }),
       kdco: co('timer_onoff', '15', '16', '18', 'KT', { act: 'delayboth', n: 'On/off-delay changeover contact (15-16 / 15-18)' }),
@@ -147,6 +165,7 @@
       km2: poles('contactor', ['1', '3'], ['2', '4'], 'km', 'KM', { n: 'Contactor main contacts 2P' }),
       km4: poles('contactor4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'km', 'KM', { n: 'Contactor main contacts 4P' }),
       km1: poles('contactor', ['1'], ['2'], 'km', 'KM', { n: 'Contactor main contact 1P' }),
+      ...Object.fromEntries([1, 2, 3, 4].map(n => ['kmn' + n, poles('contactor_nc', ['1', '3', '5', '7'].slice(0, n), ['2', '4', '6', '8'].slice(0, n), 'kmn', 'KM', { n: `Contactor N.C. main contacts ${n}P` })])),
     },
     Protections: {
       fu1: poles('fuse', ['1'], ['2'], 'fuse', 'FU', { n: 'Fuse 1P', part: 'f' }),
@@ -169,13 +188,17 @@
       rcbo4: poles('rcbo4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'rcd', 'QF', { n: 'RCBO 4P (RCD + MCB)', part: 'h' }),
       qs1: poles('isol1', ['1'], ['2'], 'isol', 'QS', { n: 'Disconnector 1P', part: 'h' }),
       qs2: poles('isol2', ['1', '3'], ['2', '4'], 'isol', 'QS', { n: 'Disconnector 2P', part: 'h' }),
-      // 1- and 2-pole symbols of the 3-pole devices (as wired in a panel: the other poles stay unused)
-      ol1: poles('olr', ['1'], ['2'], 'ol', 'F', { n: 'Overload relay, 1 pole used', part: 'ol' }),
-      ol2: poles('olr', ['1', '3'], ['2', '4'], 'ol', 'F', { n: 'Overload relay, 2 poles used', part: 'ol' }),
-      qm1: poles('mpcb', ['1'], ['2'], 'qm', 'QM', { n: 'Motor protection breaker, 1 pole used', part: 'h' }),
-      qm2: poles('mpcb', ['1', '3'], ['2', '4'], 'qm', 'QM', { n: 'Motor protection breaker, 2 poles used', part: 'h' }),
-      fsw1: poles('fsw3', ['1'], ['2'], 'fsw', 'QS', { n: 'Fuse disconnector, 1 pole used', part: 'h' }),
-      fsw2: poles('fsw3', ['1', '3'], ['2', '4'], 'fsw', 'QS', { n: 'Fuse disconnector, 2 poles used', part: 'h' }),
+      // 1-, 2- and 4-pole devices of their own (a drawing from before, with the 3-pole device under the symbol, still works)
+      ol1: poles('olr1', ['1'], ['2'], 'ol', 'F', { n: 'Overload relay 1P', part: 'ol' }),
+      ol2: poles('olr2', ['1', '3'], ['2', '4'], 'ol', 'F', { n: 'Overload relay 2P', part: 'ol' }),
+      qm1: poles('mpcb1', ['1'], ['2'], 'qm', 'QM', { n: 'Motor protection breaker 1P', part: 'h' }),
+      qm2: poles('mpcb2', ['1', '3'], ['2', '4'], 'qm', 'QM', { n: 'Motor protection breaker 2P', part: 'h' }),
+      qm4: poles('mpcb4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'qm', 'QM', { n: 'Motor protection breaker 4P', part: 'h' }),
+      fsw1: poles('fsw1', ['1'], ['2'], 'fsw', 'QS', { n: 'Fuse disconnector 1P', part: 'h' }),
+      fsw2: poles('fsw2', ['1', '3'], ['2', '4'], 'fsw', 'QS', { n: 'Fuse disconnector 2P', part: 'h' }),
+      fsw1n: poles('fsw1n', ['1', '3'], ['2', '4'], 'fsw', 'QS', { n: 'Fuse disconnector 1P+N (3-4 = N, no fuse)', part: 'h' }),
+      fsw3n: poles('fsw3n', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'fsw', 'QS', { n: 'Fuse disconnector 3P+N (7-8 = N, no fuse)', part: 'h' }),
+      fsw4: poles('fsw4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'fsw', 'QS', { n: 'Fuse disconnector 4P', part: 'h' }),
     },
     Others: {
       node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', jct: true, auto: true, terms: [{ id: 'J', x: 0, y: 0 }] },
@@ -303,20 +326,35 @@
     const miss = S.terms.find(t => !DEFS[d.type].terms.some(x => x.id === t.id));
     return miss ? `${it.tag} (${DEFS[d.type].name}) has no terminal ${miss.id}` : null;
   }
+  /* a symbol on a device of another type of the same family (a 1-pole overload relay under the overload contact):
+     the terminals it uses must exist there; the overload changeover 95-96-98 needs the relay set that way */
+  function devErr(it, S) {
+    const d = H.devOf(it.tag); if (!d || !DEFS[d.type]) return null;
+    const D = DEFS[d.type];
+    if ((D.famNo || []).includes(S.look)) return `${it.tag} is a ${D.name}: draw its own symbols (${S.n} does not fit it)`;
+    const miss = S.terms.find(t => !D.terms.some(x => x.id === t.id));
+    if (miss) return `${it.tag} (${D.name}) has no terminal ${miss.id}`;
+    if (/^olr/.test(d.type)) {
+      const co = d.props.aux === '95-96-98 changeover';
+      if (S.olco && !co) return `${it.tag}: set its Aux contacts to "95-96-98 changeover" (Properties) to use this symbol`;
+      if (co && S.terms.some(t => t.id === '97')) return `${it.tag}: its aux is a 95-96-98 changeover, it has no 97-98 contact`;
+    }
+    return null;
+  }
   FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
     if (!H) return errs;
     const te = typeErr || ((tag, type, what) => {
       const d = H.devOf(tag), R = H.circ().reserved;
       if (!d && R && R.has(tag)) return window.Schematic.reservedMsg(tag);
-      return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null;
+      return d && !Circuit.sameKind(d.type, type) ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null;
     });
     for (const it of fr().items) {
       const S = K[it.k];
       if (!S.type) continue;
       if (S.pot && !potKey(S.pot)) { errs.set(it, `${POTNAME[S.pot] || S.pot}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
       if (S.jct) { const m = te(it.tag, 'jct', 'wire point'); if (m) errs.set(it, m); continue; }
-      const m = S.types ? plcErr(it, S) : te(it.tag, S.type); if (m) { errs.set(it, m); continue; }
+      const m = S.types ? plcErr(it, S) : te(it.tag, S.type) || devErr(it, S); if (m) { errs.set(it, m); continue; }
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
       if (used.has(key) && !SRC.includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
@@ -336,7 +374,15 @@
     const F = fr(), col = Circuit.POT_COLORS;
     // devices first (a supply drawn on this sheet must exist before a potential point looks for it), then the checks
     const e0 = check();
-    for (const it of F.items) if (K[it.k].type && !K[it.k].pot && !e0.has(it)) ensureType(K[it.k].type, it.tag);
+    // a tag's device is made from its most specific symbol (a 1-pole overload relay rather than the contact's generic one);
+    // an overload relay made for the changeover symbol is set that way
+    const pref = new Map();
+    for (const it of F.items) { const t = K[it.k].type; if (!t || K[it.k].jct || K[it.k].types) continue; const p = pref.get(it.tag); if (!p || (!DEFS[p].family && DEFS[t].family)) pref.set(it.tag, t); }
+    for (const it of F.items) {
+      if (!K[it.k].type || K[it.k].pot || e0.has(it)) continue;
+      const known = !!H.devOf(it.tag), c = ensureType(K[it.k].jct || K[it.k].types ? K[it.k].type : pref.get(it.tag) || K[it.k].type, it.tag);
+      if (!known && K[it.k].olco && c && (DEFS[c.type].pdefs || []).some(p => p.k === 'aux')) c.props.aux = '95-96-98 changeover';
+    }
     const errs = check();
     FD.errs = errs;
     const key = e => {
@@ -404,6 +450,7 @@
     const has = (a, b) => pr.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
     if (S.look === 'co') return { on: has(S.terms[0].id, S.terms[2].id) };
     if (S.look === 'xover') return { on: has('1', '2') };
+    if (S.look === 'nonc') return { on: has(S.terms[2].id, S.terms[3].id) };
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
     return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
   }
@@ -436,6 +483,11 @@
       // changeover: the blade rests on the N.C. side and moves to the N.O. side when operated
       o.push(stub(0, -30, -14), stub(-10, 12, 30), stub(10, 12, 30), `<path class="thin" d="M-10 12 H-5"/>`, `<path d="M0 -14 L${st.on ? 10 : -9} 12"/>`);
       if (S.act) o.push(`<path class="thin dash" d="M-4 -1 H-26"/>`, actMark(S.act, -26));
+    } else if (S.look === 'nonc') {
+      // N.C. (left) and N.O. (right) contacts on one actuator, drawn as they are now
+      o.push(stub(-10, -30, -14), stub(-10, 14, 30), stub(10, -30, -14), stub(10, 14, 30));
+      o.push(st.on ? `<path d="M-10 -14 H-4 M-10 14 L-15 -12"/><path d="M10 14 L10 -14"/>` : `<path d="M-10 -14 H-4 M-10 14 L-3 -16"/><path d="M10 14 L3 -13"/>`);
+      if (S.act) o.push(`<path class="thin dash" d="M-12 0 H-30"/>`, actMark(S.act, -30));
     } else if (S.look === 'xover') {
       o.push(stub(-10, -30, -14), stub(10, -30, -14), stub(-10, 14, 30), stub(10, 14, 30));
       o.push(st.on ? `<path d="M-10 -14 V14 M10 -14 V14"/>` : `<path d="M-10 -14 L10 14 M10 -14 L-10 14"/>`);
@@ -460,7 +512,7 @@
     } else if (S.look === 'batt') {
       o.push(stub(0, -30, -6), stub(0, 4, 30), `<path d="M-14 -6 H14"/><path d="M-7 4 H7" stroke-width="4"/><path class="thin" d="M10 -16 h6 M13 -19 v6"/>`);
     } else if (S.look === 'gen') {
-      o.push(`<circle cx="0" cy="0" r="22"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} 20"/>`), `<path class="pe" d="M22 0 H44"/>`);
+      o.push(`<circle cx="0" cy="0" r="22"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} ${t.y < 0 ? -20 : 20}"/>`), `<path class="pe" d="M22 0 H44"/>`);
     } else if (S.look === 'gnd') {
       o.push(`<path class="pe" d="M0 -20 V0 M-10 0 H10 M-6 4 H6 M-2 8 H2"/>`);
     } else if (S.look === 'plcin') {
@@ -503,6 +555,7 @@
         if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
         else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/><path class="thin" d="M${x} -12 V12"/>`);
         else if (S.look === 'ol') o.push(stub(x, -30, -10), stub(x, 10, 30), `<path d="M${x} -10 h-4 v8 h8 v8 h-4 V10"/>`);
+        else if (S.look === 'kmn') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} -14 H${x + 8} M${x} 14 L${x + 10} -16"/><path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
         else {
           o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/>`);
           if (S.look === 'km') o.push(`<path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
@@ -532,7 +585,7 @@
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
-    const isPole = !['no', 'nc', 'co', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
+    const isPole = !['no', 'nc', 'co', 'nonc', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
@@ -617,7 +670,7 @@
     if (S.jct) { const set = api.potsR(api.rootK(d.id + ':J')); return set && set.size ? Circuit.potText(set) : '—'; }
     const st = stateOf(it);
     if (['no', 'nc', 'km', 'brk', 'qm', 'rcd', 'isol', 'fsw', 'fuse', 'ol'].includes(S.look)) return st.on ? 'closed' : 'open';
-    if (S.look === 'co' || S.look === 'xover') return st.on ? 'operated' : 'at rest';
+    if (['co', 'xover', 'nonc'].includes(S.look)) return st.on ? 'operated' : 'at rest';
     if (['src', 'gen', 'conv', 'batt'].includes(S.look)) return st.on ? 'on' : 'off';
     const a = S.terms[0], b = S.terms.find(t => t !== a && t.id !== 'PE');
     return a && b ? vText(api.v(d, a.id, b.id)) : '';
@@ -835,7 +888,7 @@
   const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
   function suggest(k) {
     const S = K[k], used = taken();
-    const same = H.circ().comps.filter(c => (S.types || [S.type]).includes(c.type)).map(c => c.props.label);
+    const same = H.circ().comps.filter(c => (S.types ? S.types.includes(c.type) : Circuit.sameKind(c.type, S.type))).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
     let n = 1; while (used.has(S.pre + n)) n++;
@@ -971,6 +1024,19 @@
       if (w.pts && w.pts.length) nw.pts = w.pts.map(([x, y]) => [x + dx, y + dy]);
       F.wires.push(nw);
     }
+    // a pasted PLC I/O symbol keeps its controller and takes the next point of it that is not drawn yet (I0 → I1…);
+    // with every point drawn it stays as it is, shows the problem and says so
+    let noPoint = 0;
+    for (const id of added) {
+      const it = itemOf(id), S = K[it.k]; if (!S.io) continue;
+      const d = H.devOf(it.tag), b = base(it.k), D = d && DEFS[d.type];
+      const drawn = new Set(F.items.filter(x => x !== it && x.tag === it.tag && K[x.k].io && base(x.k) === b).map(x => K[x.k].io.n));
+      if (!drawn.has(S.io.n)) continue;
+      const nk = Object.keys(K).filter(k => base(k) === b && K[k].io).sort((p, q) => K[p].io.n - K[q].io.n)
+        .find(k => !drawn.has(K[k].io.n) && (!D || D.terms.some(t => t.id === S.io.d + K[k].io.n)));
+      if (nk) setKind(it, nk); else noPoint++;
+    }
+    if (noPoint) UI.toast(`Every ${K[itemOf(added.find(id => K[itemOf(id).k].io)).k].io.d === 'I' ? 'input' : 'output'} of that controller is drawn already: pick another PLC or card for the copy`, 'warn', 5000);
     // the next paste lands further on
     clip.items.forEach(i => { i.x += dx; i.y += dy; }); clip.wires.forEach(w => (w.pts || []).forEach(q => { q[0] += dx; q[1] += dy; }));
     group = new Set(added); sel = added.length ? { i: added[0] } : null;

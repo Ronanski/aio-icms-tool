@@ -87,15 +87,18 @@
   });
   def('gen3', {
     name: '3-Phase Generator', cat: 'Power', view: 'power', prefix: 'G', w: 140, h: 80,
-    info: 'Generator set 400/230 V, 60 Hz: L1 L2 L3 N PE. Click START/STOP to run it; it supplies like the 3-phase supply while it runs.',
-    terms: [{ id: 'L1', x: 20, y: 80 }, { id: 'L2', x: 40, y: 80 }, { id: 'L3', x: 60, y: 80 }, { id: 'N', x: 90, y: 80 }, { id: 'PE', x: 120, y: 80 }],
+    props: { mode: 'manual' }, pdefs: [{ k: 'mode', n: 'Start', opts: ['manual', 'auto (C1-C2)'] }],
+    info: 'Generator set 400/230 V, 60 Hz: L1 L2 L3 N PE. Manual: click START/STOP to run it. Auto: it runs while C1 and C2 are joined (a remote start contact, e.g. a relay contact between C1 and C2). It supplies like the 3-phase supply while it runs.',
+    terms: [{ id: 'L1', x: 20, y: 80 }, { id: 'L2', x: 40, y: 80 }, { id: 'L3', x: 60, y: 80 }, { id: 'N', x: 90, y: 80 }, { id: 'PE', x: 120, y: 80 }, { id: 'C1', x: 100, y: 0 }, { id: 'C2', x: 124, y: 0 }],
     init: () => ({ on: false }),
     sources: c => c.state.on ? { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N', PE: 'PE' } : null,
-    onPart(c, p, ev) { if (ev === 'down' && p === 'run') { c.state.on = !c.state.on; return true; } },
+    // C1-C2 are a dry start input: joined through a closed contact (the same net) = start
+    evaluate(c, api) { return c.props.mode === 'auto (C1-C2)' ? set(c, 'on', api.sameNet(c.id + ':C1', c.id + ':C2')) : false; },
+    onPart(c, p, ev) { if (ev === 'down' && p === 'run' && c.props.mode !== 'auto (C1-C2)') { c.state.on = !c.state.on; return true; } },
     draw(c) {
       const on = c.state.on;
       return R(0, 0, 140, 80, '#c9a227', 6, '#6b5512') + R(8, 8, 76, 52, '#2b2d30', 4, '#111') + T(46, 30, 'GS 3~', 'dt light big') + T(46, 48, '400/230 V', 'dt light xs') +
-        led(110, 18, on, '#3ddc63') + btn('run', 92, 32, 42, 18, on ? 'STOP' : 'START', on);
+        led(110, 18, on, '#3ddc63') + (c.props.mode === 'auto (C1-C2)' ? T(113, 46, 'AUTO', 'dt light sm') : btn('run', 92, 32, 42, 18, on ? 'STOP' : 'START', on));
     },
     status: c => (c.state.on ? 'Running — 400/230 V' : 'Stopped'),
   });
@@ -215,15 +218,18 @@
     },
     status: c => c.state.tripped ? 'TRIPPED — click the knob to reset' : !c.state.on ? 'OFF' : c.state.heatPct ? `ON · overload ${c.state.heatPct}%` : 'ON',
   });
+  // overload relay aux contacts: two contacts (95-96 N.C., 97-98 N.O.) or one changeover 95-96-98
+  const OL_AUX = ['95-96 + 97-98', '95-96-98 changeover'];
+  const olAux = c => (c.props.aux === OL_AUX[1] ? [c.state.tripped ? ['95', '98'] : ['95', '96']] : [c.state.tripped ? ['97', '98'] : ['95', '96']]);
   def('olr', {
     name: 'Thermal Overload Relay', cat: 'Protection', view: 'power', prefix: 'F', w: 140, h: 110,
-    props: { trip: 4 },
-    pdefs: [{ k: 'trip', n: 'Trip delay at overload (s)', type: 'number' }],
-    info: 'Main poles 1-3-5 → 2-4-6 (always closed). Aux: 95-96 NC opens on trip, 97-98 NO closes on trip. Trips when the motor it feeds is jammed or single-phasing. Blue = RESET, red = TEST.',
+    props: { trip: 4, aux: OL_AUX[0] },
+    pdefs: [{ k: 'trip', n: 'Trip delay at overload (s)', type: 'number' }, { k: 'aux', n: 'Aux contacts', opts: OL_AUX }],
+    info: 'Main poles 1-3-5 → 2-4-6 (always closed). Aux: 95-96 NC opens on trip, 97-98 NO closes on trip (or, set as a changeover, 95 common → 96 N.C. / 98 N.O.). Trips when the motor it feeds is jammed or single-phasing. Blue = RESET, red = TEST.',
     terms: [{ id: '1', x: 20, y: 0 }, { id: '3', x: 40, y: 0 }, { id: '5', x: 60, y: 0 }, { id: '95', x: 85, y: 0 }, { id: '96', x: 100, y: 0 }, { id: '97', x: 115, y: 0 }, { id: '98', x: 130, y: 0 },
       { id: '2', x: 20, y: 110 }, { id: '4', x: 40, y: 110 }, { id: '6', x: 60, y: 110 }],
     init: () => ({ tripped: false, heat: 0 }),
-    conduct: c => [['1', '2'], ['3', '4'], ['5', '6'], c.state.tripped ? ['97', '98'] : ['95', '96']],
+    conduct: c => [['1', '2'], ['3', '4'], ['5', '6'], ...olAux(c)],
     tick(c, api, dt) {
       const hot = api.feedsOverload(c);
       const s = c.state;
@@ -248,6 +254,29 @@
     },
     status: c => c.state.tripped ? 'TRIPPED — press R to reset' : c.state.heatPct ? `heating ${c.state.heatPct}%` : 'Ready',
   });
+
+  const POLE_IN = ['1', '3', '5', '7'], POLE_OUT = ['2', '4', '6', '8'];
+  function mpcbN(type, n) {
+    const ins = POLE_IN.slice(0, n), outs = POLE_OUT.slice(0, n), w = n === 4 ? 124 : 100, ax = n === 4 ? 108 : 86;
+    def(type, {
+      ...DEFS.mpcb, name: `Motor Protection Breaker ${n}-Pole`, family: 'mpcb', w,
+      info: `Motor protection circuit breaker, ${n} pole${n > 1 ? 's' : ''}: ${ins.join('-')} → ${outs.join('-')}. Trips on a short circuit and on motor overload (jammed or single-phasing). Aux 13-14 is closed while ON. Click the knob: ON/OFF; after a trip, click once to reset. TEST trips it.`,
+      terms: [...ins.map((t, i) => ({ id: t, x: 18 + i * 22, y: 0 })), { id: '13', x: ax, y: 0 }, ...outs.map((t, i) => ({ id: t, x: 18 + i * 22, y: 130 })), { id: '14', x: ax, y: 130 }],
+      conduct: c => (c.state.on && !c.state.tripped) ? [...pairs(ins, outs), ['13', '14']] : null,
+      draw: c => (w > 100 ? R(98, 0, w - 98, 130, '#f1f1ef', 3, '#8b8b86') : '') + DEFS.mpcb.draw(c),
+    });
+  }
+  mpcbN('mpcb1', 1); mpcbN('mpcb2', 2); mpcbN('mpcb4', 4);
+  function olrN(type, n) {
+    const ins = POLE_IN.slice(0, n), outs = POLE_OUT.slice(0, n);
+    def(type, {
+      ...DEFS.olr, name: `Thermal Overload Relay ${n}-Pole`, family: 'olr',
+      info: `Overload relay, ${n} pole${n > 1 ? 's' : ''}: ${ins.join('-')} → ${outs.join('-')} (always closed). Aux: 95-96 NC opens on trip, 97-98 NO closes on trip (or 95-96-98 changeover). Trips when the motor it feeds is jammed. Blue = RESET, red = TEST.`,
+      terms: [...ins.map((t, i) => ({ id: t, x: 20 + i * 20, y: 0 })), ...DEFS.olr.terms.filter(t => /^9/.test(t.id)), ...outs.map((t, i) => ({ id: t, x: 20 + i * 20, y: 110 }))],
+      conduct: c => [...pairs(ins, outs), ...olAux(c)],
+    });
+  }
+  olrN('olr1', 1); olrN('olr2', 2);
 
   /* ---------- CONTROL ---------- */
   def('contactor', {
@@ -283,6 +312,46 @@
     draw: c => DEFS.contactor.draw(c).replace('3P + 1NO 1NC', '4P + 1NO'),
     status: c => c.state.burnt ? 'Coil burnt' : c.state.pulled ? 'Energized (pulled in)' : 'De-energized',
   });
+  /* contactor with normally closed main poles: 1-2 … 7-8 are closed at rest and open when the coil pulls in */
+  def('contactor_nc', {
+    ...DEFS.contactor4, name: 'Contactor N.C. Poles (4-Pole)', family: 'contactor', famNo: ['km'],
+    info: 'Coil A1-A2. Four N.C. main poles 1-2, 3-4, 5-6, 7-8: closed at rest, open while the coil is energized. Aux 13-14 N.O., 21-22 N.C.',
+    terms: [{ id: 'A1', x: 10, y: 0 }, { id: '1', x: 28, y: 0 }, { id: '3', x: 46, y: 0 }, { id: '5', x: 64, y: 0 }, { id: '7', x: 82, y: 0 }, { id: '13', x: 98, y: 0 }, { id: '21', x: 112, y: 0 },
+      { id: 'A2', x: 10, y: 140 }, { id: '2', x: 28, y: 140 }, { id: '4', x: 46, y: 140 }, { id: '6', x: 64, y: 140 }, { id: '8', x: 82, y: 140 }, { id: '14', x: 98, y: 140 }, { id: '22', x: 112, y: 140 }],
+    conduct: c => c.state.pulled ? [['13', '14']] : [['1', '2'], ['3', '4'], ['5', '6'], ['7', '8'], ['21', '22']],
+    draw: c => DEFS.contactor.draw(c).replace('3P + 1NO 1NC', '4 N.C. poles').replace('>NO<', '>NC<'),
+  });
+  /* contactor with a front-mounted time-delay contact block (pneumatic timer block): the block's contacts switch t s
+     after the coil pulls in (on-delay) or t s after it drops out (off-delay). Block: 55 common → 56 N.C. / 58 N.O.,
+     and a separate N.O. 67-68; all of them switch together. */
+  function contactorTd(type, off) {
+    def(type, {
+      name: `Contactor + ${off ? 'Off' : 'On'}-Delay Block`, family: 'contactor', cat: 'Control', view: 'cabinet', prefix: 'KM', w: 170, h: 140,
+      props: { coil: '230VAC', t: 3 },
+      pdefs: [{ k: 'coil', n: 'Coil voltage', opts: RATINGS }, { k: 't', n: `${off ? 'Off' : 'On'} delay of the block (s)`, type: 'number' }],
+      info: `Contactor 3P + 13-14 N.O. / 21-22 N.C., with an ${off ? 'off' : 'on'}-delay contact block: 55-56 N.C., 55-58 N.O. and 67-68 N.O. switch ${off ? 'at once when the coil pulls in, and back t s after it drops out' : 't s after the coil pulls in, and back at once when it drops out'}.`,
+      terms: [...DEFS.contactor.terms, { id: '55', x: 132, y: 0 }, { id: '67', x: 156, y: 0 }, { id: '56', x: 126, y: 140 }, { id: '58', x: 140, y: 140 }, { id: '68', x: 156, y: 140 }],
+      init: () => ({ pulled: false, burnt: false, td: false, el: 0 }),
+      conduct: c => [...(DEFS.contactor.conduct(c) || []), ...(c.state.td ? [['55', '58'], ['67', '68']] : [['55', '56']])],
+      evaluate(c, api) {
+        const on = coilOn(c, api, 'A1', 'A2');
+        if (on !== c.state.pulled) c.state.el = 0;
+        let ch = set(c, 'pulled', on);
+        if (off && on) ch = set(c, 'td', true) || ch;
+        if (!off && !on) ch = set(c, 'td', false) || ch;
+        return ch;
+      },
+      tick(c, api, dt) {
+        const s = c.state, t = Number(c.props.t) || 0;
+        if (s.pulled !== s.td) { s.el = Math.min(t, s.el + dt); if (s.el >= t) { s.td = s.pulled; s.el = 0; } } else s.el = 0;
+        s.elD = Math.round(s.el * 10) / 10;
+      },
+      draw: c => DEFS.contactor.draw(c) + R(120, 18, 50, 104, '#e2ddd0', 3, '#8b8b86') + T(145, 40, off ? 'OFF' : 'ON', 'dt xs') + T(145, 52, 'DELAY', 'dt xs') +
+        T(145, 74, `${Number(c.props.t) || 0} s`, 'dt sm') + led(145, 92, c.state.td, '#f2c230', 3),
+      status: c => { const s = c.state, base = DEFS.contactor.status(c); return s.pulled !== s.td ? `${base} · block timing ${(s.elD || 0).toFixed(1)} s` : `${base} · block ${s.td ? 'switched' : 'at rest'}`; },
+    });
+  }
+  contactorTd('contactor_ton', false); contactorTd('contactor_tof', true);
   /* impulse relay (latching, "teleruptor"): every pulse on the coil toggles the contact, which then stays */
   def('impulse', {
     name: 'Impulse Relay', cat: 'Control', view: 'cabinet', prefix: 'KI', w: 70, h: 110,
@@ -996,6 +1065,14 @@
     },
     status: c => c.state.latched ? 'LATCHED — click to release' : 'Released',
   });
+  /* E-stop with one changeover contact: 11 common → 12 N.C. (released) / 14 N.O. (pushed and latched) */
+  def('estop_co', {
+    ...DEFS.estop, name: 'Emergency Stop Changeover',
+    info: 'Latching mushroom head with a changeover contact: 11-12 closed when released, 11-14 closed when pushed. Click again to twist-release.',
+    terms: [{ id: '11', x: 20, y: 100 }, { id: '12', x: 40, y: 100 }, { id: '14', x: 60, y: 100 }],
+    conduct: c => [c.state.latched ? ['11', '14'] : ['11', '12']],
+    draw: c => DEFS.estop.draw(c).replace('>NC + NO<', '>C/O<'),
+  });
   function sel2(type, contact) {
     const ids = contact === 'NO' ? ['13', '14'] : ['11', '12'];
     def(type, {
@@ -1251,6 +1328,21 @@
     },
     status: c => c.state.tripped ? 'Fuses BLOWN — click F to replace' : c.state.on ? 'ON' : 'OFF',
   });
+  function fswN(type, n, neutral) {
+    const ins = P4.ins.slice(0, n), outs = P4.outs.slice(0, n), w = Math.max(70, 26 + n * 24), live = neutral ? n - 1 : n;
+    def(type, {
+      ...DEFS.fsw3, name: `Fuse Disconnector ${neutral ? `${live}P+N` : `${n}-Pole`}`, w, ...(neutral || n === 4 ? {} : { family: 'fsw3' }),
+      info: `Switch with fuses in it: ${ins.join('-')} → ${outs.join('-')}${neutral ? ` (the last pole, ${ins[n - 1]}-${outs[n - 1]}, is the neutral: switched, no fuse)` : ''}. Click the knob to switch ON/OFF; the fuses blow on a short circuit (click F to replace them).`,
+      terms: polesTerms(ins, outs, w, 100),
+      conduct: c => !c.state.on ? null : c.state.tripped ? (neutral ? [[ins[n - 1], outs[n - 1]]] : null) : pairs(ins, outs),
+      draw(c) {
+        const st = c.state;
+        return modBody(w, 100, 'FUSE SW', 16, 16) + `<g class="part" data-part="h"><circle cx="${w / 2}" cy="50" r="15" fill="#f2c230" stroke="#8a6a10"/><rect x="${w / 2 - 4}" y="37" width="8" height="26" rx="3" fill="#d33a2c" stroke="#6b201a" transform="rotate(${st.on ? 90 : 0} ${w / 2} 50)"/></g>` +
+          T(w / 2, 76, (st.on ? 'ON' : 'OFF') + ' · ' + c.props.rating, 'dt xs') + `<g class="part" data-part="f"><rect x="${w - 22}" y="66" width="18" height="14" rx="3" fill="${st.tripped ? '#d33a2c' : '#e9e5dc'}" stroke="#555"/>${T(w - 13, 76, 'F', `dt xs${st.tripped ? ' light' : ''}`)}</g>`;
+      },
+    });
+  }
+  fswN('fsw1', 1); fswN('fsw2', 2); fswN('fsw1n', 2, true); fswN('fsw3n', 4, true); fswN('fsw4', 4);
   def('rcd4', {
     name: 'RCD 4-Pole 30 mA', cat: 'Protection', view: 'power', prefix: 'FI', w: 130, h: 100, breaker: 0.8, earthOnly: true,
     info: 'Residual current device for 3-phase + N: 1-3-5-7 → 2-4-6-8 (7-8 = N). Trips on an earth fault before the breakers. T = test.',
@@ -1361,6 +1453,14 @@
         led(52, 40, c.state.act, '#f2c230', 3);
     },
     status: c => c.state.act ? 'Actuated' : 'Free',
+  });
+  /* roller-lever limit switch with one changeover contact: 11 common → 12 N.C. (free) / 14 N.O. (actuated) */
+  def('limit_co', {
+    ...DEFS.limit, name: 'Limit Switch Changeover',
+    info: 'Roller-lever limit switch with a changeover contact: 11-12 closed when free, 11-14 closed when actuated. Click the lever to actuate / release.',
+    terms: [{ id: '11', x: 15, y: 90 }, { id: '12', x: 35, y: 90 }, { id: '14', x: 55, y: 90 }],
+    conduct: c => [c.state.act ? ['11', '14'] : ['11', '12']],
+    draw: c => DEFS.limit.draw(c).replace('>1NO 1NC<', '>C/O<'),
   });
   function prox(type, out, label = 'Proximity Sensor', variant = { PNP: 'prox', NPN: 'prox_npn' }) {
   def(type, {
@@ -2271,5 +2371,8 @@
     if (a.kind === 'bit' && a.bit >= 8) return { msg: `${a.norm}: the card in slot ${a.word} has 8 points (${a.file}:${a.word}/0–7)` };
     return null;
   }
-  window.Circuit = { DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
+  /* a symbol made for one device type fits a device of the same family: a 1-pole overload relay is an overload relay
+     (its contacts are the same), and an older drawing with the 3-pole device under a 1-pole symbol still works */
+  const sameKind = (dev, sym) => dev === sym || (!!DEFS[dev] && DEFS[dev].family === sym) || (!!DEFS[sym] && DEFS[sym].family === dev);
+  window.Circuit = { sameKind, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
 })();

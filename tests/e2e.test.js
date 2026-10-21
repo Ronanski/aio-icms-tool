@@ -2279,6 +2279,109 @@ function check(name, cond, info = '') {
     return p.circuit.wires.length === s.circuit.wires.length && p.ladder.rungs.length === 8 && p.hmi.objects.length === 10 && !(p.keep && p.keep.comps && p.keep.comps.length); }));
   await setMode('PROG');
   await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+  console.log('Simurelay parity: N.C. main poles, delay blocks, N.C.+N.O., changeovers, 1/2/4-pole protections, generator auto, PLC paste');
+  check('parity: the new devices are in the parts list and every new symbol fits its device', await page.evaluate(() => {
+    const devs = ['contactor_nc', 'contactor_ton', 'contactor_tof', 'estop_co', 'limit_co', 'fsw1', 'fsw2', 'fsw1n', 'fsw3n', 'fsw4', 'mpcb1', 'mpcb2', 'mpcb4', 'olr1', 'olr2'];
+    const syms = ['pbnonc', 'selnonc', 'esnonc', 'esco', 'lsnonc', 'lsco', 'kmnonc', 'kanonc', 'olco', 'kbonnc', 'kbonno', 'kbonco', 'kbonnonc', 'kbofnc', 'kbofno', 'kbofco', 'kbofnonc', 'kmn1', 'kmn2', 'kmn3', 'kmn4', 'ol1', 'ol2', 'qm1', 'qm2', 'qm4', 'fsw1', 'fsw2', 'fsw1n', 'fsw3n', 'fsw4', 'gen'];
+    return devs.every(t => Circuit.DEFS[t] && !Circuit.DEFS[t].hidden) && syms.every(k => FreeDraw.KINDS[k] && FreeDraw.KINDS[k].terms.every(t => Circuit.DEFS[FreeDraw.KINDS[k].type].terms.some(x => x.id === t.id)));
+  }));
+  check('parity: a contactor with N.C. main poles feeds its load at rest and cuts it when the coil pulls in (aux 13-14 / 21-22 too)', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('isol1'), k = add('contactor_nc', { coil: '230VAC' }), h = add('lamp', { coil: '230VAC' }), a = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '1'); w(s, '2', k, 'A1'); w(k, 'A2', q, 'N'); w(q, 'L', k, '7'); w(k, '8', h, 'X1'); w(h, 'X2', q, 'N'); w(q, 'L', k, '13'); w(k, '14', a, 'X1'); w(a, 'X2', q, 'N');
+    run(); const rest = h.state.on && !a.state.on; s.state.on = true; run(); return rest && !h.state.on && a.state.on;`)));
+  check('parity: an on-delay contact block switches 55-56 / 55-58 / 67-68 after its delay and back at once', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('isol1'), k = add('contactor_ton', { coil: '230VAC', t: 1 }), n = add('lamp', { coil: '230VAC' }), o = add('lamp', { coil: '230VAC' }), p = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '1'); w(s, '2', k, 'A1'); w(k, 'A2', q, 'N'); w(q, 'L', k, '55'); w(k, '56', n, 'X1'); w(k, '58', o, 'X1'); w(q, 'L', k, '67'); w(k, '68', p, 'X1'); [n, o, p].forEach(x => w(x, 'X2', q, 'N'));
+    run(2); const r0 = n.state.on && !o.state.on && !p.state.on; s.state.on = true; run(5); const r1 = k.state.pulled && n.state.on && !p.state.on; run(7);
+    const r2 = !n.state.on && o.state.on && p.state.on; s.state.on = false; run(1); return r0 && r1 && r2 && n.state.on && !p.state.on;`)));
+  check('parity: an off-delay contact block switches at once and goes back its delay after the coil drops', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('isol1'), k = add('contactor_tof', { coil: '230VAC', t: 1 }), p = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '1'); w(s, '2', k, 'A1'); w(k, 'A2', q, 'N'); w(q, 'L', k, '67'); w(k, '68', p, 'X1'); w(p, 'X2', q, 'N');
+    run(2); const r0 = !p.state.on; s.state.on = true; run(1); const r1 = p.state.on; s.state.on = false; run(5); const r2 = p.state.on && !k.state.pulled; run(7); return r0 && r1 && r2 && !p.state.on;`)));
+  check('parity: E-stop and limit switch changeovers join 11-12 at rest and 11-14 when operated', await page.evaluate(new Function(solveKit + `
+    const r = t => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply1'), d = add(t), a = add('lamp', { coil: '230VAC' }), b = add('lamp', { coil: '230VAC' });
+      w(q, 'L', d, '11'); w(d, '12', a, 'X1'); w(d, '14', b, 'X1'); w(a, 'X2', q, 'N'); w(b, 'X2', q, 'N'); run(); const rest = a.state.on && !b.state.on;
+      Circuit.part(d, t === 'estop_co' ? 'btn' : 'lever', 'down'); run(); return rest && !a.state.on && b.state.on; };
+    return r('estop_co') && r('limit_co');`)));
+  check('parity: fuse switches 1P, 2P, 4P switch their poles; on a short the 1P+N and 3P+N fuses blow and the neutral pole stays closed', await page.evaluate(new Function(solveKit + `
+    const q = add('supply3'), ok = [];
+    for (const [t, n] of [['fsw1', 1], ['fsw2', 2], ['fsw4', 4]]) { const d = add(t, {}, { on: true }); ok.push(Circuit.DEFS[t].conduct(d).length === n); d.state.on = false; ok.push(!Circuit.DEFS[t].conduct(d)); }
+    for (const [t, ph, nn] of [['fsw1n', ['1'], ['3', '4']], ['fsw3n', ['1', '3', '5'], ['7', '8']]]) {
+      const d = add(t, {}, { on: true }); ['L1', 'L2', 'L3'].slice(0, ph.length).forEach((p, i) => w(q, p, d, ph[i])); w(q, 'N', d, nn[0]); w(d, '2', d, nn[1]); run();
+      const c = Circuit.DEFS[t].conduct(d); ok.push(d.state.tripped && c.length === 1 && c[0][0] === nn[0] && c[0][1] === nn[1]);
+    }
+    return ok.every(Boolean);`)));
+  check('parity: 1-, 2- and 4-pole motor protection breakers switch every pole and trip on a jammed motor', await page.evaluate(new Function(solveKit + `
+    const ok = [];
+    for (const [t, n] of [['mpcb1', 1], ['mpcb2', 2], ['mpcb4', 4]]) { const d = add(t, {}, { on: true }); ok.push(Circuit.DEFS[t].conduct(d).length === n + 1); }
+    circ.comps.length = 0; circ.wires.length = 0;
+    const q = add('supply1'), d = add('mpcb1', { trip: 1 }, { on: true }), m = add('motor1'); w(q, 'L', d, '1'); w(d, '2', m, 'L'); w(m, 'N', q, 'N'); run(10);
+    const ran = m.state.drive === 'run'; m.state.jam = true; run(30); return ok.every(Boolean) && ran && d.state.tripped;`)));
+  check('parity: 1- and 2-pole overload relays trip on a jammed motor; set as a changeover, 95-96 opens and 95-98 closes', await page.evaluate(new Function(solveKit + `
+    const t = (type, aux) => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply1'), f = add(type, { trip: 1, aux }), m = add('motor1'), a = add('lamp', { coil: '230VAC' }), b = add('lamp', { coil: '230VAC' });
+      w(q, 'L', f, '1'); w(f, '2', m, 'L'); w(m, 'N', q, 'N'); w(q, 'L', f, '95'); w(f, '96', a, 'X1'); w(f, aux.includes('changeover') ? '98' : '97', b, 'X1'); if (!aux.includes('changeover')) w(q, 'L', f, '98');
+      w(a, 'X2', q, 'N'); w(b, 'X2', q, 'N'); run(10); const rest = a.state.on && !b.state.on && m.state.drive === 'run'; m.state.jam = true; run(30); return rest && f.state.tripped && !a.state.on && b.state.on; };
+    return t('olr1', '95-96 + 97-98') && t('olr2', '95-96 + 97-98') && t('olr1', '95-96-98 changeover') && t('olr', '95-96-98 changeover');`)));
+  check('parity: a generator in AUTO runs while a contact joins C1-C2 and stops when it opens; in MANUAL C1-C2 do nothing', await page.evaluate(new Function(solveKit + `
+    const g = add('gen3', { mode: 'auto (C1-C2)' }), s = add('isol1'), h = add('lamp', { coil: '230VAC' });
+    w(g, 'C1', s, '1'); w(s, '2', g, 'C2'); w(g, 'L1', h, 'X1'); w(h, 'X2', g, 'N'); run(3); const off = !g.state.on && !h.state.on;
+    s.state.on = true; run(3); const on = g.state.on && h.state.on; s.state.on = false; run(3); const stop = !g.state.on;
+    g.props.mode = 'manual'; s.state.on = true; run(3); return off && on && stop && !g.state.on;`)));
+  // drawn: changeover overload contact, an on-delay block on KM1, N.C. main poles, a N.C.+N.O. push button, an old 1-pole overload drawing on a 3-pole device
+  const pyP = { name: 'Parity', circuit: { seq: 5, comps: [{ id: 'c1', type: 'supply3', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+    { id: 'c2', type: 'olr', x: 0, y: 200, props: { label: 'F9' }, state: {} }, { id: 'c3', type: 'contactor_ton', x: 0, y: 300, props: { label: 'KM1', coil: '230VAC', t: 1 }, state: {} }], wires: [] },
+    schematic: { free: { seq: 60, items: [
+      fi('d1', 'pL1', 'XP1', 0, 0), fi('d2', 'olco', 'F1', 0, 100), fi('d3', 'lamp', 'H1', -40, 220), fi('d4', 'lamp', 'H2', 40, 220), fi('d5', 'pN', 'XP2', 0, 340),
+      fi('d6', 'pL1', 'XP3', 200, 0), fi('d7', 'pbnonc', 'S1', 200, 100), fi('d8', 'kmcoil', 'KM1', 180, 220), fi('d9', 'pN', 'XP4', 200, 340),
+      fi('d10', 'pL1', 'XP5', 320, 0), fi('d11', 'kbonno', 'KM1', 320, 100), fi('d12', 'lamp', 'H3', 320, 220), fi('d13', 'pN', 'XP6', 320, 340),
+      fi('d14', 'pL1', 'XP7', 440, 0), fi('d15', 'kmn1', 'KM2', 440, 100), fi('d16', 'lamp', 'H4', 440, 220), fi('d17', 'pN', 'XP8', 440, 340),
+      fi('d18', 'ol1', 'F9', 560, 100), fi('d19', 'olnc', 'F9', 640, 100), fi('d20', 'kmcoil', 'KM2', 560, 260), fi('d21', 'kmn2', 'KM3', 700, 100)],
+    wires: [fw('fw1', 'd1:J', 'd2:95'), fw('fw2', 'd2:96', 'd3:X1'), fw('fw3', 'd2:98', 'd4:X1'), fw('fw4', 'd3:X2', 'd5:J'), fw('fw5', 'd4:X2', 'd5:J'),
+      fw('fw6', 'd6:J', 'd7:13'), fw('fw7', 'd7:14', 'd8:A1'), fw('fw8', 'd8:A2', 'd9:J'), fw('fw9', 'd10:J', 'd11:67'), fw('fw10', 'd11:68', 'd12:X1'), fw('fw11', 'd12:X2', 'd13:J'),
+      fw('fw12', 'd14:J', 'd15:1'), fw('fw13', 'd15:2', 'd16:X1'), fw('fw14', 'd16:X2', 'd17:J')] } } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, pyP);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('parity: the drawing makes F1 an overload relay set as a 95-96-98 changeover and KM2 a N.C.-pole contactor and KM1 the on-delay-block contactor; no problem is reported',
+    await until(is("d('H1').on && !d('H2').on && d('H4').on")) && await page.evaluate(() => { const C = App.project.circuit, t = l => C.comps.find(c => c.props.label === l);
+      return t('F1').type === 'olr' && t('F1').props.aux === '95-96-98 changeover' && t('KM2').type === 'contactor_nc' && t('KM1').type === 'contactor_ton' && FreeDraw.errs.size === 0; }));
+  check('parity: an older drawing (1-pole overload symbol on a 3-pole relay) and the generic overload contact still fit F9', await page.evaluate(() => { const it = App.project.schematic.free.items; return ['d18', 'd19'].every(id => !FreeDraw.errs.has(it.find(i => i.id === id))) && App.project.circuit.comps.find(c => c.props.label === 'F9').type === 'olr'; }));
+  await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'F1'), 'test'));
+  check('parity: tripping F1 moves the drawn changeover 95-96-98 from H1 to H2', await until(is("d('F1').tripped && !d('H1').on && d('H2').on")));
+  await page.evaluate(() => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); });
+  check('parity: holding S1 (drawn N.C.+N.O.) pulls in KM1; the symbol shows operated and the on-delay block lights H3 only after 1 s', await until(is("d('KM1').pulled && !d('H3').on")) &&
+    await page.evaluate(() => document.querySelector('#view-schematic [data-fi="d7"] .ssym').classList.contains('on')) && await until(is("d('KM1').td && d('H3').on"), null, 3000));
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('parity: releasing S1 drops KM1 and its block at once', await until(is("!d('KM1').pulled && !d('H3').on"), null, 1000));
+  check('parity: a main-pole symbol of a normal contactor does not fit a N.C.-pole contactor (KM2 with km3 is reported)', await page.evaluate(() => {
+    App.project.schematic.free.items.push({ id: 'd40', k: 'km3', tag: 'KM2', x: 800, y: 100, r: 0 }); const m = FreeDraw.check().get(App.project.schematic.free.items.find(i => i.id === 'd40'));
+    App.project.schematic.free.items.pop(); return !!m && /own symbols/.test(m);
+  }));
+  check('parity: the new symbols survive save and reload, with the overload setting', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
+    return ['olco', 'pbnonc', 'kbonno', 'kmn1', 'kmn2'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.circuit.comps.find(c => c.props.label === 'F1').props.aux === '95-96-98 changeover' && p.circuit.comps.find(c => c.props.label === 'KM1').type === 'contactor_ton' && !(p.keep && p.keep.free.items.length); }));
+  // PLC I/O copies take the next free point of the same controller
+  const plP = { name: 'PLC paste', circuit: { seq: 5, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'plc', x: 0, y: 200, props: { label: 'PLC' }, state: {} }], wires: [] },
+    schematic: { free: { seq: 10, items: [fi('d1', 'plci0', 'PLC', 0, 100), fi('d2', 'plcq0', 'PLC', 200, 100)], wires: [] } } };
+  await page.evaluate(p => { const prev = App.currentId; App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, plP);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('PLC paste: Ctrl+C / Ctrl+V of input I0 and output O0 gives I1 and O1 of the same PLC, with no problem reported', await page.evaluate(() => {
+    FreeDraw.selectAll(); FreeDraw.copySel(); FreeDraw.paste(); const F = App.project.schematic.free;
+    return F.items.length === 4 && F.items.some(i => i.k === 'plci1' && i.tag === 'PLC') && F.items.some(i => i.k === 'plcq1' && i.tag === 'PLC') && FreeDraw.check().size === 0;
+  }));
+  // select one symbol the way the user does (a click on it), then D duplicates it
+  const clickFi = id => page.evaluate(async id => { const h = document.querySelector('#view-schematic [data-fi="' + id + '"] .hit'), r = h.getBoundingClientRect(),
+    o = { bubbles: true, pointerId: 7, pointerType: 'mouse', clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    h.dispatchEvent(new PointerEvent('pointerdown', o)); await new Promise(q => setTimeout(q, 30)); h.dispatchEvent(new PointerEvent('pointerup', o)); await new Promise(q => setTimeout(q, 500)); }, id);
+  await clickFi(await page.evaluate(() => App.project.schematic.free.items.find(i => i.k === 'plci1').id));
+  check('PLC paste: D on input I1 gives I2 (the next point not drawn yet)', await page.evaluate(() => { FreeDraw.copy(); const F = App.project.schematic.free; return F.items.some(i => i.k === 'plci2' && i.tag === 'PLC') && FreeDraw.check().size === 0; }));
+  await page.evaluate(() => { const F = App.project.schematic.free; for (let n = 3; n < 12; n++) F.items.push({ id: 'd' + (++F.seq), k: 'plci' + n, tag: 'PLC', x: 100 + n * 60, y: 400, r: 0 }); App.showView('wiring'); App.showView('schematic'); });
+  await wait(300);
+  await clickFi('d1');
+  check('PLC paste: with all 12 inputs drawn, a copy stays as it is, is reported and the user is told why', await page.evaluate(() => {
+    const F = App.project.schematic.free, n = F.items.length; FreeDraw.copy(); const added = F.items[F.items.length - 1];
+    const toast = [...document.querySelectorAll('#toast-root *')].some(e => /drawn already/.test(e.textContent));
+    return F.items.length === n + 1 && added.k === 'plci0' && FreeDraw.check().has(added) && toast; }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 

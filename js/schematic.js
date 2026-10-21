@@ -175,7 +175,7 @@
       // the tag of a part a newer version made (kept in the project): no new device may take it
       if (!d && circ().reserved && circ().reserved.has(tag)) return SC.reservedMsg(tag);
       if (!t) { want.set(tag, type); return null; }
-      return t === type ? null : `${tag} is a ${DEFS[t].name} ${d ? 'in the Wiring' : 'elsewhere in the diagram'}, not a ${what || DEFS[type].name}`;
+      return Circuit.sameKind(t, type) ? null : `${tag} is a ${DEFS[t].name} ${d ? 'in the Wiring' : 'elsewhere in the diagram'}, not a ${what || DEFS[type].name}`;
     };
     // dry: only test; else take the terminals for view v
     const take = (tag, ids, v, dry) => {
