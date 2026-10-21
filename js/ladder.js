@@ -108,8 +108,10 @@
     o.push(`<g class="el${selCls(id)}" data-uid="${id}">`);
     o.push(`<rect class="hit" x="${x + 2}" y="${y + 4}" width="${CW - 4}" height="${RH - 8}" rx="6"/>`);
     o.push(hw(x, cx - sw, wy, 'i' + id), hw(cx + sw, x + CW, wy, 'o' + id));
-    descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - 30 - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
-    if (!noArg) o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(App.fmt(norm))}</text>`);
+    const tg = p && p.tag ? PLCcore.tagOf(p.tag) : null, alias = tg && tg.type === 'ALIAS' ? `<${App.fmt(p.addr)}>` : '';
+    descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - (alias ? 41 : 30) - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
+    if (!noArg) o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - (alias ? 28 : 17)}">${esc(App.fmt(norm))}</text>`);
+    if (alias) o.push(`<text class="alias" x="${cx}" y="${wy - 17}">${esc(alias)}</text>`);
     o.push(`<text class="fbadge" data-f="${esc(p && p.addr || norm)}" x="${cx}" y="${wy + 26}"></text>`);
     o.push(`<g class="ins" data-h="${id}">`);
     if (d && d.k === 'coil') {
@@ -149,7 +151,8 @@
       const raw = e.a[k] ?? '?';
       const p = parse(raw);
       const lk = liveKey(e, k);
-      o.push(`<text class="bname" x="${bx + 8}" y="${ry}">${esc(spec.n)}</text>`);
+      o.push(`<text class="bname" x="${bx + 8}" y="${ry}">${esc(spec.ty === 'prog' && App.project.target === 'tag' ? 'Routine Name' : spec.n)}</text>`);
+      if (spec.ty === 'prog' && App.project.target === 'tag' && p && p.kind === 'prog') { const f = fileOf(p.n); o.push(`<text class="bval${f ? '' : ' bad'}" x="${bx + BOXW - 8}" y="${ry}">${esc(f ? f.name : p.norm)}</text>`); return; }
       if (lk) o.push(`<text class="bval" data-v="${lk}" x="${bx + BOXW - 8}" y="${ry}">${esc(raw)}</text>`);
       else if (p && p.kind === 'word') {
         o.push(`<text class="baddr" x="${bx + 78}" y="${ry}">${esc(p.norm)}</text>`);
@@ -207,7 +210,7 @@
   function renderRung(r, W) {
     const L = rungLayout(r), o = [];
     const h = L.h;
-    o.push(`<line class="rail" x1="3" y1="0" x2="3" y2="${h}"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="${h}"/>`);
+    o.push(`<line class="rail" data-rail x1="3" y1="0" x2="3" y2="${h}"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="${h}"/>`);
     o.push(hw(3, LM, WY, 'r' + r.id));
     let key = renderSeq(L.cl, L.cond, LM, 0, 'r' + r.id, 0, o);
     const ox = W - RM - L.ol.w;
@@ -231,6 +234,7 @@
   /* Online group and the online-edit banner (Realistic connection) */
   Ladder.connUi = function () {
     if (!root || !App.project) return;
+    Ladder.statusUi();
     const c = App.project.conn, real = !!(c && c.mode === 'real'), cn = App.conn;
     const sel = root.querySelector('[data-cmode]'); if (sel) sel.value = real ? 'real' : 'simple';
     const rr = root.querySelector('.lad-comm-real'); if (rr) rr.hidden = !real;
@@ -243,14 +247,34 @@
       : `<b>Online edits pending</b> — the controller still runs its program. <button class="tbtn" data-act="test">▶ Test edits</button><button class="tbtn" data-act="assemble">✓ Assemble</button><button class="tbtn" data-act="cancel">✕ Cancel edits</button>`;
   };
   Ladder.openFile = function (n) { if (n !== 2 && !fileOf(n)) return; curFile = n; SEL = { r: -1, id: null, leg: null }; undo = []; redo = []; Ladder.render(); };
+  // a routine of the tag-based controller is named like a tag (letters, digits, _; up to 40); a file-based program file keeps 10 capitals
+  const routineName = (s, tag) => tag ? String(s).trim().replace(/[^A-Za-z0-9_]/g, '').replace(/^[^A-Za-z]+/, '').slice(0, 40) : String(s).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10);
+  Ladder.renameFile = function (n) {
+    const f = fileOf(n); if (!f) return;
+    const tag = App.project.target === 'tag';
+    UI.form(tag ? 'Rename routine' : `Rename LAD ${n}`, [{ key: 'nm', label: 'Name', value: f.name }], v => {
+      const nm = routineName(v.nm, tag); if (!nm) return 'Type a name';
+      if ((App.project.ladder.files || []).some(x => x !== f && x.name === nm)) return 'Another routine has that name';
+      App.log('system', `${tag ? 'Routine' : 'LAD ' + n} ${f.name} renamed ${nm}`); f.name = nm; App.programChanged(); Ladder.render(); return undefined;
+    });
+  };
+  Ladder.deleteFile = function (n) {
+    const f = fileOf(n); if (!f) return;
+    const tag = App.project.target === 'tag';
+    UI.confirm(tag ? 'Delete routine' : `Delete LAD ${n}`, `Delete ${f.name} and its ${f.rungs.length} rung(s)? A JSR that calls it becomes an error until you fix it.`, () => {
+      App.project.ladder.files = App.project.ladder.files.filter(x => x !== f); if (curFile === n) curFile = 2;
+      App.log('system', `${tag ? 'Routine' : 'LAD ' + n} ${f.name} deleted`); App.programChanged(); Ladder.render();
+    }, 'Delete');
+  };
   Ladder.newFile = function () {
     const used = new Set((App.project.ladder.files || []).map(f => f.n)); let n = 3; while (used.has(n)) n++;
-    if (n > 9) { UI.toast('Program files go up to LAD 9', 'warn'); return; }
-    UI.form(`New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: 'SUB' + n }], v => {
-      const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
-      App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [] }].sort((a, b) => a.n - b.n);
+    const tag = App.project.target === 'tag';
+    if (n > 9) { UI.toast(tag ? 'Up to 7 routines besides MainRoutine' : 'Program files go up to LAD 9', 'warn'); return; }
+    UI.form(tag ? 'New routine' : `New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: tag ? 'Routine' + (n - 2) : 'SUB' + n }], v => {
+      const nm = routineName(v.nm, tag); if (!nm) return 'Type a name';
+      App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [Ladder.newRung([])] }].sort((a, b) => a.n - b.n);
       curFile = n; App.programChanged(); Ladder.render(); return undefined;
-    }, '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
+    }, tag ? '<p class="help">A routine runs when a JSR to it in MainRoutine (or another routine) is true. Pick it by name in the JSR.</p>' : '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
   };
 
   function snapshot() {
@@ -526,7 +550,8 @@
     const e = f.e, d = INSTR[e.t];
     const first = parse(e.a[0]);
     const descKey = first && first.kind !== 'const' ? first.norm : null;
-    const fields = d.args.map((spec, k) => (spec.ty === 'mtype' ? { key: 'a' + k, label: spec.n, value: e.a[k], options: ['READ', 'WRITE'] } : { key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
+    const files = App.project.ladder.files || [], tag = App.project.target === 'tag';
+    const fields = d.args.map((spec, k) => (spec.ty === 'prog' && files.length ? { key: 'a' + k, label: tag ? 'Routine' : spec.n, value: e.a[k], options: files.map(f => ({ v: 'U:' + f.n, l: tag ? f.name : `U:${f.n} — LAD ${f.n} ${f.name}` })) } : spec.ty === 'mtype' ? { key: 'a' + k, label: spec.n, value: e.a[k], options: ['READ', 'WRITE'] } : { key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
     fields.push({ key: 'desc', label: 'Address description (optional)', value: descKey ? (App.project.ladder.desc[descKey] || '') : '', hint: 'Shown above the instruction, e.g. "START PB" or "MOTOR RUN".' });
     const m = UI.form(`${e.t} — ${d.name}`, fields, vals => {
       const a = [];
@@ -573,15 +598,21 @@
     }, `<p class="help">Example: <code>BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 OTE O:0/0</code><br>BST = branch start, NXB = next branch, BND = branch end.</p>`);
   };
 
+  const fileName = n => (n === 2 ? (App.project.target === 'tag' ? 'MainRoutine' : 'LAD 2 - MAIN') : (App.project.target === 'tag' ? (fileOf(n) || {}).name : `LAD ${n} - ${(fileOf(n) || {}).name}`));
   Ladder.verify = function (quiet) {
     // every program file; the messages say which file a rung is in
     const errs = [], warns = [];
     [[2, App.project.ladder.rungs], ...(App.project.ladder.files || []).map(f => [f.n, f.rungs])].forEach(([n, list]) => {
       const r = App.plc.verify(list, (App.project.ladder.files || []).map(f => f.n));  // JSR targets: the project's files, not the engine's
-      const tag = x => ({ ...x, msg: n === 2 ? x.msg : `LAD ${n}: ${x.msg}` });
+      const tag = x => ({ ...x, n, msg: n === 2 ? x.msg : `LAD ${n}: ${x.msg}` });
       errs.push(...r.errs.map(tag)); warns.push(...r.warns.map(tag));
     });
     ERR_IDS = new Set(errs.filter(x => x.id).map(x => x.id));
+    const where = x => `${App.project.target === 'tag' ? 'MainProgram - ' + fileName(x.n) : fileName(x.n)}, rung ${x.ri}`;
+    Ladder.out('m', 'Verifying routines...', true);
+    errs.forEach(x => Ladder.out('e', `Error: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`));
+    warns.forEach(x => Ladder.out('w', `Warning: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`));
+    Ladder.out('m', `Complete - ${errs.length} error(s), ${warns.length} warning(s)`);
     Ladder.render();
     if (quiet) return errs.length === 0;
     // I/O addresses in the messages follow the project's address style
@@ -644,11 +675,15 @@
   const TB = [
     ['Bit', ['XIC', 'XIO', 'ONS', 'OTE', 'OTL', 'OTU', 'OSR', 'OSF']],
     ['Timer/Counter', ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES']],
+    ['Input/Output', ['MSG']],
     ['Compare', ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM']],
-    ['Math/Move', ['MOV', 'ADD', 'SUB', 'MUL', 'DIV', 'CLR']],
-    ['File/Seq', ['COP', 'FLL', 'SQO', 'MSG']],
-    ['Program', ['JSR', 'SBR', 'RET', 'MCR']],
+    ['Compute/Math', ['ADD', 'SUB', 'MUL', 'DIV']],
+    ['Move/Logical', ['MOV', 'CLR']],
+    ['File/Misc', ['COP', 'FLL', 'SQO']],
+    ['Program Control', ['JSR', 'SBR', 'RET', 'MCR']],
   ];
+  // the Favorites tab, as the first tab of the instruction palette
+  const FAV = ['XIC', 'XIO', 'OTE', 'OTU', 'OTL', 'ONS', 'TON', 'CTU', 'RES', 'MOV', 'EQU', 'JSR'];
   const ICON = {
     XIC: '-] [-', XIO: '-]/[-', ONS: '-[ONS]-', OTE: '-( )-', OTL: '-(L)-', OTU: '-(U)-', RES: '-(RES)-', MCR: '-(MCR)-', RET: '-(RET)-',
   };
@@ -657,8 +692,15 @@
     root = el;
     el.innerHTML = `
       <div class="lad-toolbar">
+        <div class="tb-group lad-status" data-lstatus>
+          <div class="lad-leds">${["run", "ok", "bat", "io"].map(k => `<span data-st-led="${k}"><i></i>${k === "io" ? "I/O" : k.toUpperCase()}</span>`).join("")}</div>
+          <span class="lad-key" data-st-key title="Controller key switch"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="8" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 12h9M18 12v4M21 12v3" stroke="currentColor" stroke-width="2" fill="none"/></svg></span>
+          <div class="lad-stat-mid"><button class="lad-stat-btn" data-act="omenu" title="Controller mode — click for Go Online, Download, Run / Program Mode and Who Active"><b data-st-mode>Offline</b><span class="caret">▾</span></button><span class="lad-path" data-st-path title="Path to the controller"></span></div>
+          <div class="lad-stat-lines"><span class="st-box" data-st-forces>No Forces</span><span class="st-box" data-st-edits>No Edits</span><span class="st-box bad" data-st-io hidden>I/O Not Responding</span></div></div>
+        <div class="tb-group lad-ins"><div class="ins-row">${TB.flatMap(([g, list]) => list.map(t => `<button class="tbtn ins-btn${FAV.includes(t) ? ' fav' : ''}" data-ins="${t}" data-g="${g}" title="${t} — ${esc(INSTR[t].name)}: ${esc(INSTR[t].help)}" aria-label="${t} ${esc(INSTR[t].name)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`)).join('')}</div>
+          <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}</div></div>
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
-        <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><button class="tbtn" data-act="network" title="Network: who active, remote PLCs, produced / consumed data">🖧 Network</button><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
+        <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><button class="tbtn" data-act="who" title="Who Active: find the controller through the engineering PC in the Wiring and set the project path">⇆ Who Active</button><button class="tbtn" data-act="network" title="Network: who active, remote PLCs, produced / consumed data">🖧 Network</button><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-act="data" title="Data files and forces">▤ Data</button>
           <button class="tbtn" data-act="rung" title="New rung (Ctrl+R)">＋ Rung</button>
@@ -680,13 +722,14 @@
           <button class="tbtn zoomv" data-act="zreset" data-lz title="Reset zoom to 100%">100%</button>
           <button class="tbtn" data-act="zin" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button>
         </div>
-        ${TB.map(([g, list]) => `<div class="tb-group"><span class="tb-lbl">${g}</span>${list.map(t => `<button class="tbtn ins-btn" data-ins="${t}" title="${esc(INSTR[t].name)} — ${esc(INSTR[t].help)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`).join('')}</div>`).join('')}
       </div>
       <div class="lad-banner" data-lbanner hidden></div>
       <div class="lad-main">
+        <aside class="lad-org" data-lorg hidden></aside>
         <div class="lad-rungs" tabindex="0"></div>
         <aside class="lad-side"></aside>
-      </div>`;
+      </div>
+      <div class="lad-out" data-lout><div class="lad-out-head"><button class="oc e" data-oc="e"></button><button class="oc w" data-oc="w"></button><button class="oc m" data-oc="m"></button><span class="lad-rungpos" data-rungpos></span><button class="oc-tog" data-act="outtog" title="Show or hide the Errors pane">▾</button></div><pre class="lad-out-log" data-olog></pre></div>`;
     rungsEl = el.querySelector('.lad-rungs');
     sideEl = el.querySelector('.lad-side');
     el.querySelector('[data-addr]').addEventListener('change', ev => App.setAddrStyle(ev.target.value));
@@ -695,13 +738,17 @@
     el.querySelector('[data-lbanner]').addEventListener('click', ev => { const b = ev.target.closest('[data-act]'); if (b) ({ test: App.testEdits, assemble: App.assembleEdits, cancel: App.cancelEdits })[b.dataset.act]?.(); });
     el.querySelector('.lad-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.itab) { setTab(b.dataset.itab); return; }
+      if (b.dataset.oc) { const k = b.dataset.oc; if (outHide.has(k)) outHide.delete(k); else outHide.add(k); outUi(); return; }
+      if (b.dataset.act === 'omenu') { const q = b.getBoundingClientRect(); onlineMenu(q.left, q.bottom + 4); return; }
       if (b.dataset.ins) return Ladder.insert(b.dataset.ins);
       ({
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
-        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(), tags: () => App.tagsDialog(),
-        network: () => App.network(), online: () => App.goOnline(), download: () => App.download(), upload: () => UI.confirm('Upload', 'Replace the ladder and the tags of the project with the program in the controller?', () => App.upload(), 'Upload'), compare: () => App.compare(),
+        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(true), tags: () => App.tagsDialog(),
+        network: () => App.network(), who: () => App.whoActive(), online: () => App.goOnline(), download: () => App.download(), upload: () => App.upload(), compare: () => App.compare(),
         test: () => App.testEdits(), assemble: () => App.assembleEdits(), cancel: () => App.cancelEdits(),
+        outtog: () => outOpen(!outShown),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
     });
@@ -728,11 +775,85 @@
       else { SEL = { r: ri, id: null, leg: null }; Ladder.render(); rungMenu(ev.clientX, ev.clientY, ri); }
     });
     DataTable.init(sideEl);
+    setTab(insTab);
+    el.querySelector('[data-lout]').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.oc) { const k = b.dataset.oc; if (outHide.has(k)) outHide.delete(k); else outHide.add(k); outUi(); } else if (b.dataset.act === 'outtog') outOpen(!outShown); });
+    outUi();
+    // the Organizer stays open (or closed) as the user left it in this browser
+    try { if (localStorage.getItem('plc-trainer.orgOpen')) el.querySelector('[data-lorg]').hidden = false; } catch (e) { /* ignore */ }
     UI.drawer(el.querySelector('[data-act="data"]'), sideEl);
     UI.longPress(rungsEl);
     new ResizeObserver(() => { if (root.offsetParent) Ladder.render(); }).observe(rungsEl);
     rungsEl.addEventListener('wheel', ev => { if (!ev.ctrlKey) return; ev.preventDefault(); setZoom(ev.deltaY < 0 ? LZ * 1.1 : LZ / 1.1); }, { passive: false });
     bindDrag();
+  };
+
+  /* Errors pane: lines of kind e (error) / w (warning) / m (message); the chips count them and hide a kind */
+  const OUT = [], outHide = new Set();
+  let outShown = (() => { try { return localStorage.getItem('plc-trainer.outOpen') === '1'; } catch (e) { return false; } })();
+  function outOpen(on) { outShown = on; try { localStorage.setItem('plc-trainer.outOpen', on ? '1' : ''); } catch (e) { /* ignore */ } outUi(); }
+  function outUi() {
+    if (!root) return;
+    const box = root.querySelector('[data-lout]'); if (!box) return;
+    const n = k => OUT.filter(x => x.k === k).length, word = (k, w) => `${n(k)} ${w}${n(k) === 1 ? '' : 's'}`;
+    box.querySelector('[data-oc="e"]').textContent = word('e', 'Error'); box.querySelector('[data-oc="w"]').textContent = word('w', 'Warning'); box.querySelector('[data-oc="m"]').textContent = word('m', 'Message');
+    box.querySelectorAll('[data-oc]').forEach(b => b.classList.toggle('off', outHide.has(b.dataset.oc)));
+    box.classList.toggle('open', outShown);
+    box.querySelector('[data-act="outtog"]').textContent = outShown ? '▾' : '▴';
+    const log = box.querySelector('[data-olog]');
+    log.textContent = OUT.filter(x => !outHide.has(x.k)).map(x => x.t).join('\n');
+    log.scrollTop = log.scrollHeight;
+  }
+  // write to the Errors pane (kind e / w / m); clear = start a new report
+  Ladder.out = function (k, text, clear) { if (clear) OUT.length = 0; String(text).split('\n').forEach(t => OUT.push({ k, t })); if (OUT.length > 400) OUT.splice(0, OUT.length - 400); if (k === 'e') outShown = true; outUi(); };
+  Ladder.outLines = () => OUT.map(x => x.t);
+
+  /* instruction palette tabs (remembered in this browser) */
+  let insTab = (() => { try { return localStorage.getItem('plc-trainer.insTab') || 'Favorites'; } catch (e) { return 'Favorites'; } })();
+  function setTab(g) {
+    if (!root) return;
+    if (!['Favorites', ...TB.map(x => x[0])].includes(g)) g = 'Favorites';
+    insTab = g; try { localStorage.setItem('plc-trainer.insTab', g); } catch (e) { /* ignore */ }
+    root.querySelectorAll('.ins-tab').forEach(t => { t.classList.toggle('on', t.dataset.itab === g); t.setAttribute('aria-selected', t.dataset.itab === g); });
+    root.querySelectorAll('.lad-ins .ins-btn').forEach(b => b.classList.toggle('show', g === 'Favorites' ? b.classList.contains('fav') : b.dataset.g === g));
+  }
+  Ladder.setTab = setTab;
+  /* the online menu of the status box: what the controller connection allows now */
+  function onlineMenu(x, y) {
+    const c = App.project.conn, real = !!(c && c.mode === 'real'), on = App.conn.online, run = App.plc.mode === 'RUN';
+    UI.menu(x, y, [
+      { head: real ? (on ? 'Online' : 'Offline') : 'Simple connection' },
+      ...(real ? [{ label: on ? 'Go Offline' : 'Go Online', onClick: () => App.goOnline() }, { label: 'Download…', onClick: () => App.download() }, { label: 'Upload…', onClick: () => App.upload() }] : []),
+      { label: 'Who Active…', onClick: () => App.whoActive() },
+      { sep: true },
+      { label: 'Run Mode', disabled: run || (real && !on), onClick: () => App.setMode('RUN') },
+      { label: 'Program Mode', disabled: !run || (real && !on), onClick: () => App.setMode('PROG') },
+      { sep: true },
+      { label: real ? 'Simple connection (edits run at once)' : 'Realistic connection (download)', onClick: () => App.setConnMode(real ? 'simple' : 'real') },
+    ]);
+  }
+  /* status box: mode, forces, edits, the controller lights and the path */
+  Ladder.statusUi = function () {
+    if (!root || !App.project) return;
+    const plc = App.plc, c = App.project.conn, real = !!(c && c.mode === 'real'), on = !real || App.conn.online, run = plc.mode === 'RUN';
+    const st = App.status ? App.status() : {};
+    const set = (k, v) => { const e = root.querySelector(k); if (e && e.textContent !== v) e.textContent = v; };
+    set('[data-st-mode]', !on || !st.ctl ? 'Offline' : st.fault ? 'Faulted' : run ? 'Rem Run' : 'Rem Prog');
+    const nr = root.querySelector('[data-st-io]'); if (nr) nr.hidden = st.io !== 'bad';
+    if (rungsEl) rungsEl.classList.toggle('live', on && run && plc.powered);
+    const n = plc.forceCount();
+    set('[data-st-forces]', n ? `Forces ${plc.forcesEnabled ? 'on' : 'off'} (${n})` : 'No Forces');
+    set('[data-st-edits]', real && App.conn.online && !App.conn.same ? (App.conn.testing ? 'Testing edits' : 'Edits pending') : 'No Edits');
+    set('[data-st-path]', 'Path: ' + (st.path || '<none>'));
+    const key = root.querySelector('[data-st-key]'); if (key) { key.dataset.pos = run ? 'run' : 'prog'; key.title = `Controller key switch: ${run ? 'RUN' : 'PROG'}`; }
+    const box = root.querySelector('[data-lstatus]'); if (!box) return;
+    box.classList.toggle('online', on); box.classList.toggle('run', on && run);
+    const L = (k, cls) => { const e = box.querySelector(`[data-st-led="${k}"]`); if (e) e.className = cls || ''; };
+    L('run', run && plc.powered ? 'on' : '');
+    const tip = (k, t) => { const e = box.querySelector(`[data-st-led="${k}"]`); if (e) e.title = t; };
+    tip('run', run ? 'Run Mode' : 'Program Mode'); tip('ok', plc.powered ? (st.fault ? 'Controller fault' : 'Controller OK') : 'No power'); tip('bat', 'Battery OK'); tip('io', st.io === 'bad' ? 'I/O not responding' : st.io === 'ok' ? 'I/O OK' : 'No I/O');
+    L('ok', plc.powered ? (st.fault ? 'bad' : 'on') : '');
+    L('bat', '');
+    L('io', st.io === 'bad' ? 'bad blink' : st.io === 'ok' ? 'on' : '');
   };
 
   /* drag an instruction with the mouse to move it (touch uses the menu or ◀ ▶) */
@@ -845,8 +966,13 @@
     if (as) as.value = App.project.addr || 'file';
     if (curFile !== 2 && !fileOf(curFile)) curFile = 2;
     Ladder.connUi();
+    if (App.renderOrg) App.renderOrg();
     const lf = root.querySelector('[data-lfile]');
-    if (lf) lf.innerHTML = [`<option value="2">LAD 2 · MAIN</option>`, ...(App.project.ladder.files || []).map(f => `<option value="${f.n}" ${f.n === curFile ? 'selected' : ''}>LAD ${f.n} · ${esc(f.name)}</option>`)].join('');
+    // file-based target: program files LAD 2 · MAIN, LAD 3…; tag-based: MainRoutine and routines by name
+    const tag = App.project.target === 'tag';
+    if (lf) lf.innerHTML = [`<option value="2">${tag ? 'MainRoutine' : 'LAD 2 · MAIN'}</option>`, ...(App.project.ladder.files || []).map(f => `<option value="${f.n}" ${f.n === curFile ? 'selected' : ''}>${tag ? '' : `LAD ${f.n} · `}${esc(f.name)}</option>`)].join('');
+    const nf = root.querySelector('[data-act="newfile"]');
+    if (nf) { nf.textContent = tag ? '＋ Routine' : '＋ File'; nf.title = tag ? 'New routine in MainProgram' : 'New subroutine file'; }
     const list = rungs();
     const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
@@ -854,11 +980,12 @@
     const html = list.map((r, i) => {
       const { svg, h } = renderRung(r, W);
       const err = JSON.stringify(r.elems).includes('"id":') && [...ERR_IDS].some(id => find(id)?.ri === i);
-      return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}" data-r="${i}">
+      return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}${r.elems.length ? '' : ' empty'}" data-r="${i}">
         <div class="rung-num" style="padding-top:${Math.round(50 * LZ)}px" title="Double-click to edit rung text; right-click (long-press on touch) for the rung menu">${String(i).padStart(4, '0')}</div>
         <div class="rung-body">${r.comment ? `<div class="rung-comment">${esc(r.comment)}</div>` : ''}
         <svg class="rung-svg" width="${Math.round(W * LZ)}" height="${Math.round(h * LZ)}" viewBox="0 0 ${W} ${h}">${svg}</svg></div></div>`;
     }).join('') + `<div class="rung end"><div class="rung-num">${String(list.length).padStart(4, '0')}</div><div class="rung-body"><svg class="rung-svg" width="${Math.round(W * LZ)}" height="${Math.round(34 * LZ)}" viewBox="0 0 ${W} 34"><line class="rail" x1="3" y1="0" x2="3" y2="34"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="34"/><line class="w" x1="3" y1="17" x2="${W / 2 - 30}" y2="17"/><line class="w" x1="${W / 2 + 30}" y1="17" x2="${W - 3}" y2="17"/><text class="endt" x="${W / 2}" y="21">(END)</text></svg></div></div>`;
+    const rp = root.querySelector('[data-rungpos]'); if (rp) rp.textContent = `Rung ${SEL.r < 0 ? 0 : SEL.r} of ${list.length}`;
     const st = rungsEl.scrollTop, sl = rungsEl.scrollLeft;
     rungsEl.innerHTML = html;
     rungsEl.scrollTop = st; rungsEl.scrollLeft = sl;
@@ -891,12 +1018,19 @@
 
   /* ---------- Data table ---------- */
   const DataTable = {};
-  let dtFile = 'I', dtEl, dtCache = [];
+  let dtFile = 'I', dtEl, dtCache = [], dtProj = null;
   DataTable.init = function (el) { dtEl = el; };
+  DataTable.show = function (f) { if (['TAGS', 'I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'].includes(f)) { dtFile = f; DataTable.render(); } };
   DataTable.render = function () {
     if (!dtEl || !App.project) return;
-    const files = ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
-    const names = { I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', R6: 'R6 Control (sequencers)', N7: 'N7 Integer' };
+    // a tag-based project shows Controller Tags (module tags and the project's tags) instead of the I and O data files
+    const tagMode = App.project.target === 'tag';
+    const files = tagMode ? ['TAGS'] : ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
+    // another project opens on its first tab
+    if (dtProj !== App.project) { dtProj = App.project; dtFile = tagMode ? 'TAGS' : 'I'; }
+    if (tagMode) dtFile = 'TAGS';
+    if (!tagMode && dtFile === 'TAGS') dtFile = 'I';
+    const names = { TAGS: 'Controller Tags', I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', R6: 'R6 Control (sequencers)', N7: 'N7 Integer' };
     let body = '';
     const bitHead = `<tr><th></th>${Array.from({ length: 16 }, (_, i) => `<th>${15 - i}</th>`).join('')}</tr>`;
     const bitRow = (f, w, n) => `<tr><th class="rowh">${f}:${w}</th>${Array.from({ length: 16 }, (_, i) => {
@@ -904,7 +1038,17 @@
       const dead = (f === 'I' || f === 'O') && b >= n;
       return `<td class="bit${dead ? ' dead' : ''}" data-bit="${a}" title="${a}${App.project.ladder.desc[a] ? ' — ' + esc(App.project.ladder.desc[a]) : ''}">0</td>`;
     }).join('')}</tr>`;
-    if (dtFile === 'I' || dtFile === 'O') {
+    const ioRow = a => `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code title="${a}">${esc(App.fmt(a))}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
+    if (dtFile === 'TAGS') {
+      // module tags from the I/O configuration (Local:slot:I / :O), then the project's tags with their values
+      const r = Circuit.rack(App.project.circuit, App.project.io), words = r.ctl || Object.keys(App.project.io.slots).length ? Circuit.ioMap(App.project.circuit, App.project.io).filter(m => !m.analog) : [];
+      const mods = words.map(m => `<div class="io-slot">Local:${m.word}:${m.file} — ${esc(m.name || 'controller I/O')}</div>` + Array.from({ length: m.n }, (_, i) => ioRow(`${m.file}:${m.word}/${i}`)).join('')).join('');
+      const val = t => { const a = parse(t.addr); if (!a) return '<td></td>'; if (t.type === 'TIMER' || t.type === 'COUNTER') return `<td class="num" data-word="${t.addr}.ACC">0</td>`; return a.kind === 'bit' ? `<td class="bit" data-bit="${a.norm}">0</td>` : `<td class="num" data-word="${a.norm}">0</td>`; };
+      const tags = App.project.tags;
+      body = `<div class="ctag-head">Scope: <b>Controller</b> <button class="tbtn sm" data-act="tagedit">Edit Tags…</button></div>
+        ${words.length ? `<h5 class="ctag-h">Module tags</h5>${mods}` : '<p class="help">No I/O modules yet: add them with <b>New Module…</b> in the Organizer (I/O Configuration).</p>'}
+        <h5 class="ctag-h">Tags</h5>${tags.length ? `<table class="dt ctag"><tr><th>Name</th><th>Value</th><th>Data Type</th></tr>${tags.map(t => `<tr><th class="rowh" title="${esc(t.desc || '')}">${esc(t.name)}</th>${val(t)}<td>${t.type === 'ALIAS' ? `→ <code>${esc(App.fmt(t.addr))}</code>` : t.type}</td></tr>`).join('')}</table>` : '<p class="help">No tags yet.</p>'}`;
+    } else if (dtFile === 'I' || dtFile === 'O') {
       // one word per I/O slot: the compact PLC's I:0/O:0, or each rack card in its slot
       const words = Circuit.ioMap(App.project.circuit, App.project.io).filter(m => m.file === dtFile);
       const dig = words.filter(m => !m.analog);
@@ -929,8 +1073,8 @@
       body = `<table class="dt"><tr><th></th>${Array.from({ length: 4 }, (_, i) => `<th>${i}</th>`).join('')}</tr>${Array.from({ length: 8 }, (_, r) => `<tr><th class="rowh">N7:${r * 4}</th>${Array.from({ length: 4 }, (_, i) => `<td class="num" data-word="N7:${r * 4 + i}">0</td>`).join('')}</tr>`).join('')}</table><p class="help">Click a value to edit.</p>`;
     }
     const forces = Object.keys(App.plc.forces);
-    dtEl.innerHTML = `<div class="side-head"><h4>Data Files</h4></div>
-      <div class="dt-tabs">${files.map(f => `<button class="${f === dtFile ? 'on' : ''}" data-file="${f}" title="${names[f]}">${f}</button>`).join('')}</div>
+    dtEl.innerHTML = `<div class="side-head"><h4>${tagMode ? 'Controller Tags' : 'Data Files'}</h4></div>
+      <div class="dt-tabs">${files.map(f => `<button class="${f === dtFile ? 'on' : ''}" data-file="${f}" title="${names[f]}">${f === 'TAGS' ? 'Tags' : f}</button>`).join('')}</div>
       <div class="dt-body">${body}</div>
       <div class="side-head"><h4>Forces <span class="count">${forces.length}</span></h4>
         <button class="tbtn sm" data-act="fen">${App.plc.forcesEnabled ? 'Disable' : 'Enable'}</button>
@@ -947,6 +1091,7 @@
       if (t.dataset.foff) return App.force(t.dataset.foff, 0);
       if (t.dataset.frm) return App.force(t.dataset.frm, null);
       if (t.dataset.act === 'iocfg') { App.ioConfig(); return; }
+      if (t.dataset.act === 'tagedit') { App.tagsDialog('edit'); return; }
       if (t.dataset.act === 'fen') { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); return; }
       if (t.dataset.act === 'fclr') { Object.keys(App.plc.forces).forEach(k => App.plc.setForce(k, null)); App.forcesChanged(); return; }
       const bitEl = t.closest('[data-bit]');

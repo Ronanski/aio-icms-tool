@@ -167,13 +167,19 @@
       tags,
       net: cleanNet(p.net),
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
-      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null },
+      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null,
+        // the project path set with Who Active (USB to the controller, or Ethernet to a module at an IP address)
+        path: isObj(p.conn) && isObj(p.conn.path) && str(p.conn.path.ctl, 40) ? { via: p.conn.path.via === 'ETH' ? 'ETH' : 'USB', ip: str(p.conn.path.ip, 40), ctl: str(p.conn.path.ctl, 40) } : null,
+        // the name of the project the controller holds (shown by Who Active and Download)
+        ctlName: isObj(p.conn) ? str(p.conn.ctlName, 80) : '' },
       // new parts and wires never reuse the id or the tag of one that was put aside
       circuit,
       hmi: HMI.cleanAll(hm),
       schematic,
       io: Circuit.cleanIo(p.io),
-      addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : 'file',
+      // PLC target: 'file' (rack with data files; every project made before it existed) or 'tag' (1756-style chassis)
+      target: p.target === 'tag' ? 'tag' : 'file',
+      addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : p.target === 'tag' ? 'tag' : 'file',
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && Object.prototype.hasOwnProperty.call(KINDS, e.kind)).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
       keep, format,
     };
@@ -200,7 +206,9 @@
     if (welcome) { welcome.remove(); welcome = null; }
     App.project = proj;
     conn.online = false; conn.testing = false;
+    App.ctx.target = proj.target;
     App.addrChanged(false);
+    if (window.Workspace && Workspace.paletteChanged) Workspace.paletteChanged();
     LOG.length = 0; LOG.push(...proj.events); unseen = 0;
     const plc = App.plc;
     plc.setMode('PROG');
@@ -231,11 +239,12 @@
         files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
       tags: p.tags || [],
       net: p.net && (p.net.remotes.length || p.net.links.length) ? p.net : undefined,
-      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl } : undefined,
+      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl, ...(p.conn.path ? { path: p.conn.path } : {}), ...(p.conn.ctlName ? { ctlName: p.conn.ctlName } : {}) } : undefined,
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
       io: p.io,
+      target: p.target,
       addr: p.addr,
       events: LOG.slice(-LOG_KEEP),
     }, p);
@@ -342,7 +351,13 @@
       { key: 'type', label: 'Type', value: t ? t.type : 'BOOL', options: Object.entries(TAG_TYPES).map(([v, l]) => ({ v, l })) },
       { key: 'alias', label: 'Alias for (ALIAS only, e.g. I:1/0 or I0.0)', value: t && t.type === 'ALIAS' ? App.fmt(t.addr) : '' },
       { key: 'desc', label: 'Description', value: t ? t.desc : '' },
-    ], v => {
+    ], v => { const e = saveTag(t, v); if (e) return e; App.tagsDialog(); return undefined; }, TAG_HELP);
+  }
+  const TAG_HELP = `<p class="help">BOOL, INT, TIMER and COUNTER tags get their own address (shown in the list). Use a tag name in an instruction instead of an address: <code>XIC START_PB</code>, <code>TON PUMP_DELAY 1.0 5 0</code>, <code>XIC PUMP_DELAY.DN</code>.</p>`;
+  // create (t = null) or change a tag from {name, type, alias, desc}; returns an error message, else undefined
+  function saveTag(t, v) {
+    const tags = App.project.tags;
+    {
       const name = v.name.trim().toUpperCase();
       if (!PLCcore.tagNameOk(name)) return 'A name starts with a letter or _, has letters, digits and _ only, and is not an address or an instruction';
       if (tags.some(x => x !== t && x.name === name)) return `${name} already exists`;
@@ -358,23 +373,40 @@
       const n = { name, type: v.type, addr, desc: v.desc.trim().slice(0, 80) };
       if (t) Object.assign(t, n); else tags.push(n);
       App.log('system', `Tag ${name} (${v.type}) ${t ? 'changed' : 'created'} → ${addr}`);
-      App.tagChanged(); App.tagsDialog(); return undefined;
-    }, `<p class="help">BOOL, INT, TIMER and COUNTER tags get their own address (shown in the list). Use a tag name in an instruction instead of an address: <code>XIC START_PB</code>, <code>TON PUMP_DELAY 1.0 5 0</code>, <code>XIC PUMP_DELAY.DN</code>.</p>`);
+      App.tagChanged(); return undefined;
+    }
   }
   function renameInProgram(from, to) {
     const re = new RegExp(`^${from}(\\.[A-Z]+)?$`);
     const fix = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(fix); else e.a = e.a.map(x => (re.test(String(x).toUpperCase()) ? to + String(x).toUpperCase().slice(from.length) : x)); });
     [App.project.ladder.rungs, ...(App.project.ladder.files || []).map(f => f.rungs)].forEach(list => list.forEach(r => fix(r.elems)));
   }
-  App.tagsDialog = function () {
-    document.querySelectorAll('.modal-wrap[data-tags]').forEach(m => m.remove());
+  let tagTab = 'monitor';
+  App.tagsDialog = function (tab) {
+    if (tab) tagTab = tab;
+    document.querySelectorAll('.modal-wrap[data-tags]').forEach(m => m.querySelector('[data-x]').click());
     const tags = App.project.tags, esc = UI.esc;
+    const tabs = `<div class="tag-tabs"><button class="ins-tab${tagTab === 'monitor' ? ' on' : ''}" data-ttab="monitor">Monitor Tags</button><button class="ins-tab${tagTab === 'edit' ? ' on' : ''}" data-ttab="edit">Edit Tags</button></div>`;
+    const typeSel = (v, k) => `<select data-tf="type">${Object.keys(TAG_TYPES).map(x => `<option ${x === v ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
+    const row = (t, i) => `<tr data-trow="${i}"><td><input data-tf="name" value="${esc(t ? t.name : '')}" placeholder="${t ? '' : 'New tag name'}" spellcheck="false"></td><td>${typeSel(t ? t.type : 'BOOL')}</td><td><input data-tf="alias" value="${esc(t && t.type === 'ALIAS' ? App.fmt(t.addr) : '')}" placeholder="${t && t.type !== 'ALIAS' ? esc(App.fmt(t.addr)) : 'alias for…'}" ${t && t.type !== 'ALIAS' ? 'disabled' : ''}></td><td><input data-tf="desc" value="${esc(t ? t.desc : '')}"></td><td>${t ? `<button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button>` : ''}</td></tr>`;
+    const grid = `<table class="io-cfg tag-grid"><tr><th>Name</th><th>Data Type</th><th>Alias For / Address</th><th>Description</th><th></th></tr>${tags.map(row).join('')}${row(null, 'new')}</table><p class="help">Type in a cell and press Enter or Tab: the tag changes at once. The last row adds a tag.</p>`;
     const m = UI.modal({
       title: 'Controller Tags', wide: true,
-      body: `${tags.length ? `<table class="io-cfg tag-tbl"><tr><th>Name</th><th>Type</th><th>Address</th><th>Value</th><th>Description</th><th></th></tr>${tags.map((t, i) => `<tr><td><a href="#" data-tedit="${i}"><code>${esc(t.name)}</code></a></td><td>${t.type}</td><td><code>${esc(App.fmt(t.addr))}</code></td><td class="num" data-tval="${esc(t.name)}"></td><td>${esc(t.desc)}</td><td><button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No tags yet. A tag is a name for a bit, an integer, a timer or a counter, so the program reads like the machine: <code>XIC START_PB</code> instead of <code>XIC I:1/0</code>.</p>'}`,
-      buttons: [{ label: '＋ New tag', onClick: () => { tagForm(null); return false; } }, { label: 'Close', primary: true }],
+      body: tabs + (tagTab === 'edit' ? grid : `${tags.length ? `<table class="io-cfg tag-tbl"><tr><th>Name</th><th>Type</th><th>Address</th><th>Value</th><th>Description</th><th></th></tr>${tags.map((t, i) => `<tr><td><a href="#" data-tedit="${i}"><code>${esc(t.name)}</code></a></td><td>${t.type}</td><td><code>${esc(App.fmt(t.addr))}</code></td><td class="num" data-tval="${esc(t.name)}"></td><td>${esc(t.desc)}</td><td><button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No tags yet. A tag is a name for a bit, an integer, a timer or a counter, so the program reads like the machine: <code>XIC START_PB</code> instead of <code>XIC I:1/0</code>.</p>'}`),
+      // no default button in the grid, so Enter in a cell saves the cell instead of closing the window
+      buttons: [{ label: '＋ New tag', onClick: () => { tagForm(null); return false; } }, { label: 'Close', primary: tagTab !== 'edit' }],
       onOpen: el => {
         el.closest('.modal-wrap').dataset.tags = '1';
+        el.querySelectorAll('[data-ttab]').forEach(b => { b.onclick = () => App.tagsDialog(b.dataset.ttab); });
+        // the grid: a change in a row saves that tag (or creates one from the last row)
+        el.querySelectorAll('[data-trow]').forEach(tr => tr.addEventListener('change', () => {
+          const i = tr.dataset.trow, t = i === 'new' ? null : tags[Number(i)], g = k => tr.querySelector(`[data-tf="${k}"]`).value;
+          if (!t && !g('name').trim()) return;
+          const e = saveTag(t, { name: g('name'), type: g('type'), alias: g('alias'), desc: g('desc') });
+          if (e) { UI.toast(e, 'warn', 5000); if (t) return; }
+          App.tagsDialog('edit');
+        }));
+        el.querySelectorAll('.tag-grid input').forEach(i => i.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); i.blur(); } }, true));
         el.querySelectorAll('[data-tedit]').forEach(a => { a.onclick = ev => { ev.preventDefault(); tagForm(tags[Number(a.dataset.tedit)]); }; });
         el.querySelectorAll('[data-tdel]').forEach(b => { b.onclick = () => { const t = tags[Number(b.dataset.tdel)]; UI.confirm('Delete tag', `Delete ${t.name}? Instructions that use it become invalid until you fix them.`, () => { tags.splice(tags.indexOf(t), 1); App.log('system', `Tag ${t.name} deleted`); App.tagChanged(); App.tagsDialog(); }, 'Delete'); }; });
         const upd = () => { if (!el.isConnected) { clearInterval(tm); return; } el.querySelectorAll('[data-tval]').forEach(c => { const t = PLCcore.tagOf(c.dataset.tval); c.textContent = t ? (t.type === 'TIMER' || t.type === 'COUNTER' ? `ACC ${App.plc.read(t.name + '.ACC')} · DN ${App.plc.read(t.name + '.DN')}` : String(App.plc.read(t.name))) : ''; }); };
@@ -383,35 +415,77 @@
     });
     return m;
   };
-  App.organizer = function () {
-    const lad = App.project.ladder, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io);
+  // close a UI.modal from inside its body: its own close also removes its Enter / Escape handler (wrap.remove() would leave it)
+  const closeModal = el => { const w = el.closest('.modal-wrap'), x = w && w.querySelector('[data-x]'); if (x) x.click(); else if (w) w.remove(); };
+  /* the project tree in the names of the PLC target: Tasks → Programs → Routines (tag-based), or program files LAD 2–9
+     and data files O0–N7 (file-based). Both run the same program files. */
+  // docked on the left of the Ladder: App.organizer() opens it, App.organizer(true) (the toolbar button) opens or closes it
+  const orgBox = () => document.querySelector('#view-ladder [data-lorg]');
+  const saveOrg = on => { try { localStorage.setItem('plc-trainer.orgOpen', on ? '1' : ''); } catch (e) { /* ignore */ } };
+  App.organizer = function (toggle) {
+    const box = orgBox(); if (!box) return;
+    if (toggle && !box.hidden) { box.hidden = true; saveOrg(false); return; }
+    box.hidden = false; saveOrg(true); App.renderOrg();
+  };
+  App.renderOrg = function () {
+    const box = orgBox(); if (!box || box.hidden || !App.project) return;
+    const lad = App.project.ladder, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io), tag = App.project.target === 'tag';
     const PER = [0, 10, 50, 100, 250, 500, 1000];
     const per = lad.files.filter(f => f.period);
-    const body = `<ul class="org">
-      <li>🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? 'modular rack' : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}
+    const ctl = `🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? (tag ? '1756-style chassis' : 'modular rack') : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}`;
+    // every configured or installed module, with a fault mark where the module does not match the configuration
+    const flt = s => { const b = r.bad.find(x => x.slot === s); return b ? ` <span class="flt" title="${esc(b.msg)}">⚠ ${esc(b.msg.replace(/^(slot \d+|chassis): /, ''))}</span>` : ''; };
+    const slots = r.cpu || !r.ctl ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; const m = (App.project.io.mods || {})[s]; return `<li>▭ <a href="#" data-org="m${s}">[${s}] <code>${MCODE[t] || ''}</code> ${esc(m && m.name ? m.name : Circuit.DEFS[t].name)}</a> <small>${tag ? 'Local:' + s : 'slot ' + s}${m && m.inhibit ? ' · inhibited' : ''}</small>${flt(s)}</li>`; }).join('') : '';
+    const me = r.ctl && r.ctl.props.label;
+    const path = esc(App.status().path);
+    const DATA = [['O0', 'OUTPUT', 'O'], ['I1', 'INPUT', 'I'], ['S2', 'STATUS', ''], ['B3', 'BINARY', 'B3'], ['T4', 'TIMER', 'T4'], ['C5', 'COUNTER', 'C5'], ['R6', 'CONTROL', 'R6'], ['N7', 'INTEGER', 'N7']];
+    const tree = tag ? `<ul class="org">
+      <li>${ctl}
         <ul>
           <li>🏷 <a href="#" data-org="tags">Controller Tags</a> <small>(${App.project.tags.length})</small></li>
+          <li>⚑ Controller Fault Handler <small>none</small></li><li>⏻ Power-Up Handler <small>none</small></li>
           <li>⚙ Tasks<ul>
             <li>↻ <b>MainTask</b> <small>continuous</small><ul><li>▤ <b>MainProgram</b><ul>
-              <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>LAD 2</small></li>
-              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>LAD ${f.n} · runs on JSR U:${f.n}</small></li>`).join('')}
+              <li>🏷 Parameters and Local Tags <small>this trainer keeps every tag at controller scope</small></li>
+              <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>main routine</small></li>
+              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>routine · runs on JSR</small><span class="org-act"><a href="#" data-orn="${f.n}" title="Rename">✎</a><a href="#" data-ordel="${f.n}" title="Delete">🗑</a></span></li>`).join('')}
+              <li><a href="#" data-org="new" class="org-add">＋ New Routine…</a></li>
             </ul></li></ul></li>
-            ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>LAD ${f.n}</small></li></ul></li>`).join('')}
+            ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a></li></ul></li>`).join('')}
+            <li>⏸ Unscheduled</li>
           </ul></li>
-          <li>🔌 <a href="#" data-org="io">I/O Configuration</a></li>
-        </ul></li></ul>
-      ${lad.files.length ? `<h5>Routine tasks</h5><table class="io-cfg">${lad.files.map(f => `<tr><td>LAD ${f.n} ${esc(f.name)}</td><td><select data-per="${f.n}">${PER.map(p => `<option value="${p}" ${p === (f.period || 0) ? 'selected' : ''}>${p ? `Periodic task, every ${p} ms` : 'Called by JSR'}</option>`).join('')}</select></td></tr>`).join('')}</table>` : '<p class="help">Add a subroutine file with ＋ File in the Ladder: it runs on a JSR, or on its own as a periodic task.</p>'}`;
-    UI.modal({
-      title: 'Controller Organizer', body, wide: true,
-      onOpen: el => {
+          <li>📦 Assets<ul><li>Data Types <small>BOOL · INT · TIMER · COUNTER</small></li></ul></li>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a><ul><li>▭ 1756 Backplane${r.chassis ? `, ${r.chassis.props.slots}-slot chassis` : ''}<ul><li>▭ [0] ${esc(me || 'Controller')}</li>${slots}<li><a href="#" data-org="newmod" class="org-add">＋ New Module…</a></li></ul></li></ul></li>
+        </ul></li></ul>` : `<ul class="org">
+      <li>${ctl}
+        <ul>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a>${slots ? `<ul><li>▭ [0] CPU</li>${slots}<li><a href="#" data-org="newmod" class="org-add">＋ New Module…</a></li></ul>` : ''}</li>
+          <li>🏷 <a href="#" data-org="tags">Tags (symbols)</a> <small>(${App.project.tags.length})</small></li>
+          <li>📁 <b>Program Files</b><ul>
+            <li>▤ SYS 0 <small>system</small></li><li>▤ SYS 1 <small>reserved</small></li>
+            <li>⊢ <a href="#" data-org="f2">LAD 2 – MAIN</a></li>
+            ${lad.files.map(f => `<li>⊢ <a href="#" data-org="f${f.n}">LAD ${f.n} – ${esc(f.name)}</a> <small>${f.period ? `timed, every ${f.period} ms` : 'runs on JSR U:' + f.n}</small><span class="org-act"><a href="#" data-orn="${f.n}" title="Rename">✎</a><a href="#" data-ordel="${f.n}" title="Delete">🗑</a></span></li>`).join('')}
+            <li><a href="#" data-org="new" class="org-add">＋ New Program File…</a></li>
+          </ul></li>
+          <li>📁 <b>Data Files</b><ul>${DATA.map(([n, d, f]) => `<li>▦ ${f ? `<a href="#" data-org="d${f}">${n} – ${d}</a>` : `${n} – ${d}`}</li>`).join('')}</ul></li>
+        </ul></li></ul>`;
+    const body = tree + (lad.files.length ? `<h5>${tag ? 'Routines' : 'Program files'}</h5><table class="io-cfg">${lad.files.map(f => `<tr><td>${tag ? '' : 'LAD ' + f.n + ' '}${esc(f.name)}</td><td><select data-per="${f.n}">${PER.map(p => `<option value="${p}" ${p === (f.period || 0) ? 'selected' : ''}>${p ? `${tag ? 'Periodic task' : 'Timed'}, every ${p} ms` : 'Called by JSR'}</option>`).join('')}</select></td></tr>`).join('')}</table>` : `<p class="help">Add a ${tag ? 'routine' : 'subroutine file'} with ＋ ${tag ? 'Routine' : 'File'} in the Ladder: it runs on a JSR, or on its own every few ms.</p>`);
+    box.innerHTML = `<div class="side-head"><h4>${tag ? 'Controller Organizer' : 'Project'}</h4><button class="icon-btn" data-orgx title="Close the Organizer" aria-label="Close the Organizer">×</button></div>
+      <div class="org-path" title="The controller found in the Wiring; the project goes online with it by itself">Path: <b>${path}</b></div><div class="org-body">${body}</div>`;
+    box.querySelector('[data-orgx]').onclick = () => { box.hidden = true; saveOrg(false); };
+    {
+      const el = box;
+      {
         el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
-          ev.preventDefault(); el.closest('.modal-wrap').remove();
+          ev.preventDefault();
           const k = a.dataset.org;
-          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
+          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k === 'newmod') App.newModule(); else if (k[0] === 'm') App.moduleProps(k.slice(1)); else if (k === 'new') { App.showView('ladder'); Ladder.newFile(); } else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
-        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); el.closest('.modal-wrap').remove(); App.organizer(); }; });
-      },
-    });
+        el.querySelectorAll('[data-orn]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.renameFile(Number(x.dataset.orn)); }; });
+        el.querySelectorAll('[data-ordel]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.deleteFile(Number(x.dataset.ordel)); }; });
+        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); App.renderOrg(); }; });
+      }
+    }
   };
   /* ---------- v2.0 part C: simulated network (who active, remote PLCs, produced / consumed) ---------- */
   App.network = function () {
@@ -457,31 +531,108 @@
     });
   };
   /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
+  /* New Module: Select Module Type (search, catalog table), then the General page (type, parent, slot) */
+  const MCODE = { mdi8: 'IB8', mdi8ac: 'IA8', mdi16: 'IB16', mdi16ac: 'IA16', mdo8: 'OW8', mdo16: 'OW16', mdo8t: 'OB8', mdo16t: 'OB16', mai4: 'IF4', mao2: 'OF2', meth: 'ENET' };
+  const mcat = t => (Circuit.DEFS[t].comm ? 'Communication' : Circuit.DEFS[t].analog ? 'Analog' : 'Digital');
+  App.newModule = function () {
+    const esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io);
+    if (r.ctl && !r.cpu) { App.ioConfig(); return; }   // a compact PLC has fixed I/O
+    const types = Circuit.CARDS();
+    let pick = null;
+    UI.modal({
+      title: 'Select Module Type', wide: true,
+      body: `<input class="mod-search" data-msearch placeholder="Search: catalog number or description" spellcheck="false">
+        <table class="io-cfg mod-cat"><tr><th>Catalog Number</th><th>Description</th><th>Category</th></tr>${types.map(t => `<tr data-mt="${t}"><td><code>${MCODE[t] || t}</code></td><td>${esc(Circuit.DEFS[t].name)}</td><td>${mcat(t)}</td></tr>`).join('')}</table>
+        <p class="help" data-mcount>${types.length} of ${types.length} Module Types Found</p>`,
+      onOpen: el => {
+        const q = el.querySelector('[data-msearch]');
+        q.addEventListener('input', () => { const v = q.value.trim().toLowerCase(); let n = 0; el.querySelectorAll('[data-mt]').forEach(tr => { const on = !v || tr.textContent.toLowerCase().includes(v); tr.hidden = !on; if (on) n++; }); el.querySelector('[data-mcount]').textContent = `${n} of ${types.length} Module Types Found`; });
+        el.querySelectorAll('[data-mt]').forEach(tr => { tr.onclick = () => { pick = tr.dataset.mt; el.querySelectorAll('[data-mt]').forEach(x => x.classList.toggle('sel', x === tr)); }; tr.ondblclick = () => { pick = tr.dataset.mt; el.closest('.modal').querySelector('.btn.primary').click(); }; });
+        q.focus();
+      },
+      buttons: [{ label: 'Close' }, { label: 'Create', primary: true, onClick: () => {
+        if (!pick) { UI.toast('Select a module type in the list', 'warn'); return false; }
+        const t = pick, free = Circuit.SLOTS.filter(s => !App.project.io.slots[s]);
+        if (!free.length) { UI.toast('Every slot (1–7) is configured already', 'warn'); return false; }
+        setTimeout(() => modForm(t, null, free.find(s => r.slots[s] && App.project.circuit.comps.find(c => c.id === r.slots[s]).type === t) || free[0], free));
+        return undefined;
+      } }],
+    });
+  };
+  /* the module pages of New Module / Module Properties: General (type, parent, name, slot, description) and
+     Connection (RPI, inhibit, major fault on connection loss) */
+  function modForm(t, slot, def, free) {
+    const io = App.project.io, m = (slot && io.mods && io.mods[slot]) || {}, code = MCODE[t] || t;
+    UI.form(slot ? `Module Properties — Local:${slot} ${App.project.io.slots[slot] ? code : code + ' (installed, not configured)'}` : `New Module — ${code}`, [
+      { key: 'type', label: 'Type', value: t, options: slot ? Circuit.CARDS().map(x => ({ v: x, l: `${MCODE[x] || x} ${Circuit.DEFS[x].name}` })) : [{ v: t, l: `${code} ${Circuit.DEFS[t].name}` }] },
+      { key: 'parent', label: 'Parent', value: 'Local', options: ['Local'] },
+      { key: 'name', label: 'Name', value: m.name || '' },
+      { key: 'slot', label: 'Slot', value: slot || def, options: slot ? [slot] : free },
+      { key: 'desc', label: 'Description', value: m.desc || '' },
+      { key: 'rpi', label: 'Connection: Requested Packet Interval (RPI, ms, 0.2–750)', value: String(m.rpi || 20), type: 'number' },
+      { key: 'inhibit', label: 'Connection: Inhibit Module', value: m.inhibit ? 'Yes' : 'No', options: ['No', 'Yes'] },
+      { key: 'mf', label: 'Connection: Major Fault On Controller If Connection Fails While in Run Mode', value: m.mf ? 'Yes' : 'No', options: ['No', 'Yes'] },
+    ], v => {
+      const s = String(v.slot), rpi = Number(v.rpi);
+      if (!(rpi >= 0.2 && rpi <= 750)) return 'RPI: 0.2 to 750 ms';
+      const name = v.name.trim(); if (name && !/^[A-Za-z_][A-Za-z0-9_]{0,19}$/.test(name)) return 'Name: letters, digits and _ (up to 20), starting with a letter or _';
+      App.project.io = Circuit.cleanIo({ ...io, slots: { ...io.slots, [s]: v.type }, mods: { ...(io.mods || {}), [s]: { name, desc: v.desc, rpi, inhibit: v.inhibit === 'Yes', mf: v.mf === 'Yes' } } });
+      App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.dirty.wiring = true; App.save();
+      const nt = v.type, f = Circuit.DEFS[nt].comm ? '' : Circuit.DEFS[nt].analog || (nt.startsWith('mdi') ? 'I' : 'O');
+      App.log('system', `${slot ? 'Module properties' : 'New module'}: ${MCODE[nt] || nt} in slot ${s}${v.inhibit === 'Yes' ? ' (inhibited)' : ''}`);
+      if (!slot) UI.toast(`${code} added in slot ${s}${f ? `: its data is ${App.fmt(`${f}:${s}/0`).replace(/0$/, '…')}` : ''}`, 'ok', 5000);
+      return undefined;
+    }, '<p class="help">The module is configured in the project. When you go online, the module in that slot of the chassis in the Wiring must be the same, or the controller shows a module fault (Code 16#0022).</p>');
+  }
+  App.moduleProps = function (slot) {
+    slot = String(slot);
+    const r = Circuit.rack(App.project.circuit, App.project.io), inst = r.slots[slot] && App.project.circuit.comps.find(c => c.id === r.slots[slot]);
+    const t = App.project.io.slots[slot] || (inst && inst.type); if (!t) return;
+    modForm(t, slot);
+    // Remove from the I/O configuration (the module in the Wiring stays; it is then not configured)
+    const m = [...document.querySelectorAll('.modal-wrap')].pop(); if (!m || !App.project.io.slots[slot]) return;
+    const b = document.createElement('button'); b.className = 'btn danger'; b.textContent = 'Remove module'; b.dataset.modrm = slot;
+    b.onclick = () => UI.confirm('Remove module', `Remove slot ${slot} (${MCODE[t] || t}) from the I/O configuration? Its tags Local:${slot}:… go too.`, () => {
+      const io = App.project.io, slots = { ...io.slots }, mods = { ...(io.mods || {}) }; delete slots[slot]; delete mods[slot];
+      App.project.io = Circuit.cleanIo({ ...io, slots, mods }); App.log('system', `Module removed from slot ${slot}`);
+      m.querySelector('[data-x]').click(); App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.save();
+    }, 'Remove');
+    m.querySelector('.modal-foot').prepend(b);
+  };
+  // the PLC target picker at the top of the I/O Configuration; a change reopens the dialog
+  const targetPick = () => `<label class="io-target">PLC target <select data-target>${Object.entries(Circuit.TARGETS).map(([k, n]) => `<option value="${k}" ${k === App.project.target ? 'selected' : ''}>${UI.esc(n)}</option>`).join('')}</select></label>`;
+  const bindTarget = el => { const s = el.querySelector('[data-target]'); if (s) s.onchange = () => { closeModal(el); App.setTarget(s.value); App.ioConfig(); }; };
   App.ioConfig = function () {
-    const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc;
-    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', body: `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular rack.</p>` }); return; }
+    const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc, tag = App.project.target === 'tag';
+    if (!r.cpu && r.ctl) { UI.modal({ title: 'I/O Configuration', onOpen: bindTarget, body: targetPick() + `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular ${tag ? 'chassis' : 'rack'}.${tag ? ' The tag-based target offers no compact controller in the Wiring library.' : ''}</p>` }); return; }
     const run = App.plc.mode === 'RUN';
     const opts = sel => `<option value="">— Empty —</option>` + Circuit.CARDS().map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(Circuit.DEFS[t].name)}</option>`).join('');
     const inst = s => { const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]); return c ? c : null; };
-    const row = s => { const c = inst(s); return `<tr><th>${s}</th><td><select data-slot="${s}" ${run ? 'disabled' : ''}>${opts(r.conf[s] || '')}</select></td><td data-have="${c ? c.type : ''}">${c ? `${esc(c.props.label)} — ${esc(Circuit.DEFS[c.type].name)}` : '—'}</td><td class="io-st" data-st="${s}"></td></tr>`; };
-    const body = `<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
-      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>Installed in the rack</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${Circuit.SLOTS.map(row).join('')}</table>`;
+    const ad = s => { const t = r.conf[s]; if (!t) return ''; const f = Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'); return tag ? `Local:${s}:${f}.Data` : `${f}:${s}`; };
+    const row = s => { const c = inst(s); return `<tr><th>${s}</th><td><select data-slot="${s}" ${run ? 'disabled' : ''}>${opts(r.conf[s] || '')}</select></td><td><code>${ad(s)}</code></td><td data-have="${c ? c.type : ''}">${c ? `${esc(c.props.label)} — ${esc(Circuit.DEFS[c.type].name)}` : '—'}</td><td class="io-st" data-st="${s}"></td></tr>`; };
+    // the chassis size the controller expects: a chassis of another size is a fault (as with a module in the wrong slot)
+    const chHave = r.chassis ? r.chassis.props.slots : '';
+    const chRow = !chHave && !App.project.io.chassis ? '' : `<tr><th>⧉</th><td><select data-slot="ch" ${run ? 'disabled' : ''}><option value="">— Not checked —</option>${['4', '7', '10', '13'].map(n => `<option value="${n}" ${App.project.io.chassis === n ? 'selected' : ''}>${n}-slot chassis</option>`).join('')}</select></td><td></td><td data-have="${chHave}">${chHave ? `${esc(r.chassis.props.label)} — ${chHave}-slot chassis` : '—'}</td><td class="io-st" data-st="ch"></td></tr>`;
+    const body = targetPick() + `${tag ? '<h5>I/O Configuration · 1756-style backplane · Local</h5>' : '<h5>I/O Configuration · rack</h5>'}<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
+      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>${tag ? 'Tags' : 'Data file'}</th><th>Installed in the ${tag ? 'chassis' : 'rack'}</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td></td><td>${r.cpu ? esc(circ.comps.find(c => c.id === r.cpu).props.label) : '— (no controller in the Wiring yet)'}</td><td class="io-st ok">${r.cpu ? '✓' : ''}</td></tr>${chRow}${Circuit.SLOTS.map(row).join('')}</table>`;
     const mark = el => el.querySelectorAll('[data-slot]').forEach(sel => {
       const have = sel.closest('tr').querySelector('[data-have]').dataset.have, st = el.querySelector(`[data-st="${sel.dataset.slot}"]`);
       st.textContent = !sel.value && !have ? '' : sel.value === have ? '✓' : '✗ mismatch'; st.className = 'io-st ' + (sel.value === have ? 'ok' : 'bad');
     });
     UI.modal({
       title: 'I/O Configuration', wide: true, body,
-      onOpen: el => { mark(el); el.addEventListener('change', () => mark(el)); },
+      onOpen: el => { bindTarget(el); mark(el); el.addEventListener('change', () => mark(el)); },
       buttons: [
         ...(run ? [] : [{ label: 'Read I/O Config', onClick: el => { el.querySelectorAll('[data-slot]').forEach(sel => { sel.value = sel.closest('tr').querySelector('[data-have]').dataset.have; }); mark(el); return false; } }]),
         { label: run ? 'Close' : 'Cancel' },
         ...(run ? [] : [{ label: 'Apply', primary: true, onClick: el => {
           const slots = {};
-          el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.value) slots[sel.dataset.slot] = sel.value; });
-          App.project.io = Circuit.cleanIo({ slots });
+          let chassis;
+          el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.dataset.slot === 'ch') chassis = sel.value || undefined; else if (sel.value) slots[sel.dataset.slot] = sel.value; });
+          App.project.io = Circuit.cleanIo({ slots, chassis, mods: App.project.io.mods });
           App.addrChanged();
-          App.log('system', 'I/O configuration changed: ' + (Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`).join(', ') || 'empty'));
+          App.log('system', 'I/O configuration changed: ' + ([...(chassis ? [`${chassis}-slot chassis`] : []), ...Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`)].join(', ') || 'empty'));
+          App.renderOrg();
           Ladder.DataTable.render(); updateBar(true); App.dirty.wiring = true; App.save();
         } }]),
       ],
@@ -524,40 +675,153 @@
     App.plc.applyAll(false);
     PLCcore.setTags(App.project.tags);
   }
+  /* Communication with a controller in the Wiring (Realistic connection), as with real programming software: the
+     engineering PC's comms driver must run and a cable must reach the controller (USB to its programming port, or
+     Ethernet to an Ethernet module in its chassis). Who Active finds it, Set Project Path remembers it, and Go Online /
+     Download need that path. A project with no controller in the Wiring runs on the virtual controller: no path. */
+  const needsPath = () => { const c = App.project.conn; return !!(c && c.mode === 'real' && Circuit.rack(App.project.circuit, App.project.io).ctl); };
+  const pathText = p => (!p ? '<none>' : p.via === 'ETH' ? `Ethernet\\${p.ip}\\Backplane\\0 (${p.ctl})` : `USB\\${p.ctl}`);
+  App.pathText = () => pathText(App.project.conn && App.project.conn.path);
+  // null while the project path reaches the controller, else why not
+  function pathErr() {
+    const p = App.project.conn.path;
+    if (!p) return 'No project path: use Who Active to find the controller, then Set Project Path';
+    const f = Circuit.comms(App.project.circuit, App.project.io);
+    if (!f.ctl) return f.why;
+    if (f.via !== p.via || (p.via === 'ETH' && f.ip !== p.ip) || f.ctl.props.label !== p.ctl) return `The project path (${pathText(p)}) does not reach a controller now`;
+    return null;
+  }
+  App.pathErr = () => (needsPath() ? pathErr() : null);
+  /* for the Ladder's status box: the path to the controller, a major fault, the I/O state ('' | 'ok' | 'bad') */
+  App.status = function () {
+    const r = Circuit.rack(App.project.circuit, App.project.io);
+    const path = needsPath() ? pathText(App.project.conn.path) + (pathErr() ? ' ⚠' : '') : r.cpu ? `Backplane\\0 (${r.ctl.props.label})` : r.ctl ? `${r.ctl.props.label} (compact PLC)` : '<none>';
+    return { path, ctl: !!r.ctl, fault: !!(r.cpu && r.bad.some(b => App.project.target !== 'tag' || b.major)), io: !r.cpu ? '' : r.bad.length ? 'bad' : 'ok' };
+  };
+  // a controller that does not fit the project's PLC target
+  const typeErr = ctl => (App.project.target === 'tag' && Circuit.DEFS[ctl.type].compact ? `${ctl.props.label} is a compact file-based PLC, but the project is tag-based (1756-style). Change the PLC target in the I/O Configuration, or use a chassis controller.` : null);
+  App.whoActive = function () {
+    document.querySelectorAll('.modal-wrap[data-who]').forEach(m => m.querySelector('[data-x]').click());
+    const esc = UI.esc, c = App.project.conn, real = c.mode === 'real';
+    const f = Circuit.comms(App.project.circuit, App.project.io), r = Circuit.rack(App.project.circuit, App.project.io);
+    const mods = r.cpu ? Circuit.SLOTS.filter(s => r.slots[s]).map(s => { const m = App.project.circuit.comps.find(x => x.id === r.slots[s]); return `<li>▭ ${s.padStart(2, '0')}, ${esc(m.props.label)} — ${esc(Circuit.DEFS[m.type].name)}</li>`; }).join('') : '';
+    const ctlRow = f.ctl ? `<li class="who-ctl sel" data-whoctl>🖥 <b>${r.cpu ? '00, ' : ''}${esc(f.ctl.props.label)}</b> — ${esc(Circuit.DEFS[f.ctl.type].name)}${real ? (c.ctlName ? `, '<b>${esc(c.ctlName)}</b>'` : ', no program') : ''} <small>${App.plc.mode}</small></li>` : '';
+    const found = !f.ctl ? '' : f.via === 'ETH'
+      ? `<ul><li>🌐 Ethernet<ul><li>${esc(f.ip)}, ${esc(f.mod.props.label)}<ul><li>▭ Backplane<ul>${ctlRow}${mods}</ul></li></ul></li></ul></li></ul>`
+      : `<ul><li>🔌 USB<ul>${ctlRow}${mods ? `<li>▭ Backplane<ul>${mods}</ul></li>` : ''}</ul></li></ul>`;
+    const tree = !f.pc ? `<p class="help">${esc(f.why)}. Add an <b>Engineering PC</b> (Wiring → PLC Rack), start its comms driver and wire it to the controller.</p>`
+      : `<ul class="org who"><li>💻 <b>${esc(f.pc.props.label)}</b> <small>workstation</small><ul><li>⚙ Comms driver: ${f.pc.state.drv === 'running' ? 'running' : '<b>not running</b> — start it on the PC in the Wiring'}${found}${!f.ctl && f.pc.state.drv === 'running' ? `<ul><li class="help">${esc(f.why)}</li></ul>` : ''}</li></ul></li></ul>`;
+    const here = f.ctl ? { via: f.via, ip: f.via === 'ETH' ? f.ip : '', ctl: f.ctl.props.label } : null;
+    // as in the reference dialog: actions in a column on the right, greyed out until a controller is found
+    const dis = f.ctl ? '' : 'disabled', act = (k, l, on = !!f.ctl) => `<button class="btn" data-who="${k}" ${on ? '' : 'disabled'}>${l}</button>`;
+    const body = `<div class="who-grid"><div class="who-tree">${tree}</div><div class="who-acts">${act('online', conn.online ? 'Go Offline' : 'Go Online', !!f.ctl && real)}${act('upload', 'Upload…')}${act('download', 'Download', !!f.ctl && real)}</div></div>
+      <div class="who-path"><div>Path: <b>${esc(here ? pathText(here) : '<none>')}</b></div><div>Path in Project: <b data-path>${esc(c.path ? pathText(c.path) : '<none>')}</b></div>
+      <div class="who-pbtn"><button class="btn" data-who="set" ${dis}>Set Project Path</button><button class="btn" data-who="clear" ${c.path ? '' : 'disabled'}>Clear Project Path</button></div></div>` +
+      (real ? '' : '<p class="help">Simple connection: edits run in the controller at once, no path is needed. Choose <b>Realistic connection</b> in the controller menu to download as with real PLC software.</p>');
+    UI.modal({
+      title: 'Who Active', wide: true, body,
+      onOpen: el => {
+        el.closest('.modal-wrap').dataset.who = '1';
+        el.addEventListener('click', ev => {
+          const b = ev.target.closest('[data-who]'); if (!b || b.disabled) return;
+          const k = b.dataset.who;
+          if (k === 'set') {
+            const e = typeErr(f.ctl); if (e) { UI.toast(e, 'danger', 7000); App.log('system', 'Set Project Path: ' + e); return; }
+            c.path = here; App.log('system', `Project path set: ${pathText(c.path)}`); App.save(); App.renderOrg(); Ladder.statusUi(); UI.toast('Project path set', 'ok'); App.whoActive();
+          } else if (k === 'clear') { c.path = null; App.log('system', 'Project path cleared'); App.save(); App.renderOrg(); Ladder.statusUi(); App.whoActive(); }
+          else if (k === 'online' || k === 'upload' || k === 'download') {
+            el.closest('.modal-wrap').querySelector('[data-x]').click();
+            ({ online: App.goOnline, upload: App.upload, download: App.download })[k]();
+          }
+        });
+      },
+      buttons: [{ label: 'Close', primary: true }],
+    });
+  };
+  // the path must reach the controller before going online or downloading; else say why and open Who Active
+  function commsOk() {
+    if (!needsPath()) return true;
+    const e = pathErr(); if (!e) return true;
+    UI.toast(e, 'warn', 6000); App.log('system', 'No communication: ' + e); App.whoActive();
+    return false;
+  }
+  // checked a few times a second while online: a cable pulled out or a driver stopped drops the connection
+  let commT = 0;
+  function commWatch(now) {
+    if (!conn.online || now - commT < 200) return; commT = now;
+    if (!needsPath()) return;
+    const e = pathErr(); if (!e) return;
+    conn.online = false; conn.testing = false;
+    const msg = `Communication lost with ${App.project.conn.path ? App.project.conn.path.ctl : 'the controller'}: ${e}`;
+    App.log('alarm', msg); UI.toast(msg, 'danger', 7000);
+    App.loadProgram(); Ladder.render(); App.renderOrg();
+  }
   App.setConnMode = function (m) {
     const c = App.project.conn || (App.project.conn = { mode: 'simple', ctl: null });
     if (c.mode === m) return;
     c.mode = m; conn.online = false; conn.testing = false;
-    if (m === 'real') c.ctl = progSnap();   // as if the project had just been downloaded
+    if (m === 'real') { c.ctl = progSnap(); c.ctlName = App.project.name; }   // as if the project had just been downloaded
     App.log('system', `Connection: ${m === 'real' ? 'Realistic (download / upload)' : 'Simple (edits run at once)'}`);
     App.loadProgram(); App.save(); Ladder.render();
   };
   function needProg(what, go) {
     if (App.plc.mode === 'PROG') { go(); return; }
-    UI.confirm(what, `The controller must be in PROG to ${what.toLowerCase()}. Switch to PROG now?`, () => { App.setMode('PROG'); go(); }, 'Switch to PROG');
+    Ladder.out('w', `Controller not in correct mode (RUN): ${what.toLowerCase()} needs Program mode.`);
+    UI.confirm(what, `The controller is in RUN. A ${what.toLowerCase()} needs Program mode (Rem Prog). Switch to Program mode now?`, () => { App.setMode('PROG'); go(); }, 'Switch to PROG');
   }
-  App.download = function () {
+  // a fixed serial number for a controller in the Wiring (made from its id), as the Download dialog shows one
+  const serialOf = ctl => '16#' + (([...String(ctl.id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) & 0xFFFFFFFF) >>> 0).toString(16).toUpperCase().padStart(8, '0').replace(/^(.{4})/, '$1_');
+  App.download = function (sure) {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
-    if (!Ladder.verify(true)) { UI.toast('The project has errors — Verify and fix them before downloading', 'danger'); Ladder.verify(false); return; }
-    needProg('Download', () => { c.ctl = progSnap(); conn.online = true; conn.testing = false; App.log('system', 'Download: the project was written to the controller'); App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); });
+    if (!conn.online && !commsOk()) return;
+    const run = App.plc.mode === 'RUN', other = c.ctlName && c.ctlName !== App.project.name;
+    if (!sure) {
+      const esc = UI.esc, ctl = Circuit.rack(App.project.circuit, App.project.io).ctl;
+      UI.modal({
+        title: 'Download', wide: true,
+        body: `<p class="dl-head">⚠ Download offline project '<b>${esc(App.project.name)}</b>' to the controller.</p>
+          <table class="io-cfg dl-ctl"><tr><th colspan="2">Connected Controller</th></tr><tr><td>Name</td><td>${c.ctlName ? esc(c.ctlName) : '&lt;no name&gt;'}</td></tr><tr><td>Type</td><td>${esc(ctl ? `${Circuit.DEFS[ctl.type].name} (${ctl.props.label})` : 'Virtual controller (no PLC in the Wiring)')}</td></tr><tr><td>Path</td><td><code>${esc(App.status().path)}</code></td></tr><tr><td>Serial Number</td><td><code>${ctl ? serialOf(ctl) : '—'}</code></td></tr><tr><td>Security</td><td>No protection</td></tr></table>
+          ${other ? `<p class="dl-warn">The controller holds another project, '<b>${esc(c.ctlName)}</b>'. Download replaces it with '<b>${esc(App.project.name)}</b>'.</p>` : ''}
+          ${run ? '<p class="dl-warn">The controller is in Remote Run mode. The mode will be changed to Remote Program prior to download.</p>' : ''}
+          <p class="dl-danger"><b>DANGER:</b> Unexpected hazardous motion of machinery may occur. Outputs can change when the controller changes mode or program: make sure the machine and the people near it are safe before you download.</p>`,
+        buttons: [{ label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => {
+          // a controller that holds another project asks once more before it is overwritten
+          if (other) setTimeout(() => UI.confirm('Overwrite the controller project', `The controller holds '${c.ctlName}'. Overwrite it with '${App.project.name}'?`, () => App.download(true), 'Overwrite'));
+          else setTimeout(() => App.download(true));
+        } }],
+      });
+      return;
+    }
+    if (!Ladder.verify(true)) { Ladder.out('m', 'Cancelling download...'); UI.toast('The project has errors — see the Errors pane under the ladder', 'danger', 6000); return; }
+    if (App.plc.mode === 'RUN') { App.setMode('PROG'); Ladder.out('m', 'Changing the controller to Remote Program mode...'); }
+    const finish = () => {
+      c.ctl = progSnap(); c.ctlName = App.project.name; conn.online = true; conn.testing = false;
+      App.log('system', 'Download: the project was written to the controller');
+      Ladder.out('m', `Download complete: '${App.project.name}' is in the controller. Online, ${App.plc.mode === 'RUN' ? 'Rem Run' : 'Rem Prog'}.`);
+      App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); App.renderOrg();
+    };
+    // over a cable the download takes a moment; a chain broken meanwhile times out, as with real comms software
+    if (!needsPath()) { finish(); return; }
+    Ladder.out('m', `Downloading '${App.project.name}' over ${pathText(c.path)} ...`);
+    setTimeout(() => {
+      const e = pathErr();
+      if (e) { Ladder.out('e', 'Error: Communications timed out. Cancelling download...'); App.log('alarm', `Download failed: communications timed out (${e})`); UI.toast(`Download failed: communications timed out — ${e}`, 'danger', 7000); return; }
+      finish();
+    }, 250);
   };
+  // the trainer does not read a program back from a controller: Download is the way the program gets there
   App.upload = function () {
-    const c = App.project.conn, o = c && readSnap(c.ctl); if (!o) { UI.toast('The controller has no program', 'warn'); return; }
-    const L = App.project.ladder;
-    L.rungs = rungsOf(o.main);
-    L.files = (o.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: rungsOf(f.r) }));
-    App.project.tags = Array.isArray(o.tags) ? JSON.parse(JSON.stringify(o.tags)) : [];
-    conn.online = true; conn.testing = false;
-    App.log('system', 'Upload: the controller program was read into the project');
-    Ladder.resetSel(); App.loadProgram(); App.save(); Ladder.render(); Ladder.DataTable.render(); UI.toast('Uploaded — online', 'ok');
+    App.log('system', 'Upload: not available in the trainer');
+    UI.modal({ title: 'Upload', body: '<p><b>Upload is not available in the trainer.</b></p><p class="help">The project on this computer is the program: use <b>Download</b> to write it into the controller.</p>' });
   };
   App.goOnline = function () {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
     if (conn.online) { conn.online = false; conn.testing = false; App.log('system', 'Went offline'); App.loadProgram(); Ladder.render(); return; }
+    if (!commsOk()) return;
     if (progSnap() === c.ctl) { conn.online = true; App.log('system', 'Went online'); App.loadProgram(); Ladder.render(); return; }
     UI.modal({
-      title: 'Go Online', body: '<p>The project in this computer and the program in the controller are <b>different</b>.</p><p class="help">Download writes the project into the controller (needs PROG). Upload reads the controller program into the project (the project ladder and tags are replaced).</p>',
-      buttons: [{ label: 'Compare…', onClick: () => { App.compare(); return false; } }, { label: 'Upload', onClick: () => App.upload() }, { label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => App.download() }],
+      title: 'Go Online', body: '<p>The project in this computer and the program in the controller are <b>different</b>.</p><p class="help">Download writes the project into the controller (needs PROG).</p>',
+      buttons: [{ label: 'Compare…', onClick: () => { App.compare(); return false; } }, { label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => App.download() }],
     });
   };
   /* what differs between the project and the controller: rungs by file, and tags */
@@ -588,7 +852,7 @@
     const el = document.querySelector('[data-conn]'); if (!el || !App.project) return;
     const c = App.project.conn, real = c && c.mode === 'real';
     const txt = !real ? '' : !conn.online ? 'OFFLINE' + (conn.same ? '' : ' · project ≠ controller') : conn.testing ? 'ONLINE · testing edits' : conn.same ? 'ONLINE' : 'ONLINE · edits pending';
-    el.textContent = txt; el.hidden = !real;
+    el.textContent = txt; el.title = txt; el.hidden = !real;
     el.className = 'conn-chip ' + (!real ? '' : !conn.online ? 'off' : conn.same ? 'on' : 'edit');
     if (window.Ladder && Ladder.connUi) Ladder.connUi();
   }
@@ -615,6 +879,16 @@
     App.log('system', `Address style: ${Circuit.STYLES[st]}`);
     App.addrChanged(); App.save();
   };
+  /* PLC target of the project (Circuit.TARGETS): the address style follows it when it is the other target's own style */
+  App.setTarget = function (t) {
+    if (!Object.prototype.hasOwnProperty.call(Circuit.TARGETS, t) || App.project.target === t) return;
+    App.project.target = t; App.ctx.target = t;
+    if (t === 'tag' && App.project.addr === 'file') App.project.addr = 'tag';
+    if (t === 'file' && App.project.addr === 'tag') App.project.addr = 'file';
+    App.log('system', `PLC target: ${Circuit.TARGETS[t]}`);
+    Workspace.paletteChanged();
+    App.addrChanged(); App.save();
+  };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
   /* compare with the last known forces so every change is logged, whichever control made it */
   let lastForces = {}, lastFen = true;
@@ -627,8 +901,9 @@
     Ladder.DataTable.render(); updateBar(true);
   };
   App.setMode = function (m) {
+    // a file-based processor will not run with an I/O mismatch; a tag-based controller runs and faults the modules
     const rk = m === 'RUN' && Circuit.rack(App.project.circuit, App.project.io);
-    if (rk && rk.cpu && rk.bad.length) {
+    if (rk && rk.cpu && rk.bad.some(b => App.project.target !== 'tag' || b.major)) {
       const msg = `I/O configuration does not match the rack: ${rk.bad.map(b => b.msg).join('; ')}`;
       UI.toast(msg + ' — open I/O Configuration', 'danger', 6000); App.log('system', 'Go to RUN refused: ' + msg); return;
     }
@@ -738,11 +1013,19 @@
     lastPw = plc.powered;
     ctx.plcInRaw = ctx.plcIn;
     // the rack no longer matches the I/O configuration while running: major fault, the CPU stops
-    if (rack.cpu && rack.bad.length && plc.mode === 'RUN' && plc.powered) {
+    // tag-based: each new module fault is logged once, the controller keeps running
+    if (App.project.target === 'tag') {
+      const now2 = new Set(rack.cpu ? rack.bad.map(b => b.msg) : []);
+      for (const m of now2) if (!modFaults.has(m)) { App.log('alarm', `Module fault (Code 16#0022) — ${m}`); if (App.ticks > 0) UI.toast(`Module fault (Code 16#0022): an invalid reply was received — ${m}`, 'warn', 5000); }
+      for (const m of modFaults) if (!now2.has(m)) App.log('system', `Module fault cleared — ${m}`);
+      modFaults = now2;
+    } else modFaults = new Set();
+    if (rack.cpu && rack.bad.some(b => App.project.target !== 'tag' || b.major) && plc.mode === 'RUN' && plc.powered) {
       plc.setMode('PROG');
       const msg = `CPU fault: I/O configuration mismatch (${rack.bad.map(b => b.msg).join('; ')}) — the controller stopped`;
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
     }
+    commWatch(now);
     plc.scan(dt);
     HMI.sample(now);   // trends keep their history while the HMI is not on screen
     // produced / consumed data: copied every scan while the controller runs
@@ -951,6 +1234,7 @@
 
   /* ---------- status bar ---------- */
   let barCache = {};
+  let modFaults = new Set();
   function updateBar(force) {
     const plc = App.plc, ctx = App.ctx;
     const st = {
@@ -980,6 +1264,7 @@
     msg.textContent = m;
     msg.title = m;
     msg.classList.toggle('warn', !!st.nplc && !st.pw);
+    if (window.Ladder && Ladder.statusUi) Ladder.statusUi();
   }
 
   /* ---------- learn ---------- */
@@ -1035,7 +1320,7 @@
   let exDiff = 'easy', exTopic = '';
   const exDone = (() => { try { return new Set(JSON.parse(localStorage.getItem('plc-trainer.exDone') || '[]')); } catch (e) { return new Set(); } })();
   const markDone = id => { exDone.add(id); try { localStorage.setItem('plc-trainer.exDone', JSON.stringify([...exDone])); } catch (e) { /* private mode */ } };
-  const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'cabinet']]];
+  const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'chassis', 'cabinet']]];
   App.EX_CATS = EX_CATS;
   function renderLearn() {
     const el = document.getElementById('view-learn');
@@ -1241,15 +1526,31 @@
     UI.form('New project', [
       { key: 'n', label: 'Project name', value: 'My project' },
       { key: 't', label: 'Start from', value: 'blank', options: opts },
+      { key: 'plc', label: 'PLC target', value: 'file', options: Object.entries(Circuit.TARGETS).map(([k, n]) => ({ v: k, l: n })) },
     ], v => {
       const name = v.n.trim();
       if (!name) return 'Enter a project name';
-      const p = Examples.EX[v.t].build();
-      p.name = name;
-      App.openNew(p);
-      UI.toast(`Created project “${name}”`, 'ok');
-      App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
-    }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project.</p>');
+      // page 2, as in the new-project wizard of PLC programming software: the controller and its chassis
+      setTimeout(() => UI.form(`New project “${name}” — controller`, [
+        { key: 'ch', label: v.plc === 'tag' ? 'Chassis' : 'Rack', value: v.plc === 'tag' ? '7' : '', options: [{ v: '', l: '— not checked —' }, ...['4', '7', '10', '13'].map(n => ({ v: n, l: `${n}-slot ${v.plc === 'tag' ? 'chassis' : 'rack'}` }))] },
+        { key: 'slot', label: 'Controller slot', value: '0', options: [{ v: '0', l: '0 (this trainer keeps the controller in slot 0)' }] },
+        { key: 'conn', label: 'Connection', value: v.plc === 'tag' ? 'real' : 'simple', options: [{ v: 'real', l: 'Realistic: offline project, Who Active, Download' }, { v: 'simple', l: 'Simple: edits run in the controller at once' }] },
+      ], w => {
+        const p = Examples.EX[v.t].build();
+        p.name = name;
+        // the PLC target picked here; an example keeps its own address style unless it used the other target's own
+        p.target = v.plc;
+        if (!p.addr || p.addr === (v.plc === 'tag' ? 'file' : 'tag')) p.addr = v.plc === 'tag' ? 'tag' : 'file';
+        if (w.ch) p.io = { ...(p.io || {}), slots: (p.io && p.io.slots) || {}, chassis: w.ch };
+        if (w.conn === 'real') p.conn = { mode: 'real' };
+        if (!p.ladder || !(p.ladder.rungs || []).length) p.ladder = { ...(p.ladder || {}), rungs: [{ text: '', comment: '' }] };
+        App.openNew(p);
+        UI.toast(`Created project “${name}”`, 'ok');
+        App.showView(v.t === 'blank' && v.plc !== 'tag' ? 'wiring' : 'ladder');
+        return undefined;
+      }, '<p class="help">The chassis size and the connection can be changed later (I/O Configuration, controller menu).</p>'));
+      return undefined;
+    }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project. The PLC target can be changed later in the I/O Configuration.</p>');
   }
   function openDialog() {
     const fmt = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });

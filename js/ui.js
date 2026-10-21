@@ -36,12 +36,18 @@
       foot.appendChild(btn);
     });
     wrap.querySelector('[data-x]').onclick = close;
-    wrap.addEventListener('pointerdown', e => { if (e.target === wrap) close(); });
+    // a click on the backdrop closes the window, but not the second click of the double-click that opened it
+    const t0 = Date.now();
+    wrap.addEventListener('pointerdown', e => { if (e.target === wrap && Date.now() - t0 > 400) close(); });
     function onKey(e) {
-      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      // a dialog removed without close() lets go of the keys; only the top dialog of a stack answers them
+      if (!wrap.isConnected) { document.removeEventListener('keydown', onKey, true); return; }
+      const all = root.querySelectorAll('.modal-wrap');
+      if (all[all.length - 1] !== wrap) return;
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); }
       else if (e.key === 'Enter' && !e.shiftKey && e.target.tagName !== 'TEXTAREA') {
         const p = buttons.find(b => b.primary);
-        if (p) { e.preventDefault(); e.stopPropagation(); run(p); }
+        if (p) { e.preventDefault(); e.stopImmediatePropagation(); run(p); }
       }
     }
     document.addEventListener('keydown', onKey, true);

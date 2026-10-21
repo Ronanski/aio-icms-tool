@@ -128,9 +128,18 @@
     const st = m.el.querySelector('[data-ust]');
     const show = () => {
       const s = U.state, when = s.at ? new Date(s.at).toLocaleString() : 'never';
+      // the hosted app of the other channel is still loaded after a switch: the same version is not "the latest" here
+      const moved = onPages() && !servedHere(channel());
       st.textContent = s.status === 'checking' ? 'Checking…' : s.status === 'offline' ? 'You are offline. Connect to the internet to check.' :
         s.status === 'error' ? 'Could not reach the update server. Try again later.' : s.status === 'available' ? `Update ready: v${s.info.version}. Last checked ${when}.` :
+        s.status === 'current' && moved ? `The ${channel()} channel loads when you restart.` :
         s.status === 'current' ? `You have the latest ${channel()} version. Last checked ${when}.` : `Last checked: ${when}.`;
+      if (s.status === 'current' && moved) {
+        const b = document.createElement('button');
+        b.className = 'btn'; b.textContent = `⟳ Restart into ${channel() === 'beta' ? 'Beta' : 'Stable'}`;
+        b.onclick = () => App.leaveProject(() => { location.href = channelUrl(channel()); });
+        st.append(' ', b);
+      }
     };
     const run = async () => { U.state = { ...U.state, status: 'checking' }; show(); await U.check(true); show(); };
     m.el.querySelectorAll('[name="uch"]').forEach(i => {

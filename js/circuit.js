@@ -619,8 +619,16 @@
      removable terminal block (RTB) whose terminals sit on the module's left and right edges, wires leaving sideways */
   const MW = 70, MH = 300, Y0 = 132, PITCH = 15;
   const rtbTerms = (left, right) => [...left.map((t, i) => ({ ...t, x: 0, y: Y0 + i * PITCH, side: -1 })), ...right.map((t, i) => ({ ...t, x: MW, y: Y0 + i * PITCH, side: 1 }))];
-  const modBody1756 = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, AB.body, 3, AB.edge) + R(4, 4, W - 8, 5, col, 1, 'none') + T(W / 2, 26, code, 'dt brand') + T(W / 2, 38, sub, 'dt light xs') +
+  const modBody1756 = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, AB.body, 3, AB.edge, 1, 'class="look-1756"') + R(4, 4, W - 8, 5, col, 1, 'none') + T(W / 2, 26, code, 'dt brand') + T(W / 2, 38, sub, 'dt light xs') +
     (slot != null ? T(W / 2, 114, 'SLOT ' + slot, 'dt light xs') : '') + (rows ? R(8, Y0 - 10, W - 16, (rows - 1) * PITCH + 20, '#d4d3ce', 2, '#8d8c87') : '');
+  /* file-based rack module (the project's PLC target is 'file'): same size and terminals, but a lighter housing with the
+     slot number on top, a dark LED window, and a door over the terminal block carrying the colour stripe of its kind */
+  const modBodySlc = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, '#56585b', 2, '#1b1c1d', 1, 'class="look-slc"') + R(3, 3, W - 6, 13, '#3d3e40', 1, 'none') +
+    (slot != null ? T(W / 2, 13, 'SLOT ' + slot, 'dt light xs') : '') + T(W / 2, 30, code, 'dt brand') + R(6, 42, W - 12, 74, '#141414', 2, '#000') + T(W / 2, 39, sub, 'dt light xs') +
+    R(4, Y0 - 20, W - 8, MH - Y0 - 6, '#4a4c4f', 2, '#222') + R(4, Y0 - 20, W - 8, 6, col, 0, 'none') + (rows ? R(8, Y0 - 10, W - 16, (rows - 1) * PITCH + 20, '#d4d3ce', 2, '#8d8c87') : '');
+  // the look follows the project's PLC target: 1756-style chassis for 'tag', the file-based rack for 'file' (and by default)
+  const tagLook = ctx => !!(ctx && ctx.target === 'tag');
+  const rackBody = (ctx, ...a) => (tagLook(ctx) ? modBody1756 : modBodySlc)(...a);
   // the module's address range at its foot (a tag-based range is shortened to fit: Local:1:I 0–15)
   const rngFoot = (ctx, f, slot, n) => T(MW / 2, MH - 8, rng(ctx, f, slot, n).replace(/^Local:(\d+):([IO])\.Data\.(\d+) – Local:\d+:[IO]\.Data\.(\d+)$/, 'Local:$1:$2 $3–$4'), 'dt light xs');
   // status LEDs: two columns, numbered outside (0–7 left, 8–15 right; 0–3 / 4–7 on an 8-point module)
@@ -651,6 +659,7 @@
       info: `Power L1/N 230 VAC. Built-in 24 VDC sensor supply (+24 / COM). Inputs I:0/0–I:0/${PLC_IN - 1} are 24 VDC, referenced to input COM. Relay outputs O:0/0–${PLC_OUT - 1} in groups of four: ${Array.from({ length: G }, (_, g) => `O:0/${g * 4}–${Math.min(PLC_OUT, g * 4 + 4) - 1} switch from VAC-VDC${g}`).join(', ')}. Click the key switch to change PROG/RUN.`,
       terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'N', x: 40, y: 0, l: 'L2/N' }, { id: 'PE', x: 62, y: 0 }, { id: 'V24', x: 90, y: 0, l: '+24' }, { id: 'C24', x: 112, y: 0, l: 'COM' },
         { id: 'COM', x: 150, y: 0, l: 'COM' }, ...Array.from({ length: PLC_IN }, (_, i) => ({ id: 'I' + i, x: 174 + i * 16, y: 0, l: String(i) })),
+        { id: 'PRG', x: W - 20, y: 200, l: 'PORT' },
         ...Array.from({ length: G }, (_, g) => [{ id: 'VAC' + g, x: 20 + g * 100, y: 200, l: 'VAC' + g }, ...Array.from({ length: Math.min(4, PLC_OUT - g * 4) }, (_, k) => ({ id: 'O' + (g * 4 + k), x: 44 + g * 100 + k * 16, y: 200, l: String(g * 4 + k) }))]).flat()],
       init: () => ({ pw: false, burnt: false, badIn: 0 }),
       conduct(c, ctx) {
@@ -701,8 +710,8 @@
         (!c.state.pw ? 'No power on L1/N' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' : 'Second PLC (inactive)')),
     });
   }
-  compactPlc('plc', 12, 8, 'PLC (compact, 12 in / 8 out)');
-  compactPlc('plc16', 16, 12, 'PLC (compact AB-style, 16 in / 12 out)', { family: 'plc' });
+  compactPlc('plc', 12, 8, 'PLC (compact, 12 in / 8 out)', { target: 'file' });
+  compactPlc('plc16', 16, 12, 'PLC (compact AB-style, 16 in / 12 out)', { family: 'plc', target: 'file' });
 
   /* ---------- MODULAR PLC: rack power supply, CPU (slot 0) and I/O cards (slots 1–7) ----------
      The modules snap on a DIN rail; the backplane is shared, so the cards follow the CPU and
@@ -710,17 +719,74 @@
   const SLOTS = ['1', '2', '3', '4', '5', '6', '7'];
   const rackOn = ctx => !!(ctx && ctx.rack && ctx.rack.pw);
   // the card works: a CPU is present, the card is the first one in its slot and the I/O configuration expects it there
-  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type);
+  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type && !ctx.rack.chBad && !(ctx.rack.mods[c.props.slot] && ctx.rack.mods[c.props.slot].inhibit));
   // why a card does not work (for its status line)
   const cardWhy = (c, ctx) => {
     const r = ctx && ctx.rack;
     if (!r || !r.cpu) return 'No CPU module in the rack';
+    if (r.mods[c.props.slot] && r.mods[c.props.slot].inhibit) return `Inhibited in the I/O configuration (slot ${c.props.slot})`;
+    if (r.chBad) return `Module fault: the ${r.chassis ? r.chassis.props.slots + '-slot ' : ''}chassis does not match the I/O configuration`;
     if (r.slots[c.props.slot] !== c.id) return `Slot ${c.props.slot} is already taken — inactive`;
     const want = r.conf[c.props.slot];
-    return want ? `I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
+    // the wording of a module fault in PLC programming software: a module that is not the configured one gives an invalid reply
+    return want ? `Module fault (Code 16#0022): an invalid reply was received — I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
   };
   // the card's address range in the chosen address style (ctx.fmt), e.g. I:1/0 – I:1/7 or I0.0 – I0.7
   const rng = (ctx, f, s, n = 8) => { const fmt = (ctx && ctx.fmt) || (a => a); return `${fmt(`${f}:${s}/0`)} – ${fmt(`${f}:${s}/${n - 1}`)}`; };
+  /* PLC chassis: a backplane with a power-supply bay on the left and 4 / 7 / 10 / 13 module slots. A module dropped on it
+     snaps into a slot and takes that slot's number; moving the chassis moves its modules (it is a plate). The controller
+     sits in slot 0; the trainer's I/O files hold slots 1–7, so slots 8–12 of the larger chassis stay empty. */
+  const CH = { pad: 10, ps: 90, sw: 74, top: 52, bot: 18 };
+  const chassisDims = c => ({ w: CH.pad * 2 + CH.ps + (Number(c && c.props.slots) || 7) * CH.sw, h: CH.top + MH + CH.bot });
+  // where a module sits in the chassis: the power-supply bay, or slot n
+  const bayX = (ch, n) => ch.x + CH.pad + (n === 'ps' ? 0 : CH.ps + n * CH.sw + 2);
+  def('chassis', {
+    name: 'PLC Chassis (backplane)', cat: 'PLC Rack', view: 'cabinet', prefix: 'RACK', w: chassisDims(null).w, h: chassisDims(null).h, layer: 'back', plate: true,
+    props: { slots: '7' }, pdefs: [{ k: 'slots', n: 'Slots', opts: ['4', '7', '10', '13'] }],
+    info: 'The backplane of a modular PLC: the power supply goes in the bay on the left, the controller in slot 0 and the I/O modules in slots 1–7. Drop a module on it and it snaps into a slot; the slot it sits in is its slot number (I:3/0 or Local:3:I.Data.0 for slot 3). The controller sees every module in the chassis by itself — there is nothing to set up for the connection.',
+    terms: [],
+    dims: chassisDims,
+    draw(c, ctx) {
+      const n = Number(c && c.props.slots) || 7, { w, h } = chassisDims(c), tag = tagLook(ctx);
+      let s = R(0, 0, w, h, tag ? '#3b3d40' : '#6d7177', 4, '#1b1c1d', 1.5, `class="${tag ? 'look-1756' : 'look-slc'}"`) + R(CH.pad - 4, CH.top - 6, w - CH.pad * 2 + 8, MH + 12, tag ? '#232426' : '#4b4f54', 2, 'none');
+      s += T(CH.pad + 4, 14, `${tag ? '1756-STYLE CHASSIS' : 'RACK'} · ${n} SLOTS`, 'dt light xs', 'start') + T(CH.pad + CH.ps / 2, 32, 'POWER', 'dt light xs');
+      for (let i = 0; i < n; i++) {
+        const x = CH.pad + CH.ps + i * CH.sw, off = i > 7;
+        s += R(x + 2, CH.top, MW, MH, off ? '#2a2a2a' : tag ? '#2d2f31' : '#5b5f64', 1, '#111', 1, 'class="ch-slot"') + T(x + 2 + MW / 2, 32, 'SLOT ' + i, 'dt light xs');
+        if (off) s += T(x + 2 + MW / 2, CH.top + MH / 2, 'not used', 'dt light xs');
+      }
+      return s + R(CH.pad, CH.top, CH.ps - 6, MH, tag ? '#2d2f31' : '#5b5f64', 1, '#111');
+    },
+    status: c => `${c.props.slots} slots: power supply on the left, controller in slot 0, I/O in slots 1–7`,
+  });
+  // the chassis whose slot area holds the middle of module c (null when it is not in a chassis)
+  function chassisOf(circ, c) {
+    const d = DEFS[c.type]; if (!d || !(d.slot || c.type === 'mcpu' || c.type === 'mpsu')) return null;
+    const mx = c.x + d.w / 2, my = c.y + d.h / 2;
+    return circ.comps.find(k => k.type === 'chassis' && mx > k.x && mx < k.x + chassisDims(k).w && my > k.y && my < k.y + chassisDims(k).h) || null;
+  }
+  /* seat a module in its chassis. by 'pos' (it was dropped): the nearest slot gives its slot number; by 'slot' (its slot was
+     picked): it moves to that slot. Returns an error message when it cannot go there, else '' (or null: not in a chassis). */
+  function seat(circ, c, by) {
+    const ch = chassisOf(circ, c); if (!ch) return null;
+    const n = Number(ch.props.slots) || 7, d = DEFS[c.type], y = ch.y + CH.top;
+    if (c.type === 'mpsu') { c.x = bayX(ch, 'ps'); c.y = y; return ''; }
+    let i = c.type === 'mcpu' ? 0 : by === 'slot' ? Number(c.props.slot) : Math.round((c.x - bayX(ch, 0)) / CH.sw);
+    i = Math.max(0, Math.min(n - 1, i));
+    if (i > 7) return `Slot ${i} is not used in this trainer: put I/O modules in slots 1–7`;
+    if (d.slot && i === 0) return 'Slot 0 holds the controller: put I/O modules in slots 1–7';
+    const other = circ.comps.find(k => k !== c && chassisOf(circ, k) === ch && (k.type === 'mcpu' ? 0 : DEFS[k.type].slot ? Number(k.props.slot) : -1) === i);
+    if (other) return `Slot ${i} already holds ${other.props.label}`;
+    c.x = bayX(ch, i); c.y = y;
+    if (d.slot) c.props.slot = String(i);
+    return '';
+  }
+  // the first empty slot (1–7) of a chassis for a new I/O module (skip: that module itself), else null
+  function freeSlot(circ, ch, skip) {
+    const n = Math.min(8, Number(ch.props.slots) || 7), used = new Set(circ.comps.filter(k => k !== skip && k.type !== 'chassis' && chassisOf(circ, k) === ch && DEFS[k.type].slot).map(k => Number(k.props.slot)));
+    for (let i = 1; i < n; i++) if (!used.has(i)) return i;
+    return null;
+  }
   def('mpsu', {
     name: 'Rack Power Supply 230VAC / 24VDC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PS', w: 80, h: MH, unique: 'psu', uniqueMsg: 'Only one rack power supply per project',
     info: 'Powers the chassis backplane (controller and I/O modules) from L1/N 230 VAC. Also gives 24 VDC (+24 / COM) for sensors, input modules and transistor outputs. Put it at the left end of the chassis.',
@@ -734,7 +800,9 @@
       if (ctx && ctx.rack) ctx.rack.pw = c.state.pw;
       return ch;
     },
-    draw(c) {
+    draw(c, ctx) {
+      if (!tagLook(ctx)) return modBodySlc(80, 'POWER', '230 VAC IN', AB.SYS) + led(20, 60, c.state.pw, '#3ddc63', 3.6) + T(30, 63, 'POWER', 'dt light xs', 'start') +
+        R(14, 150, 52, 60, '#2c2d2f', 3, '#111') + T(40, 176, 'FUSE', 'dt light xs') + T(40, 196, '24 VDC OUT', 'dt light xs') + (c.state.burnt ? burnt(80, MH) : '');
       return modBody1756(80, 'PA', '230 VAC IN', AB.SYS) + band(MH - 22, 80, 22, '#1b1b1a') + led(20, 70, c.state.pw, '#3ddc63', 3.6) + T(30, 73, 'DC OK', 'dt light xs', 'start') +
         R(10, 90, 60, 120, '#232322', 3, '#111') + T(40, 154, '24 VDC', 'dt light xs') + T(40, 166, 'OUT', 'dt light xs') + (c.state.burnt ? burnt(80, MH) : '');
     },
@@ -743,7 +811,8 @@
   def('mcpu', {
     name: 'PLC CPU Module (slot 0)', cat: 'PLC Rack', view: 'cabinet', prefix: 'CPU', w: MW, h: MH, unique: 'cpu', uniqueMsg: 'Only one PLC (compact or CPU module) per project',
     info: 'Controller of the modular PLC, always slot 0. It runs the ladder. Powered by the rack power supply. I/O cards in slots 1–7 are addressed I:slot/bit and O:slot/bit. Click the key switch to change PROG/RUN.',
-    terms: [],
+    // programming port (USB) for the engineering PC
+    terms: [{ id: 'PRG', x: MW / 2, y: MH, l: 'USB' }],
     init: () => ({ pw: false }),
     evaluate(c, api, ctx) {
       const ch = set(c, 'pw', rackOn(ctx));
@@ -754,10 +823,18 @@
     ctxSig: (c, ctx) => `|${ctx.plcId}|${ctx.mode}|${ctx.forces}|${ctx.rack && ctx.rack.bad.length}`,
     draw(c, ctx) {
       const me = ctx && ctx.plcId === c.id, pw = c.state.pw, run = me && pw && ctx.mode === 'RUN';
+      if (!tagLook(ctx)) {
+        // file-based processor: status LEDs, a REM / RUN / PROG key switch and a serial port
+        let p = modBodySlc(MW, 'CPU', 'Processor · slot 0', AB.SYS);
+        const st = [['RUN', run, '#3ddc63'], ['FLT', me && pw && ctx.rack && ctx.rack.bad.length, '#ff4b3a'], ['BATT', false, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['PWR', pw, '#3ddc63']];
+        st.forEach(([n, on, col], i) => { p += led(16, 52 + i * 13, on, col, 3) + T(24, 55 + i * 13, n, 'dt light xs', 'start'); });
+        p += `<g class="part" data-part="mode"><rect x="13" y="130" width="44" height="58" rx="4" fill="#3a3a37" stroke="#111"/><circle cx="35" cy="152" r="11" fill="#c9c5bb" stroke="#111"/><rect x="33" y="142" width="4" height="20" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 35 152)"/>${T(35, 181, 'RUN · PROG', 'dt light xs')}</g>`;
+        return p + R(15, 214, 40, 26, '#232322', 3, '#111') + T(35, 231, 'RS-232', 'dt light xs') + T(35, MH - 12, pw ? (me ? ctx.mode : 'IDLE') : '', 'dt light xs');
+      }
       let s = modBody1756(MW, 'L7', 'Controller · slot 0', AB.SYS);
       // 4-character display, status LEDs, key switch
       s += R(9, 48, 52, 16, '#0d1a0d', 2, '#000') + T(35, 60, pw ? (me ? ctx.mode : 'IDLE') : '', 'dt light xs');
-      const st = [['RUN', run, '#3ddc63'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['I/O', me && pw && !(ctx.rack && ctx.rack.bad.length), '#3ddc63'], ['OK', pw && !(me && ctx.rack && ctx.rack.bad.length), me && ctx.rack && ctx.rack.bad.length ? '#ff4b3a' : '#3ddc63']];
+      const st = [['RUN', run, '#3ddc63'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['I/O', me && pw, me && ctx.rack && ctx.rack.bad.length ? '#ff4b3a' : '#3ddc63'], ['OK', pw, '#3ddc63']];
       st.forEach(([n, on, col], i) => { s += led(14, 80 + i * 13, on, col, 3) + T(22, 83 + i * 13, n, 'dt light xs', 'start'); });
       s += `<g class="part" data-part="mode"><rect x="13" y="140" width="44" height="58" rx="4" fill="#3a3a37" stroke="#111"/><circle cx="35" cy="162" r="11" fill="#c9c5bb" stroke="#111"/><rect x="33" y="152" width="4" height="20" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 35 162)"/>${T(35, 191, 'RUN · PROG', 'dt light xs')}</g>`;
       return s + R(13, 220, 44, 60, '#232322', 3, '#111') + T(35, 254, 'SD', 'dt light xs');
@@ -788,7 +865,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcInX[c.props.slot]}|${ctx.fmt && ctx.fmt(`I:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcInX[c.props.slot] || 0 : 0;
-        return modBody1756(W, code, sub, col, h + 1, c.props.slot) + stLeds(W, n, w, c.state.badIn) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'I', c.props.slot, n);
+        return rackBody(ctx, W, code, sub, col, h + 1, c.props.slot) + stLeds(W, n, w, c.state.badIn) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'I', c.props.slot, n);
       },
       status: (c, ctx) => (c.state.badIn ? 'Damaged input(s) — right-click → Repair. ' : '') + (!cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: I:${c.props.slot}/0–${n - 1}` : 'Rack not powered'),
     });
@@ -818,7 +895,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
-        return modBody1756(W, code, 'RELAY OUT', AB.RLY, G * 5 / 2, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n);
+        return rackBody(ctx, W, code, 'RELAY OUT', AB.RLY, G * 5 / 2, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n);
       },
       status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–${n - 1}` : 'Rack not powered',
     });
@@ -848,7 +925,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx) && !c.state.burnt, w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
-        return modBody1756(W, code, 'DC OUT', AB.DC, h + 1, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n) + (c.state.burnt ? burnt(W, MH) : '');
+        return rackBody(ctx, W, code, 'DC OUT', AB.DC, h + 1, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n) + (c.state.burnt ? burnt(W, MH) : '');
       },
       status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–${n - 1}` : 'Rack not powered',
     });
@@ -876,7 +953,7 @@
     ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.mA || []).map(v => v.toFixed(1))}|${ctx.fmt && ctx.fmt('I:0/0')}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx);
-      let s = modBody1756(MW, 'IF4', '4–20 mA IN', AB.ANA, 3, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
+      let s = rackBody(ctx, MW, 'IF4', '4–20 mA IN', AB.ANA, 3, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
       (c.state.mA || []).forEach((ma, i) => { s += T(8, 58 + i * 14, String(i), 'dt light xs', 'start') + R(16, 52 + i * 14, 46, 8, '#1c1c1b', 2, '#000') + R(17, 53 + i * 14, Math.max(0, Math.min(1, (ma - 4) / 16)) * 44, 6, '#f2c230', 1, 'none'); });
       return s;
     },
@@ -899,12 +976,76 @@
     ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.v || []).map(v => v.toFixed(2))}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx);
-      let s = modBody1756(MW, 'OF2', '0–10 V OUT', AB.ANA, 2, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
+      let s = rackBody(ctx, MW, 'OF2', '0–10 V OUT', AB.ANA, 2, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
       (c.state.v || []).forEach((v, i) => { s += T(8, 58 + i * 14, String(i), 'dt light xs', 'start') + R(16, 52 + i * 14, 46, 8, '#1c1c1b', 2, '#000') + R(17, 53 + i * 14, v / 10 * 44, 6, '#2f6fd6', 1, 'none'); });
       return s;
     },
     status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: AO0 ${(c.state.v[0] || 0).toFixed(2)} V, AO1 ${(c.state.v[1] || 0).toFixed(2)} V` : 'Rack not powered',
   });
+  /* Ethernet communication module: takes a slot like an I/O module (configure it in the I/O Configuration) but has no
+     I/O words; a cable from the engineering PC's Ethernet port to its port reaches the controller over the backplane */
+  def('meth', {
+    name: 'PLC Ethernet Module', cat: 'PLC Rack', view: 'cabinet', prefix: 'EN', w: MW, h: MH, slot: true, comm: true,
+    props: { slot: '1', ip: '192.168.1.20' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }, { k: 'ip', n: 'IP address' }],
+    info: 'Ethernet communication module for the chassis. Wire the ETH port to the Ethernet port of the engineering PC: Who Active then finds the controller through this module at its IP address. Configure it in the I/O Configuration like any module; it has no I/O addresses.',
+    terms: [{ id: 'ETH', x: MW / 2, y: MH, l: 'ETH' }],
+    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}`,
+    draw(c, ctx) {
+      const on = cardOn(c, ctx) && rackOn(ctx);
+      return rackBody(ctx, MW, 'ENET', 'ETHERNET', AB.SYS, 0, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6) + T(14, 58, 'LNK', 'dt light xs', 'start') + led(46, 55, rackOn(ctx), '#3ddc63', 3) +
+        T(MW / 2, 74, 'IP', 'dt light xs') + T(MW / 2, 86, String(c.props.ip || '').split('.').slice(0, 2).join('.') + '.', 'dt light xs') + T(MW / 2, 98, String(c.props.ip || '').split('.').slice(2).join('.'), 'dt light xs') +
+        R(MW / 2 - 12, MH - 40, 24, 22, '#232322', 2, '#111');
+    },
+    status: (c, ctx) => !rackOn(ctx) ? 'Chassis not powered' : `IP ${c.props.ip} · slot ${c.props.slot}` + (cardOn(c, ctx) ? '' : ' — ' + cardWhy(c, ctx)),
+  });
+  /* engineering PC (the programming computer): a comms driver that must be started, a USB port for the controller's
+     programming port and an Ethernet port for an Ethernet module. Click the screen button to start or stop the driver. */
+  def('epc', {
+    name: 'Engineering PC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PC', w: 170, h: 130,
+    info: 'The computer the PLC programming software runs on. Start its comms driver (click the button on the screen), then wire its USB port to the controller\'s programming port, or its ETH port to an Ethernet module in the chassis. Who Active in the Ladder then finds the controller and you can set the project path, go online and download.',
+    terms: [{ id: 'USB', x: 40, y: 130, l: 'USB' }, { id: 'ETH', x: 130, y: 130, l: 'ETH' }],
+    init: () => ({ drv: 'off', t: 0 }),
+    tick(c, api, dt) {
+      if (c.state.drv !== 'starting') return false;
+      c.state.t = (c.state.t || 0) + dt;
+      if (c.state.t >= 1.5) { c.state.drv = 'running'; c.state.t = 0; return true; }
+      return false;
+    },
+    onPart(c, p, ev) {
+      if (ev !== 'down' || p !== 'drv') return false;
+      c.state.drv = c.state.drv === 'off' ? 'starting' : 'off'; c.state.t = 0;
+      return true;
+    },
+    draw(c) {
+      const d = (c && c.state.drv) || 'off', col = d === 'running' ? '#3ddc63' : d === 'starting' ? '#f2c230' : '#8b8b86';
+      return R(10, 0, 150, 96, '#2b2d30', 6, '#111') + R(18, 8, 134, 80, '#e9eef3', 2, '#5f6b77') + R(18, 8, 134, 14, '#3b6ea8', 0, 'none') + T(24, 18, 'COMMS DRIVER', 'dt light xs', 'start') +
+        led(30, 38, d !== 'off', col, 4) + T(40, 41, d === 'running' ? 'Running' : d === 'starting' ? 'Starting…' : 'Stopped', 'dt xs', 'start') +
+        `<g class="part" data-part="drv">${R(30, 54, 110, 24, d === 'off' ? '#2c63b8' : '#7a7d82', 4, '#1b3d70')}${T(85, 70, d === 'off' ? 'Start driver' : 'Stop driver', 'dt light xs')}</g>` +
+        R(0, 96, 170, 34, '#3a3c40', 4, '#111') + T(85, 112, 'ENGINEERING PC', 'dt light xs');
+    },
+    status: c => c.state.drv === 'running' ? 'Comms driver running' : c.state.drv === 'starting' ? 'Comms driver starting…' : 'Comms driver stopped — click Start driver',
+  });
+  /* what the engineering PC can reach: the controller through a USB cable to its programming port, or through an
+     Ethernet cable to an Ethernet module in a powered chassis that has a controller. Returns { pc, ctl, via, ip, mod }
+     when it finds the controller, else { pc, why }. */
+  function comms(circ, io) {
+    const pc = circ.comps.find(c => c.type === 'epc');
+    if (!pc) return { why: 'There is no engineering PC in the Wiring' };
+    if (pc.state.drv !== 'running') return { pc, why: `The comms driver on ${pc.props.label} is not running` };
+    const adj = new Map(), link = (a, b) => { (adj.get(a) || adj.set(a, []).get(a)).push(b); };
+    for (const w of circ.wires) { link(w.a, w.b); link(w.b, w.a); }
+    const reach = from => { const seen = new Set([from]), todo = [from]; while (todo.length) for (const n of adj.get(todo.pop()) || []) if (!seen.has(n)) { seen.add(n); todo.push(n); } return seen; };
+    const r = rack(circ, io), ctl = r.ctl, usb = reach(pc.id + ':USB'), eth = reach(pc.id + ':ETH');
+    if (ctl && usb.has(ctl.id + ':PRG')) return ctl.state.pw ? { pc, ctl, via: 'USB' } : { pc, why: `${ctl.props.label} has no power` };
+    const mod = circ.comps.find(m => m.type === 'meth' && eth.has(m.id + ':ETH'));
+    if (mod) {
+      if (!r.pw) return { pc, why: `The chassis of ${mod.props.label} has no power` };
+      if (!r.cpu) return { pc, why: `There is no controller in the chassis of ${mod.props.label}` };
+      if (r.slots[mod.props.slot] !== mod.id) return { pc, why: `${mod.props.label} is not on the backplane (slot ${mod.props.slot} is taken)` };
+      return { pc, ctl, via: 'ETH', ip: mod.props.ip, mod };
+    }
+    return { pc, why: `No cable from ${pc.props.label} to a controller: wire USB to the controller's programming port, or ETH to an Ethernet module in the chassis` };
+  }
   /* level transmitter: 3-wire, 24 V DC; OUT gives 4–20 mA for 0–100 % of the tank it measures (by tag), or its own test level */
   def('ltx', {
     name: 'Level Transmitter 4–20 mA', cat: 'Sensors', view: 'plant', prefix: 'LT', w: 70, h: 110,
@@ -2363,6 +2504,8 @@
     let s = c.type + JSON.stringify(c.state) + JSON.stringify(c.props);
     if (DEFS[c.type] && DEFS[c.type].compact && ctx) s += `|${ctx.plcId}|${ctx.plcInRaw}|${ctx.plcOut}|${ctx.mode}|${ctx.forces}|${ctx.fmt && ctx.fmt('I:0/0')}`;
     else if (ctx && DEFS[c.type] && DEFS[c.type].ctxSig) s += DEFS[c.type].ctxSig(c, ctx);
+    // rack modules are drawn in the look of the project's PLC target
+    if (ctx && ctx.target) s += '|' + ctx.target;
     return s;
   }
   function draw(c, ctx) { const d = DEFS[c.type]; return d ? d.draw(c, ctx) : ''; }
@@ -2395,12 +2538,22 @@
   }
 
   const CARDS = () => ORDER.filter(t => DEFS[t].slot);
-  const ioFile = t => (DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'));
+  // the I/O file of a module type ('' for a communication module, which has no I/O words)
+  const ioFile = t => (DEFS[t].comm ? '' : DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'));
   /* keep only valid slots and card types of a saved I/O configuration */
   function cleanIo(io) {
     const slots = {}, src = io && typeof io === 'object' && io.slots && typeof io.slots === 'object' ? io.slots : {};
     for (const s of SLOTS) if (typeof src[s] === 'string' && DEFS[src[s]] && DEFS[src[s]].slot) slots[s] = src[s];
-    return { slots };
+    // the chassis size the controller expects (only set once a chassis was configured)
+    const chassis = io && ['4', '7', '10', '13'].includes(io.chassis) ? io.chassis : undefined;
+    // module properties set in the project (New Module pages): name, description, RPI, inhibit, major fault on connection loss
+    const mods = {}, ms = io && typeof io.mods === 'object' && io.mods ? io.mods : {};
+    for (const s of Object.keys(slots)) {
+      const m = ms[s]; if (!m || typeof m !== 'object') continue;
+      const rpi = Number(m.rpi);
+      mods[s] = { name: String(m.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 20), desc: String(m.desc || '').slice(0, 80), rpi: Number.isFinite(rpi) ? Math.min(750, Math.max(0.2, rpi)) : 20, inhibit: m.inhibit === true, mf: m.mf === true };
+    }
+    return { slots, ...(chassis ? { chassis } : {}), ...(Object.keys(mods).length ? { mods } : {}) };
   }
   /* the controller and its rack: which CPU runs, which card owns each slot (the first one found),
      the I/O configuration (conf) and every slot where the installed card does not match it (bad) */
@@ -2412,15 +2565,24 @@
     if (cpu) for (const s of SLOTS) {
       const c = slots[s] && circ.comps.find(x => x.id === slots[s]), have = c ? c.type : '', want = conf[s] || '';
       if (have === want) continue;
+      // an inhibited module is not checked (and does not run)
+      if (io && io.mods && io.mods[s] && io.mods[s].inhibit) continue;
       bad.push({ slot: s, want, have, msg: !want ? `slot ${s}: ${DEFS[have].name} installed but not configured` : !have ? `slot ${s}: ${DEFS[want].name} configured but missing` : `slot ${s}: ${DEFS[want].name} configured, ${DEFS[have].name} installed` });
     }
-    return { ctl, cpu, slots, conf, bad, pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
+    // a chassis of another size than the configured one is a fault, as on real hardware
+    const chassis = circ.comps.find(c => c.type === 'chassis') || null;
+    if (cpu && io && io.chassis && (!chassis || chassis.props.slots !== io.chassis)) bad.push({ slot: 'ch', want: io.chassis, have: chassis ? chassis.props.slots : '', msg: chassis ? `chassis: ${io.chassis} slots configured, ${chassis.props.slots} installed` : `chassis: ${io.chassis} slots configured, no chassis installed` });
+    // a fault on a module set to "major fault on connection loss" stops the controller (major fault)
+    const mods = (io && io.mods) || {};
+    bad.forEach(b => { if (mods[b.slot] && mods[b.slot].mf) b.major = true; });
+    return { ctl, cpu, slots, conf, mods, bad, chassis, chBad: bad.some(b => b.slot === 'ch'), pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
   }
   /* I/O words the data table shows: the compact PLC's I:0/O:0, or the configured rack slots */
   function ioMap(circ, io) {
     const r = rack(circ, io);
-    if (!r.cpu) { const d = r.ctl && DEFS[r.ctl.type]; return [{ file: 'I', word: 0, n: (d && d.nIn) || 12 }, { file: 'O', word: 0, n: (d && d.nOut) || 8 }]; }
-    return SLOTS.filter(s => r.conf[s]).map(s => {
+    // no hardware yet but modules in the project's I/O configuration: the configured slots
+    if (!r.cpu && (r.ctl || !Object.keys(r.conf).length)) { const d = r.ctl && DEFS[r.ctl.type]; return [{ file: 'I', word: 0, n: (d && d.nIn) || 12 }, { file: 'O', word: 0, n: (d && d.nOut) || 8 }]; }
+    return SLOTS.filter(s => r.conf[s] && !DEFS[r.conf[s]].comm).map(s => {
       const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]);
       const d = DEFS[r.conf[s]];
       return { file: ioFile(r.conf[s]), word: Number(s), n: d.analog ? d.chans : d.pts || 8, analog: !!d.analog, label: c && c.type === r.conf[s] ? c.props.label : '(missing)', name: d.name };
@@ -2429,6 +2591,11 @@
   /* Address styles (display only; programs are always stored file-based):
      file 'I:1/0', bit/byte 'I0.0' / 'Q0.0', basic 'I1' / 'Q1'. Bit/byte and basic number the I/O points
      of the hardware in order (compact PLC, or the configured rack slots), inputs and outputs separately. */
+  /* PLC target of a project: the file-based rack (data files, I:1/0) or the tag-based 1756-style chassis (Local:1:I.Data.0).
+     It picks the look of the rack modules, which controllers the Wiring library offers (a def's target), the default
+     address style and the names in the Organizer. The solver and the PLC engine are the same for both. */
+  const TARGETS = { file: 'File-based controller (data files, I:1/0)', tag: 'Tag-based controller, 1756-style chassis (Local:1:I.Data.0)' };
+  const forTarget = (type, target) => !DEFS[type].target || DEFS[type].target === (target === 'tag' ? 'tag' : 'file');
   const STYLES = { file: 'File-based (I:1/0)', tag: 'Tag-based (Local:1:I.Data.0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
   function addrBook(circ, io, style) {
     const idx = { I: [], O: [] };
@@ -2457,7 +2624,7 @@
   /* is an I/O address real hardware? null when it is, else the reason (used by Verify) */
   function ioCheck(a, circ, io) {
     const r = rack(circ, io);
-    if (!r.cpu) {
+    if (!r.cpu && (r.ctl || !Object.keys(r.conf).length)) {
       const d = r.ctl && DEFS[r.ctl.type], n = a.file === 'I' ? (d && d.nIn) || 12 : (d && d.nOut) || 8;
       if (a.word !== 0 || (a.kind === 'bit' && a.bit >= n)) return { warn: true, msg: `${a.norm} is not on the compact PLC (${a.file}:0/0–${n - 1})` };
       return null;
@@ -2494,5 +2661,5 @@
     return null;
   }
   const setManual = on => { manual = !!on; };
-  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
+  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook, TARGETS, forTarget, chassisOf, seat, freeSlot, comms };
 })();

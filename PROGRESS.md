@@ -9,8 +9,34 @@
 - [x] One short drawing toolbar (Library, Play, Rotate, Delete, Undo, Redo, ⋯)
 - [x] 100 exercises (25 easy, 40 medium, 35 hard) with checks, hints and solutions, across all modules
 - [x] Practice board 16; Learn tabs; Examples grouped by category
-- [ ] PLC target per project: SLC-style (compact, rack, file-based) or 1756-style (chassis, tag-based)
-- [ ] Study Studio 5000 / RSLogix in the owner's VM (computer use session)
+- [x] PLC target per project: file-based (compact, rack, data files) or 1756-style (chassis, tag-based) — `feature/plc-target`: library, module look, address style, Organizer / Project Tree, ladder file names, I/O Configuration
+- [x] Study Studio 5000 / RSLinx / Logix Emulate in the owner's VM (`docs/ROCKWELL_UI_STUDY.md`, verified download, I/O fault and simulator addressing)
+- [x] PLC chassis in the Wiring (4/7/10/13 slots, modules snap into slots, slot = position) — `feature/plc-chassis`
+- [x] Organizer panel on the left of the Ladder, module and chassis faults in the tree, chassis size in the I/O Configuration — `feature/plc-organizer`
+- [x] Comms: Engineering PC with a comms driver, cable to the controller (USB) or an Ethernet module; Who Active → Set Project Path → Download; Upload = not available; communication lost — `feature/plc-comms`
+- [x] I/O faults per target: module fault (tag-based) or major fault (file-based); ＋ New Module… — `feature/plc-ioconfig`
+- [x] Routines / program files workflow (JSR by name, new / rename / delete in the Organizer) — `feature/plc-routines`
+- [x] Ladder UI like the programming software: status box with online menu, path, tabbed instruction palette — `feature/plc-ladder-ui`
+- [x] Tag editor in a grid (Edit Tags / Monitor Tags)
+- [x] Aligned with the reference UI study: online bar, Errors pane, Download dialog and flow, Who Active layout, Select Module Type, Organizer nodes — `feature/plc-ui-align`
+- [x] Reference corrections: alias display, live rails, project in the controller, download timeout, Code 16#0022 module fault, I/O Not Responding, Faulted — `feature/plc-ui-align2`
+- [x] Gap list (side-by-side check): Upload everywhere, empty new routine, offline menu and status, module catalog on the project with RPI / Inhibit / Major fault, New project page 2, Controller Tags panel, Download dialog rows and overwrite confirm, free placement, chassis example — `feature/plc-gaps`
+- [x] Last gaps: routine names like tags (up to 40, case kept), connection chip shortens in the PLC bar — `fix/plc-last-gaps`
+- [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
+- [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
+- [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)
+- [ ] CPT (Compute) instruction
+- [ ] Tag browser on an operand and New Tag from an unknown operand (reference: right-click → New "tag")
+- [ ] Program Tags (scope of a program), several programs per task
+- [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
+
+## Full audit (2026-10-22, `audit/full-2026-10-22`)
+- [x] Tests and a headless scan of every view, example, lesson and exercise: 0 console errors
+- [x] Stacked dialogs: Escape/Enter only reach the top one; no key listener left behind
+- [x] Updates dialog: restart into the chosen channel when the other one is still loaded
+- [x] Project hand-over from the Android / Windows app: only changed projects, within a safe link size
+- [x] Damaged project index no longer stops startup
+- [x] No third-party product names in UI strings; brand test reads all source strings
 
 ## Engineer use (2026-10-21, `fix/wiring-engineer`)
 - [x] Contactor aux block 2NO 2NC; a second N.O./N.C. of a contactor takes 53-54 / 61-62 / 71-72 / 83-84

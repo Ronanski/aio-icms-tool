@@ -60,11 +60,29 @@
       if (!shell || /[?&]local=1\b/.test(location.search)) return;
       var n = Number(ls.getItem('plc-trainer.handover')) || 0;
       if (!n && !navigator.onLine) return;   // first start offline: use the built-in copy
-      // always hand the built-in copy's projects over: the hosted app only adds keys it does not have, so this is
-      // safe to repeat, and a hosted copy too old to read it does not lose them
-      var o = {};
-      for (var i = 0; i < ls.length; i++) { var key = ls.key(i); if (/^plc-trainer\./.test(key) && key !== 'plc-trainer.handover') o[key] = ls.getItem(key); }
-      ls.setItem('plc-trainer.handover', String(n + 1));
+      // hand the built-in copy's projects over: only those changed since the last hand-over, newest first, and no more
+      // than fits in a safe link (the rest go on the next start). The hosted app merges by id, so repeating is safe
+      var IX = 'plc-trainer.projects.v2', PX = 'plc-trainer.proj.', HD = 'plc-trainer.handed', LIMIT = 1500000;
+      var idx = [], sent = {};
+      try { idx = JSON.parse(ls.getItem(IX) || '[]'); if (Object.prototype.toString.call(idx) !== '[object Array]') idx = []; } catch (e) { idx = []; }
+      try { sent = JSON.parse(ls.getItem(HD) || '{}') || {}; } catch (e) { sent = {}; }
+      idx = idx.filter(function (p) { return p && typeof p.id === 'string' && sent[p.id] !== (Number(p.updated) || 0); });
+      idx.sort(function (a, b) { return (Number(b.updated) || 0) - (Number(a.updated) || 0); });
+      var o = { 'plc-trainer.current': ls.getItem('plc-trainer.current'), 'plc-trainer.channel': ls.getItem('plc-trainer.channel') }, part = [], size = 200;
+      for (var i = 0; i < idx.length; i++) {
+        var data = ls.getItem(PX + idx[i].id);
+        if (data === null) continue;
+        var cost = encodeURIComponent(data).length * 1.2 + 200;
+        if (part.length && size + cost > LIMIT) break;
+        o[PX + idx[i].id] = data; part.push(idx[i]); size += cost;
+      }
+      o[IX] = JSON.stringify(part);
+      // offline the hosted app may not load: then nothing counts as handed over
+      if (navigator.onLine) {
+        for (var k = 0; k < part.length; k++) sent[part[k].id] = Number(part[k].updated) || 0;
+        try { ls.setItem(HD, JSON.stringify(sent)); } catch (e) { /* the next start sends them again */ }
+      }
+      try { ls.setItem('plc-trainer.handover', String(n + 1)); } catch (e) { /* only the count is lost */ }
       location.replace(PAGES + (ch === 'beta' ? 'beta/' : '') + '#import=' + encodeURIComponent(JSON.stringify(o)));
     })();
   </script>

@@ -192,16 +192,19 @@
   try { palClosed = JSON.parse(localStorage.getItem('plc-trainer.palClosed') || '[]'); } catch (e) { palClosed = []; }
   if (!Array.isArray(palClosed)) palClosed = [];
   const savePal = () => { try { localStorage.setItem('plc-trainer.palClosed', JSON.stringify(palClosed)); } catch (e) { /* ignore */ } };
+  // the library follows the project's PLC target (controllers offered, look of the rack modules)
+  WS.paletteChanged = () => { if (root) buildPalette((root.querySelector('.ws-search') || {}).value || ''); };
   function buildPalette(q) {
     q = q.trim().toLowerCase();
     const cats = {};
-    Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (d.hidden) return; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
+    const target = App.project && App.project.target;
+    Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (!d || d.hidden || !Circuit.forTarget(t, target)) return; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
     const list = root.querySelector('.pal-list');
     list.innerHTML = Object.entries(cats).map(([cat, types]) => `<details class="pal-cat" data-cat="${esc(cat)}"${q || !palClosed.includes(cat) ? ' open' : ''}><summary>${esc(cat)} <small>${types.length}</small></summary><div class="pal-grid">${types.map(t => {
       const d = DEFS[t];
       const sample = { id: 'pal', type: t, x: 0, y: 0, props: { label: d.prefix, ...d.props }, state: d.init ? d.init() : {} };
       const pad = 8;
-      return `<button class="pal-item" draggable="true" data-type="${t}" title="${esc(d.name)} — ${esc(d.info || '')}"><svg viewBox="${-pad} ${-pad} ${d.w + pad * 2} ${d.h + pad * 2}">${Circuit.draw(sample, null)}${Circuit.drawTerms(d)}</svg><span>${esc(d.name)}</span></button>`;
+      return `<button class="pal-item" draggable="true" data-type="${t}" title="${esc(d.name)} — ${esc(d.info || '')}"><svg viewBox="${-pad} ${-pad} ${d.w + pad * 2} ${d.h + pad * 2}">${Circuit.draw(sample, d.cat === 'PLC Rack' ? { target } : null)}${Circuit.drawTerms(d)}</svg><span>${esc(d.name)}</span></button>`;
     }).join('')}</div></details>`).join('') || '<p class="help">No match.</p>';
     list.querySelectorAll('.pal-cat').forEach(d => d.addEventListener('toggle', () => {
       if (q) return;
@@ -220,11 +223,32 @@
     });
   }
 
+  // the nearest place to (x, y) where a new part of this type covers no other part (rails, plates and junctions do not count)
+  function freePlace(type, x, y) {
+    const d = DEFS[type], w = d.w, h = d.h, pad = 16;
+    const boxes = circ().comps.filter(c => !DEFS[c.type].layer && !DEFS[c.type].rail && !DEFS[c.type].junction).map(c => { const s = c.props.size || 1, m = Circuit.dims(c); return [c.x - pad, c.y - pad - 18, c.x + m.w * s + pad, c.y + m.h * s + pad]; });
+    const free = (px, py) => boxes.every(([x0, y0, x1, y1]) => px + w <= x0 || px >= x1 || py + h <= y0 || py >= y1);
+    for (let ring = 0; ring < 40; ring++) {
+      const step = 40, n = ring * 8 || 1;
+      for (let k = 0; k < n; k++) {
+        const ang = (k / n) * Math.PI * 2, px = Math.round((x + Math.cos(ang) * ring * step) / 10) * 10, py = Math.round((y + Math.sin(ang) * ring * step) / 10) * 10;
+        if (free(px, py)) return [px, py];
+      }
+    }
+    return [x, y];
+  }
   function addComp(type, x, y) {
     const d = DEFS[type];
+    if (!d.layer && !d.rail && !d.junction) [x, y] = freePlace(type, x, y);
     if (d.unique && circ().comps.some(c => DEFS[c.type].unique === d.unique)) { UI.toast(d.uniqueMsg || 'Only one of this device per project', 'warn'); return; }
     const c = Circuit.create(type, x, y, circ());
     circ().comps.push(c);
+    // with a chassis in the Wiring, a new PLC module goes straight into it: power supply bay, slot 0 or the first free slot
+    const ch = (d.slot || type === 'mcpu' || type === 'mpsu') && circ().comps.find(k => k.type === 'chassis');
+    if (ch) {
+      const i = d.slot ? Circuit.freeSlot(circ(), ch, c) : 0, taken = !d.slot && circ().comps.some(k => k !== c && k.type === type && Circuit.chassisOf(circ(), k) === ch);
+      if (i != null && !taken) { if (d.slot) c.props.slot = String(i); c.x = ch.x + 20; c.y = ch.y + 40; if (Circuit.seat(circ(), c, 'slot')) { c.x = x; c.y = y; } }
+    }
     select({ kind: 'comp', id: c.id });
     App.circuitChanged();
   }
@@ -308,7 +332,7 @@
     if (compEl) {
       const c = byId(compEl.dataset.cid);
       select({ kind: 'comp', id: c.id });
-      drag = { kind: 'comp', c, ox: pt.x - c.x, oy: pt.y - c.y, moved: false, ...mounted(c) };
+      drag = { kind: 'comp', c, ox: pt.x - c.x, oy: pt.y - c.y, sx: c.x, sy: c.y, moved: false, ...mounted(c) };
       svg.setPointerCapture(e.pointerId);
       return;
     }
@@ -399,7 +423,12 @@
     }
     if (!drag) return;
     if (drag.kind === 'part') drag.rel();
-    if ((drag.kind === 'comp' || drag.kind === 'bend') && drag.moved) App.save();
+    // a PLC module let go on a chassis snaps into a slot and takes its number; a slot it cannot take sends it back
+    if (drag.kind === 'comp' && drag.moved && Circuit.chassisOf(circ(), drag.c)) {
+      const c = drag.c, slot = c.props.slot, err = Circuit.seat(circ(), c, 'pos');
+      if (err) { c.x = drag.sx; c.y = drag.sy; c.props.slot = slot; UI.toast(err, 'warn'); }
+      renderWires(); App.circuitChanged(); renderProps();
+    } else if ((drag.kind === 'comp' || drag.kind === 'bend') && drag.moved) App.save();
     if (drag.kind === 'comp' && drag.guide != null) { drag = null; renderTemp(); }
     svg.classList.remove('panning');
     try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
@@ -442,6 +471,8 @@
       const d = DEFS[c.type];
       UI.menu(e.clientX, e.clientY, [
         { head: `${c.props.label} · ${d.name}` },
+        // the controller's own menu, as on an emulated chassis: mode and Who Active
+        ...(d.unique === 'cpu' ? [{ label: 'Run Mode', disabled: App.plc.mode === 'RUN', onClick: () => App.setMode('RUN') }, { label: 'Program Mode', disabled: App.plc.mode !== 'RUN', onClick: () => App.setMode('PROG') }, { label: 'Who Active…', onClick: () => App.whoActive() }] : []),
         ...(c.type === 'mcpu' || d.slot ? [{ label: 'I/O Configuration…', onClick: () => App.ioConfig() }] : []),
         { label: 'Duplicate', onClick: () => duplicate(c) },
         ...Object.entries(d.variant ? d.variant.of : {}).filter(([, t]) => t !== c.type).map(([k, t]) => ({ label: `Change contact to ${k}`, onClick: () => retype(c, t) })),
@@ -776,8 +807,11 @@
       propsEl.querySelectorAll('[data-pk]').forEach(i => i.addEventListener('change', () => {
         const k = i.dataset.pk;
         if (k === 'label') { setLabel(c, i); return; }
+        const was = c.props[k];
         c.props[k] = i.type === 'number' || k === 'size' ? Number(i.value) : i.value;
-        if (k === 'size') App.circuitChanged(); else App.save();
+        // a module in a chassis moves to the slot picked here
+        if (k === 'slot' && Circuit.chassisOf(circ(), c)) { const err = Circuit.seat(circ(), c, 'slot'); if (err) { c.props.slot = was; i.value = was; UI.toast(err, 'warn'); } App.circuitChanged(); return; }
+        if (k === 'size' || (k === 'slots' && c.type === 'chassis')) App.circuitChanged(); else App.save();
       }));
       const sa = propsEl.querySelector('[data-same]');
       if (sa) sa.onclick = () => { circ().comps.forEach(x => { if (!DEFS[x.type].junction) x.props.size = c.props.size || 1; }); App.circuitChanged(); UI.toast('All devices now have the same size', 'ok'); };
