@@ -13,6 +13,7 @@
     root.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
     setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, ms);
+    return el;
   };
 
   UI.modal = function ({ title, body, buttons = [{ label: 'Close' }], wide = false, onOpen }) {
