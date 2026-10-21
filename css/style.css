@@ -223,6 +223,11 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .org-act a { text-decoration: none; margin-left: 4px; font-size: 11px; }
 .org li:hover > .org-act { opacity: 1; }
 .org-add { font-size: 12px; color: var(--accent); }
+.tag-tabs { display: flex; margin: -4px 0 10px; border-bottom: 1px solid var(--border); }
+.tag-tabs .ins-tab { border-radius: 5px 5px 0 0; border-top: 1px solid var(--border); border-bottom: 0; font-size: 12px; padding: 4px 12px; }
+.tag-tabs .ins-tab.on { top: 1px; border-bottom: 1px solid var(--surface-2, var(--bg)); }
+.tag-grid input, .tag-grid select { width: 100%; box-sizing: border-box; font: 12.5px var(--mono); padding: 3px 5px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--text); }
+.tag-grid input:disabled { background: transparent; border-color: transparent; color: var(--muted); }
 .lad-rungs { flex: 1; min-width: 0; overflow: auto; background: var(--lad-bg); padding: 10px 0 60px; outline: none; position: relative; }
 .lad-rungs.dragging, .lad-rungs.dragging * { cursor: grabbing !important; }
 .lad-rungs .el[data-uid] { cursor: grab; }

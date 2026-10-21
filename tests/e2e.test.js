@@ -2928,6 +2928,23 @@ function check(name, cond, info = '') {
     await page.keyboard.press('Escape');
     await page.evaluate(() => { document.getElementById('ctxMenu') && UI.closeMenu(); App.setConnMode('simple'); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay6); });
   }
+  console.log('Tag editor: Monitor Tags and Edit Tags');
+  {
+    await page.evaluate(() => { const prev = App.currentId; App.openNew({ name: 'Tag grid', target: 'tag', tags: [{ name: 'START_PB', type: 'ALIAS', addr: 'I:0/0' }, { name: 'RUN_T', type: 'TIMER' }], ladder: { rungs: [{ text: 'XIC START_PB TON RUN_T 1.0 5 0' }] } }); if (prev) Store.remove(prev); App.showView('ladder'); App.tagsDialog('edit'); });
+    await wait(200);
+    check('tag editor: Edit Tags shows a grid (name, data type, alias / address, description) with an empty row to add a tag', await page.evaluate(() => document.querySelectorAll('.tag-grid [data-trow]').length === 3 && document.querySelector('.tag-grid [data-trow="new"] [data-tf="name"]').value === '' && /Monitor Tags/.test(document.querySelector('.tag-tabs').textContent)));
+    await page.fill('.tag-grid [data-trow="new"] [data-tf="name"]', 'level_sp'); await page.selectOption('.tag-grid [data-trow="new"] [data-tf="type"]', 'INT'); await wait(200);
+    check('tag editor: typing in the last row creates the tag (LEVEL_SP, INT, gets an N7 word)', await page.evaluate(() => { const t = App.project.tags.find(x => x.name === 'LEVEL_SP'); return !!t && /^N7:/.test(t.addr) && !!document.querySelector('.modal-wrap[data-tags]'); }));
+    await page.fill('.tag-grid [data-trow="0"] [data-tf="name"]', 'start_button'); await page.press('.tag-grid [data-trow="0"] [data-tf="name"]', 'Enter'); await wait(200);
+    check('tag editor: renaming in the grid (Enter) renames the tag in the program and keeps the window open', await page.evaluate(() => App.project.tags[0].name === 'START_BUTTON' && Ladder.serialize(App.project.ladder.rungs[0].elems).startsWith('XIC START_BUTTON') && !!document.querySelector('.modal-wrap[data-tags]')));
+    await page.fill('.tag-grid [data-trow="1"] [data-tf="desc"]', 'Pump run timer'); await page.press('.tag-grid [data-trow="1"] [data-tf="desc"]', 'Tab'); await wait(200);
+    check('tag editor: a description typed in the grid is saved', await page.evaluate(() => App.project.tags[1].desc === 'Pump run timer'));
+    await page.fill('.tag-grid [data-trow="1"] [data-tf="name"]', '3BAD'); await page.press('.tag-grid [data-trow="1"] [data-tf="name"]', 'Tab'); await wait(200);
+    check('tag editor: a bad name is refused with a message and the tag keeps its name', await page.evaluate(() => App.project.tags[1].name === 'RUN_T' && !!document.querySelector('.toast')));
+    await page.click('.tag-tabs [data-ttab="monitor"]'); await wait(200);
+    check('tag editor: Monitor Tags lists the tags with their values', await page.evaluate(() => document.querySelectorAll('.tag-tbl [data-tedit]').length === 3 && !!document.querySelector('.tag-tbl [data-tval="RUN_T"]')));
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.plcmotor.build()); });
+  }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);

@@ -349,7 +349,13 @@
       { key: 'type', label: 'Type', value: t ? t.type : 'BOOL', options: Object.entries(TAG_TYPES).map(([v, l]) => ({ v, l })) },
       { key: 'alias', label: 'Alias for (ALIAS only, e.g. I:1/0 or I0.0)', value: t && t.type === 'ALIAS' ? App.fmt(t.addr) : '' },
       { key: 'desc', label: 'Description', value: t ? t.desc : '' },
-    ], v => {
+    ], v => { const e = saveTag(t, v); if (e) return e; App.tagsDialog(); return undefined; }, TAG_HELP);
+  }
+  const TAG_HELP = `<p class="help">BOOL, INT, TIMER and COUNTER tags get their own address (shown in the list). Use a tag name in an instruction instead of an address: <code>XIC START_PB</code>, <code>TON PUMP_DELAY 1.0 5 0</code>, <code>XIC PUMP_DELAY.DN</code>.</p>`;
+  // create (t = null) or change a tag from {name, type, alias, desc}; returns an error message, else undefined
+  function saveTag(t, v) {
+    const tags = App.project.tags;
+    {
       const name = v.name.trim().toUpperCase();
       if (!PLCcore.tagNameOk(name)) return 'A name starts with a letter or _, has letters, digits and _ only, and is not an address or an instruction';
       if (tags.some(x => x !== t && x.name === name)) return `${name} already exists`;
@@ -365,23 +371,40 @@
       const n = { name, type: v.type, addr, desc: v.desc.trim().slice(0, 80) };
       if (t) Object.assign(t, n); else tags.push(n);
       App.log('system', `Tag ${name} (${v.type}) ${t ? 'changed' : 'created'} → ${addr}`);
-      App.tagChanged(); App.tagsDialog(); return undefined;
-    }, `<p class="help">BOOL, INT, TIMER and COUNTER tags get their own address (shown in the list). Use a tag name in an instruction instead of an address: <code>XIC START_PB</code>, <code>TON PUMP_DELAY 1.0 5 0</code>, <code>XIC PUMP_DELAY.DN</code>.</p>`);
+      App.tagChanged(); return undefined;
+    }
   }
   function renameInProgram(from, to) {
     const re = new RegExp(`^${from}(\\.[A-Z]+)?$`);
     const fix = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(fix); else e.a = e.a.map(x => (re.test(String(x).toUpperCase()) ? to + String(x).toUpperCase().slice(from.length) : x)); });
     [App.project.ladder.rungs, ...(App.project.ladder.files || []).map(f => f.rungs)].forEach(list => list.forEach(r => fix(r.elems)));
   }
-  App.tagsDialog = function () {
-    document.querySelectorAll('.modal-wrap[data-tags]').forEach(m => m.remove());
+  let tagTab = 'monitor';
+  App.tagsDialog = function (tab) {
+    if (tab) tagTab = tab;
+    document.querySelectorAll('.modal-wrap[data-tags]').forEach(m => m.querySelector('[data-x]').click());
     const tags = App.project.tags, esc = UI.esc;
+    const tabs = `<div class="tag-tabs"><button class="ins-tab${tagTab === 'monitor' ? ' on' : ''}" data-ttab="monitor">Monitor Tags</button><button class="ins-tab${tagTab === 'edit' ? ' on' : ''}" data-ttab="edit">Edit Tags</button></div>`;
+    const typeSel = (v, k) => `<select data-tf="type">${Object.keys(TAG_TYPES).map(x => `<option ${x === v ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
+    const row = (t, i) => `<tr data-trow="${i}"><td><input data-tf="name" value="${esc(t ? t.name : '')}" placeholder="${t ? '' : 'New tag name'}" spellcheck="false"></td><td>${typeSel(t ? t.type : 'BOOL')}</td><td><input data-tf="alias" value="${esc(t && t.type === 'ALIAS' ? App.fmt(t.addr) : '')}" placeholder="${t && t.type !== 'ALIAS' ? esc(App.fmt(t.addr)) : 'alias for…'}" ${t && t.type !== 'ALIAS' ? 'disabled' : ''}></td><td><input data-tf="desc" value="${esc(t ? t.desc : '')}"></td><td>${t ? `<button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button>` : ''}</td></tr>`;
+    const grid = `<table class="io-cfg tag-grid"><tr><th>Name</th><th>Data Type</th><th>Alias For / Address</th><th>Description</th><th></th></tr>${tags.map(row).join('')}${row(null, 'new')}</table><p class="help">Type in a cell and press Enter or Tab: the tag changes at once. The last row adds a tag.</p>`;
     const m = UI.modal({
       title: 'Controller Tags', wide: true,
-      body: `${tags.length ? `<table class="io-cfg tag-tbl"><tr><th>Name</th><th>Type</th><th>Address</th><th>Value</th><th>Description</th><th></th></tr>${tags.map((t, i) => `<tr><td><a href="#" data-tedit="${i}"><code>${esc(t.name)}</code></a></td><td>${t.type}</td><td><code>${esc(App.fmt(t.addr))}</code></td><td class="num" data-tval="${esc(t.name)}"></td><td>${esc(t.desc)}</td><td><button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No tags yet. A tag is a name for a bit, an integer, a timer or a counter, so the program reads like the machine: <code>XIC START_PB</code> instead of <code>XIC I:1/0</code>.</p>'}`,
-      buttons: [{ label: '＋ New tag', onClick: () => { tagForm(null); return false; } }, { label: 'Close', primary: true }],
+      body: tabs + (tagTab === 'edit' ? grid : `${tags.length ? `<table class="io-cfg tag-tbl"><tr><th>Name</th><th>Type</th><th>Address</th><th>Value</th><th>Description</th><th></th></tr>${tags.map((t, i) => `<tr><td><a href="#" data-tedit="${i}"><code>${esc(t.name)}</code></a></td><td>${t.type}</td><td><code>${esc(App.fmt(t.addr))}</code></td><td class="num" data-tval="${esc(t.name)}"></td><td>${esc(t.desc)}</td><td><button class="tbtn sm" data-tdel="${i}" title="Delete tag">✕</button></td></tr>`).join('')}</table>` : '<p class="help">No tags yet. A tag is a name for a bit, an integer, a timer or a counter, so the program reads like the machine: <code>XIC START_PB</code> instead of <code>XIC I:1/0</code>.</p>'}`),
+      // no default button in the grid, so Enter in a cell saves the cell instead of closing the window
+      buttons: [{ label: '＋ New tag', onClick: () => { tagForm(null); return false; } }, { label: 'Close', primary: tagTab !== 'edit' }],
       onOpen: el => {
         el.closest('.modal-wrap').dataset.tags = '1';
+        el.querySelectorAll('[data-ttab]').forEach(b => { b.onclick = () => App.tagsDialog(b.dataset.ttab); });
+        // the grid: a change in a row saves that tag (or creates one from the last row)
+        el.querySelectorAll('[data-trow]').forEach(tr => tr.addEventListener('change', () => {
+          const i = tr.dataset.trow, t = i === 'new' ? null : tags[Number(i)], g = k => tr.querySelector(`[data-tf="${k}"]`).value;
+          if (!t && !g('name').trim()) return;
+          const e = saveTag(t, { name: g('name'), type: g('type'), alias: g('alias'), desc: g('desc') });
+          if (e) { UI.toast(e, 'warn', 5000); if (t) return; }
+          App.tagsDialog('edit');
+        }));
+        el.querySelectorAll('.tag-grid input').forEach(i => i.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); i.blur(); } }, true));
         el.querySelectorAll('[data-tedit]').forEach(a => { a.onclick = ev => { ev.preventDefault(); tagForm(tags[Number(a.dataset.tedit)]); }; });
         el.querySelectorAll('[data-tdel]').forEach(b => { b.onclick = () => { const t = tags[Number(b.dataset.tdel)]; UI.confirm('Delete tag', `Delete ${t.name}? Instructions that use it become invalid until you fix them.`, () => { tags.splice(tags.indexOf(t), 1); App.log('system', `Tag ${t.name} deleted`); App.tagChanged(); App.tagsDialog(); }, 'Delete'); }; });
         const upd = () => { if (!el.isConnected) { clearInterval(tm); return; } el.querySelectorAll('[data-tval]').forEach(c => { const t = PLCcore.tagOf(c.dataset.tval); c.textContent = t ? (t.type === 'TIMER' || t.type === 'COUNTER' ? `ACC ${App.plc.read(t.name + '.ACC')} · DN ${App.plc.read(t.name + '.DN')}` : String(App.plc.read(t.name))) : ''; }); };
