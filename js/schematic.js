@@ -746,9 +746,9 @@
     const more = {}; Object.entries(SK).forEach(([k, K]) => { if (K.more) (more[K.g] = more[K.g] || []).push(k); });
     el.innerHTML = `
       <div class="lad-toolbar sch-toolbar">
-        <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select">✎ Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols">☝ Operate</button></div>
-          <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit">⇵ IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung">⇄ Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal">✎ Free draw</button></div></div>
-        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦ Library</button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶ Play</button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎ Values</button><button class="tbtn${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨 Colours</button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉ Duplicate</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑 Delete</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶ Undo</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷ Redo</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button></div>
+        <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select"><span class="ic">✎ </span>Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols"><span class="ic">☝ </span>Operate</button></div>
+          <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit"><span class="ic">⇵ </span>IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung"><span class="ic">⇄ </span>Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal"><span class="ic">✎ </span>Free draw</button></div></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦<span class="tl"> Library</span></button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶<span class="tl"> Play</span></button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎<span class="tl"> Values</span></button><button class="tbtn${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨<span class="tl"> Colours</span></button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳<span class="tl"> Rotate</span></button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉<span class="tl"> Duplicate</span></button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑<span class="tl"> Delete</span></button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶<span class="tl"> Undo</span></button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷<span class="tl"> Redo</span></button><button class="tbtn mobile-only" data-fdact="props" title="Properties of the selected symbol, problems and tips">⚙<span class="tl"> Props</span></button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -757,20 +757,21 @@
           <button class="tbtn" data-sact="del" title="Delete selection (Del)">🗑</button>
           <button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button>
         </div>
-        ${Object.entries(groups).map(([g, ks]) => `<div class="tb-group"><span class="tb-lbl">${g}</span>${ks.map(k => `<button class="tbtn" data-skind="${k}" title="${esc(SK[k].n)}">${esc(btnLabel(k))}</button>`).join('')}</div>`).join('')}
-        <div class="tb-group"><select class="tbtn sch-more" data-smore title="More symbols for the current paths: other timers, delay blocks, latching relay, phase relay, loads, PLC inputs and outputs"><option value="">More symbols…</option>${Object.entries(more).map(([g, ks]) => `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}">${esc(SK[k].n)}</option>`).join('')}</optgroup>`).join('')}</select></div>
+        ${Object.entries(groups).map(([g, ks]) => `<div class="tb-group kinds"><span class="tb-lbl">${g}</span>${ks.map(k => `<button class="tbtn" data-skind="${k}" title="${esc(SK[k].n)}">${esc(btnLabel(k))}</button>`).join('')}</div>`).join('')}
+        <div class="tb-group"><select class="tbtn sch-more" data-smore title="More symbols for the current paths: other timers, delay blocks, latching relay, phase relay, loads, PLC inputs and outputs"><option value="">More symbols…</option><optgroup label="Basic" class="mob-opt">${Object.values(groups).flat().map(k => `<option value="${k}">${esc(SK[k].n)}</option>`).join('')}</optgroup>${Object.entries(more).map(([g, ks]) => `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}">${esc(SK[k].n)}</option>`).join('')}</optgroup>`).join('')}<optgroup label="Power circuit" class="mob-opt pw-opt"><option value="p:feeder">New motor feeder</option>${Object.keys(PK).map(k => `<option value="p:${k}">${esc(PK[k].n)}</option>`).join('')}</optgroup></select></div>
         <div class="tb-group pw-group"><span class="tb-lbl">Power</span><button class="tbtn" data-sact="feeder" title="New motor feeder">＋ Feeder</button>${Object.keys(PK).map(k => `<button class="tbtn" data-pkind="${k}" title="${esc(PK[k].n)}">${esc({ qf3: 'QF 3P', qm3: 'QM 3P', km3: 'KM 3P', ol3: 'OL 3P', m3: 'M 3~', m6: 'M Y-Δ' }[k])}</button>`).join('')}</div>
       </div>
       <div class="lad-main"><div class="sch-body lad-rungs" tabindex="0"></div><aside class="lad-side sch-side"></aside></div>`;
     body = el.querySelector('.sch-body'); side = el.querySelector('.sch-side');
     setStyleUi();
     UI.drawer(el.querySelector('[data-sact="side"]'), side);
-    const mo = el.querySelector('[data-smore]'); if (mo) mo.onchange = () => { const k = mo.value; mo.value = ''; if (k) SC.insert(k); };
+    // a power symbol in the list does what its toolbar button does
+    const mo = el.querySelector('[data-smore]'); if (mo) mo.onchange = () => { const k = mo.value; mo.value = ''; if (!k) return; if (k.startsWith('p:')) { const b = el.querySelector(k === 'p:feeder' ? '[data-sact="feeder"]' : `[data-pkind="${k.slice(2)}"]`); if (b) b.click(); } else SC.insert(k); };
     el.querySelector('.sch-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.smode) {
         mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run');
-        const pl = el.querySelector('[data-fdact="play"]'); pl.classList.toggle('on', mode === 'run'); pl.textContent = mode === 'run' ? '■ Stop' : '▶ Play';
+        const pl = el.querySelector('[data-fdact="play"]'); pl.classList.toggle('on', mode === 'run'); pl.innerHTML = mode === 'run' ? '■<span class="tl"> Stop</span>' : '▶<span class="tl"> Play</span>';
         return;
       }
       if (b.dataset.sstyle) { style = b.dataset.sstyle; try { localStorage.setItem('plc-trainer.schStyle', style); } catch (err) { /* private mode */ } setStyleUi(); SC.render(); return; }
@@ -779,6 +780,7 @@
         if (a === 'lib') b.classList.toggle('on', FreeDraw.toggleLib());
         else if (a === 'play') el.querySelector(`[data-smode="${mode === 'run' ? 'edit' : 'run'}"]`).click();
         else if (a === 'values') { FreeDraw.values = !FreeDraw.values; b.classList.toggle('on', FreeDraw.values); renderRungs(); }
+        else if (a === 'props') el.querySelector('[data-sact="side"]').click();
         else if (a === 'colors') { FreeDraw.setColors(!FreeDraw.colors); b.classList.toggle('on', FreeDraw.colors); }
         else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, copy: FreeDraw.copy, del: FreeDraw.del, front: () => FreeDraw.order(true), back: () => FreeDraw.order(false) })[a]();
         return;
@@ -841,6 +843,7 @@
     if (!root) return;
     root.querySelectorAll('[data-sstyle]').forEach(x => x.classList.toggle('on', x.dataset.sstyle === style));
     root.querySelector('.pw-group').hidden = style !== 'iec';
+    const po = root.querySelector('.pw-opt'); if (po) po.hidden = style !== 'iec';
     root.classList.toggle('free-style', style === 'free');
     const lb = root.querySelector('[data-fdact="lib"]'); if (lb) lb.classList.toggle('on', FreeDraw.libOpen());
   }

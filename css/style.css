@@ -541,8 +541,15 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 @media (max-width: 760px) {
   .topbar { gap: 8px; padding: 6px max(12px, env(safe-area-inset-right, 0px)) 6px max(12px, env(safe-area-inset-left, 0px)); }
   .brand { min-width: 0; flex: 1; }
-  .brand-title { font-size: 17px; }
-  .top-actions .btn { padding: 6px 9px; }
+  .brand-title { font-size: 16px; white-space: nowrap; }
+  .brand > div { min-width: 0; }
+  .brand-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand .logo { width: 26px; height: 26px; flex-shrink: 0; }
+  .topbar { flex-wrap: nowrap; }
+  .top-actions { flex-wrap: nowrap; gap: 2px; flex-shrink: 0; }
+  .top-actions .btn { padding: 6px 7px; font-size: 13px; }
+  .top-actions .icon-btn { width: 30px; }
+  .top-actions [data-examples] { display: none; }
   /* view tabs become a bottom navigation bar */
   .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; border-radius: 0; border: 0; border-top: 1px solid var(--border);
     background: var(--surface); padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px)); flex-wrap: nowrap; justify-content: space-around; gap: 0; box-shadow: 0 -4px 16px rgba(0, 0, 0, .06); }
@@ -676,7 +683,19 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fwire .w.on[class*="pc-"] { stroke-width: 2.6; }
 .free-svg .ftag.start { text-anchor: start; }
 .sch-svg .ssym path.fill { fill: var(--lad-wire); }
-@media (max-width: 760px) { .fd-lib { width: 150px; } .fd-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px) {
+  .fd-lib { width: 150px; } .fd-grid { grid-template-columns: repeat(2, 1fr); }
+  /* the Electrical Diagram toolbar wraps on a phone (no control cut off at the edge): icons only, the current-path
+     symbols in the list instead of a button each */
+  .sch-toolbar { flex-wrap: wrap; overflow: visible; gap: 4px; padding: 5px 8px; -webkit-mask-image: none; mask-image: none; }
+  .sch-toolbar .tb-group { flex-wrap: wrap; flex-shrink: 1; border-right: 0; padding: 0; gap: 3px; }
+  .sch-toolbar .tb-lbl, .sch-toolbar .tl, .sch-toolbar .ic, .sch-toolbar .tb-group.kinds, .sch-toolbar .pw-group { display: none; }
+  .sch-toolbar .tb-group.keep { flex-wrap: nowrap; gap: 6px; }
+  .sch-toolbar .tbtn { padding: 5px 8px; min-height: 34px; }
+  .sch-toolbar .seg button { padding: 5px 7px; }
+  .sch-more { max-width: 100%; }
+}
+@media (min-width: 761px) { .sch-toolbar .mob-opt { display: none; } }
 .free-svg .fitem { cursor: move; }
 .free-svg .fitem .hit { fill: transparent; }
 .free-svg .fitem:hover > .hit { fill: color-mix(in srgb, var(--accent-soft) 40%, transparent); }

@@ -636,7 +636,11 @@
     const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
     lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
     lib.addEventListener('input', ev => { if (ev.target.matches('.fd-search')) FD.search(ev.target.value); });
-    lib.addEventListener('click', ev => { const b = ev.target.closest('[data-fk]'); if (b && H.mode() === 'edit') FD.add(b.dataset.fk); });
+    lib.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-fk]'); if (!b || H.mode() !== 'edit') return;
+      FD.add(b.dataset.fk);
+      if (window.matchMedia && matchMedia('(max-width: 760px)').matches && libUi.open) { FD.toggleLib(); const lb = document.querySelector('#view-schematic [data-fdact="lib"]'); if (lb) lb.classList.remove('on'); }
+    });
     lib.addEventListener('dragstart', ev => { const b = ev.target.closest('[data-fk]'); if (b) { ev.dataTransfer.setData('text/fd-sym', b.dataset.fk); ev.dataTransfer.effectAllowed = 'copy'; } });
     host.addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('text/fd-sym')) ev.preventDefault(); });
     host.addEventListener('drop', ev => { const k = ev.dataTransfer.getData('text/fd-sym'); if (!K[k] || !svg) return; ev.preventDefault(); const p = world(ev); FD.add(k, undefined, snap10(p.x), snap10(p.y)); });

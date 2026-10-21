@@ -2387,7 +2387,7 @@ function check(name, cond, info = '') {
   await page.click('#view-schematic [data-sstyle="iec"]'); await wait(200);
   check('iec: the newer symbols are in one "More symbols…" list, grouped, and are not toolbar buttons', await page.evaluate(() => {
     const sel = document.querySelector('#view-schematic [data-smore]'), more = Object.entries(Schematic.KINDS).filter(([, K]) => K.more).map(([k]) => k);
-    return !!sel && sel.querySelectorAll('option[value]:not([value=""])').length === more.length && more.length >= 40 && !more.some(k => document.querySelector(`#view-schematic [data-skind="${k}"]`)) && sel.querySelectorAll('optgroup').length >= 4;
+    return !!sel && sel.querySelectorAll('optgroup:not(.mob-opt) option[value]:not([value=""])').length === more.length && more.length >= 40 && !more.some(k => document.querySelector(`#view-schematic [data-skind="${k}"]`)) && sel.querySelectorAll('optgroup').length >= 4;
   }));
   check('iec: picking a symbol in the list asks for its tag, like a toolbar button', await page.evaluate(async () => {
     const sel = document.querySelector('#view-schematic [data-smore]'); sel.value = 'flcoil'; sel.dispatchEvent(new Event('change'));
@@ -2488,6 +2488,31 @@ function check(name, cond, info = '') {
   check('a long press on a symbol in the free drawing opens its tag form', await phone.evaluate(() => !!document.querySelector('.modal #f_t')));
   await phone.evaluate(() => { const c = [...document.querySelectorAll('.modal .btn')].find(b => /cancel/i.test(b.textContent)); if (c) c.click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await phone.waitForTimeout(150);
+  // phone layout of the header and the Electrical Diagram toolbar: nothing cut off at the edge, the side panel and the library reachable
+  const cutOff = sel => phone.evaluate(sel => { const W = innerWidth, el = document.querySelector(sel); if (!el) return ['missing ' + sel];
+    return [...el.querySelectorAll('button, select')].filter(b => b.offsetParent && getComputedStyle(b).visibility !== 'hidden').filter(b => { const r = b.getBoundingClientRect(); return r.width && (r.left < -1 || r.right > W + 1); }).map(b => b.textContent.trim().slice(0, 16)); }, sel);
+  check('phone: the header is one row and its buttons and project name fit (no overlap)', await phone.evaluate(() => { const t = document.querySelector('.topbar').getBoundingClientRect(), b = document.querySelector('.brand-title').getBoundingClientRect(), a = document.querySelector('.top-actions').getBoundingClientRect();
+    return t.height <= 64 && b.right <= a.left + 1 && a.right <= innerWidth + 1; }));
+  for (const st of ['iec', 'free']) {
+    await phone.evaluate(st => { localStorage.setItem('plc-trainer.schStyle', st); App.showView('schematic'); document.querySelector(`#view-schematic [data-sstyle="${st}"]`).click(); }, st);
+    await phone.waitForTimeout(300);
+    const cut = await cutOff('#view-schematic .sch-toolbar'), h = await phone.evaluate(() => document.querySelector('#view-schematic .sch-toolbar').getBoundingClientRect().height);
+    check(`phone: the Electrical Diagram toolbar (${st}) wraps, no control is cut off and it stays short`, cut.length === 0 && h <= 140, `${cut.join(', ')} · ${h}px`);
+  }
+  check('phone: in the IEC view every current-path and power symbol can be added from the list', await phone.evaluate(() => { const o = [...document.querySelectorAll('#view-schematic [data-smore] option')].map(x => x.value).filter(Boolean);
+    return Object.keys(Schematic.KINDS).every(k => o.includes(k)) && Object.keys(Schematic.PKINDS).every(k => o.includes('p:' + k)) && o.includes('p:feeder'); }));
+  await phone.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'free'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); });
+  await phone.waitForTimeout(200);
+  await phone.tap('#view-schematic [data-fdact="props"]'); await phone.waitForTimeout(350);
+  check('phone: ⚙ in the free drawing opens the properties drawer over the drawing, a tap outside closes it', await phone.evaluate(() => document.querySelector('#view-schematic .sch-side').classList.contains('open')) &&
+    await (async () => { await phone.touchscreen.tap(40, 500); await phone.waitForTimeout(350); return phone.evaluate(() => !document.querySelector('#view-schematic .sch-side').classList.contains('open')); })());
+  await phone.evaluate(() => { if (!FreeDraw.libOpen()) document.querySelector('#view-schematic [data-fdact="lib"]').click(); });
+  await phone.waitForTimeout(200);
+  await phone.tap('#view-schematic .fd-lib [data-fk="lamp"]'); await phone.waitForTimeout(250);
+  await phone.evaluate(() => { const ok = [...document.querySelectorAll('.modal .btn')].find(b => /ok|add/i.test(b.textContent) && b.classList.contains('primary')); if (ok) ok.click(); });
+  await phone.waitForTimeout(300);
+  check('phone: after a symbol is placed from the library, the library closes so the drawing is not covered', await phone.evaluate(() => !FreeDraw.libOpen() && !document.querySelector('#view-schematic [data-fdact="lib"]').classList.contains('on')));
+  await phone.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await phone.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setMode('RUN'); App.showView('hmi'); });
   await phone.waitForTimeout(400);
   const hp = await (await phone.$('.hmi-screen .t-pb')).boundingBox();
