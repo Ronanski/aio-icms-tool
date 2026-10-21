@@ -136,6 +136,8 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .plcbar > * { flex-shrink: 0; }
 .plcbar .io-strip { flex-shrink: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
 .plcbar .bar-msg { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the connection chip gives way before the bar overflows: it keeps its start (OFFLINE / ONLINE) and the title has the rest */
+.plcbar .conn-chip { flex-shrink: 2; min-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plcbar .mode button[data-mode="RUN"].on { background: var(--ok); }
 .leds { display: flex; gap: 10px; }
 .led { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 11px; color: var(--muted); letter-spacing: .03em; }

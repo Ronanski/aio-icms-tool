@@ -247,11 +247,13 @@
       : `<b>Online edits pending</b> — the controller still runs its program. <button class="tbtn" data-act="test">▶ Test edits</button><button class="tbtn" data-act="assemble">✓ Assemble</button><button class="tbtn" data-act="cancel">✕ Cancel edits</button>`;
   };
   Ladder.openFile = function (n) { if (n !== 2 && !fileOf(n)) return; curFile = n; SEL = { r: -1, id: null, leg: null }; undo = []; redo = []; Ladder.render(); };
+  // a routine of the tag-based controller is named like a tag (letters, digits, _; up to 40); a file-based program file keeps 10 capitals
+  const routineName = (s, tag) => tag ? String(s).trim().replace(/[^A-Za-z0-9_]/g, '').replace(/^[^A-Za-z]+/, '').slice(0, 40) : String(s).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10);
   Ladder.renameFile = function (n) {
     const f = fileOf(n); if (!f) return;
     const tag = App.project.target === 'tag';
     UI.form(tag ? 'Rename routine' : `Rename LAD ${n}`, [{ key: 'nm', label: 'Name', value: f.name }], v => {
-      const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
+      const nm = routineName(v.nm, tag); if (!nm) return 'Type a name';
       if ((App.project.ladder.files || []).some(x => x !== f && x.name === nm)) return 'Another routine has that name';
       App.log('system', `${tag ? 'Routine' : 'LAD ' + n} ${f.name} renamed ${nm}`); f.name = nm; App.programChanged(); Ladder.render(); return undefined;
     });
@@ -269,7 +271,7 @@
     const tag = App.project.target === 'tag';
     if (n > 9) { UI.toast(tag ? 'Up to 7 routines besides MainRoutine' : 'Program files go up to LAD 9', 'warn'); return; }
     UI.form(tag ? 'New routine' : `New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: tag ? 'Routine' + (n - 2) : 'SUB' + n }], v => {
-      const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
+      const nm = routineName(v.nm, tag); if (!nm) return 'Type a name';
       App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [Ladder.newRung([])] }].sort((a, b) => a.n - b.n);
       curFile = n; App.programChanged(); Ladder.render(); return undefined;
     }, tag ? '<p class="help">A routine runs when a JSR to it in MainRoutine (or another routine) is true. Pick it by name in the JSR.</p>' : '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');

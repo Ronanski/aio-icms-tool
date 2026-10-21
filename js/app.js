@@ -852,7 +852,7 @@
     const el = document.querySelector('[data-conn]'); if (!el || !App.project) return;
     const c = App.project.conn, real = c && c.mode === 'real';
     const txt = !real ? '' : !conn.online ? 'OFFLINE' + (conn.same ? '' : ' · project ≠ controller') : conn.testing ? 'ONLINE · testing edits' : conn.same ? 'ONLINE' : 'ONLINE · edits pending';
-    el.textContent = txt; el.hidden = !real;
+    el.textContent = txt; el.title = txt; el.hidden = !real;
     el.className = 'conn-chip ' + (!real ? '' : !conn.online ? 'off' : conn.same ? 'on' : 'edit');
     if (window.Ladder && Ladder.connUi) Ladder.connUi();
   }

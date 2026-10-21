@@ -2890,7 +2890,7 @@ function check(name, cond, info = '') {
     await wait(250);
     check('routines: a JSR in a tag-based project shows the routine by name (FILL)', await page.evaluate(() => { const t = document.querySelector('#view-ladder .lad-rungs').textContent; return t.includes('Routine Name') && t.includes('FILL'); }));
     await page.click('#view-ladder [data-lorg] [data-org="new"]'); await wait(150);
-    await page.fill('#f_nm', 'drain'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    await page.fill('#f_nm', 'DRAIN'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
     check('routines: ＋ New Routine… in the Organizer adds a routine (DRAIN) and opens it', await page.evaluate(() => App.project.ladder.files.some(f => f.name === 'DRAIN' && f.n === 4) && Ladder.file() === 4 && document.querySelector('#view-ladder [data-lorg]').textContent.includes('DRAIN')));
     check('routines: a new routine starts with rung 0, empty (red ⊗) — Verify fails until it has an instruction', await page.evaluate(() => { const f = App.project.ladder.files.find(x => x.name === 'DRAIN'); return f.rungs.length === 1 && !f.rungs[0].elems.length && !!document.querySelector('#view-ladder .rung.empty') && !Ladder.verify(true); }));
     await page.evaluate(() => { const f = App.project.ladder.files.find(x => x.name === 'DRAIN'); f.rungs = [Ladder.newRung(Ladder.parseRung('XIC B3:0/5 OTE B3:0/6'))]; App.programChanged(); Ladder.openFile(2); }); await wait(100);
@@ -2902,8 +2902,8 @@ function check(name, cond, info = '') {
     await page.selectOption('.modal #f_a0', 'U:4'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
     check('routines: picking DRAIN stores JSR U:4 and the program verifies', await page.evaluate(() => Ladder.serialize(App.project.ladder.rungs[1].elems) === 'XIC B3:0/2 JSR U:4' && Ladder.verify(true)));
     await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg] [data-orn="3"]').click(); }); await wait(150);
-    await page.fill('#f_nm', 'tank_fill'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
-    check('routines: renaming a routine keeps every JSR to it (shown with the new name)', await page.evaluate(() => App.project.ladder.files.find(f => f.n === 3).name === 'TANK_FILL' && document.querySelector('#view-ladder .lad-rungs').textContent.includes('TANK_FILL') && Ladder.verify(true)));
+    await page.fill('#f_nm', 'Tank_Fill_Sequence_Long_Name'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    check('routines: renaming a routine keeps every JSR to it (shown with the new name; a tag-based routine keeps its case and a long name)', await page.evaluate(() => App.project.ladder.files.find(f => f.n === 3).name === 'Tank_Fill_Sequence_Long_Name' && document.querySelector('#view-ladder .lad-rungs').textContent.includes('Tank_Fill_Sequence_Long_Name') && Ladder.verify(true)));
     await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg] [data-ordel="4"]').click(); }); await wait(150);
     await page.click('.modal-wrap:last-child .btn.danger, .modal-wrap:last-child .btn.primary'); await wait(200);
     check('routines: deleting a routine that a JSR calls makes that JSR an error in Verify', await page.evaluate(() => !App.project.ladder.files.some(f => f.n === 4) && !Ladder.verify(true)));
