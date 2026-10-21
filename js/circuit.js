@@ -1354,7 +1354,7 @@
     status: c => DEFS.rcd.status(c),
   });
   def('rcbo', {
-    name: 'RCBO 2-Pole (RCD + MCB)', cat: 'Protection', view: 'power', prefix: 'QF', w: 70, h: 100, breaker: 0.9,
+    name: 'RCBO 2-Pole (RCD + MCB)', cat: 'Protection', view: 'power', prefix: 'QF', w: 70, h: 100, breaker: 0.9, earth: true,
     info: 'Residual current breaker with overcurrent protection: L 1 → 2, N 3 → 4. Trips on an earth fault and on a short circuit, before the MCBs in front of it. T = test.',
     terms: [{ id: '1', x: 20, y: 0, l: '1 L' }, { id: '3', x: 50, y: 0, l: '3 N' }, { id: '2', x: 20, y: 100, l: '2 L' }, { id: '4', x: 50, y: 100, l: '4 N' }],
     init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
@@ -1364,7 +1364,7 @@
     status: c => c.state.tripped ? 'TRIPPED — click the handle to reset' : c.state.on ? 'ON' : 'OFF',
   });
   def('rcbo4', {
-    name: 'RCBO 4-Pole (RCD + MCB)', cat: 'Protection', view: 'power', prefix: 'QF', w: 130, h: 100, breaker: 0.9,
+    name: 'RCBO 4-Pole (RCD + MCB)', cat: 'Protection', view: 'power', prefix: 'QF', w: 130, h: 100, breaker: 0.9, earth: true,
     info: 'Residual current breaker with overcurrent protection for 3-phase + N: 1-3-5-7 → 2-4-6-8 (7-8 = N). Trips on an earth fault and on a short circuit, before the MCBs in front of it. T = test.',
     terms: polesTerms(P4.ins, P4.outs, 130, 100),
     init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
@@ -2144,7 +2144,8 @@
      or to an N that is bonded to PE after the RCD. That RCD trips; a phase-to-PE load with no RCD is reported. */
   const working = st => !!(st.on || st.pulled || st.pw || st.ok || st.open || st.sol || st.fill || st.drain || st.drive === 'run');
   function earthLeak(circ, ctx, api) {
-    const rcds = circ.comps.filter(r => DEFS[r.type].earthOnly && DEFS[r.type].closed(r)), out = [];
+    // RCDs (earth fault only) and RCBOs (earth fault and overcurrent) both see the leakage
+    const rcds = circ.comps.filter(r => (DEFS[r.type].earthOnly || DEFS[r.type].earth) && DEFS[r.type].closed(r)), out = [];
     const potsIn = (n, k) => { const i = n.idx.get(k); return i == null ? null : n.pots.get(n.find(i)); };
     let trial = null;   // nets with each RCD tripped, built only when a load needs them
     for (const c of circ.comps) {
@@ -2229,6 +2230,14 @@
     const dp = { label: d.prefix, size: 1, ...JSON.parse(JSON.stringify(d.props)) }, sp = c.props && typeof c.props === 'object' ? c.props : {};
     c.props = {};
     for (const k in dp) c.props[k] = cleanVal(k in sp ? sp[k] : dp[k], dp[k]);
+    // a setting a newer version added to a device this version knows is kept as it is (not used here), so saving the
+    // project does not lose it: plain values only, short, a few of them
+    let extra = 0;
+    for (const k of Object.keys(sp)) {
+      if (k in dp || extra >= 20 || !/^[A-Za-z][A-Za-z0-9_]{0,30}$/.test(k)) continue;
+      const v = sp[k];
+      if ((typeof v === 'string' && v.length <= 200) || okNum(v) || typeof v === 'boolean') { c.props[k] = v; extra++; }
+    }
     for (const f of d.pdefs || []) {
       if (f.opts && !f.opts.includes(c.props[f.k])) c.props[f.k] = dp[f.k];
       if (f.type === 'number') c.props[f.k] = Number(c.props[f.k]) || 0;

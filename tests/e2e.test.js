@@ -2432,6 +2432,73 @@ function check(name, cond, info = '') {
     return ['plci0', 'plcq0'].every(k => ks.includes(k)) && !(p.keep && p.keep.rungs && p.keep.rungs.length); }));
   await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  console.log('Verification gaps: RCBO 4P earth leakage, drawn changeover states of the timers and latch, mouse drag');
+  check('gaps: a load fed from an RCBO 4P to PE (earth leakage) trips it; the same load to N does not', await page.evaluate(new Function(solveKit + `
+    const t = ret => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply3'), r = add('rcbo4', {}, { on: true }), h = add('lamp', { coil: '230VAC' });
+      w(q, 'L1', r, '1'); w(q, 'L2', r, '3'); w(q, 'L3', r, '5'); w(q, 'N', r, '7'); w(r, '2', h, 'X1'); if (ret === 'PE') w(h, 'X2', q, 'PE'); else w(h, 'X2', r, '8'); run(); return r.state.tripped; };
+    return t('PE') === true && t('N') === false;`)));
+  check('gaps: an RCBO 2P also trips on earth leakage (L to PE), not on a load to its own N', await page.evaluate(new Function(solveKit + `
+    const t = ret => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply1'), r = add('rcbo', {}, { on: true }), h = add('lamp', { coil: '230VAC' });
+      w(q, 'L', r, '1'); w(q, 'N', r, '3'); w(r, '2', h, 'X1'); if (ret === 'PE') w(h, 'X2', q, 'PE'); else w(h, 'X2', r, '4'); run(); return r.state.tripped; };
+    return t('PE') === true && t('N') === false;`)));
+  // the changeover contacts of the on-delay, off-delay, on/off-delay, flasher and latching relays, drawn next to their coils; S1 (a selector) feeds every coil
+  const coT = { name: 'Changeovers', circuit: { seq: 10, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+    { id: 'c2', type: 'timer', x: 0, y: 200, props: { label: 'KT1', coil: '230VAC', t: 0.6 }, state: {} }, { id: 'c3', type: 'timer_off', x: 0, y: 300, props: { label: 'KT2', coil: '230VAC', t: 0.6 }, state: {} },
+    { id: 'c4', type: 'latch', x: 0, y: 400, props: { label: 'KA1', coil: '230VAC' }, state: {} }, { id: 'c5', type: 'timer_onoff', x: 0, y: 500, props: { label: 'KT3', coil: '230VAC', t: 0.6, t2: 0.6 }, state: {} },
+    { id: 'c6', type: 'flasher', x: 0, y: 600, props: { label: 'KT4', coil: '230VAC', t: 0.3, t2: 0.3 }, state: {} }], wires: [] },
+    schematic: { free: { seq: 60, items: [fi('d1', 'pL1', 'XP1', 0, 0), fi('d2', 'selno', 'S1', 0, 100), fi('d3', 'pN', 'XP2', 0, 400),
+      fi('d10', 'ktcoil', 'KT1', 120, 250), fi('d11', 'kfcoil', 'KT2', 220, 250), fi('d12', 'ltset', 'KA1', 320, 250), fi('d13', 'kdcoil', 'KT3', 420, 250), fi('d14', 'flcoil', 'KT4', 520, 250),
+      fi('d20', 'ktco', 'KT1', 120, 500), fi('d21', 'kfco', 'KT2', 220, 500), fi('d22', 'ltco', 'KA1', 320, 500), fi('d23', 'kdco', 'KT3', 420, 500), fi('d24', 'flco', 'KT4', 520, 500)],
+    wires: [fw('fw1', 'd1:J', 'd2:13'), ...['d10', 'd11', 'd12', 'd13', 'd14'].flatMap((d, i) => [fw('fw' + (10 + i), 'd2:14', d + ':A1'), fw('fw' + (20 + i), d + ':A2', 'd3:J')])] } } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic'); }, coT);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  const coOn = () => page.evaluate(() => Object.fromEntries(['d20', 'd21', 'd22', 'd23', 'd24'].map(id => [id, document.querySelector(`#view-schematic [data-fi="${id}"] .ssym`).classList.contains('on')])));
+  check('gaps: at rest every drawn changeover (KT1 on-delay, KT2 off-delay, KA1 latch, KT3 on/off, KT4 flasher) shows its rest position, no problem', await (async () => { await wait(200); const s = await coOn(); return Object.values(s).every(v => v === false) && await page.evaluate(() => FreeDraw.errs.size === 0); })());
+  await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'knob'));
+  check('gaps: S1 on: the off-delay and latch changeovers switch at once, the on-delay and on/off ones only after 0.6 s', await (async () => { await wait(250); const a = await coOn();
+    const early = a.d21 && a.d22 && !a.d20 && !a.d23; const late = await until(is("d('KT1').done && d('KT3').on"), null, 2000); await wait(150); const b = await coOn(); return early && late && b.d20 && b.d23 && b.d21 && b.d22; })());
+  check('gaps: the flasher changeover KT4 switches over and back on the drawing', await page.evaluate(() => new Promise(res => { const seen = new Set(); let n = 0; const t = setInterval(() => { const g = document.querySelector('#view-schematic [data-fi="d24"] .ssym'); seen.add(g.classList.contains('on')); if (++n > 30 || seen.size === 2) { clearInterval(t); res(seen.size === 2); } }, 50); })));
+  await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'knob'));
+  check('gaps: S1 off: the on-delay goes back at once, the latch stays set, the off-delay and on/off ones go back after their delay', await (async () => { await wait(250); const a = await coOn();
+    const at = !a.d20 && a.d22 && a.d21 && a.d23; const back = await until(is("!d('KT2').on && !d('KT3').on"), null, 2000); await wait(150); const b = await coOn(); return at && back && !b.d21 && !b.d23 && b.d22 && !b.d24; })());
+  // drag a placed symbol with the mouse: it moves on the grid, its wires follow, Undo puts it back
+  const dragBox = await page.evaluate(() => { const r = document.querySelector('#view-schematic [data-fi="d10"] .hit').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  const dragFrom = await page.evaluate(() => { const it = App.project.schematic.free.items.find(i => i.id === 'd10'); return { x: it.x, y: it.y }; });
+  await page.mouse.move(dragBox.x, dragBox.y); await page.mouse.down(); await page.mouse.move(dragBox.x + 40, dragBox.y + 20, { steps: 6 }); await page.mouse.move(dragBox.x + 80, dragBox.y + 40, { steps: 6 }); await page.mouse.up();
+  await wait(300);
+  check('gaps: dragging a placed symbol with the mouse moves it on the grid and its wires follow (still wired in the Wiring)', await page.evaluate(b => { const it = App.project.schematic.free.items.find(i => i.id === 'd10'), k = FreeDraw.view ? FreeDraw.view().k : 1;
+    const moved = it.x !== b.x && it.y !== b.y && it.x % 10 === 0 && it.y % 10 === 0 && it.x > b.x && it.y > b.y;
+    const C = App.project.circuit, kt = C.comps.find(c => c.props.label === 'KT1'); return moved && C.wires.some(w => w.sch && (w.a === kt.id + ':A1' || w.b === kt.id + ':A1')) && FreeDraw.errs.size === 0; }, dragFrom));
+  await page.keyboard.press('Control+z'); await wait(250);
+  check('gaps: Undo puts the dragged symbol back', await page.evaluate(b => { const it = App.project.schematic.free.items.find(i => i.id === 'd10'); return it.x === b.x && it.y === b.y; }, dragFrom));
+
+  check('compat: a reader that does not know the new parts, symbols, terminals and settings keeps them and saves them back; this version then reads them all again', await page.evaluate(() => {
+    const fi = (id, k, tag, x, y) => ({ id, k, tag, x, y, r: 0 });
+    const P = { name: 'New parts', circuit: { seq: 20, comps: [
+      { id: 'c1', type: 'supply3', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'contactor_ton', x: 0, y: 200, props: { label: 'KM1', coil: '230VAC', t: 2 }, state: {} },
+      { id: 'c3', type: 'olr', x: 0, y: 300, props: { label: 'F1', aux: '95-96-98 changeover' }, state: {} }, { id: 'c4', type: 'gen3', x: 300, y: 0, props: { label: 'G1', mode: 'auto (C1-C2)' }, state: {} },
+      { id: 'c5', type: 'isol1', x: 300, y: 200, props: { label: 'QS1' }, state: {} }, { id: 'c6', type: 'mpcb4', x: 400, y: 300, props: { label: 'QM1' }, state: {} }],
+      wires: [{ id: 'w1', a: 'c4:C1', b: 'c5:1', pts: [] }, { id: 'w2', a: 'c5:2', b: 'c4:C2', pts: [] }, { id: 'w3', a: 'c1:L1', b: 'c2:67', pts: [] }, { id: 'w4', a: 'c1:L1', b: 'c3:95', pts: [] }] },
+      schematic: { free: { seq: 30, items: [fi('d1', 'kbonno', 'KM1', 0, 0), fi('d2', 'olco', 'F1', 100, 0), fi('d3', 'kmn2', 'KM2', 200, 0)], wires: [] } } };
+    const prev = App.currentId; App.openNew(JSON.parse(JSON.stringify(P))); if (prev) Store.remove(prev);
+    const saved = JSON.parse(JSON.stringify(App.serialize()));
+    // an older reader: no new device types, symbol kinds, terminals C1/C2 or props aux/mode
+    const D = Circuit.DEFS, K = FreeDraw.KINDS, newT = ['contactor_ton', 'contactor_tof', 'contactor_nc', 'mpcb4', 'olr1', 'olr2'], bak = {}, bakK = {};
+    newT.forEach(t => { bak[t] = D[t]; delete D[t]; }); ['kbonno', 'olco', 'kmn2'].forEach(k => { bakK[k] = K[k]; delete K[k]; });
+    const gT = D.gen3.terms, oP = D.olr.props, gP = D.gen3.props; D.gen3.terms = gT.filter(t => !/^C/.test(t.id)); D.olr.props = { trip: 4 }; D.gen3.props = {};
+    let out;
+    try {
+      const prev2 = App.currentId; App.openNew(JSON.parse(JSON.stringify(saved))); if (prev2) Store.remove(prev2);
+      const msgs = App.compat(), resaved = JSON.parse(JSON.stringify(App.serialize()));
+      out = { msgs, resaved };
+    } finally { newT.forEach(t => { D[t] = bak[t]; }); Object.assign(K, bakK); D.gen3.terms = gT; D.olr.props = oP; D.gen3.props = gP; }
+    const s2 = out.resaved, comp = l => s2.circuit.comps.find(c => c.props.label === l) || ((s2.keep && s2.keep.comps) || []).find(c => c.props && c.props.label === l);
+    const back = App.buildProject(JSON.parse(JSON.stringify(s2))), B = back.circuit.comps, b = l => B.find(c => c.props.label === l);
+    return out.msgs.length === 1 && comp('KM1').type === 'contactor_ton' && !!comp('QM1') && comp('F1').props.aux === '95-96-98 changeover' && comp('G1').props.mode === 'auto (C1-C2)' && JSON.stringify(s2).includes('c4:C1') && JSON.stringify(s2).includes('c2:67')
+      && b('KM1').type === 'contactor_ton' && b('QM1').type === 'mpcb4' && b('F1').props.aux === '95-96-98 changeover' && b('G1').props.mode === 'auto (C1-C2)' && ['kbonno', 'olco', 'kmn2'].every(k => back.schematic.free.items.some(i => i.k === k)) && !(back.keep && back.keep.comps && back.keep.comps.length);
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 
@@ -2443,6 +2510,8 @@ function check(name, cond, info = '') {
   await phone.goto(URL);
   await phone.waitForTimeout(500);
   check('no horizontal page scroll', (await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0);
+  check('the welcome message of the first start goes away when another project is opened', await phone.evaluate(() => { const has = () => [...document.querySelectorAll('#toast-root .toast')].some(t => /Welcome|Maligayang/.test(t.textContent));
+    const a = has(); App.openNew(Examples.EX.dol.build()); const b = has(); App.openNew(Examples.EX.plcmotor.build()); return a && !b; }));
   await phone.evaluate(() => App.showView('ladder'));
   await phone.tap('[data-act="data"]');
   await phone.waitForTimeout(300);
