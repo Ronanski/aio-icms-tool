@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-21
+
 ### Changed
 - **Free draw works like Simurelay** (behaviour taken from studying Simurelay 3.0.9 itself; our own code and drawings, `docs/SIMURELAY_WALKTHROUGH.md`):
   - **Look**: Simurelay's colours in light and dark (they follow the app theme): canvas, grey/black symbols, teal/green tags and terminal numbers, small square terminals that disappear once wired, a grid of fine lines with a stronger line every four steps, blue selection, and an orange handle on the middle of a selected wire.
