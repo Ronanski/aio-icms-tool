@@ -433,27 +433,31 @@
     const ctl = `🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? (tag ? '1756-style chassis' : 'modular rack') : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}`;
     // every configured or installed module, with a fault mark where the module does not match the configuration
     const flt = s => { const b = r.bad.find(x => x.slot === s); return b ? ` <span class="flt" title="${esc(b.msg)}">⚠ ${esc(b.msg.replace(/^(slot \d+|chassis): /, ''))}</span>` : ''; };
-    const slots = r.cpu ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; return `<li>▭ [${s}] ${esc(Circuit.DEFS[t].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small>${flt(s)}</li>`; }).join('') : '';
+    const slots = r.cpu ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; return `<li>▭ [${s}] <code>${MCODE[t] || ''}</code> ${esc(Circuit.DEFS[t].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small>${flt(s)}</li>`; }).join('') : '';
     const me = r.ctl && r.ctl.props.label;
-    const path = needsPath() ? `${esc(App.pathText())}${pathErr() ? ' ⚠' : ''}` : r.cpu ? `Backplane, slot 0 · ${esc(me)}` : r.ctl ? `Compact PLC · ${esc(me)}` : 'no controller in the Wiring';
+    const path = esc(App.status().path);
     const DATA = [['O0', 'OUTPUT', 'O'], ['I1', 'INPUT', 'I'], ['S2', 'STATUS', ''], ['B3', 'BINARY', 'B3'], ['T4', 'TIMER', 'T4'], ['C5', 'COUNTER', 'C5'], ['R6', 'CONTROL', 'R6'], ['N7', 'INTEGER', 'N7']];
     const tree = tag ? `<ul class="org">
       <li>${ctl}
         <ul>
           <li>🏷 <a href="#" data-org="tags">Controller Tags</a> <small>(${App.project.tags.length})</small></li>
+          <li>⚑ Controller Fault Handler <small>none</small></li><li>⏻ Power-Up Handler <small>none</small></li>
           <li>⚙ Tasks<ul>
             <li>↻ <b>MainTask</b> <small>continuous</small><ul><li>▤ <b>MainProgram</b><ul>
+              <li>🏷 Parameters and Local Tags <small>this trainer keeps every tag at controller scope</small></li>
               <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>main routine</small></li>
               ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>routine · runs on JSR</small><span class="org-act"><a href="#" data-orn="${f.n}" title="Rename">✎</a><a href="#" data-ordel="${f.n}" title="Delete">🗑</a></span></li>`).join('')}
               <li><a href="#" data-org="new" class="org-add">＋ New Routine…</a></li>
             </ul></li></ul></li>
             ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a></li></ul></li>`).join('')}
+            <li>⏸ Unscheduled</li>
           </ul></li>
-          <li>🔌 <a href="#" data-org="io">I/O Configuration</a><ul><li>▭ 1756-style backplane<ul><li>▭ [0] Controller</li>${slots}<li><a href="#" data-org="io" class="org-add">＋ New Module…</a></li></ul></li></ul></li>
+          <li>📦 Assets<ul><li>Data Types <small>BOOL · INT · TIMER · COUNTER</small></li></ul></li>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a><ul><li>▭ 1756 Backplane${r.chassis ? `, ${r.chassis.props.slots}-slot chassis` : ''}<ul><li>▭ [0] ${esc(me || 'Controller')}</li>${slots}<li><a href="#" data-org="newmod" class="org-add">＋ New Module…</a></li></ul></li></ul></li>
         </ul></li></ul>` : `<ul class="org">
       <li>${ctl}
         <ul>
-          <li>🔌 <a href="#" data-org="io">I/O Configuration</a>${slots ? `<ul><li>▭ [0] CPU</li>${slots}<li><a href="#" data-org="io" class="org-add">＋ New Module…</a></li></ul>` : ''}</li>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a>${slots ? `<ul><li>▭ [0] CPU</li>${slots}<li><a href="#" data-org="newmod" class="org-add">＋ New Module…</a></li></ul>` : ''}</li>
           <li>🏷 <a href="#" data-org="tags">Tags (symbols)</a> <small>(${App.project.tags.length})</small></li>
           <li>📁 <b>Program Files</b><ul>
             <li>▤ SYS 0 <small>system</small></li><li>▤ SYS 1 <small>reserved</small></li>
@@ -473,7 +477,7 @@
         el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
           ev.preventDefault();
           const k = a.dataset.org;
-          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k === 'new') { App.showView('ladder'); Ladder.newFile(); } else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
+          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k === 'newmod') App.newModule(); else if (k === 'new') { App.showView('ladder'); Ladder.newFile(); } else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
         el.querySelectorAll('[data-orn]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.renameFile(Number(x.dataset.orn)); }; });
         el.querySelectorAll('[data-ordel]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.deleteFile(Number(x.dataset.ordel)); }; });
@@ -525,6 +529,45 @@
     });
   };
   /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
+  /* New Module: Select Module Type (search, catalog table), then the General page (type, parent, slot) */
+  const MCODE = { mdi8: 'IB8', mdi8ac: 'IA8', mdi16: 'IB16', mdi16ac: 'IA16', mdo8: 'OW8', mdo16: 'OW16', mdo8t: 'OB8', mdo16t: 'OB16', mai4: 'IF4', mao2: 'OF2', meth: 'ENET' };
+  const mcat = t => (Circuit.DEFS[t].comm ? 'Communication' : Circuit.DEFS[t].analog ? 'Analog' : 'Digital');
+  App.newModule = function () {
+    const esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io);
+    if (!r.cpu) { App.ioConfig(); return; }
+    const types = Circuit.CARDS();
+    let pick = null;
+    UI.modal({
+      title: 'Select Module Type', wide: true,
+      body: `<input class="mod-search" data-msearch placeholder="Search: catalog number or description" spellcheck="false">
+        <table class="io-cfg mod-cat"><tr><th>Catalog Number</th><th>Description</th><th>Category</th></tr>${types.map(t => `<tr data-mt="${t}"><td><code>${MCODE[t] || t}</code></td><td>${esc(Circuit.DEFS[t].name)}</td><td>${mcat(t)}</td></tr>`).join('')}</table>
+        <p class="help" data-mcount>${types.length} of ${types.length} Module Types Found</p>`,
+      onOpen: el => {
+        const q = el.querySelector('[data-msearch]');
+        q.addEventListener('input', () => { const v = q.value.trim().toLowerCase(); let n = 0; el.querySelectorAll('[data-mt]').forEach(tr => { const on = !v || tr.textContent.toLowerCase().includes(v); tr.hidden = !on; if (on) n++; }); el.querySelector('[data-mcount]').textContent = `${n} of ${types.length} Module Types Found`; });
+        el.querySelectorAll('[data-mt]').forEach(tr => { tr.onclick = () => { pick = tr.dataset.mt; el.querySelectorAll('[data-mt]').forEach(x => x.classList.toggle('sel', x === tr)); }; tr.ondblclick = () => { pick = tr.dataset.mt; el.closest('.modal').querySelector('.btn.primary').click(); }; });
+        q.focus();
+      },
+      buttons: [{ label: 'Close' }, { label: 'Create', primary: true, onClick: () => {
+        if (!pick) { UI.toast('Select a module type in the list', 'warn'); return false; }
+        const t = pick, free = Circuit.SLOTS.filter(s => !App.project.io.slots[s]);
+        if (!free.length) { UI.toast('Every slot (1–7) is configured already', 'warn'); return false; }
+        setTimeout(() => UI.form(`New Module — ${MCODE[t] || t}`, [
+          { key: 'type', label: 'Type', value: `${MCODE[t] || t} ${Circuit.DEFS[t].name}`, options: [`${MCODE[t] || t} ${Circuit.DEFS[t].name}`] },
+          { key: 'parent', label: 'Parent', value: 'Local', options: ['Local'] },
+          { key: 'slot', label: 'Slot', value: free.find(s => r.slots[s] && App.project.circuit.comps.find(c => c.id === r.slots[s]).type === t) || free[0], options: free },
+        ], v => {
+          App.project.io = Circuit.cleanIo({ ...App.project.io, slots: { ...App.project.io.slots, [v.slot]: t } });
+          App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.dirty.wiring = true; App.save();
+          const f = Circuit.DEFS[t].comm ? '' : Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O');
+          App.log('system', `New module: ${MCODE[t] || t} in slot ${v.slot}`);
+          UI.toast(`${MCODE[t] || t} added in slot ${v.slot}${f ? `: its data is ${App.fmt(`${f}:${v.slot}/0`).replace(/0$/, '…')}` : ''}`, 'ok', 5000);
+          return undefined;
+        }, '<p class="help">The module is added to the I/O Configuration. Put the same module in that slot of the chassis in the Wiring, or the controller shows a module fault.</p>'));
+        return undefined;
+      } }],
+    });
+  };
   // the PLC target picker at the top of the I/O Configuration; a change reopens the dialog
   const targetPick = () => `<label class="io-target">PLC target <select data-target>${Object.entries(Circuit.TARGETS).map(([k, n]) => `<option value="${k}" ${k === App.project.target ? 'selected' : ''}>${UI.esc(n)}</option>`).join('')}</select></label>`;
   const bindTarget = el => { const s = el.querySelector('[data-target]'); if (s) s.onchange = () => { closeModal(el); App.setTarget(s.value); App.ioConfig(); }; };
@@ -606,7 +649,7 @@
      Ethernet to an Ethernet module in its chassis). Who Active finds it, Set Project Path remembers it, and Go Online /
      Download need that path. A project with no controller in the Wiring runs on the virtual controller: no path. */
   const needsPath = () => { const c = App.project.conn; return !!(c && c.mode === 'real' && Circuit.rack(App.project.circuit, App.project.io).ctl); };
-  const pathText = p => (!p ? 'none' : p.via === 'ETH' ? `Ethernet ${p.ip} → backplane → slot 0 · ${p.ctl}` : `USB → ${p.ctl}`);
+  const pathText = p => (!p ? '<none>' : p.via === 'ETH' ? `Ethernet\\${p.ip}\\Backplane\\0 (${p.ctl})` : `USB\\${p.ctl}`);
   App.pathText = () => pathText(App.project.conn && App.project.conn.path);
   // null while the project path reaches the controller, else why not
   function pathErr() {
@@ -621,7 +664,7 @@
   /* for the Ladder's status box: the path to the controller, a major fault, the I/O state ('' | 'ok' | 'bad') */
   App.status = function () {
     const r = Circuit.rack(App.project.circuit, App.project.io);
-    const path = needsPath() ? pathText(App.project.conn.path) + (pathErr() ? ' ⚠' : '') : r.cpu ? `Backplane, slot 0 · ${r.ctl.props.label}` : r.ctl ? `Compact PLC · ${r.ctl.props.label}` : 'Virtual controller (no PLC in the Wiring)';
+    const path = needsPath() ? pathText(App.project.conn.path) + (pathErr() ? ' ⚠' : '') : r.cpu ? `Backplane\\0 (${r.ctl.props.label})` : r.ctl ? `${r.ctl.props.label} (compact PLC)` : 'Virtual controller';
     return { path, fault: !!(r.cpu && r.bad.length && App.project.target !== 'tag'), io: !r.cpu ? '' : r.bad.length ? 'bad' : 'ok' };
   };
   // a controller that does not fit the project's PLC target
@@ -630,27 +673,37 @@
     document.querySelectorAll('.modal-wrap[data-who]').forEach(m => m.querySelector('[data-x]').click());
     const esc = UI.esc, c = App.project.conn, real = c.mode === 'real';
     const f = Circuit.comms(App.project.circuit, App.project.io), r = Circuit.rack(App.project.circuit, App.project.io);
-    const mods = r.cpu ? Circuit.SLOTS.filter(s => r.slots[s]).map(s => { const m = App.project.circuit.comps.find(x => x.id === r.slots[s]); return `<li>▭ ${s.padStart(2, '0')} · ${esc(m.props.label)} — ${esc(Circuit.DEFS[m.type].name)}</li>`; }).join('') : '';
-    const ctlRow = f.ctl ? `<li class="who-ctl">🖥 <b>${r.cpu ? '00 · ' : ''}${esc(f.ctl.props.label)}</b> — ${esc(Circuit.DEFS[f.ctl.type].name)} <small>${App.plc.mode}</small></li>` : '';
+    const mods = r.cpu ? Circuit.SLOTS.filter(s => r.slots[s]).map(s => { const m = App.project.circuit.comps.find(x => x.id === r.slots[s]); return `<li>▭ ${s.padStart(2, '0')}, ${esc(m.props.label)} — ${esc(Circuit.DEFS[m.type].name)}</li>`; }).join('') : '';
+    const ctlRow = f.ctl ? `<li class="who-ctl sel" data-whoctl>🖥 <b>${r.cpu ? '00, ' : ''}${esc(f.ctl.props.label)}</b> — ${esc(Circuit.DEFS[f.ctl.type].name)} <small>${App.plc.mode}</small></li>` : '';
     const found = !f.ctl ? '' : f.via === 'ETH'
-      ? `<ul><li>🌐 Ethernet<ul><li>${esc(f.ip)} · ${esc(f.mod.props.label)}<ul><li>▭ Backplane<ul>${ctlRow}${mods}</ul></li></ul></li></ul></li></ul>`
+      ? `<ul><li>🌐 Ethernet<ul><li>${esc(f.ip)}, ${esc(f.mod.props.label)}<ul><li>▭ Backplane<ul>${ctlRow}${mods}</ul></li></ul></li></ul></li></ul>`
       : `<ul><li>🔌 USB<ul>${ctlRow}${mods ? `<li>▭ Backplane<ul>${mods}</ul></li>` : ''}</ul></li></ul>`;
     const tree = !f.pc ? `<p class="help">${esc(f.why)}. Add an <b>Engineering PC</b> (Wiring → PLC Rack), start its comms driver and wire it to the controller.</p>`
       : `<ul class="org who"><li>💻 <b>${esc(f.pc.props.label)}</b> <small>workstation</small><ul><li>⚙ Comms driver: ${f.pc.state.drv === 'running' ? 'running' : '<b>not running</b> — start it on the PC in the Wiring'}${found}${!f.ctl && f.pc.state.drv === 'running' ? `<ul><li class="help">${esc(f.why)}</li></ul>` : ''}</li></ul></li></ul>`;
-    const body = `${tree}<p class="who-path">Project path: <b data-path>${esc(pathText(c.path))}</b></p>` +
-      (real ? '' : '<p class="help">Simple connection: edits run in the controller at once, no path is needed. Choose <b>Realistic</b> in the Online group to download as with real PLC software.</p>');
+    const here = f.ctl ? { via: f.via, ip: f.via === 'ETH' ? f.ip : '', ctl: f.ctl.props.label } : null;
+    // as in the reference dialog: actions in a column on the right, greyed out until a controller is found
+    const dis = f.ctl ? '' : 'disabled', act = (k, l, on = !!f.ctl) => `<button class="btn" data-who="${k}" ${on ? '' : 'disabled'}>${l}</button>`;
+    const body = `<div class="who-grid"><div class="who-tree">${tree}</div><div class="who-acts">${act('online', conn.online ? 'Go Offline' : 'Go Online', !!f.ctl && real)}${act('upload', 'Upload…')}${act('download', 'Download', !!f.ctl && real)}</div></div>
+      <div class="who-path"><div>Path: <b>${esc(here ? pathText(here) : '<none>')}</b></div><div>Path in Project: <b data-path>${esc(c.path ? pathText(c.path) : '<none>')}</b></div>
+      <div class="who-pbtn"><button class="btn" data-who="set" ${dis}>Set Project Path</button><button class="btn" data-who="clear" ${c.path ? '' : 'disabled'}>Clear Project Path</button></div></div>` +
+      (real ? '' : '<p class="help">Simple connection: edits run in the controller at once, no path is needed. Choose <b>Realistic connection</b> in the controller menu to download as with real PLC software.</p>');
     UI.modal({
       title: 'Who Active', wide: true, body,
-      onOpen: el => { el.closest('.modal-wrap').dataset.who = '1'; },
-      buttons: [
-        ...(f.ctl ? [{ label: 'Set Project Path', onClick: () => {
-          const e = typeErr(f.ctl); if (e) { UI.toast(e, 'danger', 7000); App.log('system', 'Set Project Path: ' + e); return false; }
-          c.path = { via: f.via, ip: f.via === 'ETH' ? f.ip : '', ctl: f.ctl.props.label };
-          App.log('system', `Project path set: ${pathText(c.path)}`); App.save(); App.renderOrg(); UI.toast('Project path set', 'ok'); App.whoActive(); return false;
-        } }] : []),
-        ...(f.ctl && real && c.path ? [{ label: 'Download', onClick: () => App.download() }, { label: conn.online ? 'Go Offline' : 'Go Online', onClick: () => App.goOnline() }] : []),
-        { label: 'Close', primary: true },
-      ],
+      onOpen: el => {
+        el.closest('.modal-wrap').dataset.who = '1';
+        el.addEventListener('click', ev => {
+          const b = ev.target.closest('[data-who]'); if (!b || b.disabled) return;
+          const k = b.dataset.who;
+          if (k === 'set') {
+            const e = typeErr(f.ctl); if (e) { UI.toast(e, 'danger', 7000); App.log('system', 'Set Project Path: ' + e); return; }
+            c.path = here; App.log('system', `Project path set: ${pathText(c.path)}`); App.save(); App.renderOrg(); Ladder.statusUi(); UI.toast('Project path set', 'ok'); App.whoActive();
+          } else if (k === 'clear') { c.path = null; App.log('system', 'Project path cleared'); App.save(); App.renderOrg(); Ladder.statusUi(); App.whoActive(); }
+          else if (k === 'online') App.goOnline();
+          else if (k === 'upload') App.upload();
+          else if (k === 'download') App.download();
+        });
+      },
+      buttons: [{ label: 'Close', primary: true }],
     });
   };
   // the path must reach the controller before going online or downloading; else say why and open Who Active
@@ -681,13 +734,25 @@
   };
   function needProg(what, go) {
     if (App.plc.mode === 'PROG') { go(); return; }
-    UI.confirm(what, `The controller must be in PROG to ${what.toLowerCase()}. Switch to PROG now?`, () => { App.setMode('PROG'); go(); }, 'Switch to PROG');
+    Ladder.out('w', `Controller not in correct mode (RUN): ${what.toLowerCase()} needs Program mode.`);
+    UI.confirm(what, `The controller is in RUN. A ${what.toLowerCase()} needs Program mode (Rem Prog). Switch to Program mode now?`, () => { App.setMode('PROG'); go(); }, 'Switch to PROG');
   }
-  App.download = function () {
+  App.download = function (sure) {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
     if (!conn.online && !commsOk()) return;
-    if (!Ladder.verify(true)) { UI.toast('The project has errors — Verify and fix them before downloading', 'danger'); Ladder.verify(false); return; }
-    needProg('Download', () => { c.ctl = progSnap(); conn.online = true; conn.testing = false; App.log('system', 'Download: the project was written to the controller'); App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); });
+    if (!sure) {
+      const esc = UI.esc, ctl = Circuit.rack(App.project.circuit, App.project.io).ctl;
+      UI.modal({
+        title: 'Download', wide: true,
+        body: `<p class="dl-head">⚠ Download offline project '<b>${esc(App.project.name)}</b>' to the controller.</p>
+          <table class="io-cfg dl-ctl"><tr><th colspan="2">Connected Controller</th></tr><tr><td>Name</td><td>${esc(ctl ? ctl.props.label : 'Virtual controller')}</td></tr><tr><td>Type</td><td>${esc(ctl ? Circuit.DEFS[ctl.type].name : 'Virtual controller (no PLC in the Wiring)')}</td></tr><tr><td>Path</td><td><code>${esc(App.status().path)}</code></td></tr><tr><td>Mode</td><td>${App.plc.mode}</td></tr></table>
+          <p class="dl-danger"><b>DANGER:</b> Unexpected hazardous motion of machinery may occur. Outputs can change when the controller changes mode or program: make sure the machine and the people near it are safe before you download.</p>`,
+        buttons: [{ label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => { setTimeout(() => App.download(true)); } }],
+      });
+      return;
+    }
+    if (!Ladder.verify(true)) { Ladder.out('m', 'Cancelling download...'); UI.toast('The project has errors — see the Errors pane under the ladder', 'danger', 6000); return; }
+    needProg('Download', () => { c.ctl = progSnap(); conn.online = true; conn.testing = false; App.log('system', 'Download: the project was written to the controller'); Ladder.out('m', `Download complete: '${App.project.name}' is in the controller. Online, ${App.plc.mode === 'RUN' ? 'Rem Run' : 'Rem Prog'}.`); App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); });
   };
   // the trainer does not read a program back from a controller: Download is the way the program gets there
   App.upload = function () {

@@ -18,6 +18,8 @@
 - [x] Routines / program files workflow (JSR by name, new / rename / delete in the Organizer) — `feature/plc-routines`
 - [x] Ladder UI like the programming software: status box with online menu, path, tabbed instruction palette — `feature/plc-ladder-ui`
 - [x] Tag editor in a grid (Edit Tags / Monitor Tags)
+- [x] Aligned with the reference UI study: online bar, Errors pane, Download dialog and flow, Who Active layout, Select Module Type, Organizer nodes — `feature/plc-ui-align`
+- [ ] Tag browser on an operand and New Tag from an unknown operand (reference: right-click → New "tag")
 - [ ] Program Tags (scope of a program), several programs per task
 - [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
 

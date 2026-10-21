@@ -456,6 +456,8 @@
       const d = DEFS[c.type];
       UI.menu(e.clientX, e.clientY, [
         { head: `${c.props.label} · ${d.name}` },
+        // the controller's own menu, as on an emulated chassis: mode and Who Active
+        ...(d.unique === 'cpu' ? [{ label: 'Run Mode', disabled: App.plc.mode === 'RUN', onClick: () => App.setMode('RUN') }, { label: 'Program Mode', disabled: App.plc.mode !== 'RUN', onClick: () => App.setMode('PROG') }, { label: 'Who Active…', onClick: () => App.whoActive() }] : []),
         ...(c.type === 'mcpu' || d.slot ? [{ label: 'I/O Configuration…', onClick: () => App.ioConfig() }] : []),
         { label: 'Duplicate', onClick: () => duplicate(c) },
         ...Object.entries(d.variant ? d.variant.of : {}).filter(([, t]) => t !== c.type).map(([k, t]) => ({ label: `Change contact to ${k}`, onClick: () => retype(c, t) })),

@@ -522,6 +522,8 @@
       const files = fileNums ? new Set([...fileNums].map(Number)) : null, hasFile = n => files ? files.has(n) : !!(this.subs && this.subs[n]);
       const otes = {}, structs = {};
       rungs.forEach((r, ri) => {
+        // as in PLC programming software, an empty rung is an error (it cannot be downloaded)
+        if (!r.elems.length) errs.push({ ri, msg: 'Rung has no instructions: add one or delete the rung' });
         const walk = arr => arr.forEach(e => {
           if (e.t === 'BST') {
             if (!e.legs.length) errs.push({ ri, id: e.id, msg: 'Branch with no legs' });

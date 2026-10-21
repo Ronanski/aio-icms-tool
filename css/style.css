@@ -223,6 +223,37 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .org-act a { text-decoration: none; margin-left: 4px; font-size: 11px; }
 .org li:hover > .org-act { opacity: 1; }
 .org-add { font-size: 12px; color: var(--accent); }
+/* online bar: LED stack, key switch, mode box with the path, forces / edits boxes */
+.lad-status { display: flex !important; align-items: center; gap: 8px; }
+.lad-status .lad-leds { display: flex; flex-direction: column; gap: 0; }
+.lad-key { color: var(--muted); display: inline-flex; transform: rotate(-30deg); transition: transform .2s; }
+.lad-key[data-pos="run"] { transform: rotate(30deg); color: var(--text); }
+.lad-stat-mid { display: flex; flex-direction: column; gap: 3px; }
+.lad-stat-lines { display: flex; flex-direction: column; gap: 3px; }
+.st-box { border: 1px solid var(--border); background: var(--surface); padding: 1px 6px; border-radius: 3px; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+/* Errors pane under the ladder */
+.lad-out { border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.lad-out-head { display: flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 11px; }
+.lad-out .oc { font-size: 11px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2, var(--bg)); color: var(--text); cursor: pointer; }
+.lad-out .oc.e::before { content: '⛔ '; } .lad-out .oc.w::before { content: '⚠ '; } .lad-out .oc.m::before { content: 'ℹ '; }
+.lad-out .oc.off { opacity: .45; }
+.lad-rungpos { margin-left: auto; color: var(--muted); font-family: var(--mono); }
+.oc-tog { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; }
+.lad-out-log { display: none; margin: 0; max-height: 110px; overflow: auto; padding: 4px 10px 6px; font: 11.5px/1.45 var(--mono); color: var(--text); white-space: pre-wrap; }
+.lad-out.open .lad-out-log { display: block; }
+.rung.empty .rung-num::before { content: '⊗ '; color: #e5392c; font-weight: 700; }
+/* Who Active, Download, Select Module Type */
+.who-grid { display: grid; grid-template-columns: 1fr auto; gap: 12px; }
+.who-tree { border: 1px solid var(--border); border-radius: 6px; padding: 6px; min-height: 140px; max-height: 320px; overflow: auto; background: var(--surface-2, var(--bg)); }
+.who-acts { display: flex; flex-direction: column; gap: 6px; min-width: 120px; }
+.who-acts .btn:disabled, .who-pbtn .btn:disabled { opacity: .45; }
+.who-path { margin-top: 10px; font-size: 12.5px; display: grid; gap: 4px; }
+.who-pbtn { display: flex; gap: 6px; margin-top: 4px; }
+.who .who-ctl.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 4px; }
+.dl-danger { border-left: 4px solid #e5392c; padding: 6px 10px; background: color-mix(in srgb, #e5392c 10%, transparent); font-size: 12.5px; }
+.mod-search { width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.mod-cat tr[data-mt] { cursor: pointer; }
+.mod-cat tr.sel td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .tag-tabs { display: flex; margin: -4px 0 10px; border-bottom: 1px solid var(--border); }
 .tag-tabs .ins-tab { border-radius: 5px 5px 0 0; border-top: 1px solid var(--border); border-bottom: 0; font-size: 12px; padding: 4px 12px; }
 .tag-tabs .ins-tab.on { top: 1px; border-bottom: 1px solid var(--surface-2, var(--bg)); }

@@ -594,15 +594,21 @@
     }, `<p class="help">Example: <code>BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 OTE O:0/0</code><br>BST = branch start, NXB = next branch, BND = branch end.</p>`);
   };
 
+  const fileName = n => (n === 2 ? (App.project.target === 'tag' ? 'MainRoutine' : 'LAD 2 - MAIN') : (App.project.target === 'tag' ? (fileOf(n) || {}).name : `LAD ${n} - ${(fileOf(n) || {}).name}`));
   Ladder.verify = function (quiet) {
     // every program file; the messages say which file a rung is in
     const errs = [], warns = [];
     [[2, App.project.ladder.rungs], ...(App.project.ladder.files || []).map(f => [f.n, f.rungs])].forEach(([n, list]) => {
       const r = App.plc.verify(list, (App.project.ladder.files || []).map(f => f.n));  // JSR targets: the project's files, not the engine's
-      const tag = x => ({ ...x, msg: n === 2 ? x.msg : `LAD ${n}: ${x.msg}` });
+      const tag = x => ({ ...x, n, msg: n === 2 ? x.msg : `LAD ${n}: ${x.msg}` });
       errs.push(...r.errs.map(tag)); warns.push(...r.warns.map(tag));
     });
     ERR_IDS = new Set(errs.filter(x => x.id).map(x => x.id));
+    const where = x => `${App.project.target === 'tag' ? 'MainProgram - ' + fileName(x.n) : fileName(x.n)}, rung ${x.ri}`;
+    Ladder.out('m', 'Verifying routines...', true);
+    errs.forEach(x => Ladder.out('e', `Error: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`));
+    warns.forEach(x => Ladder.out('w', `Warning: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`));
+    Ladder.out('m', `Complete - ${errs.length} error(s), ${warns.length} warning(s)`);
     Ladder.render();
     if (quiet) return errs.length === 0;
     // I/O addresses in the messages follow the project's address style
@@ -665,13 +671,15 @@
   const TB = [
     ['Bit', ['XIC', 'XIO', 'ONS', 'OTE', 'OTL', 'OTU', 'OSR', 'OSF']],
     ['Timer/Counter', ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES']],
+    ['Input/Output', ['MSG']],
     ['Compare', ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM']],
-    ['Math/Move', ['MOV', 'ADD', 'SUB', 'MUL', 'DIV', 'CLR']],
-    ['File/Seq', ['COP', 'FLL', 'SQO', 'MSG']],
-    ['Program', ['JSR', 'SBR', 'RET', 'MCR']],
+    ['Compute/Math', ['ADD', 'SUB', 'MUL', 'DIV']],
+    ['Move/Logical', ['MOV', 'CLR']],
+    ['File/Misc', ['COP', 'FLL', 'SQO']],
+    ['Program Control', ['JSR', 'SBR', 'RET', 'MCR']],
   ];
   // the Favorites tab, as the first tab of the instruction palette
-  const FAV = ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES', 'MOV', 'EQU', 'JSR'];
+  const FAV = ['XIC', 'XIO', 'OTE', 'OTU', 'OTL', 'ONS', 'TON', 'CTU', 'RES', 'MOV', 'EQU', 'JSR'];
   const ICON = {
     XIC: '-] [-', XIO: '-]/[-', ONS: '-[ONS]-', OTE: '-( )-', OTL: '-(L)-', OTU: '-(U)-', RES: '-(RES)-', MCR: '-(MCR)-', RET: '-(RET)-',
   };
@@ -680,10 +688,11 @@
     root = el;
     el.innerHTML = `
       <div class="lad-toolbar">
-        <div class="tb-group lad-status" data-lstatus><button class="lad-stat-btn" data-act="omenu" title="Controller status — click for Go Online, Download, RUN / PROG and Who Active"><b data-st-mode>Offline</b><span class="caret">▾</span></button>
-          <div class="lad-stat-lines"><span data-st-forces>No Forces</span><span data-st-edits>No Edits</span></div>
-          <div class="lad-leds">${["run", "ok", "bat", "io"].map(k => `<span data-st-led="${k}"><i></i>${k === "io" ? "I/O" : k.toUpperCase()}</span>`).join("")}</div></div>
-        <div class="tb-group lad-pathbox" title="Path to the controller"><span class="tb-lbl">Path</span><span class="lad-path" data-st-path></span></div>
+        <div class="tb-group lad-status" data-lstatus>
+          <div class="lad-leds">${["run", "ok", "bat", "io"].map(k => `<span data-st-led="${k}"><i></i>${k === "io" ? "I/O" : k.toUpperCase()}</span>`).join("")}</div>
+          <span class="lad-key" data-st-key title="Controller key switch"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="8" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 12h9M18 12v4M21 12v3" stroke="currentColor" stroke-width="2" fill="none"/></svg></span>
+          <div class="lad-stat-mid"><button class="lad-stat-btn" data-act="omenu" title="Controller mode — click for Go Online, Download, Run / Program Mode and Who Active"><b data-st-mode>Offline</b><span class="caret">▾</span></button><span class="lad-path" data-st-path title="Path to the controller"></span></div>
+          <div class="lad-stat-lines"><span class="st-box" data-st-forces>No Forces</span><span class="st-box" data-st-edits>No Edits</span></div></div>
         <div class="tb-group lad-ins"><div class="ins-row">${TB.flatMap(([g, list]) => list.map(t => `<button class="tbtn ins-btn${FAV.includes(t) ? ' fav' : ''}" data-ins="${t}" data-g="${g}" title="${t} — ${esc(INSTR[t].name)}: ${esc(INSTR[t].help)}" aria-label="${t} ${esc(INSTR[t].name)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`)).join('')}</div>
           <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}</div></div>
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
@@ -715,7 +724,8 @@
         <aside class="lad-org" data-lorg hidden></aside>
         <div class="lad-rungs" tabindex="0"></div>
         <aside class="lad-side"></aside>
-      </div>`;
+      </div>
+      <div class="lad-out" data-lout><div class="lad-out-head"><button class="oc e" data-oc="e"></button><button class="oc w" data-oc="w"></button><button class="oc m" data-oc="m"></button><span class="lad-rungpos" data-rungpos></span><button class="oc-tog" data-act="outtog" title="Show or hide the Errors pane">▾</button></div><pre class="lad-out-log" data-olog></pre></div>`;
     rungsEl = el.querySelector('.lad-rungs');
     sideEl = el.querySelector('.lad-side');
     el.querySelector('[data-addr]').addEventListener('change', ev => App.setAddrStyle(ev.target.value));
@@ -725,6 +735,7 @@
     el.querySelector('.lad-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.itab) { setTab(b.dataset.itab); return; }
+      if (b.dataset.oc) { const k = b.dataset.oc; if (outHide.has(k)) outHide.delete(k); else outHide.add(k); outUi(); return; }
       if (b.dataset.act === 'omenu') { const q = b.getBoundingClientRect(); onlineMenu(q.left, q.bottom + 4); return; }
       if (b.dataset.ins) return Ladder.insert(b.dataset.ins);
       ({
@@ -733,6 +744,7 @@
         ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(true), tags: () => App.tagsDialog(),
         network: () => App.network(), who: () => App.whoActive(), online: () => App.goOnline(), download: () => App.download(), upload: () => UI.confirm('Upload', 'Replace the ladder and the tags of the project with the program in the controller?', () => App.upload(), 'Upload'), compare: () => App.compare(),
         test: () => App.testEdits(), assemble: () => App.assembleEdits(), cancel: () => App.cancelEdits(),
+        outtog: () => outOpen(!outShown),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
       })[b.dataset.act]?.();
     });
@@ -760,6 +772,8 @@
     });
     DataTable.init(sideEl);
     setTab(insTab);
+    el.querySelector('[data-lout]').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.oc) { const k = b.dataset.oc; if (outHide.has(k)) outHide.delete(k); else outHide.add(k); outUi(); } else if (b.dataset.act === 'outtog') outOpen(!outShown); });
+    outUi();
     // the Organizer stays open (or closed) as the user left it in this browser
     try { if (localStorage.getItem('plc-trainer.orgOpen')) el.querySelector('[data-lorg]').hidden = false; } catch (e) { /* ignore */ }
     UI.drawer(el.querySelector('[data-act="data"]'), sideEl);
@@ -768,6 +782,26 @@
     rungsEl.addEventListener('wheel', ev => { if (!ev.ctrlKey) return; ev.preventDefault(); setZoom(ev.deltaY < 0 ? LZ * 1.1 : LZ / 1.1); }, { passive: false });
     bindDrag();
   };
+
+  /* Errors pane: lines of kind e (error) / w (warning) / m (message); the chips count them and hide a kind */
+  const OUT = [], outHide = new Set();
+  let outShown = (() => { try { return localStorage.getItem('plc-trainer.outOpen') === '1'; } catch (e) { return false; } })();
+  function outOpen(on) { outShown = on; try { localStorage.setItem('plc-trainer.outOpen', on ? '1' : ''); } catch (e) { /* ignore */ } outUi(); }
+  function outUi() {
+    if (!root) return;
+    const box = root.querySelector('[data-lout]'); if (!box) return;
+    const n = k => OUT.filter(x => x.k === k).length, word = (k, w) => `${n(k)} ${w}${n(k) === 1 ? '' : 's'}`;
+    box.querySelector('[data-oc="e"]').textContent = word('e', 'Error'); box.querySelector('[data-oc="w"]').textContent = word('w', 'Warning'); box.querySelector('[data-oc="m"]').textContent = word('m', 'Message');
+    box.querySelectorAll('[data-oc]').forEach(b => b.classList.toggle('off', outHide.has(b.dataset.oc)));
+    box.classList.toggle('open', outShown);
+    box.querySelector('[data-act="outtog"]').textContent = outShown ? '▾' : '▴';
+    const log = box.querySelector('[data-olog]');
+    log.textContent = OUT.filter(x => !outHide.has(x.k)).map(x => x.t).join('\n');
+    log.scrollTop = log.scrollHeight;
+  }
+  // write to the Errors pane (kind e / w / m); clear = start a new report
+  Ladder.out = function (k, text, clear) { if (clear) OUT.length = 0; String(text).split('\n').forEach(t => OUT.push({ k, t })); if (OUT.length > 400) OUT.splice(0, OUT.length - 400); if (k === 'e') outShown = true; outUi(); };
+  Ladder.outLines = () => OUT.map(x => x.t);
 
   /* instruction palette tabs (remembered in this browser) */
   let insTab = (() => { try { return localStorage.getItem('plc-trainer.insTab') || 'Favorites'; } catch (e) { return 'Favorites'; } })();
@@ -799,15 +833,18 @@
     const plc = App.plc, c = App.project.conn, real = !!(c && c.mode === 'real'), on = !real || App.conn.online, run = plc.mode === 'RUN';
     const st = App.status ? App.status() : {};
     const set = (k, v) => { const e = root.querySelector(k); if (e && e.textContent !== v) e.textContent = v; };
-    set('[data-st-mode]', !on ? 'Offline' : (real ? 'Online · ' : '') + (run ? 'Run' : 'Program'));
+    set('[data-st-mode]', !on ? 'Offline' : run ? 'Rem Run' : 'Rem Prog');
     const n = plc.forceCount();
     set('[data-st-forces]', n ? `Forces ${plc.forcesEnabled ? 'on' : 'off'} (${n})` : 'No Forces');
     set('[data-st-edits]', real && App.conn.online && !App.conn.same ? (App.conn.testing ? 'Testing edits' : 'Edits pending') : 'No Edits');
-    set('[data-st-path]', st.path || '');
+    set('[data-st-path]', 'Path: ' + (st.path || '<none>'));
+    const key = root.querySelector('[data-st-key]'); if (key) { key.dataset.pos = run ? 'run' : 'prog'; key.title = `Controller key switch: ${run ? 'RUN' : 'PROG'}`; }
     const box = root.querySelector('[data-lstatus]'); if (!box) return;
     box.classList.toggle('online', on); box.classList.toggle('run', on && run);
     const L = (k, cls) => { const e = box.querySelector(`[data-st-led="${k}"]`); if (e) e.className = cls || ''; };
     L('run', run && plc.powered ? 'on' : '');
+    const tip = (k, t) => { const e = box.querySelector(`[data-st-led="${k}"]`); if (e) e.title = t; };
+    tip('run', run ? 'Run Mode' : 'Program Mode'); tip('ok', plc.powered ? (st.fault ? 'Controller fault' : 'Controller OK') : 'No power'); tip('bat', 'Battery OK'); tip('io', st.io === 'bad' ? 'I/O not responding' : st.io === 'ok' ? 'I/O OK' : 'No I/O');
     L('ok', plc.powered ? (st.fault ? 'bad' : 'on') : '');
     L('bat', '');
     L('io', st.io === 'bad' ? 'bad blink' : st.io === 'ok' ? 'on' : '');
@@ -937,11 +974,12 @@
     const html = list.map((r, i) => {
       const { svg, h } = renderRung(r, W);
       const err = JSON.stringify(r.elems).includes('"id":') && [...ERR_IDS].some(id => find(id)?.ri === i);
-      return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}" data-r="${i}">
+      return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}${r.elems.length ? '' : ' empty'}" data-r="${i}">
         <div class="rung-num" style="padding-top:${Math.round(50 * LZ)}px" title="Double-click to edit rung text; right-click (long-press on touch) for the rung menu">${String(i).padStart(4, '0')}</div>
         <div class="rung-body">${r.comment ? `<div class="rung-comment">${esc(r.comment)}</div>` : ''}
         <svg class="rung-svg" width="${Math.round(W * LZ)}" height="${Math.round(h * LZ)}" viewBox="0 0 ${W} ${h}">${svg}</svg></div></div>`;
     }).join('') + `<div class="rung end"><div class="rung-num">${String(list.length).padStart(4, '0')}</div><div class="rung-body"><svg class="rung-svg" width="${Math.round(W * LZ)}" height="${Math.round(34 * LZ)}" viewBox="0 0 ${W} 34"><line class="rail" x1="3" y1="0" x2="3" y2="34"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="34"/><line class="w" x1="3" y1="17" x2="${W / 2 - 30}" y2="17"/><line class="w" x1="${W / 2 + 30}" y1="17" x2="${W - 3}" y2="17"/><text class="endt" x="${W / 2}" y="21">(END)</text></svg></div></div>`;
+    const rp = root.querySelector('[data-rungpos]'); if (rp) rp.textContent = `Rung ${SEL.r < 0 ? 0 : SEL.r} of ${list.length}`;
     const st = rungsEl.scrollTop, sl = rungsEl.scrollLeft;
     rungsEl.innerHTML = html;
     rungsEl.scrollTop = st; rungsEl.scrollLeft = sl;

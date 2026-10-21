@@ -4,6 +4,8 @@ Ginawa noong 2026-10-21 para sa "PLC target bawat project". Dito lang sa `docs/`
 (Rockwell Automation, RSLogix 500, Studio 5000 Logix Designer, SLC 500, MicroLogix, ControlLogix); sa app mismo ay
 "file-based" at "tag-based / 1756-style" lang ang tawag, at walang kinopyang code o artwork.
 
+> **Update:** natapos ng hiwalay na study session ang pagtingin sa VM; ang buong tala ay nasa `docs/ROCKWELL_UI_STUDY.md` (layout at flow na nakita mismo). Ang app ay inayon na doon (`feature/plc-ui-align`). Ang mga hanay sa ibaba na may (kaalaman) ay nakumpirma o naitama roon.
+
 ## Paano ginawa ang pag-aaral
 
 - VM ng owner: **Win10-Studio500-FTView12** (VMware Workstation). Naka-install: Studio 5000, RSLogix 500, RSLinx Classic,
