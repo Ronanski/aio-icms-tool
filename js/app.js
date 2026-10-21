@@ -173,7 +173,9 @@
       hmi: HMI.cleanAll(hm),
       schematic,
       io: Circuit.cleanIo(p.io),
-      addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : 'file',
+      // PLC target: 'file' (rack with data files; every project made before it existed) or 'tag' (1756-style chassis)
+      target: p.target === 'tag' ? 'tag' : 'file',
+      addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : p.target === 'tag' ? 'tag' : 'file',
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && Object.prototype.hasOwnProperty.call(KINDS, e.kind)).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
       keep, format,
     };
@@ -200,7 +202,9 @@
     if (welcome) { welcome.remove(); welcome = null; }
     App.project = proj;
     conn.online = false; conn.testing = false;
+    App.ctx.target = proj.target;
     App.addrChanged(false);
+    if (window.Workspace && Workspace.paletteChanged) Workspace.paletteChanged();
     LOG.length = 0; LOG.push(...proj.events); unseen = 0;
     const plc = App.plc;
     plc.setMode('PROG');
@@ -236,6 +240,7 @@
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
       io: p.io,
+      target: p.target,
       addr: p.addr,
       events: LOG.slice(-LOG_KEEP),
     }, p);
@@ -383,33 +388,51 @@
     });
     return m;
   };
+  // close a UI.modal from inside its body: its own close also removes its Enter / Escape handler (wrap.remove() would leave it)
+  const closeModal = el => { const w = el.closest('.modal-wrap'), x = w && w.querySelector('[data-x]'); if (x) x.click(); else if (w) w.remove(); };
+  /* the project tree in the names of the PLC target: Tasks → Programs → Routines (tag-based), or program files LAD 2–9
+     and data files O0–N7 (file-based). Both run the same program files. */
   App.organizer = function () {
-    const lad = App.project.ladder, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io);
+    const lad = App.project.ladder, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io), tag = App.project.target === 'tag';
     const PER = [0, 10, 50, 100, 250, 500, 1000];
     const per = lad.files.filter(f => f.period);
-    const body = `<ul class="org">
-      <li>🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? 'modular rack' : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}
+    const ctl = `🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? (tag ? '1756-style chassis' : 'modular rack') : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}`;
+    const slots = r.cpu ? Circuit.SLOTS.filter(s => r.conf[s]).map(s => `<li>▭ [${s}] ${esc(Circuit.DEFS[r.conf[s]].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small></li>`).join('') : '';
+    const DATA = [['O0', 'OUTPUT', 'O'], ['I1', 'INPUT', 'I'], ['S2', 'STATUS', ''], ['B3', 'BINARY', 'B3'], ['T4', 'TIMER', 'T4'], ['C5', 'COUNTER', 'C5'], ['R6', 'CONTROL', 'R6'], ['N7', 'INTEGER', 'N7']];
+    const tree = tag ? `<ul class="org">
+      <li>${ctl}
         <ul>
           <li>🏷 <a href="#" data-org="tags">Controller Tags</a> <small>(${App.project.tags.length})</small></li>
           <li>⚙ Tasks<ul>
             <li>↻ <b>MainTask</b> <small>continuous</small><ul><li>▤ <b>MainProgram</b><ul>
-              <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>LAD 2</small></li>
-              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>LAD ${f.n} · runs on JSR U:${f.n}</small></li>`).join('')}
+              <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>main routine</small></li>
+              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>routine · runs on JSR</small></li>`).join('')}
             </ul></li></ul></li>
-            ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>LAD ${f.n}</small></li></ul></li>`).join('')}
+            ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a></li></ul></li>`).join('')}
           </ul></li>
-          <li>🔌 <a href="#" data-org="io">I/O Configuration</a></li>
-        </ul></li></ul>
-      ${lad.files.length ? `<h5>Routine tasks</h5><table class="io-cfg">${lad.files.map(f => `<tr><td>LAD ${f.n} ${esc(f.name)}</td><td><select data-per="${f.n}">${PER.map(p => `<option value="${p}" ${p === (f.period || 0) ? 'selected' : ''}>${p ? `Periodic task, every ${p} ms` : 'Called by JSR'}</option>`).join('')}</select></td></tr>`).join('')}</table>` : '<p class="help">Add a subroutine file with ＋ File in the Ladder: it runs on a JSR, or on its own as a periodic task.</p>'}`;
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a><ul><li>▭ 1756-style backplane<ul><li>▭ [0] Controller</li>${slots}</ul></li></ul></li>
+        </ul></li></ul>` : `<ul class="org">
+      <li>${ctl}
+        <ul>
+          <li>🔌 <a href="#" data-org="io">I/O Configuration</a>${slots ? `<ul><li>▭ [0] CPU</li>${slots}</ul>` : ''}</li>
+          <li>🏷 <a href="#" data-org="tags">Tags (symbols)</a> <small>(${App.project.tags.length})</small></li>
+          <li>📁 <b>Program Files</b><ul>
+            <li>▤ SYS 0 <small>system</small></li><li>▤ SYS 1 <small>reserved</small></li>
+            <li>⊢ <a href="#" data-org="f2">LAD 2 – MAIN</a></li>
+            ${lad.files.map(f => `<li>⊢ <a href="#" data-org="f${f.n}">LAD ${f.n} – ${esc(f.name)}</a> <small>${f.period ? `timed, every ${f.period} ms` : 'runs on JSR U:' + f.n}</small></li>`).join('')}
+          </ul></li>
+          <li>📁 <b>Data Files</b><ul>${DATA.map(([n, d, f]) => `<li>▦ ${f ? `<a href="#" data-org="d${f}">${n} – ${d}</a>` : `${n} – ${d}`}</li>`).join('')}</ul></li>
+        </ul></li></ul>`;
+    const body = tree + (lad.files.length ? `<h5>${tag ? 'Routines' : 'Program files'}</h5><table class="io-cfg">${lad.files.map(f => `<tr><td>${tag ? '' : 'LAD ' + f.n + ' '}${esc(f.name)}</td><td><select data-per="${f.n}">${PER.map(p => `<option value="${p}" ${p === (f.period || 0) ? 'selected' : ''}>${p ? `${tag ? 'Periodic task' : 'Timed'}, every ${p} ms` : 'Called by JSR'}</option>`).join('')}</select></td></tr>`).join('')}</table>` : `<p class="help">Add a ${tag ? 'routine' : 'subroutine file'} with ＋ ${tag ? 'Routine' : 'File'} in the Ladder: it runs on a JSR, or on its own every few ms.</p>`);
     UI.modal({
-      title: 'Controller Organizer', body, wide: true,
+      title: tag ? 'Controller Organizer' : 'Project Tree', body, wide: true,
       onOpen: el => {
         el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
-          ev.preventDefault(); el.closest('.modal-wrap').remove();
+          ev.preventDefault(); closeModal(el);
           const k = a.dataset.org;
-          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
+          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
-        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); el.closest('.modal-wrap').remove(); App.organizer(); }; });
+        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); closeModal(el); App.organizer(); }; });
       },
     });
   };
@@ -457,22 +480,26 @@
     });
   };
   /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
+  // the PLC target picker at the top of the I/O Configuration; a change reopens the dialog
+  const targetPick = () => `<label class="io-target">PLC target <select data-target>${Object.entries(Circuit.TARGETS).map(([k, n]) => `<option value="${k}" ${k === App.project.target ? 'selected' : ''}>${UI.esc(n)}</option>`).join('')}</select></label>`;
+  const bindTarget = el => { const s = el.querySelector('[data-target]'); if (s) s.onchange = () => { closeModal(el); App.setTarget(s.value); App.ioConfig(); }; };
   App.ioConfig = function () {
-    const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc;
-    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', body: `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular rack.</p>` }); return; }
+    const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc, tag = App.project.target === 'tag';
+    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', onOpen: bindTarget, body: targetPick() + `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular ${tag ? 'chassis' : 'rack'}.${tag ? ' The tag-based target offers no compact controller in the Wiring library.' : ''}</p>` }); return; }
     const run = App.plc.mode === 'RUN';
     const opts = sel => `<option value="">— Empty —</option>` + Circuit.CARDS().map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(Circuit.DEFS[t].name)}</option>`).join('');
     const inst = s => { const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]); return c ? c : null; };
-    const row = s => { const c = inst(s); return `<tr><th>${s}</th><td><select data-slot="${s}" ${run ? 'disabled' : ''}>${opts(r.conf[s] || '')}</select></td><td data-have="${c ? c.type : ''}">${c ? `${esc(c.props.label)} — ${esc(Circuit.DEFS[c.type].name)}` : '—'}</td><td class="io-st" data-st="${s}"></td></tr>`; };
-    const body = `<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
-      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>Installed in the rack</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${Circuit.SLOTS.map(row).join('')}</table>`;
+    const ad = s => { const t = r.conf[s]; if (!t) return ''; const f = Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'); return tag ? `Local:${s}:${f}.Data` : `${f}:${s}`; };
+    const row = s => { const c = inst(s); return `<tr><th>${s}</th><td><select data-slot="${s}" ${run ? 'disabled' : ''}>${opts(r.conf[s] || '')}</select></td><td><code>${ad(s)}</code></td><td data-have="${c ? c.type : ''}">${c ? `${esc(c.props.label)} — ${esc(Circuit.DEFS[c.type].name)}` : '—'}</td><td class="io-st" data-st="${s}"></td></tr>`; };
+    const body = targetPick() + `${tag ? '<h5>I/O Configuration · 1756-style backplane · Local</h5>' : '<h5>I/O Configuration · rack</h5>'}<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
+      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>${tag ? 'Tags' : 'Data file'}</th><th>Installed in the ${tag ? 'chassis' : 'rack'}</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td></td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${Circuit.SLOTS.map(row).join('')}</table>`;
     const mark = el => el.querySelectorAll('[data-slot]').forEach(sel => {
       const have = sel.closest('tr').querySelector('[data-have]').dataset.have, st = el.querySelector(`[data-st="${sel.dataset.slot}"]`);
       st.textContent = !sel.value && !have ? '' : sel.value === have ? '✓' : '✗ mismatch'; st.className = 'io-st ' + (sel.value === have ? 'ok' : 'bad');
     });
     UI.modal({
       title: 'I/O Configuration', wide: true, body,
-      onOpen: el => { mark(el); el.addEventListener('change', () => mark(el)); },
+      onOpen: el => { bindTarget(el); mark(el); el.addEventListener('change', () => mark(el)); },
       buttons: [
         ...(run ? [] : [{ label: 'Read I/O Config', onClick: el => { el.querySelectorAll('[data-slot]').forEach(sel => { sel.value = sel.closest('tr').querySelector('[data-have]').dataset.have; }); mark(el); return false; } }]),
         { label: run ? 'Close' : 'Cancel' },
@@ -613,6 +640,16 @@
     if (!Object.prototype.hasOwnProperty.call(Circuit.STYLES, st) || App.project.addr === st) return;
     App.project.addr = st;
     App.log('system', `Address style: ${Circuit.STYLES[st]}`);
+    App.addrChanged(); App.save();
+  };
+  /* PLC target of the project (Circuit.TARGETS): the address style follows it when it is the other target's own style */
+  App.setTarget = function (t) {
+    if (!Object.prototype.hasOwnProperty.call(Circuit.TARGETS, t) || App.project.target === t) return;
+    App.project.target = t; App.ctx.target = t;
+    if (t === 'tag' && App.project.addr === 'file') App.project.addr = 'tag';
+    if (t === 'file' && App.project.addr === 'tag') App.project.addr = 'file';
+    App.log('system', `PLC target: ${Circuit.TARGETS[t]}`);
+    Workspace.paletteChanged();
     App.addrChanged(); App.save();
   };
   App.force = function (norm, val) { App.plc.setForce(norm, val); App.forcesChanged(); };
@@ -1241,15 +1278,19 @@
     UI.form('New project', [
       { key: 'n', label: 'Project name', value: 'My project' },
       { key: 't', label: 'Start from', value: 'blank', options: opts },
+      { key: 'plc', label: 'PLC target', value: 'file', options: Object.entries(Circuit.TARGETS).map(([k, n]) => ({ v: k, l: n })) },
     ], v => {
       const name = v.n.trim();
       if (!name) return 'Enter a project name';
       const p = Examples.EX[v.t].build();
       p.name = name;
+      // the PLC target picked here; an example keeps its own address style unless it used the other target's own
+      p.target = v.plc;
+      if (!p.addr || p.addr === (v.plc === 'tag' ? 'file' : 'tag')) p.addr = v.plc === 'tag' ? 'tag' : 'file';
       App.openNew(p);
       UI.toast(`Created project “${name}”`, 'ok');
       App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
-    }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project.</p>');
+    }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project. The PLC target can be changed later in the I/O Configuration.</p>');
   }
   function openDialog() {
     const fmt = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });

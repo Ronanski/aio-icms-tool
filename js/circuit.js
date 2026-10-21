@@ -619,8 +619,16 @@
      removable terminal block (RTB) whose terminals sit on the module's left and right edges, wires leaving sideways */
   const MW = 70, MH = 300, Y0 = 132, PITCH = 15;
   const rtbTerms = (left, right) => [...left.map((t, i) => ({ ...t, x: 0, y: Y0 + i * PITCH, side: -1 })), ...right.map((t, i) => ({ ...t, x: MW, y: Y0 + i * PITCH, side: 1 }))];
-  const modBody1756 = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, AB.body, 3, AB.edge) + R(4, 4, W - 8, 5, col, 1, 'none') + T(W / 2, 26, code, 'dt brand') + T(W / 2, 38, sub, 'dt light xs') +
+  const modBody1756 = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, AB.body, 3, AB.edge, 1, 'class="look-1756"') + R(4, 4, W - 8, 5, col, 1, 'none') + T(W / 2, 26, code, 'dt brand') + T(W / 2, 38, sub, 'dt light xs') +
     (slot != null ? T(W / 2, 114, 'SLOT ' + slot, 'dt light xs') : '') + (rows ? R(8, Y0 - 10, W - 16, (rows - 1) * PITCH + 20, '#d4d3ce', 2, '#8d8c87') : '');
+  /* file-based rack module (the project's PLC target is 'file'): same size and terminals, but a lighter housing with the
+     slot number on top, a dark LED window, and a door over the terminal block carrying the colour stripe of its kind */
+  const modBodySlc = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, '#56585b', 2, '#1b1c1d', 1, 'class="look-slc"') + R(3, 3, W - 6, 13, '#3d3e40', 1, 'none') +
+    (slot != null ? T(W / 2, 13, 'SLOT ' + slot, 'dt light xs') : '') + T(W / 2, 30, code, 'dt brand') + R(6, 42, W - 12, 74, '#141414', 2, '#000') + T(W / 2, 39, sub, 'dt light xs') +
+    R(4, Y0 - 20, W - 8, MH - Y0 - 6, '#4a4c4f', 2, '#222') + R(4, Y0 - 20, W - 8, 6, col, 0, 'none') + (rows ? R(8, Y0 - 10, W - 16, (rows - 1) * PITCH + 20, '#d4d3ce', 2, '#8d8c87') : '');
+  // the look follows the project's PLC target: 1756-style chassis for 'tag', the file-based rack for 'file' (and by default)
+  const tagLook = ctx => !!(ctx && ctx.target === 'tag');
+  const rackBody = (ctx, ...a) => (tagLook(ctx) ? modBody1756 : modBodySlc)(...a);
   // the module's address range at its foot (a tag-based range is shortened to fit: Local:1:I 0–15)
   const rngFoot = (ctx, f, slot, n) => T(MW / 2, MH - 8, rng(ctx, f, slot, n).replace(/^Local:(\d+):([IO])\.Data\.(\d+) – Local:\d+:[IO]\.Data\.(\d+)$/, 'Local:$1:$2 $3–$4'), 'dt light xs');
   // status LEDs: two columns, numbered outside (0–7 left, 8–15 right; 0–3 / 4–7 on an 8-point module)
@@ -701,8 +709,8 @@
         (!c.state.pw ? 'No power on L1/N' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' : 'Second PLC (inactive)')),
     });
   }
-  compactPlc('plc', 12, 8, 'PLC (compact, 12 in / 8 out)');
-  compactPlc('plc16', 16, 12, 'PLC (compact AB-style, 16 in / 12 out)', { family: 'plc' });
+  compactPlc('plc', 12, 8, 'PLC (compact, 12 in / 8 out)', { target: 'file' });
+  compactPlc('plc16', 16, 12, 'PLC (compact AB-style, 16 in / 12 out)', { family: 'plc', target: 'file' });
 
   /* ---------- MODULAR PLC: rack power supply, CPU (slot 0) and I/O cards (slots 1–7) ----------
      The modules snap on a DIN rail; the backplane is shared, so the cards follow the CPU and
@@ -734,7 +742,9 @@
       if (ctx && ctx.rack) ctx.rack.pw = c.state.pw;
       return ch;
     },
-    draw(c) {
+    draw(c, ctx) {
+      if (!tagLook(ctx)) return modBodySlc(80, 'POWER', '230 VAC IN', AB.SYS) + led(20, 60, c.state.pw, '#3ddc63', 3.6) + T(30, 63, 'POWER', 'dt light xs', 'start') +
+        R(14, 150, 52, 60, '#2c2d2f', 3, '#111') + T(40, 176, 'FUSE', 'dt light xs') + T(40, 196, '24 VDC OUT', 'dt light xs') + (c.state.burnt ? burnt(80, MH) : '');
       return modBody1756(80, 'PA', '230 VAC IN', AB.SYS) + band(MH - 22, 80, 22, '#1b1b1a') + led(20, 70, c.state.pw, '#3ddc63', 3.6) + T(30, 73, 'DC OK', 'dt light xs', 'start') +
         R(10, 90, 60, 120, '#232322', 3, '#111') + T(40, 154, '24 VDC', 'dt light xs') + T(40, 166, 'OUT', 'dt light xs') + (c.state.burnt ? burnt(80, MH) : '');
     },
@@ -754,6 +764,14 @@
     ctxSig: (c, ctx) => `|${ctx.plcId}|${ctx.mode}|${ctx.forces}|${ctx.rack && ctx.rack.bad.length}`,
     draw(c, ctx) {
       const me = ctx && ctx.plcId === c.id, pw = c.state.pw, run = me && pw && ctx.mode === 'RUN';
+      if (!tagLook(ctx)) {
+        // file-based processor: status LEDs, a REM / RUN / PROG key switch and a serial port
+        let p = modBodySlc(MW, 'CPU', 'Processor · slot 0', AB.SYS);
+        const st = [['RUN', run, '#3ddc63'], ['FLT', me && pw && ctx.rack && ctx.rack.bad.length, '#ff4b3a'], ['BATT', false, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['PWR', pw, '#3ddc63']];
+        st.forEach(([n, on, col], i) => { p += led(16, 52 + i * 13, on, col, 3) + T(24, 55 + i * 13, n, 'dt light xs', 'start'); });
+        p += `<g class="part" data-part="mode"><rect x="13" y="130" width="44" height="58" rx="4" fill="#3a3a37" stroke="#111"/><circle cx="35" cy="152" r="11" fill="#c9c5bb" stroke="#111"/><rect x="33" y="142" width="4" height="20" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 35 152)"/>${T(35, 181, 'RUN · PROG', 'dt light xs')}</g>`;
+        return p + R(15, 214, 40, 26, '#232322', 3, '#111') + T(35, 231, 'RS-232', 'dt light xs') + T(35, MH - 12, pw ? (me ? ctx.mode : 'IDLE') : '', 'dt light xs');
+      }
       let s = modBody1756(MW, 'L7', 'Controller · slot 0', AB.SYS);
       // 4-character display, status LEDs, key switch
       s += R(9, 48, 52, 16, '#0d1a0d', 2, '#000') + T(35, 60, pw ? (me ? ctx.mode : 'IDLE') : '', 'dt light xs');
@@ -788,7 +806,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcInX[c.props.slot]}|${ctx.fmt && ctx.fmt(`I:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcInX[c.props.slot] || 0 : 0;
-        return modBody1756(W, code, sub, col, h + 1, c.props.slot) + stLeds(W, n, w, c.state.badIn) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'I', c.props.slot, n);
+        return rackBody(ctx, W, code, sub, col, h + 1, c.props.slot) + stLeds(W, n, w, c.state.badIn) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'I', c.props.slot, n);
       },
       status: (c, ctx) => (c.state.badIn ? 'Damaged input(s) — right-click → Repair. ' : '') + (!cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: I:${c.props.slot}/0–${n - 1}` : 'Rack not powered'),
     });
@@ -818,7 +836,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
-        return modBody1756(W, code, 'RELAY OUT', AB.RLY, G * 5 / 2, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n);
+        return rackBody(ctx, W, code, 'RELAY OUT', AB.RLY, G * 5 / 2, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n);
       },
       status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–${n - 1}` : 'Rack not powered',
     });
@@ -848,7 +866,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx) && !c.state.burnt, w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
-        return modBody1756(W, code, 'DC OUT', AB.DC, h + 1, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n) + (c.state.burnt ? burnt(W, MH) : '');
+        return rackBody(ctx, W, code, 'DC OUT', AB.DC, h + 1, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n) + (c.state.burnt ? burnt(W, MH) : '');
       },
       status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–${n - 1}` : 'Rack not powered',
     });
@@ -876,7 +894,7 @@
     ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.mA || []).map(v => v.toFixed(1))}|${ctx.fmt && ctx.fmt('I:0/0')}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx);
-      let s = modBody1756(MW, 'IF4', '4–20 mA IN', AB.ANA, 3, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
+      let s = rackBody(ctx, MW, 'IF4', '4–20 mA IN', AB.ANA, 3, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
       (c.state.mA || []).forEach((ma, i) => { s += T(8, 58 + i * 14, String(i), 'dt light xs', 'start') + R(16, 52 + i * 14, 46, 8, '#1c1c1b', 2, '#000') + R(17, 53 + i * 14, Math.max(0, Math.min(1, (ma - 4) / 16)) * 44, 6, '#f2c230', 1, 'none'); });
       return s;
     },
@@ -899,7 +917,7 @@
     ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.v || []).map(v => v.toFixed(2))}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx);
-      let s = modBody1756(MW, 'OF2', '0–10 V OUT', AB.ANA, 2, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
+      let s = rackBody(ctx, MW, 'OF2', '0–10 V OUT', AB.ANA, 2, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
       (c.state.v || []).forEach((v, i) => { s += T(8, 58 + i * 14, String(i), 'dt light xs', 'start') + R(16, 52 + i * 14, 46, 8, '#1c1c1b', 2, '#000') + R(17, 53 + i * 14, v / 10 * 44, 6, '#2f6fd6', 1, 'none'); });
       return s;
     },
@@ -2363,6 +2381,8 @@
     let s = c.type + JSON.stringify(c.state) + JSON.stringify(c.props);
     if (DEFS[c.type] && DEFS[c.type].compact && ctx) s += `|${ctx.plcId}|${ctx.plcInRaw}|${ctx.plcOut}|${ctx.mode}|${ctx.forces}|${ctx.fmt && ctx.fmt('I:0/0')}`;
     else if (ctx && DEFS[c.type] && DEFS[c.type].ctxSig) s += DEFS[c.type].ctxSig(c, ctx);
+    // rack modules are drawn in the look of the project's PLC target
+    if (ctx && ctx.target) s += '|' + ctx.target;
     return s;
   }
   function draw(c, ctx) { const d = DEFS[c.type]; return d ? d.draw(c, ctx) : ''; }
@@ -2429,6 +2449,11 @@
   /* Address styles (display only; programs are always stored file-based):
      file 'I:1/0', bit/byte 'I0.0' / 'Q0.0', basic 'I1' / 'Q1'. Bit/byte and basic number the I/O points
      of the hardware in order (compact PLC, or the configured rack slots), inputs and outputs separately. */
+  /* PLC target of a project: the file-based rack (data files, I:1/0) or the tag-based 1756-style chassis (Local:1:I.Data.0).
+     It picks the look of the rack modules, which controllers the Wiring library offers (a def's target), the default
+     address style and the names in the Organizer. The solver and the PLC engine are the same for both. */
+  const TARGETS = { file: 'File-based controller (data files, I:1/0)', tag: 'Tag-based controller, 1756-style chassis (Local:1:I.Data.0)' };
+  const forTarget = (type, target) => !DEFS[type].target || DEFS[type].target === (target === 'tag' ? 'tag' : 'file');
   const STYLES = { file: 'File-based (I:1/0)', tag: 'Tag-based (Local:1:I.Data.0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
   function addrBook(circ, io, style) {
     const idx = { I: [], O: [] };
@@ -2494,5 +2519,5 @@
     return null;
   }
   const setManual = on => { manual = !!on; };
-  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
+  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook, TARGETS, forTarget };
 })();

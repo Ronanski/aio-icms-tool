@@ -245,12 +245,13 @@
   Ladder.openFile = function (n) { if (n !== 2 && !fileOf(n)) return; curFile = n; SEL = { r: -1, id: null, leg: null }; undo = []; redo = []; Ladder.render(); };
   Ladder.newFile = function () {
     const used = new Set((App.project.ladder.files || []).map(f => f.n)); let n = 3; while (used.has(n)) n++;
-    if (n > 9) { UI.toast('Program files go up to LAD 9', 'warn'); return; }
-    UI.form(`New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: 'SUB' + n }], v => {
+    const tag = App.project.target === 'tag';
+    if (n > 9) { UI.toast(tag ? 'Up to 7 routines besides MainRoutine' : 'Program files go up to LAD 9', 'warn'); return; }
+    UI.form(tag ? 'New routine' : `New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: tag ? 'Routine' + (n - 2) : 'SUB' + n }], v => {
       const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
       App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [] }].sort((a, b) => a.n - b.n);
       curFile = n; App.programChanged(); Ladder.render(); return undefined;
-    }, '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
+    }, tag ? '<p class="help">A routine runs when a JSR to it in MainRoutine (or another routine) is true. In the ladder the JSR shows the routine number.</p>' : '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
   };
 
   function snapshot() {
@@ -846,7 +847,11 @@
     if (curFile !== 2 && !fileOf(curFile)) curFile = 2;
     Ladder.connUi();
     const lf = root.querySelector('[data-lfile]');
-    if (lf) lf.innerHTML = [`<option value="2">LAD 2 · MAIN</option>`, ...(App.project.ladder.files || []).map(f => `<option value="${f.n}" ${f.n === curFile ? 'selected' : ''}>LAD ${f.n} · ${esc(f.name)}</option>`)].join('');
+    // file-based target: program files LAD 2 · MAIN, LAD 3…; tag-based: MainRoutine and routines by name
+    const tag = App.project.target === 'tag';
+    if (lf) lf.innerHTML = [`<option value="2">${tag ? 'MainRoutine' : 'LAD 2 · MAIN'}</option>`, ...(App.project.ladder.files || []).map(f => `<option value="${f.n}" ${f.n === curFile ? 'selected' : ''}>${tag ? '' : `LAD ${f.n} · `}${esc(f.name)}</option>`)].join('');
+    const nf = root.querySelector('[data-act="newfile"]');
+    if (nf) { nf.textContent = tag ? '＋ Routine' : '＋ File'; nf.title = tag ? 'New routine in MainProgram' : 'New subroutine file'; }
     const list = rungs();
     const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
@@ -893,6 +898,7 @@
   const DataTable = {};
   let dtFile = 'I', dtEl, dtCache = [];
   DataTable.init = function (el) { dtEl = el; };
+  DataTable.show = function (f) { if (['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'].includes(f)) { dtFile = f; DataTable.render(); } };
   DataTable.render = function () {
     if (!dtEl || !App.project) return;
     const files = ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];

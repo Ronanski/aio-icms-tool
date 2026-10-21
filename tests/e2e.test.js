@@ -1422,7 +1422,7 @@ function check(name, cond, info = '') {
 
   console.log('v2.0 part A: controller tags, organizer, periodic task');
   await page.evaluate(() => {
-    App.openNew({ name: 'Tags', tags: [{ name: 'start_pb', type: 'ALIAS', addr: 'I:0/0' }, { name: 'MOTOR', type: 'ALIAS', addr: 'O:0/0', desc: 'Main motor' }, { name: 'RUN_T', type: 'TIMER', addr: 'T4:31' }, { name: 'PARTS', type: 'COUNTER' }, { name: 'B3', type: 'BOOL' }, { name: 'BAD', type: 'ALIAS', addr: 'X:9' }, { name: 'SEEN', type: 'BOOL' }],
+    App.openNew({ name: 'Tags', target: 'tag', tags: [{ name: 'start_pb', type: 'ALIAS', addr: 'I:0/0' }, { name: 'MOTOR', type: 'ALIAS', addr: 'O:0/0', desc: 'Main motor' }, { name: 'RUN_T', type: 'TIMER', addr: 'T4:31' }, { name: 'PARTS', type: 'COUNTER' }, { name: 'B3', type: 'BOOL' }, { name: 'BAD', type: 'ALIAS', addr: 'X:9' }, { name: 'SEEN', type: 'BOOL' }],
       ladder: { rungs: [{ text: 'XIC START_PB TON RUN_T 1.0 1 0' }, { text: 'XIC RUN_T.DN OTE MOTOR' }, { text: 'XIC START_PB OTE SEEN' }],
         files: [{ n: 3, name: 'tick', period: 100, rungs: [{ text: 'ADD N7:0 1 N7:0' }] }] } });
     App.setLayout('single'); App.showView('ladder');
@@ -2653,6 +2653,49 @@ function check(name, cond, info = '') {
     const book = Circuit.addrBook(App.project.circuit, App.project.io, 'tag');
     return book.fmt('I:1/0') === 'Local:1:I.Data.0' && book.toFile('Local:2:O.Data.3') === 'O:2/3' && !!Circuit.STYLES.tag;
   }));
+  console.log('PLC target per project: file-based rack or tag-based 1756-style chassis');
+  const BRANDS = /Allen.?Bradley|Rockwell|RSLogix|MicroLogix|PanelView|SLC 500|ControlLogix|CompactLogix|Logix Designer|Studio 5000/i;
+  const rackProj = target => ({ name: 'Target', ...(target ? { target } : {}), io: { slots: { 1: 'mdi16', 2: 'mdo16' } }, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:2/0' }], files: [{ n: 3, name: 'FILL', rungs: [] }] },
+    circuit: { seq: 5, comps: [{ id: 'c1', type: 'mpsu', x: 0, y: 0, props: { label: 'PS' }, state: {} }, { id: 'c2', type: 'mcpu', x: 110, y: 0, props: { label: 'CPU' }, state: {} },
+      { id: 'c3', type: 'mdi16', x: 200, y: 0, props: { label: 'DI', slot: '1' }, state: {} }, { id: 'c4', type: 'mdo16', x: 290, y: 0, props: { label: 'DO', slot: '2' }, state: {} }], wires: [] } });
+  const tgt = await page.evaluate(async proj => {
+    const prev = App.currentId; App.openNew(proj); if (prev) Store.remove(prev);
+    window._lay0 = App.layout; App.setLayout('single'); App.showView('wiring'); await new Promise(q => setTimeout(q, 250));
+    const pal = () => [...document.querySelectorAll('#view-wiring .pal-item')].map(b => b.dataset.type);
+    const look = () => ['c1', 'c2', 'c3', 'c4'].map(id => { const g = document.querySelector(`#view-wiring [data-cid="${id}"]`); return g && g.querySelector('.look-slc') ? 'slc' : g && g.querySelector('.look-1756') ? '1756' : '?'; }).join();
+    const old = { target: App.project.target, addr: App.project.addr, saved: App.serialize().target, pal: pal(), look: look(), palLook: !!document.querySelector('#view-wiring .pal-item[data-type="mdi16"] .look-slc'), fmt: App.fmt('I:1/0') };
+    App.setTarget('tag'); await new Promise(q => setTimeout(q, 250));
+    const tag = { target: App.project.target, addr: App.project.addr, saved: App.serialize().target, pal: pal(), look: look(), palLook: !!document.querySelector('#view-wiring .pal-item[data-type="mdi16"] .look-1756'), fmt: App.fmt('I:1/0'), logged: App.events().some(e => /PLC target/.test(e.msg)) };
+    const id = App.currentId; App.flushSave(); App.openSaved(id); await new Promise(q => setTimeout(q, 200));
+    tag.reopened = App.project.target === 'tag' && App.project.addr === 'tag';
+    return { old, tag };
+  }, rackProj(null));
+  check('PLC target: a project saved before targets existed opens as the file-based rack (addresses I:1/0, data files) and saves the target', tgt.old.target === 'file' && tgt.old.addr === 'file' && tgt.old.saved === 'file' && tgt.old.fmt === 'I:1/0', JSON.stringify(tgt.old));
+  check('PLC target file-based: the Wiring library offers the compact controllers and the rack modules, drawn in the rack look (also in the library)', ['plc', 'plc16', 'mcpu', 'mpsu', 'mdi16', 'mdo16', 'mdo16t'].every(t => tgt.old.pal.includes(t)) && tgt.old.look === 'slc,slc,slc,slc' && tgt.old.palLook, JSON.stringify(tgt.old));
+  check('PLC target tag-based: the library offers the 1756-style chassis modules and no compact controller; the same modules are drawn 1756-style', !tgt.tag.pal.includes('plc') && !tgt.tag.pal.includes('plc16') && ['mcpu', 'mpsu', 'mdi16', 'mdo16', 'mdo16t', 'mai4', 'mao2'].every(t => tgt.tag.pal.includes(t)) && tgt.tag.look === '1756,1756,1756,1756' && tgt.tag.palLook, JSON.stringify(tgt.tag));
+  check('PLC target tag-based: the address style follows (Local:1:I.Data.0), the change is logged, saved and kept on reopening', tgt.tag.target === 'tag' && tgt.tag.addr === 'tag' && tgt.tag.saved === 'tag' && tgt.tag.fmt === 'Local:1:I.Data.0' && tgt.tag.logged && tgt.tag.reopened, JSON.stringify(tgt.tag));
+  check('PLC target: the wiring, terminals and program are the same in both looks (only the drawing changes)', await page.evaluate(() => App.serialize().ladder.rungs[0].text === 'XIC I:1/0 OTE O:2/0' && Circuit.DEFS.mdi16.terms.every(t => t.side === -1 || t.side === 1)));
+  await page.evaluate(() => App.organizer()); await wait(150);
+  check('PLC target tag-based: the Organizer shows Tasks → MainTask → MainProgram → MainRoutine, the routine by name and the 1756-style backplane with its slots', await page.evaluate(() => { const t = document.querySelector('.org').textContent; return t.includes('MainTask') && t.includes('MainProgram') && t.includes('MainRoutine') && t.includes('FILL') && !t.includes('LAD 3') && t.includes('1756-style backplane') && t.includes('Local:1') && t.includes('Local:2'); }));
+  const brandTag = await page.evaluate(re => !new RegExp(re, 'i').test(document.documentElement.outerHTML), BRANDS.source);
+  await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.showView('ladder'); }); await wait(150);
+  check('PLC target tag-based: the Ladder lists MainRoutine and routines by name, with ＋ Routine', await page.evaluate(() => { const o = [...document.querySelectorAll('#view-ladder [data-lfile] option')].map(x => x.textContent); return o[0] === 'MainRoutine' && o[1] === 'FILL' && document.querySelector('#view-ladder [data-act="newfile"]').textContent.includes('Routine'); }));
+  await page.evaluate(() => App.ioConfig()); await wait(150);
+  check('PLC target: the I/O Configuration has the target picker and lists each slot\'s tags (Local:1:I.Data)', await page.evaluate(() => !!document.querySelector('.modal [data-target]') && document.querySelector('.modal [data-target]').value === 'tag' && document.querySelector('.modal .io-cfg').textContent.includes('Local:1:I.Data') && document.querySelector('.modal .io-cfg').textContent.includes('Local:2:O.Data')));
+  await page.selectOption('.modal [data-target]', 'file'); await wait(250);
+  check('PLC target: picking the file-based target in the I/O Configuration switches the project back (I:1/0, data file I:1 per slot)', await page.evaluate(() => App.project.target === 'file' && App.project.addr === 'file' && App.fmt('I:1/0') === 'I:1/0' && document.querySelector('.modal [data-target]').value === 'file' && document.querySelector('.modal .io-cfg').textContent.includes('I:1')));
+  check('PLC target: after the target picker reopened the I/O Configuration and it was closed, no dialog is left catching Enter', await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }); document.body.dispatchEvent(ev); return !ev.defaultPrevented && !document.querySelector('.modal-wrap'); }));
+  await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.organizer(); }); await wait(150);
+  check('PLC target file-based: the project tree shows Program Files (SYS 0, SYS 1, LAD 2 – MAIN, LAD 3 – FILL) and Data Files O0, I1, S2, B3, T4, C5, R6, N7', await page.evaluate(() => { const t = document.querySelector('.org').textContent; return ['SYS 0', 'SYS 1', 'LAD 2 – MAIN', 'LAD 3 – FILL', 'O0 – OUTPUT', 'I1 – INPUT', 'S2 – STATUS', 'B3 – BINARY', 'T4 – TIMER', 'C5 – COUNTER', 'R6 – CONTROL', 'N7 – INTEGER'].every(x => t.includes(x)) && !t.includes('MainTask'); }));
+  const brandFile = await page.evaluate(re => !new RegExp(re, 'i').test(document.documentElement.outerHTML), BRANDS.source);
+  await page.click('.org [data-org="dN7"]'); await wait(200);
+  check('PLC target file-based: a data file in the project tree opens it in the data table (N7)', await page.evaluate(() => !!document.querySelector('#view-ladder .dt-tabs button.on[data-file="N7"]')));
+  await page.evaluate(() => App.newProject()); await wait(150);
+  const brandNew = await page.evaluate(re => !new RegExp(re, 'i').test(document.documentElement.outerHTML), BRANDS.source);
+  await page.selectOption('.modal #f_plc', 'tag'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(300);
+  check('PLC target: New project asks for the target; a tag-based blank project uses tag-based addresses', await page.evaluate(() => App.project.target === 'tag' && App.project.addr === 'tag'));
+  check('PLC target: no brand names in the target picker, the Organizer, the project tree or the New project form', brandTag && brandFile && brandNew);
+  await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay0); });
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);

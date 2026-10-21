@@ -192,16 +192,19 @@
   try { palClosed = JSON.parse(localStorage.getItem('plc-trainer.palClosed') || '[]'); } catch (e) { palClosed = []; }
   if (!Array.isArray(palClosed)) palClosed = [];
   const savePal = () => { try { localStorage.setItem('plc-trainer.palClosed', JSON.stringify(palClosed)); } catch (e) { /* ignore */ } };
+  // the library follows the project's PLC target (controllers offered, look of the rack modules)
+  WS.paletteChanged = () => { if (root) buildPalette((root.querySelector('.ws-search') || {}).value || ''); };
   function buildPalette(q) {
     q = q.trim().toLowerCase();
     const cats = {};
-    Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (d.hidden) return; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
+    const target = App.project && App.project.target;
+    Circuit.ORDER.forEach(t => { const d = DEFS[t]; if (!d || d.hidden || !Circuit.forTarget(t, target)) return; if (q && !(d.name.toLowerCase().includes(q) || d.cat.toLowerCase().includes(q))) return; (cats[d.cat] = cats[d.cat] || []).push(t); });
     const list = root.querySelector('.pal-list');
     list.innerHTML = Object.entries(cats).map(([cat, types]) => `<details class="pal-cat" data-cat="${esc(cat)}"${q || !palClosed.includes(cat) ? ' open' : ''}><summary>${esc(cat)} <small>${types.length}</small></summary><div class="pal-grid">${types.map(t => {
       const d = DEFS[t];
       const sample = { id: 'pal', type: t, x: 0, y: 0, props: { label: d.prefix, ...d.props }, state: d.init ? d.init() : {} };
       const pad = 8;
-      return `<button class="pal-item" draggable="true" data-type="${t}" title="${esc(d.name)} — ${esc(d.info || '')}"><svg viewBox="${-pad} ${-pad} ${d.w + pad * 2} ${d.h + pad * 2}">${Circuit.draw(sample, null)}${Circuit.drawTerms(d)}</svg><span>${esc(d.name)}</span></button>`;
+      return `<button class="pal-item" draggable="true" data-type="${t}" title="${esc(d.name)} — ${esc(d.info || '')}"><svg viewBox="${-pad} ${-pad} ${d.w + pad * 2} ${d.h + pad * 2}">${Circuit.draw(sample, d.cat === 'PLC Rack' ? { target } : null)}${Circuit.drawTerms(d)}</svg><span>${esc(d.name)}</span></button>`;
     }).join('')}</div></details>`).join('') || '<p class="help">No match.</p>';
     list.querySelectorAll('.pal-cat').forEach(d => d.addEventListener('toggle', () => {
       if (q) return;
