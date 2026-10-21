@@ -2857,7 +2857,7 @@ function check(name, cond, info = '') {
     }, proj('tag'));
     check('tag-based: a module in the wrong slot is a module fault — the controller keeps running the logic, the other module works', tagRun.mode === 'RUN' && tagRun.logic && tagRun.faulted && tagRun.other, JSON.stringify(tagRun));
     check('tag-based: the module fault is logged once as an alarm and marked ⚠ in the Organizer (with ＋ New Module…)', tagRun.alarms === 1 && tagRun.once && tagRun.tree, JSON.stringify(tagRun));
-    await page.click('#view-ladder [data-lorg] .org-add'); await wait(150);
+    await page.click('#view-ladder [data-lorg] .org-add[data-org="io"]'); await wait(150);
     check('tag-based: ＋ New Module… opens the I/O Configuration', await page.evaluate(() => /I\/O Configuration/.test(document.querySelector('.modal-head').textContent)));
     await page.evaluate(() => { App.setMode('PROG'); }); await wait(100);
     await page.evaluate(() => document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()));
