@@ -5,7 +5,7 @@ Read this first when you resume work, whether you're a person or an AI agent.
 ## Savepoint
 | | |
 |---|---|
-| **Version** | **v2.0.0 (stable), released and verified 2026-10-20** (owner: GO on "Release v2.0.0"). Release run #63 from `main` (`473e1c4`): 3 assets; APK cert `27:5F:A5:15:06:CC:46…` (checked); Pages `version.json` = 2.0.0 (checked). v1.6.0 was the previous stable. v2.0.1 accuracy fixes merged (PR #36, Beta); v2.1 lessons with live checklists (Beta). Next on the roadmap: v2.2 publishing (Play Store, name, logo) — needs the owner's GO. |
+| **Version** | **v2.1.0 prepared (owner GO 2026-10-21: "go stable na yan")**: version bumped and CHANGELOG section on `release/v2.1.0`; needs #39, #40 and the release PR merged into `main`, then **Actions → Release** on `main`. **v2.0.0 (stable), released and verified 2026-10-20** (owner: GO on "Release v2.0.0"). Release run #63 from `main` (`473e1c4`): 3 assets; APK cert `27:5F:A5:15:06:CC:46…` (checked); Pages `version.json` = 2.0.0 (checked). v1.6.0 was the previous stable. v2.0.1 accuracy fixes merged (PR #36, Beta); v2.1 lessons with live checklists (Beta). Next on the roadmap: v2.2 publishing (Play Store, name, logo) — needs the owner's GO. |
 | **Tags** | `v2.0.0`, `v1.6.0`, `v1.5.0`, `v1.4.1`, `v1.4.0`, `v1.4.0-beta.2`, `v1.4.0-beta.1`, `v1.2.1`, `v1.2.0`, `v1.1.0`. `v1.0.0` (`c22dbbd`) has no GitHub release (optional). |
 | **Date** | 2026-10-21 |
 | **Branch** | `main` is the **default branch** and holds released code; releases are built from `main`. Work happens on feature branches merged through PRs. The old branch `ccr-d652d569-13gxij` was deleted by the owner. |

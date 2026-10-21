@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-21
+
 ### Fixed (full audit)
 - **PLC**: timers in a **periodic task** now count with the task period (they ran up to 10× too fast or too slow). Verify finds a **duplicate OTE** or a **shared timer** also when one of them is written with a tag name. **Forcing** through an alias tag forces the address itself (no second, conflicting force). A tag such as `U:3` or `T4:0` on an HMI object no longer stops the screen updates. In Realistic mode, Verify checks JSR targets against the project's program files. EN/DN lights work for TIMER and COUNTER tags. A counter counting back across an overflow clears OV (and UN), as the controller does.
 - **Electrical**: a **VFD** makes its own output: the input phase order does not reverse the motor, a missing input phase stops the drive, a motor on the mains next to it is no longer slowed down, and a short on its output trips the drive. **Earth leakage** is now seen for every load (24 V power supply, valves, cylinders, tank), for a **borrowed neutral** (return to an N that bypasses the RCD) and for N bonded to PE after the RCD; several leaks at once are all handled. A short circuit **before any breaker** no longer trips the breakers after it: it is reported. 0 V tied to N is no longer a short. A star-delta motor with a wrong delta (two windings on the same phases) does not run normally, and a star point tied to N runs. A jammed **DC motor** trips its protection. The HMI terminal no longer starts on reversed 24 V. A tank level from a deleted tank no longer stays in a level transmitter.
