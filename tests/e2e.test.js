@@ -304,7 +304,34 @@ function check(name, cond, info = '') {
   }));
   await page.evaluate(() => { delete document.documentElement.dataset.theme; });
   for (const v of ['ladder', 'schematic', 'hmi', 'learn']) { await page.evaluate(v => App.showView(v), v); await wait(150); }
-  check('no brand names in the app', await page.evaluate(() => !/Allen.?Bradley|Rockwell|RSLogix|MicroLogix|PanelView|SLC 500/i.test(document.documentElement.outerHTML)));
+  const BRANDS = /Simurelay|Allen.?Bradley|Rockwell|RSLogix|RSLinx|Studio ?5000|\bLogix|ControlLogix|CompactLogix|MicroLogix|PanelView|SLC.?500|FactoryTalk/i;
+  check('no brand names in the app', await page.evaluate(re => !new RegExp(re, 'i').test(document.documentElement.outerHTML), BRANDS.source));
+  {
+    // every string the app can show, including dialogs that are not open while this runs; comments may name the references
+    const src = dir => fs.readdirSync(dir).filter(f => /\.js$/.test(f)).map(f => fs.readFileSync(path.join(dir, f), 'utf8'));
+    const bare = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
+    const hits = [...src(path.resolve(__dirname, '..', 'js')).map(bare),
+      fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8').replace(/<!--[\s\S]*?-->/g, '')]
+      .flatMap(s => s.split('\n')).filter(l => BRANDS.test(l));
+    check('no brand names in the source strings', !hits.length, hits.slice(0, 3).join(' | '));
+  }
+
+  console.log('Dialogs: keys go to the top dialog only');
+  await page.evaluate(() => { UI.modal({ title: 'Lower' }); UI.modal({ title: 'Upper' }); });
+  await page.keyboard.press('Escape');
+  check('Escape on stacked dialogs closes only the top one', await page.evaluate(() => [...document.querySelectorAll('#modal-root .modal-wrap h3')].map(h => h.textContent).join() === 'Lower'));
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { UI.modal({ title: 'Removed' }); document.querySelector('#modal-root .modal-wrap').remove(); window.__esc = 0; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__esc++; }); });
+  await page.keyboard.press('Escape');
+  check('a dialog removed without close() does not keep eating Escape', await page.evaluate(() => window.__esc === 1));
+  check('a damaged project index reads as an empty list', await page.evaluate(() => {
+    const k = 'plc-trainer.projects.v2', keep = localStorage.getItem(k);
+    try {
+      localStorage.setItem(k, '{}'); const a = Store.list().length === 0;
+      localStorage.setItem(k, '[null,{"id":"x","updated":1}]'); const b = Store.list().length === 1;
+      return a && b;
+    } finally { localStorage.setItem(k, keep); }
+  }));
 
   console.log('Ladder: change, drag, zoom');
   await page.evaluate(() => { App.openNew({ name: 'Edit test', ladder: { rungs: [{ text: 'XIC I:0/0 XIC I:0/1 TON T4:0 1.0 5 0' }, { text: 'OTE O:0/1' }] } }); App.showView('ladder'); });
@@ -2658,7 +2685,6 @@ function check(name, cond, info = '') {
     return book.fmt('I:1/0') === 'Local:1:I.Data.0' && book.toFile('Local:2:O.Data.3') === 'O:2/3' && !!Circuit.STYLES.tag;
   }));
   console.log('PLC target per project: file-based rack or tag-based 1756-style chassis');
-  const BRANDS = /Allen.?Bradley|Rockwell|RSLogix|MicroLogix|PanelView|SLC 500|ControlLogix|CompactLogix|Logix Designer|Studio 5000/i;
   const rackProj = target => ({ name: 'Target', ...(target ? { target } : {}), io: { slots: { 1: 'mdi16', 2: 'mdo16' } }, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:2/0' }], files: [{ n: 3, name: 'FILL', rungs: [] }] },
     circuit: { seq: 5, comps: [{ id: 'c1', type: 'mpsu', x: 0, y: 0, props: { label: 'PS' }, state: {} }, { id: 'c2', type: 'mcpu', x: 110, y: 0, props: { label: 'CPU' }, state: {} },
       { id: 'c3', type: 'mdi16', x: 200, y: 0, props: { label: 'DI', slot: '1' }, state: {} }, { id: 'c4', type: 'mdo16', x: 290, y: 0, props: { label: 'DO', slot: '2' }, state: {} }], wires: [] } });
