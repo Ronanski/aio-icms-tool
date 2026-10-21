@@ -1,7 +1,7 @@
 /* Service worker: caches the app so the trainer works offline once it has been opened.
    The Stable copy (site root) and the Beta copy (/beta/) each have their own worker and cache.
    VER is the app version; hosted builds get a build id added (scripts/copy-web.sh), so every new build caches its files. */
-const VER = 'v2.2.0';
+const VER = 'v2.2.1';
 const SCOPE = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CH = /\/beta\/$/.test(SCOPE) ? 'beta' : 'stable';
 const CACHE = `plc-trainer-${CH}-${VER}`;

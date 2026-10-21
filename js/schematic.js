@@ -516,7 +516,8 @@
     o.push(`<g class="ssym${st.on ? ' on' : ''}${SC.errs && SC.errs.has(e) ? ' err' : ''}${st.missing ? ' miss' : ''}">`);
     const nc = ['nc', 'tnc', 'olnc'].includes(K.sym);
     if (!K.out) {
-      o.push(nc ? `<path d="M${x} ${t} H${x + 10} M${x} ${b} L${x + 13} ${t - 3}"/>` : `<path d="M${x} ${b} L${x - 11} ${t + 1}"/>`);
+      const shut = st.c ? st.closed : nc;
+      o.push(nc ? `<path d="M${x} ${t} H${x + 10} M${x} ${b} L${shut ? `${x + 13} ${t - 3}` : `${x - 11} ${t + 1}`}"/>` : `<path d="M${x} ${b} L${shut ? `${x + 2} ${t - 2}` : `${x - 11} ${t + 1}`}"/>`);
       const m = MARK[e.k];
       if (m) {
         const bx = nc ? x + 6 : x - 6, ax = x - 26;
@@ -609,8 +610,9 @@
       o.push(`<rect x="${xs[0] - 8}" y="${t + 4}" width="${xs[2] - xs[0] + 16}" height="20"/>`);
       xs.forEach(x => o.push(`<path d="M${x} ${t} V${t + 8} h-4 v8 h4 V${b}"/>`));
     } else {
+      const shut = !!k && (DEFS[k.c.type].conduct(k.c, App.ctx) || []).some(([p, q]) => (p === K.ins[0] && q === K.outs[0]) || (p === K.outs[0] && q === K.ins[0]));
       xs.forEach(x => {
-        o.push(`<path d="M${x} ${b} L${x - 10} ${t + 2}"/>`);
+        o.push(shut ? `<path d="M${x} ${b} L${x + 2} ${t - 2}"/>` : `<path d="M${x} ${b} L${x - 10} ${t + 2}"/>`);
         if (e.k === 'km3') o.push(`<path class="thin" d="M${x - 4} ${t} a4 4 0 0 0 8 0"/>`);
         else o.push(`<path class="thin" d="M${x - 3} ${t - 3} l6 6 M${x + 3} ${t - 3} l-6 6"/>`);
       });
@@ -639,7 +641,8 @@
       o.push(`<line class="pw p${i + 1}${lv(k && k.mid[i], i) ? ' on' : ''}" x1="${ds[i]}" y1="${y0 + PE_ / 2 + 14}" x2="${ds[i]}" y2="${my + 22}"/>`);
     });
     o.push(`<g class="ssym${SC.perrs && SC.perrs.has(e) ? ' err' : ''}${!ok ? ' miss' : ''}">`);
-    const contacts = (cols, cy) => cols.map(x => `<path d="M${x} ${cy + 14} L${x - 10} ${cy - 12}"/><path class="thin" d="M${x - 4} ${cy - 14} a4 4 0 0 0 8 0"/>`).join('') + `<path class="thin dash" d="M${cols[0] - 5} ${cy} H${cols[2] - 5}"/>`;
+    const shutD = !!(ok && d.state.pulled);
+    const contacts = (cols, cy) => cols.map(x => `<path d="M${x} ${cy + 14} L${shutD ? `${x + 2} ${cy - 16}` : `${x - 10} ${cy - 12}`}"/><path class="thin" d="M${x - 4} ${cy - 14} a4 4 0 0 0 8 0"/>`).join('') + `<path class="thin dash" d="M${cols[0] - 5} ${cy} H${cols[2] - 5}"/>`;
     o.push(contacts(ds, y0 + PE_ / 2));
     o.push(`<path d="M${xs[0]} ${my - 18} L${xs[1] - 8} ${my - 10} M${xs[2]} ${my - 18} L${xs[1] + 8} ${my - 10}"/><circle cx="${xs[1]}" cy="${my + 4}" r="18" class="${c && c.state.drive === 'run' ? 'mon' : ''}"/>`);
     o.push(`<path class="thin" d="M${xs[1] + 18} ${my + 4} H${ds[0]}"/>`);

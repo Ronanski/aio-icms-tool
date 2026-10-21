@@ -2482,6 +2482,64 @@ function check(name, cond, info = '') {
     FreeDraw.setLabels({ color: 'auto' }); await new Promise(r => setTimeout(r, 50)); const g = getComputedStyle(document.querySelector('#view-schematic .free-svg .ftag')).fill;
     return f === 'rgb(198, 40, 40)' && g !== f && !document.querySelector('#view-schematic .free-svg.tagc-red'); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
+  console.log('Owner case on the PLC motor example: a 24 V seal-in drawn from the library, moving contacts, coil voltage warning');
+  const ownerCase = await page.evaluate(async () => {
+    const prev = App.currentId; App.openNew(Examples.EX.plcmotor.build()); if (prev) Store.remove(prev); localStorage.setItem('plc-trainer.schStyle', 'free'); App.showView('schematic');
+    document.querySelector('#view-schematic [data-sstyle="free"]').click(); FreeDraw.setLabels({ ask: false }); await new Promise(q => setTimeout(q, 300));
+    const add = (k, x, y) => { FreeDraw.add(k, undefined, x, y); const F = App.project.schematic.free.items; return F[F.length - 1]; };
+    const a = add('pP', 0, 0), stop = add('pbnc', 0, 120), start = add('pbno', 0, 240), seal = add('kmno', 120, 240), coil = add('kmcoil', 0, 360), m = add('pM', 0, 480);
+    const F = App.project.schematic.free; let n = F.seq; const w = (x, y) => F.wires.push({ id: 'fw' + (++n), a: x, b: y }); F.seq = n + 10;
+    w(a.id + ':J', stop.id + ':11'); w(stop.id + ':12', start.id + ':13'); w(start.id + ':13', seal.id + ':13'); w(start.id + ':14', seal.id + ':14'); w(start.id + ':14', coil.id + ':A1'); w(coil.id + ':A2', m.id + ':J');
+    Schematic.sync(); App.circuitChanged(); document.querySelector('#view-schematic [data-smode="run"]').click(); await new Promise(q => setTimeout(q, 300));
+    return { start: start.tag, stop: stop.tag, seal: seal.tag, coil: coil.tag, sealId: seal.id, stopId: stop.id };
+  });
+  check('owner case: on the PLC motor example the drawn seal-in gets its own contactor (KM2, not the motor contactor KM1), with a 24 V DC coil', ownerCase.coil === 'KM2' && ownerCase.seal === 'KM2' && await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'KM2').props.coil === '24VDC'), JSON.stringify(ownerCase));
+  const symHtml = id => page.evaluate(id => document.querySelector(`#view-schematic [data-fi="${id}"] .ssym`).innerHTML, id);
+  const seal0 = await symHtml(ownerCase.sealId);
+  await page.evaluate(t => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === t), 'btn'); }, ownerCase.start);
+  check('owner case: pressing START pulls KM2 in', await until(is(`d('KM2').pulled`)));
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('owner case: released, KM2 holds through its own 13-14 (seal-in)', await (async () => { await wait(400); return page.evaluate(is(`d('KM2').pulled && !d('${ownerCase.start}').pressed`)); })());
+  check('moving contacts: the drawn KM2 13-14 is drawn closed now (it was drawn open)', await (async () => { await wait(150); const s1 = await symHtml(ownerCase.sealId); return s1 !== seal0 && /M0 14 L2 -16/.test(s1) && /M0 14 L-11 -13/.test(seal0); })());
+  const stop0 = await symHtml(ownerCase.stopId);
+  await page.evaluate(t => { window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === t), 'btn'); }, ownerCase.stop);
+  check('moving contacts: pressing STOP draws its N.C. contact open and drops KM2', await until(is(`!d('KM2').pulled`)) && await (async () => { await wait(150); const s1 = await symHtml(ownerCase.stopId); return s1 !== stop0 && /M0 14 L-11 -13/.test(s1); })());
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('coil voltage: a 230 V AC coil on 24 V DC is reported (event, status, dashed warning on the drawing) instead of staying silently off', await page.evaluate(async () => {
+    const k = App.project.circuit.comps.find(c => c.props.label === 'KM2'); k.props.coil = '230VAC'; App.circuitChanged();
+    const s = App.project.circuit.comps.find(c => c.props.label === App.project.schematic.free.items.find(i => i.k === 'pbno').tag); const up = App.operate(s, 'btn'); await new Promise(q => setTimeout(q, 500));
+    const coilIt = App.project.schematic.free.items.find(i => i.k === 'kmcoil');
+    return App.events().some(e => /KM2: its coil is 230VAC but gets 24VDC/.test(e.msg)) && /gets only 24VDC/.test(Circuit.status(k, App.ctx)) && !!document.querySelector(`#view-schematic [data-fi="${coilIt.id}"] .ssym.lowv`) && (up(), true); }));
+  await page.evaluate(() => { document.querySelector('#view-schematic [data-smode="edit"]').click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+  console.log('Moving contacts: every library symbol whose contact switches is drawn switched');
+  check('moving contacts: every symbol in the library with a contact is drawn differently when that contact switches (all of them, not a few)', await page.evaluate(async () => {
+    const K = FreeDraw.KINDS, D = Circuit.DEFS, still = [], moved = [];
+    const kinds = Object.keys(K).filter(k => K[k].type && !K[k].jct && !K[k].types && !K[k].pots && D[K[k].type] && D[K[k].type].conduct);
+    localStorage.setItem('plc-trainer.schStyle', 'free');
+    for (const k of kinds) {
+      const tag = (K[k].pre || 'X') + '9'; App.openNew({ name: 'sweep', schematic: { free: { seq: 3, items: [{ id: 'd1', k, tag, x: 100, y: 100, r: 0 }], wires: [] } } });
+      App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click();
+      const dev = App.project.circuit.comps.find(c => c.props.label === tag); if (!dev) continue;
+      const ids = K[k].terms.map(t => t.id), mine = () => JSON.stringify((D[dev.type].conduct(dev, App.ctx) || []).filter(([a, b]) => ids.includes(a) && ids.includes(b)).map(x => x.slice().sort()).sort());
+      const html = () => { FreeDraw.render(document.querySelector('#view-schematic .sch-body')); return document.querySelector('#view-schematic [data-fi="d1"] .ssym').innerHTML; };
+      let any = false, ok = true;
+      for (const f of Object.keys(dev.state).filter(x => typeof dev.state[x] === 'boolean' || x === 'pos')) {
+        const c0 = mine(), h0 = html(), old = dev.state[f]; dev.state[f] = f === 'pos' ? (old ? 0 : 1) : !old; const c1 = mine(), h1 = html(); dev.state[f] = old;
+        if (c0 !== c1) { any = true; if (h0 === h1) ok = false; }
+      }
+      if (any) (ok ? moved : still).push(k);
+    }
+    return still.length === 0 && moved.length >= 110;
+  }));
+  check('moving contacts: in the IEC power circuit the breaker and contactor poles are drawn closed when they close', await page.evaluate(async () => {
+    App.openNew({ name: 'Power poles' }); const C = App.project.circuit, s = Circuit.create('supply3', 0, 0, C); s.props.label = 'Q0'; s.state.on = true; C.comps.push(s);
+    App.project.schematic.power = { src: 'Q0', main: [], feeders: [{ elems: [{ k: 'qf3', tag: 'QF1' }, { k: 'km3', tag: 'KM1' }, { k: 'm3', tag: 'M1' }] }] }; localStorage.setItem('plc-trainer.schStyle', 'iec'); Schematic.sync(); App.showView('schematic');
+    document.querySelector('#view-schematic [data-sstyle="iec"]').click(); const h = i => { Schematic.render(); return document.querySelectorAll('#view-schematic .pel .ssym')[i].innerHTML; };
+    const qf = C.comps.find(c => c.props.label === 'QF1'), km = C.comps.find(c => c.props.label === 'KM1'); qf.state.on = false; const q0 = h(0), k0 = h(1);
+    qf.state.on = true; km.state.pulled = true; const q1 = h(0), k1 = h(1); km.state.pulled = false; return q0 !== q1 && k0 !== k1;
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
   console.log('IEC current paths: the newer devices and the PLC points');
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); });
   await page.click('#view-schematic [data-sstyle="iec"]'); await wait(200);
@@ -2725,6 +2783,14 @@ function check(name, cond, info = '') {
     const e = document.querySelector('#view-schematic .fd-lib [data-fk="kmno"]'), o = { bubbles: true, pointerId: 31, pointerType: 'touch' };
     e.dispatchEvent(new PointerEvent('pointerdown', o)); await new Promise(r => setTimeout(r, 700)); e.dispatchEvent(new PointerEvent('pointerup', o)); e.click(); await new Promise(r => setTimeout(r, 150)); return n; });
   check('phone: a long press on a library tile shows its full name and terminals and does not place it', await phone.evaluate(libN0 => [...document.querySelectorAll('#toast-root .toast')].some(x => /Contactor aux N.O. — terminals 13, 14/.test(x.textContent)) && App.project.schematic.free.items.length === libN0, libN0));
+  // wiring by touch: one terminal of a symbol, then its other terminal right away, is not taken as a double tap
+  await phone.evaluate(() => { App.openNew({ name: 'Touch wiring', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
+    schematic: { free: { seq: 5, items: [{ id: 'd1', k: 'pbno', tag: 'S1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'pbno', tag: 'S2', x: 120, y: 0, r: 0 }], wires: [] } } }); localStorage.setItem('plc-trainer.schStyle', 'free'); App.showView('schematic');
+    document.querySelector('#view-schematic [data-sstyle="free"]').click(); document.querySelector('#view-schematic [data-smode="edit"]').click(); if (FreeDraw.libOpen()) document.querySelector('#view-schematic [data-fdact="lib"]').click(); document.querySelectorAll('#toast-root > *').forEach(x => x.remove()); });
+  await phone.waitForTimeout(400);
+  const tTap = async ft => { const bb = await (await phone.$('#view-schematic [data-ft="' + ft + '"]')).boundingBox(); await phone.touchscreen.tap(bb.x + bb.width / 2, bb.y + bb.height / 2); await phone.waitForTimeout(120); };
+  await tTap('d1:13'); await tTap('d2:13'); await tTap('d1:14'); await tTap('d2:14');
+  check('phone: tapping one terminal of a symbol and then its other terminal quickly draws both wires', await phone.evaluate(() => App.project.schematic.free.wires.length === 2 && !document.querySelector('#modal-root .modal')));
   await phone.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await phone.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setMode('RUN'); App.showView('hmi'); });
   await phone.waitForTimeout(400);

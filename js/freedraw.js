@@ -391,6 +391,9 @@
       if (!H.devOf(it.tag)) made.add(it.tag);
       ensureType(K[it.k].jct || K[it.k].types ? K[it.k].type : pref.get(it.tag) || K[it.k].type, it.tag);
     }
+    const dc = F.items.some(i => ['+', '-'].includes(K[i.k].pot) || ['batt'].includes(K[i.k].look) || K[i.k].type === 'psu24');
+    const ac = F.items.some(i => ['L1', 'L2', 'L3', 'N'].includes(K[i.k].pot) || K[i.k].pots || ['src'].includes(K[i.k].look));
+    if (dc !== ac) for (const tag of made) { const c = H.devOf(tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'coil' && p.opts && p.opts.includes('24VDC'))) c.props.coil = dc ? '24VDC' : '230VAC'; }
     for (const it of F.items) if (K[it.k].olco && made.has(it.tag)) { const c = H.devOf(it.tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'aux')) c.props.aux = '95-96-98 changeover'; }
     const errs = check();
     FD.errs = errs;
@@ -442,6 +445,7 @@
     const d = H.devOf(it.tag);
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
+    if (st.lowV && ['coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren'].includes(S.look)) return { on: false, low: true };
     if (d.type === 'lamp_fl') return { on: !!st.lit };
     if (S.look === 'phm') return { on: !!st.ok };
     if (['coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
@@ -463,7 +467,9 @@
     if (S.look === 'nonc') return { on: has(S.terms[2].id, S.terms[3].id) };
     if (S.look === 'rot') { const o = S.terms.find(t => t.y > 0 && has('1', t.id)); return { on: !!o, out: o && o.id }; }
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
-    return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
+    // each pole on its own (a fuse switch with a neutral: the fuses blow, the neutral pole stays closed)
+    const poles = ins.map((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i])));
+    return { on: poles.some(Boolean), poles, known: true };
   }
   /* IEC drawing of one symbol, upright, centred on 0,0 */
   function shape(it, st) {
@@ -488,7 +494,8 @@
     })[a] || '';
     if (S.look === 'no' || S.look === 'nc') {
       o.push(stub(0, -30, -14), stub(0, 14, 30));
-      o.push(S.look === 'nc' ? `<path d="M0 -14 H10 M0 14 L13 -17"/>` : `<path d="M0 14 L-11 -13"/>`);
+      const shut = S.look === 'nc' ? !(st.known && !st.on) : !!st.on;
+      o.push(S.look === 'nc' ? (shut ? `<path d="M0 -14 H10 M0 14 L13 -17"/>` : `<path d="M0 -14 H10 M0 14 L-11 -13"/>`) : (shut ? `<path d="M0 14 L2 -16"/>` : `<path d="M0 14 L-11 -13"/>`));
       if (S.act) o.push(`<path class="thin dash" d="M${S.look === 'nc' ? 6 : -6} 0 H-26"/>`, actMark(S.act, -26));
     } else if (S.look === 'co') {
       // changeover: the blade rests on the N.C. side and moves to the N.O. side when operated
@@ -572,14 +579,14 @@
       if (S.terms.some(t => t.id === 'PE')) o.push(`<path class="pe" d="M22 0 H40 M40 0 V8 M33 8 H47 M36 12 H44 M39 16 H41"/>`);
     } else {
       // multi-pole power device: one symbol per pole and a dashed link
-      S.terms.filter(t => t.y < 0).forEach(t => {
-        const x = t.x;
-        if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
-        else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/><path class="thin" d="M${x} -12 V12"/>`);
+      S.terms.filter(t => t.y < 0).forEach((t, pi) => {
+        const x = t.x, st1 = st.poles ? { ...st, on: !!st.poles[pi] } : st;
+        if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), st1.on ? `<path d="M${x} 14 L${x + 2} -16"/><rect class="thin" x="${x - 2}" y="-7" width="6" height="14"/>` : `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
+        else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/>${st1.known && !st1.on ? `<path class="thin" d="M${x} -12 V-3 M${x} 3 V12 M${x - 4} -3 l8 6"/>` : `<path class="thin" d="M${x} -12 V12"/>`}`);
         else if (S.look === 'ol') o.push(stub(x, -30, -10), stub(x, 10, 30), `<path d="M${x} -10 h-4 v8 h8 v8 h-4 V10"/>`);
-        else if (S.look === 'kmn') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} -14 H${x + 8} M${x} 14 L${x + 10} -16"/><path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
+        else if (S.look === 'kmn') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} -14 H${x + 8} M${x} 14 ${st1.known && !st1.on ? `L${x - 10} -12` : `L${x + 10} -16`}"/><path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
         else {
-          o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/>`);
+          o.push(stub(x, -30, -14), stub(x, 14, 30), st1.on ? `<path d="M${x} 14 L${x + 2} -16"/>` : `<path d="M${x} 14 L${x - 10} -12"/>`);
           if (S.look === 'km') o.push(`<path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
           if (S.look === 'brk' || S.look === 'qm' || S.look === 'rcd') o.push(`<path class="thin" d="M${x - 3} -17 l6 6 M${x + 3} -17 l-6 6"/>`);
         }
@@ -779,7 +786,7 @@
         : S.look === 'gnd' ? `<rect class="hit" x="${it.x - 14}" y="${it.y - 24}" width="28" height="36" rx="4"/>`
         : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`;
       o.push(`<g class="fitem${(sel && sel.i === it.id) || group.has(it.id) ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
-      o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
+      o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}${st.low ? ' lowv' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${st.low ? `<title>${esc(it.tag)}: coil voltage too low — see Properties</title>` : ''}${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
       const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" data-fc="${it.id}" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
@@ -788,7 +795,7 @@
     }
     if (wiring && wiring.cur) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${wirePath(a, wiring.cur)}"/>`); }
     if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
-    if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — click or drag symbols from the Library, then click a terminal and another to wire them</text>`);
+    if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — add symbols from ▦ Library, then tap two terminals to wire them</text>`);
     o.push('</g></svg>');
     host.innerHTML = o.join('');
     svg = host.querySelector('svg'); gv = svg.querySelector('.fv');
@@ -826,7 +833,8 @@
       }
       const p = world(ev), term = ev.target.closest('[data-ft]'), itEl = ev.target.closest('[data-fi]'), wEl = ev.target.closest('[data-fw]'), bEl = ev.target.closest('[data-fb]');
       // double click / double tap (the drawing is redrawn between the two clicks, so the browser's dblclick is not used)
-      const tapKey = bEl ? 'b' + bEl.dataset.fb : wEl ? 'w' + wEl.dataset.fw : itEl ? 'i' + itEl.dataset.fi : '';
+      // a tap on a terminal is never half of a double tap (wiring taps one terminal of a symbol, then its other one)
+      const tapKey = term ? '' : bEl ? 'b' + bEl.dataset.fb : wEl ? 'w' + wEl.dataset.fw : itEl ? 'i' + itEl.dataset.fi : '';
       const dbl = tapKey && lastTap.k === tapKey && Date.now() - lastTap.t < 400;
       lastTap = { k: tapKey, t: Date.now() };
       if (dbl && H.mode() === 'edit' && !wiring) {
@@ -952,8 +960,13 @@
     // makes the next contactor, a contact goes to the contactor whose 13-14 is free); none free: the next new tag
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) {
       const ids = S.terms.map(t => t.id), drawn = tag => fr().items.some(i => i.tag === tag && K[i.k] && K[i.k].terms.some(t => ids.includes(t.id)));
-      const free = same.filter(t => !drawn(t));
-      if (free.length) return { def: free[free.length - 1], list: same };
+      // first a device already on this drawing (its coil or another contact), then one the Wiring does not wire elsewhere
+      // (the PLC motor example's KM1 is the motor contactor): never grab a device that belongs to another circuit
+      const onSheet = tag => fr().items.some(i => i.tag === tag);
+      const elsewhere = tag => { const d = H.devOf(tag); return !!d && H.circ().wires.some(w => !w.sch && (w.a.startsWith(d.id + ':') || w.b.startsWith(d.id + ':'))); };
+      const free = same.filter(t => !drawn(t)), mine = free.filter(onSheet), spare = free.filter(t => !onSheet(t) && !elsewhere(t));
+      const def = mine.length ? mine[mine.length - 1] : spare[spare.length - 1];
+      if (def) return { def, list: same };
     }
     let n = 1; while (used.has(S.pre + n)) n++;
     return { def: S.pre + n, list: same };
@@ -977,6 +990,17 @@
     return j;
   }
   /* the nearest place to (cx, cy), on an 80 px grid around it, where no symbol is yet */
+  /* a symbol placed from the library goes to the first free place of the visible drawing, left to right and top to
+     bottom (100 apart across, 130 down), so it is never placed off the edge of a small screen; a full view falls back
+     to the nearest free place around the middle */
+  function visibleSpot() {
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect(), k = view.k;
+    const x0 = snap10((90 - view.x) / k), x1 = (r.width - 40 - view.x) / k, y0 = snap10((60 - view.y) / k), y1 = (r.height - 50 - view.y) / k;
+    const its = fr().items, ok = (x, y) => its.every(i => Math.abs(i.x - x) >= 90 || Math.abs(i.y - y) >= 110);
+    for (let y = y0; y <= y1; y += 130) for (let x = x0; x <= x1; x += 100) if (ok(x, y)) return { x, y };
+    return null;
+  }
   function freeSpot(cx, cy) {
     const its = fr().items, ok = (x, y) => its.every(i => Math.abs(i.x - x) >= 70 || Math.abs(i.y - y) >= 70);
     for (let ring = 0; ring < 12; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
@@ -996,7 +1020,7 @@
       H.snap();
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
-      const c = x != null ? { x, y } : freeSpot(snap10((r.width / 2 - view.x) / view.k), snap10((r.height / 2 - view.y) / view.k)), cx = c.x, cy = c.y;
+      const c = x != null ? { x, y } : visibleSpot() || freeSpot(snap10((r.width / 2 - view.x) / view.k), snap10((r.height / 2 - view.y) / view.k)), cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
       F.items.push(it); sel = { i: it.id }; group.clear();
       H.changed();
@@ -1009,7 +1033,8 @@
     if (K[k].auto) return go(suggest(k).def);
     if (k === 'text') { UI.form('Text', [{ key: 't', label: 'Text', value: '' }], v => go(v.t.trim())); return undefined; }
     const sg = suggest(k);
-    if (!lbl.ask) { const m = go(sg.def); if (!m) UI.toast(`${K[k].n}: -${sg.def} (change the tag or rename the device in Properties)`, 'ok', 2500); return m; }
+    // the tag is drawn on the symbol and shown in Properties: no message for every symbol placed
+    if (!lbl.ask) return go(sg.def);
     UI.form(K[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
       '<p class="help">Use the tag of a device in the Wiring (its contacts and coil share the tag), or a new tag: the device is added to the Wiring for you.</p>');
   };

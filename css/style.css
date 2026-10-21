@@ -675,6 +675,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .fd-zoom { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; box-shadow: var(--shadow); }
 .free-svg .fval { font: 600 10px var(--mono); fill: var(--accent-text); pointer-events: none; }
 .free-svg .fval.fcount { fill: var(--warn); }
+/* a coil or lamp that gets too low a voltage */
+.free-svg .ssym.lowv path, .free-svg .ssym.lowv rect, .free-svg .ssym.lowv circle { stroke: var(--warn); stroke-dasharray: 3 2; }
 /* conductor colours (🎨 Colours): Philippine practice as in the Wiring; N is grey so it shows on white paper */
 .free-svg .fwire .w.pc-L1 { stroke: #b3261e; }
 .free-svg .fwire .w.pc-L2 { stroke: #d4a20c; }
