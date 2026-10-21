@@ -1,7 +1,7 @@
 # Progress
 
-**Current version:** 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** Stable v2.0.0 (released and verified 2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Current version:** 2.1.0 (stable release authorized by the owner 2026-10-21: "go stable na yan. make it latest stable update" — v2.0.1 accuracy fixes, v2.1 lessons, the full audit, the Electrical Diagram roadmap Phases 0–6 and the Simurelay parity batch). Before it 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
+**Status:** v2.1.0 prepared for the Stable release (PR); Stable v2.0.0 (released and verified 2026-10-20) until the release workflow has run. Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
