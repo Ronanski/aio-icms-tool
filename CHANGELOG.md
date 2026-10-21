@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Thermal-magnetic MCBs**: the 1P–4P MCBs also trip, after a thermal delay (10 s, a setting), when the motor they feed stays overloaded; an overload relay set faster in the same feeder trips first.
+- **3-position selectors I-II-III and I-0-II** (Wiring and Electrical Diagram): common 1 to 2 / 3 / 4, or to 2 / nothing / 3.
+- **Source and destination link arrows** in the diagram (arrows with the same tag are connected, as with the link arrow), and **L1 L2 L3** and **L1 L2 L3 N** points in one symbol.
+- **docs/SIMURELAY_PARITY.md**: 111 of 114 Simurelay symbols full (97.4%); the generator, impulse coil, earth source and power supply checked against Simurelay's symbol metadata (read with REA, no code).
+
+### Tests
+- **Parity v2.2** (6 checks): selector positions, MCB thermal trip and selectivity with an overload relay, drawn L1 L2 L3 points running a motor, arrows carrying L1, the drawn I-II-III selector, save and reload.
+
 ## [2.1.0] - 2026-10-21
 
 ### Fixed (full audit)

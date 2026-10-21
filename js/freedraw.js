@@ -44,6 +44,9 @@
       psu: { n: 'AC/DC converter 230V~ / 24V= (power supply)', type: 'psu24', pre: 'G', look: 'conv', terms: [...row(['L', 'N'], -30), ...row(['P1', 'M1'], 30)] },
       gen: { n: 'Generator 3~ (GS), C1-C2 remote start', type: 'gen3', pre: 'G', look: 'gen', label: 'GS\n3~', terms: [...row(['L1', 'L2', 'L3', 'N'], 34), { id: 'PE', x: 44, y: 0, src: true }, { id: 'C1', x: -10, y: -34 }, { id: 'C2', x: 10, y: -34 }], part: 'run' },
       batt: { n: 'Battery 24 V', type: 'battery', pre: 'GB', look: 'batt', terms: [{ id: 'P', x: 0, y: -30, src: true }, { id: 'M', x: 0, y: 30, src: true }] },
+      // several conductors in one symbol (each terminal is wired to that conductor of the supply)
+      p3: { n: 'Points L1 L2 L3', type: null, pre: 'XP', look: 'pots', auto: true, pots: { L1: 'L1', L2: 'L2', L3: 'L3' }, terms: ['L1', 'L2', 'L3'].map((t, i) => ({ id: t, x: -20 + i * 20, y: 30 })) },
+      p3n: { n: 'Points L1 L2 L3 N', type: null, pre: 'XP', look: 'pots', auto: true, pots: { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N' }, terms: ['L1', 'L2', 'L3', 'N'].map((t, i) => ({ id: t, x: -30 + i * 20, y: 30 })) },
       pL1: pot('L1', 'Point L1'), pL2: pot('L2', 'Point L2'), pL3: pot('L3', 'Point L3'), pN: pot('N', 'Point N'), pPE: pot('PE', 'Point PE'),
       pP: pot('+', 'Point +24 V'), pM: pot('-', 'Point 0 V'),
     },
@@ -75,6 +78,9 @@
       lsnonc: nonc('limit', '21', '22', '13', '14', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch N.C. + N.O. (21-22 / 13-14)' }),
       lsco: co('limit_co', '11', '12', '14', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch changeover 11-12 / 11-14' }),
       selx: xov('sel_x', { act: 'turn', part: 'knob', n: 'Selector crossover' }),
+      // rotary selectors: common 1 on top, one output per position below
+      sel3i: { n: 'Selector 3 positions I-II-III (1-2 / 1-3 / 1-4)', type: 'sel3p', pre: 'S', look: 'rot', act: 'turn', part: 'knob', terms: [{ id: '1', x: 0, y: -30 }, { id: '2', x: -20, y: 30 }, { id: '3', x: 0, y: 30 }, { id: '4', x: 20, y: 30 }] },
+      sel3o: { n: 'Selector 3 positions I-0-II (1-2 / – / 1-3)', type: 'sel3p0', pre: 'S', look: 'rot', act: 'turn', part: 'knob', terms: [{ id: '1', x: 0, y: -30 }, { id: '2', x: -14, y: 30 }, { id: '3', x: 14, y: 30 }] },
     },
     Sensors: {
       pswno: two('pswitch', '13', '14', 'no', 'SP', { act: 'press', part: 'pv', n: 'Pressure switch N.O.' }),
@@ -207,6 +213,9 @@
       wtee: wire('Wire T (junction)', [[-30, 0], [30, 0], [0, 30]]),
       wcross: wire('Wire cross (junction)', [[-30, 0], [30, 0], [0, -30], [0, 30]]),
       wlink: wire('Link arrow (same tag = connected)', [[0, -30]], { pre: 'W', auto: false, arrow: true }),
+      // a source and a destination arrow: arrows with the same tag are connected, as with the link arrow; the arrow shows the way
+      wsrc: wire('Link arrow — source (same tag = connected)', [[0, -30]], { pre: 'W', auto: false, arrow: 'src' }),
+      wdst: wire('Link arrow — destination (same tag = connected)', [[0, -30]], { pre: 'W', auto: false, arrow: 'dst' }),
       // protective earth: wired to the PE of the supply
       gnd: { n: 'Protective earth (PE)', type: 'jct', pre: 'PE', look: 'gnd', jct: true, auto: true, pot: 'PE', terms: [{ id: 'J', x: 0, y: -20 }] },
       // a note on the drawing, no device
@@ -342,6 +351,7 @@
     });
     for (const it of fr().items) {
       const S = K[it.k];
+      if (S.pots) { const miss = Object.values(S.pots).find(p => !potKey(p)); if (miss) errs.set(it, `${miss}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
       if (!S.type) continue;
       if (S.pot && !potKey(S.pot)) { errs.set(it, `${POTNAME[S.pot] || S.pot}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
       if (S.jct) { const m = te(it.tag, 'jct', 'wire point'); if (m) errs.set(it, m); continue; }
@@ -385,6 +395,7 @@
     const key = e => {
       const [id, t] = e.split(':'), it = itemOf(id);
       if (!it || errs.has(it)) return null;
+      if (K[it.k].pots) { const pk = potKey(K[it.k].pots[t]); return pk ? { k: pk, src: K[it.k].pots[t] } : null; }
       const S = K[it.k], c = ensureType(S.type, it.tag);
       const tm = S.terms.find(q => q.id === t);
       // every end of a wire piece or potential point is the one terminal J of its junction
@@ -448,6 +459,7 @@
     if (S.look === 'co') return { on: has(S.terms[0].id, S.terms[2].id) };
     if (S.look === 'xover') return { on: has('1', '2') };
     if (S.look === 'nonc') return { on: has(S.terms[2].id, S.terms[3].id) };
+    if (S.look === 'rot') { const o = S.terms.find(t => t.y > 0 && has('1', t.id)); return { on: !!o, out: o && o.id }; }
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
     return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
   }
@@ -480,6 +492,15 @@
       // changeover: the blade rests on the N.C. side and moves to the N.O. side when operated
       o.push(stub(0, -30, -14), stub(-10, 12, 30), stub(10, 12, 30), `<path class="thin" d="M-10 12 H-5"/>`, `<path d="M0 -14 L${st.on ? 10 : -9} 12"/>`);
       if (S.act) o.push(`<path class="thin dash" d="M-4 -1 H-26"/>`, actMark(S.act, -26));
+    } else if (S.look === 'rot') {
+      // rotary selector: the blade joins the common to the output of the position (none in 0)
+      const outs = S.terms.filter(t => t.y > 0), to = st.out && outs.find(t => t.id === st.out);
+      o.push(stub(0, -30, -14), ...outs.map(t => stub(t.x, 14, 30)), `<path class="thin" d="M${outs[0].x - 4} 14 H${outs[outs.length - 1].x + 4}"/>`);
+      o.push(to ? `<path d="M0 -14 L${to.x} 14"/>` : `<path d="M0 -14 L-6 6"/>`);
+      o.push(`<path class="thin dash" d="M-3 -4 H-30"/>`, actMark(S.act, -30));
+    } else if (S.look === 'pots') {
+      // supply points in one symbol: a bar with one point per conductor
+      o.push(...S.terms.map(t => `<path d="M${t.x} 0 V30"/><circle cx="${t.x}" cy="0" r="7"/>`));
     } else if (S.look === 'nonc') {
       // N.C. (left) and N.O. (right) contacts on one actuator, drawn as they are now
       o.push(stub(-10, -30, -14), stub(-10, 14, 30), stub(10, -30, -14), stub(10, 14, 30));
@@ -503,7 +524,9 @@
     } else if (S.look === 'wire') {
       o.push(...S.terms.map(t => `<path d="M0 0 L${t.x} ${t.y}"/>`));
       if (S.terms.length > 2) o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
-      if (S.arrow) o.push(`<path d="M-8 0 L8 0 L0 14 Z" class="fill"/>`);
+      if (S.arrow === 'dst') o.push(`<path d="M-8 14 L8 14 L0 0 Z" class="fill"/>`);
+      else if (S.arrow === 'src') o.push(`<path d="M-8 0 L8 0 L0 14 Z" class="fill"/><path class="thin" d="M-8 18 H8"/>`);
+      else if (S.arrow) o.push(`<path d="M-8 0 L8 0 L0 14 Z" class="fill"/>`);
     } else if (S.look === 'conv') {
       o.push(stub(-10, -30, -18), stub(10, -30, -18), stub(-10, 18, 30), stub(10, 18, 30), `<rect x="-24" y="-18" width="48" height="36"/><path class="thin" d="M-24 18 L24 -18 M-18 -8 q3 -5 6 0 t6 0 M6 8 h12 M6 12 h12"/>`);
     } else if (S.look === 'batt') {
@@ -582,12 +605,13 @@
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
-    const isPole = !['no', 'nc', 'co', 'nonc', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
+    const isPole = !['no', 'nc', 'co', 'nonc', 'rot', 'pots', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     if (S.look === 'plcpw') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">PLC ~</text>`); }
+    if (S.look === 'pots') S.terms.forEach(t => { const [px, py] = at(t.x, 4); o.push(`<text class="mtxt sm" x="${px}" y="${py}">${esc(t.id)}</text>`); });
     if (S.look === 'phm') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">3~ L1-L2-L3</text>`); }
     if (S.look === 'lamp' && S.label) { const [mx, my] = at(20, -12); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     // the PLC address of an I/O point, in the project's address style (I:0/3, I0.3…)

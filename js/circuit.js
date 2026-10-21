@@ -1096,6 +1096,26 @@
   }
   sel2('sel2', 'NO');
   sel2('sel2_nc', 'NC');
+  /* rotary selectors with one common 1: I-II-III joins 1-2, 1-3 or 1-4; I-0-II joins 1-2, nothing or 1-3. Click the knob to turn it on */
+  function selRot(type, name, outs, legend) {
+    def(type, {
+      name, cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 80, h: 90,
+      info: `${name}: common 1 → ${outs.map((o, i) => (o ? `${o} in ${legend[i]}` : `nothing in ${legend[i]}`)).join(', ')}. Click the knob to turn it to the next position.`,
+      terms: [{ id: '1', x: 12, y: 90 }, ...[...new Set(outs.filter(Boolean))].map((o, i) => ({ id: o, x: 32 + i * 18, y: 90 }))],
+      init: () => ({ pos: 0 }),
+      conduct: c => (outs[c.state.pos] ? [['1', outs[c.state.pos]]] : null),
+      onPart(c, p, ev) { if (p === 'knob' && ev === 'down') { c.state.pos = (c.state.pos + 1) % outs.length; return true; } },
+      draw(c) {
+        const a = [-45, 0, 45][c.state.pos] || 0;
+        return R(0, 0, 80, 90, '#2b2a28', 6, '#111') + R(6, 4, 68, 13, '#f2efe6', 2, '#999') + T(40, 13.5, legend.join(' · '), 'dt xs') +
+          `<g class="part" data-part="knob"><circle cx="40" cy="42" r="20" fill="url(#gChrome)" stroke="#222"/><circle cx="40" cy="42" r="15" fill="#222"/><rect x="36" y="26" width="8" height="32" rx="3" fill="#e9e5dc" transform="rotate(${a} 40 42)"/></g>` +
+          R(14, 66, 52, 12, '#d7d3ca', 2, '#777') + T(40, 75, 'pos ' + legend[c.state.pos], 'dt xs');
+      },
+      status: c => `Position ${legend[c.state.pos]}${outs[c.state.pos] ? ` (1-${outs[c.state.pos]} closed)` : ' (open)'}`,
+    });
+  }
+  selRot('sel3p', 'Selector 3-Pos I-II-III', ['2', '3', '4'], ['I', 'II', 'III']);
+  selRot('sel3p0', 'Selector 3-Pos I-0-II', ['2', null, '3'], ['I', '0', 'II']);
   def('sel3', {
     name: 'Selector H-O-A 3-Pos', cat: 'Pilot Devices', view: 'panel', prefix: 'S', w: 80, h: 90,
     info: 'HAND-OFF-AUTO. 13-14 closes in HAND (left), 23-24 closes in AUTO (right). Click left/right half to turn.',
@@ -1299,6 +1319,21 @@
     init: () => ({ on: false, tripped: false }), closed: c => c.state.on && !c.state.tripped,
     conduct: c => (c.state.on && !c.state.tripped) ? pairs(P4.ins, P4.outs) : null,
     onPart: breakerOnPart, draw: c => mcbDraw(c, 130, 4),
+  });
+  /* thermal-magnetic: an MCB trips at once on a short circuit (magnetic) and, after a delay, when the motor it feeds is
+     overloaded — jammed or single-phasing (thermal). An overload relay set faster in the same feeder trips first. */
+  function mcbThermal(c, api, dt) {
+    const s = c.state, hot = s.on && !s.tripped && api.feedsOverload(c);
+    s.heat = hot ? (s.heat || 0) + dt : Math.max(0, (s.heat || 0) - dt * 0.4);
+    const tr = Number(c.props.trip), lim = Number.isFinite(tr) ? Math.max(0.1, tr) : 10;
+    if (!s.tripped && s.heat >= lim) { s.tripped = true; s.heat = 0; api.alert(`${c.props.label}: breaker TRIPPED (thermal, overload)`, 'warn'); }
+  }
+  ['mcb1', 'mcb2', 'mcb3', 'mcb4'].forEach(t => {
+    const d = DEFS[t];
+    d.props = { ...d.props, trip: 10 };
+    d.pdefs = [...(d.pdefs || []), { k: 'trip', n: 'Thermal trip delay at overload (s)', type: 'number' }];
+    d.info += ' Thermal-magnetic: it also trips after the thermal delay when the motor it feeds is overloaded.';
+    d.tick = mcbThermal;
   });
   def('isol4', {
     name: 'Disconnector 4-Pole', cat: 'Protection', view: 'power', prefix: 'QS', w: 130, h: 100,

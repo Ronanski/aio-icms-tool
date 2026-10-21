@@ -218,6 +218,8 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [x] Push at PR (owner GO, 2026-10-21): 11 branches naka-push; PR [#39](https://github.com/Ronanski/aio-icms-tool/pull/39) (Phase 0–1 → `main`) at [#40](https://github.com/Ronanski/aio-icms-tool/pull/40) (stacked sa #39)
 - [x] CI ng #39 at #40: **green** (2026-10-21) — test (npm test sa Ubuntu), windows, android, web, version: pass; publish: skipped (PR lang). Pareho ring nag-pass ang Phase 1 CI item sa itaas.
 - [ ] Merge sa `main` (Beta): #39 muna, saka #40 — kailangan ng hiwalay na GO; Stable release — hiwalay na GO
+- [x] Parity v2.2: thermal-magnetic MCB, 3-position selectors, directional arrows, L1L2L3(N) points; REA metadata for generator/impulse coil/earth/PSU → 111/114 full (97.4%) (6 checks; branch `feature/parity-v2.2`)
+  - Natitirang Partial (3): isolator 1P (13-14), roller CON (11-12-13) — sinadyang IEC numbering; LV/HV power supply (walang 115 V)
 - [ ] Separate, needs its own approval: diode (one-way conduction in the solver)
 
 ## Audit findings not fixed yet

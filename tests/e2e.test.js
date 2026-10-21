@@ -2391,7 +2391,7 @@ function check(name, cond, info = '') {
     'ka1co', 'ktco', 'kfco', 'kdco', 'flco', 'ltco', 'olco', 'kbonco', 'kbofco', 'kmnc', 'ka1nc', 'ktnc', 'kfnc', 'olnc', 'kbonnc', 'kbofnc', 'kmno', 'ka1no', 'ktno', 'kfno', 'olno', 'kbonno', 'kbofno',
     'kmnonc', 'kanonc', 'kbonnonc', 'kbofnonc', 'km1', 'km2', 'km3', 'km4', 'kmn1', 'kmn2', 'kmn3', 'kmn4', 'esco', 'estop', 'esno', 'esnonc', 'fu1', 'fu2', 'fu3', 'fu4', 'fsw1', 'fsw1n', 'fsw2', 'fsw3', 'fsw3n', 'fsw4',
     'gen', 'qs1', 'qs2', 'qs3', 'qs4', 'wline', 'wcorner', 'wtee', 'wcross', 'gnd', 'lamp', 'lampfl', 'm1', 'm3', 'qm1', 'qm2', 'qm3', 'qm4', 'mdc', 'mdh', 'm6', 'm2s', 'ol1', 'ol2', 'ol3', 'kpmon', 'psu',
-    'rcbo', 'rcbo4', 'rcd', 'rcd4', 'bell', 'lsco', 'lsnc', 'lsno', 'lsnonc', 'siren', 'pM', 'pL1', 'pL2', 'pL3', 'pN', 'pP', 'pPE', 'src3', 'sel3h', 'sel3a', 'selcx', 'selx', 'selnc', 'selno', 'selnonc', 'text', 'qf3'];
+    'rcbo', 'rcbo4', 'rcd', 'rcd4', 'bell', 'lsco', 'lsnc', 'lsno', 'lsnonc', 'siren', 'pM', 'pL1', 'pL2', 'pL3', 'pN', 'pP', 'pPE', 'src3', 'sel3h', 'sel3a', 'selcx', 'selx', 'selnc', 'selno', 'selnonc', 'text', 'qf3', 'sel3i', 'sel3o', 'wsrc', 'wdst', 'p3', 'p3n'];
   await page.evaluate(ks => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free');
     const items = ks.map((k, i) => ({ id: 'd' + (i + 1), k, tag: k === 'text' ? 'TXT' : (FreeDraw.KINDS[k].pre || 'X') + (100 + i), x: (i % 12) * 120, y: Math.floor(i / 12) * 160, r: 0, ...(k === 'text' ? { txt: 'note' } : {}) }));
     App.openNew({ name: 'All parity symbols', schematic: { free: { seq: items.length + 1, items, wires: [] } } }); if (prev) Store.remove(prev); App.showView('schematic'); }, PARITY_KINDS);
@@ -2406,6 +2406,41 @@ function check(name, cond, info = '') {
     const s = App.serialize(), p = App.buildProject(JSON.parse(JSON.stringify(s))), key = c => c.props.label + ':' + c.type + ':' + JSON.stringify(c.props);
     return JSON.stringify(p.schematic.free.items.map(i => i.k)) === JSON.stringify(s.schematic.free.items.map(i => i.k)) && JSON.stringify(p.circuit.comps.map(key).sort()) === JSON.stringify(s.circuit.comps.map(key).sort()) && !(p.keep && p.keep.free.items.length);
   }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
+  console.log('Parity v2.2: thermal-magnetic MCB, 3-position selectors, directional link arrows, L1L2L3(N) points');
+  check('v2.2: the 3-position selectors are in the parts list and the new symbols fit their devices', await page.evaluate(() =>
+    ['sel3p', 'sel3p0'].every(t => Circuit.DEFS[t] && !Circuit.DEFS[t].hidden) && ['sel3i', 'sel3o'].every(k => FreeDraw.KINDS[k].terms.every(t => Circuit.DEFS[FreeDraw.KINDS[k].type].terms.some(x => x.id === t.id))) && ['wsrc', 'wdst', 'p3', 'p3n'].every(k => FreeDraw.KINDS[k])));
+  check('v2.2: the I-II-III selector joins 1-2, 1-3, 1-4 in turn; the I-0-II selector 1-2, nothing, 1-3', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('sel3p'), z = add('sel3p0'), L = ['2', '3', '4'].map(() => add('lamp', { coil: '230VAC' })), M = ['2', '3'].map(() => add('lamp', { coil: '230VAC' }));
+    w(q, 'L', s, '1'); ['2', '3', '4'].forEach((t, i) => w(s, t, L[i], 'X1')); w(q, 'L', z, '1'); ['2', '3'].forEach((t, i) => w(z, t, M[i], 'X1')); [...L, ...M].forEach(h => w(h, 'X2', q, 'N'));
+    const seen = []; for (let i = 0; i < 3; i++) { run(); seen.push(L.map(h => h.state.on ? 1 : 0).join('') + '|' + M.map(h => h.state.on ? 1 : 0).join('')); Circuit.part(s, 'knob', 'down'); Circuit.part(z, 'knob', 'down'); }
+    run(); return seen.join(' ') === '100|10 010|00 001|01' && L[0].state.on;`)));
+  check('v2.2: an MCB trips (thermal) when the motor it feeds stays jammed; a faster overload relay in the same feeder trips first', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), b = add('mcb1', { trip: 1 }, { on: true }), m = add('motor1'); w(q, 'L', b, '1'); w(b, '2', m, 'L'); w(m, 'N', q, 'N'); run(10);
+    const ran = m.state.drive === 'run' && !b.state.tripped; m.state.jam = true; const al = run(30); const alone = b.state.tripped && al.some(a => /thermal/.test(a));
+    circ.comps.length = 0; circ.wires.length = 0;
+    const q2 = add('supply1'), b2 = add('mcb1', {}, { on: true }), f = add('olr1', { trip: 1 }), m2 = add('motor1');
+    w(q2, 'L', b2, '1'); w(b2, '2', f, '1'); w(f, '2', m2, 'L'); w(m2, 'N', q2, 'N'); run(10); m2.state.jam = true; run(30);
+    return ran && alone && f.state.tripped && !b2.state.tripped;`)));
+  // drawn: L1 L2 L3 points feed a motor; L1 L2 L3 N points: L1 → source arrow W1 … destination arrow W1 → lamp → N; a rotary selector
+  const v22 = { name: 'v2.2', circuit: { seq: 3, comps: [{ id: 'c1', type: 'supply3', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
+    schematic: { free: { seq: 30, items: [fi('d1', 'p3', 'XP1', 0, 0), fi('d2', 'm3', 'M1', 0, 120), fi('d3', 'p3n', 'XP2', 200, 0), fi('d4', 'wsrc', 'W1', 180, 100), fi('d5', 'wdst', 'W1', 300, 100),
+      fi('d6', 'lamp', 'H1', 300, 200), fi('d7', 'sel3i', 'S1', 450, 100), fi('d8', 'lamp', 'H2', 410, 220), fi('d9', 'lamp', 'H3', 450, 220), fi('d10', 'lamp', 'H4', 490, 220)],
+    wires: [fw('fw1', 'd1:L1', 'd2:U1'), fw('fw2', 'd1:L2', 'd2:V1'), fw('fw3', 'd1:L3', 'd2:W1'), fw('fw4', 'd3:L1', 'd4:J0'), fw('fw5', 'd5:J0', 'd6:X1'), fw('fw6', 'd6:X2', 'd3:N'),
+      fw('fw7', 'd3:L2', 'd7:1'), fw('fw8', 'd7:2', 'd8:X1'), fw('fw9', 'd7:3', 'd9:X1'), fw('fw10', 'd7:4', 'd10:X1'), fw('fw11', 'd8:X2', 'd3:N'), fw('fw12', 'd9:X2', 'd3:N'), fw('fw13', 'd10:X2', 'd3:N')] } } };
+  await page.evaluate(p => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); if (prev) Store.remove(prev); App.showView('schematic');
+    p.circuit && App.project.circuit.comps.filter(c => c.type === 'lamp').forEach(c => { c.props.coil = '230VAC'; }); }, v22);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  await page.evaluate(() => { App.project.circuit.comps.filter(c => c.type === 'lamp').forEach(c => { c.props.coil = '230VAC'; c.state.burnt = false; }); });
+  check('v2.2: the L1 L2 L3 points run the motor, the source and destination arrows with one tag carry L1 to H1, no problem reported', await until(is("d('M1').drive === 'run' && d('H1').on")) && await page.evaluate(() => FreeDraw.errs.size === 0));
+  check('v2.2: the drawn I-II-III selector lights H2, then H3, then H4, and its symbol follows', await (async () => {
+    const sym = () => page.evaluate(() => { const g = document.querySelector('#view-schematic [data-fi="d7"] .ssym'); return g ? g.innerHTML : ''; });
+    const a = await until(is("d('H2').on && !d('H3').on")); const s1 = await sym(); await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'knob'));
+    const b = await until(is("d('H3').on && !d('H2').on")); await wait(150); const s2 = await sym(); await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'knob'));
+    const c = await until(is("d('H4').on && !d('H3').on")); return a && b && c && s1 !== s2; })());
+  check('v2.2: the drawing with the new symbols survives save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
+    return ['p3', 'p3n', 'wsrc', 'wdst', 'sel3i'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.wires.length === 13 && !(p.keep && p.keep.free.items.length); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
   console.log('IEC current paths: the newer devices and the PLC points');
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); });
