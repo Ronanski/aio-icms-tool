@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **+ and 0 V points work on their own** (free draw, as in Simurelay): when no supply of that conductor is in the Wiring, a 24 V battery is added there for the + / 0 V points (a 1-phase supply for L1 / N / PE, a 3-phase one when L2 or L3 is drawn), and it leaves again with the last point. Before, the points showed "no supply with this conductor in the Wiring" until you added one yourself. Coils drawn before the points get the supply's voltage too.
+- **Seal-in branch like Simurelay**: a simple wire may now run over a terminal of its own circuit (the seal-in contact's wire joining at the stop button's terminal 12), with a junction dot there, instead of taking a detour. It still goes around a terminal of another circuit.
+- **Comparison with Simurelay, step by step** (`docs/SIMURELAY_WALKTHROUGH.md`): the same seal-in circuit built in both apps.
 - **Wires the way Simurelay draws them** (free draw, default): a wire is a simple connector from terminal to terminal. It runs straight when the terminals line up; otherwise out, across and in, so it always goes where you expect, and you drag its middle to move it. Only a wire that would run over another terminal, through a symbol, or on top of another circuit goes around. The router that goes around everything is still there under Drawing settings → Wires.
 - **Alignment guides** while you move a symbol: a dashed line shows when one of its terminals is on the line of another terminal, and it snaps onto the line of the terminals it is wired to.
 - **Running colours like Simurelay**: red where + (or a phase) reaches, blue where 0 V (or N) reaches, a yellow coil when it pulls in. A connected terminal is drawn as the end of its line (no circle), with teal terminal numbers and the tag upright beside a vertical symbol.
@@ -34,6 +37,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [2.2.1] - 2026-10-21
 
 ### Fixed
+- **A push button's tag no longer covers its push head** (free draw): the tag is written left of the head, as in Simurelay.
 - **Contacts move on the drawing** — every one of the 118 library symbols with a contact (checked by a test that switches each): N.O. contacts, main poles, breakers, disconnectors, fuse switches (each pole on its own, so the neutral of a 1P+N / 3P+N stays closed when the fuses blow), changeovers and PLC outputs; a blown fuse is drawn broken; in the IEC view the current paths and the power circuit (breaker, motor breaker, contactor, star-delta) switch too. Before, only the colour changed.
 - **Wiring by touch**: tapping one terminal of a symbol and then its other terminal quickly no longer counts as a double tap (the second wire was lost).
 - **A new symbol never takes a device that belongs to another circuit**: on the *PLC motor control* example a drawn coil became the 230 V motor contactor KM1 and stayed off; it is now the next contactor (KM2), and a contact goes with the coil on the same drawing.

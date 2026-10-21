@@ -1259,7 +1259,7 @@ function check(name, cond, info = '') {
   });
   await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
   check('free draw: Point L1 and Point N are wired to the supply L and N', await page.evaluate(() => { const C = App.project.circuit, q = C.comps.find(c => c.props.label === 'Q1'), j1 = C.comps.find(c => c.props.label === 'XP1'), j2 = C.comps.find(c => c.props.label === 'XP2'); return App.api.sameNet(j1.id + ':J', q.id + ':L') && App.api.sameNet(j2.id + ':J', q.id + ':N'); }));
-  check('free draw: a +24 V point with no 24 V supply is reported', await page.evaluate(() => [...FreeDraw.errs.values()].some(m => m.includes('+24 V'))));
+  check('free draw: a +24 V point with no 24 V supply brings a 24 V battery into the Wiring (no error)', await page.evaluate(() => ![...FreeDraw.errs.values()].some(m => m.includes('+24 V')) && App.project.circuit.comps.some(c => c.type === 'battery')));
   await page.click('#view-schematic [data-fdact="play"]'); await wait(100);
   check('free draw: Play switches to operate', await page.evaluate(() => document.querySelector('#view-schematic [data-smode="run"]').classList.contains('on') && document.querySelector('#view-schematic [data-fdact="play"]').textContent.includes('Stop')));
   await page.click('#view-schematic [data-fdact="values"]'); await wait(200);
@@ -2667,6 +2667,55 @@ function check(name, cond, info = '') {
     await page.mouse.up(); await wait(150);
     check('like Simurelay: moving a symbol shows alignment guides and keeps its terminals on the line of the terminals it is wired to', guide > 0 && await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd4').y === 280), String(guide));
   }
+  console.log('Like Simurelay: the seal-in built with the mouse, step by step');
+  {
+    // the same steps as in Simurelay: click 6 library tiles, drag 2 symbols, click 6 pairs of terminals, Play, press
+    await page.evaluate(() => { const prev = App.currentId; App.openNew({ name: 'Seal-in by mouse', circuit: { comps: [], wires: [], seq: 0 } }); if (prev) Store.remove(prev); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); document.querySelector('#view-schematic [data-smode="edit"]').click(); FreeDraw.setRouting('simple'); FreeDraw.setLabels({ ask: false }); FreeDraw.search(''); });
+    await wait(200);
+    await page.selectOption('#view-schematic .fd-grp', 'All');
+    for (const k of ['pP', 'pbnc', 'pbno', 'kacoil', 'ka1no', 'pM']) { await page.click(`#view-schematic [data-fk="${k}"]`); await wait(120); }
+    const id = await page.evaluate(() => Object.fromEntries(App.project.schematic.free.items.map(i => [i.k, i.id])));
+    check('Simurelay walk-through: + and 0 V points work on their own: a 24 V battery is added to the Wiring for them, no error', await page.evaluate(() => (FreeDraw.errs || new Map()).size === 0 && App.project.circuit.comps.filter(c => c.type === 'battery').length === 1));
+    const scr = (x, y) => page.evaluate(([x, y]) => { const svg = document.querySelector('#view-schematic .free-svg'), pt = svg.createSVGPoint(); pt.x = x; pt.y = y; const q = pt.matrixTransform(svg.querySelector('.fv').getScreenCTM()); return { x: q.x, y: q.y }; }, [x, y]);
+    const pos = k => page.evaluate(i => { const it = App.project.schematic.free.items.find(q => q.id === i); return [it.x, it.y]; }, id[k]);
+    const drag = async (k, x, y) => { const [ix, iy] = await pos(k), a = await scr(ix + 25, iy), b = await scr(x + 25, y); await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 8 }); await page.mouse.up(); await wait(150); };
+    // the seal-in contact a little above the start button (its branch then runs over the stop button's terminal 12)
+    const [sx, sy] = await pos('pbno'), [cx, cy] = await pos('kacoil');
+    await drag('ka1no', sx + 100, sy - 40); await drag('pM', cx, cy + 120);
+    const ft = async key => { const b = await (await page.$(`#view-schematic [data-ft="${key}"]`)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    const pairs = [[id.pP + ':J', id.pbnc + ':11'], [id.pbnc + ':12', id.pbno + ':13'], [id.pbno + ':14', id.kacoil + ':A1'], [id.kacoil + ':A2', id.pM + ':J'], [id.ka1no + ':11', id.pbno + ':13'], [id.ka1no + ':14', id.pbno + ':14']];
+    for (const [a, b] of pairs) { const p = await ft(a); await page.mouse.click(p.x, p.y); await wait(100); const q = await ft(b); await page.mouse.click(q.x, q.y); await wait(150); }
+    check('Simurelay walk-through: two clicks per wire make the 6 wires of the circuit', await page.evaluate(n => App.project.schematic.free.wires.length === n && (FreeDraw.errs || new Map()).size === 0, pairs.length));
+    const seal = await page.evaluate(([c, s]) => {
+      const F = App.project.schematic.free, w = F.wires.find(x => [x.a, x.b].includes(c + ':11')), P = document.querySelector(`#view-schematic [data-fw="${w.id}"] .w`).getAttribute('d').replace('M', '').split(' L').map(p => p.split(' ').map(Number));
+      const t12 = document.querySelector(`#view-schematic [data-ft="${s}:12"]`), x = +t12.getAttribute('cx'), y = +t12.getAttribute('cy');
+      return { P, onTerm: P.some(p => p[0] === x && p[1] === y), dot: [...document.querySelectorAll('#view-schematic .fjdot')].some(d => +d.getAttribute('cx') === x && +d.getAttribute('cy') === y) };
+    }, [id.ka1no, id.pbnc]);
+    check('Simurelay walk-through: the seal-in branch is a simple bracket that joins at the stop button\'s terminal 12 (same circuit), with a junction dot there', seal.P.length === 4 && seal.onTerm && seal.dot, JSON.stringify(seal));
+    await page.click('#view-schematic [data-fdact="play"]'); await wait(200);
+    const hold = async k => { const b = await (await page.$(`#view-schematic [data-fi="${id[k]}"] .hit`)).boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await wait(300); await page.mouse.up(); await wait(400); };
+    const pulled = () => page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'relay').state.pulled);
+    await hold('pbno'); const on = await pulled();
+    await hold('pbnc'); const off = await pulled();
+    check('Simurelay walk-through: Play, press S2 (N.O.): KA1 pulls in and holds itself; press S1 (N.C.): it drops out', on === true && off === false && await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'relay').props.coil === '24VDC'));
+    await page.click('#view-schematic [data-fdact="play"]'); await wait(150);
+    check('Simurelay walk-through: deleting the + and 0 V points takes the battery they brought out of the Wiring again', await page.evaluate(ids => {
+      const F = App.project.schematic.free; F.items = F.items.filter(i => !ids.includes(i.id)); F.wires = F.wires.filter(w => !ids.some(d => w.a.startsWith(d + ':') || w.b.startsWith(d + ':'))); Schematic.sync();
+      return !App.project.circuit.comps.some(c => c.type === 'battery');
+    }, [id.pP, id.pM]));
+  }
+  check('Simurelay walk-through: L1 and N points on their own bring a 1-phase supply, an L2 point a 3-phase one', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'AC points', circuit: { comps: [], wires: [], seq: 0 } }); if (prev) Store.remove(prev);
+    const F = App.project.schematic.free; F.items.push({ id: 'd1', k: 'pL1', tag: 'XP1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'lamp', tag: 'H1', x: 0, y: 100, r: 0 }, { id: 'd3', k: 'pN', tag: 'XP2', x: 0, y: 200, r: 0 }); F.seq = 9;
+    Schematic.sync(); const one = App.project.circuit.comps.filter(c => /^supply/.test(c.type)).map(c => c.type).join() === 'supply1' && FreeDraw.errs.size === 0;
+    F.items.push({ id: 'd4', k: 'pL2', tag: 'XP3', x: 100, y: 0, r: 0 }); Schematic.sync();
+    return one && App.project.circuit.comps.some(c => c.type === 'supply3') && FreeDraw.errs.size === 0;
+  }));
+  check('Simurelay walk-through: a push button\'s tag is written left of its push head, not over it', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'Tag spot', circuit: { comps: [], wires: [], seq: 0 } }); if (prev) Store.remove(prev);
+    App.project.schematic.free.items.push({ id: 'd1', k: 'pbno', tag: 'S1', x: 100, y: 100, r: 0 }); App.project.schematic.free.seq = 2; Schematic.sync(); FreeDraw.render(document.querySelector('#view-schematic .sch-body'));
+    const t = document.querySelector('#view-schematic [data-fi="d1"] .ftag'); return !!t && +t.getAttribute('x') <= 100 - 36;
+  }));
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },

@@ -386,14 +386,20 @@
     const up = new Map(), find = k => { while (up.has(k) && up.get(k) !== k) k = up.get(k); return k; }, join = (a, b) => { const x = find(a), y = find(b); if (x !== y) up.set(x, y); };
     F.wires.forEach(w => join(w.a, w.b));
     F.items.forEach(it => { if (['node', 'wire'].includes(K[it.k].look)) K[it.k].terms.forEach(t => join(it.id + ':' + t.id, it.id + ':' + K[it.k].terms[0].id)); });
-    const blocked = new Set(), tpts = new Set(), front = new Set();
+    const blocked = new Set(), nodes = new Set(), front = new Set(), tnet = new Map(), legs = [];
     F.items.forEach(it => bodyCells(it, blocked));
+    const body = new Set(blocked);
     F.items.forEach(it => K[it.k].terms.forEach(t => {
       const p = termPos(it, t.id), [dx, dy] = termDir(it, t.id);
-      if (p.x % G === 0 && p.y % G === 0) { tpts.add(p.x / G + ',' + p.y / G); blocked.add(p.x / G + ',' + p.y / G); }
+      if (p.x % G === 0 && p.y % G === 0) {
+        const c = p.x / G + ',' + p.y / G, net = find(it.id + ':' + t.id);
+        blocked.add(c); tnet.set(c, tnet.has(c) && tnet.get(c) !== net ? null : net);
+        if (K[it.k].look === 'node') nodes.add(c); else legs.push({ x: p.x / G, y: p.y / G, dx: -dx, dy: -dy, net });
+      }
       front.add(Math.round(p.x / G + dx) + ',' + Math.round(p.y / G + dy));
     }));
-    // does a path pass over a terminal or through a symbol body (its own two ends aside)?
+    // does a path pass through a symbol body, or over a terminal of another circuit (its own two ends aside)? Over a
+    // terminal of its own circuit it may (as in Simurelay: the seal-in branch joins at the button's terminal, with a dot)
     const taken = new Map();   // unit steps of the simple wires already placed → their circuit
     const stepKey = (x, y, dx, dy) => dx ? Math.min(x, x + dx * G) + ',' + y + ',h' : x + ',' + Math.min(y, y + dy * G) + ',v';
     const clear = (P, net) => {
@@ -402,7 +408,8 @@
         for (let k = 0; k <= n; k++) {
           const x = p.x + Math.sign(q.x - p.x) * k * G, y = p.y + Math.sign(q.y - p.y) * k * G;
           if ((x === P[0].x && y === P[0].y) || (x === P[P.length - 1].x && y === P[P.length - 1].y)) continue;
-          if (blocked.has(Math.round(x / G) + ',' + Math.round(y / G))) return false;
+          const c = Math.round(x / G) + ',' + Math.round(y / G);
+          if (body.has(c) || (tnet.has(c) && tnet.get(c) !== net)) return false;
           const dx = Math.sign(q.x - p.x), dy = Math.sign(q.y - p.y), o = k < n && taken.get(stepKey(x, y, dx, dy));
           if (o && o !== net) return false;
         }
@@ -422,10 +429,10 @@
         wires.push({ id: w.id, net, fixed: sp });
       } else wires.push({ id: w.id, net, a, b, da, db });
     }
-    const r = GridRoute.solve({ G, blocked, front, wires }), d = new Map();
+    const r = GridRoute.solve({ G, blocked, front, wires, legs }), d = new Map();
     for (const w of F.wires) if (!(w.pts && w.pts.length) && r.paths.has(w.id)) d.set(w.id, 'M' + r.paths.get(w.id).map(p => `${p.x} ${p.y}`).join(' L'));
-    // a junction dot where three or more lines of one circuit meet away from a terminal
-    const dots = r.dots.filter(j => !tpts.has(j.x / G + ',' + j.y / G));
+    // a junction dot where three or more lines of one circuit meet (a terminal's leg counts), not on a junction point
+    const dots = r.dots.filter(j => !nodes.has(j.x / G + ',' + j.y / G));
     routeSig = sig; routeCache = { d, dots, netOf };
     return routeCache;
   }
@@ -509,6 +516,15 @@
       if (!H.devOf(it.tag)) made.add(it.tag);
       ensureType(K[it.k].jct || K[it.k].types ? K[it.k].type : pref.get(it.tag) || K[it.k].type, it.tag);
     }
+    // a + / − or L / N point with no supply of its conductor brings one into the Wiring (in Simurelay + and − work on their
+    // own): a 24 V battery, or a 1-phase (3-phase when L2 or L3 is drawn) supply. It leaves with the last point (unwired).
+    const pots = new Set(F.items.flatMap(i => (K[i.k].pots ? Object.values(K[i.k].pots) : K[i.k].pot ? [K[i.k].pot] : [])));
+    const nextTag = pre => { const t = taken(); let n = 1; while (t.has(pre + n)) n++; return pre + n; };
+    const supplied = [];
+    if ([...pots].some(p => ['+', '-'].includes(p) && !potKey(p))) supplied.push(ensureType('battery', nextTag('GB')));
+    if ([...pots].some(p => !['+', '-'].includes(p) && !potKey(p))) supplied.push(ensureType(pots.has('L2') || pots.has('L3') ? 'supply3' : 'supply1', nextTag('Q')));
+    // coils drawn before that supply get its voltage too
+    if (supplied.length) F.items.forEach(i => { const c = K[i.k].type && H.devOf(i.tag); if (c && c.schAuto) made.add(i.tag); });
     const dc = F.items.some(i => ['+', '-'].includes(K[i.k].pot) || ['batt'].includes(K[i.k].look) || K[i.k].type === 'psu24');
     const ac = F.items.some(i => ['L1', 'L2', 'L3', 'N'].includes(K[i.k].pot) || K[i.k].pots || ['src'].includes(K[i.k].look));
     if (dc !== ac) for (const tag of made) { const c = H.devOf(tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'coil' && p.opts && p.opts.includes('24VDC'))) c.props.coil = dc ? '24VDC' : '230VAC'; }
@@ -751,7 +767,8 @@
     const isPole = !['no', 'nc', 'co', 'nonc', 'rot', 'pots', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     const upright = (it.r === 0 || it.r === 180) && !S.io && ['no', 'nc', 'co', 'nonc', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat'].includes(S.look);
-    if (upright) { const ux = it.x - (S.look === 'co' || S.look === 'nonc' ? 34 : 22); o.push(`<text class="ftag up" x="${ux}" y="${it.y}" transform="rotate(-90 ${ux} ${it.y})">-${esc(it.tag)}</text>`); }
+    // left of the contact, and of its push button / knob head when it has one (not on top of it)
+    if (upright) { const ux = it.x - (S.act && it.r === 0 ? 38 : S.look === 'co' || S.look === 'nonc' ? 34 : 22); o.push(`<text class="ftag up" x="${ux}" y="${it.y}" transform="rotate(-90 ${ux} ${it.y})">-${esc(it.tag)}</text>`); }
     else o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }

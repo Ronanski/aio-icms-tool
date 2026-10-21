@@ -21,7 +21,8 @@
   }
   /* opts: G grid step; blocked: Set "gx,gy" no wire may enter; front: Set of points just in front of a terminal;
      wires: [{ id, net, a: {x, y}, b, da: [dx, dy] out of a, db: out of b, fixed: [{x, y}…] (drawn by hand) }];
-     stub: how far a wire goes straight out of a terminal before it may turn (grid steps, default 1).
+     stub: how far a wire goes straight out of a terminal before it may turn (grid steps, default 1);
+     legs: [{ x, y (grid steps), dx, dy, net }] a terminal's line into its symbol, counted for junction dots.
      Returns { paths: Map id → [{x, y}…], dots: [{x, y, net}] }. */
   function solve(opts) {
     const G = opts.G, blocked = opts.blocked, front = opts.front || new Set(), stub = opts.stub || 1;
@@ -93,6 +94,8 @@
       occupy(net, out);
       paths.set(w.id, out);
     }
+    // a terminal's own leg (towards its symbol) counts as a line where its net's wires meet it
+    for (const l of opts.legs || []) { const m = pts.get(l.x + ',' + l.y); if (m && m.has(l.net)) mark(l.net, l.x, l.y, dirNo(l.dx, l.dy)); }
     const dots = [];
     for (const [k, m] of pts) for (const [net, bits] of m) {
       let n = 0; for (let i = 0; i < 4; i++) if (bits & (1 << i)) n++;
