@@ -167,7 +167,9 @@
       tags,
       net: cleanNet(p.net),
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
-      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null },
+      conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null,
+        // the project path set with Who Active (USB to the controller, or Ethernet to a module at an IP address)
+        path: isObj(p.conn) && isObj(p.conn.path) && str(p.conn.path.ctl, 40) ? { via: p.conn.path.via === 'ETH' ? 'ETH' : 'USB', ip: str(p.conn.path.ip, 40), ctl: str(p.conn.path.ctl, 40) } : null },
       // new parts and wires never reuse the id or the tag of one that was put aside
       circuit,
       hmi: HMI.cleanAll(hm),
@@ -235,7 +237,7 @@
         files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
       tags: p.tags || [],
       net: p.net && (p.net.remotes.length || p.net.links.length) ? p.net : undefined,
-      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl } : undefined,
+      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl, ...(p.conn.path ? { path: p.conn.path } : {}) } : undefined,
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
@@ -410,7 +412,7 @@
     const flt = s => { const b = r.bad.find(x => x.slot === s); return b ? ` <span class="flt" title="${esc(b.msg)}">⚠ ${esc(b.msg.replace(/^(slot \d+|chassis): /, ''))}</span>` : ''; };
     const slots = r.cpu ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; return `<li>▭ [${s}] ${esc(Circuit.DEFS[t].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small>${flt(s)}</li>`; }).join('') : '';
     const me = r.ctl && r.ctl.props.label;
-    const path = r.cpu ? `Backplane, slot 0 · ${esc(me)}` : r.ctl ? `Compact PLC · ${esc(me)}` : 'no controller in the Wiring';
+    const path = needsPath() ? `${esc(App.pathText())}${pathErr() ? ' ⚠' : ''}` : r.cpu ? `Backplane, slot 0 · ${esc(me)}` : r.ctl ? `Compact PLC · ${esc(me)}` : 'no controller in the Wiring';
     const DATA = [['O0', 'OUTPUT', 'O'], ['I1', 'INPUT', 'I'], ['S2', 'STATUS', ''], ['B3', 'BINARY', 'B3'], ['T4', 'TIMER', 'T4'], ['C5', 'COUNTER', 'C5'], ['R6', 'CONTROL', 'R6'], ['N7', 'INTEGER', 'N7']];
     const tree = tag ? `<ul class="org">
       <li>${ctl}
@@ -572,6 +574,70 @@
     App.plc.applyAll(false);
     PLCcore.setTags(App.project.tags);
   }
+  /* Communication with a controller in the Wiring (Realistic connection), as with real programming software: the
+     engineering PC's comms driver must run and a cable must reach the controller (USB to its programming port, or
+     Ethernet to an Ethernet module in its chassis). Who Active finds it, Set Project Path remembers it, and Go Online /
+     Download need that path. A project with no controller in the Wiring runs on the virtual controller: no path. */
+  const needsPath = () => { const c = App.project.conn; return !!(c && c.mode === 'real' && Circuit.rack(App.project.circuit, App.project.io).ctl); };
+  const pathText = p => (!p ? 'none' : p.via === 'ETH' ? `Ethernet ${p.ip} → backplane → slot 0 · ${p.ctl}` : `USB → ${p.ctl}`);
+  App.pathText = () => pathText(App.project.conn && App.project.conn.path);
+  // null while the project path reaches the controller, else why not
+  function pathErr() {
+    const p = App.project.conn.path;
+    if (!p) return 'No project path: use Who Active to find the controller, then Set Project Path';
+    const f = Circuit.comms(App.project.circuit, App.project.io);
+    if (!f.ctl) return f.why;
+    if (f.via !== p.via || (p.via === 'ETH' && f.ip !== p.ip) || f.ctl.props.label !== p.ctl) return `The project path (${pathText(p)}) does not reach a controller now`;
+    return null;
+  }
+  App.pathErr = () => (needsPath() ? pathErr() : null);
+  // a controller that does not fit the project's PLC target
+  const typeErr = ctl => (App.project.target === 'tag' && Circuit.DEFS[ctl.type].compact ? `${ctl.props.label} is a compact file-based PLC, but the project is tag-based (1756-style). Change the PLC target in the I/O Configuration, or use a chassis controller.` : null);
+  App.whoActive = function () {
+    document.querySelectorAll('.modal-wrap[data-who]').forEach(m => m.querySelector('[data-x]').click());
+    const esc = UI.esc, c = App.project.conn, real = c.mode === 'real';
+    const f = Circuit.comms(App.project.circuit, App.project.io), r = Circuit.rack(App.project.circuit, App.project.io);
+    const mods = r.cpu ? Circuit.SLOTS.filter(s => r.slots[s]).map(s => { const m = App.project.circuit.comps.find(x => x.id === r.slots[s]); return `<li>▭ ${s.padStart(2, '0')} · ${esc(m.props.label)} — ${esc(Circuit.DEFS[m.type].name)}</li>`; }).join('') : '';
+    const ctlRow = f.ctl ? `<li class="who-ctl">🖥 <b>${r.cpu ? '00 · ' : ''}${esc(f.ctl.props.label)}</b> — ${esc(Circuit.DEFS[f.ctl.type].name)} <small>${App.plc.mode}</small></li>` : '';
+    const found = !f.ctl ? '' : f.via === 'ETH'
+      ? `<ul><li>🌐 Ethernet<ul><li>${esc(f.ip)} · ${esc(f.mod.props.label)}<ul><li>▭ Backplane<ul>${ctlRow}${mods}</ul></li></ul></li></ul></li></ul>`
+      : `<ul><li>🔌 USB<ul>${ctlRow}${mods ? `<li>▭ Backplane<ul>${mods}</ul></li>` : ''}</ul></li></ul>`;
+    const tree = !f.pc ? `<p class="help">${esc(f.why)}. Add an <b>Engineering PC</b> (Wiring → PLC Rack), start its comms driver and wire it to the controller.</p>`
+      : `<ul class="org who"><li>💻 <b>${esc(f.pc.props.label)}</b> <small>workstation</small><ul><li>⚙ Comms driver: ${f.pc.state.drv === 'running' ? 'running' : '<b>not running</b> — start it on the PC in the Wiring'}${found}${!f.ctl && f.pc.state.drv === 'running' ? `<ul><li class="help">${esc(f.why)}</li></ul>` : ''}</li></ul></li></ul>`;
+    const body = `${tree}<p class="who-path">Project path: <b data-path>${esc(pathText(c.path))}</b></p>` +
+      (real ? '' : '<p class="help">Simple connection: edits run in the controller at once, no path is needed. Choose <b>Realistic</b> in the Online group to download as with real PLC software.</p>');
+    UI.modal({
+      title: 'Who Active', wide: true, body,
+      onOpen: el => { el.closest('.modal-wrap').dataset.who = '1'; },
+      buttons: [
+        ...(f.ctl ? [{ label: 'Set Project Path', onClick: () => {
+          const e = typeErr(f.ctl); if (e) { UI.toast(e, 'danger', 7000); App.log('system', 'Set Project Path: ' + e); return false; }
+          c.path = { via: f.via, ip: f.via === 'ETH' ? f.ip : '', ctl: f.ctl.props.label };
+          App.log('system', `Project path set: ${pathText(c.path)}`); App.save(); App.renderOrg(); UI.toast('Project path set', 'ok'); App.whoActive(); return false;
+        } }] : []),
+        ...(f.ctl && real && c.path ? [{ label: 'Download', onClick: () => App.download() }, { label: conn.online ? 'Go Offline' : 'Go Online', onClick: () => App.goOnline() }] : []),
+        { label: 'Close', primary: true },
+      ],
+    });
+  };
+  // the path must reach the controller before going online or downloading; else say why and open Who Active
+  function commsOk() {
+    if (!needsPath()) return true;
+    const e = pathErr(); if (!e) return true;
+    UI.toast(e, 'warn', 6000); App.log('system', 'No communication: ' + e); App.whoActive();
+    return false;
+  }
+  // checked a few times a second while online: a cable pulled out or a driver stopped drops the connection
+  let commT = 0;
+  function commWatch(now) {
+    if (!conn.online || now - commT < 200) return; commT = now;
+    if (!needsPath()) return;
+    const e = pathErr(); if (!e) return;
+    conn.online = false; conn.testing = false;
+    const msg = `Communication lost with ${App.project.conn.path ? App.project.conn.path.ctl : 'the controller'}: ${e}`;
+    App.log('alarm', msg); UI.toast(msg, 'danger', 7000);
+    App.loadProgram(); Ladder.render(); App.renderOrg();
+  }
   App.setConnMode = function (m) {
     const c = App.project.conn || (App.project.conn = { mode: 'simple', ctl: null });
     if (c.mode === m) return;
@@ -586,26 +652,23 @@
   }
   App.download = function () {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
+    if (!conn.online && !commsOk()) return;
     if (!Ladder.verify(true)) { UI.toast('The project has errors — Verify and fix them before downloading', 'danger'); Ladder.verify(false); return; }
     needProg('Download', () => { c.ctl = progSnap(); conn.online = true; conn.testing = false; App.log('system', 'Download: the project was written to the controller'); App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); });
   };
+  // the trainer does not read a program back from a controller: Download is the way the program gets there
   App.upload = function () {
-    const c = App.project.conn, o = c && readSnap(c.ctl); if (!o) { UI.toast('The controller has no program', 'warn'); return; }
-    const L = App.project.ladder;
-    L.rungs = rungsOf(o.main);
-    L.files = (o.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: rungsOf(f.r) }));
-    App.project.tags = Array.isArray(o.tags) ? JSON.parse(JSON.stringify(o.tags)) : [];
-    conn.online = true; conn.testing = false;
-    App.log('system', 'Upload: the controller program was read into the project');
-    Ladder.resetSel(); App.loadProgram(); App.save(); Ladder.render(); Ladder.DataTable.render(); UI.toast('Uploaded — online', 'ok');
+    App.log('system', 'Upload: not available in the trainer');
+    UI.modal({ title: 'Upload', body: '<p><b>Upload is not available in the trainer.</b></p><p class="help">The project on this computer is the program: use <b>Download</b> to write it into the controller.</p>' });
   };
   App.goOnline = function () {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
     if (conn.online) { conn.online = false; conn.testing = false; App.log('system', 'Went offline'); App.loadProgram(); Ladder.render(); return; }
+    if (!commsOk()) return;
     if (progSnap() === c.ctl) { conn.online = true; App.log('system', 'Went online'); App.loadProgram(); Ladder.render(); return; }
     UI.modal({
-      title: 'Go Online', body: '<p>The project in this computer and the program in the controller are <b>different</b>.</p><p class="help">Download writes the project into the controller (needs PROG). Upload reads the controller program into the project (the project ladder and tags are replaced).</p>',
-      buttons: [{ label: 'Compare…', onClick: () => { App.compare(); return false; } }, { label: 'Upload', onClick: () => App.upload() }, { label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => App.download() }],
+      title: 'Go Online', body: '<p>The project in this computer and the program in the controller are <b>different</b>.</p><p class="help">Download writes the project into the controller (needs PROG).</p>',
+      buttons: [{ label: 'Compare…', onClick: () => { App.compare(); return false; } }, { label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => App.download() }],
     });
   };
   /* what differs between the project and the controller: rungs by file, and tags */
@@ -801,6 +864,7 @@
       const msg = `CPU fault: I/O configuration mismatch (${rack.bad.map(b => b.msg).join('; ')}) — the controller stopped`;
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
     }
+    commWatch(now);
     plc.scan(dt);
     HMI.sample(now);   // trends keep their history while the HMI is not on screen
     // produced / consumed data: copied every scan while the controller runs

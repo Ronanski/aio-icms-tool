@@ -659,6 +659,7 @@
       info: `Power L1/N 230 VAC. Built-in 24 VDC sensor supply (+24 / COM). Inputs I:0/0–I:0/${PLC_IN - 1} are 24 VDC, referenced to input COM. Relay outputs O:0/0–${PLC_OUT - 1} in groups of four: ${Array.from({ length: G }, (_, g) => `O:0/${g * 4}–${Math.min(PLC_OUT, g * 4 + 4) - 1} switch from VAC-VDC${g}`).join(', ')}. Click the key switch to change PROG/RUN.`,
       terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'N', x: 40, y: 0, l: 'L2/N' }, { id: 'PE', x: 62, y: 0 }, { id: 'V24', x: 90, y: 0, l: '+24' }, { id: 'C24', x: 112, y: 0, l: 'COM' },
         { id: 'COM', x: 150, y: 0, l: 'COM' }, ...Array.from({ length: PLC_IN }, (_, i) => ({ id: 'I' + i, x: 174 + i * 16, y: 0, l: String(i) })),
+        { id: 'PRG', x: W - 20, y: 200, l: 'PORT' },
         ...Array.from({ length: G }, (_, g) => [{ id: 'VAC' + g, x: 20 + g * 100, y: 200, l: 'VAC' + g }, ...Array.from({ length: Math.min(4, PLC_OUT - g * 4) }, (_, k) => ({ id: 'O' + (g * 4 + k), x: 44 + g * 100 + k * 16, y: 200, l: String(g * 4 + k) }))]).flat()],
       init: () => ({ pw: false, burnt: false, badIn: 0 }),
       conduct(c, ctx) {
@@ -807,7 +808,8 @@
   def('mcpu', {
     name: 'PLC CPU Module (slot 0)', cat: 'PLC Rack', view: 'cabinet', prefix: 'CPU', w: MW, h: MH, unique: 'cpu', uniqueMsg: 'Only one PLC (compact or CPU module) per project',
     info: 'Controller of the modular PLC, always slot 0. It runs the ladder. Powered by the rack power supply. I/O cards in slots 1–7 are addressed I:slot/bit and O:slot/bit. Click the key switch to change PROG/RUN.',
-    terms: [],
+    // programming port (USB) for the engineering PC
+    terms: [{ id: 'PRG', x: MW / 2, y: MH, l: 'USB' }],
     init: () => ({ pw: false }),
     evaluate(c, api, ctx) {
       const ch = set(c, 'pw', rackOn(ctx));
@@ -977,6 +979,70 @@
     },
     status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: AO0 ${(c.state.v[0] || 0).toFixed(2)} V, AO1 ${(c.state.v[1] || 0).toFixed(2)} V` : 'Rack not powered',
   });
+  /* Ethernet communication module: takes a slot like an I/O module (configure it in the I/O Configuration) but has no
+     I/O words; a cable from the engineering PC's Ethernet port to its port reaches the controller over the backplane */
+  def('meth', {
+    name: 'PLC Ethernet Module', cat: 'PLC Rack', view: 'cabinet', prefix: 'EN', w: MW, h: MH, slot: true, comm: true,
+    props: { slot: '1', ip: '192.168.1.20' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }, { k: 'ip', n: 'IP address' }],
+    info: 'Ethernet communication module for the chassis. Wire the ETH port to the Ethernet port of the engineering PC: Who Active then finds the controller through this module at its IP address. Configure it in the I/O Configuration like any module; it has no I/O addresses.',
+    terms: [{ id: 'ETH', x: MW / 2, y: MH, l: 'ETH' }],
+    ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}`,
+    draw(c, ctx) {
+      const on = cardOn(c, ctx) && rackOn(ctx);
+      return rackBody(ctx, MW, 'ENET', 'ETHERNET', AB.SYS, 0, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6) + T(14, 58, 'LNK', 'dt light xs', 'start') + led(46, 55, rackOn(ctx), '#3ddc63', 3) +
+        T(MW / 2, 74, 'IP', 'dt light xs') + T(MW / 2, 86, String(c.props.ip || '').split('.').slice(0, 2).join('.') + '.', 'dt light xs') + T(MW / 2, 98, String(c.props.ip || '').split('.').slice(2).join('.'), 'dt light xs') +
+        R(MW / 2 - 12, MH - 40, 24, 22, '#232322', 2, '#111');
+    },
+    status: (c, ctx) => !rackOn(ctx) ? 'Chassis not powered' : `IP ${c.props.ip} · slot ${c.props.slot}` + (cardOn(c, ctx) ? '' : ' — ' + cardWhy(c, ctx)),
+  });
+  /* engineering PC (the programming computer): a comms driver that must be started, a USB port for the controller's
+     programming port and an Ethernet port for an Ethernet module. Click the screen button to start or stop the driver. */
+  def('epc', {
+    name: 'Engineering PC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PC', w: 170, h: 130,
+    info: 'The computer the PLC programming software runs on. Start its comms driver (click the button on the screen), then wire its USB port to the controller\'s programming port, or its ETH port to an Ethernet module in the chassis. Who Active in the Ladder then finds the controller and you can set the project path, go online and download.',
+    terms: [{ id: 'USB', x: 40, y: 130, l: 'USB' }, { id: 'ETH', x: 130, y: 130, l: 'ETH' }],
+    init: () => ({ drv: 'off', t: 0 }),
+    tick(c, api, dt) {
+      if (c.state.drv !== 'starting') return false;
+      c.state.t = (c.state.t || 0) + dt;
+      if (c.state.t >= 1.5) { c.state.drv = 'running'; c.state.t = 0; return true; }
+      return false;
+    },
+    onPart(c, p, ev) {
+      if (ev !== 'down' || p !== 'drv') return false;
+      c.state.drv = c.state.drv === 'off' ? 'starting' : 'off'; c.state.t = 0;
+      return true;
+    },
+    draw(c) {
+      const d = (c && c.state.drv) || 'off', col = d === 'running' ? '#3ddc63' : d === 'starting' ? '#f2c230' : '#8b8b86';
+      return R(10, 0, 150, 96, '#2b2d30', 6, '#111') + R(18, 8, 134, 80, '#e9eef3', 2, '#5f6b77') + R(18, 8, 134, 14, '#3b6ea8', 0, 'none') + T(24, 18, 'COMMS DRIVER', 'dt light xs', 'start') +
+        led(30, 38, d !== 'off', col, 4) + T(40, 41, d === 'running' ? 'Running' : d === 'starting' ? 'Starting…' : 'Stopped', 'dt xs', 'start') +
+        `<g class="part" data-part="drv">${R(30, 54, 110, 24, d === 'off' ? '#2c63b8' : '#7a7d82', 4, '#1b3d70')}${T(85, 70, d === 'off' ? 'Start driver' : 'Stop driver', 'dt light xs')}</g>` +
+        R(0, 96, 170, 34, '#3a3c40', 4, '#111') + T(85, 112, 'ENGINEERING PC', 'dt light xs');
+    },
+    status: c => c.state.drv === 'running' ? 'Comms driver running' : c.state.drv === 'starting' ? 'Comms driver starting…' : 'Comms driver stopped — click Start driver',
+  });
+  /* what the engineering PC can reach: the controller through a USB cable to its programming port, or through an
+     Ethernet cable to an Ethernet module in a powered chassis that has a controller. Returns { pc, ctl, via, ip, mod }
+     when it finds the controller, else { pc, why }. */
+  function comms(circ, io) {
+    const pc = circ.comps.find(c => c.type === 'epc');
+    if (!pc) return { why: 'There is no engineering PC in the Wiring' };
+    if (pc.state.drv !== 'running') return { pc, why: `The comms driver on ${pc.props.label} is not running` };
+    const adj = new Map(), link = (a, b) => { (adj.get(a) || adj.set(a, []).get(a)).push(b); };
+    for (const w of circ.wires) { link(w.a, w.b); link(w.b, w.a); }
+    const reach = from => { const seen = new Set([from]), todo = [from]; while (todo.length) for (const n of adj.get(todo.pop()) || []) if (!seen.has(n)) { seen.add(n); todo.push(n); } return seen; };
+    const r = rack(circ, io), ctl = r.ctl, usb = reach(pc.id + ':USB'), eth = reach(pc.id + ':ETH');
+    if (ctl && usb.has(ctl.id + ':PRG')) return ctl.state.pw ? { pc, ctl, via: 'USB' } : { pc, why: `${ctl.props.label} has no power` };
+    const mod = circ.comps.find(m => m.type === 'meth' && eth.has(m.id + ':ETH'));
+    if (mod) {
+      if (!r.pw) return { pc, why: `The chassis of ${mod.props.label} has no power` };
+      if (!r.cpu) return { pc, why: `There is no controller in the chassis of ${mod.props.label}` };
+      if (r.slots[mod.props.slot] !== mod.id) return { pc, why: `${mod.props.label} is not on the backplane (slot ${mod.props.slot} is taken)` };
+      return { pc, ctl, via: 'ETH', ip: mod.props.ip, mod };
+    }
+    return { pc, why: `No cable from ${pc.props.label} to a controller: wire USB to the controller's programming port, or ETH to an Ethernet module in the chassis` };
+  }
   /* level transmitter: 3-wire, 24 V DC; OUT gives 4–20 mA for 0–100 % of the tank it measures (by tag), or its own test level */
   def('ltx', {
     name: 'Level Transmitter 4–20 mA', cat: 'Sensors', view: 'plant', prefix: 'LT', w: 70, h: 110,
@@ -2469,7 +2535,8 @@
   }
 
   const CARDS = () => ORDER.filter(t => DEFS[t].slot);
-  const ioFile = t => (DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'));
+  // the I/O file of a module type ('' for a communication module, which has no I/O words)
+  const ioFile = t => (DEFS[t].comm ? '' : DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'));
   /* keep only valid slots and card types of a saved I/O configuration */
   function cleanIo(io) {
     const slots = {}, src = io && typeof io === 'object' && io.slots && typeof io.slots === 'object' ? io.slots : {};
@@ -2499,7 +2566,7 @@
   function ioMap(circ, io) {
     const r = rack(circ, io);
     if (!r.cpu) { const d = r.ctl && DEFS[r.ctl.type]; return [{ file: 'I', word: 0, n: (d && d.nIn) || 12 }, { file: 'O', word: 0, n: (d && d.nOut) || 8 }]; }
-    return SLOTS.filter(s => r.conf[s]).map(s => {
+    return SLOTS.filter(s => r.conf[s] && !DEFS[r.conf[s]].comm).map(s => {
       const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]);
       const d = DEFS[r.conf[s]];
       return { file: ioFile(r.conf[s]), word: Number(s), n: d.analog ? d.chans : d.pts || 8, analog: !!d.analog, label: c && c.type === r.conf[s] ? c.props.label : '(missing)', name: d.name };
@@ -2578,5 +2645,5 @@
     return null;
   }
   const setManual = on => { manual = !!on; };
-  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook, TARGETS, forTarget, chassisOf, seat, freeSlot };
+  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook, TARGETS, forTarget, chassisOf, seat, freeSlot, comms };
 })();

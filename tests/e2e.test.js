@@ -1461,7 +1461,7 @@ function check(name, cond, info = '') {
   await page.evaluate(() => { App.setMode('RUN'); App.plc.write('B3:0/0', 1); }); await wait(200);
   check('offline, an edit changes the project only: the controller still runs its program', await page.evaluate(() => App.plc.read('B3:0/1') === 1 && App.plc.read('B3:0/2') === 0 && document.querySelector('[data-conn]').textContent.includes('project ≠ controller')));
   await page.click('#view-ladder [data-act="online"]'); await wait(150);
-  check('Go Online with a different program asks: Download / Upload / Compare', await page.evaluate(() => [...document.querySelectorAll('.modal-foot button')].map(b => b.textContent).join() === 'Compare…,Upload,Cancel,Download'));
+  check('Go Online with a different program asks: Download / Compare (no Upload in the trainer)', await page.evaluate(() => [...document.querySelectorAll('.modal-foot button')].map(b => b.textContent).join() === 'Compare…,Cancel,Download'));
   await page.click('.modal-foot button:has-text("Compare")'); await wait(150);
   check('Compare lists the rung that differs', await page.evaluate(() => [...document.querySelectorAll('.modal .io-cfg td')].some(td => td.textContent === 'LAD 2 rung 0001') && [...document.querySelectorAll('.modal code')].some(c => c.textContent === 'XIC B3:0/0 OTE B3:0/2')));
   await page.evaluate(() => document.querySelectorAll('.modal-wrap')[1].remove());
@@ -1481,7 +1481,7 @@ function check(name, cond, info = '') {
   check('Cancel edits puts the project back to the controller program', await page.evaluate(() => App.project.ladder.rungs.length === 3 && App.conn.same));
   await page.evaluate(() => { App.setMode('PROG'); App.goOnline(); }); await wait(100);
   await addRung('XIC B3:0/0 OTE B3:0/5');
-  check('offline again, Upload brings the controller program back into the project', await page.evaluate(() => { App.upload(); return App.project.ladder.rungs.length === 3 && App.conn.online && App.diff().length === 0; }));
+  check('offline again, Upload only says it is not available in the trainer (the project keeps its edit)', await page.evaluate(() => { App.upload(); const ok = /not available in the trainer/.test(document.querySelector('.modal-body').textContent) && App.project.ladder.rungs.length === 4 && !App.conn.online; document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); return ok; }));
   check('the connection mode and the controller program are saved with the project', await page.evaluate(() => { const s = App.serialize(); const b = App.buildProject(s); return s.conn.mode === 'real' && JSON.parse(b.conn.ctl).main.length === 3; }));
   await page.evaluate(() => { App.setMode('PROG'); App.openNew(Examples.EX.plcmotor.build()); });
 
@@ -2766,6 +2766,68 @@ function check(name, cond, info = '') {
     await page.click('#view-ladder [data-act="org"]'); await wait(150);
     check('PLC module: the Organizer button closes it again', await page.evaluate(() => document.querySelector('#view-ladder [data-lorg]').hidden));
     await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay2); });
+  }
+  console.log('Comms: engineering PC, driver, cable, Who Active, project path, Download, communication lost');
+  {
+    await page.evaluate(() => {
+      const prev = App.currentId;
+      App.openNew({ name: 'Comms PC', target: 'tag', io: { slots: { 1: 'meth', 2: 'mdi16' } }, conn: { mode: 'real' }, ladder: { rungs: [{ text: 'XIC I:2/0 OTE B3:0/0' }] },
+        circuit: { seq: 9, comps: [{ id: 'c0', type: 'supply1', x: -260, y: 60, props: { label: 'Q1' }, state: { on: true } },
+          { id: 'c1', type: 'chassis', x: 0, y: 0, props: { label: 'RACK1', slots: '4' }, state: {} }, { id: 'c2', type: 'mpsu', x: 10, y: 52, props: { label: 'PS1' }, state: {} },
+          { id: 'c3', type: 'mcpu', x: 102, y: 52, props: { label: 'CPU1' }, state: {} }, { id: 'c4', type: 'meth', x: 176, y: 52, props: { label: 'EN1', slot: '1', ip: '192.168.1.20' }, state: {} },
+          { id: 'c5', type: 'mdi16', x: 250, y: 52, props: { label: 'DI1', slot: '2' }, state: {} }, { id: 'c6', type: 'epc', x: 0, y: 520, props: { label: 'PC1' }, state: {} }],
+          wires: [{ id: 'w1', a: 'c0:L', b: 'c2:L1', pts: [] }, { id: 'w2', a: 'c0:N', b: 'c2:N', pts: [] }] } });
+      if (prev) Store.remove(prev);
+      window._lay3 = App.layout; App.setLayout('single'); App.showView('ladder');
+    });
+    await wait(300);
+    const who = () => page.evaluate(() => (document.querySelector('.modal-wrap[data-who] .modal-body') || {}).textContent || '');
+    const closeAll = () => page.evaluate(() => document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()));
+    check('comms: the Ethernet module has no I/O words, the input module keeps slot 2 (Local:2:I.Data.0)', await page.evaluate(() => { const m = Circuit.ioMap(App.project.circuit, App.project.io); return m.length === 1 && m[0].word === 2 && m[0].file === 'I' && !!Circuit.ioCheck(PLCcore.parse('O:1/0'), App.project.circuit, App.project.io) && Ladder.verify(true); }));
+    await page.evaluate(() => App.goOnline()); await wait(200);
+    check('comms: Go Online without a project path is refused and Who Active opens; the driver is not running', await page.evaluate(() => !App.conn.online) && /Comms driver: not running/.test(await who()));
+    await closeAll();
+    await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.type === 'epc'), 'drv')); await wait(300);
+    const st1 = await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'epc').state.drv);
+    await wait(1700);
+    const st2 = await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'epc').state.drv);
+    check('comms: the engineering PC\'s driver starts (starting… then running) when its button is clicked', st1 === 'starting' && st2 === 'running', st1 + ' → ' + st2);
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    check('comms: with the driver running but no cable, Who Active finds nothing and says why', /No cable from PC1/.test(await who()) && !(await page.evaluate(() => [...document.querySelectorAll('.modal-foot button')].some(b => b.textContent === 'Set Project Path'))));
+    await closeAll();
+    await page.evaluate(() => { App.project.circuit.wires.push({ id: 'w9', a: 'c6:ETH', b: 'c4:ETH', pts: [] }); App.circuitChanged(); }); await wait(200);
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    check('comms: an Ethernet cable to the Ethernet module shows driver → Ethernet → 192.168.1.20 → backplane → 00 CPU1 and the modules', await (async () => { const t = await who(); return /Ethernet/.test(t) && t.includes('192.168.1.20') && /Backplane/.test(t) && /00 · CPU1/.test(t) && /02 · DI1/.test(t); })());
+    await page.click('.modal-foot button:has-text("Set Project Path")'); await wait(200);
+    check('comms: Set Project Path stores the path (shown in Who Active and the Organizer) and it is saved', await page.evaluate(() => { const p = App.project.conn.path; App.organizer(); return p && p.via === 'ETH' && p.ip === '192.168.1.20' && p.ctl === 'CPU1' && /Ethernet 192.168.1.20/.test(document.querySelector('#view-ladder [data-lorg]').textContent) && App.serialize().conn.path.ip === '192.168.1.20'; }));
+    await closeAll();
+    await page.evaluate(() => { App.setMode('PROG'); App.download(); }); await wait(200);
+    check('comms: Download writes the project into the controller and goes online', await page.evaluate(() => App.conn.online && App.events().some(e => /Download: the project was written/.test(e.msg))));
+    await page.evaluate(() => App.upload()); await wait(150);
+    check('comms: Upload shows "not available in the trainer" and changes nothing', await page.evaluate(() => /Upload is not available in the trainer/.test(document.querySelector('.modal-body').textContent) && App.conn.online && App.project.ladder.rungs.length === 1));
+    await closeAll();
+    await page.evaluate(() => { App.project.circuit.wires = App.project.circuit.wires.filter(w => w.id !== 'w9'); App.circuitChanged(); }); await wait(500);
+    check('comms: pulling the cable out while online gives "communication lost" (alarm) and goes offline', await page.evaluate(() => !App.conn.online && App.events().some(e => e.kind === 'alarm' && /Communication lost with CPU1/.test(e.msg))));
+    await page.evaluate(() => { App.project.circuit.wires.push({ id: 'w9', a: 'c6:ETH', b: 'c4:ETH', pts: [] }); App.circuitChanged(); App.goOnline(); }); await wait(200);
+    const back = await page.evaluate(() => App.conn.online);
+    await page.evaluate(() => App.operate(App.project.circuit.comps.find(c => c.type === 'epc'), 'drv')); await wait(500);
+    check('comms: with the cable back Go Online works; stopping the driver drops the connection', back && await page.evaluate(() => !App.conn.online && App.events().filter(e => /Communication lost/.test(e.msg)).length >= 2));
+    await page.evaluate(() => { const pc = App.project.circuit.comps.find(c => c.type === 'epc'); pc.state.drv = 'running'; App.project.circuit.wires = App.project.circuit.wires.filter(w => w.id !== 'w9'); App.project.circuit.wires.push({ id: 'w8', a: 'c6:USB', b: 'c3:PRG', pts: [] }); App.circuitChanged(); App.whoActive(); }); await wait(200);
+    check('comms: a USB cable to the controller\'s programming port finds it too (USB → CPU1); the old Ethernet path no longer reaches it', /USB/.test(await who()) && /00 · CPU1/.test(await who()) && await page.evaluate(() => /does not reach/.test(App.pathErr())));
+    await closeAll();
+    await page.evaluate(() => {
+      const prev = App.currentId;
+      App.openNew({ name: 'Wrong type', target: 'tag', conn: { mode: 'real' }, circuit: { seq: 3, comps: [{ id: 'c0', type: 'supply1', x: -260, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c1', type: 'plc16', x: 0, y: 0, props: { label: 'PLC1' }, state: {} }, { id: 'c2', type: 'epc', x: 0, y: 400, props: { label: 'PC1' }, state: { drv: 'running' } }],
+        wires: [{ id: 'w1', a: 'c0:L', b: 'c1:L1', pts: [] }, { id: 'w2', a: 'c0:N', b: 'c1:N', pts: [] }, { id: 'w3', a: 'c2:USB', b: 'c1:PRG', pts: [] }] } });
+      if (prev) Store.remove(prev);
+    }); await wait(300);
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    await page.click('.modal-foot button:has-text("Set Project Path")'); await wait(200);
+    check('comms: a controller that does not fit the project (compact PLC in a tag-based project) is refused at Set Project Path', await page.evaluate(() => !App.project.conn.path && App.events().some(e => /compact file-based PLC, but the project is tag-based/.test(e.msg))));
+    await closeAll();
+    check('comms: a Realistic project with no controller in the Wiring needs no path (virtual controller)', await page.evaluate(() => { App.openNew({ name: 'Virtual', conn: { mode: 'real' }, ladder: { rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] } }); App.setMode('PROG'); App.download(); const ok = App.conn.online; App.goOnline(); return ok && App.pathErr() === null; }));
+    check('comms: no brand names in Who Active, the PC or the Ethernet module', await page.evaluate(() => { App.whoActive(); const h = document.documentElement.outerHTML + Circuit.DEFS.epc.info + Circuit.DEFS.meth.info; document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); return !/Allen.?Bradley|Rockwell|RSLogix|RSLinx|MicroLogix|PanelView|SLC 500|ControlLogix|CompactLogix|Logix Designer|Studio 5000|EtherNet\/IP/i.test(h); }));
+    await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay3); });
   }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {

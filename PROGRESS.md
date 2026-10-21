@@ -13,7 +13,7 @@
 - [ ] Study Studio 5000 / RSLogix in the owner's VM (computer use session) — `docs/ROCKWELL_STUDY.md` written; only the Studio 5000 start page was seen in the VM, because VMware did not take computer-use input (likely run as administrator). Redo each step in the VM and replace the (kaalaman) marks
 - [x] PLC chassis in the Wiring (4/7/10/13 slots, modules snap into slots, slot = position) — `feature/plc-chassis`
 - [x] Organizer panel on the left of the Ladder, module and chassis faults in the tree, chassis size in the I/O Configuration — `feature/plc-organizer`
-- [ ] Comms: Engineering PC with a comms driver, cable to the controller (USB) or an Ethernet module; Who Active → Set Project Path → Download; Upload = not available; communication lost
+- [x] Comms: Engineering PC with a comms driver, cable to the controller (USB) or an Ethernet module; Who Active → Set Project Path → Download; Upload = not available; communication lost — `feature/plc-comms`
 - [ ] Routines / program files workflow (JSR) in the Organizer
 - [ ] Ladder UI like the programming software: tabbed instruction toolbar, tag editor, Go Online / Download / RUN
 - [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
