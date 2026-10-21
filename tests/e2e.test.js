@@ -1969,7 +1969,7 @@ function check(name, cond, info = '') {
   await page.selectOption('#view-schematic .fd-grp', 'PLC'); await wait(100);
   check('PLC symbols: the library shows one PLC power, relay output, transistor output and input symbol (other points are picked in the form)', await page.evaluate(() => {
     const ks = [...document.querySelectorAll('#view-schematic .fd-lib [data-fk^="plc"]')].map(b => b.dataset.fk).sort().join();
-    return ks === 'plci0,plcpw,plcq0,plct0' && Object.keys(FreeDraw.KINDS).filter(k => /^plc[qti]\d+$/.test(k)).length === 28;
+    return ks === 'plci0,plcpw,plcq0,plct0' && Object.keys(FreeDraw.KINDS).filter(k => /^plc[qti]\d+$/.test(k)).length === 48;
   }));
   const pairs = await schPairs();
   check('PLC symbols: a circuit drawn only in the diagram is wired to the real PLC terminals, and no second PLC is added', await page.evaluate(() => App.project.circuit.comps.filter(c => c.type === 'plc').length === 1 && FreeDraw.errs.size === 0)
@@ -2584,6 +2584,39 @@ function check(name, cond, info = '') {
     App.showView('schematic');
     return bad.length === 0;
   }));
+  console.log('AB-style hardware: compact 16 in / 12 out, 16-point cards, one flat look');
+  check('hardware: the compact 16 in / 12 out PLC reads I:0/15 and switches O:0/11 from its third common VAC2', await page.evaluate(async () => {
+    const prev = App.currentId;
+    App.openNew({ name: 'PLC16', circuit: { seq: 3, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'plc16', x: 0, y: 200, props: { label: 'PLC' }, state: {} }],
+      wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L1', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }, { id: 'w3', a: 'c2:V24', b: 'c2:I15', pts: [] }, { id: 'w4', a: 'c2:C24', b: 'c2:COM', pts: [] }, { id: 'w5', a: 'c1:L', b: 'c2:VAC2', pts: [] }] } });
+    if (prev) Store.remove(prev);
+    App.showView('ladder'); App.setMode('RUN'); await new Promise(q => setTimeout(q, 400));
+    const inOk = ((App.plc.physIn >> 15) & 1) === 1;
+    App.plc.data.O[0] |= 1 << 11; App.plc.physOut |= 1 << 11; App.circuitChanged(); await new Promise(q => setTimeout(q, 200));
+    const plc = App.project.circuit.comps.find(c => c.type === 'plc16'), pr = Circuit.DEFS.plc16.conduct(plc, App.ctx) || [];
+    const outOk = pr.some(([a, b]) => a === 'VAC2' && b === 'O11');
+    const map = Circuit.ioMap(App.project.circuit, App.project.io);
+    App.setMode('PROG');
+    return inOk && outOk && map[0].n === 16 && map[1].n === 12 && !Circuit.ioCheck(PLCcore.parse('I:0/15'), App.project.circuit, App.project.io) && !!Circuit.ioCheck(PLCcore.parse('O:0/12'), App.project.circuit, App.project.io);
+  }));
+  check('hardware: a 16-point input card reads I:1/15, a 16-point relay card drives O:2/15 from VAC3, and Verify knows 16 points (8 on the 8-point cards)', await page.evaluate(async () => {
+    const prev = App.currentId;
+    App.openNew({ name: 'Rack16', io: { slots: { 1: 'mdi16', 2: 'mdo16', 3: 'mdi8' } }, circuit: { seq: 8, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+      { id: 'c2', type: 'mpsu', x: 0, y: 200, props: { label: 'PS' }, state: {} }, { id: 'c3', type: 'mcpu', x: 120, y: 200, props: { label: 'CPU' }, state: {} },
+      { id: 'c4', type: 'mdi16', x: 260, y: 200, props: { label: 'DI', slot: '1' }, state: {} }, { id: 'c5', type: 'mdo16', x: 600, y: 200, props: { label: 'DO', slot: '2' }, state: {} }, { id: 'c6', type: 'mdi8', x: 1000, y: 200, props: { label: 'DI8', slot: '3' }, state: {} }],
+      wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L1', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }, { id: 'w3', a: 'c2:V24', b: 'c4:I15', pts: [] }, { id: 'w4', a: 'c2:C24', b: 'c4:COM', pts: [] }] } });
+    if (prev) Store.remove(prev);
+    App.showView('ladder'); App.setMode('RUN'); await new Promise(q => setTimeout(q, 400));
+    const inOk = ((App.plc.physInX[1] >> 15) & 1) === 1;
+    App.plc.data.O[2] |= 1 << 15; App.plc.physOutX[2] |= 1 << 15; App.circuitChanged(); await new Promise(q => setTimeout(q, 200));
+    const dout = App.project.circuit.comps.find(c => c.type === 'mdo16'), pr = Circuit.DEFS.mdo16.conduct(dout, App.ctx) || [];
+    const outOk = pr.some(([a, b]) => a === 'VAC3' && b === 'O15');
+    const chk = a => Circuit.ioCheck(PLCcore.parse(a), App.project.circuit, App.project.io);
+    App.setMode('PROG');
+    return inOk && outOk && !chk('I:1/15') && !chk('O:2/15') && !!chk('I:3/8') && /8 points/.test(chk('I:3/8').msg);
+  }));
+  check('hardware: one flat look — no device is drawn with shading (every fill of the device art is one colour)', await page.evaluate(() =>
+    [...document.querySelectorAll('svg defs linearGradient, svg defs radialGradient')].every(g => new Set([...g.querySelectorAll('stop')].map(s => s.getAttribute('stop-color'))).size === 1)));
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },

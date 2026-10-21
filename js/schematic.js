@@ -60,8 +60,8 @@
     siren: { n: 'Siren', g: 'Loads', type: 'siren', a: 'X1', b: 'X2', sym: 'horn', pre: 'HA', out: true, more: true },
     // PLC: the compact PLC placed in the Wiring (the diagram never adds one). A relay output is a contact from VAC0/VAC1,
     // an input a load from I0… to COM (wire COM's rail, 0 V, as the return)
-    ...Object.fromEntries(Array.from({ length: 8 }, (_, n) => ['plcq' + n, { n: `PLC relay output O${n}`, g: 'PLC', type: 'plc', a: n < 4 ? 'VAC0' : 'VAC1', b: 'O' + n, sym: 'no', pre: 'PLC', plc: true, more: true }])),
-    ...Object.fromEntries(Array.from({ length: 12 }, (_, n) => ['plci' + n, { n: `PLC input I${n}`, g: 'PLC', type: 'plc', a: 'I' + n, b: 'COM', sym: 'plcin', pre: 'PLC', plc: true, out: true, more: true, io: n }])),
+    ...Object.fromEntries(Array.from({ length: 16 }, (_, n) => ['plcq' + n, { n: `PLC relay output O${n}`, g: 'PLC', type: 'plc', a: 'VAC' + (n >> 2), b: 'O' + n, sym: 'no', pre: 'PLC', plc: true, more: true }])),
+    ...Object.fromEntries(Array.from({ length: 16 }, (_, n) => ['plci' + n, { n: `PLC input I${n}`, g: 'PLC', type: 'plc', a: 'I' + n, b: 'COM', sym: 'plcin', pre: 'PLC', plc: true, out: true, more: true, io: n }])),
   };
   SC.KINDS = SK;
   // devices whose N.O. and N.C. are one changeover (one common terminal): only one of them in the current paths
@@ -1047,7 +1047,7 @@
   function suggestTag(k) {
     const K = SK[k];
     // a PLC symbol is a point of the PLC placed in the Wiring
-    if (K.plc) { const p = circ().comps.filter(c => c.type === 'plc').map(c => c.props.label); return { def: p[0] || 'PLC', list: p }; }
+    if (K.plc) { const p = circ().comps.filter(c => DEFS[c.type] && DEFS[c.type].compact).map(c => c.props.label); return { def: p[0] || 'PLC', list: p }; }
     const same = circ().comps.filter(c => Circuit.sameKind(c.type, K.type) || (DEFS[c.type].variant && Object.values(DEFS[c.type].variant.of).includes(K.type))).map(c => c.props.label);
     // a contact or coil of a relay family suggests the last device of that family; inputs and loads a new tag
     if (!K.out && ['contactor', 'relay', 'timer', 'olr'].includes(K.type) && same.length) return { def: same[same.length - 1], list: same };

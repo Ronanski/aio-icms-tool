@@ -31,10 +31,10 @@
      it may be). The diagram never adds a controller. Only point 0 is in the library; the others are picked in its form. */
   const plcIO = (base, n, name, types, d, terms, look) => [base + n, { n: name, type: types[0], types, io: { d, n }, pre: 'PLC', look, hide: n > 0, terms }];
   const PLCLIB = Object.fromEntries([
-    ['plcpw', { n: 'PLC power supply L1 / N', type: 'plc', types: ['plc', 'mpsu'], pre: 'PLC', look: 'plcpw', terms: [{ id: 'L1', x: 0, y: -30 }, { id: 'N', x: 0, y: 30 }] }],
-    ...Array.from({ length: 8 }, (_, n) => plcIO('plcq', n, 'PLC relay output', ['plc', 'mdo8'], 'O', [{ id: n < 4 ? 'VAC0' : 'VAC1', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
-    ...Array.from({ length: 8 }, (_, n) => plcIO('plct', n, 'PLC transistor output 24 VDC', ['mdo8t'], 'O', [{ id: 'VP', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
-    ...Array.from({ length: 12 }, (_, n) => plcIO('plci', n, 'PLC input', ['plc', 'mdi8', 'mdi8ac'], 'I', [{ id: 'I' + n, x: 0, y: -30 }, { id: 'COM', x: 0, y: 30 }], 'plcin')),
+    ['plcpw', { n: 'PLC power supply L1 / N', type: 'plc', types: ['plc', 'plc16', 'mpsu'], pre: 'PLC', look: 'plcpw', terms: [{ id: 'L1', x: 0, y: -30 }, { id: 'N', x: 0, y: 30 }] }],
+    ...Array.from({ length: 16 }, (_, n) => plcIO('plcq', n, 'PLC relay output', ['plc', 'plc16', 'mdo8', 'mdo16'], 'O', [{ id: 'VAC' + (n >> 2), x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
+    ...Array.from({ length: 16 }, (_, n) => plcIO('plct', n, 'PLC transistor output 24 VDC', ['mdo8t', 'mdo16t'], 'O', [{ id: 'VP', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
+    ...Array.from({ length: 16 }, (_, n) => plcIO('plci', n, 'PLC input', ['plc', 'plc16', 'mdi8', 'mdi8ac', 'mdi16', 'mdi16ac'], 'I', [{ id: 'I' + n, x: 0, y: -30 }, { id: 'COM', x: 0, y: 30 }], 'plcin')),
   ]);
   const LIB = {
     Sources: {
@@ -378,7 +378,7 @@
   const POT = {
     L1: [['supply3', 'L1'], ['supply1', 'L'], ['gen3', 'L1']], L2: [['supply3', 'L2'], ['gen3', 'L2']], L3: [['supply3', 'L3'], ['gen3', 'L3']],
     N: [['supply3', 'N'], ['supply1', 'N'], ['gen3', 'N']], PE: [['supply3', 'PE'], ['supply1', 'PE'], ['gen3', 'PE']],
-    '+': [['psu24', 'P1'], ['mpsu', 'V24'], ['plc', 'V24'], ['battery', 'P']], '-': [['psu24', 'M1'], ['mpsu', 'C24'], ['plc', 'C24'], ['battery', 'M']],
+    '+': [['psu24', 'P1'], ['mpsu', 'V24'], ['plc', 'V24'], ['plc16', 'V24'], ['battery', 'P']], '-': [['psu24', 'M1'], ['mpsu', 'C24'], ['plc', 'C24'], ['plc16', 'C24'], ['battery', 'M']],
   };
   const POTNAME = { '+': '+24 V', '-': '0 V' };
   function potKey(p) {
@@ -527,7 +527,7 @@
     if (S.look === 'plcpw') return { on: !!st.pw };
     // a PLC input is ON when the controller reads it (this tick's input word: the compact PLC's, or the card's slot)
     if (S.look === 'plcin') {
-      const c = App.ctx, w = d.type === 'plc' ? (c.plcId === d.id ? c.plcInRaw : 0) : ((c.plcInX || [])[Number(d.props.slot)] || 0);
+      const c = App.ctx, w = DEFS[d.type].compact ? (c.plcId === d.id ? c.plcInRaw : 0) : ((c.plcInX || [])[Number(d.props.slot)] || 0);
       return { on: !!((w >> S.io.n) & 1) };
     }
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];

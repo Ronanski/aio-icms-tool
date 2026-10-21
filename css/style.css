@@ -328,7 +328,8 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .dt.sm { font-size: 9px; }
 .dt.xs { font-size: 7.5px; font-weight: 600; }
 .dt.big { font-size: 15px; font-weight: 700; }
-.dt.brand { font: 700 15px var(--serif); fill: #f4efe4; }
+.dt.brand { font: 700 13px var(--sans); fill: #f4efe4; }
+.dt.brand.ink { fill: #1f1f1d; }
 .dt.ont { fill: #e45a4a; font-weight: 700; }
 .dt.warnt { fill: #f39c1e; font-weight: 800; }
 .dt.burn { fill: #ff7a5c; font-size: 12px; font-weight: 800; letter-spacing: .1em; }

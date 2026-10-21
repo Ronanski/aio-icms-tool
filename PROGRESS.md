@@ -13,6 +13,9 @@
 - [x] Supply points face the current: L/+ feed down, N/0 V/PE return up
 - [x] Wire path drawn by the user (click = corner, drag a segment), clean A* auto-route, junction dots
 - [x] Tidy Wiring built from the diagram (panel rows, one lane per wire)
+- [x] AB-style PLC hardware: compact 16 in / 12 out, 16-point cards (IB16, IA16, OW16, OB16)
+- [x] One flat 2D look for all devices (no shading), one font
+- [ ] 32-point cards (need two words per slot in the data table)
 - [ ] Stable v2.2.2 (needs the owner's GO)
 
 ## Done (v1.0.0)
