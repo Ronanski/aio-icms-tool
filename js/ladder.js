@@ -232,6 +232,7 @@
   /* Online group and the online-edit banner (Realistic connection) */
   Ladder.connUi = function () {
     if (!root || !App.project) return;
+    Ladder.statusUi();
     const c = App.project.conn, real = !!(c && c.mode === 'real'), cn = App.conn;
     const sel = root.querySelector('[data-cmode]'); if (sel) sel.value = real ? 'real' : 'simple';
     const rr = root.querySelector('.lad-comm-real'); if (rr) rr.hidden = !real;
@@ -669,6 +670,8 @@
     ['File/Seq', ['COP', 'FLL', 'SQO', 'MSG']],
     ['Program', ['JSR', 'SBR', 'RET', 'MCR']],
   ];
+  // the Favorites tab, as the first tab of the instruction palette
+  const FAV = ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES', 'MOV', 'EQU', 'JSR'];
   const ICON = {
     XIC: '-] [-', XIO: '-]/[-', ONS: '-[ONS]-', OTE: '-( )-', OTL: '-(L)-', OTU: '-(U)-', RES: '-(RES)-', MCR: '-(MCR)-', RET: '-(RET)-',
   };
@@ -677,6 +680,12 @@
     root = el;
     el.innerHTML = `
       <div class="lad-toolbar">
+        <div class="tb-group lad-status" data-lstatus><button class="lad-stat-btn" data-act="omenu" title="Controller status — click for Go Online, Download, RUN / PROG and Who Active"><b data-st-mode>Offline</b><span class="caret">▾</span></button>
+          <div class="lad-stat-lines"><span data-st-forces>No Forces</span><span data-st-edits>No Edits</span></div>
+          <div class="lad-leds">${["run", "ok", "bat", "io"].map(k => `<span data-st-led="${k}"><i></i>${k === "io" ? "I/O" : k.toUpperCase()}</span>`).join("")}</div></div>
+        <div class="tb-group lad-pathbox" title="Path to the controller"><span class="tb-lbl">Path</span><span class="lad-path" data-st-path></span></div>
+        <div class="tb-group lad-ins"><div class="ins-row">${TB.flatMap(([g, list]) => list.map(t => `<button class="tbtn ins-btn${FAV.includes(t) ? ' fav' : ''}" data-ins="${t}" data-g="${g}" title="${t} — ${esc(INSTR[t].name)}: ${esc(INSTR[t].help)}" aria-label="${t} ${esc(INSTR[t].name)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`)).join('')}</div>
+          <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}</div></div>
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
         <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><button class="tbtn" data-act="who" title="Who Active: find the controller through the engineering PC in the Wiring and set the project path">⇆ Who Active</button><button class="tbtn" data-act="network" title="Network: who active, remote PLCs, produced / consumed data">🖧 Network</button><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
@@ -700,7 +709,6 @@
           <button class="tbtn zoomv" data-act="zreset" data-lz title="Reset zoom to 100%">100%</button>
           <button class="tbtn" data-act="zin" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button>
         </div>
-        ${TB.map(([g, list]) => `<div class="tb-group"><span class="tb-lbl">${g}</span>${list.map(t => `<button class="tbtn ins-btn" data-ins="${t}" title="${esc(INSTR[t].name)} — ${esc(INSTR[t].help)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`).join('')}</div>`).join('')}
       </div>
       <div class="lad-banner" data-lbanner hidden></div>
       <div class="lad-main">
@@ -716,6 +724,8 @@
     el.querySelector('[data-lbanner]').addEventListener('click', ev => { const b = ev.target.closest('[data-act]'); if (b) ({ test: App.testEdits, assemble: App.assembleEdits, cancel: App.cancelEdits })[b.dataset.act]?.(); });
     el.querySelector('.lad-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.itab) { setTab(b.dataset.itab); return; }
+      if (b.dataset.act === 'omenu') { const q = b.getBoundingClientRect(); onlineMenu(q.left, q.bottom + 4); return; }
       if (b.dataset.ins) return Ladder.insert(b.dataset.ins);
       ({
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
@@ -749,6 +759,7 @@
       else { SEL = { r: ri, id: null, leg: null }; Ladder.render(); rungMenu(ev.clientX, ev.clientY, ri); }
     });
     DataTable.init(sideEl);
+    setTab(insTab);
     // the Organizer stays open (or closed) as the user left it in this browser
     try { if (localStorage.getItem('plc-trainer.orgOpen')) el.querySelector('[data-lorg]').hidden = false; } catch (e) { /* ignore */ }
     UI.drawer(el.querySelector('[data-act="data"]'), sideEl);
@@ -756,6 +767,50 @@
     new ResizeObserver(() => { if (root.offsetParent) Ladder.render(); }).observe(rungsEl);
     rungsEl.addEventListener('wheel', ev => { if (!ev.ctrlKey) return; ev.preventDefault(); setZoom(ev.deltaY < 0 ? LZ * 1.1 : LZ / 1.1); }, { passive: false });
     bindDrag();
+  };
+
+  /* instruction palette tabs (remembered in this browser) */
+  let insTab = (() => { try { return localStorage.getItem('plc-trainer.insTab') || 'Favorites'; } catch (e) { return 'Favorites'; } })();
+  function setTab(g) {
+    if (!root) return;
+    if (!['Favorites', ...TB.map(x => x[0])].includes(g)) g = 'Favorites';
+    insTab = g; try { localStorage.setItem('plc-trainer.insTab', g); } catch (e) { /* ignore */ }
+    root.querySelectorAll('.ins-tab').forEach(t => { t.classList.toggle('on', t.dataset.itab === g); t.setAttribute('aria-selected', t.dataset.itab === g); });
+    root.querySelectorAll('.lad-ins .ins-btn').forEach(b => b.classList.toggle('show', g === 'Favorites' ? b.classList.contains('fav') : b.dataset.g === g));
+  }
+  Ladder.setTab = setTab;
+  /* the online menu of the status box: what the controller connection allows now */
+  function onlineMenu(x, y) {
+    const c = App.project.conn, real = !!(c && c.mode === 'real'), on = App.conn.online, run = App.plc.mode === 'RUN';
+    UI.menu(x, y, [
+      { head: real ? (on ? 'Online' : 'Offline') : 'Simple connection' },
+      ...(real ? [{ label: on ? 'Go Offline' : 'Go Online', onClick: () => App.goOnline() }, { label: 'Download…', onClick: () => App.download() }, { label: 'Upload…', onClick: () => App.upload() }] : []),
+      { label: 'Who Active…', onClick: () => App.whoActive() },
+      { sep: true },
+      { label: 'Run Mode', disabled: run, onClick: () => App.setMode('RUN') },
+      { label: 'Program Mode', disabled: !run, onClick: () => App.setMode('PROG') },
+      { sep: true },
+      { label: real ? 'Simple connection (edits run at once)' : 'Realistic connection (download)', onClick: () => App.setConnMode(real ? 'simple' : 'real') },
+    ]);
+  }
+  /* status box: mode, forces, edits, the controller lights and the path */
+  Ladder.statusUi = function () {
+    if (!root || !App.project) return;
+    const plc = App.plc, c = App.project.conn, real = !!(c && c.mode === 'real'), on = !real || App.conn.online, run = plc.mode === 'RUN';
+    const st = App.status ? App.status() : {};
+    const set = (k, v) => { const e = root.querySelector(k); if (e && e.textContent !== v) e.textContent = v; };
+    set('[data-st-mode]', !on ? 'Offline' : (real ? 'Online · ' : '') + (run ? 'Run' : 'Program'));
+    const n = plc.forceCount();
+    set('[data-st-forces]', n ? `Forces ${plc.forcesEnabled ? 'on' : 'off'} (${n})` : 'No Forces');
+    set('[data-st-edits]', real && App.conn.online && !App.conn.same ? (App.conn.testing ? 'Testing edits' : 'Edits pending') : 'No Edits');
+    set('[data-st-path]', st.path || '');
+    const box = root.querySelector('[data-lstatus]'); if (!box) return;
+    box.classList.toggle('online', on); box.classList.toggle('run', on && run);
+    const L = (k, cls) => { const e = box.querySelector(`[data-st-led="${k}"]`); if (e) e.className = cls || ''; };
+    L('run', run && plc.powered ? 'on' : '');
+    L('ok', plc.powered ? (st.fault ? 'bad' : 'on') : '');
+    L('bat', '');
+    L('io', st.io === 'bad' ? 'bad blink' : st.io === 'ok' ? 'on' : '');
   };
 
   /* drag an instruction with the mouse to move it (touch uses the menu or ◀ ▶) */

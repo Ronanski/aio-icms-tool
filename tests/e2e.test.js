@@ -2904,6 +2904,30 @@ function check(name, cond, info = '') {
     check('program files: the file-based tree offers ＋ New Program File… and rename / delete on LAD 3', await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-lorg]'); return /New Program File/.test(b.textContent) && !!b.querySelector('[data-orn="3"]') && !!b.querySelector('[data-ordel="3"]'); }));
     await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay5); });
   }
+  console.log('Ladder UI: status box, path, tabbed instruction palette, online menu');
+  {
+    await page.evaluate(() => { const prev = App.currentId; App.openNew(Examples.EX.plcmotor.build()); if (prev) Store.remove(prev); window._lay6 = App.layout; App.setLayout('single'); App.showView('ladder'); App.setMode('PROG'); Ladder.setTab('Favorites'); });
+    await wait(250);
+    const vis = sel => page.evaluate(s => { const e = document.querySelector(s); return !!e && !!e.offsetParent; }, sel);
+    check('ladder UI: the status box shows Program, No Forces, No Edits and the path to the compact PLC', await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-lstatus]'); return /Program/.test(b.querySelector('[data-st-mode]').textContent) && /No Forces/.test(b.textContent) && /No Edits/.test(b.textContent) && /Compact PLC · PLC/.test(document.querySelector('#view-ladder [data-st-path]').textContent); }));
+    check('ladder UI: Favorites is the first tab and shows XIC, OTE, TON; other instructions wait in their tabs', await vis('#view-ladder [data-ins="XIC"]') && await vis('#view-ladder [data-ins="TON"]') && !(await vis('#view-ladder [data-ins="OSR"]')) && await page.evaluate(() => document.querySelector('#view-ladder .ins-tab.on').dataset.itab === 'Favorites'));
+    await page.click('#view-ladder [data-itab="Bit"]'); await wait(100);
+    check('ladder UI: the Bit tab shows OSR / OSF and hides the timers; the tab is remembered', await vis('#view-ladder [data-ins="OSR"]') && !(await vis('#view-ladder [data-ins="TON"]')) && await page.evaluate(() => localStorage.getItem('plc-trainer.insTab') === 'Bit'));
+    await page.click('#view-ladder [data-itab="Program"]'); await wait(100);
+    check('ladder UI: the Program tab holds JSR, SBR, RET, MCR', (await Promise.all(['JSR', 'SBR', 'RET', 'MCR'].map(t => vis(`#view-ladder [data-ins="${t}"]`)))).every(Boolean));
+    await page.click('#view-ladder [data-itab="Favorites"]');
+    await page.evaluate(() => { App.setMode('RUN'); App.force('I:0/3', 1); }); await wait(300);
+    check('ladder UI: in RUN the status says Run, the RUN light is on and a force shows as Forces on (1)', await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-lstatus]'); const ok = /Run/.test(b.querySelector('[data-st-mode]').textContent) && b.querySelector('[data-st-led="run"]').classList.contains('on') && /Forces on \(1\)/.test(b.textContent); App.force('I:0/3', null); return ok; }));
+    await page.click('#view-ladder [data-act="omenu"]'); await wait(150);
+    check('ladder UI: the status menu (Simple connection) offers Who Active, Program Mode and the Realistic connection', await page.evaluate(() => { const t = [...document.querySelectorAll('.ctx-menu button')].map(b => b.textContent); return t.includes('Who Active…') && t.includes('Program Mode') && t.some(x => /Realistic connection/.test(x)); }));
+    await page.click('.ctx-menu button:has-text("Program Mode")'); await wait(150);
+    check('ladder UI: Program Mode in the menu puts the controller in PROG', await page.evaluate(() => App.plc.mode === 'PROG'));
+    await page.evaluate(() => App.setConnMode('real')); await wait(150);
+    await page.click('#view-ladder [data-act="omenu"]'); await wait(150);
+    check('ladder UI: Realistic connection: the status says Online · Program and the menu has Go Offline, Download, Upload', await page.evaluate(() => { const t = [...document.querySelectorAll('.ctx-menu button')].map(b => b.textContent); return /Online · Program|Offline/.test(document.querySelector('#view-ladder [data-st-mode]').textContent) && ['Download…', 'Upload…'].every(x => t.includes(x)) && t.some(x => /Go (Online|Offline)/.test(x)); }));
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { document.getElementById('ctxMenu') && UI.closeMenu(); App.setConnMode('simple'); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay6); });
+  }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);

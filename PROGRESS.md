@@ -16,7 +16,8 @@
 - [x] Comms: Engineering PC with a comms driver, cable to the controller (USB) or an Ethernet module; Who Active → Set Project Path → Download; Upload = not available; communication lost — `feature/plc-comms`
 - [x] I/O faults per target: module fault (tag-based) or major fault (file-based); ＋ New Module… — `feature/plc-ioconfig`
 - [x] Routines / program files workflow (JSR by name, new / rename / delete in the Organizer) — `feature/plc-routines`
-- [ ] Ladder UI like the programming software: tabbed instruction toolbar, tag editor, Go Online / Download / RUN
+- [x] Ladder UI like the programming software: status box with online menu, path, tabbed instruction palette — `feature/plc-ladder-ui`
+- [ ] Tag editor in a grid (Edit Tags / Monitor Tags), Program Tags
 - [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
 
 ## Engineer use (2026-10-21, `fix/wiring-engineer`)

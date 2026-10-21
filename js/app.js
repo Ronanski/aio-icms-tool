@@ -595,6 +595,12 @@
     return null;
   }
   App.pathErr = () => (needsPath() ? pathErr() : null);
+  /* for the Ladder's status box: the path to the controller, a major fault, the I/O state ('' | 'ok' | 'bad') */
+  App.status = function () {
+    const r = Circuit.rack(App.project.circuit, App.project.io);
+    const path = needsPath() ? pathText(App.project.conn.path) + (pathErr() ? ' ⚠' : '') : r.cpu ? `Backplane, slot 0 · ${r.ctl.props.label}` : r.ctl ? `Compact PLC · ${r.ctl.props.label}` : 'Virtual controller (no PLC in the Wiring)';
+    return { path, fault: !!(r.cpu && r.bad.length && App.project.target !== 'tag'), io: !r.cpu ? '' : r.bad.length ? 'bad' : 'ok' };
+  };
   // a controller that does not fit the project's PLC target
   const typeErr = ctl => (App.project.target === 'tag' && Circuit.DEFS[ctl.type].compact ? `${ctl.props.label} is a compact file-based PLC, but the project is tag-based (1756-style). Change the PLC target in the I/O Configuration, or use a chassis controller.` : null);
   App.whoActive = function () {
@@ -1115,6 +1121,7 @@
     msg.textContent = m;
     msg.title = m;
     msg.classList.toggle('warn', !!st.nplc && !st.pw);
+    if (window.Ladder && Ladder.statusUi) Ladder.statusUi();
   }
 
   /* ---------- learn ---------- */
