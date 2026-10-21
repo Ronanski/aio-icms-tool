@@ -516,7 +516,8 @@
     o.push(`<g class="ssym${st.on ? ' on' : ''}${SC.errs && SC.errs.has(e) ? ' err' : ''}${st.missing ? ' miss' : ''}">`);
     const nc = ['nc', 'tnc', 'olnc'].includes(K.sym);
     if (!K.out) {
-      o.push(nc ? `<path d="M${x} ${t} H${x + 10} M${x} ${b} L${x + 13} ${t - 3}"/>` : `<path d="M${x} ${b} L${x - 11} ${t + 1}"/>`);
+      const shut = st.c ? st.closed : nc;
+      o.push(nc ? `<path d="M${x} ${t} H${x + 10} M${x} ${b} L${shut ? `${x + 13} ${t - 3}` : `${x - 11} ${t + 1}`}"/>` : `<path d="M${x} ${b} L${shut ? `${x + 2} ${t - 2}` : `${x - 11} ${t + 1}`}"/>`);
       const m = MARK[e.k];
       if (m) {
         const bx = nc ? x + 6 : x - 6, ax = x - 26;

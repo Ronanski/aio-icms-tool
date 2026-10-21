@@ -30,6 +30,10 @@
       c.state.burnt = true;
       api.alert(`${c.props.label}: burnt out — ${v.label} applied to a ${rating} device`, 'danger');
     }
+    // too low a voltage: the coil does not pull in — said once, and shown in its status and on the drawing
+    const low = st === 'under' ? v.label : '';
+    if (low && c.state.lowV !== low) api.alert(`${c.props.label}: its coil is ${rating} but gets ${low} — it does not pull in (change its coil voltage)`, 'warn');
+    if ((c.state.lowV || '') !== low) c.state.lowV = low;
     return st === 'on' && !c.state.burnt;
   }
   const set = (c, k, v) => { if (c.state[k] !== v) { c.state[k] = v; return true; } return false; };
@@ -2313,7 +2317,10 @@
   function draw(c, ctx) { const d = DEFS[c.type]; return d ? d.draw(c, ctx) : ''; }
   /* drawn size before scaling: a DIN rail's width follows its length */
   function dims(c) { const d = DEFS[c.type], x = d.dims ? d.dims(c) : {}; return { w: x.w || d.w, h: x.h || d.h }; }
-  function status(c, ctx) { const d = DEFS[c.type]; return d && d.status ? d.status(c, ctx) : ''; }
+  function status(c, ctx) {
+    const d = DEFS[c.type], s = d && d.status ? d.status(c, ctx) : '';
+    return c.state && c.state.lowV ? `Coil ${c.props.coil}: gets only ${c.state.lowV}, not pulled in — ${s}` : s;
+  }
   function repair(c) {
     const d = DEFS[c.type];
     if ('burnt' in c.state) c.state.burnt = false;
