@@ -202,7 +202,7 @@
       const s = c.state, hot = s.on && !s.tripped && api.feedsOverload(c);
       s.heat = hot ? s.heat + dt : Math.max(0, s.heat - dt * 0.4);
       const tr = Number(c.props.trip), lim = Number.isFinite(tr) ? Math.max(0.1, tr) : 3;
-      if (!s.tripped && s.heat >= lim) { s.tripped = true; s.heat = 0; api.alert(`${c.props.label}: motor protection TRIPPED (overload)`, 'warn'); }
+      if (!manual && !s.tripped && s.heat >= lim) { s.tripped = true; s.heat = 0; api.alert(`${c.props.label}: motor protection TRIPPED (overload)`, 'warn'); }
       s.heatPct = Math.round(Math.min(1, s.heat / lim) * 100);
     },
     onPart(c, p, ev) {
@@ -239,7 +239,7 @@
       const s = c.state;
       s.heat = hot ? s.heat + dt : Math.max(0, s.heat - dt * 0.4);
       const tr = Number(c.props.trip), T = Number.isFinite(tr) ? Math.max(0.1, tr) : 4;   // 0 = trips at once
-      if (!s.tripped && s.heat >= T) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
+      if (!manual && !s.tripped && s.heat >= T) { s.tripped = true; api.alert(`${c.props.label}: overload relay TRIPPED (motor overcurrent)`, 'warn'); }
       s.heatPct = Math.round(Math.min(1, s.heat / T) * 100);
     },
     onPart(c, p, ev) {
@@ -1378,7 +1378,7 @@
     const s = c.state, hot = s.on && !s.tripped && api.feedsOverload(c);
     s.heat = hot ? (s.heat || 0) + dt : Math.max(0, (s.heat || 0) - dt * 0.4);
     const tr = Number(c.props.trip), lim = Number.isFinite(tr) ? Math.max(0.1, tr) : 10;
-    if (!s.tripped && s.heat >= lim) { s.tripped = true; s.heat = 0; api.alert(`${c.props.label}: breaker TRIPPED (thermal, overload)`, 'warn'); }
+    if (!manual && !s.tripped && s.heat >= lim) { s.tripped = true; s.heat = 0; api.alert(`${c.props.label}: breaker TRIPPED (thermal, overload)`, 'warn'); }
   }
   ['mcb1', 'mcb2', 'mcb3', 'mcb4'].forEach(t => {
     const d = DEFS[t];
@@ -2104,11 +2104,14 @@
     }
     return n;
   }
+  /* manual protections (the free-draw diagram while it plays, as Simurelay): breakers, fuses, overloads and RCDs are
+     operated by hand only; nothing trips by itself, and a short is left in net.short for the caller to stop on */
+  let manual = false;
   function solveNet(circ, ctx, alerts) {
     let net = build(circ, ctx);
     let sh = shorts(net);
     let guard = 0;
-    while (sh.size && guard++ < 8) {
+    while (!manual && sh.size && guard++ < 8) {
       const roots = new Set(sh.keys());
       const reason = [...sh.values()][0];
       const cands = circ.comps.filter(c => {
@@ -2269,7 +2272,7 @@
       }
       const leaks = earthLeak(circ, ctx, api);
       leaks.filter(l => !l.rcd).forEach(l => alerts.push({ msg: `${l.c.props.label} is fed between a phase and PE: its current leaks to earth and no RCD protects it`, kind: 'warn' }));
-      const trips = leaks.filter(l => l.rcd && !l.rcd.state.tripped);
+      const trips = manual ? [] : leaks.filter(l => l.rcd && !l.rcd.state.tripped);
       if (!trips.length) break;
       trips.forEach(l => { if (l.rcd.state.tripped) return; l.rcd.state.tripped = true; alerts.push({ msg: `${l.rcd.props.label} TRIPPED — earth leakage through ${l.c.props.label}`, kind: 'danger' }); });
     }
@@ -2490,5 +2493,6 @@
     }
     return null;
   }
-  window.Circuit = { sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
+  const setManual = on => { manual = !!on; };
+  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
 })();

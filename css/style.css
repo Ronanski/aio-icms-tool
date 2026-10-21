@@ -768,3 +768,79 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .net-words input { width: 100%; min-width: 0; padding: 2px 4px; font: 12px var(--mono); border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
 @media (max-width: 760px) { .net-words { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .lad-banner[hidden] { display: none; }
+/* ---------- free draw: Simurelay's look (light and dark follow the app theme; colours can be changed in ⋯ → Settings) ---------- */
+:root { --fd-bg: #F0F0F0; --fd-grid: #E2E2E2; --fd-grid2: #C8C8C8; --fd-sym: #0A0A0A; --fd-sel: #2979FF; --fd-align: rgba(170, 170, 170, .24); --fd-tag: #008000; --fd-cmt: #008000; --fd-term: #008000;
+  --fd-L1: #A35740; --fd-L2: #455A64; --fd-L3: #18FFFF; --fd-N: #2962FF; --fd-PE: #FDD835; --fd-P: #FF0000; --fd-M: #2962FF; --fd-coil: #FFE600; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fd-bg: #141414; --fd-grid: #1E1E21; --fd-grid2: #28282D; --fd-sym: #B4B4B4; --fd-align: rgba(100, 100, 100, .24); --fd-tag: #1DE9B6; --fd-cmt: #FFFF8D; --fd-term: #1DE9B6; } }
+:root[data-theme="dark"] { --fd-bg: #141414; --fd-grid: #1E1E21; --fd-grid2: #28282D; --fd-sym: #B4B4B4; --fd-align: rgba(100, 100, 100, .24); --fd-tag: #1DE9B6; --fd-cmt: #FFFF8D; --fd-term: #1DE9B6; }
+.fd-canvas { background: var(--fd-bg); }
+.free-svg { --lad-wire: var(--fd-sym); --lad-text: var(--fd-sym); --lad-bg: var(--fd-bg); --grid-dot: var(--fd-grid2); --grid-line: var(--fd-grid2); }
+.free-svg .gridLine { stroke: var(--fd-grid2); }
+.free-svg .gridDot { fill: var(--fd-grid); }
+.free-svg .ftag, .free-svg .ftag.faddr { font: 700 12.5px var(--sans); fill: var(--fd-tag); }
+.free-svg .ftag.fcmt { font: 400 11px var(--sans); fill: var(--fd-cmt); }
+.free-svg .sterm { font: 700 11px var(--sans); fill: var(--fd-term); }
+.free-svg .mtxt { fill: var(--fd-sym); }
+/* terminals: small grey squares; under the pointer and when picked, blue; a wired terminal is just the end of its line */
+.free-svg .fterm { fill: #9E9E9E; stroke: none; cursor: crosshair; }
+.free-svg .fterm:hover, .free-svg .fterm.on { fill: var(--fd-sel); stroke: var(--fd-sel); stroke-width: 4; }
+.free-svg .fterm.used:not(:hover):not(.on) { fill: transparent; stroke: transparent; }
+.free-svg .fitem:hover > .hit { fill: transparent; }
+.free-svg .fitem.sel > .hit { fill: transparent; stroke: var(--fd-sel); stroke-width: 3; stroke-dasharray: none; }
+.free-svg .fitem.sel .ssym path, .free-svg .fitem.sel .ssym circle, .free-svg .fitem.sel .ssym rect, .free-svg .fitem.sel .ssym ellipse { stroke: var(--fd-sel); }
+.free-svg .fitem.sel .ftag, .free-svg .fitem.sel .sterm { fill: var(--fd-sel); }
+.free-svg .fwire .w { stroke: var(--fd-sym); }
+.free-svg .fwire.sel .w { stroke: var(--fd-sel); stroke-width: 3; }
+.free-svg .fseg { fill: none; stroke: #FF9800; stroke-width: 2; pointer-events: none; }
+.free-svg .fguide { stroke: var(--fd-align); stroke-width: 4; stroke-dasharray: none; opacity: 1; pointer-events: none; }
+.free-svg .fguide.hit { stroke: var(--fd-sel); stroke-width: 1.5; opacity: .7; }
+.free-svg .wtemp { stroke: var(--fd-sel); }
+.free-svg .fjdot { fill: var(--fd-sym); }
+/* editing: one line colour; running: each conductor in its colour (as Simurelay), the energized coil yellow */
+.free-svg:not(.run) .fwire .w.on, .free-svg:not(.run) .fwire .w.neg { stroke: var(--fd-sym); stroke-width: 2; }
+.free-svg:not(.run) .fwire .wflow { display: none; }
+.free-svg:not(.run) .fjdot.on { fill: var(--fd-sym); }
+.free-svg:not(.run) .ssym.on path, .free-svg:not(.run) .ssym.on circle, .free-svg:not(.run) .ssym.on rect { stroke: var(--fd-sym); }
+.free-svg:not(.run) .ssym.on[data-look] rect, .free-svg:not(.run) .ssym.on[data-look="lamp"] circle { fill: none; filter: none; }
+.free-svg.run .fwire .w[class*=" p-"] { stroke-width: 2.6; } .free-svg.run .fwire .w.p-P, .free-svg.run .fwire .w.p-M { stroke-width: 2; }
+.free-svg.run .fwire .w.p-L1 { stroke: var(--fd-L1); } .free-svg.run .fjdot.p-L1 { fill: var(--fd-L1); }
+.free-svg.run .fwire .w.p-L2 { stroke: var(--fd-L2); } .free-svg.run .fjdot.p-L2 { fill: var(--fd-L2); }
+.free-svg.run .fwire .w.p-L3 { stroke: var(--fd-L3); } .free-svg.run .fjdot.p-L3 { fill: var(--fd-L3); }
+.free-svg.run .fwire .w.p-N { stroke: var(--fd-N); } .free-svg.run .fjdot.p-N { fill: var(--fd-N); }
+.free-svg.run .fwire .w.p-PE { stroke: var(--fd-PE); } .free-svg.run .fjdot.p-PE { fill: var(--fd-PE); }
+.free-svg.run .fwire .w.p-P { stroke: var(--fd-P); } .free-svg.run .fjdot.p-P { fill: var(--fd-P); }
+.free-svg.run .fwire .w.p-M { stroke: var(--fd-M); } .free-svg.run .fjdot.p-M { fill: var(--fd-M); }
+.free-svg .fwire path.w { fill: none; }
+.free-svg .ssym[data-look="pot"] circle, .free-svg .ssym.on[data-look="pot"] circle { fill: var(--fd-bg); stroke: var(--fd-sym); }
+.free-svg.run .ssym.on path, .free-svg.run .ssym.on circle, .free-svg.run .ssym.on rect { stroke: var(--fd-sym); }
+.free-svg.run .ssym.on[data-look="coil"] rect, .free-svg.run .ssym.on[data-look^="tcoil"] rect, .free-svg.run .ssym.on[data-look="icoil"] rect { fill: var(--fd-coil); stroke: var(--fd-sym); }
+/* Play: only the drawing, a Stop button at the top left and a green line along the top (as Simurelay) */
+.fd-stop { display: none; position: absolute; left: 8px; top: 8px; z-index: 2; gap: 2px; padding: 3px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); }
+.fd-stop button { width: 30px; height: 26px; border: 0; border-radius: 4px; background: transparent; cursor: pointer; color: #E53935; font-size: 15px; }
+.fd-stop button:hover { background: var(--surface-2); }
+#view-schematic.fd-playing .fd-stop { display: flex; }
+#view-schematic.fd-playing .fd-canvas { box-shadow: inset 0 2px 0 #1FA34A; }
+#view-schematic.fd-playing .sch-toolbar, #view-schematic.fd-playing .fd-lib, #view-schematic.fd-playing .sch-side, #view-schematic.fd-fullsym .sch-side { display: none; }
+.free-svg .fwire .wflow { display: none; }
+/* the property bar (Simurelay's VALUES bar): in place of the toolbar and the library while it is open */
+.fd-pbar { position: absolute; left: 0; right: 0; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 13px; }
+.fd-pbar[hidden] { display: none; }
+.fd-pbar .fpb-name { font-weight: 600; white-space: nowrap; }
+.fd-pbar .fpb-in { width: 200px; padding: 4px 8px; font-size: 13px; }
+.fd-pbar input[data-pbterm] { width: 80px; }
+.fd-pbar .fpb-tabs { display: inline-flex; gap: 2px; }
+.fd-pbar .fpb-tabs button, .fd-pbar .fpb-step { min-width: 38px; height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); font: 600 10.5px var(--sans); cursor: pointer; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; }
+.fd-pbar .fpb-tabs button b { font-size: 12px; line-height: 1; }
+.fd-pbar .fpb-tabs button.on { background: #1FA34A; border-color: #1FA34A; color: #fff; }
+.fd-pbar .fpb-step { font-size: 14px; }
+.fd-pbar .fpb-val { min-width: 54px; text-align: center; font: 700 14px var(--sans); color: #E53935; }
+#view-schematic { position: relative; }
+#view-schematic.fd-barred .sch-toolbar, #view-schematic.fd-barred .fd-lib { visibility: hidden; }
+#view-schematic > .fd-pbar { min-height: 52px; }
+#view-schematic:not(.free-style) > .fd-pbar { display: none; }
+.fd-wrap.nozoom .fd-zoom { display: none; }
+.fds h4 { margin: 10px 0 6px; } .fds-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; } .fds-row input[type="color"] { width: 34px; height: 26px; padding: 0; border: 0; background: none; }
+.fd-pbar .fpb-dev { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); } .fd-pbar .fpb-dev input, .fd-pbar .fpb-dev select { width: auto; max-width: 140px; padding: 3px 6px; font-size: 12px; }
+.free-svg .gridLine.minor { stroke: var(--fd-grid); stroke-width: .5; }
+.free-svg .gridLine { stroke-width: 1; }
+@media (min-width: 761px) { #view-schematic.free-style .sch-side { display: none; } }

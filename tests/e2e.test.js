@@ -767,7 +767,7 @@ function check(name, cond, info = '') {
   check('symbols became real devices in the Wiring (with the 230 VAC coil)', ['pb_nc:S0:', 'pb_no:S1:', 'contactor:KM1:230VAC', 'lamp:H1:230VAC'].every(x => sch.comps.includes(x)), sch.comps.join(' '));
   check('the rungs were wired for you', sch.wires >= 8, String(sch.wires));
   check('rung 2 lamp is on through the KM1 N.C. contact', await get('H1', 'state.on'), await page.evaluate(() => { const C = App.project.circuit, lab = k => { const [id, t] = k.split(':'); return C.comps.find(x => x.id === id).props.label + ':' + t; }; return JSON.stringify([App.project.schematic.rungs, C.wires.filter(w => w.sch).map(w => lab(w.a) + '>' + lab(w.b)), C.comps.find(x => x.props.label === 'H1').state, C.comps.find(x => x.props.label === 'KM1').state]); }));
-  await page.click('#view-schematic [data-smode="run"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="run"]').click()); await wait(250);
   const s1el = await page.evaluateHandle(() => [...document.querySelectorAll('#view-schematic .sel-el')].find(g => g.querySelector('.stag').textContent.replace(/^-/, '') === 'S1'));
   const sb = await s1el.boundingBox();
   await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up();
@@ -781,7 +781,7 @@ function check(name, cond, info = '') {
   await wait(400);
   check('pressing S0 stops KM1', !(await get('KM1', 'state.pulled')) && (await get('H1', 'state.on')));
   check('the schematic is saved with the project and comes back', await page.evaluate(() => { App.saveNow(); const id = App.currentId; App.openSaved(id); return App.project.schematic.rungs.length === 2 && JSON.stringify(App.project.schematic.rungs).includes('"tag":"KM1"') && App.project.circuit.wires.some(w => w.sch); }));
-  await page.click('#view-schematic [data-smode="edit"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="edit"]').click()); await wait(250);
 
   console.log('v1.4 part 1: wiring look, DIN rail, terminal block, motor protection');
   await build(new Function(kit + `
@@ -900,7 +900,7 @@ function check(name, cond, info = '') {
   check('the motor protection breaker is ON when the diagram adds it', await get('QM1', 'state.on'));
   await page.evaluate(() => { App.project.schematic.power.feeders[0].elems.push({ k: 'qf3', tag: 'Q9' }); Schematic.sync(); Schematic.render(); });
   check('a device after the motor is reported', await page.evaluate(() => [...Schematic.perrs.values()].some(m => m.includes('last device'))));
-  await page.click('#view-schematic [data-smode="edit"]').catch(() => {});
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="edit"]').click()).catch(() => {});
 
   console.log('v1.5 part 1: more components');
   await build(new Function(kit + `
@@ -967,12 +967,14 @@ function check(name, cond, info = '') {
   check('free draw: its toolbar shows and the rung tools hide', await page.isVisible('#view-schematic [data-fdact="lib"]') && !(await page.isVisible('#view-schematic [data-sact="rung"]')));
   check('free draw: symbols and wires are drawn, a broken wire is dropped on load', await page.evaluate(() => document.querySelectorAll('#view-schematic .fitem').length === 11 && App.project.schematic.free.wires.length === 20));
   check('free draw: every symbol became a device and every drawn wire is wired', await page.evaluate(() => ['Q0:supply1', 'QF1:mcb2', 'S1:pb_no', 'KM1:contactor', 'H1:lamp', 'Q1:supply3', 'QM1:mpcb', 'M1:motor'].every(x => App.project.circuit.comps.some(c => c.props.label + ':' + c.type === x)) && App.project.circuit.wires.filter(w => w.sch).length === 20 && FreeDraw.errs.size === 0));
-  await page.click('#view-schematic [data-smode="run"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="run"]').click()); await wait(250);
+  // as in Simurelay, Play starts with the breakers off: switch QF1 and QM1 on on the drawing first
+  { const tb = await (await page.$('#view-schematic [data-fi="d2"] .hit')).boundingBox(); await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2); await wait(300); } { const tb = await (await page.$('#view-schematic [data-fi="d9"] .hit')).boundingBox(); await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2); await wait(300); }
   const fS1 = await (await page.$('#view-schematic [data-fi="d4"] .hit')).boundingBox();
   await page.mouse.move(fS1.x + fS1.width / 2, fS1.y + fS1.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up(); await wait(500);
   check('free draw: pressing S1 on the drawing starts KM1, its seal-in holds it, the motor runs', (await get('KM1', 'state.pulled')) && (await get('H1', 'state.on')) && (await get('M1', 'state.drive')) === 'run');
   check('free draw: the live paths light up', await page.evaluate(() => document.querySelectorAll('#view-schematic .fwire .w.on').length > 8));
-  await page.click('#view-schematic [data-smode="edit"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="edit"]').click()); await wait(250);
   // with 'Ask for a tag when placing a symbol' on, the Library asks for the tag (off: the next tag is given, tested in the tagging section)
   await page.evaluate(() => FreeDraw.setLabels({ ask: true }));
   await page.selectOption('#view-schematic .fd-grp', 'Loads'); await wait(100); await page.click('#view-schematic .fd-ico[data-fk="lamp"]'); await page.fill('#f_t', 'H9'); await page.click('.modal .btn.primary'); await wait(200); await page.evaluate(() => FreeDraw.setLabels({ ask: false }));
@@ -1081,15 +1083,16 @@ function check(name, cond, info = '') {
   await page.mouse.click(fp.x + 6, fp.y + 6); await wait(100);
   await page.keyboard.press('d'); await wait(200);
   check('free draw: D copies the selected symbol with a new tag', await page.evaluate(() => { const F = App.project.schematic.free; const c = F.items[F.items.length - 1]; return F.items.length === 11 && c.k === 'prox' && c.tag === 'B2' && App.project.circuit.comps.some(x => x.props.label === 'B2' && x.type === 'prox'); }));
-  await page.click('#view-schematic [data-fd="type"]'); await wait(150);
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fd="type"]').click()); await wait(150);
   check('free draw: Type ⇄ turns an inductive sensor into an NPN one', await page.evaluate(() => { const F = App.project.schematic.free; return F.items[F.items.length - 1].k === 'proxn'; }));
-  await page.click('#view-schematic [data-fd="back"]'); await wait(150);
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fd="back"]').click()); await wait(150);
   check('free draw: To back draws the symbol first', await page.evaluate(() => App.project.schematic.free.items[0].k === 'proxn'));
-  await page.click('#view-schematic [data-smode="run"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="run"]').click()); await wait(250);
+  { const tb = await (await page.$('#view-schematic [data-fi="d2"] .hit')).boundingBox(); await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2); await wait(300); }
   const fT = await (await page.$('#view-schematic [data-fi="d3"] .hit')).boundingBox();
   await page.mouse.click(fT.x + fT.width / 2, fT.y + fT.height / 2); await wait(500);
   check('free draw: clicking the thermostat on the drawing switches the heater on', await get('EH1', 'state.on'));
-  await page.click('#view-schematic [data-smode="edit"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-smode="edit"]').click()); await wait(250);
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await page.click('#view-schematic [data-sstyle="iec"]');
 
@@ -1241,7 +1244,7 @@ function check(name, cond, info = '') {
   check('free draw: the new sources and wire pieces are in the library', await page.evaluate(() => ['pL1', 'pL2', 'pL3', 'pN', 'pPE', 'pP', 'pM', 'batt', 'gen', 'psu', 'wline', 'wcorner', 'wtee', 'wcross', 'wlink', 'mdc'].every(k => FreeDraw.KINDS[k])));
   await page.selectOption('#view-schematic .fd-grp', 'Others'); await wait(100);
   for (let i = 0; i < 4; i++) { await page.click('#view-schematic .fd-ico[data-fk="wcorner"]'); await wait(80); }
-  check('free draw: symbols added one after another do not land on each other', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && its.every((a, i) => its.every((b, j) => i === j || Math.abs(a.x - b.x) >= 70 || Math.abs(a.y - b.y) >= 70)); }));
+  check('free draw: as in Simurelay, a symbol from the library lands in the middle of the view, selected', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && its.every(a => a.x === its[0].x && a.y === its[0].y) && FreeDraw.selected() === its[3]; }));
   check('free draw: wire pieces need no tag dialog', await page.evaluate(() => !document.querySelector('.modal')));
   await page.dragAndDrop('#view-schematic .fd-ico[data-fk="wcross"]', '#view-schematic .fd-host', { targetPosition: { x: 60, y: 60 } }); await wait(200);
   check('free draw: a symbol dragged from the library lands where it is dropped', await page.evaluate(() => App.project.schematic.free.items.some(i => i.k === 'wcross')));
@@ -1260,16 +1263,16 @@ function check(name, cond, info = '') {
   await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
   check('free draw: Point L1 and Point N are wired to the supply L and N', await page.evaluate(() => { const C = App.project.circuit, q = C.comps.find(c => c.props.label === 'Q1'), j1 = C.comps.find(c => c.props.label === 'XP1'), j2 = C.comps.find(c => c.props.label === 'XP2'); return App.api.sameNet(j1.id + ':J', q.id + ':L') && App.api.sameNet(j2.id + ':J', q.id + ':N'); }));
   check('free draw: a +24 V point with no 24 V supply brings a 24 V battery into the Wiring (no error)', await page.evaluate(() => ![...FreeDraw.errs.values()].some(m => m.includes('+24 V')) && App.project.circuit.comps.some(c => c.type === 'battery')));
-  await page.click('#view-schematic [data-fdact="play"]'); await wait(100);
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="play"]').click()); await wait(250); await wait(100);
   check('free draw: Play switches to operate', await page.evaluate(() => document.querySelector('#view-schematic [data-smode="run"]').classList.contains('on') && document.querySelector('#view-schematic [data-fdact="play"]').textContent.includes('Stop')));
-  await page.click('#view-schematic [data-fdact="values"]'); await wait(200);
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="values"]').click()); await wait(200);
   const pS1 = await (await page.$('#view-schematic [data-fi="d3"] .hit')).boundingBox();
   await page.mouse.move(pS1.x + pS1.width / 2, pS1.y + pS1.height / 2); await page.mouse.down(); await wait(400);
   check('free draw: through the link arrows (same tag) S1 lights H1', await get('H1', 'state.on'));
   const vals = await page.evaluate(() => [...document.querySelectorAll('#view-schematic .fval')].map(x => x.textContent));
   check('free draw: Values shows 230 V on the lamp, closed on S1, L1 on the point', vals.includes('230 V~') && vals.includes('closed') && vals.includes('L1'), vals.join(','));
   await page.mouse.up(); await wait(200);
-  await page.click('#view-schematic [data-fdact="values"]'); await page.click('#view-schematic [data-fdact="play"]');
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="values"]').click()); await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="play"]').click()); await wait(250);
   await page.click('#view-schematic [data-fz="in"]'); await wait(100);
   check('free draw: zoom buttons at the bottom right zoom the drawing', await page.evaluate(() => /scale\(1\.2/.test(document.querySelector('#view-schematic .fv').getAttribute('transform'))));
   await page.click('#view-schematic [data-fz="fit"]'); await wait(100);
@@ -2053,17 +2056,17 @@ function check(name, cond, info = '') {
   const clickSym = async id => { await page.click(`#view-schematic [data-fi="${id}"] .hit`); await wait(450); };
   await clickSym('d2');
   check('properties: one selected symbol shows its tag, a comment and its device settings (coil voltage, delay) in the side panel', await page.evaluate(() => ['[data-fp="tag"]', '[data-fp="c"]', '[data-fpd="coil"]', '[data-fpd="t"]'].every(s => document.querySelector('#view-schematic ' + s))));
-  await page.fill('#view-schematic [data-fpd="t"]', '3'); await page.dispatchEvent('#view-schematic [data-fpd="t"]', 'change'); await wait(150);
+  await page.evaluate(() => { const i = document.querySelector('#view-schematic [data-fpd="t"]'); i.value = '3'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await wait(150);
   check('properties: a delay set in the diagram is the device setting (the Wiring shows the same value)', await page.evaluate(() => { const d = App.project.circuit.comps.find(c => c.props.label === 'KT1'); App.showView('wiring'); Workspace.selectComp(d.id); const v = document.querySelector('[data-pk="t"]').value; App.showView('schematic'); return d.props.t === 3 && v === '3'; }));
   await page.evaluate(() => { App.showView('wiring'); }); await wait(100);
   await page.selectOption('[data-pk="coil"]', '24VDC'); await wait(100);
   await page.evaluate(() => App.showView('schematic')); await wait(150); await clickSym('d2');
   check('properties: a coil voltage changed in the Wiring shows in the diagram properties', await page.evaluate(() => document.querySelector('#view-schematic [data-fpd="coil"]').value === '24VDC'));
-  await page.fill('#view-schematic [data-fp="c"]', 'Star-delta changeover'); await page.dispatchEvent('#view-schematic [data-fp="c"]', 'change'); await wait(150);
+  await page.evaluate(() => { const i = document.querySelector('#view-schematic [data-fp="c"]'); i.value = 'Star-delta changeover'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await wait(150);
   check('properties: a comment is saved on the symbol and drawn under its tag', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd2').c === 'Star-delta changeover' && [...document.querySelectorAll('#view-schematic .fcmt')].some(t => t.textContent === 'Star-delta changeover')));
   check('properties: the comment survives save and reload', await page.evaluate(() => App.buildProject(JSON.parse(JSON.stringify(App.serialize()))).schematic.free.items.find(i => i.id === 'd2').c === 'Star-delta changeover'));
   await clickSym('d4');
-  await page.fill('#view-schematic [data-fp="tag"]', 'KT1'); await page.dispatchEvent('#view-schematic [data-fp="tag"]', 'change'); await wait(150);
+  await page.evaluate(() => { const i = document.querySelector('#view-schematic [data-fp="tag"]'); i.value = 'KT1'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await wait(150);
   check('properties: a tag of another kind of device is reported (one tag, one device) and nothing is rewired', await page.evaluate(() => { const it = App.project.schematic.free.items.find(i => i.id === 'd4'); return it.tag === 'KT1' && /KT1 is a .* not a Pilot Lamp/.test(FreeDraw.errs.get(it) || ''); }));
   await page.evaluate(() => Schematic.undo()); await wait(100);
   check('properties: Undo takes the tag back', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd4').tag === 'H1' && FreeDraw.errs.size === 0));
@@ -2116,9 +2119,9 @@ function check(name, cond, info = '') {
   }));
   await page.evaluate(() => { FreeDraw.resetSel(); Schematic.render(); }); await wait(100);
   const dlSvg = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
-  await page.click('#view-schematic [data-fd="svg"]'); const svgFile = await dlSvg;
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fd="svg"]').click()); const svgFile = await dlSvg;
   const dlPng = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
-  await page.click('#view-schematic [data-fd="png"]'); const pngFile = await dlPng;
+  await page.evaluate(() => document.querySelector('#view-schematic [data-fd="png"]').click()); const pngFile = await dlPng;
   check('image: Save as SVG and Save as PNG download the drawing', !!svgFile && /\.svg$/.test(svgFile.suggestedFilename()) && !!pngFile && /\.png$/.test(pngFile.suggestedFilename()), `${svgFile && svgFile.suggestedFilename()} ${pngFile && pngFile.suggestedFilename()}`);
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
@@ -2454,7 +2457,7 @@ function check(name, cond, info = '') {
     JSON.stringify([...document.querySelectorAll('#view-schematic .fd-grp option')].map(o => o.value)) === JSON.stringify(['All', 'Sources', 'Switches', 'Auxiliaries', 'Coils', 'Loads', 'Contactors', 'Protections', 'Motors', 'Others', 'Sensors', 'PLC'])));
   check('tagging: every library tile shows a short name (device, contact, timing, terminals) and keeps the full name as its tooltip', await page.evaluate(() => { const g = document.querySelector('#view-schematic .fd-grp'); g.value = 'All'; g.dispatchEvent(new Event('change', { bubbles: true }));
     const tile = k => document.querySelector('#view-schematic .fd-ico[data-fk="' + k + '"]'), txt = k => tile(k).querySelector('.fd-nm').textContent;
-    return [...document.querySelectorAll('#view-schematic .fd-ico')].every(b => b.querySelector('.fd-nm').textContent.trim()) && txt('ka1no') === 'KA N.O.11‑14' && txt('ktnc') === 'KT N.C.T-on 15‑16' && txt('olco') === 'F C/O95‑96/98' && tile('ka1no').title === FreeDraw.KINDS.ka1no.n; }));
+    return [...document.querySelectorAll('#view-schematic .fd-ico')].every(b => b.querySelector('.fd-nm').textContent.trim()) && txt('ka1no') === 'K N.O.11‑14' && txt('ktnc') === 'KT N.C.T-on 15‑16' && txt('olco') === 'F C/O95‑96/98' && tile('ka1no').title === FreeDraw.KINDS.ka1no.n; }));
   check('tagging: a placed symbol gets the next tag of its kind at once, no form (KM1, KM2), and a contact the contactor it belongs to', await page.evaluate(async () => {
     FreeDraw.add('kmcoil'); FreeDraw.add('kmcoil'); FreeDraw.add('kmno'); await new Promise(r => setTimeout(r, 100));
     const F = App.project.schematic.free.items; return !document.querySelector('#modal-root .modal') && F.map(i => i.k + ':' + i.tag).join(' ') === 'kmcoil:KM1 kmcoil:KM2 kmno:KM2' && App.project.circuit.comps.filter(c => c.type === 'contactor').length === 2;
@@ -2469,7 +2472,7 @@ function check(name, cond, info = '') {
   check('tagging: renaming to the tag of another device is refused and nothing changes', await page.evaluate(() => { const m = document.querySelector('#modal-root .modal'); const msg = m ? m.textContent : ''; const x = document.querySelector('#modal-root [data-x]'); if (x) x.click();
     return /already the tag of another device/.test(msg) && App.project.schematic.free.items.map(i => i.tag).join(' ') === 'KM1 KM7 KM7'; }));
   await page.evaluate(() => { document.querySelector('#modal-root').innerHTML = ''; });
-  await page.click(`#view-schematic [data-fi="${await page.evaluate(() => App.project.schematic.free.items[0].id)}"] .hit`); await wait(450);
+  await page.evaluate(() => { FreeDraw.openBar(App.project.schematic.free.items[0]); FreeDraw.closeBar(); }); await wait(450);
   await page.keyboard.press('F2'); await wait(150);
   check('tagging: F2 on a selected symbol opens Rename device', await page.evaluate(() => { const m = document.querySelector('#modal-root .modal'); const ok = !!m && /Rename -KM1/.test(m.textContent); const x = document.querySelector('#modal-root [data-x]'); if (x) x.click(); return ok; }));
   check('tagging: the Properties of a symbol have Rename device…', await page.evaluate(() => !!document.querySelector('#view-schematic .sch-side [data-fd="rename"]')));
@@ -2480,8 +2483,8 @@ function check(name, cond, info = '') {
     FreeDraw.setLabels({ tags: true, terms: true }); await new Promise(r => setTimeout(r, 50));
     return t0 >= 3 && s0 >= 6 && t1 === 0 && s1 === s0 && s2 === 0 && stored.tags === false && stored.terms === false && n('.ftag') === t0 && n('.sterm') === s0; }));
   check('tagging: the tag colour can be set (red) and back to the drawing colour', await page.evaluate(async () => {
-    FreeDraw.setLabels({ color: 'red' }); await new Promise(r => setTimeout(r, 50)); const f = getComputedStyle(document.querySelector('#view-schematic .free-svg .ftag')).fill;
-    FreeDraw.setLabels({ color: 'auto' }); await new Promise(r => setTimeout(r, 50)); const g = getComputedStyle(document.querySelector('#view-schematic .free-svg .ftag')).fill;
+    FreeDraw.setLabels({ color: 'red' }); await new Promise(r => setTimeout(r, 50)); const f = getComputedStyle(document.querySelector('#view-schematic .free-svg .fitem:not(.sel) .ftag')).fill;
+    FreeDraw.setLabels({ color: 'auto' }); await new Promise(r => setTimeout(r, 50)); const g = getComputedStyle(document.querySelector('#view-schematic .free-svg .fitem:not(.sel) .ftag')).fill;
     return f === 'rgb(198, 40, 40)' && g !== f && !document.querySelector('#view-schematic .free-svg.tagc-red'); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
@@ -2519,8 +2522,8 @@ function check(name, cond, info = '') {
     const prev = App.currentId; App.openNew({ name: 'Start stop', circuit: { seq: 3, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'psu24', x: 0, y: 200, props: { label: 'G1' }, state: {} }],
       wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }] } }); if (prev) Store.remove(prev);
     localStorage.setItem('plc-trainer.schStyle', 'free'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); FreeDraw.setLabels({ ask: false }); await new Promise(q => setTimeout(q, 200));
-    const add = k => { FreeDraw.add(k); const F = App.project.schematic.free.items; return F[F.length - 1]; };
-    const a = add('pP'), stop = add('pbnc'), start = add('pbno'), seal = add('kmno'), coil = add('kmcoil'), run = add('kmno'), h = add('lamp'), m = add('pM');
+    const add = (k, x, y) => { FreeDraw.add(k, undefined, x, y); const F = App.project.schematic.free.items; return F[F.length - 1]; };
+    const a = add('pP', 0, 0), stop = add('pbnc', 0, 120), start = add('pbno', 0, 240), seal = add('kmno', 110, 240), coil = add('kmcoil', 0, 360), run = add('kmno', 220, 120), h = add('lamp', 220, 240), m = add('pM', 0, 480);
     const F = App.project.schematic.free; let n = F.seq; const w = (x, y) => F.wires.push({ id: 'fw' + (++n), a: x, b: y }); F.seq = n + 10;
     w(a.id + ':J', stop.id + ':11'); w(stop.id + ':12', start.id + ':13'); w(start.id + ':13', seal.id + ':13'); w(start.id + ':14', seal.id + ':14'); w(start.id + ':14', coil.id + ':A1'); w(coil.id + ':A2', m.id + ':J');
     w(a.id + ':J', run.id + ':53'); w(run.id + ':54', h.id + ':X1'); w(h.id + ':X2', m.id + ':J');
@@ -2543,7 +2546,7 @@ function check(name, cond, info = '') {
     return true;
   }));
   check('engineer: an automatic wire route never passes over a terminal it does not connect', await page.evaluate(() => {
-    const ts = [...document.querySelectorAll('#view-schematic .fterm')].map(t => ({ k: t.dataset.ft, x: +t.getAttribute('cx'), y: +t.getAttribute('cy') }));
+    const ts = [...document.querySelectorAll('#view-schematic .fterm')].map(t => ({ k: t.dataset.ft, x: +t.dataset.x, y: +t.dataset.y }));
     const F = App.project.schematic.free;
     return F.wires.every(w => {
       const d = document.querySelector(`#view-schematic [data-fw="${w.id}"] .w`).getAttribute('d'), P = d.replace('M', '').split(' L').map(p => p.split(' ').map(Number));
@@ -2673,32 +2676,38 @@ function check(name, cond, info = '') {
     await page.evaluate(() => { const prev = App.currentId; App.openNew({ name: 'Seal-in by mouse', circuit: { comps: [], wires: [], seq: 0 } }); if (prev) Store.remove(prev); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); document.querySelector('#view-schematic [data-smode="edit"]').click(); FreeDraw.setRouting('simple'); FreeDraw.setLabels({ ask: false }); FreeDraw.search(''); });
     await wait(200);
     await page.selectOption('#view-schematic .fd-grp', 'All');
-    for (const k of ['pP', 'pbnc', 'pbno', 'kacoil', 'ka1no', 'pM']) { await page.click(`#view-schematic [data-fk="${k}"]`); await wait(120); }
-    const id = await page.evaluate(() => Object.fromEntries(App.project.schematic.free.items.map(i => [i.k, i.id])));
-    check('Simurelay walk-through: + and 0 V points work on their own: a 24 V battery is added to the Wiring for them, no error', await page.evaluate(() => (FreeDraw.errs || new Map()).size === 0 && App.project.circuit.comps.filter(c => c.type === 'battery').length === 1));
+    // as in Simurelay: each symbol lands in the middle of the view, then is dragged into place
+    const id = {};
     const scr = (x, y) => page.evaluate(([x, y]) => { const svg = document.querySelector('#view-schematic .free-svg'), pt = svg.createSVGPoint(); pt.x = x; pt.y = y; const q = pt.matrixTransform(svg.querySelector('.fv').getScreenCTM()); return { x: q.x, y: q.y }; }, [x, y]);
     const pos = k => page.evaluate(i => { const it = App.project.schematic.free.items.find(q => q.id === i); return [it.x, it.y]; }, id[k]);
     const drag = async (k, x, y) => { const [ix, iy] = await pos(k), a = await scr(ix + 25, iy), b = await scr(x + 25, y); await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 8 }); await page.mouse.up(); await wait(150); };
     // the seal-in contact a little above the start button (its branch then runs over the stop button's terminal 12)
-    const [sx, sy] = await pos('pbno'), [cx, cy] = await pos('kacoil');
-    await drag('ka1no', sx + 100, sy - 40); await drag('pM', cx, cy + 120);
+    const spots = { pP: [0, -240], pbnc: [0, -120], pbno: [0, 0], kacoil: [0, 120], ka1no: [100, -40], pM: [0, 240] };
+    let c0 = null;
+    for (const k of Object.keys(spots)) {
+      await page.click(`#view-schematic [data-fk="${k}"]`); await wait(120);
+      id[k] = await page.evaluate(() => { const F = App.project.schematic.free.items; return F[F.length - 1].id; });
+      if (!c0) c0 = await pos(k);
+      await drag(k, c0[0] + spots[k][0], c0[1] + spots[k][1]);
+    }
+    check('Simurelay walk-through: + and 0 V points work on their own: a 24 V battery is added to the Wiring for them, no error', await page.evaluate(() => (FreeDraw.errs || new Map()).size === 0 && App.project.circuit.comps.filter(c => c.type === 'battery').length === 1));
     const ft = async key => { const b = await (await page.$(`#view-schematic [data-ft="${key}"]`)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
     const pairs = [[id.pP + ':J', id.pbnc + ':11'], [id.pbnc + ':12', id.pbno + ':13'], [id.pbno + ':14', id.kacoil + ':A1'], [id.kacoil + ':A2', id.pM + ':J'], [id.ka1no + ':11', id.pbno + ':13'], [id.ka1no + ':14', id.pbno + ':14']];
     for (const [a, b] of pairs) { const p = await ft(a); await page.mouse.click(p.x, p.y); await wait(100); const q = await ft(b); await page.mouse.click(q.x, q.y); await wait(150); }
     check('Simurelay walk-through: two clicks per wire make the 6 wires of the circuit', await page.evaluate(n => App.project.schematic.free.wires.length === n && (FreeDraw.errs || new Map()).size === 0, pairs.length));
     const seal = await page.evaluate(([c, s]) => {
       const F = App.project.schematic.free, w = F.wires.find(x => [x.a, x.b].includes(c + ':11')), P = document.querySelector(`#view-schematic [data-fw="${w.id}"] .w`).getAttribute('d').replace('M', '').split(' L').map(p => p.split(' ').map(Number));
-      const t12 = document.querySelector(`#view-schematic [data-ft="${s}:12"]`), x = +t12.getAttribute('cx'), y = +t12.getAttribute('cy');
+      const t12 = document.querySelector(`#view-schematic [data-ft="${s}:12"]`), x = +t12.dataset.x, y = +t12.dataset.y;
       return { P, onTerm: P.some(p => p[0] === x && p[1] === y), dot: [...document.querySelectorAll('#view-schematic .fjdot')].some(d => +d.getAttribute('cx') === x && +d.getAttribute('cy') === y) };
     }, [id.ka1no, id.pbnc]);
     check('Simurelay walk-through: the seal-in branch is a simple bracket that joins at the stop button\'s terminal 12 (same circuit), with a junction dot there', seal.P.length === 4 && seal.onTerm && seal.dot, JSON.stringify(seal));
-    await page.click('#view-schematic [data-fdact="play"]'); await wait(200);
+    await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="play"]').click()); await wait(250); await wait(200);
     const hold = async k => { const b = await (await page.$(`#view-schematic [data-fi="${id[k]}"] .hit`)).boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await wait(300); await page.mouse.up(); await wait(400); };
     const pulled = () => page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'relay').state.pulled);
     await hold('pbno'); const on = await pulled();
     await hold('pbnc'); const off = await pulled();
     check('Simurelay walk-through: Play, press S2 (N.O.): KA1 pulls in and holds itself; press S1 (N.C.): it drops out', on === true && off === false && await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'relay').props.coil === '24VDC'));
-    await page.click('#view-schematic [data-fdact="play"]'); await wait(150);
+    await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="play"]').click()); await wait(250); await wait(150);
     check('Simurelay walk-through: deleting the + and 0 V points takes the battery they brought out of the Wiring again', await page.evaluate(ids => {
       const F = App.project.schematic.free; F.items = F.items.filter(i => !ids.includes(i.id)); F.wires = F.wires.filter(w => !ids.some(d => w.a.startsWith(d + ':') || w.b.startsWith(d + ':'))); Schematic.sync();
       return !App.project.circuit.comps.some(c => c.type === 'battery');
@@ -2716,6 +2725,72 @@ function check(name, cond, info = '') {
     App.project.schematic.free.items.push({ id: 'd1', k: 'pbno', tag: 'S1', x: 100, y: 100, r: 0 }); App.project.schematic.free.seq = 2; Schematic.sync(); FreeDraw.render(document.querySelector('#view-schematic .sch-body'));
     const t = document.querySelector('#view-schematic [data-fi="d1"] .ftag'); return !!t && +t.getAttribute('x') <= 100 - 36;
   }));
+  console.log('Simurelay clone: editor, property bar, settings, Play');
+  {
+    await page.evaluate(() => {
+      const prev = App.currentId; App.openNew({ name: 'Clone', circuit: { comps: [], wires: [], seq: 0 }, schematic: { free: { seq: 9, items: [
+        { id: 'd1', k: 'pL1', tag: 'XP1', x: 100, y: 0, r: 0 }, { id: 'd2', k: 'mcb1', tag: 'QF1', x: 100, y: 100, r: 0 }, { id: 'd3', k: 'pbno', tag: 'S1', x: 100, y: 220, r: 0 },
+        { id: 'd4', k: 'lamp', tag: 'H1', x: 100, y: 340, r: 0 }, { id: 'd5', k: 'pN', tag: 'XP2', x: 100, y: 460, r: 0 }, { id: 'd6', k: 'pbno', tag: 'S2', x: 300, y: 220, r: 0 }, { id: 'd7', k: 'ktcoil', tag: 'KT1', x: 300, y: 340, r: 0 }],
+      wires: [{ id: 'fw1', a: 'd1:J', b: 'd2:1' }, { id: 'fw2', a: 'd2:2', b: 'd3:13' }, { id: 'fw3', a: 'd3:14', b: 'd4:X1' }, { id: 'fw4', a: 'd4:X2', b: 'd5:J' }] } } }); if (prev) Store.remove(prev);
+      App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); document.querySelector('#view-schematic [data-smode="edit"]').click(); FreeDraw.setRouting('simple');
+    });
+    await wait(250);
+    const ft = async key => { const b = await (await page.$(`#view-schematic [data-ft="${key}"]`)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    const hit = async id => { const b = await (await page.$(`#view-schematic [data-fi="${id}"] .hit`)).boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    { const a = await ft('d6:14'); await page.mouse.click(a.x, a.y); await wait(100); await page.mouse.click(a.x + 200, a.y + 40); await wait(150); }
+    check('clone: a click on empty space while drawing a wire cancels it (no corner, no wire)', await page.evaluate(() => !document.querySelector('#view-schematic .wtemp') && App.project.schematic.free.wires.length === 4));
+    { const a = await hit('d6'); await page.mouse.click(a.x, a.y); await wait(150); }
+    check('clone: a selected symbol shows guide lines through its terminals', await page.evaluate(() => document.querySelectorAll('#view-schematic .fguide').length >= 2));
+    { const a = await hit('d6'); await page.mouse.dblclick(a.x, a.y); await wait(200); }
+    check('clone: double-click opens the property bar in place of the toolbar and the library', await page.evaluate(() => { const b = document.querySelector('#view-schematic .fd-pbar'); return !b.hidden && /Push button N\.O\.: -S2/.test(b.textContent) && getComputedStyle(document.querySelector('#view-schematic .sch-toolbar')).visibility === 'hidden'; }));
+    await page.click('#view-schematic [data-pbs="-1"]'); await wait(150);
+    check('clone: NUM1 < skips a number another device has (S1 is taken, so S2 stays)', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd6').tag === 'S2'));
+    await page.click('#view-schematic [data-pbs="1"]'); await wait(150);
+    check('clone: NUM1 > gives the next free number (S3)', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd6').tag === 'S3' && /-S3/.test(document.querySelector('#view-schematic .fd-pbar').textContent)));
+    await page.click('#view-schematic [data-pbt="tag"]'); await page.click('#view-schematic [data-pbs="1"]'); await wait(150);
+    check('clone: TAG > steps the prefix (S to SL)', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd6').tag === 'SL3'));
+    await page.fill('#view-schematic [data-pbcmt]', 'Start'); await page.press('#view-schematic [data-pbcmt]', 'Enter'); await wait(150);
+    check('clone: the comment typed in the bar is kept on the symbol', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd6').c === 'Start'));
+    { const a = await hit('d7'); await page.mouse.dblclick(a.x, a.y); await wait(200); }
+    const t0 = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'KT1').props.t);
+    await page.click('#view-schematic [data-pbn="t"][data-d="1"]'); await wait(150);
+    check('clone: a timer drawn here starts at 2 s and > adds 1 s', Number(t0) === 2 && await page.evaluate(() => Number(App.project.circuit.comps.find(c => c.props.label === 'KT1').props.t) === 3), String(t0));
+    { const a = await ft('d4:X1'); await page.mouse.click(a.x, a.y, { button: 'right' }); await wait(200); }
+    await page.fill('#view-schematic [data-pbterm]', 'X9'); await page.press('#view-schematic [data-pbterm]', 'Enter'); await wait(150);
+    check('clone: right-click on a terminal edits the number written beside it', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd4').tn.X1 === 'X9' && [...document.querySelectorAll('#view-schematic [data-fi="d4"] .sterm')].some(t => t.textContent === 'X9')));
+    { const a = await hit('d4'); await page.mouse.click(a.x + 120, a.y + 60); await wait(150); }
+    check('clone: a click on the drawing closes the bar and brings the toolbar back', await page.evaluate(() => document.querySelector('#view-schematic .fd-pbar').hidden && getComputedStyle(document.querySelector('#view-schematic .sch-toolbar')).visibility !== 'hidden'));
+    { const a = await hit('d4'); await page.mouse.click(a.x, a.y); await page.keyboard.press('Control+r'); await wait(150); }
+    check('clone: Ctrl+R rotates the selected symbol', await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd4').r === 90));
+    await page.keyboard.press('Control+z'); await wait(150);
+    // Play: only the drawing and a Stop button; everything starts at rest (the breaker off)
+    await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="play"]').click()); await wait(300);
+    check('clone: Play hides the toolbar and the library and shows a Stop button', await page.evaluate(() => getComputedStyle(document.querySelector('#view-schematic .sch-toolbar')).display === 'none' && getComputedStyle(document.querySelector('#view-schematic .fd-lib')).display === 'none' && getComputedStyle(document.querySelector('#view-schematic .fd-stop')).display !== 'none'));
+    check('clone: Play starts with the breaker off (protections by hand)', await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'QF1').state.on === false));
+    { const a = await hit('d2'); await page.mouse.click(a.x, a.y); await wait(250); const b = await hit('d3'); await page.mouse.move(b.x, b.y); await page.mouse.down(); await wait(400); }
+    check('clone: tap the breaker on, hold S1: the lamp lights and its wires show L1 brown and N blue', await page.evaluate(() => {
+      const on = App.project.circuit.comps.find(c => c.props.label === 'H1').state.on, w = id => document.querySelector(`#view-schematic [data-fw="${id}"] .w`);
+      return on && w('fw3').classList.contains('p-L1') && w('fw4').classList.contains('p-N') && getComputedStyle(w('fw3')).stroke.replace(/\s/g, '') === 'rgb(163,87,64)';
+    }));
+    await page.mouse.up(); await wait(200);
+    // a short circuit (L1 to N through the closed breaker and S2) stops the simulation; nothing trips by itself
+    await page.evaluate(() => { document.querySelector('#view-schematic .fd-stop button').click(); });
+    await wait(250);
+    await page.evaluate(() => { const F = App.project.schematic.free; F.wires.push({ id: 'fw8', a: 'd2:2', b: 'd6:13' }, { id: 'fw9', a: 'd6:14', b: 'd5:J' }); Schematic.sync(); });
+    await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="play"]').click()); await wait(300);
+    { const a = await hit('d2'); await page.mouse.click(a.x, a.y); await wait(250); const b = await hit('d6'); await page.mouse.move(b.x, b.y); await page.mouse.down(); await wait(500); await page.mouse.up(); await wait(300); }
+    check('clone: a short circuit stops the simulation with "Short circuit detected!", and the breaker did not trip by itself', await page.evaluate(() => [...document.querySelectorAll('.toast')].some(t => /Short circuit detected! Simulation stopped/.test(t.textContent)) &&
+      document.querySelector('#view-schematic [data-smode="edit"]').classList.contains('on') && !App.project.circuit.comps.find(c => c.props.label === 'QF1').state.tripped));
+    check('clone: Stop put the breaker back off', await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'QF1').state.on === false));
+    // the ⋯ menu, and Settings: a colour changed for this theme
+    await page.evaluate(() => document.querySelector('#view-schematic [data-fdact="more"]').click()); await wait(150);
+    check('clone: the ⋯ menu has New, Open, Capture, Save, Save As and Settings', await page.evaluate(() => ['New', 'Open', 'Capture', 'Save', 'Save As', 'Settings'].every(n => [...document.querySelectorAll('#ctxMenu button')].some(b => b.textContent.trim() === n))));
+    await page.keyboard.press('Escape'); await page.mouse.click(5, 300); await wait(100);
+    await page.evaluate(() => FreeDraw.settings()); await wait(150);
+    await page.evaluate(() => { const i = document.querySelector('.modal [data-fdc="tag"]'); i.value = '#ff00ff'; i.dispatchEvent(new Event('change', { bubbles: true })); }); await wait(150);
+    check('clone: Settings, Colors changes the tag colour of the drawing', await page.evaluate(() => getComputedStyle(document.querySelector('#view-schematic [data-fi="d3"] .ftag')).fill.replace(/\s/g, '') === 'rgb(255,0,255)'));
+    await page.evaluate(() => { document.querySelector('.modal [data-fdreset]').click(); document.querySelector('.modal [data-x]').click(); }); await wait(150);
+  }
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
@@ -2731,15 +2806,18 @@ function check(name, cond, info = '') {
   {
     const A = await ftBox('d1:13'); await page.mouse.move(A.x, A.y); await page.mouse.down(); await page.mouse.move(A.x - 80, A.y - 70, { steps: 6 }); await page.mouse.up(); await wait(200);
   }
-  check('finish: a wire dragged out and let go on empty space gets a corner there and goes on', await page.evaluate(() => !!document.querySelector('#view-schematic .wtemp') && App.project.schematic.free.wires.length === 1));
+  check('finish: as in Simurelay, a wire dragged out and let go on empty space is cancelled', await page.evaluate(() => !document.querySelector('#view-schematic .wtemp') && App.project.schematic.free.wires.length === 1));
+  { const A = await ftBox('d1:13'); await page.mouse.click(A.x, A.y); await wait(120); }
   await page.keyboard.press('Escape'); await wait(150);
   check('finish: Esc cancels the wire being drawn', await page.evaluate(() => App.project.schematic.free.wires.length === 1 && !document.querySelector('#view-schematic .wtemp')));
   {
-    // click a terminal, click two places on the way, click the other terminal: the wire keeps those corners
-    const A = await ftBox('d1:13'), C = await ftBox('d3:J');
-    await page.mouse.click(A.x, A.y); await wait(120); await page.mouse.click(A.x, A.y - 60); await wait(120); await page.mouse.click(C.x, A.y - 60); await wait(120); await page.mouse.click(C.x, C.y); await wait(200);
+    // as in Simurelay, a click on empty space while drawing cancels the wire
+    const A = await ftBox('d1:13');
+    await page.mouse.click(A.x, A.y); await wait(120); await page.mouse.click(A.x, A.y - 60); await wait(150);
   }
-  check('finish: clicks on the way while drawing a wire are its corners', await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => [x.a, x.b].includes('d3:J')); return !!w && Array.isArray(w.pts) && w.pts.length === 2 && w.pts[0][1] === w.pts[1][1]; }));
+  check('finish: a click on the way while drawing a wire cancels it (Simurelay)', await page.evaluate(() => !document.querySelector('#view-schematic .wtemp') && !App.project.schematic.free.wires.some(x => [x.a, x.b].includes('d3:J'))));
+  // a wire with two corners of its own (as one dragged into shape), for the segment drag below
+  await page.evaluate(() => { const F = App.project.schematic.free, t = k => document.querySelector('#view-schematic [data-ft="' + k + '"]').dataset, a = t('d1:13'), c = t('d3:J'); F.seq++; F.wires.push({ id: 'fw' + F.seq, a: 'd1:13', b: 'd3:J', pts: [[+a.x, +a.y - 60], [+c.x, +a.y - 60]] }); Schematic.sync(); App.circuitChanged(); }); await wait(200);
   {
     // drag the middle (horizontal) part of that wire 40 lower
     const P = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => [x.a, x.b].includes('d3:J')); return { id: w.id, y: w.pts[0][1], x: (w.pts[0][0] + w.pts[1][0]) / 2 }; });
@@ -2999,8 +3077,8 @@ function check(name, cond, info = '') {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: lb.x + lb.width / 2, y: lb.y + lb.height / 2, id: 3 }] });
   await phone.waitForTimeout(800);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  check('a long press on a symbol in the free drawing opens its tag form', await phone.evaluate(() => !!document.querySelector('.modal #f_t')));
-  await phone.evaluate(() => { const c = [...document.querySelectorAll('.modal .btn')].find(b => /cancel/i.test(b.textContent)); if (c) c.click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); });
+  check('a long press on a symbol in the free drawing opens its property bar (tag, comment)', await phone.evaluate(() => { const b = document.querySelector('#view-schematic .fd-pbar'); return !!document.querySelector('.modal #f_t') || (!!b && !b.hidden && !!b.querySelector('[data-pbs]')); }));
+  await phone.evaluate(() => { FreeDraw.closeBar(); const c = [...document.querySelectorAll('.modal .btn')].find(b => /cancel/i.test(b.textContent)); if (c) c.click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await phone.waitForTimeout(150);
   // phone layout of the header and the Electrical Diagram toolbar: nothing cut off at the edge, the side panel and the library reachable
   const cutOff = sel => phone.evaluate(sel => { const W = innerWidth, el = document.querySelector(sel); if (!el) return ['missing ' + sel];

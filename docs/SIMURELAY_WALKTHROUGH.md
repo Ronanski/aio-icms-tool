@@ -41,3 +41,28 @@ Simurelay 3.0.9 (Windows desktop app) ang ginamit, sa computer use; walang na-sa
 ## Screenshots
 
 Nasa scratchpad ng session (hindi kasama sa repo): `simurelay/` (bawat hakbang sa Simurelay) at `ours/` (bawat hakbang sa atin).
+
+## Update: ginaya na ang Simurelay (branch `feature/simurelay-clone`)
+
+Pagkatapos ng test ng owner ("ang daming hindi kinopya"), pinag-aralan ang Simurelay mismo: lahat ng menu at Settings, at ang `SimurelayWindows.dll` (behaviour lang ang kinuha, hindi ang code o artwork; spec sa shared notes `simurelay-behaviour-spec.md`). Ginaya na sa Free draw:
+
+| Bahagi | Simurelay | Atin ngayon |
+|---|---|---|
+| Itsura | Dark/Light: canvas #141414 / #F0F0F0, symbols #B4B4B4 / #0A0A0A, tag teal / berde, square na terminal, grid na manipis bawat step at mas makapal bawat 4 | Pareho (sumusunod sa theme ng app; Settings → Dark Mode) |
+| Paglagay | Click sa library → gitna ng view, naka-select | Pareho |
+| Wire | Click terminal → click terminal; ibang click = cancel | Pareho (hindi na kanto ang click) |
+| Guides | Linya sa bawat terminal ng naka-select na symbol | Pareho |
+| Napiling wire | Orange na hawakan sa gitnang bahagi, i-drag | Pareho |
+| Values / property bar | Double-click, right-click o Values: bar sa itaas; TAG `<` `>`, NUM1 `<` `>`, comment; terminal: numero | Pareho (+ settings ng device, oras `<` `>` 1 s, 0–60 s) |
+| Mga prefix | K KA KM KV R RA; KT RT T; S SL; Q QA; F FA FU; H L; M MA MP | Pareho; ang relay ay K1 na (dati KA1) |
+| ⋯ menu | New, Open, Capture, Save, Save As, Settings | Pareho |
+| Settings | Show Grid, Show Zoom Panel, Dark Mode, 10 kulay bawat theme, Reset | Pareho (+ Wires, tags, terminal numbers) |
+| Play | Toolbar at library nakatago, Stop sa kaliwa-itaas | Pareho, may berdeng linya sa itaas |
+| Simula ng Play / Stop | Lahat ay nasa pahinga: breaker OFF, button out, switch sa 0, timer cleared | Pareho |
+| Protections | Kamay lang: tap breaker on/off, fuse blow/replace, overload trip/reset; walang kusang trip | Pareho |
+| Short circuit | "Short circuit detected! Simulation stopped." | Pareho |
+| Kulay habang Play | L1 #A35740, L2 #455A64, L3 #18FFFF, N #2962FF, PE #FDD835, + #FF0000, − #2962FF; coil dilaw | Pareho |
+| Timer | Default 2 s, `<` `>` 1 s, 0–60 s | Pareho (timer na gawa sa drawing) |
+| Keys | Ctrl+R/B/F/D, Ctrl+Delete, Ctrl+arrows, Ctrl+V (Values), Ctrl+Z/Y | Pareho (gumagana pa rin ang lumang keys) |
+
+Hindi ginaya (sadya): ang bayad na lock (timers, Undo, Duplicate, Capture — libre sa atin); ang mga mali ng Simurelay (prefix na "LA" na walang gitling, hindi kita na dot grid sa light mode); at ang mas simpleng "potential" na simulation (series loads na hindi gumagana, walang tunay na boltahe) — mas totoo pa rin ang solver natin, pero pareho ang resulta sa karaniwang circuit.

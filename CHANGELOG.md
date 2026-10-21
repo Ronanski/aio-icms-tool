@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-21
+
+### Changed
+- **Free draw works like Simurelay** (behaviour taken from studying Simurelay 3.0.9 itself; our own code and drawings, `docs/SIMURELAY_WALKTHROUGH.md`):
+  - **Look**: Simurelay's colours in light and dark (they follow the app theme): canvas, grey/black symbols, teal/green tags and terminal numbers, small square terminals that disappear once wired, a grid of fine lines with a stronger line every four steps, blue selection, and an orange handle on the middle of a selected wire.
+  - **Placing and wiring**: a symbol from the library lands in the middle of the view, selected. Click a terminal, then another terminal: the wire. A click anywhere else cancels the wire (no more corners by clicking; drag the middle of a selected wire to move it). The selected symbol shows guide lines through its terminals.
+  - **Property bar** at the top in place of the toolbar and the library (double-click, right-click, or Values on a selected symbol): the name and tag, a comment, **TAG** `<` `>` (the prefix: K, KA, KM, KV, R, RA for coils; S, SL for switches; Q, QA; F, FA, FU; H, L; M, MA, MP…), **NUM1** `<` `>` (the number; numbers another device has are skipped), and the device's settings (a time steps by 1 s from 0 to 60 s). Right-click a terminal to change the number written beside it. A click on the drawing closes the bar. The side panel is gone on a computer (its settings are in ⋯ → Settings).
+  - **⋯ menu**: New, Open, Capture (picture), Save, Save As, Settings (Show Grid, Show Zoom Panel, Dark Mode, Wires, tags and terminal numbers, and the colours of Element Tag, Comment, Terminal Tag, N, L1, L2, L3, PE, + and −, per theme, with Reset).
+  - **Play**: only the drawing and a Stop button stay, with a green line along the top. Everything starts at rest (buttons out, switches and breakers off, timers cleared) and Stop puts it back. Protections work by hand: tap a breaker to switch it, a fuse to blow or replace it, an overload to trip or reset it; nothing trips by itself. A short circuit stops the simulation with "Short circuit detected! Simulation stopped." Wires show their conductor: L1 brown, L2 grey, L3 cyan, N blue, PE yellow, + red, 0 V blue; the energized coil is yellow.
+  - **Keys** as Simurelay's (with Ctrl): Ctrl+R rotate, Ctrl+B back, Ctrl+F front, Ctrl+D duplicate, Ctrl+Delete delete, Ctrl+arrows move, Ctrl+V values (paste when something is copied). The old keys still work.
+  - **Tags**: a relay coil and its contacts are K1, K2… (was KA); a timer drawn here starts at 2 s.
+
 ## [2.2.2] - 2026-10-21
 
 ### Added

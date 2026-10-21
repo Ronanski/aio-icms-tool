@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '2.2.2';
+  const VERSION = '2.3.0';
   // build id: 'dev' in the repository; the Pages and release builds stamp it (scripts/copy-web.sh) so the updater can tell builds apart
   const BUILD = 'dev';
   /* project file format: raise it when a saved project gains content older versions cannot read. Files without it are 1.
@@ -1276,6 +1276,10 @@
     });
   }
   App.saveAs = saveAs;
+  // for the free-draw ⋯ menu (Simurelay's New / Open / Settings → Dark Mode)
+  App.newProject = () => newProject();
+  App.openDialog = () => openDialog();
+  App.setTheme = t => setTheme(t);
 
   /* ---------- boot ---------- */
   function boot() {

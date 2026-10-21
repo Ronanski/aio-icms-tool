@@ -762,7 +762,7 @@
       <div class="lad-toolbar sch-toolbar">
         <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select"><span class="ic">✎ </span>Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols"><span class="ic">☝ </span>Operate</button></div>
           <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit"><span class="ic">⇵ </span>IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung"><span class="ic">⇄ </span>Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal"><span class="ic">✎ </span>Free draw</button></div></div>
-        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦<span class="tl"> Library</span></button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶<span class="tl"> Play</span></button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎<span class="tl"> Values</span></button><button class="tbtn${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨<span class="tl"> Colours</span></button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳<span class="tl"> Rotate</span></button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉<span class="tl"> Duplicate</span></button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑<span class="tl"> Delete</span></button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶<span class="tl"> Undo</span></button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷<span class="tl"> Redo</span></button><button class="tbtn mobile-only" data-fdact="props" title="Properties of the selected symbol, problems and tips">⚙<span class="tl"> Props</span></button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦<span class="tl"> Library</span></button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶<span class="tl"> Play</span></button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎<span class="tl"> Values</span></button><button class="tbtn${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨<span class="tl"> Colours</span></button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳<span class="tl"> Rotate</span></button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉<span class="tl"> Duplicate</span></button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑<span class="tl"> Delete</span></button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶<span class="tl"> Undo</span></button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷<span class="tl"> Redo</span></button><button class="tbtn mobile-only" data-fdact="props" title="Properties of the selected symbol, problems and tips">⚙<span class="tl"> Props</span></button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="more" title="New, Open, Capture, Save, Save As, Settings" aria-label="More">⋯</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -792,7 +792,10 @@
     el.querySelector('.sch-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.smode) {
-        mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run');
+        const was = mode; mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run');
+        root.classList.toggle('fd-playing', mode === 'run' && style === 'free');
+    Circuit.setManual(mode === 'run' && style === 'free');
+        if (style === 'free' && was !== mode) FreeDraw.playChanged(mode === 'run');
         const pl = el.querySelector('[data-fdact="play"]'); pl.classList.toggle('on', mode === 'run'); pl.innerHTML = mode === 'run' ? '■<span class="tl"> Stop</span>' : '▶<span class="tl"> Play</span>';
         return;
       }
@@ -801,7 +804,8 @@
         const a = b.dataset.fdact;
         if (a === 'lib') b.classList.toggle('on', FreeDraw.toggleLib());
         else if (a === 'play') el.querySelector(`[data-smode="${mode === 'run' ? 'edit' : 'run'}"]`).click();
-        else if (a === 'values') { FreeDraw.values = !FreeDraw.values; b.classList.toggle('on', FreeDraw.values); renderRungs(); }
+        else if (a === 'more') { const r = b.getBoundingClientRect(); FreeDraw.menu(r.right - 180, r.bottom + 4); }
+        else if (a === 'values') { if (FreeDraw.valuesAct()) return; FreeDraw.values = !FreeDraw.values; b.classList.toggle('on', FreeDraw.values); renderRungs(); }
         else if (a === 'props') el.querySelector('[data-sact="side"]').click();
         else if (a === 'colors') { FreeDraw.setColors(!FreeDraw.colors); b.classList.toggle('on', FreeDraw.colors); }
         else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, copy: FreeDraw.copy, del: FreeDraw.del, front: () => FreeDraw.order(true), back: () => FreeDraw.order(false) })[a]();
@@ -867,6 +871,7 @@
     root.querySelector('.pw-group').hidden = style !== 'iec';
     const po = root.querySelector('.pw-opt'); if (po) po.hidden = style !== 'iec';
     root.classList.toggle('free-style', style === 'free');
+    root.classList.toggle('fd-playing', mode === 'run' && style === 'free');
     const lb = root.querySelector('[data-fdact="lib"]'); if (lb) lb.classList.toggle('on', FreeDraw.libOpen());
   }
   /* power elements are found by "m.i" (main section) or "f.feeder.i"; null when it is gone (after Undo) */
@@ -1118,7 +1123,7 @@
     const c = ev.ctrlKey || ev.metaKey, k = ev.key;
     // the free drawing takes its own keys and Ctrl+C / Ctrl+V / Ctrl+A; Ctrl+Z / Ctrl+Y stay the diagram's undo / redo
     if (style === 'free' && k === 'F2' && !c) { ev.preventDefault(); FreeDraw.renameDevice(FreeDraw.selected()); return; }
-    if (style === 'free' && (!c || ['c', 'v', 'a'].includes(k.toLowerCase()))) { FreeDraw.onKey(ev); return; }
+    if (style === 'free' && (!c || ['c', 'v', 'a', 'r', 'b', 'f', 'd', 'delete', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(k.toLowerCase()))) { FreeDraw.onKey(ev); return; }
     if (c && k.toLowerCase() === 'z') { ev.preventDefault(); SC.undo(); }
     else if (c && k.toLowerCase() === 'y') { ev.preventDefault(); SC.redo(); }
     else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); SC.del(); }

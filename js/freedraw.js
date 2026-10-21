@@ -105,10 +105,10 @@
       kxnc1: two('contactor_aux', '61', '62', 'nc', 'KM', { n: 'Contactor aux block N.C. 61-62' }),
       kxnc2: two('contactor_aux', '71', '72', 'nc', 'KM', { n: 'Contactor aux block N.C. 71-72' }),
       kxno2: two('contactor_aux', '83', '84', 'no', 'KM', { n: 'Contactor aux block N.O. 83-84' }),
-      ka1no: two('relay', '11', '14', 'no', 'KA', { n: 'Relay contact 1 N.O.' }),
-      ka1nc: two('relay', '11', '12', 'nc', 'KA', { n: 'Relay contact 1 N.C.' }),
-      ka2no: two('relay', '21', '24', 'no', 'KA', { n: 'Relay contact 2 N.O.' }),
-      ka2nc: two('relay', '21', '22', 'nc', 'KA', { n: 'Relay contact 2 N.C.' }),
+      ka1no: two('relay', '11', '14', 'no', 'K', { n: 'Relay contact 1 N.O.' }),
+      ka1nc: two('relay', '11', '12', 'nc', 'K', { n: 'Relay contact 1 N.C.' }),
+      ka2no: two('relay', '21', '24', 'no', 'K', { n: 'Relay contact 2 N.O.' }),
+      ka2nc: two('relay', '21', '22', 'nc', 'K', { n: 'Relay contact 2 N.C.' }),
       ktno: two('timer', '15', '18', 'no', 'KT', { act: 'delay', n: 'On-delay contact N.O.' }),
       ktnc: two('timer', '15', '16', 'nc', 'KT', { act: 'delay', n: 'On-delay contact N.C.' }),
       kfno: two('timer_off', '15', '18', 'no', 'KT', { act: 'delayoff', n: 'Off-delay contact N.O.' }),
@@ -119,15 +119,15 @@
       km4no: two('contactor4', '13', '14', 'no', 'KM', { n: 'Contactor 4P aux N.O.' }),
       kino: two('impulse', '1', '2', 'no', 'KI', { n: 'Impulse relay contact N.O.', part: 'lever' }),
       kinc: two('impulse', '3', '4', 'nc', 'KI', { n: 'Impulse relay contact N.C.', part: 'lever' }),
-      ltno: two('latch', '11', '14', 'no', 'KA', { n: 'Latching relay contact N.O.' }),
-      ltnc: two('latch', '11', '12', 'nc', 'KA', { n: 'Latching relay contact N.C.' }),
-      ka1co: co('relay', '11', '12', '14', 'KA', { n: 'Relay changeover contact 1 (11-12 / 11-14)' }),
-      ka2co: co('relay', '21', '22', '24', 'KA', { n: 'Relay changeover contact 2 (21-22 / 21-24)' }),
+      ltno: two('latch', '11', '14', 'no', 'K', { n: 'Latching relay contact N.O.' }),
+      ltnc: two('latch', '11', '12', 'nc', 'K', { n: 'Latching relay contact N.C.' }),
+      ka1co: co('relay', '11', '12', '14', 'K', { n: 'Relay changeover contact 1 (11-12 / 11-14)' }),
+      ka2co: co('relay', '21', '22', '24', 'K', { n: 'Relay changeover contact 2 (21-22 / 21-24)' }),
       ktco: co('timer', '15', '16', '18', 'KT', { act: 'delay', n: 'On-delay changeover contact (15-16 / 15-18)' }),
       kfco: co('timer_off', '15', '16', '18', 'KT', { act: 'delayoff', n: 'Off-delay changeover contact (15-16 / 15-18)' }),
-      ltco: co('latch', '11', '12', '14', 'KA', { n: 'Latching relay changeover contact (11-12 / 11-14)' }),
+      ltco: co('latch', '11', '12', '14', 'K', { n: 'Latching relay changeover contact (11-12 / 11-14)' }),
       kmnonc: nonc('contactor', '21', '22', '13', '14', 'KM', { n: 'Contactor aux N.C. + N.O. (21-22 / 13-14)' }),
-      kanonc: nonc('relay', '11', '12', '21', '24', 'KA', { n: 'Relay N.C. + N.O. (11-12 / 21-24)' }),
+      kanonc: nonc('relay', '11', '12', '21', '24', 'K', { n: 'Relay N.C. + N.O. (11-12 / 21-24)' }),
       olco: co('olr', '95', '96', '98', 'F', { act: 'therm', part: 'ol', olco: true, n: 'Overload changeover 95-96-98' }),
       // the time-delay contact block on a contactor: 55-56 N.C., 67-68 N.O., 55-56-58 changeover (coil and main poles: the contactor's own symbols)
       ...Object.fromEntries([['kbon', 'contactor_ton', 'delay', 'On'], ['kbof', 'contactor_tof', 'delayoff', 'Off']].flatMap(([p, type, act, w]) => [
@@ -148,7 +148,7 @@
     },
     Coils: {
       kmcoil: two('contactor', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor coil' }),
-      kacoil: two('relay', 'A1', 'A2', 'coil', 'KA', { n: 'Relay coil' }),
+      kacoil: two('relay', 'A1', 'A2', 'coil', 'K', { n: 'Relay coil' }),
       ktcoil: two('timer', 'A1', 'A2', 'tcoil', 'KT', { n: 'On-delay timer coil' }),
       kfcoil: two('timer_off', 'A1', 'A2', 'tcoiloff', 'KT', { n: 'Off-delay timer coil' }),
       kdcoil: two('timer_onoff', 'A1', 'A2', 'tcoilboth', 'KT', { n: 'On/off-delay timer coil' }),
@@ -156,8 +156,8 @@
       kpmon: poles('phasemon', ['L1', 'L2', 'L3'], [], 'phm', 'KF', { n: 'Phase failure relay (monitors L1 L2 L3)' }),
       km4coil: two('contactor4', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor 4P coil' }),
       kicoil: two('impulse', 'A1', 'A2', 'icoil', 'KI', { n: 'Impulse relay coil' }),
-      ltset: two('latch', 'A1', 'A2', 'coil', 'KA', { n: 'Latching relay SET coil', label: 'S' }),
-      ltrst: two('latch', 'B1', 'B2', 'coil', 'KA', { n: 'Latching relay RESET coil', label: 'R' }),
+      ltset: two('latch', 'A1', 'A2', 'coil', 'K', { n: 'Latching relay SET coil', label: 'S' }),
+      ltrst: two('latch', 'B1', 'B2', 'coil', 'K', { n: 'Latching relay RESET coil', label: 'R' }),
     },
     Loads: {
       lamp: two('lamp', 'X1', 'X2', 'lamp', 'H', { n: 'Pilot lamp' }),
@@ -262,7 +262,9 @@
         if (typeof i.tag !== 'string' || !TAG.test(i.tag) || items.length >= 400) { kp.dropped++; continue; }
         items.push({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}),
           // a comment on the symbol (Properties), drawn under its tag
-          ...(typeof i.c === 'string' && i.c.trim() ? { c: i.c.trim().slice(0, 80) } : {}) });
+          ...(typeof i.c === 'string' && i.c.trim() ? { c: i.c.trim().slice(0, 80) } : {}),
+          // numbers written beside terminals in place of their own (property bar)
+          ...(() => { const tn = {}; if (i.tn && typeof i.tn === 'object') for (const t of K[i.k].terms) if (typeof i.tn[t.id] === 'string' && i.tn[t.id].trim()) tn[t.id] = i.tn[t.id].trim().slice(0, 6); return Object.keys(tn).length ? { tn } : {}; })() });
       } else if (typeof i.k === 'string' && i.k && kp.free.items.length < 400 && kp.fits(i)) { kp.free.items.push(JSON.parse(JSON.stringify(i))); kp.kinds.push(i.k); }
       else kp.dropped++;
     }
@@ -528,6 +530,7 @@
     const dc = F.items.some(i => ['+', '-'].includes(K[i.k].pot) || ['batt'].includes(K[i.k].look) || K[i.k].type === 'psu24');
     const ac = F.items.some(i => ['L1', 'L2', 'L3', 'N'].includes(K[i.k].pot) || K[i.k].pots || ['src'].includes(K[i.k].look));
     if (dc !== ac) for (const tag of made) { const c = H.devOf(tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'coil' && p.opts && p.opts.includes('24VDC'))) c.props.coil = dc ? '24VDC' : '230VAC'; }
+    for (const tag of made) { const c = H.devOf(tag), P = c && DEFS[c.type].pdefs || []; for (const k of ['t', 't2']) if (P.some(p => p.k === k)) c.props[k] = 2; }
     for (const it of F.items) if (K[it.k].olco && made.has(it.tag)) { const c = H.devOf(it.tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'aux')) c.props.aux = '95-96-98 changeover'; }
     const errs = check();
     FD.errs = errs;
@@ -572,6 +575,9 @@
     window.addEventListener('pointerup', lift); window.addEventListener('pointercancel', lift);
   };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
+  /* which conductor reaches a terminal (Simurelay colours each one while running): L1 L2 L3 N PE, P (+) or M (0 V) */
+  const POTC = p => (/^L[123]$|^N$|^PE$/.test(p) ? p : p.startsWith('DC+') ? 'P' : p.startsWith('DC-') ? 'M' : null);
+  const potOf = k => { const api = App.api; if (!api || !k) return ''; const ps = [...api.potsR(api.rootK(k))].map(POTC).filter(Boolean); return ['L1', 'L2', 'L3', 'P', 'N', 'M', 'PE'].find(c => ps.includes(c)) || ''; };
   const neg = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (p === 'N' || p.startsWith('DC-')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
   /* a contact of a device whose coil (A1) is drawn nowhere and wired nowhere never switches by itself */
@@ -785,7 +791,7 @@
     S.terms.forEach(t => {
       const lx = t.x + (t.id === 'PE' && (S.look === 'motor' || S.look === 'gen') ? 2 : 5), ly = t.y + (t.y < 0 ? -2 : t.y > 0 ? 10 : -6);
       const [x, y] = at(lx, ly);
-      o.push(`<text class="sterm" x="${x}" y="${y}">${esc(t.id)}</text>`);
+      o.push(`<text class="sterm" x="${x}" y="${y}">${esc((it.tn && it.tn[t.id]) || t.id)}</text>`);
     });
     return o.join('');
   }
@@ -826,7 +832,7 @@
   }
   FD.search = function (q) { libQ = String(q || ''); const g = body && body.querySelector('.fd-grid'); if (g) g.innerHTML = gridHtml(); };
   function shell(el) {
-    el.innerHTML = `<div class="fd-wrap${libUi.open ? '' : ' nolib'}"><aside class="fd-lib">${libHtml()}</aside><div class="fd-canvas"><div class="fd-host"></div>
+    el.innerHTML = `<div class="fd-wrap${libUi.open ? '' : ' nolib'}"><aside class="fd-lib">${libHtml()}</aside><div class="fd-canvas"><div class="fd-host"></div><div class="fd-stop"><button data-fstop title="Stop (back to editing)" aria-label="Stop">■</button></div>
       <div class="fd-zoom"><button class="tbtn" data-fz="out" title="Zoom out" aria-label="Zoom out">−</button><button class="tbtn" data-fz="fit" title="Fit the drawing">⤢</button><button class="tbtn" data-fz="in" title="Zoom in" aria-label="Zoom in">＋</button></div></div></div>`;
     const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
     lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
@@ -849,6 +855,9 @@
     lib.addEventListener('dragstart', ev => { const b = ev.target.closest('[data-fk]'); if (b) { ev.dataTransfer.setData('text/fd-sym', b.dataset.fk); ev.dataTransfer.effectAllowed = 'copy'; } });
     host.addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('text/fd-sym')) ev.preventDefault(); });
     host.addEventListener('drop', ev => { const k = ev.dataTransfer.getData('text/fd-sym'); if (!K[k] || !svg) return; ev.preventDefault(); const p = world(ev); FD.add(k, undefined, snap10(p.x), snap10(p.y)); });
+    // the property bar lies over the toolbar row of the view (nothing moves when it opens)
+    const vw0 = el.closest('.view') || el; if (!vw0.querySelector(':scope > .fd-pbar')) { const pb = document.createElement('div'); pb.className = 'fd-pbar'; pb.hidden = true; vw0.prepend(pb); bindBar(pb); }
+    el.querySelector('.fd-stop').addEventListener('click', () => { const v = el.closest('.view'), b = v && v.querySelector('[data-fdact="play"]'); if (b) b.click(); });
     el.querySelector('.fd-zoom').addEventListener('click', ev => { const b = ev.target.closest('[data-fz]'); if (b) FD.zoom(b.dataset.fz); });
   }
   FD.toggleLib = function () { libUi.open = !libUi.open; saveLib(); const w = body && body.querySelector('.fd-wrap'); if (w) w.classList.toggle('nolib', !libUi.open); return libUi.open; };
@@ -921,18 +930,21 @@
     const F = fr();
     FD.errs = check();
     const o = [];
-    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg${lbl.color !== 'auto' ? ' tagc-' + lbl.color : ''}" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
-    const R = routeAll(), liveNets = new Set();
+    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg${H.mode() === 'run' ? ' run' : ''}${lbl.color !== 'auto' ? ' tagc-' + lbl.color : ''}" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGridS" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0 H0 V10" class="gridLine minor"/></pattern><pattern id="fdGrid2" width="40" height="40" patternUnits="userSpaceOnUse"><rect width="40" height="40" fill="url(#fdGridS)"/><path d="M40 0 H0 V40" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
+    const R = routeAll(), liveNets = new Set(), netPot = new Map();
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
-      const ia = itemOf(w.a.split(':')[0]), dk = devKey(ia, w.a.split(':')[1]), on = live(dk), lo = !on && neg(dk);
+      const ia = itemOf(w.a.split(':')[0]), dk = devKey(ia, w.a.split(':')[1]), on = live(dk), lo = !on && neg(dk), pc = potOf(dk);
+      if (pc) netPot.set(R.netOf.get(w.id), pc);
       if (on) liveNets.add(R.netOf.get(w.id));
       const d = R.d.get(w.id) || wirePath(a, b, w.pts);
-      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : lo ? ' neg' : ''}${wireCls(w)}" d="${d}"/>${on ? `<path class="wflow" d="${d}"/>` : ''}</g>`);
+      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : lo ? ' neg' : ''}${pc ? ' p-' + pc : ''}${wireCls(w)}" d="${d}"/>${on ? `<path class="wflow" d="${d}"/>` : ''}</g>`);
+      // the selected wire: a handle round its middle part, the one to drag (Simurelay's centre segment)
+      if (sel && sel.w === w.id) { const P = d.replace('M', '').split(' L').map(q => q.trim().split(' ').map(Number)), i = Math.max(0, Math.floor((P.length - 2) / 2)), p = P[i], q = P[i + 1] || p; o.push(`<rect class="fseg" x="${Math.min(p[0], q[0]) - 5}" y="${Math.min(p[1], q[1]) - 5}" width="${Math.abs(q[0] - p[0]) + 10}" height="${Math.abs(q[1] - p[1]) + 10}" rx="2"/>`); }
       if (sel && sel.w === w.id) (w.pts || []).forEach(([x, y], i) => o.push(`<circle class="fbend" data-fb="${w.id}:${i}" cx="${x}" cy="${y}" r="5"><title>Drag to move · double-click to remove</title></circle>`));
     }
     const used = new Set(F.wires.flatMap(w => [w.a, w.b]));
-    for (const j of R.dots) o.push(`<circle class="fjdot${liveNets.has(j.net) ? ' on' : ''}" cx="${j.x}" cy="${j.y}" r="3.5"/>`);
+    for (const j of R.dots) o.push(`<circle class="fjdot${liveNets.has(j.net) ? ' on' : ''}${netPot.has(j.net) ? ' p-' + netPot.get(j.net) : ''}" cx="${j.x}" cy="${j.y}" r="3.5"/>`);
     for (const it of F.items) {
       const S = K[it.k], st = stateOf(it), err = FD.errs.has(it);
       // a symbol that just switched flashes once
@@ -943,31 +955,65 @@
         : S.look === 'gnd' ? `<rect class="hit" x="${it.x - 14}" y="${it.y - 24}" width="28" height="36" rx="4"/>`
         : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`;
       o.push(`<g class="fitem${(sel && sel.i === it.id) || group.has(it.id) ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
-      o.push(`<g data-look="${S.look}" class="ssym${st.on ? ' on' : ''}${flip ? ' flip' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}${st.low || st.nocoil ? ' lowv' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${st.low ? `<title>${esc(it.tag)}: coil voltage too low — see Properties</title>` : st.nocoil ? `<title>${esc(it.tag)}: its coil (A1-A2) is drawn nowhere, so this contact never switches — draw the coil or give this contact the tag of a contactor that has one</title>` : ''}${shape(it, st)}</g>`);
+      o.push(`<g data-look="${S.look}" class="ssym${st.on ? ' on' : ''}${flip ? ' flip' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}${st.low || st.nocoil ? ' lowv' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${err ? `<title>${esc(FD.errs.get(it))}</title>` : st.low ? `<title>${esc(it.tag)}: coil voltage too low — see Properties</title>` : st.nocoil ? `<title>${esc(it.tag)}: its coil (A1-A2) is drawn nowhere, so this contact never switches — draw the coil or give this contact the tag of a contactor that has one</title>` : ''}${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
       const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" data-fc="${it.id}" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
-      S.terms.forEach(t => { const p = termPos(it, t.id), key = it.id + ':' + t.id; o.push(`<circle class="fterm${wiring && wiring.from === key ? ' on' : ''}${used.has(key) ? ' used' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
+      S.terms.forEach(t => { const p = termPos(it, t.id), key = it.id + ':' + t.id; o.push(`<rect class="fterm${wiring && wiring.from === key ? ' on' : ''}${used.has(key) ? ' used' : ''}" data-ft="${it.id}:${t.id}" data-x="${p.x}" data-y="${p.y}" x="${p.x - 4}" y="${p.y - 4}" width="8" height="8"/>`); });
       o.push('</g>');
     }
-    if (drag && drag.item && drag.moved) {
-      const mine = K[drag.item.k].terms.map(t => termPos(drag.item, t.id)), xs = new Set(), ys = new Set();
-      for (const it of F.items) if (it !== drag.item && !drag.others.some(q => q.o === it)) for (const t of K[it.k].terms) { const p = termPos(it, t.id); for (const m of mine) { if (m.x === p.x) xs.add(p.x); if (m.y === p.y) ys.add(p.y); } }
-      xs.forEach(x => o.push(`<line class="fguide" x1="${x}" y1="-5000" x2="${x}" y2="5000"/>`)); ys.forEach(y => o.push(`<line class="fguide" x1="-5000" y1="${y}" x2="5000" y2="${y}"/>`));
+    // as in Simurelay: guides through the terminals of the selected symbol (or the one being moved)
+    const gIt = drag && drag.item && drag.moved ? drag.item : sel && sel.i && !group.size && H.mode() === 'edit' ? itemOf(sel.i) : null, gOthers = drag && drag.others ? drag.others : [];
+    if (gIt && !['node', 'text'].includes(K[gIt.k].look)) {
+      const mine = K[gIt.k].terms.map(t => termPos(gIt, t.id)), xs = new Set(), ys = new Set();
+      for (const it of F.items) if (it !== gIt && !gOthers.some(q => q.o === it)) for (const t of K[it.k].terms) { const p = termPos(it, t.id); for (const m of mine) { if (m.x === p.x) xs.add(p.x); if (m.y === p.y) ys.add(p.y); } }
+      // as in Simurelay: a guide through every terminal of the symbol being moved; a line it shares with another terminal is marked
+      new Set(mine.map(m => m.x)).forEach(x => o.push(`<line class="fguide${xs.has(x) ? ' hit' : ''}" x1="${x}" y1="-5000" x2="${x}" y2="5000"/>`));
+      new Set(mine.map(m => m.y)).forEach(y => o.push(`<line class="fguide${ys.has(y) ? ' hit' : ''}" x1="-5000" y1="${y}" x2="5000" y2="${y}"/>`));
     }
     if (wiring && (wiring.cur || (wiring.pts && wiring.pts.length))) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${tempPath(a)}"/>`); }
     if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
     if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — add symbols from ▦ Library, then tap two terminals to wire them</text>`);
     o.push('</g></svg>');
     host.innerHTML = o.join('');
+    applyPalette(el.querySelector('.fd-wrap'));
+    const vw = el.closest('.view') || el, pb = vw.querySelector(':scope > .fd-pbar'), ph = pbar && H.mode() === 'edit' ? barHtml() : '';
+    if (!ph) pbar = null;
+    pb.hidden = !ph; if (pb.innerHTML !== ph && !(pb.contains(document.activeElement) && /^(INPUT|SELECT)$/.test(document.activeElement.tagName))) pb.innerHTML = ph;
+    vw.classList.toggle('fd-barred', !!ph);
     svg = host.querySelector('svg'); gv = svg.querySelector('.fv');
     bind();
     lastSig = sig();
   };
   // a countdown only redraws the drawing when it appears or goes away; its value is written in place by FD.update
-  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => (countOf(it) ? 1 : 0)).join('') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return (ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0) + wireCls(w); }).join(''); };
+  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => (countOf(it) ? 1 : 0)).join('') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return (ia ? potOf(devKey(ia, w.a.split(':')[1])) : '') + wireCls(w); }).join('') + H.mode(); };
+  /* ▶ Play / ■ Stop, as Simurelay: protections work by hand only, and every device drawn here starts from its rest
+     state (buttons out, switches and breakers off, timers cleared, coils out); Stop puts them back there */
+  FD.playChanged = function (on) {
+    Circuit.setManual(on);
+    const seen = new Set();
+    for (const it of fr().items) {
+      const S = K[it.k]; if (!S.type || S.jct || S.types || S.pot) continue;
+      const d = H.devOf(it.tag); if (!d || seen.has(d) || ['supply1', 'supply3', 'battery', 'psu24', 'gen3'].includes(d.type)) continue;
+      seen.add(d);
+      const D = DEFS[d.type]; d.state = D.init ? D.init() : {};
+    }
+    shortShown = false;
+    if (body) FD.render(body);
+  };
+  let shortShown = false;
+  // a short circuit while playing stops the simulation (Simurelay: "Short circuit detected! Simulation stopped.")
+  function shortStop() {
+    const api = App.api; if (!api || !api.net || !api.net.short || !api.net.short.size || H.mode() !== 'run' || !Circuit.isManual() || shortShown) return false;
+    shortShown = true;
+    UI.toast('Short circuit detected! Simulation stopped.', 'danger', 5000);
+    App.log('alarm', 'Short circuit detected in the Electrical Diagram: simulation stopped');
+    const b = body && body.closest('.view') && body.closest('.view').querySelector('[data-fdact="play"]'); if (b) b.click();
+    return true;
+  }
   FD.update = function () {
     if (!body) return;
+    if (shortStop()) return;
     if (sig() !== lastSig) { FD.render(body); return; }
     if (svg) svg.querySelectorAll('[data-fc]').forEach(e => { const it = itemOf(e.dataset.fc), t = it ? countOf(it) : ''; if (e.textContent !== t) e.textContent = t; });
   };
@@ -1020,7 +1066,14 @@
     wiring = null; H.changed(); return true;
   }
   function bind() {
+    // right-click on a symbol or a terminal opens its property bar (as Simurelay)
+    svg.addEventListener('contextmenu', ev => {
+      if (H.mode() !== 'edit') return;
+      const term = ev.target.closest('[data-ft]'), itEl = ev.target.closest('[data-fi]'); if (!term && !itEl) return;
+      ev.preventDefault(); drag = null; FD.openBar(term ? term.dataset.ft : itemOf(itEl.dataset.fi));
+    });
     svg.addEventListener('pointerdown', ev => {
+      if (ev.button === 2) return;
       if (ev.pointerType === 'touch') {
         touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
         if (touches.size === 2) {
@@ -1042,7 +1095,7 @@
         lastTap = { k: '', t: 0 };
         if (bEl) { const [wid, i] = bEl.dataset.fb.split(':'), w = fr().wires.find(x => x.id === wid); if (w) { H.snap(); w.pts.splice(Number(i), 1); if (!w.pts.length) delete w.pts; H.changed(); } return; }
         if (wEl) { const w = fr().wires.find(x => x.id === wEl.dataset.fw); if (w) { sel = { w: w.id }; addBend(w, [snap10(p.x), snap10(p.y)]); } return; }
-        if (itEl && K[itemOf(itEl.dataset.fi).k].look !== 'node') { drag = null; FD.retag(itemOf(itEl.dataset.fi)); return; }
+        if (itEl && K[itemOf(itEl.dataset.fi).k].look !== 'node') { drag = null; FD.openBar(itemOf(itEl.dataset.fi)); return; }
       }
       if (bEl && H.mode() === 'edit') {
         const [wid, i] = bEl.dataset.fb.split(':'), w = fr().wires.find(x => x.id === wid);
@@ -1052,7 +1105,9 @@
       if (H.mode() === 'run') {
         if (itEl) {
           const it = itemOf(itEl.dataset.fi), S = K[it.k], d = H.devOf(it.tag);
-          if (d && S.part === 'ol') App.operate(d, d.state.tripped ? 'reset' : 'test')();
+          // a fuse: one tap blows it, the next replaces it (as Simurelay, protections are operated by hand)
+          if (d && S.look === 'fuse') { d.state.tripped = !d.state.tripped; App.log('operator', `${d.props.label}: fuse ${d.state.tripped ? 'blown' : 'replaced'}`); FD.render(body); }
+          else if (d && S.part === 'ol') App.operate(d, d.state.tripped ? 'reset' : 'test')();
           else if (d && S.part) { ev.preventDefault(); held = App.operate(d, S.part); }
           return;
         }
@@ -1064,7 +1119,7 @@
         endWire(term.dataset.ft); return;
       }
       if (wiring && wEl && endWire(null, wEl, p)) return;
-      if (wiring && !itEl) { (wiring.pts = wiring.pts || []).push([snap10(p.x), snap10(p.y)]); wiring.down = null; FD.render(body); return; }
+      // as in Simurelay: a click anywhere else cancels the wire being drawn
       if (wiring) { wiring = null; FD.render(body); return; }
       if (itEl) {
         const it = itemOf(itEl.dataset.fi);
@@ -1080,8 +1135,8 @@
         // dragging one symbol of the selection moves them all
         const others = [...group].filter(id => id !== it.id).map(id => itemOf(id)).filter(Boolean).map(o => ({ o, dx: o.x - it.x, dy: o.y - it.y }));
         drag = { item: it, others, ox: p.x - it.x, oy: p.y - it.y, moved: false, snapped: false };
-        // a long press on a touch screen opens the symbol's tag form (as a double click does)
-        if (ev.pointerType === 'touch' && K[it.k].look !== 'node') { clearTimeout(longT); longT = setTimeout(() => { if (drag && drag.item === it && !drag.moved) { drag = null; FD.retag(it); } }, 600); }
+        // a long press on a touch screen opens the symbol's property bar (as a double click does)
+        if (ev.pointerType === 'touch' && K[it.k].look !== 'node') { clearTimeout(longT); longT = setTimeout(() => { if (drag && drag.item === it && !drag.moved) { drag = null; FD.openBar(it); } }, 600); }
         capture(ev); FD.render(body); H.side(); return;
       }
       if (wEl) {
@@ -1103,7 +1158,7 @@
       }
       // Shift+drag on the background selects the symbols inside a box
       if (ev.shiftKey) { drag = { box: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y }; capture(ev); return; }
-      sel = null; group.clear(); H.side();
+      sel = null; group.clear(); pbar = null; H.side();
       drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; capture(ev);
       FD.render(body);
     });
@@ -1154,7 +1209,7 @@
         const d0 = wiring.down; wiring.down = null;
         if (Math.hypot(ev.clientX - d0.x, ev.clientY - d0.y) > 8) {
           const el = document.elementFromPoint(ev.clientX, ev.clientY), t = el && el.closest('[data-ft]'), we = el && el.closest('[data-fw]');
-          if (t) endWire(t.dataset.ft); else if (!(we && endWire(null, we, world(ev)))) { const q = world(ev); (wiring.pts = wiring.pts || []).push([snap10(q.x), snap10(q.y)]); FD.render(body); }
+          if (t) endWire(t.dataset.ft); else if (!(we && endWire(null, we, world(ev)))) { wiring = null; FD.render(body); }
         }
       }
       if (ev && ev.pointerType === 'touch') { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; }
@@ -1238,27 +1293,6 @@
     w.b = j; delete w.pts;
     return j;
   }
-  /* the nearest place to (cx, cy), on an 80 px grid around it, where no symbol is yet */
-  /* a symbol placed from the library goes to the first free place of the visible drawing, left to right and top to
-     bottom (100 apart across, 130 down), so it is never placed off the edge of a small screen; a full view falls back
-     to the nearest free place around the middle */
-  function visibleSpot() {
-    if (!svg) return null;
-    const r = svg.getBoundingClientRect(), k = view.k;
-    const x0 = snap10((90 - view.x) / k), x1 = (r.width - 40 - view.x) / k, y0 = snap10((80 - view.y) / k), y1 = (r.height - 90 - view.y) / k;   // a symbol reaches 40 above and below its middle
-    const its = fr().items, ok = (x, y) => its.every(i => Math.abs(i.x - x) >= 90 || Math.abs(i.y - y) >= 110);
-    for (let x = x0; x <= x1; x += 110) for (let y = y0; y <= y1; y += 120) if (ok(x, y)) return { x, y };
-    return null;
-  }
-  function freeSpot(cx, cy) {
-    const its = fr().items, ok = (x, y) => its.every(i => Math.abs(i.x - x) >= 70 || Math.abs(i.y - y) >= 70);
-    for (let ring = 0; ring < 12; ring++) for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
-      const x = cx + dx * 80, y = cy + dy * 80;
-      if (ok(x, y)) return { x, y };
-    }
-    return { x: cx, y: cy };
-  }
   // a saved drawing keeps 400 symbols (FD.clean)
   const MAXI = 400, full = () => { if (fr().items.length < MAXI) return false; UI.toast(`The drawing is full (${MAXI} symbols)`, 'warn'); return true; };
   FD.add = function (k, tag, x, y) {
@@ -1269,7 +1303,8 @@
       H.snap();
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
-      const c = x != null ? { x, y } : visibleSpot() || freeSpot(snap10((r.width / 2 - view.x) / view.k), snap10((r.height / 2 - view.y) / view.k)), cx = c.x, cy = c.y;
+      // as in Simurelay: a symbol from the library lands in the middle of the view (selected, ready to drag into place)
+      const c = x != null ? { x, y } : { x: snap10((r.width / 2 - view.x) / view.k), y: snap10((r.height / 2 - view.y) / view.k) }, cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
       F.items.push(it); sel = { i: it.id }; group.clear();
       H.changed();
@@ -1331,6 +1366,142 @@
       if (H.devOf(t)) return `${t} is already the tag of another device`;
       window.Schematic.renameTag(old, t); return undefined;
     }, `<p class="help">Every symbol of -${esc(old)} (coil, contacts, poles) and the device in the Wiring take the new tag. To move only this symbol to another device, change its Tag in Properties.</p>`);
+  };
+  /* ---------- property bar (as Simurelay's): double-click, right-click or Values on a symbol opens it at the top of the
+     drawing in place of the toolbar and the library. TAG steps the letter(s) of the tag, NUM1 its number (numbers
+     another kind of device has are skipped); a comment; for a terminal, the number written beside it. A click on the
+     drawing closes it. ---------- */
+  // the prefixes TAG steps through, as Simurelay's lists (coils, timer coils, contactors, switches, breakers, fuses, loads, motors…)
+  const COILS = ['K', 'KA', 'KM', 'KV', 'R', 'RA'], SW = ['S', 'SL'], BRK = ['Q', 'QA'], FUS = ['F', 'FA', 'FU'];
+  const ALT = { K: COILS, KA: COILS, KM: ['K', 'KA', 'KM'], KT: ['KT', 'RT', 'T'], KF: ['KF', 'U'], S: SW, SB: SW, SA: SW, SF: SW, SJ: SW, SL: SW, SP: SW, SQ: SW, ST: SW, B: SW,
+    Q: BRK, QF: BRK, QM: BRK, QS: BRK, QA: BRK, F: FUS, FU: FUS, FR: FUS, FC: FUS, FA: FUS, H: ['H', 'L'], HL: ['H', 'L'], HA: ['H', 'L'], M: ['M', 'MA', 'MP'], G: ['G'], GB: ['V'], Y: ['EV', 'Y'] };
+  const ONLY_FREE = ['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'];
+  let pbar = null, pbTab = 'num';
+  const splitTag = t => { const m = /^(.*?)(\d+)$/.exec(t || ''); return m ? { pre: m[1], n: Number(m[2]) } : { pre: t || '', n: 0 }; };
+  // may this symbol take that tag? a free tag, or a device of its kind whose part is not drawn yet (a contact of K2)
+  function tagOk(it, t) {
+    if (t === it.tag) return true;
+    if (!TAG.test(t)) return false;
+    const S = K[it.k], d = H.devOf(t), R = H.circ().reserved;
+    if (R && R.has(t)) return false;
+    if (!d) return !fr().items.some(i => i !== it && i.tag === t);
+    if (ONLY_FREE.includes(S.g) || !S.type || !Circuit.sameKind(d.type, S.type) || Circuit.fitErr(d, S.type, S.terms.map(q => q.id), S.look)) return false;
+    const ids = S.terms.map(q => q.id);
+    return !fr().items.some(i => i !== it && i.tag === t && K[i.k].terms.some(q => ids.includes(q.id)));
+  }
+  FD.barStep = function (dir) {
+    const it = pbar && pbar.i && itemOf(pbar.i); if (!it) return false;
+    const { pre, n } = splitTag(it.tag);
+    let t = null;
+    if (pbTab === 'tag') {
+      const list = ALT[K[it.k].pre] || [K[it.k].pre], i = list.indexOf(pre);
+      for (let s = 1; s <= list.length && !t; s++) {
+        const p = list[(((i < 0 ? 0 : i) + dir * s) % list.length + list.length) % list.length];
+        for (let m = Math.max(1, n); m < 1000 && !t; m++) if (tagOk(it, p + m)) t = p + m;
+      }
+    } else for (let m = n + dir; m >= 1 && m < 1000; m += dir) if (tagOk(it, pre + m)) { t = pre + m; break; }
+    if (!t || t === it.tag) return false;
+    FD.setProp(it, 'tag', t); return true;
+  };
+  FD.openBar = function (target) {
+    if (!target) return;
+    pbar = typeof target === 'string' ? { t: target } : { i: target.id };
+    if (pbar.i) { sel = { i: pbar.i }; group.clear(); } wiring = null;
+    if (body) FD.render(body);
+  };
+  /* Values (toolbar): the property bar of the selected symbol, or of the terminal just picked; with nothing selected, the values on the drawing */
+  FD.valuesAct = function () { if (wiring && wiring.from) { FD.openBar(wiring.from); return true; } const it = sel && sel.i && itemOf(sel.i); if (it) { FD.openBar(it); return true; } return false; };
+  FD.closeBar = function () { if (!pbar) return; pbar = null; if (body) FD.render(body); };
+  FD.barOpen = () => pbar;
+  function barHtml() {
+    if (pbar && pbar.t) {
+      const [id, tid] = pbar.t.split(':'), it = itemOf(id); if (!it) return '';
+      return `<span class="fpb-name">Terminal ${esc(tid)} — -${esc(it.tag)}</span><input class="fpb-in" data-pbterm maxlength="6" value="${esc((it.tn && it.tn[tid]) || tid)}" aria-label="Terminal number">`;
+    }
+    const it = pbar && itemOf(pbar.i); if (!it) return '';
+    const S = K[it.k], tagged = S.type && !S.jct && !S.types && S.look !== 'text';
+    const { pre, n } = splitTag(it.tag);
+    return `<span class="fpb-name">${esc(S.n)}${S.look === 'text' ? '' : ': -' + esc(it.tag)}</span>` +
+      (S.look === 'text' ? `<input class="fpb-in fpb-cmt" data-pbtext maxlength="80" value="${esc(it.txt || '')}" aria-label="Text">` : `<input class="fpb-in fpb-cmt" data-pbcmt maxlength="80" placeholder="Enter a comment" value="${esc(it.c || '')}" aria-label="Comment">`) +
+      (tagged ? `<span class="fpb-tabs"><button data-pbt="tag" class="${pbTab === 'tag' ? 'on' : ''}">TAG</button><button data-pbt="num" class="${pbTab === 'num' ? 'on' : ''}"><b>1</b>NUM1</button></span><button class="fpb-step" data-pbs="-1" aria-label="Previous">&lt;</button><span class="fpb-val">${esc(pbTab === 'tag' ? '-' + pre : String(n))}</span><button class="fpb-step" data-pbs="1" aria-label="Next">&gt;</button>` : '') +
+      // the device's own settings (coil voltage, time…), the same ones as in the Wiring
+      (() => { const d = tagged && H.devOf(it.tag); return d ? (DEFS[d.type].pdefs || []).map(p => `<label class="fpb-dev">${esc(p.n)} ${/^t2?$/.test(p.k) ? `<button class="fpb-step" data-pbn="${p.k}" data-d="-1" aria-label="Less">&lt;</button><span class="fpb-val">${(Number(d.props[p.k]) || 0).toFixed(1)}</span><button class="fpb-step" data-pbn="${p.k}" data-d="1" aria-label="More">&gt;</button>` : p.opts ? `<select data-pbd="${p.k}">${p.opts.map(o => `<option ${String(d.props[p.k]) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : `<input data-pbd="${p.k}" type="${p.type || 'text'}" value="${esc(d.props[p.k] ?? '')}">`}</label>`).join('') : ''; })();
+  }
+  function bindBar(el) {
+    el.addEventListener('click', ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.pbt) { pbTab = b.dataset.pbt; FD.render(body); }
+      else if (b.dataset.pbs) FD.barStep(Number(b.dataset.pbs));
+      // a time: steps of 1 s from 0 to 60 s, round (as Simurelay)
+      else if (b.dataset.pbn) { const it = itemOf(pbar.i), d = it && H.devOf(it.tag); if (d) { const v = Math.round(Number(d.props[b.dataset.pbn]) || 0) + Number(b.dataset.d); FD.setDevProp(it, b.dataset.pbn, String(v > 60 ? 0 : v < 0 ? 60 : v)); FD.render(body); } }
+    });
+    el.addEventListener('change', ev => {
+      const t = ev.target;
+      if (t.dataset.pbcmt != null) FD.setProp(itemOf(pbar.i), 'c', t.value);
+      else if (t.dataset.pbtext != null) { const it = itemOf(pbar.i), v = t.value.trim(); if (it && v) { H.snap(); it.txt = v.slice(0, 80); H.changed(); } }
+      else if (t.dataset.pbterm != null) FD.setTermLabel(pbar.t, t.value);
+      else if (t.dataset.pbd) FD.setDevProp(itemOf(pbar.i), t.dataset.pbd, t.value);
+    });
+    el.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') ev.target.blur(); else if (ev.key === 'Escape') FD.closeBar(); });
+  }
+  /* the number written beside a terminal (Simurelay: select the terminal, VALUES); the terminal itself stays the same */
+  FD.setTermLabel = function (key, v) {
+    const [id, tid] = String(key).split(':'), it = itemOf(id); if (!it || !K[it.k].terms.some(q => q.id === tid)) return false;
+    const s = String(v).trim().slice(0, 6); H.snap();
+    if (s && s !== tid) it.tn = { ...(it.tn || {}), [tid]: s }; else if (it.tn) { delete it.tn[tid]; if (!Object.keys(it.tn).length) delete it.tn; }
+    H.changed(); return true;
+  };
+  /* ---------- ⋯ menu and Settings (as Simurelay's): grid, zoom panel, dark mode and the drawing colours ---------- */
+  const PAL = [['tag', 'Element Tag'], ['cmt', 'Element Comment'], ['term', 'Terminal Tag'], ['N', 'Neutral'], ['L1', 'Power Supply L1'], ['L2', 'Power Supply L2'], ['L3', 'Power Supply L3'], ['PE', 'Protection Earth PE'], ['P', 'Positive Power'], ['M', 'Negative Power']];
+  const darkNow = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); };
+  let palette = (() => { try { const v = JSON.parse(localStorage.getItem('plc-trainer.fdPalette')); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } })();
+  let zoomPanel = (() => { try { return localStorage.getItem('plc-trainer.fdZoomPanel') !== '0'; } catch (e) { return true; } })();
+  const HEX = /^#[0-9a-f]{6}$/i;
+  // the colours changed in Settings, for the current theme, as CSS variables on the drawing
+  function applyPalette(wrap) {
+    if (!wrap) return;
+    const p = palette[darkNow() ? 'dark' : 'light'] || {};
+    PAL.forEach(([k]) => { if (HEX.test(p[k] || '')) wrap.style.setProperty('--fd-' + k, p[k]); else wrap.style.removeProperty('--fd-' + k); });
+    wrap.classList.toggle('nozoom', !zoomPanel);
+  }
+  FD.setPalette = function (k, v) {
+    const th = darkNow() ? 'dark' : 'light';
+    if (k == null) palette = {}; else { palette[th] = { ...(palette[th] || {}) }; if (HEX.test(v || '')) palette[th][k] = v; else delete palette[th][k]; }
+    try { localStorage.setItem('plc-trainer.fdPalette', JSON.stringify(palette)); } catch (e) { /* private mode */ }
+    if (body) FD.render(body);
+  };
+  FD.setZoomPanel = function (on) { zoomPanel = !!on; try { localStorage.setItem('plc-trainer.fdZoomPanel', zoomPanel ? '1' : '0'); } catch (e) { /* private mode */ } if (body) FD.render(body); };
+  FD.settings = function () {
+    const wrap = body && body.querySelector('.fd-wrap'), cs = wrap ? getComputedStyle(wrap) : null;
+    const col = k => { const v = cs ? cs.getPropertyValue('--fd-' + k).trim() : ''; return HEX.test(v) ? v : '#000000'; };
+    const sw = (k, on, label) => `<label class="fds-row"><input type="checkbox" data-fds="${k}" ${on ? 'checked' : ''}> ${label}</label>`;
+    UI.modal({ title: 'Settings', body: `<div class="fds"><h4>General</h4>${sw('grid', grid !== 'none', 'Show Grid')}${sw('zoom', zoomPanel, 'Show Zoom Panel')}${sw('dark', darkNow(), 'Dark Mode')}
+      <h4>Drawing</h4><label class="fds-row">Wires <select data-fds="routing">${Object.entries(ROUTINGS).map(([k, n]) => `<option value="${k}" ${k === routing ? 'selected' : ''}>${n}</option>`).join('')}</select></label>${sw('tags', lbl.tags, 'Show tags (-KM1)')}${sw('terms', lbl.terms, 'Show terminal numbers')}${sw('ask', lbl.ask, 'Ask for a tag when placing a symbol')}
+      <h4>Colors</h4>${PAL.map(([k, n]) => `<label class="fds-row"><input type="color" data-fdc="${k}" value="${col(k)}"> ${n}</label>`).join('')}
+      <button class="btn" data-fdreset>Reset to Default Settings</button></div>`,
+    onOpen: el => {
+      el.addEventListener('change', ev => {
+        const t = ev.target;
+        if (t.dataset.fds === 'grid') FD.setGrid(t.checked ? 'lines' : 'none');
+        else if (t.dataset.fds === 'zoom') FD.setZoomPanel(t.checked);
+        else if (t.dataset.fds === 'dark') { App.setTheme(t.checked ? 'dark' : 'light'); if (body) FD.render(body); el.querySelectorAll('[data-fdc]').forEach(c => { c.value = col(c.dataset.fdc); }); }
+        else if (t.dataset.fdc) FD.setPalette(t.dataset.fdc, t.value);
+        else if (t.dataset.fds === 'routing') FD.setRouting(t.value);
+        else if (['tags', 'terms', 'ask'].includes(t.dataset.fds)) FD.setLabels({ [t.dataset.fds]: t.checked });
+      });
+      el.querySelector('[data-fdreset]').addEventListener('click', () => { FD.setPalette(null); FD.setGrid('lines'); FD.setZoomPanel(true); el.querySelectorAll('[data-fdc]').forEach(c => { c.value = col(c.dataset.fdc); }); el.querySelector('[data-fds="grid"]').checked = true; el.querySelector('[data-fds="zoom"]').checked = true; });
+    } });
+  };
+  FD.menu = function (x, y) {
+    UI.menu(x, y, [
+      { label: 'New', onClick: () => App.newProject() },
+      { label: 'Open', onClick: () => App.openDialog() },
+      { label: 'Capture', onClick: () => FD.exportImage('png') },
+      { label: 'Save', onClick: () => App.saveNow() },
+      { label: 'Save As', onClick: () => App.saveAs() },
+      { sep: true },
+      { label: 'Settings', onClick: () => FD.settings() },
+    ]);
   };
   FD.rotate = function () {
     const ids = many(); if (!ids.length) { UI.toast('Select a symbol first'); return; }
@@ -1457,7 +1628,15 @@
     if (c) {
       // Ctrl+C copies text selected on the page as usual; it copies symbols only when symbols are selected
       if (lk === 'c') { if (String(window.getSelection ? window.getSelection() : '') || !many().length) return; if (FD.copySel()) { ev.preventDefault(); UI.toast(`${clip.items.length} symbol${clip.items.length === 1 ? '' : 's'} copied`, 'ok', 1500); } }
-      else if (lk === 'v') { ev.preventDefault(); FD.paste(); }
+      // Ctrl+V: paste what was copied; nothing copied, the property bar of the selected symbol (Simurelay's Ctrl+V = VALUES)
+      else if (lk === 'v') { ev.preventDefault(); if (FD.hasClip()) FD.paste(); else FD.valuesAct(); }
+      // Simurelay's keys (all with Ctrl): R rotate, B back, F front, D duplicate, Delete, arrows move one step
+      else if (lk === 'r') { ev.preventDefault(); FD.rotate(); }
+      else if (lk === 'b') { ev.preventDefault(); FD.order(false); }
+      else if (lk === 'f') { ev.preventDefault(); FD.order(true); }
+      else if (lk === 'd') { ev.preventDefault(); FD.copy(); }
+      else if (k === 'Delete') { ev.preventDefault(); FD.del(); }
+      else if (STEP[k]) { ev.preventDefault(); FD.nudge(STEP[k][0] * 10, STEP[k][1] * 10); }
       else if (lk === 'a') { ev.preventDefault(); FD.selectAll(); }
       return;
     }
@@ -1465,7 +1644,7 @@
     else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); FD.del(); }
     else if (k === 'r' || k === 'R') { ev.preventDefault(); FD.rotate(); }
     else if (k === 'd' || k === 'D') { ev.preventDefault(); FD.copy(); }
-    else if (k === 'Escape') { wiring = null; sel = null; group.clear(); if (body) FD.render(body); H.side(); }
+    else if (k === 'Escape') { wiring = null; pbar = null; sel = null; group.clear(); if (body) FD.render(body); H.side(); }
   };
   FD.resetSel = () => { sel = null; group.clear(); wiring = null; drag = null; lastSig = ''; };
   FD.selected = () => (sel && sel.i ? itemOf(sel.i) : null);
@@ -1503,12 +1682,12 @@
     const PROPS = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'opacity', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor'];
     const src = gv.querySelectorAll('*'), copy = gv.cloneNode(true), dst = copy.querySelectorAll('*');
     src.forEach((e, i) => { const cs = getComputedStyle(e); dst[i].setAttribute('style', PROPS.map(p => `${p}:${cs.getPropertyValue(p)}`).join(';')); dst[i].removeAttribute('class'); });
-    copy.querySelectorAll('[data-ft], [data-fb]').forEach(e => e.remove());
+    copy.querySelectorAll('[data-ft], [data-fb], [x="-5000"], [x1="-5000"], [y1="-5000"]').forEach(e => e.remove());
     // the background and the click areas (filled with the grid pattern or nothing visible) are not part of the picture
     [...copy.querySelectorAll('rect')].filter(e => { const o = e.getAttribute('style') || ''; return /fill:\s*(url|transparent|rgba\(0, 0, 0, 0\))/.test(o) && !/stroke:\s*rgb/.test(o); }).forEach(e => e.remove());
     copy.removeAttribute('transform');
     const x1 = Math.min(...its.map(i => i.x)) - 80, x2 = Math.max(...its.map(i => i.x)) + 80, y1 = Math.min(...its.map(i => i.y)) - 60, y2 = Math.max(...its.map(i => i.y)) + 60;
-    const bg = getComputedStyle(document.documentElement).getPropertyValue('--lad-bg').trim() || '#fff';
+    const bg = getComputedStyle(body.querySelector('.fd-wrap') || document.documentElement).getPropertyValue('--fd-bg').trim() || '#fff';
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${x2 - x1}" height="${y2 - y1}" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="${bg}"/>${copy.innerHTML}</svg>`;
   };
   const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
@@ -1546,7 +1725,7 @@
     return `${head}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
       <ul class="tips"><li><b>▦ Library</b>: pick a group, then click a symbol or drag it onto the drawing. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
-      <li>Click a terminal ● then another to draw a wire (or drag from one to the other). Click on the way to put corners where you want them; <b>Esc</b> cancels. Drag any part of a wire to move it. Every drawn wire is wired in the Wiring for you.</li>
+      <li>Click a terminal ■ then another to draw a wire (or drag from one to the other); a click anywhere else cancels it. Select a wire and drag its middle (orange) to move it. Every drawn wire is wired in the Wiring for you.</li><li>Double-click or right-click a symbol (or select it and press Values) for its bar at the top: TAG and NUM1 &lt; &gt; step its tag, a comment, and its settings (time…); on a terminal, the number written beside it.</li>
       <li>End a wire on another wire to branch it (a junction dot). Double-click a wire to add a bend, drag the bend, double-click it to remove it.</li>
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
       <li><b>Shift</b>+click or Shift+drag a box selects several symbols; <b>Ctrl+A</b> selects all. Arrow keys move the selection (Shift: five steps).</li>
@@ -1554,7 +1733,7 @@
       <li>Properties (on the right when one symbol is selected): its tag, a comment, and the settings of its device — the same ones as in the Wiring. On a touch screen, a long press opens the tag form; pinch to zoom.</li>
       <li>Sources › Point L1, N, PE, +24 V… is wired to that conductor of the supply. Others › wire pieces (straight, corner, T, cross) join wires; link arrows with the same tag are connected.</li>
       <li>PLC › outputs, inputs and power are terminals of the PLC or I/O card placed in the Wiring: pick its tag and the point. They show the live state of the point; the ladder decides the outputs.</li>
-      <li>▶ Play: press buttons, switch breakers and trip overloads on the drawing. ✎ Values shows the voltage on each load and open/closed on each contact.</li></ul>`;
+      <li>▶ Play: as in Simurelay, everything starts at rest (breakers off, buttons out, timers cleared) and protections work by hand: tap a breaker to switch it, a fuse to blow or replace it, an overload to trip or reset it. A short circuit stops the simulation. ■ Stop puts everything back. Wires show their conductor: L1 brown, L2 grey, L3 cyan, N blue, PE yellow, + red, 0 V blue.</li><li>Keys: Ctrl+R rotate, Ctrl+B back, Ctrl+F front, Ctrl+D duplicate, Ctrl+Delete delete, Ctrl+arrows move, Ctrl+V values (or paste), Ctrl+Z / Ctrl+Y undo / redo. ⋯ has New, Open, Capture, Save, Save As and Settings (grid, zoom panel, dark mode, colours).</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
     sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rename: () => FD.renameDevice(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,
