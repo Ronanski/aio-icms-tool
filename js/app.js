@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '2.2.1';
+  const VERSION = '2.2.2';
   // build id: 'dev' in the repository; the Pages and release builds stamp it (scripts/copy-web.sh) so the updater can tell builds apart
   const BUILD = 'dev';
   /* project file format: raise it when a saved project gains content older versions cannot read. Files without it are 1.

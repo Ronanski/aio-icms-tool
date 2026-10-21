@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-10-21
+
 ### Added
 - **+ and 0 V points work on their own** (free draw, as in Simurelay): when no supply of that conductor is in the Wiring, a 24 V battery is added there for the + / 0 V points (a 1-phase supply for L1 / N / PE, a 3-phase one when L2 or L3 is drawn), and it leaves again with the last point. Before, the points showed "no supply with this conductor in the Wiring" until you added one yourself. Coils drawn before the points get the supply's voltage too.
 - **Seal-in branch like Simurelay**: a simple wire may now run over a terminal of its own circuit (the seal-in contact's wire joining at the stop button's terminal 12), with a junction dot there, instead of taking a detour. It still goes around a terminal of another circuit.

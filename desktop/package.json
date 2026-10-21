@@ -1,7 +1,7 @@
 {
   "name": "plc-trainer-desktop",
   "productName": "PLC Trainer",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "PLC Trainer for Windows (portable)",
   "author": "Ronan",
   "private": true,
