@@ -727,7 +727,8 @@
     if (r.chBad) return `Module fault: the ${r.chassis ? r.chassis.props.slots + '-slot ' : ''}chassis does not match the I/O configuration`;
     if (r.slots[c.props.slot] !== c.id) return `Slot ${c.props.slot} is already taken — inactive`;
     const want = r.conf[c.props.slot];
-    return want ? `I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
+    // the wording of a module fault in PLC programming software: a module that is not the configured one gives an invalid reply
+    return want ? `Module fault (Code 16#0022): an invalid reply was received — I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
   };
   // the card's address range in the chosen address style (ctx.fmt), e.g. I:1/0 – I:1/7 or I0.0 – I0.7
   const rng = (ctx, f, s, n = 8) => { const fmt = (ctx && ctx.fmt) || (a => a); return `${fmt(`${f}:${s}/0`)} – ${fmt(`${f}:${s}/${n - 1}`)}`; };

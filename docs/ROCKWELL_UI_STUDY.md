@@ -227,6 +227,54 @@ fine, and `tests/e2e.test.js` checks for brand names.
 3. The controller must be in **PROG or REM**. With the key in RUN you get "Error: Controller not in correct mode. / Cancelling download...".
 4. On success the app goes online: the mode box shows `Rem Prog` and the LEDs read Program Mode / Controller OK.
 
+## 2b. Verified working setup (second pass, owner's corrections)
+
+The first pass got three things wrong. The owner pointed them out, and the
+second pass fixed them:
+
+1. **The comms software must be running.**
+   - Studio 5000 was set to the newer Linx. Downloads then timed out ("Can't communicate with Linx communication software" / "Communications timed out") and crashed the emulated controller.
+   - The working setup is to start the classic comms server first, then Communications → Select Communication Software → choose the classic one. You can only change this with no project open; the app says "Cannot change communication software. The project file is open."
+   - The classic RSWho tree:
+     ```
+     Workstation, <PC>
+       Linx Gateways, Ethernet
+       AB_VBP-1, 1789-A17/A Virtual Chassis      (driver for the emulated rack)
+         00, Workstation, <comms server>
+         01, <other comms module>
+         02, <controller>, <ProjectName>
+         03, 1789-SIM 32 Point Input/Output Simulator
+         04, 1789-SIM 32 Point Input/Output Simulator
+       EMU500-1, DH-485                          (driver for the SLC-style emulator)
+     ```
+   - With the classic software, Who Active has a different look: an Autobrowse checkbox, a Refresh button, the same tree, and the same Go Online / Upload / Download / Set Project Path buttons.
+2. **Check what is in the controller before you download.**
+   - Who Active showed `<no name>` for slot 2 while the emulator was still in "Power Up / Restoring Image". It actually held the owner's project. Downloading would have overwritten it.
+   - The safe flow is: browse, read the name, Upload to a new file if unsure, then Download.
+   - The Download dialog itself warns "The controller is in Remote Run mode. The mode will be changed to Remote Program prior to download."
+3. **The I/O module for the emulator is a specific generic module, not a catalog card.**
+   - The simulator card isn't in the catalog. The owner's working project (uploaded from slot 2) uses:
+     - `1756-MODULE` (Generic 1756 Module) per simulator slot;
+     - Comm Format **Data - DINT**;
+     - Input assembly **1**, size **2** (32-bit);
+     - Output assembly **2**, size **1**;
+     - Configuration assembly **16**, size **0**.
+   - **Inputs are `Local:<slot>:I.Data[1].<bit>`**, because `Data[0]` is status. **Outputs are `Local:<slot>:O.Data[0].<bit>`**.
+   - Ladder uses **alias tags**: `Stop_PB1 → Local:3:I.Data[1].0` and `Pump_Motor1 → Local:3:O.Data[0].0`. The rung shows the alias name and the base address under it in `<…>`.
+   - A wrong assembly configuration faults the module: "(Code 16#0022) An invalid reply was received", Status: Faulted, and "I/O Not Responding" in the online bar.
+4. The owner's project has a **MainRoutine plus subroutines** (Analog_Routine, Motor_Routine, VFD_Control_Routine) under one MainProgram. Motor_Routine shows:
+   - seal-in branches;
+   - a TON (Timer, Preset, Accum, with EN/DN pins on the right);
+   - a CPT (Dest / Expression).
+
+   Online, true elements are drawn with green bars and the power rails turn green.
+5. A controller in **Faulted** mode shows a red "Controller Fault" LED and `Faulted` in the mode box.
+
+The study controller and I/O card (slots 5 and 6) were removed afterwards. The
+rack is back to slots 0–4. The upload copy of the owner's project is in
+`Documents\DN600_L5X FILES\Motor_Sealin_No_Latch.ACD`. TrainerStudy.ACD is in
+`Documents\Studio 5000\Projects`.
+
 ## 3. Mapping to the trainer (proposal)
 
 | Reference | Trainer |
@@ -237,7 +285,9 @@ fine, and `tests/e2e.test.js` checks for brand names.
 | New Project wizard | PLC module "New project": choose target (1756-style or SLC-style), chassis size and CPU slot |
 | Controller Organizer | Left tree with the same node order (Controller, Tasks/Programs/Routines, Data Types, I/O Configuration) |
 | Select Module Type + New Module pages | Add-card dialog: catalog table with filters, then General (name, slot), Connection (RPI, inhibit, major-fault-on-loss), Configuration |
-| Module-defined tags | Auto tags `Local:<slot>:I.Data.<n>` / `:O.Data.<n>` (SLC target: `I:<slot>/<n>`, `O:<slot>/<n>`) |
+| Module-defined tags | Auto tags. For the simulator-style card: `Local:<slot>:I.Data[1].<n>` (Data[0] is status) and `Local:<slot>:O.Data[0].<n>`. For a catalog card: `Local:<slot>:I.Data.<n>`. SLC target: `I:<slot>/<n>`, `O:<slot>/<n>`. Alias tags (name → address) are shown on the rung as the name plus `<address>`. |
+| Comms software must be running | Who Active finds nothing unless the rack has its comms module **and** the PC/driver/cable chain is wired and powered. If that breaks mid-download: "Communications timed out", and the editor goes offline. |
+| Check before download | Who Active shows the controller's current project name. Downloading over a different project asks for confirmation. |
 | Who Active / Set Project Path | Same dialog shape, with the tree built from the Wiring rack and cable |
 | Download | Verify, then check the key mode (PROG/REM), then compare the project's I/O config against the rack. A missing or mismatched card leaves the I/O LED flashing and gives a module fault (code shown in the card's status). |
 | Upload | Shows the notice "Not available in the trainer". |

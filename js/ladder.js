@@ -108,8 +108,10 @@
     o.push(`<g class="el${selCls(id)}" data-uid="${id}">`);
     o.push(`<rect class="hit" x="${x + 2}" y="${y + 4}" width="${CW - 4}" height="${RH - 8}" rx="6"/>`);
     o.push(hw(x, cx - sw, wy, 'i' + id), hw(cx + sw, x + CW, wy, 'o' + id));
-    descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - 30 - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
-    if (!noArg) o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - 17}">${esc(App.fmt(norm))}</text>`);
+    const tg = p && p.tag ? PLCcore.tagOf(p.tag) : null, alias = tg && tg.type === 'ALIAS' ? `<${App.fmt(p.addr)}>` : '';
+    descLines(norm).forEach((l, k, arr) => o.push(`<text class="desc" x="${cx}" y="${wy - (alias ? 41 : 30) - (arr.length - 1 - k) * 11}">${esc(l)}</text>`));
+    if (!noArg) o.push(`<text class="addr${p && p.kind === 'bit' ? '' : ' bad'}" x="${cx}" y="${wy - (alias ? 28 : 17)}">${esc(App.fmt(norm))}</text>`);
+    if (alias) o.push(`<text class="alias" x="${cx}" y="${wy - 17}">${esc(alias)}</text>`);
     o.push(`<text class="fbadge" data-f="${esc(p && p.addr || norm)}" x="${cx}" y="${wy + 26}"></text>`);
     o.push(`<g class="ins" data-h="${id}">`);
     if (d && d.k === 'coil') {
@@ -208,7 +210,7 @@
   function renderRung(r, W) {
     const L = rungLayout(r), o = [];
     const h = L.h;
-    o.push(`<line class="rail" x1="3" y1="0" x2="3" y2="${h}"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="${h}"/>`);
+    o.push(`<line class="rail" data-rail x1="3" y1="0" x2="3" y2="${h}"/><line class="rail" x1="${W - 3}" y1="0" x2="${W - 3}" y2="${h}"/>`);
     o.push(hw(3, LM, WY, 'r' + r.id));
     let key = renderSeq(L.cl, L.cond, LM, 0, 'r' + r.id, 0, o);
     const ox = W - RM - L.ol.w;
@@ -692,7 +694,7 @@
           <div class="lad-leds">${["run", "ok", "bat", "io"].map(k => `<span data-st-led="${k}"><i></i>${k === "io" ? "I/O" : k.toUpperCase()}</span>`).join("")}</div>
           <span class="lad-key" data-st-key title="Controller key switch"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="8" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M13 12h9M18 12v4M21 12v3" stroke="currentColor" stroke-width="2" fill="none"/></svg></span>
           <div class="lad-stat-mid"><button class="lad-stat-btn" data-act="omenu" title="Controller mode — click for Go Online, Download, Run / Program Mode and Who Active"><b data-st-mode>Offline</b><span class="caret">▾</span></button><span class="lad-path" data-st-path title="Path to the controller"></span></div>
-          <div class="lad-stat-lines"><span class="st-box" data-st-forces>No Forces</span><span class="st-box" data-st-edits>No Edits</span></div></div>
+          <div class="lad-stat-lines"><span class="st-box" data-st-forces>No Forces</span><span class="st-box" data-st-edits>No Edits</span><span class="st-box bad" data-st-io hidden>I/O Not Responding</span></div></div>
         <div class="tb-group lad-ins"><div class="ins-row">${TB.flatMap(([g, list]) => list.map(t => `<button class="tbtn ins-btn${FAV.includes(t) ? ' fav' : ''}" data-ins="${t}" data-g="${g}" title="${t} — ${esc(INSTR[t].name)}: ${esc(INSTR[t].help)}" aria-label="${t} ${esc(INSTR[t].name)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`)).join('')}</div>
           <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}</div></div>
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
@@ -833,7 +835,9 @@
     const plc = App.plc, c = App.project.conn, real = !!(c && c.mode === 'real'), on = !real || App.conn.online, run = plc.mode === 'RUN';
     const st = App.status ? App.status() : {};
     const set = (k, v) => { const e = root.querySelector(k); if (e && e.textContent !== v) e.textContent = v; };
-    set('[data-st-mode]', !on ? 'Offline' : run ? 'Rem Run' : 'Rem Prog');
+    set('[data-st-mode]', !on ? 'Offline' : st.fault ? 'Faulted' : run ? 'Rem Run' : 'Rem Prog');
+    const nr = root.querySelector('[data-st-io]'); if (nr) nr.hidden = st.io !== 'bad';
+    if (rungsEl) rungsEl.classList.toggle('live', on && run && plc.powered);
     const n = plc.forceCount();
     set('[data-st-forces]', n ? `Forces ${plc.forcesEnabled ? 'on' : 'off'} (${n})` : 'No Forces');
     set('[data-st-edits]', real && App.conn.online && !App.conn.same ? (App.conn.testing ? 'Testing edits' : 'Edits pending') : 'No Edits');

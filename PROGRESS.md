@@ -19,6 +19,9 @@
 - [x] Ladder UI like the programming software: status box with online menu, path, tabbed instruction palette — `feature/plc-ladder-ui`
 - [x] Tag editor in a grid (Edit Tags / Monitor Tags)
 - [x] Aligned with the reference UI study: online bar, Errors pane, Download dialog and flow, Who Active layout, Select Module Type, Organizer nodes — `feature/plc-ui-align`
+- [x] Reference corrections: alias display, live rails, project in the controller, download timeout, Code 16#0022 module fault, I/O Not Responding, Faulted — `feature/plc-ui-align2`
+- [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)
+- [ ] CPT (Compute) instruction
 - [ ] Tag browser on an operand and New Tag from an unknown operand (reference: right-click → New "tag")
 - [ ] Program Tags (scope of a program), several programs per task
 - [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL

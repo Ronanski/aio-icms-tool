@@ -250,6 +250,7 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .who-path { margin-top: 10px; font-size: 12.5px; display: grid; gap: 4px; }
 .who-pbtn { display: flex; gap: 6px; margin-top: 4px; }
 .who .who-ctl.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 4px; }
+.dl-warn { border-left: 4px solid #e0a21f; padding: 6px 10px; background: color-mix(in srgb, #e0a21f 12%, transparent); font-size: 12.5px; }
 .dl-danger { border-left: 4px solid #e5392c; padding: 6px 10px; background: color-mix(in srgb, #e5392c 10%, transparent); font-size: 12.5px; }
 .mod-search { width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
 .mod-cat tr[data-mt] { cursor: pointer; }
@@ -277,6 +278,9 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .rung-comment { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 13px; padding: 8px 6px 0; max-width: 900px; }
 .rung-svg { display: block; overflow: visible; user-select: none; }
 .rung-svg .rail { stroke: var(--lad-wire); stroke-width: 2.5; }
+.lad-rungs.live .rung-svg .rail, .lad-rungs.live .rung.end .rail { stroke: #2fbf55; }
+.rung-svg .alias { font: 10px var(--mono); fill: var(--muted); text-anchor: middle; }
+.st-box.bad { color: #fff; background: #d9342b; border-color: #a52019; }
 .rung-svg .w { stroke: var(--lad-wire); stroke-width: 1.6; }
 .rung-svg .w.on { stroke: var(--lad-on); stroke-width: 2.6; }
 .rung-svg .w.stub { stroke-width: 1.2; }

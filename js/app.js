@@ -169,7 +169,9 @@
       // connection: 'simple' (edits run at once) or 'real' (a controller program of its own, Download / Upload)
       conn: { mode: isObj(p.conn) && p.conn.mode === 'real' ? 'real' : 'simple', ctl: isObj(p.conn) ? cleanCtl(p.conn.ctl) : null,
         // the project path set with Who Active (USB to the controller, or Ethernet to a module at an IP address)
-        path: isObj(p.conn) && isObj(p.conn.path) && str(p.conn.path.ctl, 40) ? { via: p.conn.path.via === 'ETH' ? 'ETH' : 'USB', ip: str(p.conn.path.ip, 40), ctl: str(p.conn.path.ctl, 40) } : null },
+        path: isObj(p.conn) && isObj(p.conn.path) && str(p.conn.path.ctl, 40) ? { via: p.conn.path.via === 'ETH' ? 'ETH' : 'USB', ip: str(p.conn.path.ip, 40), ctl: str(p.conn.path.ctl, 40) } : null,
+        // the name of the project the controller holds (shown by Who Active and Download)
+        ctlName: isObj(p.conn) ? str(p.conn.ctlName, 80) : '' },
       // new parts and wires never reuse the id or the tag of one that was put aside
       circuit,
       hmi: HMI.cleanAll(hm),
@@ -237,7 +239,7 @@
         files: (p.ladder.files || []).map(f => ({ n: f.n, name: f.name, period: f.period || 0, rungs: f.rungs.map(r => ({ comment: r.comment || '', text: Ladder.serialize(r.elems) })) })) },
       tags: p.tags || [],
       net: p.net && (p.net.remotes.length || p.net.links.length) ? p.net : undefined,
-      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl, ...(p.conn.path ? { path: p.conn.path } : {}) } : undefined,
+      conn: p.conn && p.conn.mode === 'real' ? { mode: 'real', ctl: p.conn.ctl, ...(p.conn.path ? { path: p.conn.path } : {}), ...(p.conn.ctlName ? { ctlName: p.conn.ctlName } : {}) } : undefined,
       circuit: { comps: p.circuit.comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), wires: p.circuit.wires, seq: p.circuit.seq },
       hmi: p.hmi,
       schematic: { L: p.schematic.L, N: p.schematic.N, rungs: p.schematic.rungs.map(r => ({ comment: r.comment || '', elems: JSON.parse(JSON.stringify(r.elems, (k, v) => (k === 'p' ? undefined : v))) })), power: p.schematic.power ? JSON.parse(JSON.stringify(p.schematic.power)) : undefined, free: p.schematic.free ? JSON.parse(JSON.stringify(p.schematic.free)) : undefined },
@@ -674,7 +676,7 @@
     const esc = UI.esc, c = App.project.conn, real = c.mode === 'real';
     const f = Circuit.comms(App.project.circuit, App.project.io), r = Circuit.rack(App.project.circuit, App.project.io);
     const mods = r.cpu ? Circuit.SLOTS.filter(s => r.slots[s]).map(s => { const m = App.project.circuit.comps.find(x => x.id === r.slots[s]); return `<li>▭ ${s.padStart(2, '0')}, ${esc(m.props.label)} — ${esc(Circuit.DEFS[m.type].name)}</li>`; }).join('') : '';
-    const ctlRow = f.ctl ? `<li class="who-ctl sel" data-whoctl>🖥 <b>${r.cpu ? '00, ' : ''}${esc(f.ctl.props.label)}</b> — ${esc(Circuit.DEFS[f.ctl.type].name)} <small>${App.plc.mode}</small></li>` : '';
+    const ctlRow = f.ctl ? `<li class="who-ctl sel" data-whoctl>🖥 <b>${r.cpu ? '00, ' : ''}${esc(f.ctl.props.label)}</b> — ${esc(Circuit.DEFS[f.ctl.type].name)}${real ? (c.ctlName ? `, '<b>${esc(c.ctlName)}</b>'` : ', no program') : ''} <small>${App.plc.mode}</small></li>` : '';
     const found = !f.ctl ? '' : f.via === 'ETH'
       ? `<ul><li>🌐 Ethernet<ul><li>${esc(f.ip)}, ${esc(f.mod.props.label)}<ul><li>▭ Backplane<ul>${ctlRow}${mods}</ul></li></ul></li></ul></li></ul>`
       : `<ul><li>🔌 USB<ul>${ctlRow}${mods ? `<li>▭ Backplane<ul>${mods}</ul></li>` : ''}</ul></li></ul>`;
@@ -728,7 +730,7 @@
     const c = App.project.conn || (App.project.conn = { mode: 'simple', ctl: null });
     if (c.mode === m) return;
     c.mode = m; conn.online = false; conn.testing = false;
-    if (m === 'real') c.ctl = progSnap();   // as if the project had just been downloaded
+    if (m === 'real') { c.ctl = progSnap(); c.ctlName = App.project.name; }   // as if the project had just been downloaded
     App.log('system', `Connection: ${m === 'real' ? 'Realistic (download / upload)' : 'Simple (edits run at once)'}`);
     App.loadProgram(); App.save(); Ladder.render();
   };
@@ -740,19 +742,36 @@
   App.download = function (sure) {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
     if (!conn.online && !commsOk()) return;
+    const run = App.plc.mode === 'RUN', other = c.ctlName && c.ctlName !== App.project.name;
     if (!sure) {
       const esc = UI.esc, ctl = Circuit.rack(App.project.circuit, App.project.io).ctl;
       UI.modal({
         title: 'Download', wide: true,
         body: `<p class="dl-head">⚠ Download offline project '<b>${esc(App.project.name)}</b>' to the controller.</p>
-          <table class="io-cfg dl-ctl"><tr><th colspan="2">Connected Controller</th></tr><tr><td>Name</td><td>${esc(ctl ? ctl.props.label : 'Virtual controller')}</td></tr><tr><td>Type</td><td>${esc(ctl ? Circuit.DEFS[ctl.type].name : 'Virtual controller (no PLC in the Wiring)')}</td></tr><tr><td>Path</td><td><code>${esc(App.status().path)}</code></td></tr><tr><td>Mode</td><td>${App.plc.mode}</td></tr></table>
+          <table class="io-cfg dl-ctl"><tr><th colspan="2">Connected Controller</th></tr><tr><td>Name</td><td>${esc(ctl ? ctl.props.label : 'Virtual controller')}</td></tr><tr><td>Type</td><td>${esc(ctl ? Circuit.DEFS[ctl.type].name : 'Virtual controller (no PLC in the Wiring)')}</td></tr><tr><td>Path</td><td><code>${esc(App.status().path)}</code></td></tr><tr><td>Project in the controller</td><td>${c.ctlName ? `'${esc(c.ctlName)}'` : '<i>none</i>'}</td></tr></table>
+          ${other ? `<p class="dl-warn">The controller holds another project, '<b>${esc(c.ctlName)}</b>'. Download replaces it with '<b>${esc(App.project.name)}</b>'.</p>` : ''}
+          ${run ? '<p class="dl-warn">The controller is in Remote Run mode. The mode will be changed to Remote Program prior to download.</p>' : ''}
           <p class="dl-danger"><b>DANGER:</b> Unexpected hazardous motion of machinery may occur. Outputs can change when the controller changes mode or program: make sure the machine and the people near it are safe before you download.</p>`,
         buttons: [{ label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => { setTimeout(() => App.download(true)); } }],
       });
       return;
     }
     if (!Ladder.verify(true)) { Ladder.out('m', 'Cancelling download...'); UI.toast('The project has errors — see the Errors pane under the ladder', 'danger', 6000); return; }
-    needProg('Download', () => { c.ctl = progSnap(); conn.online = true; conn.testing = false; App.log('system', 'Download: the project was written to the controller'); Ladder.out('m', `Download complete: '${App.project.name}' is in the controller. Online, ${App.plc.mode === 'RUN' ? 'Rem Run' : 'Rem Prog'}.`); App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); });
+    if (App.plc.mode === 'RUN') { App.setMode('PROG'); Ladder.out('m', 'Changing the controller to Remote Program mode...'); }
+    const finish = () => {
+      c.ctl = progSnap(); c.ctlName = App.project.name; conn.online = true; conn.testing = false;
+      App.log('system', 'Download: the project was written to the controller');
+      Ladder.out('m', `Download complete: '${App.project.name}' is in the controller. Online, ${App.plc.mode === 'RUN' ? 'Rem Run' : 'Rem Prog'}.`);
+      App.loadProgram(); App.plc.applyAll(true); App.save(); UI.toast('Downloaded — online', 'ok'); Ladder.render(); App.renderOrg();
+    };
+    // over a cable the download takes a moment; a chain broken meanwhile times out, as with real comms software
+    if (!needsPath()) { finish(); return; }
+    Ladder.out('m', `Downloading '${App.project.name}' over ${pathText(c.path)} ...`);
+    setTimeout(() => {
+      const e = pathErr();
+      if (e) { Ladder.out('e', 'Error: Communications timed out. Cancelling download...'); App.log('alarm', `Download failed: communications timed out (${e})`); UI.toast(`Download failed: communications timed out — ${e}`, 'danger', 7000); return; }
+      finish();
+    }, 250);
   };
   // the trainer does not read a program back from a controller: Download is the way the program gets there
   App.upload = function () {
@@ -961,7 +980,7 @@
     // tag-based: each new module fault is logged once, the controller keeps running
     if (App.project.target === 'tag') {
       const now2 = new Set(rack.cpu ? rack.bad.map(b => b.msg) : []);
-      for (const m of now2) if (!modFaults.has(m)) { App.log('alarm', `Module fault — ${m}`); if (App.ticks > 0) UI.toast(`Module fault — ${m}`, 'warn', 5000); }
+      for (const m of now2) if (!modFaults.has(m)) { App.log('alarm', `Module fault (Code 16#0022) — ${m}`); if (App.ticks > 0) UI.toast(`Module fault (Code 16#0022): an invalid reply was received — ${m}`, 'warn', 5000); }
       for (const m of modFaults) if (!now2.has(m)) App.log('system', `Module fault cleared — ${m}`);
       modFaults = now2;
     } else modFaults = new Set();

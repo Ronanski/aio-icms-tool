@@ -1466,9 +1466,9 @@ function check(name, cond, info = '') {
   check('Compare lists the rung that differs', await page.evaluate(() => [...document.querySelectorAll('.modal .io-cfg td')].some(td => td.textContent === 'LAD 2 rung 0001') && [...document.querySelectorAll('.modal code')].some(c => c.textContent === 'XIC B3:0/0 OTE B3:0/2')));
   await page.evaluate(() => document.querySelectorAll('.modal-wrap')[1].remove());
   await page.click('.modal-foot button:has-text("Download")'); await wait(150);
-  await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(150);
-  check('Download needs PROG: it asks to switch', await page.evaluate(() => [...document.querySelectorAll('.modal-foot button')].some(b => b.textContent === 'Switch to PROG')));
-  await page.click('.modal-foot button:has-text("Switch to PROG")'); await wait(150);
+  check('Download in RUN warns that the mode will be changed to Remote Program prior to download', await page.evaluate(() => /Remote Run mode\. The mode will be changed to Remote Program prior to download/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
+  await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(200);
+  check('the download changed the controller to PROG by itself and went online', await page.evaluate(() => App.plc.mode === 'PROG' && App.conn.online));
   await page.evaluate(() => { App.setMode('RUN'); App.plc.write('B3:0/0', 1); }); await wait(200);
   check('after the download the controller runs the new program and is ONLINE', await page.evaluate(() => App.plc.read('B3:0/2') === 1 && document.querySelector('[data-conn]').textContent === 'ONLINE' && App.conn.online));
   await addRung('XIC B3:0/0 OTE B3:0/3'); await wait(150);
@@ -2760,7 +2760,7 @@ function check(name, cond, info = '') {
       App.project.target = 'file'; App.setMode('RUN'); const fileMode = App.plc.mode; App.project.target = 'tag';
       App.setMode('RUN'); await new Promise(q => setTimeout(q, 300)); const tagMode = App.plc.mode, di = App.project.circuit.comps.find(c => c.type === 'mdi16');
       const st = Circuit.status(di, App.ctx); App.setMode('PROG');
-      return fileMode === 'PROG' && tagMode === 'RUN' && /Module fault: the 10-slot chassis/.test(st) && App.events().some(e => e.kind === 'alarm' && /Module fault — chassis/.test(e.msg));
+      return fileMode === 'PROG' && tagMode === 'RUN' && /Module fault: the 10-slot chassis/.test(st) && App.events().some(e => e.kind === 'alarm' && /Module fault \(Code 16#0022\) — chassis/.test(e.msg));
     }));
     await page.click('#view-ladder [data-lorg] [data-org="f3"]'); await wait(200);
     check('PLC module: a routine clicked in the Organizer opens in the ladder and the Organizer stays open', await page.evaluate(() => Ladder.file() === 3 && !document.querySelector('#view-ladder [data-lorg]').hidden));
@@ -2807,7 +2807,7 @@ function check(name, cond, info = '') {
     await page.click('.modal [data-who="set"]'); await wait(200);
     check('comms: Set Project Path stores the path (shown in Who Active and the Organizer) and it is saved', await page.evaluate(() => { const p = App.project.conn.path; App.organizer(); return p && p.via === 'ETH' && p.ip === '192.168.1.20' && p.ctl === 'CPU1' && /Ethernet\\192\.168\.1\.20\\Backplane\\0/.test(document.querySelector('#view-ladder [data-lorg]').textContent) && App.serialize().conn.path.ip === '192.168.1.20'; }));
     await closeAll();
-    await page.evaluate(() => { App.setMode('PROG'); App.download(true); }); await wait(200);
+    await page.evaluate(() => { App.setMode('PROG'); App.download(true); }); await wait(700);
     check('comms: Download writes the project into the controller and goes online', await page.evaluate(() => App.conn.online && App.events().some(e => /Download: the project was written/.test(e.msg))));
     await page.evaluate(() => App.upload()); await wait(150);
     check('comms: Upload shows "not available in the trainer" and changes nothing', await page.evaluate(() => /Upload is not available in the trainer/.test(document.querySelector('.modal-body').textContent) && App.conn.online && App.project.ladder.rungs.length === 1));
@@ -2850,9 +2850,9 @@ function check(name, cond, info = '') {
       App.plc.write('B3:0/0', 1); await new Promise(q => setTimeout(q, 200));
       const C = App.project.circuit.comps, dq = C.find(c => c.props.label === 'DQ1'), dout = C.find(c => c.props.label === 'DO1');
       const r = { mode: App.plc.mode, logic: App.plc.read('B3:0/1') === 1, faulted: /expects PLC Input Card 16/.test(Circuit.status(dq, App.ctx)), other: /Slot 2: O:2\/0/.test(Circuit.status(dout, App.ctx)),
-        alarms: App.events().filter(e => e.kind === 'alarm' && /Module fault — slot 1/.test(e.msg)).length };
+        alarms: App.events().filter(e => e.kind === 'alarm' && /Module fault \(Code 16#0022\) — slot 1/.test(e.msg)).length };
       await new Promise(q => setTimeout(q, 300));
-      r.once = App.events().filter(e => e.kind === 'alarm' && /Module fault — slot 1/.test(e.msg)).length === 1;
+      r.once = App.events().filter(e => e.kind === 'alarm' && /Module fault \(Code 16#0022\) — slot 1/.test(e.msg)).length === 1;
       App.organizer(); r.tree = /\[1\][^\[]*⚠/.test(document.querySelector('#view-ladder [data-lorg]').textContent) && !!document.querySelector('#view-ladder [data-lorg] .org-add');
       return r;
     }, proj('tag'));
@@ -2981,7 +2981,7 @@ function check(name, cond, info = '') {
     await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(300);
     check('reference: the empty rung stops the download: the Errors pane says Verifying…, Complete - 1 error(s), Cancelling download... and counts 1 Error', await page.evaluate(() => { const L = Ladder.outLines().join('\n'); return !App.conn.online && /Verifying routines/.test(L) && /Complete - 1 error\(s\)/.test(L) && /Cancelling download/.test(L) && /^1 Error$/.test(document.querySelector('#view-ladder [data-oc="e"]').textContent) && document.querySelector('#view-ladder [data-lout]').classList.contains('open'); }));
     await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.project.ladder.rungs.pop(); App.programChanged(); Ladder.render(); App.download(); }); await wait(200);
-    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(300);
+    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(800);
     check('reference: with the rung fixed the download completes: online, the mode box says Rem Prog, the pane says Download complete', await page.evaluate(() => App.conn.online && document.querySelector('#view-ladder [data-st-mode]').textContent === 'Rem Prog' && /Download complete/.test(Ladder.outLines().join('\n')) && /0 Errors/.test(document.querySelector('#view-ladder [data-oc="e"]').textContent)));
     check('reference: the Errors pane chips hide a kind of line, and the rung position reads Rung n of N', await page.evaluate(() => { const c = document.querySelector('#view-ladder [data-oc="m"]'); c.click(); const hidden = !/Download complete/.test(document.querySelector('#view-ladder [data-olog]').textContent); c.click(); return hidden && /^Rung \d+ of 1$/.test(document.querySelector('#view-ladder [data-rungpos]').textContent); }));
     // Select Module Type: search, pick, create in a slot
@@ -3000,6 +3000,40 @@ function check(name, cond, info = '') {
     await page.keyboard.press('Escape');
     check('reference: no brand names in the new dialogs and panes', await page.evaluate(() => !/Allen.?Bradley|Rockwell|RSLogix|RSLinx|MicroLogix|PanelView|SLC 500|ControlLogix|CompactLogix|Logix Designer|Studio 5000/i.test(document.documentElement.outerHTML)));
     await page.evaluate(() => { UI.closeMenu && UI.closeMenu(); document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay7); App.showView('ladder'); });
+  }
+  console.log('Reference corrections: alias display, live rails, project in the controller, timeout, I/O Not Responding, Faulted');
+  {
+    await page.evaluate(() => {
+      const prev = App.currentId;
+      App.openNew({ name: 'Tank line', target: 'tag', io: { slots: { 3: 'mdi16', 2: 'mdo16' } }, conn: { mode: 'real' }, tags: [{ name: 'STOP_PB1', type: 'ALIAS', addr: 'I:3/0', desc: 'Stop' }],
+        ladder: { rungs: [{ text: 'XIC STOP_PB1 OTE B3:0/1' }] },
+        circuit: { seq: 8, comps: [{ id: 'c0', type: 'supply1', x: -260, y: 60, props: { label: 'Q1' }, state: { on: true } }, { id: 'c1', type: 'chassis', x: 0, y: 0, props: { label: 'RACK1', slots: '4' }, state: {} },
+          { id: 'c2', type: 'mpsu', x: 10, y: 52, props: { label: 'PS1' }, state: {} }, { id: 'c3', type: 'mcpu', x: 102, y: 52, props: { label: 'CPU1' }, state: {} },
+          { id: 'c4', type: 'mdo16', x: 176, y: 52, props: { label: 'DO1', slot: '2' }, state: {} }, { id: 'c5', type: 'mdi16', x: 250, y: 52, props: { label: 'DI1', slot: '3' }, state: {} }, { id: 'c6', type: 'epc', x: 0, y: 500, props: { label: 'PC1' }, state: { drv: 'running' } }],
+          wires: [{ id: 'w1', a: 'c0:L', b: 'c2:L1', pts: [] }, { id: 'w2', a: 'c0:N', b: 'c2:N', pts: [] }, { id: 'w3', a: 'c6:USB', b: 'c3:PRG', pts: [] }] } });
+      if (prev) Store.remove(prev);
+      window._lay8 = App.layout; App.setLayout('single'); App.showView('ladder'); App.setMode('PROG');
+      App.project.conn.ctlName = 'Old line';
+      App.project.conn.path = { via: 'USB', ip: '', ctl: 'CPU1' };
+    });
+    await wait(300);
+    check('corrections: an alias shows its name and, under it, the address it stands for (STOP_PB1 / <Local:3:I.Data.0>)', await page.evaluate(() => { const t = [...document.querySelectorAll('#view-ladder .rung-svg text')].map(x => x.textContent); return t.includes('STOP_PB1') && t.includes('<Local:3:I.Data.0>'); }));
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    check('corrections: Who Active shows the project in the controller (\'Old line\')', await page.evaluate(() => /00, CPU1 — [^']*, 'Old line'/.test(document.querySelector('.modal-wrap[data-who]').textContent)));
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.download(); }); await wait(150);
+    check('corrections: Download warns that the controller holds another project, which will be replaced', await page.evaluate(() => /holds another project, 'Old line'\. Download replaces it with 'Tank line'/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
+    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(30);
+    await page.evaluate(() => { App.project.circuit.wires = App.project.circuit.wires.filter(w => w.id !== 'w3'); App.circuitChanged(); }); await wait(600);
+    check('corrections: a cable pulled out during the download gives "Communications timed out" and the download is cancelled', await page.evaluate(() => !App.conn.online && /Communications timed out\. Cancelling download/.test(Ladder.outLines().join('\n')) && App.project.conn.ctlName === 'Old line'));
+    await page.evaluate(() => { App.project.circuit.wires.push({ id: 'w3', a: 'c6:USB', b: 'c3:PRG', pts: [] }); App.circuitChanged(); App.download(true); }); await wait(700);
+    check('corrections: with the cable back the download completes and the controller now holds \'Tank line\'', await page.evaluate(() => App.conn.online && App.project.conn.ctlName === 'Tank line' && App.serialize().conn.ctlName === 'Tank line'));
+    await page.evaluate(() => { App.setMode('RUN'); }); await wait(300);
+    check('corrections: online in RUN the mode box says Rem Run and the power rails are green', await page.evaluate(() => document.querySelector('#view-ladder [data-st-mode]').textContent === 'Rem Run' && document.querySelector('#view-ladder .lad-rungs').classList.contains('live') && getComputedStyle(document.querySelector('#view-ladder .rung-svg .rail')).stroke.replace(/\s/g, '') === 'rgb(47,191,85)'));
+    await page.evaluate(() => { App.project.io = Circuit.cleanIo({ slots: { 3: 'mdi16', 2: 'mdo16t' } }); App.addrChanged(); }); await wait(400);
+    check('corrections: a module fault shows "I/O Not Responding" in the online bar and the module status gives Code 16#0022', await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-st-io]'); const st = Circuit.status(App.project.circuit.comps.find(c => c.id === 'c4'), App.ctx); return !b.hidden && /I\/O Not Responding/.test(b.textContent) && /Code 16#0022\): an invalid reply was received/.test(st); }));
+    await page.evaluate(() => { App.setMode('PROG'); App.project.target = 'file'; App.addrChanged(); Ladder.statusUi(); }); await wait(200);
+    check('corrections: a file-based controller with that mismatch shows Faulted in the mode box and a red OK light', await page.evaluate(() => document.querySelector('#view-ladder [data-st-mode]').textContent === 'Faulted' && document.querySelector('#view-ladder [data-st-led="ok"]').classList.contains('bad')));
+    await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay8); });
   }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
