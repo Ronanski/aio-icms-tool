@@ -421,7 +421,8 @@
           <li>⚙ Tasks<ul>
             <li>↻ <b>MainTask</b> <small>continuous</small><ul><li>▤ <b>MainProgram</b><ul>
               <li>⊢ <a href="#" data-org="f2">MainRoutine</a> <small>main routine</small></li>
-              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>routine · runs on JSR</small></li>`).join('')}
+              ${lad.files.filter(f => !f.period).map(f => `<li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a> <small>routine · runs on JSR</small><span class="org-act"><a href="#" data-orn="${f.n}" title="Rename">✎</a><a href="#" data-ordel="${f.n}" title="Delete">🗑</a></span></li>`).join('')}
+              <li><a href="#" data-org="new" class="org-add">＋ New Routine…</a></li>
             </ul></li></ul></li>
             ${per.map(f => `<li>⏱ <b>PeriodicTask ${f.n}</b> <small>every ${f.period} ms</small><ul><li>⊢ <a href="#" data-org="f${f.n}">${esc(f.name)}</a></li></ul></li>`).join('')}
           </ul></li>
@@ -434,7 +435,8 @@
           <li>📁 <b>Program Files</b><ul>
             <li>▤ SYS 0 <small>system</small></li><li>▤ SYS 1 <small>reserved</small></li>
             <li>⊢ <a href="#" data-org="f2">LAD 2 – MAIN</a></li>
-            ${lad.files.map(f => `<li>⊢ <a href="#" data-org="f${f.n}">LAD ${f.n} – ${esc(f.name)}</a> <small>${f.period ? `timed, every ${f.period} ms` : 'runs on JSR U:' + f.n}</small></li>`).join('')}
+            ${lad.files.map(f => `<li>⊢ <a href="#" data-org="f${f.n}">LAD ${f.n} – ${esc(f.name)}</a> <small>${f.period ? `timed, every ${f.period} ms` : 'runs on JSR U:' + f.n}</small><span class="org-act"><a href="#" data-orn="${f.n}" title="Rename">✎</a><a href="#" data-ordel="${f.n}" title="Delete">🗑</a></span></li>`).join('')}
+            <li><a href="#" data-org="new" class="org-add">＋ New Program File…</a></li>
           </ul></li>
           <li>📁 <b>Data Files</b><ul>${DATA.map(([n, d, f]) => `<li>▦ ${f ? `<a href="#" data-org="d${f}">${n} – ${d}</a>` : `${n} – ${d}`}</li>`).join('')}</ul></li>
         </ul></li></ul>`;
@@ -448,8 +450,10 @@
         el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
           ev.preventDefault();
           const k = a.dataset.org;
-          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
+          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k === 'new') { App.showView('ladder'); Ladder.newFile(); } else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
+        el.querySelectorAll('[data-orn]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.renameFile(Number(x.dataset.orn)); }; });
+        el.querySelectorAll('[data-ordel]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.deleteFile(Number(x.dataset.ordel)); }; });
         el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); App.renderOrg(); }; });
       }
     }

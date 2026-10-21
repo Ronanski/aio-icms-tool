@@ -2875,6 +2875,35 @@ function check(name, cond, info = '') {
     check('file-based: the same mismatch is a major fault — RUN is refused, and a running processor stops', fileRun.refused && fileRun.ran && fileRun.stopped, JSON.stringify(fileRun));
     await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay4); });
   }
+  console.log('Routines and program files: new, JSR by name, rename, delete');
+  {
+    await page.evaluate(() => {
+      const prev = App.currentId; App.openNew({ name: 'Routines', target: 'tag', ladder: { rungs: [{ text: 'XIC B3:0/0 JSR U:3' }], files: [{ n: 3, name: 'FILL', rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] }] } }); if (prev) Store.remove(prev);
+      window._lay5 = App.layout; App.setLayout('single'); App.showView('ladder'); App.organizer();
+    });
+    await wait(250);
+    check('routines: a JSR in a tag-based project shows the routine by name (FILL)', await page.evaluate(() => { const t = document.querySelector('#view-ladder .lad-rungs').textContent; return t.includes('Routine Name') && t.includes('FILL'); }));
+    await page.click('#view-ladder [data-lorg] [data-org="new"]'); await wait(150);
+    await page.fill('#f_nm', 'drain'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    check('routines: ＋ New Routine… in the Organizer adds a routine (DRAIN) and opens it', await page.evaluate(() => App.project.ladder.files.some(f => f.name === 'DRAIN' && f.n === 4) && Ladder.file() === 4 && document.querySelector('#view-ladder [data-lorg]').textContent.includes('DRAIN')));
+    await page.evaluate(() => { Ladder.openFile(2); }); await wait(100);
+    await page.evaluate(() => { const r = App.project.ladder.rungs; Ladder.resetSel(); });
+    await page.evaluate(() => { App.project.ladder.rungs.push(Ladder.newRung(Ladder.parseRung('XIC B3:0/2 JSR U:3'))); App.programChanged(); Ladder.render(); }); await wait(150);
+    const jsrId = await page.evaluate(() => App.project.ladder.rungs[1].elems[1].id);
+    await page.evaluate(id => Ladder.edit(id), jsrId); await wait(150);
+    check('routines: the JSR form lists the routines by name', await page.evaluate(() => { const o = [...document.querySelectorAll('.modal #f_a0 option')].map(x => x.textContent); return o.join() === 'FILL,DRAIN'; }));
+    await page.selectOption('.modal #f_a0', 'U:4'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    check('routines: picking DRAIN stores JSR U:4 and the program verifies', await page.evaluate(() => Ladder.serialize(App.project.ladder.rungs[1].elems) === 'XIC B3:0/2 JSR U:4' && Ladder.verify(true)));
+    await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg] [data-orn="3"]').click(); }); await wait(150);
+    await page.fill('#f_nm', 'tank_fill'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    check('routines: renaming a routine keeps every JSR to it (shown with the new name)', await page.evaluate(() => App.project.ladder.files.find(f => f.n === 3).name === 'TANK_FILL' && document.querySelector('#view-ladder .lad-rungs').textContent.includes('TANK_FILL') && Ladder.verify(true)));
+    await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg] [data-ordel="4"]').click(); }); await wait(150);
+    await page.click('.modal-wrap:last-child .btn.danger, .modal-wrap:last-child .btn.primary'); await wait(200);
+    check('routines: deleting a routine that a JSR calls makes that JSR an error in Verify', await page.evaluate(() => !App.project.ladder.files.some(f => f.n === 4) && !Ladder.verify(true)));
+    await page.evaluate(() => { App.project.target = 'file'; App.organizer(); }); await wait(150);
+    check('program files: the file-based tree offers ＋ New Program File… and rename / delete on LAD 3', await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-lorg]'); return /New Program File/.test(b.textContent) && !!b.querySelector('[data-orn="3"]') && !!b.querySelector('[data-ordel="3"]'); }));
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay5); });
+  }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);

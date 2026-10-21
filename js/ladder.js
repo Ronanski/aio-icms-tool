@@ -149,7 +149,8 @@
       const raw = e.a[k] ?? '?';
       const p = parse(raw);
       const lk = liveKey(e, k);
-      o.push(`<text class="bname" x="${bx + 8}" y="${ry}">${esc(spec.n)}</text>`);
+      o.push(`<text class="bname" x="${bx + 8}" y="${ry}">${esc(spec.ty === 'prog' && App.project.target === 'tag' ? 'Routine Name' : spec.n)}</text>`);
+      if (spec.ty === 'prog' && App.project.target === 'tag' && p && p.kind === 'prog') { const f = fileOf(p.n); o.push(`<text class="bval${f ? '' : ' bad'}" x="${bx + BOXW - 8}" y="${ry}">${esc(f ? f.name : p.norm)}</text>`); return; }
       if (lk) o.push(`<text class="bval" data-v="${lk}" x="${bx + BOXW - 8}" y="${ry}">${esc(raw)}</text>`);
       else if (p && p.kind === 'word') {
         o.push(`<text class="baddr" x="${bx + 78}" y="${ry}">${esc(p.norm)}</text>`);
@@ -243,6 +244,23 @@
       : `<b>Online edits pending</b> — the controller still runs its program. <button class="tbtn" data-act="test">▶ Test edits</button><button class="tbtn" data-act="assemble">✓ Assemble</button><button class="tbtn" data-act="cancel">✕ Cancel edits</button>`;
   };
   Ladder.openFile = function (n) { if (n !== 2 && !fileOf(n)) return; curFile = n; SEL = { r: -1, id: null, leg: null }; undo = []; redo = []; Ladder.render(); };
+  Ladder.renameFile = function (n) {
+    const f = fileOf(n); if (!f) return;
+    const tag = App.project.target === 'tag';
+    UI.form(tag ? 'Rename routine' : `Rename LAD ${n}`, [{ key: 'nm', label: 'Name', value: f.name }], v => {
+      const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
+      if ((App.project.ladder.files || []).some(x => x !== f && x.name === nm)) return 'Another routine has that name';
+      App.log('system', `${tag ? 'Routine' : 'LAD ' + n} ${f.name} renamed ${nm}`); f.name = nm; App.programChanged(); Ladder.render(); return undefined;
+    });
+  };
+  Ladder.deleteFile = function (n) {
+    const f = fileOf(n); if (!f) return;
+    const tag = App.project.target === 'tag';
+    UI.confirm(tag ? 'Delete routine' : `Delete LAD ${n}`, `Delete ${f.name} and its ${f.rungs.length} rung(s)? A JSR that calls it becomes an error until you fix it.`, () => {
+      App.project.ladder.files = App.project.ladder.files.filter(x => x !== f); if (curFile === n) curFile = 2;
+      App.log('system', `${tag ? 'Routine' : 'LAD ' + n} ${f.name} deleted`); App.programChanged(); Ladder.render();
+    }, 'Delete');
+  };
   Ladder.newFile = function () {
     const used = new Set((App.project.ladder.files || []).map(f => f.n)); let n = 3; while (used.has(n)) n++;
     const tag = App.project.target === 'tag';
@@ -251,7 +269,7 @@
       const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
       App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [] }].sort((a, b) => a.n - b.n);
       curFile = n; App.programChanged(); Ladder.render(); return undefined;
-    }, tag ? '<p class="help">A routine runs when a JSR to it in MainRoutine (or another routine) is true. In the ladder the JSR shows the routine number.</p>' : '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
+    }, tag ? '<p class="help">A routine runs when a JSR to it in MainRoutine (or another routine) is true. Pick it by name in the JSR.</p>' : '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
   };
 
   function snapshot() {
@@ -527,7 +545,8 @@
     const e = f.e, d = INSTR[e.t];
     const first = parse(e.a[0]);
     const descKey = first && first.kind !== 'const' ? first.norm : null;
-    const fields = d.args.map((spec, k) => (spec.ty === 'mtype' ? { key: 'a' + k, label: spec.n, value: e.a[k], options: ['READ', 'WRITE'] } : { key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
+    const files = App.project.ladder.files || [], tag = App.project.target === 'tag';
+    const fields = d.args.map((spec, k) => (spec.ty === 'prog' && files.length ? { key: 'a' + k, label: tag ? 'Routine' : spec.n, value: e.a[k], options: files.map(f => ({ v: 'U:' + f.n, l: tag ? f.name : `U:${f.n} — LAD ${f.n} ${f.name}` })) } : spec.ty === 'mtype' ? { key: 'a' + k, label: spec.n, value: e.a[k], options: ['READ', 'WRITE'] } : { key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
     fields.push({ key: 'desc', label: 'Address description (optional)', value: descKey ? (App.project.ladder.desc[descKey] || '') : '', hint: 'Shown above the instruction, e.g. "START PB" or "MOTOR RUN".' });
     const m = UI.form(`${e.t} — ${d.name}`, fields, vals => {
       const a = [];
