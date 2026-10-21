@@ -726,20 +726,26 @@
 
   /* a tag is unique (the Electrical Diagram and the address book find devices by it); symbols that use it follow the rename */
   const LABEL = /^[A-Za-z0-9_+.-]{1,20}$/, SCHTAG = /^[A-Za-z0-9_-]{1,20}$/;
-  function setLabel(c, inp) {
-    const old = c.props.label, v = inp.value.trim(), S = window.Schematic, refs = S && S.refs ? S.refs(old) : 0;
-    const no = msg => { UI.toast(msg, 'warn'); inp.value = old; };
-    if (v === old) { inp.value = old; return; }
-    if (!LABEL.test(v)) return no('A tag is 1 to 20 letters, numbers or + . - _ (no spaces)');
-    if (circ().comps.some(x => x !== c && x.props.label === v)) return no(`${v} is already the tag of another device`);
-    if (circ().reserved && circ().reserved.has(v)) return no(`${v} is the tag of a part this version does not know (kept in the project): use another tag`);
-    if (refs && !SCHTAG.test(v)) return no(`${old} is used in the Electrical Diagram: use letters, numbers, - or _ only`);
+  function rename(c, v) {
+    const old = c.props.label, S = window.Schematic, refs = S && S.refs ? S.refs(old) : 0;
+    if (v === old) return null;
+    if (!LABEL.test(v)) return 'A tag is 1 to 20 letters, numbers or + . - _ (no spaces)';
+    if (circ().comps.some(x => x !== c && x.props.label === v)) return `${v} is already the tag of another device`;
+    if (circ().reserved && circ().reserved.has(v)) return `${v} is the tag of a part this version does not know (kept in the project): use another tag`;
+    if (refs && !SCHTAG.test(v)) return `${old} is used in the Electrical Diagram: use letters, numbers, - or _ only`;
     c.props.label = v;
     App.log('operator', `Device ${old} renamed ${v}`);
     if (refs) { S.renameTag(old, v); UI.toast(`${old} renamed ${v} — the Electrical Diagram follows`, 'ok'); }
     else if (S && S.refs(v)) S.sync();
     else App.save();
+    return null;
   }
+  function setLabel(c, inp) {
+    const m = rename(c, inp.value.trim());
+    if (m) { UI.toast(m, 'warn'); inp.value = c.props.label; }
+  }
+  /* rename a device from another view (the Electrical Diagram): its symbols everywhere follow */
+  WS.renameDevice = (c, v) => rename(c, String(v).trim());
   WS.selectComp = id => select({ kind: 'comp', id });
   WS.onShow = function () { if (!WS._fitted) { WS._fitted = true; requestAnimationFrame(() => WS.fit()); } };
   WS.refit = () => { WS._fitted = false; };

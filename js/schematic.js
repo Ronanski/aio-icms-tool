@@ -1104,6 +1104,7 @@
   SC.onKey = function (ev) {
     const c = ev.ctrlKey || ev.metaKey, k = ev.key;
     // the free drawing takes its own keys and Ctrl+C / Ctrl+V / Ctrl+A; Ctrl+Z / Ctrl+Y stay the diagram's undo / redo
+    if (style === 'free' && k === 'F2' && !c) { ev.preventDefault(); FreeDraw.renameDevice(FreeDraw.selected()); return; }
     if (style === 'free' && (!c || ['c', 'v', 'a'].includes(k.toLowerCase()))) { FreeDraw.onKey(ev); return; }
     if (c && k.toLowerCase() === 'z') { ev.preventDefault(); SC.undo(); }
     else if (c && k.toLowerCase() === 'y') { ev.preventDefault(); SC.redo(); }

@@ -660,9 +660,12 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .fd-wrap.nolib .fd-lib { display: none; }
 .fd-grp, .fd-search { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 .fd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; overflow-y: auto; padding-right: 2px; }
-.fd-ico { aspect-ratio: 1; padding: 4px 4px 7px; border: 1px solid var(--border); border-bottom: 3px solid var(--g, var(--muted)); border-radius: 4px; background: var(--lad-bg); cursor: grab; }
+.fd-ico { aspect-ratio: 4 / 5; padding: 4px 4px 7px; border: 1px solid var(--border); border-bottom: 3px solid var(--g, var(--muted)); border-radius: 4px; background: var(--lad-bg); cursor: grab; }
 .fd-ico:hover { border-color: var(--accent); }
-.fd-ico svg { width: 100%; height: 100%; pointer-events: none; }
+.fd-ico { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; }
+.fd-ico svg { width: 100%; flex: 1; min-height: 0; pointer-events: none; }
+/* the symbol's name under its icon (two lines at most; the whole name in the tooltip and on a long press) */
+.fd-nm { font: 500 9.5px/1.15 var(--sans); color: var(--muted); text-align: center; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; pointer-events: none; min-height: 2.3em; }
 .fd-ico .ftag, .fd-ico .sterm { display: none; }
 .fd-ico.g-sources { --g: #2f9e3a; } .fd-ico.g-switches { --g: #7b3fb0; } .fd-ico.g-sensors { --g: #2f6fd6; } .fd-ico.g-auxiliaries { --g: #8a8f2a; }
 .fd-ico.g-coils { --g: #d8c21f; } .fd-ico.g-loads { --g: #d9826a; } .fd-ico.g-contactors { --g: #20a8c0; } .fd-ico.g-protections { --g: #c0392b; }
@@ -708,6 +711,13 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .ftag { font: 600 11.5px var(--mono); fill: var(--lad-text); text-anchor: end; pointer-events: none; }
 .free-svg .ftag.faddr { font-weight: 400; font-size: 10px; }
 .free-svg .ftag.fcmt { font: italic 400 10px var(--sans); fill: var(--muted); }
+/* tag colour (drawing settings) */
+.free-svg.tagc-red .ftag:not(.fcmt) { fill: #c62828; }
+.free-svg.tagc-blue .ftag:not(.fcmt) { fill: #1f5fbf; }
+.free-svg.tagc-green .ftag:not(.fcmt) { fill: #2e7d32; }
+.free-svg.tagc-orange .ftag:not(.fcmt) { fill: #d9730d; }
+.free-svg.tagc-purple .ftag:not(.fcmt) { fill: #7b3fb5; }
+.fd-props .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .free-svg .fbox { fill: color-mix(in srgb, var(--accent-soft) 45%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }

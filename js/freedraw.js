@@ -231,6 +231,8 @@
     },
     PLC: PLCLIB,
   };
+  const ORDER_G = ['Sources', 'Switches', 'Auxiliaries', 'Coils', 'Loads', 'Contactors', 'Protections', 'Motors', 'Others', 'Sensors', 'PLC'];
+  Object.keys(LIB).sort((a, b) => ORDER_G.indexOf(a) - ORDER_G.indexOf(b)).forEach(g => { const v = LIB[g]; delete LIB[g]; LIB[g] = v; });
   const K = {};
   Object.entries(LIB).forEach(([g, o]) => Object.entries(o).forEach(([k, v]) => { K[k] = { ...v, g, n: v.n || k }; }));
   FD.KINDS = K;
@@ -598,6 +600,10 @@
   }
   function labels(it, S) {
     if (S.look === 'node' || (S.look === 'wire' && !S.arrow)) return '';
+    const L = lbl, o0 = labelsAll(it, S);
+    return L.tags && L.terms ? o0 : o0.replace(L.tags ? /$^/ : /<text class="ftag(?! fcmt)[^"]*"[^>]*>[^<]*<\/text>/g, '').replace(L.terms ? /$^/ : /<text class="sterm"[^>]*>[^<]*<\/text>/g, '');
+  }
+  function labelsAll(it, S) {
     if (S.look === 'pot') return `<text class="mtxt sm" x="${it.x}" y="${it.y + 4}">${esc(POTNAME[S.pot] ? (S.pot === '+' ? '+' : '−') : S.pot)}</text>`;
     if (S.arrow) { const [x, y] = rot(14, 10, it.r); return `<text class="ftag start" x="${it.x + x}" y="${it.y + y}">${esc(it.tag)}</text>`; }
     if (S.look === 'text') return `<text class="ftext" x="${it.x}" y="${it.y + 4}">${esc(it.txt || '')}</text>`;
@@ -633,12 +639,24 @@
   try { const v = JSON.parse(localStorage.getItem('plc-trainer.fdLib') || 'null'); if (v && typeof v === 'object') libUi = { open: v.open !== false, grp: GROUPS.includes(v.grp) ? v.grp : 'All' }; } catch (e) { /* private mode */ }
   const saveLib = () => { try { localStorage.setItem('plc-trainer.fdLib', JSON.stringify(libUi)); } catch (e) { /* private mode */ } };
   const slug = g => g.toLowerCase();
+  /* a short name for a library tile, in two lines: the device prefix and the kind of contact, then its timing and terminals
+     (KA N.O. / 11-14, KT N.C. / T-on 15-16); other symbols keep their name */
+  const ACT = { delay: 'T-on', delayoff: 'T-off', delayboth: 'T-on/off', flash: 'flash' };
+  const nb = t => t.replace(/-/g, '‑');
+  function shortName(S) {
+    const t = S.terms.map(x => x.id), a = ACT[S.act] ? ACT[S.act] + ' ' : '';
+    const two = (l1, l2) => `${esc(l1)}<br>${esc(a + nb(l2))}`;
+    if (S.look === 'no' || S.look === 'nc') return two(`${S.pre} ${S.look === 'no' ? 'N.O.' : 'N.C.'}`, t.join('-'));
+    if (S.look === 'co') return two(`${S.pre} C/O`, `${t[0]}-${t[1]}/${t[2]}`);
+    if (S.look === 'nonc') return two(`${S.pre} NC+NO`, `${t[0]}-${t[1]}/${t[2]}-${t[3]}`);
+    return esc(S.n);
+  }
   function icon(k) {
     const S = K[k], it = { id: 'i', k, tag: '', x: 0, y: 0, r: 0, txt: 'Text' };
     const xs = S.terms.map(t => t.x), ys = S.terms.map(t => t.y);
     const big = ['motor', 'gen'].includes(S.look) ? 48 : 30;
     const x1 = Math.min(-big, ...xs) - 10, x2 = Math.max(big, ...xs) + 10, y1 = Math.min(-30, ...ys) - 10, y2 = Math.max(30, ...ys) + 10;
-    return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg></button>`;
+    return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg><span class="fd-nm">${shortName(S)}</span></button>`;
   }
   // search: words in the symbol's name or group, in every group (the group choice applies when the box is empty)
   let libQ = '';
@@ -657,8 +675,18 @@
     const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
     lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
     lib.addEventListener('input', ev => { if (ev.target.matches('.fd-search')) FD.search(ev.target.value); });
+    // a long press on a tile (touch) shows the symbol's full name and terminals and does not place it
+    let tilePress = null, tileShown = false;
+    lib.addEventListener('pointerdown', ev => {
+      const b = ev.target.closest('[data-fk]'); tileShown = false; clearTimeout(tilePress);
+      if (!b || ev.pointerType !== 'touch') return;
+      tilePress = setTimeout(() => { const S = K[b.dataset.fk]; tileShown = true; UI.toast(`${S.n} — terminals ${S.terms.map(t => t.id).join(', ') || 'none'}`, 'info', 4000); }, 500);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(e => lib.addEventListener(e, () => clearTimeout(tilePress)));
+    lib.addEventListener('contextmenu', ev => { if (ev.target.closest('[data-fk]')) ev.preventDefault(); });
     lib.addEventListener('click', ev => {
       const b = ev.target.closest('[data-fk]'); if (!b || H.mode() !== 'edit') return;
+      if (tileShown) { tileShown = false; return; }
       FD.add(b.dataset.fk);
       if (window.matchMedia && matchMedia('(max-width: 760px)').matches && libUi.open) { FD.toggleLib(); const lb = document.querySelector('#view-schematic [data-fdact="lib"]'); if (lb) lb.classList.remove('on'); }
     });
@@ -723,6 +751,12 @@
     const p = PC[Circuit.potClass(api.potsR(api.rootK(k)))];
     return p ? ' pc-' + p : '';
   }
+  /* label settings (Simurelay: tag and terminal visibility, tag colour), kept in this browser */
+  const TAG_COLORS = { auto: 'Like the drawing', red: 'Red', blue: 'Blue', green: 'Green', orange: 'Orange', purple: 'Purple' };
+  let lbl = { tags: true, terms: true, color: 'auto', ask: false };
+  try { lbl = { ...lbl, ...JSON.parse(localStorage.getItem('plc-trainer.fdLabels') || '{}') }; } catch (e) { /* private mode */ }
+  FD.labelSettings = () => ({ ...lbl });
+  FD.setLabels = function (o) { lbl = { ...lbl, ...o }; if (!TAG_COLORS[lbl.color]) lbl.color = 'auto'; try { localStorage.setItem('plc-trainer.fdLabels', JSON.stringify(lbl)); } catch (e) { /* private mode */ } if (body) FD.render(body); H.side(); };
   FD.render = function (el) {
     body = el;
     if (!el.querySelector('.fd-host')) shell(el);
@@ -730,7 +764,7 @@
     const F = fr();
     FD.errs = check();
     const o = [];
-    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
+    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg${lbl.color !== 'auto' ? ' tagc-' + lbl.color : ''}" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
@@ -914,8 +948,13 @@
   function suggest(k) {
     const S = K[k], used = taken();
     const same = H.circ().comps.filter(c => (S.types ? S.types.includes(c.type) : Circuit.sameKind(c.type, S.type) && !Circuit.fitErr(c, S.type, S.terms.map(t => t.id), S.look))).map(c => c.props.label);
-    // contacts and coils of an existing device suggest that device
-    if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
+    // contacts, coils and poles suggest the last device of that kind that does not have this part drawn yet (a second coil
+    // makes the next contactor, a contact goes to the contactor whose 13-14 is free); none free: the next new tag
+    if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) {
+      const ids = S.terms.map(t => t.id), drawn = tag => fr().items.some(i => i.tag === tag && K[i.k] && K[i.k].terms.some(t => ids.includes(t.id)));
+      const free = same.filter(t => !drawn(t));
+      if (free.length) return { def: free[free.length - 1], list: same };
+    }
     let n = 1; while (used.has(S.pre + n)) n++;
     return { def: S.pre + n, list: same };
   }
@@ -970,6 +1009,7 @@
     if (K[k].auto) return go(suggest(k).def);
     if (k === 'text') { UI.form('Text', [{ key: 't', label: 'Text', value: '' }], v => go(v.t.trim())); return undefined; }
     const sg = suggest(k);
+    if (!lbl.ask) { const m = go(sg.def); if (!m) UI.toast(`${K[k].n}: -${sg.def} (change the tag or rename the device in Properties)`, 'ok', 2500); return m; }
     UI.form(K[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
       '<p class="help">Use the tag of a device in the Wiring (its contacts and coil share the tag), or a new tag: the device is added to the Wiring for you.</p>');
   };
@@ -1004,6 +1044,19 @@
       const t = v.t.trim(); if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
       H.snap(); it.tag = t; H.changed();
     });
+  };
+  /* rename the device of a symbol: its coil, contacts and poles everywhere (and the Wiring device) take the new tag */
+  FD.renameDevice = function (it) {
+    if (!it || !K[it.k].type || K[it.k].jct || K[it.k].types) return;
+    const old = it.tag, d = H.devOf(old);
+    UI.form(`Rename -${old}`, [{ key: 't', label: 'New tag', value: old }], v => {
+      const t = v.t.trim(); if (t === old) return undefined;
+      if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
+      if (d) return window.Workspace.renameDevice(d, t) || undefined;
+      // no device yet (a symbol not synced): the symbols with this tag take the new one
+      if (H.devOf(t)) return `${t} is already the tag of another device`;
+      window.Schematic.renameTag(old, t); return undefined;
+    }, `<p class="help">Every symbol of -${esc(old)} (coil, contacts, poles) and the device in the Wiring take the new tag. To move only this symbol to another device, change its Tag in Properties.</p>`);
   };
   FD.rotate = function () {
     const ids = many(); if (!ids.length) { UI.toast('Select a symbol first'); return; }
@@ -1206,11 +1259,15 @@
       <p class="help">Drag one of them to move them all. Arrow keys move them one grid step (Shift: five).</p>`
       : it ? `<h5>${esc(S.n)} <code>-${esc(it.tag)}</code></h5>
       ${propsHtml(it, S, d)}
-      <div class="btn-row">${it.k === 'text' ? '<button class="btn" data-fd="retag">Edit text…</button>' : ''}<button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Duplicate (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <div class="btn-row">${it.k === 'text' ? '<button class="btn" data-fd="retag">Edit text…</button>' : ''}${S.type && !S.jct && !S.types ? '<button class="btn" data-fd="rename">Rename device…</button>' : ''}<button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Duplicate (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
       <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>`
       : `<p class="help">Select a symbol to change its tag, comment and settings. Shift+click or Shift+drag selects several.</p>
       ${FD.hasClip() ? '<div class="btn-row"><button class="btn" data-fd="paste">Paste (Ctrl+V)</button></div>' : ''}
-      <div class="props fd-props">${field('Grid', `<select data-fgrid>${Object.entries(GRIDS).map(([k, n]) => `<option value="${k}" ${k === grid ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}</div>
+      <div class="props fd-props">${field('Grid', `<select data-fgrid>${Object.entries(GRIDS).map(([k, n]) => `<option value="${k}" ${k === grid ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
+      ${field('Tag colour', `<select data-flbl="color">${Object.entries(TAG_COLORS).map(([k, n]) => `<option value="${k}" ${k === lbl.color ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
+      <label class="chk"><input type="checkbox" data-flbl="tags" ${lbl.tags ? 'checked' : ''}> Show tags (-KM1)</label>
+      <label class="chk"><input type="checkbox" data-flbl="terms" ${lbl.terms ? 'checked' : ''}> Show terminal numbers</label>
+      <label class="chk"><input type="checkbox" data-flbl="ask" ${lbl.ask ? 'checked' : ''}> Ask for a tag when placing a symbol</label></div>
       <div class="btn-row"><button class="btn" data-fd="png">Save as PNG</button><button class="btn" data-fd="svg">Save as SVG</button></div>`;
     return `${head}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
@@ -1226,9 +1283,10 @@
       <li>▶ Play: press buttons, switch breakers and trip overloads on the drawing. ✎ Values shows the voltage on each load and open/closed on each contact.</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
-    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,
+    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rename: () => FD.renameDevice(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,
       clip: () => { if (FD.copySel()) UI.toast('Copied', 'ok', 1500); }, paste: () => FD.paste(), png: () => FD.exportImage('png'), svg: () => FD.exportImage('svg') })[b.dataset.fd](); });
     const gs = sideEl.querySelector('[data-fgrid]'); if (gs) gs.onchange = () => FD.setGrid(gs.value);
+    sideEl.querySelectorAll('[data-flbl]').forEach(i => { i.onchange = () => FD.setLabels({ [i.dataset.flbl]: i.type === 'checkbox' ? i.checked : i.value }); });
     const it = FD.selected(); if (!it) return;
     sideEl.querySelectorAll('[data-fp]').forEach(i => { i.onchange = () => FD.setProp(it, i.dataset.fp, i.value); });
     sideEl.querySelectorAll('[data-fpd]').forEach(i => { i.onchange = () => FD.setDevProp(it, i.dataset.fpd, i.value); });
