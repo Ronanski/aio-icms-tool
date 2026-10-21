@@ -639,12 +639,24 @@
   try { const v = JSON.parse(localStorage.getItem('plc-trainer.fdLib') || 'null'); if (v && typeof v === 'object') libUi = { open: v.open !== false, grp: GROUPS.includes(v.grp) ? v.grp : 'All' }; } catch (e) { /* private mode */ }
   const saveLib = () => { try { localStorage.setItem('plc-trainer.fdLib', JSON.stringify(libUi)); } catch (e) { /* private mode */ } };
   const slug = g => g.toLowerCase();
+  /* a short name for a library tile, in two lines: the device prefix and the kind of contact, then its timing and terminals
+     (KA N.O. / 11-14, KT N.C. / T-on 15-16); other symbols keep their name */
+  const ACT = { delay: 'T-on', delayoff: 'T-off', delayboth: 'T-on/off', flash: 'flash' };
+  const nb = t => t.replace(/-/g, '‑');
+  function shortName(S) {
+    const t = S.terms.map(x => x.id), a = ACT[S.act] ? ACT[S.act] + ' ' : '';
+    const two = (l1, l2) => `${esc(l1)}<br>${esc(a + nb(l2))}`;
+    if (S.look === 'no' || S.look === 'nc') return two(`${S.pre} ${S.look === 'no' ? 'N.O.' : 'N.C.'}`, t.join('-'));
+    if (S.look === 'co') return two(`${S.pre} C/O`, `${t[0]}-${t[1]}/${t[2]}`);
+    if (S.look === 'nonc') return two(`${S.pre} NC+NO`, `${t[0]}-${t[1]}/${t[2]}-${t[3]}`);
+    return esc(S.n);
+  }
   function icon(k) {
     const S = K[k], it = { id: 'i', k, tag: '', x: 0, y: 0, r: 0, txt: 'Text' };
     const xs = S.terms.map(t => t.x), ys = S.terms.map(t => t.y);
     const big = ['motor', 'gen'].includes(S.look) ? 48 : 30;
     const x1 = Math.min(-big, ...xs) - 10, x2 = Math.max(big, ...xs) + 10, y1 = Math.min(-30, ...ys) - 10, y2 = Math.max(30, ...ys) + 10;
-    return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg></button>`;
+    return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg><span class="fd-nm">${shortName(S)}</span></button>`;
   }
   // search: words in the symbol's name or group, in every group (the group choice applies when the box is empty)
   let libQ = '';
@@ -663,8 +675,18 @@
     const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
     lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
     lib.addEventListener('input', ev => { if (ev.target.matches('.fd-search')) FD.search(ev.target.value); });
+    // a long press on a tile (touch) shows the symbol's full name and terminals and does not place it
+    let tilePress = null, tileShown = false;
+    lib.addEventListener('pointerdown', ev => {
+      const b = ev.target.closest('[data-fk]'); tileShown = false; clearTimeout(tilePress);
+      if (!b || ev.pointerType !== 'touch') return;
+      tilePress = setTimeout(() => { const S = K[b.dataset.fk]; tileShown = true; UI.toast(`${S.n} — terminals ${S.terms.map(t => t.id).join(', ') || 'none'}`, 'info', 4000); }, 500);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(e => lib.addEventListener(e, () => clearTimeout(tilePress)));
+    lib.addEventListener('contextmenu', ev => { if (ev.target.closest('[data-fk]')) ev.preventDefault(); });
     lib.addEventListener('click', ev => {
       const b = ev.target.closest('[data-fk]'); if (!b || H.mode() !== 'edit') return;
+      if (tileShown) { tileShown = false; return; }
       FD.add(b.dataset.fk);
       if (window.matchMedia && matchMedia('(max-width: 760px)').matches && libUi.open) { FD.toggleLib(); const lb = document.querySelector('#view-schematic [data-fdact="lib"]'); if (lb) lb.classList.remove('on'); }
     });

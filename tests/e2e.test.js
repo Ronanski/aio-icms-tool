@@ -2450,6 +2450,9 @@ function check(name, cond, info = '') {
   await page.click('#view-schematic [data-sstyle="free"]'); await wait(250);
   check('tagging: the library groups follow Simurelay (Sources, Switches, Auxiliaries, Coils, Loads, Contactors, Protections, Motors, Others), then Sensors and PLC', await page.evaluate(() =>
     JSON.stringify([...document.querySelectorAll('#view-schematic .fd-grp option')].map(o => o.value)) === JSON.stringify(['All', 'Sources', 'Switches', 'Auxiliaries', 'Coils', 'Loads', 'Contactors', 'Protections', 'Motors', 'Others', 'Sensors', 'PLC'])));
+  check('tagging: every library tile shows a short name (device, contact, timing, terminals) and keeps the full name as its tooltip', await page.evaluate(() => { const g = document.querySelector('#view-schematic .fd-grp'); g.value = 'All'; g.dispatchEvent(new Event('change', { bubbles: true }));
+    const tile = k => document.querySelector('#view-schematic .fd-ico[data-fk="' + k + '"]'), txt = k => tile(k).querySelector('.fd-nm').textContent;
+    return [...document.querySelectorAll('#view-schematic .fd-ico')].every(b => b.querySelector('.fd-nm').textContent.trim()) && txt('ka1no') === 'KA N.O.11‑14' && txt('ktnc') === 'KT N.C.T-on 15‑16' && txt('olco') === 'F C/O95‑96/98' && tile('ka1no').title === FreeDraw.KINDS.ka1no.n; }));
   check('tagging: a placed symbol gets the next tag of its kind at once, no form (KM1, KM2), and a contact the contactor it belongs to', await page.evaluate(async () => {
     FreeDraw.add('kmcoil'); FreeDraw.add('kmcoil'); FreeDraw.add('kmno'); await new Promise(r => setTimeout(r, 100));
     const F = App.project.schematic.free.items; return !document.querySelector('#modal-root .modal') && F.map(i => i.k + ':' + i.tag).join(' ') === 'kmcoil:KM1 kmcoil:KM2 kmno:KM2' && App.project.circuit.comps.filter(c => c.type === 'contactor').length === 2;
@@ -2717,6 +2720,11 @@ function check(name, cond, info = '') {
   await phone.evaluate(() => { const ok = [...document.querySelectorAll('.modal .btn')].find(b => /ok|add/i.test(b.textContent) && b.classList.contains('primary')); if (ok) ok.click(); });
   await phone.waitForTimeout(300);
   check('phone: after a symbol is placed from the library, the library closes so the drawing is not covered', await phone.evaluate(() => !FreeDraw.libOpen() && !document.querySelector('#view-schematic [data-fdact="lib"]').classList.contains('on')));
+  await phone.evaluate(() => { if (!FreeDraw.libOpen()) document.querySelector('#view-schematic [data-fdact="lib"]').click(); document.querySelectorAll('#toast-root > *').forEach(x => x.remove()); });
+  const libN0 = await phone.evaluate(async () => { const n = App.project.schematic.free.items.length, g = document.querySelector('#view-schematic .fd-grp'); g.value = 'All'; g.dispatchEvent(new Event('change', { bubbles: true }));
+    const e = document.querySelector('#view-schematic .fd-lib [data-fk="kmno"]'), o = { bubbles: true, pointerId: 31, pointerType: 'touch' };
+    e.dispatchEvent(new PointerEvent('pointerdown', o)); await new Promise(r => setTimeout(r, 700)); e.dispatchEvent(new PointerEvent('pointerup', o)); e.click(); await new Promise(r => setTimeout(r, 150)); return n; });
+  check('phone: a long press on a library tile shows its full name and terminals and does not place it', await phone.evaluate(libN0 => [...document.querySelectorAll('#toast-root .toast')].some(x => /Contactor aux N.O. — terminals 13, 14/.test(x.textContent)) && App.project.schematic.free.items.length === libN0, libN0));
   await phone.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
   await phone.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setMode('RUN'); App.showView('hmi'); });
   await phone.waitForTimeout(400);
