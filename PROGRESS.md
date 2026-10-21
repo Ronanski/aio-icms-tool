@@ -16,6 +16,7 @@
 - [x] AB-style PLC hardware: compact 16 in / 12 out, 16-point cards (IB16, IA16, OW16, OB16)
 - [x] One flat 2D look for all devices (no shading), one font
 - [x] 1756-style chassis modules (narrow, terminal block at the sides), tag-based address style
+- [x] Simurelay-style wiring in free draw: simple connectors, alignment guides, potential colours; wire styles in the Wiring
 - [ ] 32-point cards (need two words per slot in the data table)
 - [ ] Modules that touch: their side terminals face each other (leave a gap for now)
 - [ ] Stable v2.2.2 (needs the owner's GO)

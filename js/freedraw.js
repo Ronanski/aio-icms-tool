@@ -341,10 +341,46 @@
     for (let gx = Math.ceil((it.x + x1) / G); gx <= Math.floor((it.x + x2) / G); gx++)
       for (let gy = Math.ceil((it.y + y1) / G); gy <= Math.floor((it.y + y2) / G); gy++) out.add(gx + ',' + gy);
   }
+  /* a simple connector (as Simurelay draws one): out of terminal a in its direction, across, into terminal b in its
+     direction. Straight when the two terminals face each other on one line. */
+  function simplePath(a, da, b, db) {
+    const m = 20, S = { x: a.x + da[0] * m, y: a.y + da[1] * m }, E = { x: b.x + db[0] * m, y: b.y + db[1] * m };
+    const faces = (p, d, q) => (d[0] ? Math.sign(q.x - p.x) === d[0] : Math.sign(q.y - p.y) === d[1]);
+    if (a.x === b.x && !da[0] && !db[0] && faces(a, da, b) && faces(b, db, a)) return [a, b];
+    if (a.y === b.y && !da[1] && !db[1] && faces(a, da, b) && faces(b, db, a)) return [a, b];
+    const mid = (u, v) => Math.round((u + v) / 20) * 10;
+    let P;
+    if (!da[0] && !db[0]) {
+      // both terminals point up or down: across at the middle height when they face each other, else beyond both
+      let Y;
+      if (da[1] !== db[1] && faces(a, da, b) && faces(b, db, a)) Y = mid(a.y, b.y);
+      else if (da[1] === db[1]) Y = da[1] > 0 ? Math.max(S.y, E.y) : Math.min(S.y, E.y);
+      else { const X = a.x !== b.x ? mid(a.x, b.x) : a.x + 40; P = [a, S, { x: X, y: S.y }, { x: X, y: E.y }, E, b]; }
+      if (!P) P = [a, { x: a.x, y: Y }, { x: b.x, y: Y }, b];
+    } else if (!da[1] && !db[1]) {
+      let X;
+      if (da[0] !== db[0] && faces(a, da, b) && faces(b, db, a)) X = mid(a.x, b.x);
+      else if (da[0] === db[0]) X = da[0] > 0 ? Math.max(S.x, E.x) : Math.min(S.x, E.x);
+      else { const Y = a.y !== b.y ? mid(a.y, b.y) : a.y + 40; P = [a, S, { x: S.x, y: Y }, { x: E.x, y: Y }, E, b]; }
+      if (!P) P = [a, { x: X, y: a.y }, { x: X, y: b.y }, b];
+    } else {
+      // one up/down, one sideways: one corner when it lies ahead of both terminals, else out of each first
+      const c = !da[0] ? { x: a.x, y: b.y } : { x: b.x, y: a.y };
+      P = faces(a, da, c) && faces(b, db, c) ? [a, c, b] : [a, S, !da[0] ? { x: S.x, y: E.y } : { x: E.x, y: S.y }, E, b];
+    }
+    const out = [];
+    for (const p of P) { const q = out[out.length - 1]; if (q && q.x === p.x && q.y === p.y) continue; if (out.length > 1) { const r = out[out.length - 2]; if ((r.x === q.x && q.x === p.x) || (r.y === q.y && q.y === p.y)) out.pop(); } out.push(p); }
+    return out;
+  }
+  // how wires without bends of their own are drawn: simple connectors (like Simurelay), or routed around the symbols
+  const ROUTINGS = { simple: 'Simple (like Simurelay)', around: 'Around the symbols' };
+  let routing = (() => { try { const v = localStorage.getItem('plc-trainer.fdRouting'); return ROUTINGS[v] ? v : 'simple'; } catch (e) { return 'simple'; } })();
+  FD.setRouting = function (v) { if (!ROUTINGS[v]) return; routing = v; routeSig = ''; try { localStorage.setItem('plc-trainer.fdRouting', v); } catch (e) { /* private mode */ } if (body) FD.render(body); };
+  FD.routing = () => routing;
   let routeSig = '', routeCache = null;
   function routeAll() {
     const F = fr();
-    const sig = JSON.stringify([F.items.map(i => [i.id, i.k, i.x, i.y, i.r]), F.wires.map(w => [w.id, w.a, w.b, w.pts])]);
+    const sig = routing + JSON.stringify([F.items.map(i => [i.id, i.k, i.x, i.y, i.r]), F.wires.map(w => [w.id, w.a, w.b, w.pts])]);
     if (sig === routeSig && routeCache) return routeCache;
     // circuits: wires joined at a terminal, or through a junction / wire piece, are one net
     const up = new Map(), find = k => { while (up.has(k) && up.get(k) !== k) k = up.get(k); return k; }, join = (a, b) => { const x = find(a), y = find(b); if (x !== y) up.set(x, y); };
@@ -357,12 +393,34 @@
       if (p.x % G === 0 && p.y % G === 0) { tpts.add(p.x / G + ',' + p.y / G); blocked.add(p.x / G + ',' + p.y / G); }
       front.add(Math.round(p.x / G + dx) + ',' + Math.round(p.y / G + dy));
     }));
+    // does a path pass over a terminal or through a symbol body (its own two ends aside)?
+    const taken = new Map();   // unit steps of the simple wires already placed → their circuit
+    const stepKey = (x, y, dx, dy) => dx ? Math.min(x, x + dx * G) + ',' + y + ',h' : x + ',' + Math.min(y, y + dy * G) + ',v';
+    const clear = (P, net) => {
+      for (let i = 1; i < P.length; i++) {
+        const p = P[i - 1], q = P[i], n = Math.round((Math.abs(q.x - p.x) + Math.abs(q.y - p.y)) / G);
+        for (let k = 0; k <= n; k++) {
+          const x = p.x + Math.sign(q.x - p.x) * k * G, y = p.y + Math.sign(q.y - p.y) * k * G;
+          if ((x === P[0].x && y === P[0].y) || (x === P[P.length - 1].x && y === P[P.length - 1].y)) continue;
+          if (blocked.has(Math.round(x / G) + ',' + Math.round(y / G))) return false;
+          const dx = Math.sign(q.x - p.x), dy = Math.sign(q.y - p.y), o = k < n && taken.get(stepKey(x, y, dx, dy));
+          if (o && o !== net) return false;
+        }
+      }
+      return true;
+    };
     const wires = [], netOf = new Map();
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const net = find(w.a); netOf.set(w.id, net);
       if (w.pts && w.pts.length) { const P = [a]; [...w.pts.map(([x, y]) => ({ x, y })), b].forEach(q => { const p = P[P.length - 1]; P.push({ x: p.x, y: q.y }, q); }); wires.push({ id: w.id, net, fixed: P }); continue; }
-      wires.push({ id: w.id, net, a, b, da: termDir(itemOf(w.a.split(':')[0]), w.a.split(':')[1]), db: termDir(itemOf(w.b.split(':')[0]), w.b.split(':')[1]) });
+      const da = termDir(itemOf(w.a.split(':')[0]), w.a.split(':')[1]), db = termDir(itemOf(w.b.split(':')[0]), w.b.split(':')[1]);
+      // a simple connector, unless it would run over another terminal or through a symbol (then it goes around)
+      const sp = routing === 'simple' && simplePath(a, da, b, db);
+      if (sp && clear(sp, net)) {
+        for (let i = 1; i < sp.length; i++) { const p = sp[i - 1], q = sp[i], n = Math.round((Math.abs(q.x - p.x) + Math.abs(q.y - p.y)) / G), dx = Math.sign(q.x - p.x), dy = Math.sign(q.y - p.y); for (let k = 0; k < n; k++) taken.set(stepKey(p.x + dx * k * G, p.y + dy * k * G, dx, dy), net); }
+        wires.push({ id: w.id, net, fixed: sp });
+      } else wires.push({ id: w.id, net, a, b, da, db });
     }
     const r = GridRoute.solve({ G, blocked, front, wires }), d = new Map();
     for (const w of F.wires) if (!(w.pts && w.pts.length) && r.paths.has(w.id)) d.set(w.id, 'M' + r.paths.get(w.id).map(p => `${p.x} ${p.y}`).join(' L'));
@@ -498,6 +556,7 @@
     window.addEventListener('pointerup', lift); window.addEventListener('pointercancel', lift);
   };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
+  const neg = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (p === 'N' || p.startsWith('DC-')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
   /* a contact of a device whose coil (A1) is drawn nowhere and wired nowhere never switches by itself */
   function coilless(it) {
@@ -691,7 +750,9 @@
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
     const isPole = !['no', 'nc', 'co', 'nonc', 'rot', 'pots', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
-    o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
+    const upright = (it.r === 0 || it.r === 180) && !S.io && ['no', 'nc', 'co', 'nonc', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat'].includes(S.look);
+    if (upright) { const ux = it.x - (S.look === 'co' || S.look === 'nonc' ? 34 : 22); o.push(`<text class="ftag up" x="${ux}" y="${it.y}" transform="rotate(-90 ${ux} ${it.y})">-${esc(it.tag)}</text>`); }
+    else o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     if (S.look === 'plcpw') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">PLC ~</text>`); }
@@ -847,12 +908,13 @@
     const R = routeAll(), liveNets = new Set();
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
-      const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
+      const ia = itemOf(w.a.split(':')[0]), dk = devKey(ia, w.a.split(':')[1]), on = live(dk), lo = !on && neg(dk);
       if (on) liveNets.add(R.netOf.get(w.id));
       const d = R.d.get(w.id) || wirePath(a, b, w.pts);
-      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}${wireCls(w)}" d="${d}"/>${on ? `<path class="wflow" d="${d}"/>` : ''}</g>`);
+      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : lo ? ' neg' : ''}${wireCls(w)}" d="${d}"/>${on ? `<path class="wflow" d="${d}"/>` : ''}</g>`);
       if (sel && sel.w === w.id) (w.pts || []).forEach(([x, y], i) => o.push(`<circle class="fbend" data-fb="${w.id}:${i}" cx="${x}" cy="${y}" r="5"><title>Drag to move · double-click to remove</title></circle>`));
     }
+    const used = new Set(F.wires.flatMap(w => [w.a, w.b]));
     for (const j of R.dots) o.push(`<circle class="fjdot${liveNets.has(j.net) ? ' on' : ''}" cx="${j.x}" cy="${j.y}" r="3.5"/>`);
     for (const it of F.items) {
       const S = K[it.k], st = stateOf(it), err = FD.errs.has(it);
@@ -868,8 +930,13 @@
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
       const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" data-fc="${it.id}" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
-      S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
+      S.terms.forEach(t => { const p = termPos(it, t.id), key = it.id + ':' + t.id; o.push(`<circle class="fterm${wiring && wiring.from === key ? ' on' : ''}${used.has(key) ? ' used' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
       o.push('</g>');
+    }
+    if (drag && drag.item && drag.moved) {
+      const mine = K[drag.item.k].terms.map(t => termPos(drag.item, t.id)), xs = new Set(), ys = new Set();
+      for (const it of F.items) if (it !== drag.item && !drag.others.some(q => q.o === it)) for (const t of K[it.k].terms) { const p = termPos(it, t.id); for (const m of mine) { if (m.x === p.x) xs.add(p.x); if (m.y === p.y) ys.add(p.y); } }
+      xs.forEach(x => o.push(`<line class="fguide" x1="${x}" y1="-5000" x2="${x}" y2="5000"/>`)); ys.forEach(y => o.push(`<line class="fguide" x1="-5000" y1="${y}" x2="5000" y2="${y}"/>`));
     }
     if (wiring && (wiring.cur || (wiring.pts && wiring.pts.length))) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${tempPath(a)}"/>`); }
     if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
@@ -900,7 +967,24 @@
   // the wire being drawn: its corners so far, then to the pointer
   function tempPath(a) {
     const pts = wiring.pts || [], last = wiring.cur || (pts.length ? { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1] } : a);
+    if (wiring.over && !pts.length && routing === 'simple') {
+      const [fi, ft] = wiring.from.split(':'), [oi, ot] = wiring.over.split(':'), b = endPos(wiring.over);
+      if (b) return 'M' + simplePath(a, termDir(itemOf(fi), ft), b, termDir(itemOf(oi), ot)).map(p => `${p.x} ${p.y}`).join(' L');
+    }
     return wirePath(a, last, pts);
+  }
+  /* where a symbol at (nx, ny) would snap so one of its wired terminals lines up with the other end of the wire */
+  function alignTo(it, nx, ny) {
+    let bx = null, by = null, dx = 13, dy = 13;
+    for (const w of fr().wires) {
+      const mine = w.a.startsWith(it.id + ':') ? w.a : w.b.startsWith(it.id + ':') ? w.b : null; if (!mine) continue;
+      const other = mine === w.a ? w.b : w.a; if (other.startsWith(it.id + ':')) continue;
+      const o = endPos(other), t = K[it.k].terms.find(q => q.id === mine.split(':')[1]); if (!o || !t) continue;
+      const [rx, ry] = rot(t.x, t.y, it.r), ex = Math.abs(nx + rx - o.x), ey = Math.abs(ny + ry - o.y);
+      if (ex < dx) { dx = ex; bx = o.x - rx; }
+      if (ey < dy) { dy = ey; by = o.y - ry; }
+    }
+    return { x: bx != null ? bx : nx, y: by != null && bx == null ? by : ny };
   }
   function endWire(key, wEl, p) {
     if (key) {
@@ -1018,7 +1102,7 @@
         }
       }
       if (drag && drag.box) { const q = world(ev); drag.x1 = q.x; drag.y1 = q.y; FD.render(body); return; }
-      if (wiring) { const p = world(ev); wiring.cur = { x: snap10(p.x), y: snap10(p.y) }; const t = svg.querySelector('.wtemp'); const a = endPos(wiring.from); if (t && a) t.setAttribute('d', tempPath(a)); else if (a) FD.render(body); }
+      if (wiring) { const p = world(ev), ot = document.elementFromPoint(ev.clientX, ev.clientY), oe = ot && ot.closest && ot.closest('[data-ft]'); wiring.over = oe && oe.dataset.ft !== wiring.from ? oe.dataset.ft : null; wiring.cur = { x: snap10(p.x), y: snap10(p.y) }; const t = svg.querySelector('.wtemp'); const a = endPos(wiring.from); if (t && a) t.setAttribute('d', tempPath(a)); else if (a) FD.render(body); }
       if (!drag) return;
       if (drag.seg) {
         const q = world(ev), { seg: w } = drag;
@@ -1039,7 +1123,8 @@
         return;
       }
       if (drag.pan) { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`); return; }
-      const p = world(ev), nx = snap10(p.x - drag.ox), ny = snap10(p.y - drag.oy);
+      const p = world(ev); let nx = snap10(p.x - drag.ox), ny = snap10(p.y - drag.oy);
+      if (!drag.others.length) { const s = alignTo(drag.item, nx, ny); nx = s.x; ny = s.y; }
       if (nx !== drag.item.x || ny !== drag.item.y) {
         if (!drag.snapped) { H.snap(); drag.snapped = true; }
         drag.item.x = nx; drag.item.y = ny; drag.others.forEach(q => { q.o.x = nx + q.dx; q.o.y = ny + q.dy; });
@@ -1435,7 +1520,7 @@
       <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>`
       : `<p class="help">Select a symbol to change its tag, comment and settings. Shift+click or Shift+drag selects several.</p>
       ${FD.hasClip() ? '<div class="btn-row"><button class="btn" data-fd="paste">Paste (Ctrl+V)</button></div>' : ''}
-      <div class="props fd-props">${field('Grid', `<select data-fgrid>${Object.entries(GRIDS).map(([k, n]) => `<option value="${k}" ${k === grid ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
+      <div class="props fd-props">${field('Wires', `<select data-frouting>${Object.entries(ROUTINGS).map(([k, n]) => `<option value="${k}" ${k === routing ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}${field('Grid', `<select data-fgrid>${Object.entries(GRIDS).map(([k, n]) => `<option value="${k}" ${k === grid ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
       ${field('Tag colour', `<select data-flbl="color">${Object.entries(TAG_COLORS).map(([k, n]) => `<option value="${k}" ${k === lbl.color ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
       <label class="chk"><input type="checkbox" data-flbl="tags" ${lbl.tags ? 'checked' : ''}> Show tags (-KM1)</label>
       <label class="chk"><input type="checkbox" data-flbl="terms" ${lbl.terms ? 'checked' : ''}> Show terminal numbers</label>
@@ -1458,6 +1543,7 @@
     sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rename: () => FD.renameDevice(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,
       clip: () => { if (FD.copySel()) UI.toast('Copied', 'ok', 1500); }, paste: () => FD.paste(), png: () => FD.exportImage('png'), svg: () => FD.exportImage('svg') })[b.dataset.fd](); });
     const gs = sideEl.querySelector('[data-fgrid]'); if (gs) gs.onchange = () => FD.setGrid(gs.value);
+    const rs = sideEl.querySelector('[data-frouting]'); if (rs) rs.onchange = () => FD.setRouting(rs.value);
     sideEl.querySelectorAll('[data-flbl]').forEach(i => { i.onchange = () => FD.setLabels({ [i.dataset.flbl]: i.type === 'checkbox' ? i.checked : i.value }); });
     const it = FD.selected(); if (!it) return;
     sideEl.querySelectorAll('[data-fp]').forEach(i => { i.onchange = () => FD.setProp(it, i.dataset.fp, i.value); });

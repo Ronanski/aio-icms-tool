@@ -682,7 +682,7 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 /* run view: current flows along a live wire, an energized coil is filled, a lit lamp glows, a contact that just switched flashes */
 .free-svg .fwire .wflow { stroke: #fff; stroke-opacity: .55; stroke-width: 1.2; stroke-dasharray: 3 11; pointer-events: none; animation: fdflow .7s linear infinite; }
 @keyframes fdflow { to { stroke-dashoffset: -14; } }
-.free-svg .ssym.on[data-look="coil"] rect, .free-svg .ssym.on[data-look^="tcoil"] rect, .free-svg .ssym.on[data-look="icoil"] rect { fill: var(--lad-on); fill-opacity: .55; }
+.free-svg .ssym.on[data-look="coil"] rect, .free-svg .ssym.on[data-look^="tcoil"] rect, .free-svg .ssym.on[data-look="icoil"] rect { fill: #ffe600; fill-opacity: 1; stroke: #e53935; }
 .free-svg .ssym.on[data-look="lamp"] circle { fill: #ffd54a; stroke: #e0a800; filter: drop-shadow(0 0 6px #ffd54a); }
 .free-svg .ssym.on[data-look="lamp"] path { stroke: #7a5a00; }
 .free-svg .ssym.flip { animation: fdflip .4s ease-out; }
@@ -718,6 +718,14 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fitem.sel > .hit { fill: color-mix(in srgb, var(--accent-soft) 70%, transparent); stroke: var(--accent); stroke-dasharray: 4 3; }
 .free-svg .fterm { fill: var(--lad-bg); stroke: var(--lad-wire); stroke-width: 1.4; cursor: crosshair; }
 .free-svg .fterm:hover, .free-svg .fterm.on { fill: var(--accent); stroke: var(--accent); }
+/* like Simurelay: a connected terminal is just the end of the line (it lights up under the pointer) */
+.free-svg .fterm.used:not(:hover):not(.on) { fill: transparent; stroke: transparent; }
+.free-svg .sterm { font: 700 9.5px var(--sans); fill: #2bb5a6; }
+.free-svg .ftag.up { text-anchor: middle; }
+/* running: red where + (or a phase) reaches, blue where 0 V (or N) reaches */
+.free-svg .fwire .w.on:not([class*="pc-"]) { stroke: #e53935; }
+.free-svg .fwire .w.neg:not([class*="pc-"]) { stroke: #2f6fd6; stroke-width: 2.6; }
+.free-svg .ssym.on path, .free-svg .ssym.on circle, .free-svg .ssym.on rect { stroke: #e53935; }
 .free-svg .fwire path { fill: none; }
 .free-svg .fwire .fwh { stroke: transparent; stroke-width: 10; cursor: pointer; }
 .free-svg .fwire.sel .w { stroke: var(--accent); stroke-width: 2.6; }
@@ -732,14 +740,15 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg.tagc-purple .ftag:not(.fcmt) { fill: #7b3fb5; }
 .fd-props .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
+.free-svg .fguide { stroke: var(--accent); stroke-width: .8; stroke-dasharray: 4 4; opacity: .8; pointer-events: none; }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .free-svg .fbox { fill: color-mix(in srgb, var(--accent-soft) 45%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
 .sch-body.operate .free-svg .fitem { cursor: pointer; }
 .free-svg .fbend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
 .free-svg .ssym .jdot { fill: var(--lad-wire); stroke: none; }
 .free-svg .fjdot { fill: var(--lad-wire); pointer-events: none; }
-.free-svg .fjdot.on { fill: var(--lad-on); }
-.free-svg .ssym.on .jdot { fill: var(--lad-on); }
+.free-svg .fjdot.on { fill: #e53935; }
+.free-svg .ssym.on .jdot { fill: #e53935; }
 .free-svg .ftext { font: 600 13px var(--sans); fill: var(--lad-text); pointer-events: none; }
 .org, .org ul { list-style: none; margin: 0; padding-left: 18px; }
 .org { padding-left: 0; font-size: 13px; line-height: 1.9; }

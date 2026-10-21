@@ -2635,6 +2635,38 @@ function check(name, cond, info = '') {
     const book = Circuit.addrBook(App.project.circuit, App.project.io, 'tag');
     return book.fmt('I:1/0') === 'Local:1:I.Data.0' && book.toFile('Local:2:O.Data.3') === 'O:2/3' && !!Circuit.STYLES.tag;
   }));
+  console.log('Like Simurelay: simple wires, alignment guides, potential colours');
+  const simu = await page.evaluate(async () => {
+    const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);
+    localStorage.setItem('plc-trainer.schStyle', 'free'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); FreeDraw.setRouting('simple');
+    await new Promise(q => setTimeout(q, 200));
+    const F = App.project.schematic.free; let n = 0; const add = (k, tag, x, y) => { const it = { id: 'd' + (++n), k, tag, x, y, r: 0 }; F.items.push(it); return it; };
+    add('pP', 'XP1', 200, 40); add('pbnc', 'S2', 200, 160); add('pbno', 'S1', 200, 280); add('kmno', 'K1', 300, 280); add('kmcoil', 'K1', 200, 400); add('pM', 'XP2', 200, 520);
+    F.seq = 50; let m = 0; const w = (a, c) => F.wires.push({ id: 'fw' + (++m), a, b: c });
+    w('d1:J', 'd2:11'); w('d2:12', 'd3:13'); w('d3:13', 'd4:13'); w('d3:14', 'd4:14'); w('d3:14', 'd5:A1'); w('d5:A2', 'd6:J');
+    Schematic.sync(); App.circuitChanged(); FreeDraw.render(document.querySelector('#view-schematic .sch-body'));
+    const d = id => document.querySelector(`#view-schematic [data-fw="${id}"] .w`).getAttribute('d');
+    return { straight: ['fw1', 'fw2', 'fw5', 'fw6'].every(id => d(id).split(' L').length === 2), seal: d('fw3').split(' L').length === 4, dots: document.querySelectorAll('#view-schematic .fjdot').length,
+      used: document.querySelector('#view-schematic [data-ft="d2:11"]').classList.contains('used') && !document.querySelector('#view-schematic [data-ft="d4:13"]').classList.contains('used') === false };
+  });
+  check('like Simurelay: terminals on one line are joined by one straight wire, the seal-in branch is a simple bracket, junction dots where it branches', simu.straight && simu.seal && simu.dots >= 2, JSON.stringify(simu));
+  check('like Simurelay: a connected terminal is drawn as the end of its line (no circle)', simu.used);
+  check('like Simurelay: running, the + side of the circuit is red and the 0 V side blue, the energized coil yellow', await page.evaluate(async () => {
+    document.querySelector('#view-schematic [data-smode="run"]').click();
+    const up = App.operate(App.project.circuit.comps.find(c => c.props.label === 'S1'), 'btn'); await new Promise(q => setTimeout(q, 500)); if (typeof up === 'function') up(); await new Promise(q => setTimeout(q, 300));
+    const cls = id => document.querySelector(`#view-schematic [data-fw="${id}"] .w`).classList, coil = document.querySelector('#view-schematic [data-fi="d5"] .ssym');
+    const ok = cls('fw5').contains('on') && cls('fw6').contains('neg') && coil.classList.contains('on') && getComputedStyle(coil.querySelector('rect')).fill.replace(/\s/g, '') === 'rgb(255,230,0)';
+    document.querySelector('#view-schematic [data-smode="edit"]').click();
+    return ok;
+  }));
+  {
+    // drag the seal-in contact near the line of S1's terminals: an alignment guide shows, and it snaps onto the line
+    const box = await page.evaluate(() => { const r = document.querySelector('#view-schematic [data-fi="d4"] .hit').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    await page.mouse.move(box.x, box.y); await page.mouse.down(); await page.mouse.move(box.x + 10, box.y + 6, { steps: 4 });
+    const guide = await page.evaluate(() => document.querySelectorAll('#view-schematic .fguide').length);
+    await page.mouse.up(); await wait(150);
+    check('like Simurelay: moving a symbol shows alignment guides and keeps its terminals on the line of the terminals it is wired to', guide > 0 && await page.evaluate(() => App.project.schematic.free.items.find(i => i.id === 'd4').y === 280), String(guide));
+  }
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
@@ -2648,7 +2680,7 @@ function check(name, cond, info = '') {
   }
   check('finish: a wire is drawn by dragging from one terminal to another (tap, tap still works)', await page.evaluate(() => App.project.schematic.free.wires.some(w => [w.a, w.b].sort().join() === ['d1:14', 'd2:X1'].sort().join())));
   {
-    const A = await ftBox('d1:13'); await page.mouse.move(A.x, A.y); await page.mouse.down(); await page.mouse.move(A.x + 60, A.y + 80, { steps: 6 }); await page.mouse.up(); await wait(200);
+    const A = await ftBox('d1:13'); await page.mouse.move(A.x, A.y); await page.mouse.down(); await page.mouse.move(A.x - 80, A.y - 70, { steps: 6 }); await page.mouse.up(); await wait(200);
   }
   check('finish: a wire dragged out and let go on empty space gets a corner there and goes on', await page.evaluate(() => !!document.querySelector('#view-schematic .wtemp') && App.project.schematic.free.wires.length === 1));
   await page.keyboard.press('Escape'); await wait(150);

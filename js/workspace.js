@@ -15,6 +15,9 @@
   let probes = { a: null, b: null, next: 'a' };
   let wireColor = 'auto';
   let showLive = true;
+  // how wires are drawn: square (routed on the grid around the devices), straight, or curved like a real cable
+  const WSTYLES = { square: 'Square', straight: 'Straight', curve: 'Curved (cable)' };
+  let wireStyle = (() => { try { const v = localStorage.getItem('plc-trainer.wireStyle'); return WSTYLES[v] ? v : 'square'; } catch (e) { return 'square'; } })();
   let showTags = (() => { try { return localStorage.getItem('plc-trainer.wiretags') !== '0'; } catch (e) { return true; } })();
   const compEls = new Map();
   let wireEls = [];
@@ -113,6 +116,7 @@
             <div class="seg"><button class="on" data-tool="select" title="Select / move / operate (S)">✥ Select</button><button data-tool="meter" title="Multimeter: click two terminals (M)">⎓ Meter</button></div>
             <span class="tb-lbl">Wire</span>
             <div class="swatches">${WIRE_COLORS.map(([v, n, bg]) => `<button class="sw${v === wireColor ? ' on' : ''}" data-wc="${v}" title="${n}" style="background:${bg || v}"></button>`).join('')}</div>
+            <label class="chk" title="How wires are drawn">Style <select data-wstyle>${Object.entries(WSTYLES).map(([k, n]) => `<option value="${k}"${k === wireStyle ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
             <label class="chk"><input type="checkbox" data-live checked> Live voltage</label>
             <label class="chk" title="Wire markers (ferrules) at both ends: L1, L2, L3, N, PE, +24V, 0V"><input type="checkbox" data-tags${showTags ? ' checked' : ''}> Wire labels</label>
             <span class="spacer"></span>
@@ -157,6 +161,7 @@
       if (b.dataset.zoom) { const z = Number(b.dataset.zoom); zoomAt(z > 0 ? 1.2 : z < 0 ? 1 / 1.2 : 1 / view.k); }
       if (b.hasAttribute('data-fit')) WS.fit();
     });
+    el.querySelector('[data-wstyle]').addEventListener('change', e => { WS.setWireStyle(e.target.value); });
     el.querySelector('[data-live]').addEventListener('change', e => { showLive = e.target.checked; wireEls.forEach(w => { w.cls = null; }); });
     el.querySelector('[data-tags]').addEventListener('change', e => { showTags = e.target.checked; try { localStorage.setItem('plc-trainer.wiretags', showTags ? '1' : '0'); } catch (err) { /* private mode */ } renderWires(); });
     svg.addEventListener('pointerdown', onDown);
@@ -338,7 +343,8 @@
       }
     }
     const pt = toWorld(e);
-    if (wiring) { wiring.cur = [pt.x, pt.y]; renderTemp(); }
+    // over a terminal the wire being drawn ends exactly there, as it will be
+    if (wiring) { const t = e.target.closest && e.target.closest('.term'), ce = t && t.closest('.comp'); wiring.over = ce && ce.dataset.cid + ':' + t.dataset.term !== wiring.from ? ce.dataset.cid + ':' + t.dataset.term : null; wiring.cur = [pt.x, pt.y]; renderTemp(); }
     if (drag) {
       if (drag.kind === 'pan') { view.x = drag.vx + e.clientX - drag.sx; view.y = drag.vy + e.clientY - drag.sy; applyView(); }
       else if (drag.kind === 'comp') {
@@ -522,7 +528,7 @@
   }
   /* wires without bends of their own are routed on a 5-unit grid around the devices: out of each terminal 15 straight,
      never along a row of terminals or over a device, never on top of another wire (each wire is its own conductor) */
-  let gridSig = '', gridPaths = new Map();
+  let gridSig = '', gridPaths = new Map(), gridEnv = { blocked: new Set(), front: new Set() };
   function gridRoutes() {
     const C = circ(), sig = JSON.stringify([C.comps.map(c => [c.id, c.type, c.x, c.y, c.props.size]), C.wires.map(w => [w.id, w.a, w.b, w.pts])]);
     if (sig === gridSig) return gridPaths;
@@ -539,18 +545,56 @@
       if (w.pts && w.pts.length) { wires.push({ id: w.id, net: w.id, fixed: route(a, w.pts, b).map(([x, y]) => ({ x, y })) }); continue; }
       wires.push({ id: w.id, net: w.id, a, b, da: a.hx ? [a.hx, 0] : [0, a.dir < 0 ? -1 : 1], db: b.hx ? [b.hx, 0] : [0, b.dir < 0 ? -1 : 1] });
     }
+    gridEnv = { blocked, front };
     const r = GridRoute.solve({ G, blocked, front, wires, stub: 3 });
     gridPaths = new Map([...r.paths].filter(([id]) => { const w = C.wires.find(x => x.id === id); return w && !(w.pts && w.pts.length); }).map(([id, P]) => [id, P.map(p => [p.x, p.y])]));
     gridSig = sig;
     return gridPaths;
   }
+  const dirOf = p => (p.hx ? [p.hx, 0] : [0, p.dir < 0 ? -1 : p.dir > 0 ? 1 : 0]);
+  /* a cable: leaves each terminal in its direction and bends smoothly to the next point (through the user's bends) */
+  function curveOf(a, pts, b) {
+    const Q = [[a.x, a.y], ...pts, [b.x, b.y]], da = dirOf(a), db = b.dir != null || b.hx ? dirOf(b) : [0, 0];
+    let d = `M${a.x} ${a.y}`;
+    const P = [[a.x, a.y]];
+    for (let i = 1; i < Q.length; i++) {
+      const p = Q[i - 1], q = Q[i], L = Math.hypot(q[0] - p[0], q[1] - p[1]), k = Math.max(20, Math.min(110, L * 0.45));
+      // tangents: out of a terminal in its direction, through a bend along the line between its neighbours
+      const t0 = i === 1 ? da : (() => { const r = Q[i - 2], n = Math.hypot(q[0] - r[0], q[1] - r[1]) || 1; return [(q[0] - r[0]) / n, (q[1] - r[1]) / n]; })();
+      const t1 = i === Q.length - 1 ? [-db[0], -db[1]] : (() => { const r = Q[i + 1], n = Math.hypot(r[0] - p[0], r[1] - p[1]) || 1; return [(r[0] - p[0]) / n, (r[1] - p[1]) / n]; })();
+      const c1 = [p[0] + t0[0] * k, p[1] + t0[1] * k], c2 = [q[0] - t1[0] * k, q[1] - t1[1] * k];
+      d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${q[0]} ${q[1]}`;
+      for (let s = 1; s <= 16; s++) { const u = s / 16, v = 1 - u; P.push(s === 16 ? [q[0], q[1]] : [v * v * v * p[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u * u * u * q[0], v * v * v * p[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u * u * u * q[1]]); }
+    }
+    return { d, P };
+  }
+  // straight: a short piece out of each terminal, then straight lines through the user's bends
+  function straightOf(a, pts, b) {
+    const da = dirOf(a), db = b.dir != null || b.hx ? dirOf(b) : [0, 0];
+    const P = [[a.x, a.y], [a.x + da[0] * 10, a.y + da[1] * 10], ...pts, [b.x + db[0] * 10, b.y + db[1] * 10], [b.x, b.y]];
+    return { d: pathD(P), P };
+  }
+  function shapeOf(w) {
+    const a = tpos(w.a), b = tpos(w.b), pts = w.pts || [];
+    if (wireStyle === 'curve') return curveOf(a, pts, b);
+    if (wireStyle === 'straight') return straightOf(a, pts, b);
+    const P = (!pts.length && gridRoutes().get(w.id)) || route(a, pts, b, w.id);
+    return { d: pathD(P), P };
+  }
+  WS.setWireStyle = function (v) {
+    if (!WSTYLES[v]) return;
+    wireStyle = v; try { localStorage.setItem('plc-trainer.wireStyle', v); } catch (e) { /* private mode */ }
+    const s = root && root.querySelector('[data-wstyle]'); if (s) s.value = v;
+    renderWires(); renderTemp();
+  };
+  WS.wireStyle = () => wireStyle;
   function renderWires() {
     boxes = null; lanes = []; laneY.clear();
     const h = [], gp = gridRoutes();
     circ().wires.forEach(w => {
       const a = tpos(w.a), b = tpos(w.b);
       if (!a || !b) return;
-      const d = pathD(gp.get(w.id) || route(a, w.pts || [], b, w.id));
+      const d = wireStyle === 'square' ? pathD(gp.get(w.id) || route(a, w.pts || [], b, w.id)) : shapeOf(w).d;
       const wc = esc(w.color || '#1d1d1d');
       // earth wires are green/yellow
       // .wo is a thin outline under the wire so black wires show on dark backgrounds (and white ones on light)
@@ -561,14 +605,25 @@
     wireEls = [...gWires.querySelectorAll('.wire')].map(g => ({ g, id: g.dataset.wid, l: g.querySelector('.wl'), w: circ().wires.find(w => w.id === g.dataset.wid), cls: null, tag: null }));
     if (showTags) wireEls.forEach(we => setTag(we, wireTag(we.w, App.api)));
   }
+  /* the wire being drawn, in the chosen style; ending on a terminal under the pointer it is the exact final route */
+  function tempD(a) {
+    const cur = wiring.cur, over = wiring.over && tpos(wiring.over), pts = wiring.pts || [];
+    if (!cur && !over) { const P = route(a, pts, null); return pathD(P); }
+    const b = over || { x: cur[0], y: cur[1], dir: 0, hx: 0 };
+    if (wireStyle === 'curve') return curveOf(a, pts, b).d;
+    if (wireStyle === 'straight') return straightOf(a, pts, b).d;
+    if (pts.length || !window.GridRoute) { const P = route(a, pts, null); const last = P[P.length - 1]; P.push([last[0], b.y], [b.x, b.y]); return pathD(P); }
+    const gp = gridRoutes(), env = gridEnv, wires = [...gp].map(([id, P]) => ({ id, net: id, fixed: P.map(([x, y]) => ({ x, y })) }));
+    wires.push({ id: '~', net: '~', a, b, da: dirOf(a), db: over ? dirOf(b) : [0, 0] });
+    const r = GridRoute.solve({ G: 5, blocked: env.blocked, front: env.front, wires, stub: 3 }), P = r.paths.get('~');
+    return P ? 'M' + P.map(p => p.x + ' ' + p.y).join(' L') : pathD([[a.x, a.y], [b.x, b.y]]);
+  }
   function renderTemp() {
     const h = [];
     if (wiring) {
       const a = tpos(wiring.from);
       if (a) {
-        const P = route(a, wiring.pts, null);
-        if (wiring.cur) { const last = P[P.length - 1]; P.push([last[0], wiring.cur[1]], wiring.cur); }
-        h.push(`<path class="wtemp" d="${pathD(P)}"/><circle class="tsel" cx="${a.x}" cy="${a.y}" r="7"/>`);
+        h.push(`<path class="wtemp" d="${tempD(a)}"/><circle class="tsel" cx="${a.x}" cy="${a.y}" r="7"/>`);
       }
     }
     ['a', 'b'].forEach(k => {
@@ -586,7 +641,7 @@
 
   /* ---------- wire geometry: nearest point, split at a junction, add a bend ---------- */
   function nearestOnWire(w, pt) {
-    const P = (!(w.pts && w.pts.length) && gridPaths.get(w.id)) || route(tpos(w.a), w.pts || [], tpos(w.b), w.id);
+    const P = shapeOf(w).P;
     let best = null;
     for (let k = 0; k < P.length - 1; k++) {
       const [x1, y1] = P[k], [x2, y2] = P[k + 1], dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
