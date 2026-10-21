@@ -740,6 +740,10 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg.tagc-purple .ftag:not(.fcmt) { fill: #7b3fb5; }
 .fd-props .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
+/* free draw is the Electrical Diagram: no view switch, no Edit / Operate (Play operates the drawing) */
+.free-only .sch-toolbar .tb-group.keep { display: none !important; }
+/* the short drawing toolbar: these tools are in the ⋯ menu */
+.sch-toolbar .tbtn.in-more { display: none; }
 .free-svg .fguide { stroke: var(--accent); stroke-width: .8; stroke-dasharray: 4 4; opacity: .8; pointer-events: none; }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .free-svg .fbox { fill: color-mix(in srgb, var(--accent-soft) 45%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
@@ -792,6 +796,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fwire .w { stroke: var(--fd-sym); }
 .free-svg .fwire.sel .w { stroke: var(--fd-sel); stroke-width: 3; }
 .free-svg .fseg { fill: none; stroke: #FF9800; stroke-width: 2; pointer-events: none; }
+/* the short drawing toolbar: these tools are in the ⋯ menu */
+.sch-toolbar .tbtn.in-more { display: none; }
 .free-svg .fguide { stroke: var(--fd-align); stroke-width: 4; stroke-dasharray: none; opacity: 1; pointer-events: none; }
 .free-svg .fguide.hit { stroke: var(--fd-sel); stroke-width: 1.5; opacity: .7; }
 .free-svg .wtemp { stroke: var(--fd-sel); }

@@ -34,6 +34,9 @@ function check(name, cond, info = '') {
     });
   };
   const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
+  // the classic IEC / ladder-style views stay testable behind the developer switch (the app offers free draw only)
+  const classicOn = () => { try { localStorage.setItem('plc-trainer.classicViews', '1'); } catch (e) { /* ignore */ } };
+  await page.addInitScript(classicOn);
   await mockGitHub(page);
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -3039,6 +3042,7 @@ function check(name, cond, info = '') {
 
   console.log('Phone (touch)');
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await phone.addInitScript(classicOn);
   await mockGitHub(phone);
   const perr = [];
   phone.on('pageerror', e => perr.push(e.message));
@@ -3168,6 +3172,30 @@ function check(name, cond, info = '') {
   await ctx.setOffline(true);
   await web.reload();
   await web.waitForTimeout(600);
+  {
+    console.log('Free draw only: the Electrical Diagram as users get it');
+    const fo = await ctx.newPage({ viewport: { width: 1400, height: 900 } });
+    await fo.goto(base); await fo.waitForFunction(() => window.App && App.project);
+    const r = await fo.evaluate(async () => {
+      App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 300));
+      const s = App.project.schematic, vis = e => !!e && getComputedStyle(e).display !== 'none' && e.offsetParent !== null;
+      const shown = [...document.querySelectorAll('#view-schematic .sch-toolbar .free-group .tbtn')].filter(vis).map(b => b.dataset.fdact);
+      return { free: Schematic.freeOnly(), rungs: s.rungs.length, items: s.free.items.length, errs: FreeDraw.errs ? FreeDraw.errs.size : -1, iec: vis(document.querySelector('#view-schematic [data-sstyle="iec"]')), mode: vis(document.querySelector('#view-schematic [data-smode="edit"]')), shown };
+    });
+    check('free draw only: no IEC / ladder-style switch and no Edit / Operate (Play does it)', r.free && !r.iec && !r.mode, JSON.stringify(r));
+    check('free draw only: a drawing made in the IEC view (the star-delta example) opens as a free drawing, with no errors', r.rungs === 0 && r.items > 20 && r.errs === 0, JSON.stringify(r));
+    check('free draw only: one short toolbar — Library, Play, Rotate, Delete, Undo, Redo and ⋯', ['lib', 'play', 'rot', 'del', 'more'].every(a => r.shown.includes(a)) && !['values', 'colors', 'back', 'front', 'copy', 'type'].some(a => r.shown.includes(a)), r.shown.join());
+    await fo.click('#view-schematic [data-fdact="more"]'); await fo.waitForTimeout(150);
+    check('free draw only: Values, wire colours, Duplicate, Type and front / back are in the ⋯ menu', await fo.evaluate(() => { const t = [...document.querySelectorAll('.ctx-menu button')].map(b => b.textContent); return ['Show values', 'Wire colours', 'Duplicate', 'Change type', 'Bring to front', 'Send to back'].every(w => t.some(x => x.includes(w))); }));
+    await fo.keyboard.press('Escape');
+    check('free draw only: the converted star-delta starter still runs (the start button pulls in its contactor)', await fo.evaluate(async () => {
+      document.querySelector('#view-schematic [data-fdact="play"]').click();
+      const C = App.project.circuit, s1 = C.comps.find(c => c.props.label === 'S1'), km = C.comps.find(c => c.props.label === 'KM1');
+      const up = App.operate(s1, 'btn'); await new Promise(q => setTimeout(q, 600)); if (typeof up === 'function') up(); await new Promise(q => setTimeout(q, 300));
+      return !!km && km.state.pulled;
+    }));
+    await fo.close();
+  }
   check('app loads offline from cache', await web.evaluate(() => !!(window.App && App.project && document.querySelector('.rung'))));
   await ctx.setOffline(false);
   server.close();

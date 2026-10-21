@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- **The Electrical Diagram is free draw only**, like Simurelay. The IEC and ladder-style views and the Edit / Operate switch are gone (Play operates the drawing). A project or example drawn in the old views opens as a free drawing: each current path becomes a column from its supply point to its return point, and the power circuit sits beside them.
+- **One short drawing toolbar**: Library, Play, Rotate, Delete, Undo, Redo and ⋯. Show values, wire colours, Duplicate, Change type and Bring to front / Send to back are in the ⋯ menu.
+
 ### Fixed
 - **Update bar**: the Android and Windows apps no longer say "v2.3.0 is ready. You have v2.3.0". A built-in copy is offered only a newer version.
 

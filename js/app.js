@@ -211,6 +211,8 @@
     App.loadProgram();
     plc.applyAll(true);
     Ladder.resetSel(); Workspace.resetView(); HMI.resetSel(); Schematic.resetSel();
+    // a drawing made in the classic IEC / ladder-style views opens as a free drawing
+    if (Schematic.freeOnly() && Schematic.toFree()) Schematic.sync();
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
     renderVisible();
     document.querySelector('[data-pname]').textContent = App.project.name;

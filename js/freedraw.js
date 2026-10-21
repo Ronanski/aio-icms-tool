@@ -1493,7 +1493,16 @@
     } });
   };
   FD.menu = function (x, y) {
+    // the drawing tools that are not on the short toolbar, then the file commands
+    const act = a => () => { const b = document.querySelector(`#view-schematic [data-fdact="${a}"]`); if (b) b.click(); };
     UI.menu(x, y, [
+      { label: (FD.values ? '✓ ' : '') + 'Show values', onClick: act('values') },
+      { label: (FD.colors ? '✓ ' : '') + 'Wire colours by conductor', onClick: act('colors') },
+      { label: 'Duplicate', onClick: act('copy') },
+      { label: 'Change type…', onClick: act('type') },
+      { label: 'Bring to front', onClick: act('front') },
+      { label: 'Send to back', onClick: act('back') },
+      { sep: true },
       { label: 'New', onClick: () => App.newProject() },
       { label: 'Open', onClick: () => App.openDialog() },
       { label: 'Capture', onClick: () => FD.exportImage('png') },
