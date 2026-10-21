@@ -677,6 +677,15 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fval.fcount { fill: var(--warn); }
 /* a coil or lamp that gets too low a voltage */
 .free-svg .ssym.lowv path, .free-svg .ssym.lowv rect, .free-svg .ssym.lowv circle { stroke: var(--warn); stroke-dasharray: 3 2; }
+/* run view: current flows along a live wire, an energized coil is filled, a lit lamp glows, a contact that just switched flashes */
+.free-svg .fwire .wflow { stroke: #fff; stroke-opacity: .55; stroke-width: 1.2; stroke-dasharray: 3 11; pointer-events: none; animation: fdflow .7s linear infinite; }
+@keyframes fdflow { to { stroke-dashoffset: -14; } }
+.free-svg .ssym.on[data-look="coil"] rect, .free-svg .ssym.on[data-look^="tcoil"] rect, .free-svg .ssym.on[data-look="icoil"] rect { fill: var(--lad-on); fill-opacity: .55; }
+.free-svg .ssym.on[data-look="lamp"] circle { fill: #ffd54a; stroke: #e0a800; filter: drop-shadow(0 0 6px #ffd54a); }
+.free-svg .ssym.on[data-look="lamp"] path { stroke: #7a5a00; }
+.free-svg .ssym.flip { animation: fdflip .4s ease-out; }
+@keyframes fdflip { 0% { opacity: .35; } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .free-svg .fwire .wflow, .free-svg .ssym.flip { animation: none; } }
 /* conductor colours (🎨 Colours): Philippine practice as in the Wiring; N is grey so it shows on white paper */
 .free-svg .fwire .w.pc-L1 { stroke: #b3261e; }
 .free-svg .fwire .w.pc-L2 { stroke: #d4a20c; }

@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **Contactor auxiliary block** (front-mounted 2 N.O. + 2 N.C.: 53-54, 61-62, 71-72, 83-84), as on a real contactor. In free draw, a second N.O. (or N.C.) of KM1 is numbered on the block automatically, so a run lamp can be driven by KM1 53-54 while 13-14 holds the seal-in. Before, the second contact became a new KM2 with no coil, and the lamp never lit. The Wiring gets the matching *Contactor + Aux Block 2NO 2NC*.
+- **A contact whose coil is drawn nowhere is marked** (dashed, with a tooltip): it would never switch.
+- **Livelier run view** in free draw: current flows along the live wires, an energized coil is filled, and a lit lamp glows. A contact that has just switched flashes. All of this follows *reduce motion*.
+
+### Changed
+- **Wires route like a drawn diagram**: a wire without bends of its own leaves each terminal straight, goes around symbols, and never passes over a terminal it does not connect (that looked like a connection) or runs on top of another wire.
+- **New symbols are placed in columns** (a current path goes down), with room for the terminal numbers.
+
 ## [2.2.1] - 2026-10-21
 
 ### Fixed

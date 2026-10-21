@@ -2512,6 +2512,39 @@ function check(name, cond, info = '') {
     const coilIt = App.project.schematic.free.items.find(i => i.k === 'kmcoil');
     return App.events().some(e => /KM2: its coil is 230VAC but gets 24VDC/.test(e.msg)) && /gets only 24VDC/.test(Circuit.status(k, App.ctx)) && !!document.querySelector(`#view-schematic [data-fi="${coilIt.id}"] .ssym.lowv`) && (up(), true); }));
   await page.evaluate(() => { document.querySelector('#view-schematic [data-smode="edit"]').click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+  console.log('Engineer use: a run lamp on a second contact of KM1, the aux block, no-coil warning, live wires, routes');
+  const engr = await page.evaluate(async () => {
+    const prev = App.currentId; App.openNew({ name: 'Start stop', circuit: { seq: 3, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'psu24', x: 0, y: 200, props: { label: 'G1' }, state: {} }],
+      wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }] } }); if (prev) Store.remove(prev);
+    localStorage.setItem('plc-trainer.schStyle', 'free'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); FreeDraw.setLabels({ ask: false }); await new Promise(q => setTimeout(q, 200));
+    const add = k => { FreeDraw.add(k); const F = App.project.schematic.free.items; return F[F.length - 1]; };
+    const a = add('pP'), stop = add('pbnc'), start = add('pbno'), seal = add('kmno'), coil = add('kmcoil'), run = add('kmno'), h = add('lamp'), m = add('pM');
+    const F = App.project.schematic.free; let n = F.seq; const w = (x, y) => F.wires.push({ id: 'fw' + (++n), a: x, b: y }); F.seq = n + 10;
+    w(a.id + ':J', stop.id + ':11'); w(stop.id + ':12', start.id + ':13'); w(start.id + ':13', seal.id + ':13'); w(start.id + ':14', seal.id + ':14'); w(start.id + ':14', coil.id + ':A1'); w(coil.id + ':A2', m.id + ':J');
+    w(a.id + ':J', run.id + ':53'); w(run.id + ':54', h.id + ':X1'); w(h.id + ':X2', m.id + ':J');
+    Schematic.sync(); App.circuitChanged();
+    const km = App.project.circuit.comps.find(c => c.props.label === 'KM1'), lamp = App.project.circuit.comps.find(c => c.props.label === h.tag); lamp.props.coil = '24VDC';
+    return { runK: run.k, runTag: run.tag, coilTag: coil.tag, kmType: km && km.type, errs: FreeDraw.check().size, startTag: start.tag, hTag: h.tag, runId: run.id };
+  });
+  check('engineer: a second N.O. of a contactor drawn from the library is the same KM1 on its aux block 53-54 (not a coil-less KM2)', engr.runK === 'kxno1' && engr.runTag === 'KM1' && engr.coilTag === 'KM1' && engr.kmType === 'contactor_aux' && engr.errs === 0, JSON.stringify(engr));
+  await page.evaluate(t => { document.querySelector('#view-schematic [data-smode="run"]').click(); window.__up = App.operate(App.project.circuit.comps.find(c => c.props.label === t), 'btn'); }, engr.startTag);
+  check('engineer: START pulls KM1 in and the run lamp lights through KM1 53-54', await until(is(`d('KM1').pulled && d('${engr.hTag}').on`)));
+  await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
+  check('engineer: a live wire shows current flowing, a lit lamp glows and the energized coil is filled', await (async () => { await wait(200); return page.evaluate(() => document.querySelectorAll('#view-schematic .fwire .wflow').length >= 4 && !!document.querySelector('#view-schematic .ssym.on[data-look="lamp"]') && !!document.querySelector('#view-schematic .ssym.on[data-look="coil"]')); })());
+  check('engineer: an automatic wire route never passes over a terminal it does not connect', await page.evaluate(() => {
+    const ts = [...document.querySelectorAll('#view-schematic .fterm')].map(t => ({ k: t.dataset.ft, x: +t.getAttribute('cx'), y: +t.getAttribute('cy') }));
+    const F = App.project.schematic.free;
+    return F.wires.every(w => {
+      const d = document.querySelector(`#view-schematic [data-fw="${w.id}"] .w`).getAttribute('d'), P = d.replace('M', '').split(' L').map(p => p.split(' ').map(Number));
+      return ts.filter(t => t.k !== w.a && t.k !== w.b).every(t => P.slice(1).every((q, i) => { const p = P[i], x1 = Math.min(p[0], q[0]), x2 = Math.max(p[0], q[0]), y1 = Math.min(p[1], q[1]), y2 = Math.max(p[1], q[1]); return !(t.x >= x1 - 2 && t.x <= x2 + 2 && t.y >= y1 - 2 && t.y <= y2 + 2); }));
+    });
+  }));
+  check('engineer: a contact whose contactor has no coil drawn anywhere is marked (it would never switch)', await page.evaluate(runId => {
+    document.querySelector('#view-schematic [data-smode="edit"]').click();
+    FreeDraw.add('kanonc'); const F = App.project.schematic.free.items, it = F[F.length - 1]; Schematic.sync(); FreeDraw.render(document.querySelector('#view-schematic .sch-body'));
+    const q = id => document.querySelector('#view-schematic [data-fi="' + id + '"] .ssym'), g = q(it.id), km = q(runId);
+    return g.classList.contains('lowv') && /drawn nowhere/.test(g.innerHTML) && !km.classList.contains('lowv');
+  }, engr.runId));
   console.log('Moving contacts: every library symbol whose contact switches is drawn switched');
   check('moving contacts: every symbol in the library with a contact is drawn differently when that contact switches (all of them, not a few)', await page.evaluate(async () => {
     const K = FreeDraw.KINDS, D = Circuit.DEFS, still = [], moved = [];
@@ -2613,11 +2646,11 @@ function check(name, cond, info = '') {
       schematic: { free: { seq: 3, items: [{ id: 'd1', k: 'ol3', tag: 'FZ', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'olco', tag: 'FZ', x: 100, y: 0, r: 0 }], wires: [] } } }); if (prev) Store.remove(prev);
     const f = App.project.circuit.comps.find(c => c.props.label === 'FZ'); return !!f && f.props.aux === '95-96-98 changeover' && FreeDraw.check().size === 0;
   }));
-  check('review: a contact drawn twice (13-14 alone and inside an N.C.+N.O. of the same contactor, 55-56 inside the block changeover) is reported', await page.evaluate(() => {
+  check('review: a contact drawn twice (55-56 inside the block changeover) is reported; a second contactor N.O. takes the aux block 53-54 instead', await page.evaluate(() => {
     const prev = App.currentId; App.openNew({ name: 'Twice', schematic: { free: { seq: 6, items: [{ id: 'd1', k: 'kmnonc', tag: 'KM1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'kmno', tag: 'KM1', x: 100, y: 0, r: 0 },
       { id: 'd3', k: 'kbonco', tag: 'KM2', x: 200, y: 0, r: 0 }, { id: 'd4', k: 'kbonnc', tag: 'KM2', x: 300, y: 0, r: 0 }, { id: 'd5', k: 'ka1no', tag: 'KA1', x: 400, y: 0, r: 0 }, { id: 'd6', k: 'ka1nc', tag: 'KA1', x: 500, y: 0, r: 0 }], wires: [] } } }); if (prev) Store.remove(prev);
     const e = FreeDraw.check(), F = App.project.schematic.free.items, has = id => e.has(F.find(i => i.id === id));
-    return has('d2') && has('d4') && !has('d1') && !has('d3') && !has('d5') && !has('d6');   // N.O. and N.C. of one relay changeover share 11: allowed
+    return F.find(i => i.id === 'd2').k === 'kxno1' && !has('d2') && has('d4') && !has('d1') && !has('d3') && !has('d5') && !has('d6');   // N.O. and N.C. of one relay changeover share 11: allowed
   }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="iec"]').click(); });
   await wait(200);
