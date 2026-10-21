@@ -57,8 +57,10 @@
       const v = await res.json();
       const info = v && typeof v === 'object' && typeof v.build === 'string' && typeof v.version === 'string' ? { version: v.version, build: v.build, notes: typeof v.notes === 'string' ? v.notes : '', channel: ch } : null;
       if (!info) throw new Error('bad version.json');
-      // a different build, or a built-in copy (offline fallback) that should move to the hosted app; a dev copy never moves
-      const newer = info.build !== App.BUILD || (!servedHere(ch) && App.BUILD !== 'dev');
+      // the hosted app: a different build of its channel. A built-in copy (the Android / Windows app, offline fallback)
+      // moves to the hosted app only for a newer version: the same version is not an update ("v2.3.0 is ready. You have
+      // v2.3.0"). A development copy compares builds.
+      const newer = servedHere(ch) || App.BUILD === 'dev' ? info.build !== App.BUILD : compare(info.version, App.VERSION) > 0;
       U.state = { status: newer ? 'available' : 'current', at: Date.now(), info: newer ? info : null };
       set(K.last, String(U.state.at));
       if (newer && (manual || get(K.skip) !== info.build)) { showBar(info); if (!manual) App.log('system', `Update available: v${info.version}${ch === 'beta' ? ' (beta)' : ''}`); }

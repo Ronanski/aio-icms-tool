@@ -429,6 +429,18 @@ function check(name, cond, info = '') {
   pagesInfo.beta = { version: '1.0.0', build: 'dev', notes: '' };
   st = await page.evaluate(() => Updater.check(true).then(s => s.status));
   check('no update when this is the build the channel serves', st === 'current', st);
+  {
+    // the Android / Windows app runs a built-in copy: the same version on the channel is not an update
+    const ver = await page.evaluate(() => App.VERSION);
+    pagesInfo.beta = { version: ver, build: 'v' + ver, notes: '' };
+    st = await page.evaluate(async () => { const b = App.BUILD; App.BUILD = 'v' + App.VERSION + '-apk'; try { return (await Updater.check(true)).status; } finally { App.BUILD = b; } });
+    check('a built-in copy (Android / Windows app) is not told "v2.3.0 is ready, you have v2.3.0"', st === 'current' && !(await page.$('.update-bar')), st);
+    pagesInfo.beta = { version: '99.0.0', build: 'v99.0.0', notes: '' };
+    st = await page.evaluate(async () => { const b = App.BUILD; App.BUILD = 'v' + App.VERSION + '-apk'; try { return (await Updater.check(true)).status; } finally { App.BUILD = b; } });
+    check('a built-in copy is offered a newer version', st === 'available', st);
+    await page.evaluate(() => { const b = document.querySelector('.update-bar'); if (b) b.remove(); });
+    pagesInfo.beta = { version: '1.0.0', build: 'dev', notes: '' };
+  }
   await page.context().setOffline(true);
   st = await page.evaluate(() => Updater.check(true).then(s => s.status));
   check('offline: no check, no error, app keeps working', st === 'offline' && !!(await page.evaluate(() => App.project && document.querySelector('.rung'))), st);

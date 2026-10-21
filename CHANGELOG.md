@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- **Update bar**: the Android and Windows apps no longer say "v2.3.0 is ready. You have v2.3.0". A built-in copy is offered only a newer version.
+
 ## [2.3.0] - 2026-10-21
 
 ### Changed
