@@ -1,16 +1,26 @@
 # Progress
 
 **Current version:** 2.2.0 (stable release authorized by the owner 2026-10-21 with "go" after the tagging and library-name changes: Simurelay parity v2.2 and Simurelay-like tagging). Before it 2.1.0 (stable release authorized by the owner 2026-10-21: "go stable na yan. make it latest stable update" — v2.0.1 accuracy fixes, v2.1 lessons, the full audit, the Electrical Diagram roadmap Phases 0–6 and the Simurelay parity batch). Before it 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** v2.2.1 (fixes from the owner using the app on a phone) prepared in PR #45; **Stable v2.2.0 released and verified 2026-10-21** (exe, apk, web zip; APK release cert checked; Pages Stable = 2.2.0). Before it v2.1.0 (2026-10-21) (GitHub Release with exe, apk, web zip; APK release cert checked; Pages Stable = 2.1.0). Previous: v2.0.0 (2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Status:** v2.2.2 (Simurelay-like wiring, seal-in walk-through, aux block, AB-style 1756 hardware; owner: "GO STABLE" 2026-10-21) being released from PR #47; v2.2.1 released 2026-10-21; **Stable v2.2.0 released and verified 2026-10-21** (exe, apk, web zip; APK release cert checked; Pages Stable = 2.2.0). Before it v2.1.0 (2026-10-21) (GitHub Release with exe, apk, web zip; APK release cert checked; Pages Stable = 2.1.0). Previous: v2.0.0 (2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Engineer use (2026-10-21, `fix/wiring-engineer`)
 - [x] Contactor aux block 2NO 2NC; a second N.O./N.C. of a contactor takes 53-54 / 61-62 / 71-72 / 83-84
 - [x] Warning on a contact whose coil is drawn nowhere
 - [x] Wire routing around symbols and terminals; column placement
 - [x] Run view: current flow, filled coil, glowing lamp, switch flash
-- [ ] Drag from a terminal to another to wire (now: tap, tap)
-- [ ] Contact animation in the Ladder-style (NEMA) diagram view
-- [ ] Stable v2.2.2 (needs the owner's GO)
+- [x] Drag from a terminal to another to wire (tap, tap still works)
+- [x] Contact animation in the Ladder-style (NEMA) diagram view
+- [x] Supply points face the current: L/+ feed down, N/0 V/PE return up
+- [x] Wire path drawn by the user (click = corner, drag a segment), clean A* auto-route, junction dots
+- [x] Tidy Wiring built from the diagram (panel rows, one lane per wire)
+- [x] AB-style PLC hardware: compact 16 in / 12 out, 16-point cards (IB16, IA16, OW16, OB16)
+- [x] One flat 2D look for all devices (no shading), one font
+- [x] 1756-style chassis modules (narrow, terminal block at the sides), tag-based address style
+- [x] Simurelay-style wiring in free draw: simple connectors, alignment guides, potential colours; wire styles in the Wiring
+- [x] Seal-in built side by side in Simurelay and here (`docs/SIMURELAY_WALKTHROUGH.md`): + / 0 V points bring their own supply, seal-in branch over its own circuit's terminal with a dot, push button tag beside the head
+- [ ] 32-point cards (need two words per slot in the data table)
+- [ ] Modules that touch: their side terminals face each other (leave a gap for now)
+- [x] Stable v2.2.2 (owner: "GO STABLE", 2026-10-21)
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing

@@ -60,8 +60,8 @@
     siren: { n: 'Siren', g: 'Loads', type: 'siren', a: 'X1', b: 'X2', sym: 'horn', pre: 'HA', out: true, more: true },
     // PLC: the compact PLC placed in the Wiring (the diagram never adds one). A relay output is a contact from VAC0/VAC1,
     // an input a load from I0… to COM (wire COM's rail, 0 V, as the return)
-    ...Object.fromEntries(Array.from({ length: 8 }, (_, n) => ['plcq' + n, { n: `PLC relay output O${n}`, g: 'PLC', type: 'plc', a: n < 4 ? 'VAC0' : 'VAC1', b: 'O' + n, sym: 'no', pre: 'PLC', plc: true, more: true }])),
-    ...Object.fromEntries(Array.from({ length: 12 }, (_, n) => ['plci' + n, { n: `PLC input I${n}`, g: 'PLC', type: 'plc', a: 'I' + n, b: 'COM', sym: 'plcin', pre: 'PLC', plc: true, out: true, more: true, io: n }])),
+    ...Object.fromEntries(Array.from({ length: 16 }, (_, n) => ['plcq' + n, { n: `PLC relay output O${n}`, g: 'PLC', type: 'plc', a: 'VAC' + (n >> 2), b: 'O' + n, sym: 'no', pre: 'PLC', plc: true, more: true }])),
+    ...Object.fromEntries(Array.from({ length: 16 }, (_, n) => ['plci' + n, { n: `PLC input I${n}`, g: 'PLC', type: 'plc', a: 'I' + n, b: 'COM', sym: 'plcin', pre: 'PLC', plc: true, out: true, more: true, io: n }])),
   };
   SC.KINDS = SK;
   // devices whose N.O. and N.C. are one changeover (one common terminal): only one of them in the current paths
@@ -256,16 +256,24 @@
   };
 
   /* ---------- create devices and wire the rungs ---------- */
-  function freeSpot() {
-    let x1 = 0, y0 = 40;
-    for (const c of circ().comps) { const d = DEFS[c.type], s = c.props.size || 1; x1 = Math.max(x1, c.x + d.w * s); }
-    const n = circ().comps.filter(c => c.schAuto).length;
-    return { x: Math.round((x1 + 120) / 10) * 10 + (n % 6) * 110, y: y0 + Math.floor(n / 6) * 170 };
+  /* a device the diagram makes goes into rows to the right of the devices placed by hand, the first free place of a
+     row 1100 wide (a DIN rail), with room around it for the wires */
+  function freeSpot(type) {
+    const C = circ().comps, D = DEFS[type] || { w: 80, h: 120 }, size = c => c.props.size || 1;
+    let base = 40;
+    for (const c of C) if (!c.schAuto) base = Math.max(base, c.x + DEFS[c.type].w * size(c) + 80);
+    base = Math.round(base / 10) * 10;
+    const box = C.map(c => ({ x1: c.x - 30, y1: c.y - 30, x2: c.x + DEFS[c.type].w * size(c) + 30, y2: c.y + DEFS[c.type].h * size(c) + 60 }));
+    for (let row = 0; row < 60; row++) {
+      const y = 40 + row * 220;
+      for (let x = base; x <= base + 1100; x += 10) if (!box.some(b => x < b.x2 && x + D.w > b.x1 && y < b.y2 && y + D.h > b.y1)) return { x, y };
+    }
+    return { x: base, y: 40 };
   }
   function ensureType(type, tag) {
     let c = devOf(tag);
     if (c) return c;
-    const p = freeSpot();
+    const p = freeSpot(type);
     c = Circuit.create(type, p.x, p.y, circ());
     c.props.label = tag;
     if (DEFS[type].pdefs && DEFS[type].pdefs.some(f => f.k === 'coil')) c.props.coil = controlVoltage();
@@ -445,7 +453,9 @@
     const K = SK[e.k], cx = x + CW / 2, o = [];
     const cls = `ssym${st.on ? ' on' : ''}${SC.errs && SC.errs.has(e) ? ' err' : ''}${st.missing ? ' miss' : ''}`;
     o.push(`<g class="${cls}">`);
-    const contact = nc => `<path d="M${cx - 12} ${y - 12} V${y + 12} M${cx + 12} ${y - 12} V${y + 12}"/>` + (nc ? `<path d="M${cx - 14} ${y + 12} L${cx + 14} ${y - 12}"/>` : '');
+    // the contact moves: a closed N.O. is bridged across its plates, an opened N.C. has its blade lifted off
+    const shut = nc => (st.c ? !!st.closed : nc);
+    const contact = nc => `<path d="M${cx - 12} ${y - 12} V${y + 12} M${cx + 12} ${y - 12} V${y + 12}"/>` + (nc ? (shut(nc) ? `<path d="M${cx - 14} ${y + 12} L${cx + 14} ${y - 12}"/>` : `<path d="M${cx - 14} ${y + 12} L${cx + 2} ${y - 20}"/>`) : shut(nc) ? `<path d="M${cx - 12} ${y} H${cx + 12}"/>` : '');
     switch (K.sym) {
       case 'no': o.push(contact(false)); break;
       case 'nc': o.push(contact(true)); break;
@@ -1037,7 +1047,7 @@
   function suggestTag(k) {
     const K = SK[k];
     // a PLC symbol is a point of the PLC placed in the Wiring
-    if (K.plc) { const p = circ().comps.filter(c => c.type === 'plc').map(c => c.props.label); return { def: p[0] || 'PLC', list: p }; }
+    if (K.plc) { const p = circ().comps.filter(c => DEFS[c.type] && DEFS[c.type].compact).map(c => c.props.label); return { def: p[0] || 'PLC', list: p }; }
     const same = circ().comps.filter(c => Circuit.sameKind(c.type, K.type) || (DEFS[c.type].variant && Object.values(DEFS[c.type].variant.of).includes(K.type))).map(c => c.props.label);
     // a contact or coil of a relay family suggests the last device of that family; inputs and loads a new tag
     if (!K.out && ['contactor', 'relay', 'timer', 'olr'].includes(K.type) && same.length) return { def: same[same.length - 1], list: same };

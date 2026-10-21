@@ -1,14 +1,14 @@
 /* Service worker: caches the app so the trainer works offline once it has been opened.
    The Stable copy (site root) and the Beta copy (/beta/) each have their own worker and cache.
    VER is the app version; hosted builds get a build id added (scripts/copy-web.sh), so every new build caches its files. */
-const VER = 'v2.2.1';
+const VER = 'v2.2.2';
 const SCOPE = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CH = /\/beta\/$/.test(SCOPE) ? 'beta' : 'stable';
 const CACHE = `plc-trainer-${CH}-${VER}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/ui.js', 'js/i18n.js', 'js/store.js', 'js/plc.js', 'js/ladder.js', 'js/circuit.js', 'js/workspace.js',
-  'js/hmi.js', 'js/freedraw.js', 'js/schematic.js', 'js/examples.js', 'js/update.js', 'js/app.js',
+  'js/hmi.js', 'js/gridroute.js', 'js/freedraw.js', 'js/schematic.js', 'js/examples.js', 'js/update.js', 'js/app.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
 ];
 

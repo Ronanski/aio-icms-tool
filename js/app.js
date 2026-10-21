@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const esc = UI.esc;
-  const VERSION = '2.2.1';
+  const VERSION = '2.2.2';
   // build id: 'dev' in the repository; the Pages and release builds stamp it (scripts/copy-web.sh) so the updater can tell builds apart
   const BUILD = 'dev';
   /* project file format: raise it when a saved project gains content older versions cannot read. Files without it are 1.
@@ -457,7 +457,7 @@
   /* I/O Configuration: which card the CPU expects in each rack slot. A card works only when it is configured. */
   App.ioConfig = function () {
     const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc;
-    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', body: `<p class="help">${r.ctl ? 'The compact PLC has fixed I/O: I:0/0–11 and O:0/0–7.' : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular rack.</p>` }); return; }
+    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', body: `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular rack.</p>` }); return; }
     const run = App.plc.mode === 'RUN';
     const opts = sel => `<option value="">— Empty —</option>` + Circuit.CARDS().map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(Circuit.DEFS[t].name)}</option>`).join('');
     const inst = s => { const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]); return c ? c : null; };

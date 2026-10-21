@@ -1,6 +1,6 @@
 {
   "name": "plc-trainer-mobile",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "PLC Trainer for Android",
   "private": true,
   "scripts": {
