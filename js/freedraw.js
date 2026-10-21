@@ -376,7 +376,7 @@
     return out;
   }
   // how wires without bends of their own are drawn: simple connectors (like Simurelay), or routed around the symbols
-  const ROUTINGS = { simple: 'Simple (like Simurelay)', around: 'Around the symbols' };
+  const ROUTINGS = { simple: 'Simple (straight connectors)', around: 'Around the symbols' };
   let routing = (() => { try { const v = localStorage.getItem('plc-trainer.fdRouting'); return ROUTINGS[v] ? v : 'simple'; } catch (e) { return 'simple'; } })();
   FD.setRouting = function (v) { if (!ROUTINGS[v]) return; routing = v; routeSig = ''; try { localStorage.setItem('plc-trainer.fdRouting', v); } catch (e) { /* private mode */ } if (body) FD.render(body); };
   FD.routing = () => routing;
@@ -1746,7 +1746,7 @@
       <li>Properties (on the right when one symbol is selected): its tag, a comment, and the settings of its device — the same ones as in the Wiring. On a touch screen, a long press opens the tag form; pinch to zoom.</li>
       <li>Sources › Point L1, N, PE, +24 V… is wired to that conductor of the supply. Others › wire pieces (straight, corner, T, cross) join wires; link arrows with the same tag are connected.</li>
       <li>PLC › outputs, inputs and power are terminals of the PLC or I/O card placed in the Wiring: pick its tag and the point. They show the live state of the point; the ladder decides the outputs.</li>
-      <li>▶ Play: as in Simurelay, everything starts at rest (breakers off, buttons out, timers cleared) and protections work by hand: tap a breaker to switch it, a fuse to blow or replace it, an overload to trip or reset it. A short circuit stops the simulation. ■ Stop puts everything back. Wires show their conductor: L1 brown, L2 grey, L3 cyan, N blue, PE yellow, + red, 0 V blue.</li><li>Keys: Ctrl+R rotate, Ctrl+B back, Ctrl+F front, Ctrl+D duplicate, Ctrl+Delete delete, Ctrl+arrows move, Ctrl+V values (or paste), Ctrl+Z / Ctrl+Y undo / redo. ⋯ has New, Open, Capture, Save, Save As and Settings (grid, zoom panel, dark mode, colours).</li></ul>`;
+      <li>▶ Play: everything starts at rest (breakers off, buttons out, timers cleared) and protections work by hand: tap a breaker to switch it, a fuse to blow or replace it, an overload to trip or reset it. A short circuit stops the simulation. ■ Stop puts everything back. Wires show their conductor: L1 brown, L2 grey, L3 cyan, N blue, PE yellow, + red, 0 V blue.</li><li>Keys: Ctrl+R rotate, Ctrl+B back, Ctrl+F front, Ctrl+D duplicate, Ctrl+Delete delete, Ctrl+arrows move, Ctrl+V values (or paste), Ctrl+Z / Ctrl+Y undo / redo. ⋯ has New, Open, Capture, Save, Save As and Settings (grid, zoom panel, dark mode, colours).</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
     sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rename: () => FD.renameDevice(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,

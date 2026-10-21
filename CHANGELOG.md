@@ -19,6 +19,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 - **Update bar**: the Android and Windows apps no longer say "v2.3.0 is ready. You have v2.3.0". A built-in copy is offered only a newer version.
+- **Dialogs**: Escape in a dialog opened over another dialog (for example New tag over Controller Tags) closes only the top one. A dialog closed from inside the app no longer keeps catching the next Escape or Enter (cancelling a wire, editing an instruction).
+- **Switching the update channel** (File → Updates…) no longer says "You have the latest beta version" while the Stable app is still loaded: it says the channel loads on restart and offers **Restart into Beta / Stable**.
+- **Moving projects from the Android / Windows app to the hosted app** sends only the projects changed since the last start, newest first, within a safe link size. With many projects (after many exercises) the hand-over could fail silently before.
+- **Startup** no longer fails when the saved project list is damaged: bad entries are skipped.
+- No third-party product names in the drawing settings and help (wire routing is "Simple (straight connectors)"). The brand check now also reads every string in the app's code, not only the page on screen.
 
 ## [2.3.0] - 2026-10-21
 

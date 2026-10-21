@@ -9,8 +9,16 @@
 - [x] One short drawing toolbar (Library, Play, Rotate, Delete, Undo, Redo, ⋯)
 - [x] 100 exercises (25 easy, 40 medium, 35 hard) with checks, hints and solutions, across all modules
 - [x] Practice board 16; Learn tabs; Examples grouped by category
-- [ ] PLC target per project: SLC-style (compact, rack, file-based) or 1756-style (chassis, tag-based)
-- [ ] Study Studio 5000 / RSLogix in the owner's VM (computer use session)
+- [ ] PLC target per project: SLC-style (compact, rack, file-based) or 1756-style (chassis, tag-based) — coded in PRs #52–#61 (stacked, not merged yet)
+- [x] Study Studio 5000 / RSLinx / Logix Emulate in the owner's VM (`docs/ROCKWELL_UI_STUDY.md`, verified download, I/O fault and simulator addressing)
+
+## Full audit (2026-10-22, `audit/full-2026-10-22`)
+- [x] Tests and a headless scan of every view, example, lesson and exercise: 0 console errors
+- [x] Stacked dialogs: Escape/Enter only reach the top one; no key listener left behind
+- [x] Updates dialog: restart into the chosen channel when the other one is still loaded
+- [x] Project hand-over from the Android / Windows app: only changed projects, within a safe link size
+- [x] Damaged project index no longer stops startup
+- [x] No third-party product names in UI strings; brand test reads all source strings
 
 ## Engineer use (2026-10-21, `fix/wiring-engineer`)
 - [x] Contactor aux block 2NO 2NC; a second N.O./N.C. of a contactor takes 53-54 / 61-62 / 71-72 / 83-84

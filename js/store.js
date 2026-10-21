@@ -10,7 +10,11 @@
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } };
   const del = k => { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } };
-  const readIdx = () => { try { return JSON.parse(get(IDX) || '[]'); } catch (e) { return []; } };
+  // anything but a list of {id} entries (a hand-edited or damaged index) reads as empty or loses only the bad entries
+  const readIdx = () => {
+    try { const a = JSON.parse(get(IDX) || '[]'); return Array.isArray(a) ? a.filter(p => p && typeof p.id === 'string') : []; }
+    catch (e) { return []; }
+  };
   const writeIdx = list => set(IDX, JSON.stringify(list));
 
   const Store = {
