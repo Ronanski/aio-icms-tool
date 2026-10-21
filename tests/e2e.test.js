@@ -2382,6 +2382,27 @@ function check(name, cond, info = '') {
     return F.items.length === n + 1 && added.k === 'plci0' && FreeDraw.check().has(added) && toast; }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+  // every symbol the Simurelay comparison (docs/SIMURELAY_PARITY.md) maps to: one drawing, a tag each; each makes its device, fits it, and survives save and reload
+  const PARITY_KINDS = ['wlink', 'batt', 'mcb1', 'mcb2', 'mcb3', 'mcb4', 'pbcx', 'pbx', 'pbnc', 'pbno', 'pbnonc', 'horn', 'kmcoil', 'kacoil', 'kfcoil', 'ktcoil', 'kdcoil', 'flcoil', 'kicoil', 'valve',
+    'ka1co', 'ktco', 'kfco', 'kdco', 'flco', 'ltco', 'olco', 'kbonco', 'kbofco', 'kmnc', 'ka1nc', 'ktnc', 'kfnc', 'olnc', 'kbonnc', 'kbofnc', 'kmno', 'ka1no', 'ktno', 'kfno', 'olno', 'kbonno', 'kbofno',
+    'kmnonc', 'kanonc', 'kbonnonc', 'kbofnonc', 'km1', 'km2', 'km3', 'km4', 'kmn1', 'kmn2', 'kmn3', 'kmn4', 'esco', 'estop', 'esno', 'esnonc', 'fu1', 'fu2', 'fu3', 'fu4', 'fsw1', 'fsw1n', 'fsw2', 'fsw3', 'fsw3n', 'fsw4',
+    'gen', 'qs1', 'qs2', 'qs3', 'qs4', 'wline', 'wcorner', 'wtee', 'wcross', 'gnd', 'lamp', 'lampfl', 'm1', 'm3', 'qm1', 'qm2', 'qm3', 'qm4', 'mdc', 'mdh', 'm6', 'm2s', 'ol1', 'ol2', 'ol3', 'kpmon', 'psu',
+    'rcbo', 'rcbo4', 'rcd', 'rcd4', 'bell', 'lsco', 'lsnc', 'lsno', 'lsnonc', 'siren', 'pM', 'pL1', 'pL2', 'pL3', 'pN', 'pP', 'pPE', 'src3', 'sel3h', 'sel3a', 'selcx', 'selx', 'selnc', 'selno', 'selnonc', 'text', 'qf3'];
+  await page.evaluate(ks => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free');
+    const items = ks.map((k, i) => ({ id: 'd' + (i + 1), k, tag: k === 'text' ? 'TXT' : (FreeDraw.KINDS[k].pre || 'X') + (100 + i), x: (i % 12) * 120, y: Math.floor(i / 12) * 160, r: 0, ...(k === 'text' ? { txt: 'note' } : {}) }));
+    App.openNew({ name: 'All parity symbols', schematic: { free: { seq: items.length + 1, items, wires: [] } } }); if (prev) Store.remove(prev); App.showView('schematic'); }, PARITY_KINDS);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(400);
+  check('parity: every mapped symbol is in the library, makes a device of its own type with every terminal it uses, and no problem is reported', await page.evaluate(ks => {
+    const K = FreeDraw.KINDS, C = App.project.circuit, F = App.project.schematic.free;
+    const bad = F.items.filter(it => { const S = K[it.k]; if (!S || S.hide) return true; if (!S.type || S.jct) return false; const d = C.comps.find(c => c.props.label === it.tag);
+      return !d || !Circuit.sameKind(d.type, S.type) || !S.terms.every(t => Circuit.DEFS[d.type].terms.some(x => x.id === t.id)); });
+    return ks.every(k => K[k]) && F.items.length === ks.length && bad.length === 0 && FreeDraw.errs.size === 0;
+  }, PARITY_KINDS), await page.evaluate(() => [...FreeDraw.errs.values()].slice(0, 3).join(' | ')));
+  check('parity: the drawing with every mapped symbol survives save and reload (same symbols, devices and settings)', await page.evaluate(() => {
+    const s = App.serialize(), p = App.buildProject(JSON.parse(JSON.stringify(s))), key = c => c.props.label + ':' + c.type + ':' + JSON.stringify(c.props);
+    return JSON.stringify(p.schematic.free.items.map(i => i.k)) === JSON.stringify(s.schematic.free.items.map(i => i.k)) && JSON.stringify(p.circuit.comps.map(key).sort()) === JSON.stringify(s.circuit.comps.map(key).sort()) && !(p.keep && p.keep.free.items.length);
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
   console.log('IEC current paths: the newer devices and the PLC points');
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); });
   await page.click('#view-schematic [data-sstyle="iec"]'); await wait(200);

@@ -320,9 +320,9 @@
     App.currentId = Store.newId();
     Store.setCurrent(App.currentId);
     applyProject(proj);
-    // an example (or file) with diagram rungs but no diagram wires yet: let the Electrical Diagram wire them now
+    // an example (or file) with diagram rungs or symbols but no diagram wires yet: let the Electrical Diagram make them now
     const sp = proj.schematic.power;
-    if ((proj.schematic.rungs.length || sp.main.length || sp.feeders.some(f => f.elems.length) || proj.schematic.free.wires.length) && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
+    if ((proj.schematic.rungs.length || sp.main.length || sp.feeders.some(f => f.elems.length) || proj.schematic.free.wires.length || proj.schematic.free.items.length) && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
   }
   App.openSaved = function (id) {
     let proj = null;
