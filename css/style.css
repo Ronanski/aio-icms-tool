@@ -476,6 +476,18 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .learn-nav button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--text); }
 .learn-nav button:hover { background: var(--surface-2); }
 .learn-nav button.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+/* Learn: Course / Exercises tabs, difficulty and topic of the exercises, done marks, the hint */
+.learn-tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 8px; background: var(--surface-2); border-radius: 10px; }
+.learn-nav .learn-tabs button.lt { flex: 1; text-align: center; padding: 7px 6px; font-weight: 600; }
+.learn-nav .learn-tabs button.lt.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.learn-tabs small, .ex-diff small { color: var(--muted); font-weight: 500; }
+.ex-diff { display: flex; gap: 4px; margin: 4px 0 8px; }
+.learn-nav .ex-diff button { flex: 1; text-align: center; padding: 6px 4px; border: 1px solid var(--border); font-size: 12.5px; }
+.learn-nav .ex-diff button.on { border-color: var(--accent); }
+.ex-topic { width: 100%; margin-bottom: 6px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.learn-nav button.done { color: var(--muted); }
+.learn-body details.hint { margin: 10px 0; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; }
+.learn-body details.hint summary { cursor: pointer; font-weight: 600; }
 .learn-body { flex: 1; overflow: auto; padding: 28px clamp(16px, 4vw, 56px) 60px; max-width: 980px; }
 .learn-body h2 { font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 4px 0 14px; letter-spacing: -.01em; }
 .learn-body h3 { font-family: var(--serif); font-weight: 600; font-size: 20px; }
@@ -740,6 +752,10 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg.tagc-purple .ftag:not(.fcmt) { fill: #7b3fb5; }
 .fd-props .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
+/* free draw is the Electrical Diagram: no view switch, no Edit / Operate (Play operates the drawing) */
+.free-only .sch-toolbar .tb-group.keep { display: none !important; }
+/* the short drawing toolbar: these tools are in the ⋯ menu */
+.sch-toolbar .tbtn.in-more { display: none; }
 .free-svg .fguide { stroke: var(--accent); stroke-width: .8; stroke-dasharray: 4 4; opacity: .8; pointer-events: none; }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .free-svg .fbox { fill: color-mix(in srgb, var(--accent-soft) 45%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
@@ -792,6 +808,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .fwire .w { stroke: var(--fd-sym); }
 .free-svg .fwire.sel .w { stroke: var(--fd-sel); stroke-width: 3; }
 .free-svg .fseg { fill: none; stroke: #FF9800; stroke-width: 2; pointer-events: none; }
+/* the short drawing toolbar: these tools are in the ⋯ menu */
+.sch-toolbar .tbtn.in-more { display: none; }
 .free-svg .fguide { stroke: var(--fd-align); stroke-width: 4; stroke-dasharray: none; opacity: 1; pointer-events: none; }
 .free-svg .fguide.hit { stroke: var(--fd-sel); stroke-width: 1.5; opacity: .7; }
 .free-svg .wtemp { stroke: var(--fd-sel); }

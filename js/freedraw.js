@@ -345,7 +345,8 @@
   }
   /* a simple connector (as Simurelay draws one): out of terminal a in its direction, across, into terminal b in its
      direction. Straight when the two terminals face each other on one line. */
-  function simplePath(a, da, b, db) {
+  // off moves the part that runs across (a lane beside it, like dragging the middle of a Simurelay connector)
+  function simplePath(a, da, b, db, off = 0) {
     const m = 20, S = { x: a.x + da[0] * m, y: a.y + da[1] * m }, E = { x: b.x + db[0] * m, y: b.y + db[1] * m };
     const faces = (p, d, q) => (d[0] ? Math.sign(q.x - p.x) === d[0] : Math.sign(q.y - p.y) === d[1]);
     if (a.x === b.x && !da[0] && !db[0] && faces(a, da, b) && faces(b, db, a)) return [a, b];
@@ -355,15 +356,15 @@
     if (!da[0] && !db[0]) {
       // both terminals point up or down: across at the middle height when they face each other, else beyond both
       let Y;
-      if (da[1] !== db[1] && faces(a, da, b) && faces(b, db, a)) Y = mid(a.y, b.y);
-      else if (da[1] === db[1]) Y = da[1] > 0 ? Math.max(S.y, E.y) : Math.min(S.y, E.y);
-      else { const X = a.x !== b.x ? mid(a.x, b.x) : a.x + 40; P = [a, S, { x: X, y: S.y }, { x: X, y: E.y }, E, b]; }
+      if (da[1] !== db[1] && faces(a, da, b) && faces(b, db, a)) Y = mid(a.y, b.y) + off;
+      else if (da[1] === db[1]) Y = (da[1] > 0 ? Math.max(S.y, E.y) : Math.min(S.y, E.y)) + da[1] * Math.abs(off);
+      else { const X = (a.x !== b.x ? mid(a.x, b.x) : a.x + 40) + off; P = [a, S, { x: X, y: S.y }, { x: X, y: E.y }, E, b]; }
       if (!P) P = [a, { x: a.x, y: Y }, { x: b.x, y: Y }, b];
     } else if (!da[1] && !db[1]) {
       let X;
-      if (da[0] !== db[0] && faces(a, da, b) && faces(b, db, a)) X = mid(a.x, b.x);
-      else if (da[0] === db[0]) X = da[0] > 0 ? Math.max(S.x, E.x) : Math.min(S.x, E.x);
-      else { const Y = a.y !== b.y ? mid(a.y, b.y) : a.y + 40; P = [a, S, { x: S.x, y: Y }, { x: E.x, y: Y }, E, b]; }
+      if (da[0] !== db[0] && faces(a, da, b) && faces(b, db, a)) X = mid(a.x, b.x) + off;
+      else if (da[0] === db[0]) X = (da[0] > 0 ? Math.max(S.x, E.x) : Math.min(S.x, E.x)) + da[0] * Math.abs(off);
+      else { const Y = (a.y !== b.y ? mid(a.y, b.y) : a.y + 40) + off; P = [a, S, { x: S.x, y: Y }, { x: E.x, y: Y }, E, b]; }
       if (!P) P = [a, { x: X, y: a.y }, { x: X, y: b.y }, b];
     } else {
       // one up/down, one sideways: one corner when it lies ahead of both terminals, else out of each first
@@ -404,14 +405,15 @@
     // terminal of its own circuit it may (as in Simurelay: the seal-in branch joins at the button's terminal, with a dot)
     const taken = new Map();   // unit steps of the simple wires already placed → their circuit
     const stepKey = (x, y, dx, dy) => dx ? Math.min(x, x + dx * G) + ',' + y + ',h' : x + ',' + Math.min(y, y + dy * G) + ',v';
-    const clear = (P, net) => {
+    // strict: no terminal at all on the way (a moved lane must not touch even a terminal of its own circuit)
+    const clear = (P, net, strict) => {
       for (let i = 1; i < P.length; i++) {
         const p = P[i - 1], q = P[i], n = Math.round((Math.abs(q.x - p.x) + Math.abs(q.y - p.y)) / G);
         for (let k = 0; k <= n; k++) {
           const x = p.x + Math.sign(q.x - p.x) * k * G, y = p.y + Math.sign(q.y - p.y) * k * G;
           if ((x === P[0].x && y === P[0].y) || (x === P[P.length - 1].x && y === P[P.length - 1].y)) continue;
           const c = Math.round(x / G) + ',' + Math.round(y / G);
-          if (body.has(c) || (tnet.has(c) && tnet.get(c) !== net)) return false;
+          if (body.has(c) || (tnet.has(c) && (strict || tnet.get(c) !== net))) return false;
           const dx = Math.sign(q.x - p.x), dy = Math.sign(q.y - p.y), o = k < n && taken.get(stepKey(x, y, dx, dy));
           if (o && o !== net) return false;
         }
@@ -425,8 +427,10 @@
       if (w.pts && w.pts.length) { const P = [a]; [...w.pts.map(([x, y]) => ({ x, y })), b].forEach(q => { const p = P[P.length - 1]; P.push({ x: p.x, y: q.y }, q); }); wires.push({ id: w.id, net, fixed: P }); continue; }
       const da = termDir(itemOf(w.a.split(':')[0]), w.a.split(':')[1]), db = termDir(itemOf(w.b.split(':')[0]), w.b.split(':')[1]);
       // a simple connector, unless it would run over another terminal or through a symbol (then it goes around)
-      const sp = routing === 'simple' && simplePath(a, da, b, db);
-      if (sp && clear(sp, net)) {
+      // the part across moves to the next free lane (10, 20, 30… either side) before the wire is routed around
+      let sp = null;
+      if (routing === 'simple') for (const off of [0, 10, -10, 20, -20, 30, -30, 40, -40, 50, -50, 60, -60]) { const c = simplePath(a, da, b, db, off); if (clear(c, net, off !== 0)) { sp = c; break; } }
+      if (sp) {
         for (let i = 1; i < sp.length; i++) { const p = sp[i - 1], q = sp[i], n = Math.round((Math.abs(q.x - p.x) + Math.abs(q.y - p.y)) / G), dx = Math.sign(q.x - p.x), dy = Math.sign(q.y - p.y); for (let k = 0; k < n; k++) taken.set(stepKey(p.x + dx * k * G, p.y + dy * k * G, dx, dy), net); }
         wires.push({ id: w.id, net, fixed: sp });
       } else wires.push({ id: w.id, net, a, b, da, db });
@@ -1493,7 +1497,16 @@
     } });
   };
   FD.menu = function (x, y) {
+    // the drawing tools that are not on the short toolbar, then the file commands
+    const act = a => () => { const b = document.querySelector(`#view-schematic [data-fdact="${a}"]`); if (b) b.click(); };
     UI.menu(x, y, [
+      { label: (FD.values ? '✓ ' : '') + 'Show values', onClick: act('values') },
+      { label: (FD.colors ? '✓ ' : '') + 'Wire colours by conductor', onClick: act('colors') },
+      { label: 'Duplicate', onClick: act('copy') },
+      { label: 'Change type…', onClick: act('type') },
+      { label: 'Bring to front', onClick: act('front') },
+      { label: 'Send to back', onClick: act('back') },
+      { sep: true },
       { label: 'New', onClick: () => App.newProject() },
       { label: 'Open', onClick: () => App.openDialog() },
       { label: 'Capture', onClick: () => FD.exportImage('png') },

@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **100 exercises** in Learn → Exercises: 25 easy, 40 medium and 35 hard, by topic (contacts and logic, seal-in and latches, timers, counters, compare and math, sequences, motor control, process, Electrical Diagram, Wiring, HMI, and integration of every module). Each has a hint, a starting project, **Check my work** and a solution. Ladder exercises are run on a simulated PLC. Drawing, wiring and HMI exercises are checked on your own project: the checker presses your buttons and switches the PLC to RUN when needed. Done exercises are ticked and counted.
+- **Practice board 16**: the 16 in / 12 out compact PLC with START, STOP, four push buttons, two selectors and eight lamps, for the medium and hard exercises.
+- **Learn** has two tabs, Course (the lessons) and Exercises (by difficulty with a topic filter). The **Examples** menu is grouped by category: practice boards, motor control, process, hardware and cabinet.
+
+### Fixed
+- **Reversing power circuits** in free draw: the wires that cross L1 and L3 over to KM2 no longer loop around the drawing. When a simple wire would lie on a wire of another phase, its crossing part moves to the next free lane (10, 20, 30… either side), the way you would drag it in Simurelay.
+
+### Changed
+- **The Electrical Diagram is free draw only**, like Simurelay. The IEC and ladder-style views and the Edit / Operate switch are gone (Play operates the drawing). A project or example drawn in the old views opens as a free drawing: each current path becomes a column from its supply point to its return point, and the power circuit sits beside them.
+- **One short drawing toolbar**: Library, Play, Rotate, Delete, Undo, Redo and ⋯. Show values, wire colours, Duplicate, Change type and Bring to front / Send to back are in the ⋯ menu.
+
+### Fixed
+- **Update bar**: the Android and Windows apps no longer say "v2.3.0 is ready. You have v2.3.0". A built-in copy is offered only a newer version.
+
 ## [2.3.0] - 2026-10-21
 
 ### Changed

@@ -8,7 +8,7 @@ const CACHE = `plc-trainer-${CH}-${VER}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/ui.js', 'js/i18n.js', 'js/store.js', 'js/plc.js', 'js/ladder.js', 'js/circuit.js', 'js/workspace.js',
-  'js/hmi.js', 'js/gridroute.js', 'js/freedraw.js', 'js/schematic.js', 'js/examples.js', 'js/update.js', 'js/app.js',
+  'js/hmi.js', 'js/gridroute.js', 'js/freedraw.js', 'js/schematic.js', 'js/examples.js', 'js/exercises.js', 'js/update.js', 'js/app.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
 ];
 

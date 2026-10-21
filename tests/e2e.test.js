@@ -34,6 +34,9 @@ function check(name, cond, info = '') {
     });
   };
   const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
+  // the classic IEC / ladder-style views stay testable behind the developer switch (the app offers free draw only)
+  const classicOn = () => { try { localStorage.setItem('plc-trainer.classicViews', '1'); } catch (e) { /* ignore */ } };
+  await page.addInitScript(classicOn);
   await mockGitHub(page);
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -429,6 +432,18 @@ function check(name, cond, info = '') {
   pagesInfo.beta = { version: '1.0.0', build: 'dev', notes: '' };
   st = await page.evaluate(() => Updater.check(true).then(s => s.status));
   check('no update when this is the build the channel serves', st === 'current', st);
+  {
+    // the Android / Windows app runs a built-in copy: the same version on the channel is not an update
+    const ver = await page.evaluate(() => App.VERSION);
+    pagesInfo.beta = { version: ver, build: 'v' + ver, notes: '' };
+    st = await page.evaluate(async () => { const b = App.BUILD; App.BUILD = 'v' + App.VERSION + '-apk'; try { return (await Updater.check(true)).status; } finally { App.BUILD = b; } });
+    check('a built-in copy (Android / Windows app) is not told "v2.3.0 is ready, you have v2.3.0"', st === 'current' && !(await page.$('.update-bar')), st);
+    pagesInfo.beta = { version: '99.0.0', build: 'v99.0.0', notes: '' };
+    st = await page.evaluate(async () => { const b = App.BUILD; App.BUILD = 'v' + App.VERSION + '-apk'; try { return (await Updater.check(true)).status; } finally { App.BUILD = b; } });
+    check('a built-in copy is offered a newer version', st === 'available', st);
+    await page.evaluate(() => { const b = document.querySelector('.update-bar'); if (b) b.remove(); });
+    pagesInfo.beta = { version: '1.0.0', build: 'dev', notes: '' };
+  }
   await page.context().setOffline(true);
   st = await page.evaluate(() => Updater.check(true).then(s => s.status));
   check('offline: no check, no error, app keeps working', st === 'offline' && !!(await page.evaluate(() => App.project && document.querySelector('.rung'))), st);
@@ -3027,6 +3042,7 @@ function check(name, cond, info = '') {
 
   console.log('Phone (touch)');
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await phone.addInitScript(classicOn);
   await mockGitHub(phone);
   const perr = [];
   phone.on('pageerror', e => perr.push(e.message));
@@ -3156,6 +3172,75 @@ function check(name, cond, info = '') {
   await ctx.setOffline(true);
   await web.reload();
   await web.waitForTimeout(600);
+  {
+    console.log('Free draw only: the Electrical Diagram as users get it');
+    const fo = await ctx.newPage({ viewport: { width: 1400, height: 900 } });
+    await fo.goto(base); await fo.waitForFunction(() => window.App && App.project);
+    const r = await fo.evaluate(async () => {
+      App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 300));
+      const s = App.project.schematic, vis = e => !!e && getComputedStyle(e).display !== 'none' && e.offsetParent !== null;
+      const shown = [...document.querySelectorAll('#view-schematic .sch-toolbar .free-group .tbtn')].filter(vis).map(b => b.dataset.fdact);
+      return { free: Schematic.freeOnly(), rungs: s.rungs.length, items: s.free.items.length, errs: FreeDraw.errs ? FreeDraw.errs.size : -1, iec: vis(document.querySelector('#view-schematic [data-sstyle="iec"]')), mode: vis(document.querySelector('#view-schematic [data-smode="edit"]')), shown };
+    });
+    check('free draw only: no IEC / ladder-style switch and no Edit / Operate (Play does it)', r.free && !r.iec && !r.mode, JSON.stringify(r));
+    check('free draw only: a drawing made in the IEC view (the star-delta example) opens as a free drawing, with no errors', r.rungs === 0 && r.items > 20 && r.errs === 0, JSON.stringify(r));
+    check('free draw only: one short toolbar — Library, Play, Rotate, Delete, Undo, Redo and ⋯', ['lib', 'play', 'rot', 'del', 'more'].every(a => r.shown.includes(a)) && !['values', 'colors', 'back', 'front', 'copy', 'type'].some(a => r.shown.includes(a)), r.shown.join());
+    await fo.click('#view-schematic [data-fdact="more"]'); await fo.waitForTimeout(150);
+    check('free draw only: Values, wire colours, Duplicate, Type and front / back are in the ⋯ menu', await fo.evaluate(() => { const t = [...document.querySelectorAll('.ctx-menu button')].map(b => b.textContent); return ['Show values', 'Wire colours', 'Duplicate', 'Change type', 'Bring to front', 'Send to back'].every(w => t.some(x => x.includes(w))); }));
+    await fo.keyboard.press('Escape');
+    check('free draw only: the converted star-delta starter still runs (the start button pulls in its contactor)', await fo.evaluate(async () => {
+      document.querySelector('#view-schematic [data-fdact="play"]').click();
+      const C = App.project.circuit, s1 = C.comps.find(c => c.props.label === 'S1'), km = C.comps.find(c => c.props.label === 'KM1');
+      const up = App.operate(s1, 'btn'); await new Promise(q => setTimeout(q, 600)); if (typeof up === 'function') up(); await new Promise(q => setTimeout(q, 300));
+      return !!km && km.state.pulled;
+    }));
+    check('free draw: a reversing power circuit (owner’s layout) is drawn with simple wires — L1 / L3 cross to KM2 in lanes beside each other, none loops around', await fo.evaluate(async () => {
+      App.openNew({ name: 'FwdRev power', circuit: { seq: 1, comps: [], wires: [] } }); App.showView('schematic');
+      const F = App.project.schematic.free; let n = 0;
+      const it = (k, tag, x, y) => { const o = { id: 'd' + (++n), k, tag, x, y, r: 0 }; F.items.push(o); return o.id; };
+      const xp = it('p3', 'XP4', 640, 80), qf = it('qf3', 'QF3', 660, 280), fu = it('fu3', 'FU1', 660, 560), k1 = it('km3', 'KM1', 660, 690), k2 = it('km3', 'KM2', 860, 660), m = it('m3', 'M2', 660, 900);
+      let w = 0; const W = (a, c) => F.wires.push({ id: 'fw' + (++w), a, b: c });
+      ['L1', 'L2', 'L3'].forEach((t, i) => W(xp + ':' + t, qf + ':' + ['1', '3', '5'][i])); ['2', '4', '6'].forEach((t, i) => W(qf + ':' + t, fu + ':' + ['1', '3', '5'][i]));
+      ['2', '4', '6'].forEach((t, i) => W(fu + ':' + t, k1 + ':' + ['1', '3', '5'][i])); W(fu + ':2', k2 + ':5'); W(fu + ':4', k2 + ':3'); W(fu + ':6', k2 + ':1');
+      ['2', '4', '6'].forEach((t, i) => W(k1 + ':' + t, m + ':' + ['U1', 'V1', 'W1'][i])); ['2', '4', '6'].forEach((t, i) => W(k2 + ':' + t, k1 + ':' + t));
+      F.seq = 200; Schematic.sync(); FreeDraw.render(document.querySelector('#view-schematic .sch-body')); await new Promise(q => setTimeout(q, 200));
+      return F.wires.every(x => document.querySelector(`#view-schematic [data-fw="${x.id}"] .w`).getAttribute('d').split(' L').length <= 4);
+    }));
+    console.log('Exercises: 100 graded tasks across the modules');
+    const xr = await fo.evaluate(async () => {
+      const L = Exercises.LIST, n = d => L.filter(x => x.diff === d).length, bad = [];
+      for (const e of L) {
+        if (e.test) {
+          const good = Examples.gradeLesson(e, e.solution), empty = Examples.gradeLesson(e, []);
+          if (good.error || !good.every(x => x.ok)) bad.push(e.title + ': solution fails');
+          if (!empty.error && empty.every(x => x.ok)) bad.push(e.title + ': passes with an empty program');
+          continue;
+        }
+        const open = () => { App.openNew(e.build ? e.build() : Examples.EX[e.ex].build()); App.plc.setMode('PROG'); };
+        open(); let A = Exercises.api(); if (e.setup) e.setup(A);
+        const before = await e.check(A);
+        open(); A = Exercises.api(); await e.solve(A); if (e.setup) e.setup(Exercises.api());
+        const after = await e.check(Exercises.api());
+        if (!after.every(x => x.ok)) bad.push(e.title + ': solution fails ' + after.filter(x => !x.ok).map(x => x.say).join('; '));
+        if (before.every(x => x.ok)) bad.push(e.title + ': passes before it is done');
+      }
+      return { total: L.length, easy: n('easy'), medium: n('medium'), hard: n('hard'), project: L.filter(x => x.check).length, hints: L.every(x => x.hint), bad };
+    });
+    check('exercises: 100 of them — 25 easy, 40 medium, 35 hard — each with a hint', xr.total === 100 && xr.easy === 25 && xr.medium === 40 && xr.hard === 35 && xr.hints, JSON.stringify(xr));
+    check('exercises: every solution passes its check and no exercise passes before it is done (ladder on a simulated PLC; drawing, wiring and HMI on the project, buttons pressed by the checker)', xr.bad.length === 0, xr.bad.join(' | '));
+    check('exercises: some use the Electrical Diagram, the Wiring and the HMI, and some all modules together', xr.project >= 15, String(xr.project));
+    await fo.evaluate(() => { App.showView('learn'); });
+    await fo.click('#view-learn [data-ltab="ex"]'); await fo.waitForTimeout(150);
+    check('Learn: Course and Exercises tabs; exercises by difficulty with a topic filter and a done count', await fo.evaluate(() => !!document.querySelector('#view-learn [data-ltab="course"]') && document.querySelectorAll('#view-learn [data-xdiff]').length === 3 && !!document.querySelector('#view-learn [data-xtopic]') && /0\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent)));
+    await fo.click('#view-learn [data-lesson="' + await fo.evaluate(() => Exercises.LIST[0].id) + '"]'); await fo.waitForTimeout(150);
+    await fo.click('#view-learn [data-sol]'); await fo.waitForTimeout(150); await fo.click('.modal .btn.primary'); await fo.waitForTimeout(200);
+    await fo.evaluate(() => App.showView('learn')); await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
+    check('Learn: an exercise passed with Check my work is marked done in the list and the count', await fo.evaluate(() => /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok')));
+    await fo.click('[data-examples]'); await fo.waitForTimeout(150);
+    check('Examples menu: grouped by category (practice boards, motor control, process, hardware)', await fo.evaluate(() => { const h = [...document.querySelectorAll('.ctx-menu .ctx-head, .ctx-menu .head, .ctx-menu h6')].map(x => x.textContent); return ['Practice boards', 'Motor control', 'Process', 'Hardware'].every(c => h.some(t => t.includes(c))); }));
+    await fo.keyboard.press('Escape');
+    await fo.close();
+  }
   check('app loads offline from cache', await web.evaluate(() => !!(window.App && App.project && document.querySelector('.rung'))));
   await ctx.setOffline(false);
   server.close();

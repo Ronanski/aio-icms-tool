@@ -355,6 +355,80 @@
   // colour the diagram last gave each of its wires (this session): a wire whose colour differs was recoloured by the user
   const autoCol = new Map();
   let recolor = false;
+  /* a drawing made in the classic views becomes a free drawing: each current path a column from its supply point down
+     to its return point (a branch: its legs side by side), the power circuit to the right, from L1 L2 L3 points through
+     the main devices to each feeder. Returns whether anything was converted. */
+  SC.toFree = function () {
+    const s = sch(); if (!s) return false;
+    checks();
+    const P = s.power || { main: [], feeders: [] };
+    const hasRungs = (s.rungs || []).some(r => r.elems && r.elems.length), hasPow = (P.main || []).length || (P.feeders || []).some(f => f.elems && f.elems.length);
+    if (!hasRungs && !hasPow) return false;
+    const K = FreeDraw.KINDS, F = s.free || (s.free = FreeDraw.clean(null));
+    const ids = k => K[k].terms.map(t => t.id).sort().join(',');
+    const kindOf = (type, want, name) => (K[name] && K[name].type === type && ids(name) === want ? name : Object.keys(K).find(f => K[f].type === type && ids(f) === want));
+    let n = F.seq || 0;
+    const item = (k, tag, x, y) => { const it = { id: 'd' + (++n), k, tag, x, y, r: 0 }; F.items.push(it); return it; };
+    const wire = (a, b) => { if (a && b && a !== b) F.wires.push({ id: 'fw' + (++n), a, b }); };
+    let x0 = F.items.length ? Math.max(...F.items.map(i => i.x)) + 200 : 100;
+    const dc = controlVoltage() === '24VDC', topK = dc ? 'pP' : 'pL1', botK = dc ? 'pM' : 'pN', topTag = dc ? 'XP+' : 'XL1', botTag = dc ? 'XP-' : 'XN';
+    // a series of elements from (x, y) down; cur: the terminals the next element is wired from; returns { cur, cols, y }
+    const place = (arr, x, y, cur) => {
+      let cols = 1;
+      for (const e of arr) {
+        if (e.k === 'br') {
+          let lx = x, ly = y, outs = [];
+          for (const leg of e.legs) { if (!leg.length) continue; const r = place(leg, lx, y, cur); outs = outs.concat(r.cur); lx += r.cols * 110; ly = Math.max(ly, r.y); }
+          cols = Math.max(cols, (lx - x) / 110); cur = outs; y = ly; continue;
+        }
+        const S = SK[e.k]; if (!S) continue;
+        const p2 = S.type === 'relay' && !S.out && e.p === 2, a = p2 ? S.a2 : S.a, b = p2 ? S.b2 : S.b;
+        const k = kindOf(S.type, [a, b].sort().join(','), e.k); if (!k) continue;
+        const it = item(k, e.tag, x, y);
+        cur.forEach(c => wire(c, it.id + ':' + a));
+        cur = [it.id + ':' + b]; y += 120;
+      }
+      return { cur, cols, y };
+    };
+    for (const r of s.rungs || []) {
+      if (!r.elems || !r.elems.length) continue;
+      const top = item(topK, topTag, x0, 40), res = place(r.elems, x0, 160, [top.id + ':J']), bot = item(botK, botTag, x0, res.y);
+      res.cur.forEach(c => wire(c, bot.id + ':J'));
+      x0 += res.cols * 110 + 50;
+    }
+    if (hasPow) {
+      const pole = (from, to) => from.forEach((f, i) => wire(f, to[i]));
+      const src = item('p3', P.src || 'XL', x0 + 20, 40), pe = item('pPE', 'XPE', x0 + 80, 40);
+      let cur = ['L1', 'L2', 'L3'].map(t => src.id + ':' + t), y = 180;
+      const dev = (e, x) => {
+        const Q = PK[e.k]; const k = Q && kindOf(Q.type, ids(e.k), e.k); if (!k) return null;
+        const it = item(k, e.tag, x, y); return { it, Q };
+      };
+      for (const e of P.main || []) { const d = dev(e, x0 + 20); if (!d) continue; pole(cur, d.Q.ins.map(t => d.it.id + ':' + t)); cur = d.Q.outs.map(t => d.it.id + ':' + t); y += 140; }
+      const bus = cur, y0 = y;
+      (P.feeders || []).forEach((f, fi) => {
+        let at = bus; y = y0; const fx = x0 + 20 + fi * 200;
+        for (const e of f.elems || []) {
+          const d = dev(e, fx); if (!d) continue;
+          pole(at, d.Q.ins.map(t => d.it.id + ':' + t));
+          if (!d.Q.outs) {
+            if (K[d.it.k].terms.some(t => t.id === 'PE')) wire(pe.id + ':J', d.it.id + ':PE');
+            if (d.Q.sd && e.delta && e.star) {
+              const km = kindOf('contactor', ids('km3'), 'km3'), dl = item(km, e.delta, fx + 150, y - 140), st = item(km, e.star, fx + 150, y + 140), m2 = ['W2', 'U2', 'V2'];
+              pole(at, ['1', '3', '5'].map(t => dl.id + ':' + t)); pole(['2', '4', '6'].map(t => dl.id + ':' + t), m2.map(t => d.it.id + ':' + t));
+              pole(m2.map(t => d.it.id + ':' + t), ['1', '3', '5'].map(t => st.id + ':' + t)); wire(st.id + ':2', st.id + ':4'); wire(st.id + ':4', st.id + ':6');
+            }
+            break;
+          }
+          at = d.Q.outs.map(t => d.it.id + ':' + t); y += 140;
+        }
+      });
+    }
+    F.seq = n + 1;
+    s.rungs = []; s.power = cleanPower(null);
+    App.log('system', 'The Electrical Diagram was converted to a free drawing (the IEC and ladder-style views are no longer used)');
+    return true;
+  };
   SC.sync = function () {
     if (!App.project || !sch()) return;
     const s = sch(), C = circ();
@@ -513,8 +587,11 @@
   let PE_ = 92;
   const pxs = lx => [lx + 50, lx + 50 + PP, lx + 50 + PP * 2];
   const DV = { A: VE, C: VL, E: VEMPTY, P: VB };
-  let style = 'iec';
-  try { const v = localStorage.getItem('plc-trainer.schStyle'); style = v === 'nema' || v === 'free' ? v : 'iec'; } catch (e) { /* private mode */ }
+  // free draw is the Electrical Diagram; the classic IEC / ladder-style views only behind a developer switch
+  const classic = (() => { try { return localStorage.getItem('plc-trainer.classicViews') === '1'; } catch (e) { return false; } })();
+  SC.freeOnly = () => !classic;
+  let style = 'free';
+  try { const v = localStorage.getItem('plc-trainer.schStyle'); style = !classic ? 'free' : v === 'nema' || v === 'free' ? v : 'iec'; } catch (e) { /* private mode */ }
   const vw = (x, y1, y2, live, cls = '') => (y2 > y1 ? `<line class="w${live ? ' on' : ''}${cls}" x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>` : '');
   function termIds(e) { const K = SK[e.k], p2 = K.type === 'relay' && !K.out && e.p === 2; return [p2 ? K.a2 : K.a, p2 ? K.b2 : K.b]; }
   const MARK = { pbno: 'push', pbnc: 'push', sel: 'turn', estop: 'mush', lsno: 'roll', lsnc: 'roll', ktno: 'delay', ktnc: 'delay', olnc: 'therm', olno: 'therm',
@@ -762,7 +839,7 @@
       <div class="lad-toolbar sch-toolbar">
         <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select"><span class="ic">✎ </span>Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols"><span class="ic">☝ </span>Operate</button></div>
           <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit"><span class="ic">⇵ </span>IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung"><span class="ic">⇄ </span>Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal"><span class="ic">✎ </span>Free draw</button></div></div>
-        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦<span class="tl"> Library</span></button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶<span class="tl"> Play</span></button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎<span class="tl"> Values</span></button><button class="tbtn${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨<span class="tl"> Colours</span></button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳<span class="tl"> Rotate</span></button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉<span class="tl"> Duplicate</span></button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑<span class="tl"> Delete</span></button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶<span class="tl"> Undo</span></button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷<span class="tl"> Redo</span></button><button class="tbtn mobile-only" data-fdact="props" title="Properties of the selected symbol, problems and tips">⚙<span class="tl"> Props</span></button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="more" title="New, Open, Capture, Save, Save As, Settings" aria-label="More">⋯</button></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦<span class="tl"> Library</span></button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶<span class="tl"> Play</span></button><button class="tbtn in-more" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎<span class="tl"> Values</span></button><button class="tbtn in-more${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨<span class="tl"> Colours</span></button><button class="tbtn in-more" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn in-more" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳<span class="tl"> Rotate</span></button><button class="tbtn in-more" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉<span class="tl"> Duplicate</span></button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑<span class="tl"> Delete</span></button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶<span class="tl"> Undo</span></button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷<span class="tl"> Redo</span></button><button class="tbtn mobile-only" data-fdact="props" title="Properties of the selected symbol, problems and tips">⚙<span class="tl"> Props</span></button><button class="tbtn in-more" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button><button class="tbtn" data-fdact="more" title="New, Open, Capture, Save, Save As, Settings" aria-label="More">⋯</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -867,6 +944,8 @@
   };
   function setStyleUi() {
     if (!root) return;
+    if (!classic && style !== 'free') style = 'free';
+    root.classList.toggle('free-only', !classic);
     root.querySelectorAll('[data-sstyle]').forEach(x => x.classList.toggle('on', x.dataset.sstyle === style));
     root.querySelector('.pw-group').hidden = style !== 'iec';
     const po = root.querySelector('.pw-opt'); if (po) po.hidden = style !== 'iec';
