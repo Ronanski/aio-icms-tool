@@ -29,8 +29,43 @@
     ktcoil: { n: 'Timer coil (on-delay)', g: 'Loads', type: 'timer', a: 'A1', b: 'A2', sym: 'tcoil', pre: 'KT', out: true },
     lamp: { n: 'Pilot lamp', g: 'Loads', type: 'lamp', a: 'X1', b: 'X2', sym: 'lamp', pre: 'H', out: true },
     horn: { n: 'Buzzer', g: 'Loads', type: 'buzzer', a: 'X1', b: 'X2', sym: 'horn', pre: 'HA', out: true },
+    /* more symbols (picked from the "More…" list, not a toolbar button each): the same devices as in the free drawing */
+    esno: { n: 'Emergency stop N.O. 13-14', g: 'Inputs', type: 'estop', a: '13', b: '14', sym: 'no', part: 'btn', pre: 'S', more: true },
+    pbcono: { n: 'Push button NO+NC — N.O. 13-14', g: 'Inputs', type: 'pb_co', a: '13', b: '14', sym: 'no', part: 'btn', mom: true, pre: 'S', more: true },
+    pbconc: { n: 'Push button NO+NC — N.C. 21-22', g: 'Inputs', type: 'pb_co', a: '21', b: '22', sym: 'nc', part: 'btn', mom: true, pre: 'S', more: true },
+    selcono: { n: 'Selector NO+NC — N.O. 13-14', g: 'Inputs', type: 'sel_co', a: '13', b: '14', sym: 'no', part: 'knob', pre: 'S', more: true },
+    selconc: { n: 'Selector NO+NC — N.C. 21-22', g: 'Inputs', type: 'sel_co', a: '21', b: '22', sym: 'nc', part: 'knob', pre: 'S', more: true },
+    kfno: { n: 'Off-delay contact N.O.', g: 'Contacts', type: 'timer_off', a: '15', b: '18', sym: 'tno', pre: 'KT', more: true },
+    kfnc: { n: 'Off-delay contact N.C.', g: 'Contacts', type: 'timer_off', a: '15', b: '16', sym: 'tnc', pre: 'KT', more: true },
+    kdno: { n: 'On/off-delay contact N.O.', g: 'Contacts', type: 'timer_onoff', a: '15', b: '18', sym: 'tno', pre: 'KT', more: true },
+    kdnc: { n: 'On/off-delay contact N.C.', g: 'Contacts', type: 'timer_onoff', a: '15', b: '16', sym: 'tnc', pre: 'KT', more: true },
+    flno: { n: 'Flasher contact N.O.', g: 'Contacts', type: 'flasher', a: '15', b: '18', sym: 'tno', pre: 'KT', more: true },
+    flnc: { n: 'Flasher contact N.C.', g: 'Contacts', type: 'flasher', a: '15', b: '16', sym: 'tnc', pre: 'KT', more: true },
+    kbonno: { n: 'On-delay block N.O. 67-68 (contactor)', g: 'Contacts', type: 'contactor_ton', a: '67', b: '68', sym: 'tno', pre: 'KM', more: true },
+    kbonnc: { n: 'On-delay block N.C. 55-56 (contactor)', g: 'Contacts', type: 'contactor_ton', a: '55', b: '56', sym: 'tnc', pre: 'KM', more: true },
+    kbofno: { n: 'Off-delay block N.O. 67-68 (contactor)', g: 'Contacts', type: 'contactor_tof', a: '67', b: '68', sym: 'tno', pre: 'KM', more: true },
+    kbofnc: { n: 'Off-delay block N.C. 55-56 (contactor)', g: 'Contacts', type: 'contactor_tof', a: '55', b: '56', sym: 'tnc', pre: 'KM', more: true },
+    ltno: { n: 'Latching relay contact N.O. 11-14', g: 'Contacts', type: 'latch', a: '11', b: '14', sym: 'no', pre: 'KA', more: true },
+    ltnc: { n: 'Latching relay contact N.C. 11-12', g: 'Contacts', type: 'latch', a: '11', b: '12', sym: 'nc', pre: 'KA', more: true },
+    kpno: { n: 'Phase failure relay N.O. 11-14', g: 'Contacts', type: 'phasemon', a: '11', b: '14', sym: 'no', pre: 'KF', more: true },
+    kpnc: { n: 'Phase failure relay N.C. 11-12', g: 'Contacts', type: 'phasemon', a: '11', b: '12', sym: 'nc', pre: 'KF', more: true },
+    kfcoil: { n: 'Off-delay timer coil', g: 'Loads', type: 'timer_off', a: 'A1', b: 'A2', sym: 'tcoil', tv: 'off', pre: 'KT', out: true, more: true },
+    kdcoil: { n: 'On/off-delay timer coil', g: 'Loads', type: 'timer_onoff', a: 'A1', b: 'A2', sym: 'tcoil', tv: 'both', pre: 'KT', out: true, more: true },
+    flcoil: { n: 'Flasher timer coil', g: 'Loads', type: 'flasher', a: 'A1', b: 'A2', sym: 'tcoil', tv: 'fl', pre: 'KT', out: true, more: true },
+    ltset: { n: 'Latching relay SET coil A1-A2', g: 'Loads', type: 'latch', a: 'A1', b: 'A2', sym: 'coil', pre: 'KA', out: true, more: true },
+    ltrst: { n: 'Latching relay RESET coil B1-B2', g: 'Loads', type: 'latch', a: 'B1', b: 'B2', sym: 'coil', pre: 'KA', out: true, more: true },
+    valve: { n: 'Solenoid valve', g: 'Loads', type: 'valve', a: 'A1', b: 'A2', sym: 'coil', pre: 'Y', out: true, more: true },
+    lampfl: { n: 'Flashing pilot lamp', g: 'Loads', type: 'lamp_fl', a: 'X1', b: 'X2', sym: 'lamp', pre: 'H', out: true, more: true },
+    bell: { n: 'Bell', g: 'Loads', type: 'bell', a: 'X1', b: 'X2', sym: 'horn', pre: 'HA', out: true, more: true },
+    siren: { n: 'Siren', g: 'Loads', type: 'siren', a: 'X1', b: 'X2', sym: 'horn', pre: 'HA', out: true, more: true },
+    // PLC: the compact PLC placed in the Wiring (the diagram never adds one). A relay output is a contact from VAC0/VAC1,
+    // an input a load from I0… to COM (wire COM's rail, 0 V, as the return)
+    ...Object.fromEntries(Array.from({ length: 8 }, (_, n) => ['plcq' + n, { n: `PLC relay output O${n}`, g: 'PLC', type: 'plc', a: n < 4 ? 'VAC0' : 'VAC1', b: 'O' + n, sym: 'no', pre: 'PLC', plc: true, more: true }])),
+    ...Object.fromEntries(Array.from({ length: 12 }, (_, n) => ['plci' + n, { n: `PLC input I${n}`, g: 'PLC', type: 'plc', a: 'I' + n, b: 'COM', sym: 'plcin', pre: 'PLC', plc: true, out: true, more: true, io: n }])),
   };
   SC.KINDS = SK;
+  // devices whose N.O. and N.C. are one changeover (one common terminal): only one of them in the current paths
+  const CO_TYPES = ['timer', 'timer_off', 'timer_onoff', 'flasher', 'latch', 'phasemon'];
   /* power circuit (IEC view): 3-pole devices in a feeder, from the 3-phase supply down to the motor */
   const PK = {
     qf3: { n: 'Circuit breaker 3-pole', type: 'mccb3', ins: ['1', '3', '5'], outs: ['2', '4', '6'], part: 'h', pre: 'Q' },
@@ -136,8 +171,11 @@
     const errs = new Map(), use = new Map();   // element -> message ; tag -> {kinds}
     const walk = arr => arr.forEach(e => {
       if (e.k === 'br') { e.legs.forEach(walk); return; }
-      const K = SK[e.k], m = typeErr(e.tag, K.type);
+      const K = SK[e.k];
+      if (K.plc && !devOf(e.tag)) { errs.set(e, `${e.tag}: there is no PLC with this tag in the Wiring — add it there first (the diagram does not add controllers)`); return; }
+      const d = devOf(e.tag), m = typeErr(e.tag, K.type) || (d && Circuit.fitErr(d, K.type, [K.a, K.b, ...(K.a2 ? [K.a2, K.b2] : [])], K.sym));
       if (m) { errs.set(e, m); return; }
+      if (K.io != null && controlVoltage() !== '24VDC') { errs.set(e, `${e.tag} I${K.io}: PLC inputs are 24 V DC — use the +24 V / 0 V rails (a PSU) for this current path`); return; }
       const u = use.get(e.tag) || { list: [] }; u.list.push(e); use.set(e.tag, u);
     });
     sch().rungs.forEach(r => walk(r.elems));
@@ -148,7 +186,7 @@
         const K = SK[e.k];
         if (K.type === 'relay' && !K.out) { e.p = ++poles; if (poles > 2) { errs.set(e, `${tag} has only 2 contacts — add another relay`); } continue; }
         const key = K.a + '-' + K.b;
-        const shared = (K.type === 'timer' && !K.out) || ['pb_no', 'pb_nc', 'sel2', 'estop'].includes(K.type);
+        const shared = (CO_TYPES.includes(K.type) && !K.out) || ['pb_no', 'pb_nc', 'sel2'].includes(K.type);
         const sk = shared && !K.out ? 'contact' : key;
         if (seen.has(sk)) errs.set(e, K.type === 'contactor' ? `${tag}: this contact is already used in another place (a contactor has one N.O. and one N.C. aux contact — use a relay KA for more)` : `${tag}: this contact is already used in another place`);
         seen.set(sk, e);
@@ -175,7 +213,7 @@
       // the tag of a part a newer version made (kept in the project): no new device may take it
       if (!d && circ().reserved && circ().reserved.has(tag)) return SC.reservedMsg(tag);
       if (!t) { want.set(tag, type); return null; }
-      return t === type ? null : `${tag} is a ${DEFS[t].name} ${d ? 'in the Wiring' : 'elsewhere in the diagram'}, not a ${what || DEFS[type].name}`;
+      return Circuit.sameKind(t, type) ? null : `${tag} is a ${DEFS[t].name} ${d ? 'in the Wiring' : 'elsewhere in the diagram'}, not a ${what || DEFS[type].name}`;
     };
     // dry: only test; else take the terminals for view v
     const take = (tag, ids, v, dry) => {
@@ -244,7 +282,7 @@
   function checkPower(typeErr, take) {
     const errs = new Map(), used = new Map(), P = pw();
     const one = (e, last) => {
-      const K = PK[e.k], m = typeErr(e.tag, K.type);
+      const K = PK[e.k], dv = devOf(e.tag), m = typeErr(e.tag, K.type) || (dv && Circuit.fitErr(dv, K.type, [...K.ins, ...(K.outs || [])], K.type === 'contactor' ? 'km' : ''));
       if (m) { errs.set(e, m); return; }
       if (used.has(e.tag)) { errs.set(e, `${e.tag}: its main contacts are already used in the power circuit`); return; }
       used.set(e.tag, e);
@@ -394,6 +432,8 @@
     const K = SK[e.k], c = devOf(e.tag), api = App.api;
     if (!c) return { missing: true };
     if (SC.errs && SC.errs.has(e)) return { c, closed: false, on: false, inLive: false, outLive: false };   // not wired
+    if (K.io != null) { const [a, b] = terms(e); const live = k => { if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
+      return { c, closed: false, on: App.ctx.plcId === c.id && !!((App.ctx.plcInRaw >> K.io) & 1), inLive: live(a), outLive: live(b) }; }
     const [a, b] = (() => { try { return terms(e); } catch (err) { return [null, null]; } })();
     const live = k => { if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
     let closed = false;
@@ -417,6 +457,7 @@
       case 'tcoil': o.push(`<rect x="${cx - 14}" y="${y - 12}" width="28" height="24" rx="2"/><path class="thin" d="M${cx - 8} ${y - 4} H${cx + 8} M${cx} ${y - 4} V${y + 6}"/>`); break;
       case 'lamp': o.push(`<circle cx="${cx}" cy="${y}" r="13"/><path class="thin" d="M${cx - 9} ${y - 9} L${cx + 9} ${y + 9} M${cx + 9} ${y - 9} L${cx - 9} ${y + 9}"/>`); break;
       case 'horn': o.push(`<path d="M${cx - 12} ${y - 8} H${cx - 4} L${cx + 10} ${y - 16} V${y + 16} L${cx - 4} ${y + 8} H${cx - 12} Z"/>`); break;
+      case 'plcin': o.push(`<rect x="${cx - 16}" y="${y - 10}" width="32" height="20"/><path class="thin" d="M${cx - 9} ${y} H${cx + 7} M${cx + 3} ${y - 4} L${cx + 7} ${y} L${cx + 3} ${y + 4}"/>`); break;
     }
     o.push('</g>');
     return o.join('');
@@ -466,7 +507,9 @@
   try { const v = localStorage.getItem('plc-trainer.schStyle'); style = v === 'nema' || v === 'free' ? v : 'iec'; } catch (e) { /* private mode */ }
   const vw = (x, y1, y2, live, cls = '') => (y2 > y1 ? `<line class="w${live ? ' on' : ''}${cls}" x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>` : '');
   function termIds(e) { const K = SK[e.k], p2 = K.type === 'relay' && !K.out && e.p === 2; return [p2 ? K.a2 : K.a, p2 ? K.b2 : K.b]; }
-  const MARK = { pbno: 'push', pbnc: 'push', sel: 'turn', estop: 'mush', lsno: 'roll', lsnc: 'roll', ktno: 'delay', ktnc: 'delay', olnc: 'therm', olno: 'therm' };
+  const MARK = { pbno: 'push', pbnc: 'push', sel: 'turn', estop: 'mush', lsno: 'roll', lsnc: 'roll', ktno: 'delay', ktnc: 'delay', olnc: 'therm', olno: 'therm',
+    esno: 'mush', pbcono: 'push', pbconc: 'push', selcono: 'turn', selconc: 'turn', kfno: 'delayoff', kfnc: 'delayoff', kdno: 'delayboth', kdnc: 'delayboth', flno: 'flash', flnc: 'flash',
+    kbonno: 'delay', kbonnc: 'delay', kbofno: 'delayoff', kbofnc: 'delayoff' };
   /* IEC 60617-style symbols drawn upright, centred on (x, y); the path enters at y-14 and leaves at y+14 */
   function symV(e, x, y, st) {
     const K = SK[e.k], t = y - 14, b = y + 14, o = [];
@@ -485,15 +528,21 @@
           roll: `<path class="thin" d="M${ax} ${y} l-7 -5 v10 z"/>`,
           therm: `<path class="thin" d="M${ax} ${y - 6} h-5 v6 h5 v6"/>`,
           delay: `<path class="thin" d="M${ax} ${y - 7} a7 7 0 0 0 0 14"/>`,
+          delayoff: `<path class="thin" d="M${ax - 7} ${y - 7} a7 7 0 0 1 0 14"/>`,
+          delayboth: `<path class="thin" d="M${ax} ${y - 7} a7 7 0 0 0 0 14 M${ax - 9} ${y - 7} a7 7 0 0 1 0 14"/>`,
+          flash: `<path class="thin" d="M${ax} ${y + 4} h-3 v-8 h-4 v8 h-4 v-8 h-3"/>`,
         }[m]);
       }
     } else if (K.sym === 'coil' || K.sym === 'tcoil') {
       o.push(`<path d="M${x} ${t} V${y - 9} M${x} ${y + 9} V${b}"/><rect x="${x - 14}" y="${y - 9}" width="28" height="18"/>`);
-      if (K.sym === 'tcoil') o.push(`<rect x="${x - 26}" y="${y - 9}" width="12" height="18"/><path class="thin" d="M${x - 26} ${y - 9} L${x - 14} ${y + 9} M${x - 14} ${y - 9} L${x - 26} ${y + 9}"/>`);
+      if (K.sym === 'tcoil' && K.tv === 'fl') o.push(`<rect x="${x - 26}" y="${y - 9}" width="12" height="18"/><path class="thin" d="M${x - 25} ${y + 4} h2 v-8 h4 v8 h2 v-8"/>`);
+      else if (K.sym === 'tcoil') o.push(`${K.tv === 'both' ? `<rect x="${x - 26}" y="${y - 9}" width="6" height="18" class="fill"/>` : ''}<rect x="${x - 26}" y="${y - 9}" width="12" height="18"${K.tv === 'off' ? ' class="fill"' : ''}/><path class="thin" d="M${x - 26} ${y - 9} L${x - 14} ${y + 9} M${x - 14} ${y - 9} L${x - 26} ${y + 9}"/>`);
     } else if (K.sym === 'lamp') {
       o.push(`<path d="M${x} ${t} V${y - 11} M${x} ${y + 11} V${b}"/><circle cx="${x}" cy="${y}" r="11"/><path class="thin" d="M${x - 8} ${y - 8} L${x + 8} ${y + 8} M${x + 8} ${y - 8} L${x - 8} ${y + 8}"/>`);
     } else if (K.sym === 'horn') {
       o.push(`<path d="M${x} ${t} V${y - 4} M${x} ${y + 8} V${b}"/><path d="M${x - 12} ${y + 8} H${x + 12} M${x - 9} ${y + 8} a9 11 0 0 1 18 0"/>`);
+    } else if (K.sym === 'plcin') {
+      o.push(`<path d="M${x} ${t} V${y - 10} M${x} ${y + 10} V${b}"/><rect x="${x - 16}" y="${y - 10}" width="32" height="20"/><path class="thin" d="M${x - 9} ${y} H${x + 7} M${x + 3} ${y - 4} L${x + 7} ${y} L${x + 3} ${y + 4}"/>`);
     }
     o.push('</g>');
     return o.join('');
@@ -673,7 +722,7 @@
       <div class="sch-add"><button class="tbtn" data-sact2="rung">＋ Add a current path</button> <button class="tbtn" data-sact2="feeder">＋ Add a motor feeder</button></div>`;
   }
   const railLive = () => { const api = App.api, k = sch().L; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
-  const kindShort = e => ({ no: 'N.O.', nc: 'N.C.', tno: 'N.O. delay', tnc: 'N.C. delay', olnc: 'OL N.C.', olno: 'OL N.O.', coil: 'coil', tcoil: 'timer coil', lamp: 'lamp', horn: 'buzzer' })[SK[e.k].sym];
+  const kindShort = e => (SK[e.k].plc ? (SK[e.k].io != null ? 'I' + SK[e.k].io : SK[e.k].b) : ({ no: 'N.O.', nc: 'N.C.', tno: 'N.O. delay', tnc: 'N.C. delay', olnc: 'OL N.C.', olno: 'OL N.O.', coil: 'coil', tcoil: 'timer coil', lamp: 'lamp', horn: 'buzzer', plcin: 'input' })[SK[e.k].sym]);
   /* elements are found again by their path inside the rung list: "r.i" or "r.i.leg.i…" */
   function pathOf(target) {
     let found = null;
@@ -694,12 +743,13 @@
     root = el;
     FreeDraw.init({ sch, circ, devOf, snap: () => snap(), changed: () => changed(), mode: () => mode, side: () => renderSide(), checks, refs: SC.refs });
     const groups = {};
-    Object.entries(SK).forEach(([k, K]) => { (groups[K.g] = groups[K.g] || []).push(k); });
+    Object.entries(SK).forEach(([k, K]) => { if (!K.more) (groups[K.g] = groups[K.g] || []).push(k); });
+    const more = {}; Object.entries(SK).forEach(([k, K]) => { if (K.more) (more[K.g] = more[K.g] || []).push(k); });
     el.innerHTML = `
       <div class="lad-toolbar sch-toolbar">
-        <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select">✎ Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols">☝ Operate</button></div>
-          <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit">⇵ IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung">⇄ Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal">✎ Free draw</button></div></div>
-        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦ Library</button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶ Play</button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎ Values</button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳ Rotate</button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉ Duplicate</button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑 Delete</button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶ Undo</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷ Redo</button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button></div>
+        <div class="tb-group keep"><div class="seg"><button data-smode="edit" class="on" title="Build the circuit: click to select"><span class="ic">✎ </span>Edit</button><button data-smode="run" title="Operate push buttons, selectors and switches by clicking their symbols"><span class="ic">☝ </span>Operate</button></div>
+          <div class="seg"><button data-sstyle="iec" title="IEC: L on top, N at the bottom, one column per current path, with the power circuit"><span class="ic">⇵ </span>IEC</button><button data-sstyle="nema" title="Ladder style: L on the left, N on the right, one row per rung"><span class="ic">⇄ </span>Ladder</button><button data-sstyle="free" title="Free draw: place symbols anywhere, rotate them and wire terminal to terminal"><span class="ic">✎ </span>Free draw</button></div></div>
+        <div class="tb-group free-group"><button class="tbtn" data-fdact="lib" title="Show or hide the symbol library">▦<span class="tl"> Library</span></button><button class="tbtn" data-fdact="play" title="Play: operate the drawing (press buttons, switch breakers). Click again to edit.">▶<span class="tl"> Play</span></button><button class="tbtn" data-fdact="values" title="Show the voltage on each load, open/closed on each contact">✎<span class="tl"> Values</span></button><button class="tbtn${FreeDraw.colors ? ' on' : ''}" data-fdact="colors" title="Colour each wire by its conductor: L1 red, L2 yellow, L3 blue, N grey, PE green, +24 V red, 0 V blue">🎨<span class="tl"> Colours</span></button><button class="tbtn" data-fdact="back" title="Send the selected symbol to the back">Back</button><button class="tbtn" data-fdact="front" title="Bring the selected symbol to the front">Front</button><button class="tbtn" data-fdact="rot" title="Rotate the selected symbol (R)">⟳<span class="tl"> Rotate</span></button><button class="tbtn" data-fdact="copy" title="Duplicate the selected symbol (D)">⧉<span class="tl"> Duplicate</span></button><button class="tbtn" data-fdact="del" title="Delete (Del)">🗑<span class="tl"> Delete</span></button><button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶<span class="tl"> Undo</span></button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷<span class="tl"> Redo</span></button><button class="tbtn mobile-only" data-fdact="props" title="Properties of the selected symbol, problems and tips">⚙<span class="tl"> Props</span></button><button class="tbtn" data-fdact="type" title="Change the type of a switch (push, selector, key, limit…)">Type ⇄</button></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
           <button class="tbtn mobile-only" data-sact="side" title="Supply and messages">⚙ Info</button>
           <button class="tbtn" data-sact="rung" title="New rung">＋ Rung</button>
@@ -708,18 +758,29 @@
           <button class="tbtn" data-sact="del" title="Delete selection (Del)">🗑</button>
           <button class="tbtn" data-sact="undo" title="Undo (Ctrl+Z)">↶</button><button class="tbtn" data-sact="redo" title="Redo (Ctrl+Y)">↷</button>
         </div>
-        ${Object.entries(groups).map(([g, ks]) => `<div class="tb-group"><span class="tb-lbl">${g}</span>${ks.map(k => `<button class="tbtn" data-skind="${k}" title="${esc(SK[k].n)}">${esc(btnLabel(k))}</button>`).join('')}</div>`).join('')}
+        ${Object.entries(groups).map(([g, ks]) => `<div class="tb-group kinds"><span class="tb-lbl">${g}</span>${ks.map(k => `<button class="tbtn" data-skind="${k}" title="${esc(SK[k].n)}">${esc(btnLabel(k))}</button>`).join('')}</div>`).join('')}
+        <div class="tb-group"><select class="tbtn sch-more" data-smore title="More symbols for the current paths: other timers, delay blocks, latching relay, phase relay, loads, PLC inputs and outputs"><option value="">More symbols…</option><optgroup label="Basic" class="mob-opt">${Object.values(groups).flat().map(k => `<option value="${k}">${esc(SK[k].n)}</option>`).join('')}</optgroup>${Object.entries(more).map(([g, ks]) => `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}">${esc(SK[k].n)}</option>`).join('')}</optgroup>`).join('')}<optgroup label="Power circuit" class="mob-opt pw-opt"><option value="p:feeder">New motor feeder</option>${Object.keys(PK).map(k => `<option value="p:${k}">${esc(PK[k].n)}</option>`).join('')}</optgroup></select></div>
         <div class="tb-group pw-group"><span class="tb-lbl">Power</span><button class="tbtn" data-sact="feeder" title="New motor feeder">＋ Feeder</button>${Object.keys(PK).map(k => `<button class="tbtn" data-pkind="${k}" title="${esc(PK[k].n)}">${esc({ qf3: 'QF 3P', qm3: 'QM 3P', km3: 'KM 3P', ol3: 'OL 3P', m3: 'M 3~', m6: 'M Y-Δ' }[k])}</button>`).join('')}</div>
       </div>
       <div class="lad-main"><div class="sch-body lad-rungs" tabindex="0"></div><aside class="lad-side sch-side"></aside></div>`;
     body = el.querySelector('.sch-body'); side = el.querySelector('.sch-side');
     setStyleUi();
     UI.drawer(el.querySelector('[data-sact="side"]'), side);
+    // a power symbol in the list does what its toolbar button does
+    const mo = el.querySelector('[data-smore]');
+    if (mo) {
+      let keyed = false;
+      const pick = () => { const k = mo.value; mo.value = ''; keyed = false; if (!k) return; if (k.startsWith('p:')) { const b = el.querySelector(k === 'p:feeder' ? '[data-sact="feeder"]' : `[data-pkind="${k.slice(2)}"]`); if (b) b.click(); } else SC.insert(k); };
+      mo.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); pick(); } else if (/^Arrow|^Page|^Home|^End/.test(ev.key)) keyed = true; });
+      mo.addEventListener('pointerdown', () => { keyed = false; });
+      mo.onchange = () => { if (!keyed) pick(); };
+      mo.addEventListener('blur', () => { keyed = false; });
+    }
     el.querySelector('.sch-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.smode) {
         mode = b.dataset.smode; el.querySelectorAll('[data-smode]').forEach(x => x.classList.toggle('on', x === b)); body.classList.toggle('operate', mode === 'run');
-        const pl = el.querySelector('[data-fdact="play"]'); pl.classList.toggle('on', mode === 'run'); pl.textContent = mode === 'run' ? '■ Stop' : '▶ Play';
+        const pl = el.querySelector('[data-fdact="play"]'); pl.classList.toggle('on', mode === 'run'); pl.innerHTML = mode === 'run' ? '■<span class="tl"> Stop</span>' : '▶<span class="tl"> Play</span>';
         return;
       }
       if (b.dataset.sstyle) { style = b.dataset.sstyle; try { localStorage.setItem('plc-trainer.schStyle', style); } catch (err) { /* private mode */ } setStyleUi(); SC.render(); return; }
@@ -728,6 +789,8 @@
         if (a === 'lib') b.classList.toggle('on', FreeDraw.toggleLib());
         else if (a === 'play') el.querySelector(`[data-smode="${mode === 'run' ? 'edit' : 'run'}"]`).click();
         else if (a === 'values') { FreeDraw.values = !FreeDraw.values; b.classList.toggle('on', FreeDraw.values); renderRungs(); }
+        else if (a === 'props') el.querySelector('[data-sact="side"]').click();
+        else if (a === 'colors') { FreeDraw.setColors(!FreeDraw.colors); b.classList.toggle('on', FreeDraw.colors); }
         else ({ rot: FreeDraw.rotate, type: FreeDraw.cycleType, copy: FreeDraw.copy, del: FreeDraw.del, front: () => FreeDraw.order(true), back: () => FreeDraw.order(false) })[a]();
         return;
       }
@@ -789,6 +852,7 @@
     if (!root) return;
     root.querySelectorAll('[data-sstyle]').forEach(x => x.classList.toggle('on', x.dataset.sstyle === style));
     root.querySelector('.pw-group').hidden = style !== 'iec';
+    const po = root.querySelector('.pw-opt'); if (po) po.hidden = style !== 'iec';
     root.classList.toggle('free-style', style === 'free');
     const lb = root.querySelector('[data-fdact="lib"]'); if (lb) lb.classList.toggle('on', FreeDraw.libOpen());
   }
@@ -968,7 +1032,10 @@
     changed();
   };
   function suggestTag(k) {
-    const K = SK[k], same = circ().comps.filter(c => c.type === K.type || (DEFS[c.type].variant && Object.values(DEFS[c.type].variant.of).includes(K.type))).map(c => c.props.label);
+    const K = SK[k];
+    // a PLC symbol is a point of the PLC placed in the Wiring
+    if (K.plc) { const p = circ().comps.filter(c => c.type === 'plc').map(c => c.props.label); return { def: p[0] || 'PLC', list: p }; }
+    const same = circ().comps.filter(c => Circuit.sameKind(c.type, K.type) || (DEFS[c.type].variant && Object.values(DEFS[c.type].variant.of).includes(K.type))).map(c => c.props.label);
     // a contact or coil of a relay family suggests the last device of that family; inputs and loads a new tag
     if (!K.out && ['contactor', 'relay', 'timer', 'olr'].includes(K.type) && same.length) return { def: same[same.length - 1], list: same };
     if (K.out && ['contactor', 'relay', 'timer'].includes(K.type)) { const used = new Set(); sch().rungs.forEach(r => JSON.stringify(r.elems).replace(/"k":"(\w+coil)","tag":"([^"]+)"/g, (_, a, t) => used.add(t))); const free = same.find(t => !used.has(t)); if (free) return { def: free, list: same }; }
@@ -1036,7 +1103,8 @@
   };
   SC.onKey = function (ev) {
     const c = ev.ctrlKey || ev.metaKey, k = ev.key;
-    if (style === 'free' && !c) { FreeDraw.onKey(ev); return; }
+    // the free drawing takes its own keys and Ctrl+C / Ctrl+V / Ctrl+A; Ctrl+Z / Ctrl+Y stay the diagram's undo / redo
+    if (style === 'free' && (!c || ['c', 'v', 'a'].includes(k.toLowerCase()))) { FreeDraw.onKey(ev); return; }
     if (c && k.toLowerCase() === 'z') { ev.preventDefault(); SC.undo(); }
     else if (c && k.toLowerCase() === 'y') { ev.preventDefault(); SC.redo(); }
     else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); SC.del(); }

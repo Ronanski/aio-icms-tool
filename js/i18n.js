@@ -34,6 +34,7 @@
     'Live voltage': 'Live na boltahe', 'Wire labels': 'Label ng wire', 'Fit': 'Ipagkasya', '⤢ Fit': '⤢ Ipagkasya',
     'Live voltage colors': 'Kulay ng live na boltahe', 'Tips': 'Mga tip', 'Workspace': 'Workspace',
     // electrical diagram
+    'Edit': 'I-edit', 'Operate': 'Paganahin', 'Play': 'Paandarin', 'Stop': 'Itigil', 'Values': 'Mga value', 'Colours': 'Mga kulay', 'Rotate': 'Iikot', 'Undo': 'Ibalik', 'Redo': 'Ulitin', 'Library': 'Library', 'Props': 'Props', 'Free draw': 'Malayang guhit', 'More symbols…': 'Iba pang simbolo…',
     '✎ Edit': '✎ I-edit', '☝ Operate': '☝ Paganahin', '▶ Play': '▶ Paandarin', '■ Stop': '■ Itigil', '✎ Values': '✎ Mga value',
     'Back': 'Likod', 'Front': 'Harap', '⟳ Rotate': '⟳ Iikot', '⧉ Duplicate': '⧉ Doblehin', '🗑 Delete': '🗑 Burahin', '↶ Undo': '↶ Ibalik', '↷ Redo': '↷ Ulitin',
     '▦ Library': '▦ Library', 'How it works': 'Paano ito gumagana', 'Add a current path': 'Magdagdag ng current path', 'Add a motor feeder': 'Magdagdag ng motor feeder',

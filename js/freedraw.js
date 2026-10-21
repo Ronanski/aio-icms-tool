@@ -17,17 +17,32 @@
   });
   const sens = (type, out, n, photo) => ({ type, pre: 'B', look: 'sens', label: out, photo, part: 'tgt', n, terms: [{ id: 'BN', x: 0, y: -30 }, { id: 'BU', x: 0, y: 30 }, { id: 'BK', x: 30, y: 0 }] });
   const row = (ids, y, gap = 20) => ids.map((t, i) => ({ id: t, x: (i - (ids.length - 1) / 2) * gap, y, src: true }));
+  // a changeover contact: common on top, N.C. bottom left, N.O. bottom right
+  const co = (type, c, nc, no, pre, extra) => ({ type, pre, look: 'co', terms: [{ id: c, x: 0, y: -30 }, { id: nc, x: -10, y: 30 }, { id: no, x: 10, y: 30 }], ...extra });
+  // N.C. + N.O. in one symbol (one actuator): N.C. on the left, N.O. on the right
+  const nonc = (type, nc1, nc2, no1, no2, pre, extra) => ({ type, pre, look: 'nonc', terms: [{ id: nc1, x: -10, y: -30 }, { id: nc2, x: -10, y: 30 }, { id: no1, x: 10, y: -30 }, { id: no2, x: 10, y: 30 }], ...extra });
+  // a crossover (reversing) contact: 1-4 and 3-2 at rest, 1-2 and 3-4 operated
+  const xov = (type, extra) => ({ type, pre: 'S', look: 'xover', terms: [{ id: '1', x: -10, y: -30 }, { id: '3', x: 10, y: -30 }, { id: '2', x: -10, y: 30 }, { id: '4', x: 10, y: 30 }], ...extra });
   // a potential point (L1, N, +24 V…): a junction wired to that conductor of the supply in the Wiring
   const pot = (p, n) => ({ n, type: 'jct', pre: 'XP', look: 'pot', pot: p, jct: true, auto: true, terms: [{ id: 'J', x: 0, y: -30 }] });
   // wire pieces: junctions with several ends (all one point); a link arrow joins every arrow with the same tag
   const wire = (n, ends, extra) => ({ n, type: 'jct', pre: 'J', look: 'wire', jct: true, auto: true, terms: ends.map(([x, y], i) => ({ id: 'J' + i, x, y })), ...extra });
+  /* PLC I/O: one symbol per point of the real controller or I/O card in the Wiring, found by its tag (`types`: the devices
+     it may be). The diagram never adds a controller. Only point 0 is in the library; the others are picked in its form. */
+  const plcIO = (base, n, name, types, d, terms, look) => [base + n, { n: name, type: types[0], types, io: { d, n }, pre: 'PLC', look, hide: n > 0, terms }];
+  const PLCLIB = Object.fromEntries([
+    ['plcpw', { n: 'PLC power supply L1 / N', type: 'plc', types: ['plc', 'mpsu'], pre: 'PLC', look: 'plcpw', terms: [{ id: 'L1', x: 0, y: -30 }, { id: 'N', x: 0, y: 30 }] }],
+    ...Array.from({ length: 8 }, (_, n) => plcIO('plcq', n, 'PLC relay output', ['plc', 'mdo8'], 'O', [{ id: n < 4 ? 'VAC0' : 'VAC1', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
+    ...Array.from({ length: 8 }, (_, n) => plcIO('plct', n, 'PLC transistor output 24 VDC', ['mdo8t'], 'O', [{ id: 'VP', x: 0, y: -30 }, { id: 'O' + n, x: 0, y: 30 }], 'no')),
+    ...Array.from({ length: 12 }, (_, n) => plcIO('plci', n, 'PLC input', ['plc', 'mdi8', 'mdi8ac'], 'I', [{ id: 'I' + n, x: 0, y: -30 }, { id: 'COM', x: 0, y: 30 }], 'plcin')),
+  ]);
   const LIB = {
     Sources: {
       // supply terminals line up with the poles of the devices under them (L1 L2 L3 at -20 0 20)
       src3: { n: '3-phase supply', type: 'supply3', pre: 'Q', look: 'src', label: '3~ 400/230V', terms: ['L1', 'L2', 'L3', 'N', 'PE'].map((t, i) => ({ id: t, x: -20 + i * 20, y: 20, src: true })), part: 'sw' },
       src1: { n: '1-phase supply 230V', type: 'supply1', pre: 'Q', look: 'src', label: '1~ 230V', terms: ['L', 'N', 'PE'].map((t, i) => ({ id: t, x: -10 + i * 20, y: 20, src: true })), part: 'sw' },
       psu: { n: 'AC/DC converter 230V~ / 24V= (power supply)', type: 'psu24', pre: 'G', look: 'conv', terms: [...row(['L', 'N'], -30), ...row(['P1', 'M1'], 30)] },
-      gen: { n: 'Generator 3~ (GS)', type: 'gen3', pre: 'G', look: 'gen', label: 'GS\n3~', terms: [...row(['L1', 'L2', 'L3', 'N'], 34), { id: 'PE', x: 44, y: 0, src: true }], part: 'run' },
+      gen: { n: 'Generator 3~ (GS), C1-C2 remote start', type: 'gen3', pre: 'G', look: 'gen', label: 'GS\n3~', terms: [...row(['L1', 'L2', 'L3', 'N'], 34), { id: 'PE', x: 44, y: 0, src: true }, { id: 'C1', x: -10, y: -34 }, { id: 'C2', x: 10, y: -34 }], part: 'run' },
       batt: { n: 'Battery 24 V', type: 'battery', pre: 'GB', look: 'batt', terms: [{ id: 'P', x: 0, y: -30, src: true }, { id: 'M', x: 0, y: 30, src: true }] },
       pL1: pot('L1', 'Point L1'), pL2: pot('L2', 'Point L2'), pL3: pot('L3', 'Point L3'), pN: pot('N', 'Point N'), pPE: pot('PE', 'Point PE'),
       pP: pot('+', 'Point +24 V'), pM: pot('-', 'Point 0 V'),
@@ -47,6 +62,19 @@
       footnc: two('foot', '21', '22', 'nc', 'S', { act: 'foot', part: 'btn', mom: true, n: 'Foot switch N.C.' }),
       sel3h: two('sel3', '13', '14', 'no', 'S', { act: 'turn', part: 'l', n: 'Selector H-O-A — HAND 13-14' }),
       sel3a: two('sel3', '23', '24', 'no', 'S', { act: 'turn', part: 'r', n: 'Selector H-O-A — AUTO 23-24' }),
+      esno: two('estop', '13', '14', 'no', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop N.O. 13-14' }),
+      pbcx: co('pb_cx', '11', '12', '14', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button changeover 11-12 / 11-14' }),
+      selcx: co('sel_cx', '11', '12', '14', 'S', { act: 'turn', part: 'knob', n: 'Selector changeover 11-12 / 11-14' }),
+      selcono: two('sel_co', '13', '14', 'no', 'S', { act: 'turn', part: 'knob', n: 'Selector NO+NC — N.O. 13-14' }),
+      selconc: two('sel_co', '21', '22', 'nc', 'S', { act: 'turn', part: 'knob', n: 'Selector NO+NC — N.C. 21-22' }),
+      pbx: xov('pb_x', { act: 'push', part: 'btn', mom: true, n: 'Push button crossover' }),
+      pbnonc: nonc('pb_co', '21', '22', '13', '14', 'S', { act: 'push', part: 'btn', mom: true, n: 'Push button N.C. + N.O. (21-22 / 13-14)' }),
+      selnonc: nonc('sel_co', '21', '22', '13', '14', 'S', { act: 'turn', part: 'knob', n: 'Selector N.C. + N.O. (21-22 / 13-14)' }),
+      esnonc: nonc('estop', '11', '12', '13', '14', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop N.C. + N.O. (11-12 / 13-14)' }),
+      esco: co('estop_co', '11', '12', '14', 'S', { act: 'mush', part: 'btn', n: 'Emergency stop changeover 11-12 / 11-14' }),
+      lsnonc: nonc('limit', '21', '22', '13', '14', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch N.C. + N.O. (21-22 / 13-14)' }),
+      lsco: co('limit_co', '11', '12', '14', 'SQ', { act: 'roll', part: 'lever', n: 'Limit switch changeover 11-12 / 11-14' }),
+      selx: xov('sel_x', { act: 'turn', part: 'knob', n: 'Selector crossover' }),
     },
     Sensors: {
       pswno: two('pswitch', '13', '14', 'no', 'SP', { act: 'press', part: 'pv', n: 'Pressure switch N.O.' }),
@@ -82,12 +110,39 @@
       kinc: two('impulse', '3', '4', 'nc', 'KI', { n: 'Impulse relay contact N.C.', part: 'lever' }),
       ltno: two('latch', '11', '14', 'no', 'KA', { n: 'Latching relay contact N.O.' }),
       ltnc: two('latch', '11', '12', 'nc', 'KA', { n: 'Latching relay contact N.C.' }),
+      ka1co: co('relay', '11', '12', '14', 'KA', { n: 'Relay changeover contact 1 (11-12 / 11-14)' }),
+      ka2co: co('relay', '21', '22', '24', 'KA', { n: 'Relay changeover contact 2 (21-22 / 21-24)' }),
+      ktco: co('timer', '15', '16', '18', 'KT', { act: 'delay', n: 'On-delay changeover contact (15-16 / 15-18)' }),
+      kfco: co('timer_off', '15', '16', '18', 'KT', { act: 'delayoff', n: 'Off-delay changeover contact (15-16 / 15-18)' }),
+      ltco: co('latch', '11', '12', '14', 'KA', { n: 'Latching relay changeover contact (11-12 / 11-14)' }),
+      kmnonc: nonc('contactor', '21', '22', '13', '14', 'KM', { n: 'Contactor aux N.C. + N.O. (21-22 / 13-14)' }),
+      kanonc: nonc('relay', '11', '12', '21', '24', 'KA', { n: 'Relay N.C. + N.O. (11-12 / 21-24)' }),
+      olco: co('olr', '95', '96', '98', 'F', { act: 'therm', part: 'ol', olco: true, n: 'Overload changeover 95-96-98' }),
+      // the time-delay contact block on a contactor: 55-56 N.C., 67-68 N.O., 55-56-58 changeover (coil and main poles: the contactor's own symbols)
+      ...Object.fromEntries([['kbon', 'contactor_ton', 'delay', 'On'], ['kbof', 'contactor_tof', 'delayoff', 'Off']].flatMap(([p, type, act, w]) => [
+        [p + 'nc', two(type, '55', '56', 'nc', 'KM', { act, n: `${w}-delay block N.C. 55-56` })],
+        [p + 'no', two(type, '67', '68', 'no', 'KM', { act, n: `${w}-delay block N.O. 67-68` })],
+        [p + 'co', co(type, '55', '56', '58', 'KM', { act, n: `${w}-delay block changeover 55-56 / 55-58` })],
+        [p + 'nonc', nonc(type, '55', '56', '67', '68', 'KM', { act, n: `${w}-delay block N.C. + N.O. (55-56 / 67-68)` })],
+      ])),
+      kdno: two('timer_onoff', '15', '18', 'no', 'KT', { act: 'delayboth', n: 'On/off-delay contact N.O.' }),
+      kdnc: two('timer_onoff', '15', '16', 'nc', 'KT', { act: 'delayboth', n: 'On/off-delay contact N.C.' }),
+      kdco: co('timer_onoff', '15', '16', '18', 'KT', { act: 'delayboth', n: 'On/off-delay changeover contact (15-16 / 15-18)' }),
+      flno: two('flasher', '15', '18', 'no', 'KT', { act: 'flash', n: 'Flasher contact N.O.' }),
+      flnc: two('flasher', '15', '16', 'nc', 'KT', { act: 'flash', n: 'Flasher contact N.C.' }),
+      flco: co('flasher', '15', '16', '18', 'KT', { act: 'flash', n: 'Flasher changeover contact (15-16 / 15-18)' }),
+      kpno: two('phasemon', '11', '14', 'no', 'KF', { n: 'Phase failure relay contact N.O.' }),
+      kpnc: two('phasemon', '11', '12', 'nc', 'KF', { n: 'Phase failure relay contact N.C.' }),
+      kpco: co('phasemon', '11', '12', '14', 'KF', { n: 'Phase failure relay changeover contact (11-12 / 11-14)' }),
     },
     Coils: {
       kmcoil: two('contactor', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor coil' }),
       kacoil: two('relay', 'A1', 'A2', 'coil', 'KA', { n: 'Relay coil' }),
       ktcoil: two('timer', 'A1', 'A2', 'tcoil', 'KT', { n: 'On-delay timer coil' }),
       kfcoil: two('timer_off', 'A1', 'A2', 'tcoiloff', 'KT', { n: 'Off-delay timer coil' }),
+      kdcoil: two('timer_onoff', 'A1', 'A2', 'tcoilboth', 'KT', { n: 'On/off-delay timer coil' }),
+      flcoil: two('flasher', 'A1', 'A2', 'tcoilfl', 'KT', { n: 'Flasher timer coil' }),
+      kpmon: poles('phasemon', ['L1', 'L2', 'L3'], [], 'phm', 'KF', { n: 'Phase failure relay (monitors L1 L2 L3)' }),
       km4coil: two('contactor4', 'A1', 'A2', 'coil', 'KM', { n: 'Contactor 4P coil' }),
       kicoil: two('impulse', 'A1', 'A2', 'icoil', 'KI', { n: 'Impulse relay coil' }),
       ltset: two('latch', 'A1', 'A2', 'coil', 'KA', { n: 'Latching relay SET coil', label: 'S' }),
@@ -95,17 +150,22 @@
     },
     Loads: {
       lamp: two('lamp', 'X1', 'X2', 'lamp', 'H', { n: 'Pilot lamp' }),
+      lampfl: two('lamp_fl', 'X1', 'X2', 'lamp', 'H', { n: 'Flashing pilot lamp', label: 'FL' }),
       horn: two('buzzer', 'X1', 'X2', 'horn', 'HA', { n: 'Buzzer / horn' }),
       valve: two('valve', 'A1', 'A2', 'coil', 'Y', { n: 'Solenoid valve' }),
       heater: two('heater', 'X1', 'X2', 'heat', 'EH', { n: 'Heater' }),
       hmeter: two('hourmeter', 'X1', 'X2', 'meter', 'P', { n: 'Hour meter', label: 'h' }),
       vmeter: two('vmeter', 'V1', 'V2', 'meter', 'PV', { n: 'Voltmeter', label: 'V' }),
+      bell: two('bell', 'X1', 'X2', 'bell', 'HA', { n: 'Bell' }),
+      siren: two('siren', 'X1', 'X2', 'siren', 'HA', { n: 'Siren' }),
       fan: { n: 'Fan 1~ 230V', type: 'fan', pre: 'M', look: 'motor', label: 'FAN\n1~', terms: [...row(['L', 'N'], -34), { id: 'PE', x: 40, y: 0 }] },
     },
     Contactors: {
       km3: poles('contactor', ['1', '3', '5'], ['2', '4', '6'], 'km', 'KM', { n: 'Contactor main contacts 3P' }),
       km2: poles('contactor', ['1', '3'], ['2', '4'], 'km', 'KM', { n: 'Contactor main contacts 2P' }),
       km4: poles('contactor4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'km', 'KM', { n: 'Contactor main contacts 4P' }),
+      km1: poles('contactor', ['1'], ['2'], 'km', 'KM', { n: 'Contactor main contact 1P' }),
+      ...Object.fromEntries([1, 2, 3, 4].map(n => ['kmn' + n, poles('contactor_nc', ['1', '3', '5', '7'].slice(0, n), ['2', '4', '6', '8'].slice(0, n), 'kmn', 'KM', { n: `Contactor N.C. main contacts ${n}P` })])),
     },
     Protections: {
       fu1: poles('fuse', ['1'], ['2'], 'fuse', 'FU', { n: 'Fuse 1P', part: 'f' }),
@@ -125,6 +185,20 @@
       rcd: poles('rcd', ['1', '3'], ['2', '4'], 'rcd', 'FI', { n: 'RCD 2P 30 mA', part: 'h' }),
       rcd4: poles('rcd4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'rcd', 'FI', { n: 'RCD 4P 30 mA', part: 'h' }),
       rcbo: poles('rcbo', ['1', '3'], ['2', '4'], 'rcd', 'QF', { n: 'RCBO 2P (RCD + MCB)', part: 'h' }),
+      rcbo4: poles('rcbo4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'rcd', 'QF', { n: 'RCBO 4P (RCD + MCB)', part: 'h' }),
+      qs1: poles('isol1', ['1'], ['2'], 'isol', 'QS', { n: 'Disconnector 1P', part: 'h' }),
+      qs2: poles('isol2', ['1', '3'], ['2', '4'], 'isol', 'QS', { n: 'Disconnector 2P', part: 'h' }),
+      // 1-, 2- and 4-pole devices of their own (a drawing from before, with the 3-pole device under the symbol, still works)
+      ol1: poles('olr1', ['1'], ['2'], 'ol', 'F', { n: 'Overload relay 1P', part: 'ol' }),
+      ol2: poles('olr2', ['1', '3'], ['2', '4'], 'ol', 'F', { n: 'Overload relay 2P', part: 'ol' }),
+      qm1: poles('mpcb1', ['1'], ['2'], 'qm', 'QM', { n: 'Motor protection breaker 1P', part: 'h' }),
+      qm2: poles('mpcb2', ['1', '3'], ['2', '4'], 'qm', 'QM', { n: 'Motor protection breaker 2P', part: 'h' }),
+      qm4: poles('mpcb4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'qm', 'QM', { n: 'Motor protection breaker 4P', part: 'h' }),
+      fsw1: poles('fsw1', ['1'], ['2'], 'fsw', 'QS', { n: 'Fuse disconnector 1P', part: 'h' }),
+      fsw2: poles('fsw2', ['1', '3'], ['2', '4'], 'fsw', 'QS', { n: 'Fuse disconnector 2P', part: 'h' }),
+      fsw1n: poles('fsw1n', ['1', '3'], ['2', '4'], 'fsw', 'QS', { n: 'Fuse disconnector 1P+N (3-4 = N, no fuse)', part: 'h' }),
+      fsw3n: poles('fsw3n', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'fsw', 'QS', { n: 'Fuse disconnector 3P+N (7-8 = N, no fuse)', part: 'h' }),
+      fsw4: poles('fsw4', ['1', '3', '5', '7'], ['2', '4', '6', '8'], 'fsw', 'QS', { n: 'Fuse disconnector 4P', part: 'h' }),
     },
     Others: {
       node: { n: 'Junction (wire branch)', type: 'jct', pre: 'J', look: 'node', jct: true, auto: true, terms: [{ id: 'J', x: 0, y: 0 }] },
@@ -146,6 +220,7 @@
       mdc: { n: 'Motor DC 24 V', type: 'motordc', pre: 'M', look: 'motor', label: 'M\n=', terms: row(['A1', 'A2'], -34), part: 'jam' },
       mdh: { n: 'Motor Dahlander', type: 'dahlander', pre: 'M', look: 'motor', label: 'M 3~\nDahlander', terms: [...row(['1U', '1V', '1W'], -34), ...row(['2U', '2V', '2W'], 34), { id: 'PE', x: 40, y: 0 }], part: 'jam' },
     },
+    PLC: PLCLIB,
   };
   const K = {};
   Object.entries(LIB).forEach(([g, o]) => Object.entries(o).forEach(([k, v]) => { K[k] = { ...v, g, n: v.n || k }; }));
@@ -169,7 +244,9 @@
       if (!unique(i)) { kp.dropped++; continue; }
       if (Object.prototype.hasOwnProperty.call(K, i.k)) {
         if (typeof i.tag !== 'string' || !TAG.test(i.tag) || items.length >= 400) { kp.dropped++; continue; }
-        items.push({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}) });
+        items.push({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}),
+          // a comment on the symbol (Properties), drawn under its tag
+          ...(typeof i.c === 'string' && i.c.trim() ? { c: i.c.trim().slice(0, 80) } : {}) });
       } else if (typeof i.k === 'string' && i.k && kp.free.items.length < 400 && kp.fits(i)) { kp.free.items.push(JSON.parse(JSON.stringify(i))); kp.kinds.push(i.k); }
       else kp.dropped++;
     }
@@ -241,23 +318,41 @@
   /* typeErr(tag, type, what) and take(tag, terminals, view, dry) come from the Schematic, which checks the whole diagram:
      one type per tag, and a device terminal wired by one view only (the current paths, the power circuit or this drawing) */
   const SRC = ['src', 'conv', 'gen', 'batt'];
+  /* a PLC symbol needs the controller or I/O card in the Wiring already, of a fitting type, with the terminals of its point */
+  function plcErr(it, S) {
+    const d = H.devOf(it.tag), R = H.circ().reserved;
+    if (!d) return R && R.has(it.tag) ? window.Schematic.reservedMsg(it.tag) : `${it.tag}: there is no PLC or I/O card with this tag in the Wiring — add it there first (the diagram does not add controllers)`;
+    if (!S.types.includes(d.type)) return `${it.tag} is a ${DEFS[d.type].name}, not a ${S.types.map(t => DEFS[t].name).join(' or ')}`;
+    const miss = S.terms.find(t => !DEFS[d.type].terms.some(x => x.id === t.id));
+    return miss ? `${it.tag} (${DEFS[d.type].name}) has no terminal ${miss.id}` : null;
+  }
+  /* a symbol on a device of another type of the same family (a 1-pole overload relay under the overload contact):
+     the terminals it uses must exist there; the overload changeover 95-96-98 needs the relay set that way */
+  function devErr(it, S) {
+    const d = H.devOf(it.tag); if (!d || !DEFS[d.type]) return null;
+    return Circuit.fitErr(d, S.type, S.terms.map(t => t.id), S.olco ? 'olco' : S.look);
+  }
   FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
     if (!H) return errs;
     const te = typeErr || ((tag, type, what) => {
       const d = H.devOf(tag), R = H.circ().reserved;
       if (!d && R && R.has(tag)) return window.Schematic.reservedMsg(tag);
-      return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null;
+      return d && !Circuit.sameKind(d.type, type) ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null;
     });
     for (const it of fr().items) {
       const S = K[it.k];
       if (!S.type) continue;
       if (S.pot && !potKey(S.pot)) { errs.set(it, `${POTNAME[S.pot] || S.pot}: no supply with this conductor in the Wiring (add one from Sources)`); continue; }
       if (S.jct) { const m = te(it.tag, 'jct', 'wire point'); if (m) errs.set(it, m); continue; }
-      const m = te(it.tag, S.type); if (m) { errs.set(it, m); continue; }
+      const m = S.types ? plcErr(it, S) : te(it.tag, S.type) || devErr(it, S); if (m) { errs.set(it, m); continue; }
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
       if (used.has(key) && !SRC.includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
+      else if (!SRC.includes(S.look) && !S.jct) {
+        const ids = S.terms.map(t => t.id), twin = [...used.values()].find(o => o.tag === it.tag && !SRC.includes(K[o.k].look) && (() => { const os = K[o.k].terms.map(t => t.id); return ids.every(t => os.includes(t)) || os.every(t => ids.includes(t)); })());
+        if (twin) errs.set(it, `${it.tag}: this contact is already drawn in another symbol (${K[twin.k].n})`);
+      }
       used.set(key, it);
     }
     // terminals the other views wire (a supply may be drawn in every view): this symbol is not wired
@@ -274,7 +369,17 @@
     const F = fr(), col = Circuit.POT_COLORS;
     // devices first (a supply drawn on this sheet must exist before a potential point looks for it), then the checks
     const e0 = check();
-    for (const it of F.items) if (K[it.k].type && !K[it.k].pot && !e0.has(it)) ensureType(K[it.k].type, it.tag);
+    // a tag's device is made from its most specific symbol (a 1-pole overload relay rather than the contact's generic one);
+    // an overload relay made for the changeover symbol is set that way
+    const pref = new Map();
+    for (const it of F.items) { const t = K[it.k].type; if (!t || K[it.k].jct || K[it.k].types) continue; const p = pref.get(it.tag); if (!p || (!DEFS[p].family && DEFS[t].family)) pref.set(it.tag, t); }
+    const made = new Set();
+    for (const it of F.items) {
+      if (!K[it.k].type || K[it.k].pot || e0.has(it)) continue;
+      if (!H.devOf(it.tag)) made.add(it.tag);
+      ensureType(K[it.k].jct || K[it.k].types ? K[it.k].type : pref.get(it.tag) || K[it.k].type, it.tag);
+    }
+    for (const it of F.items) if (K[it.k].olco && made.has(it.tag)) { const c = H.devOf(it.tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'aux')) c.props.aux = '95-96-98 changeover'; }
     const errs = check();
     FD.errs = errs;
     const key = e => {
@@ -305,7 +410,17 @@
 
   /* ---------- view ---------- */
   let body = null, svg = null, gv = null, view = { x: 60, y: 60, k: 1 }, sel = null, wiring = null, drag = null, lastSig = '';
-  FD.init = function (hooks) { H = hooks; window.addEventListener('pointerup', () => { if (held) { held(); held = null; } }); };
+  // several symbols selected (Shift+click, Shift+drag a box, Ctrl+A); sel.i stays the one the side panel shows
+  let group = new Set(), clip = null;
+  const many = () => (group.size ? [...group] : sel && sel.i ? [sel.i] : []).filter(id => itemOf(id));
+  FD.init = function (hooks) {
+    H = hooks;
+    window.addEventListener('pointerup', () => { if (held) { held(); held = null; } });
+    // a finger lifted off the drawing (it was redrawn, or a form opened under the finger) must not count as still down,
+    // or every later tap would look like the second finger of a pinch
+    const lift = ev => { if (ev.pointerType === 'touch') { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; } };
+    window.addEventListener('pointerup', lift); window.addEventListener('pointercancel', lift);
+  };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
   function stateOf(it) {
@@ -314,12 +429,25 @@
     const d = H.devOf(it.tag);
     if (!d || (FD.errs && FD.errs.has(it))) return { on: false, miss: !d };
     const st = d.state;
-    if (['coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
+    if (d.type === 'lamp_fl') return { on: !!st.lit };
+    if (S.look === 'phm') return { on: !!st.ok };
+    if (['coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter'].includes(S.look)) return { on: !!(st.pulled || st.on || st.pw || st.v || (it.k === 'ltset' && st.set)) };
     if (S.jct) return { on: live(d.id + ':J') };
     if (S.look === 'motor') return { on: st.drive === 'run' || (S.type === 'fan' && !!st.on) };
     if (S.look === 'sens') return { on: !!st.act };
     if (['src', 'conv', 'gen', 'batt'].includes(S.look)) return { on: !!(st.on || st.ok || S.look === 'batt') };
+    if (S.look === 'plcpw') return { on: !!st.pw };
+    // a PLC input is ON when the controller reads it (this tick's input word: the compact PLC's, or the card's slot)
+    if (S.look === 'plcin') {
+      const c = App.ctx, w = d.type === 'plc' ? (c.plcId === d.id ? c.plcInRaw : 0) : ((c.plcInX || [])[Number(d.props.slot)] || 0);
+      return { on: !!((w >> S.io.n) & 1) };
+    }
     const pr = DEFS[d.type].conduct ? DEFS[d.type].conduct(d, App.ctx) || [] : [];
+    // a changeover is operated when common and N.O. are joined; a crossover when 1-2 is
+    const has = (a, b) => pr.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+    if (S.look === 'co') return { on: has(S.terms[0].id, S.terms[2].id) };
+    if (S.look === 'xover') return { on: has('1', '2') };
+    if (S.look === 'nonc') return { on: has(S.terms[2].id, S.terms[3].id) };
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
     return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))) };
   }
@@ -336,6 +464,8 @@
       therm: `<path class="thin" d="M${ax} -6 h-5 v6 h5 v6"/>`,
       delay: `<path class="thin" d="M${ax} -7 a7 7 0 0 0 0 14"/>`,
       delayoff: `<path class="thin" d="M${ax - 7} -7 a7 7 0 0 1 0 14"/>`,
+      delayboth: `<path class="thin" d="M${ax} -7 a7 7 0 0 0 0 14 M${ax - 9} -7 a7 7 0 0 1 0 14"/>`,
+      flash: `<path class="thin" d="M${ax} 4 h-3 v-8 h-4 v8 h-4 v-8 h-3"/>`,
       foot: `<path class="thin" d="M${ax} -6 V5 h-7 l-2 -4"/>`,
       press: `<rect class="thin" x="${ax - 10}" y="-5" width="10" height="10"/><path class="thin" d="M${ax - 7} 3 V-3 h3 a1.5 1.5 0 0 1 0 3 h-3"/>`,
       float: `<path class="thin" d="M${ax} 0 h-4"/><circle class="thin" cx="${ax - 8}" cy="0" r="4"/><path class="thin" d="M${ax - 14} 6 h12"/>`,
@@ -346,6 +476,26 @@
       o.push(stub(0, -30, -14), stub(0, 14, 30));
       o.push(S.look === 'nc' ? `<path d="M0 -14 H10 M0 14 L13 -17"/>` : `<path d="M0 14 L-11 -13"/>`);
       if (S.act) o.push(`<path class="thin dash" d="M${S.look === 'nc' ? 6 : -6} 0 H-26"/>`, actMark(S.act, -26));
+    } else if (S.look === 'co') {
+      // changeover: the blade rests on the N.C. side and moves to the N.O. side when operated
+      o.push(stub(0, -30, -14), stub(-10, 12, 30), stub(10, 12, 30), `<path class="thin" d="M-10 12 H-5"/>`, `<path d="M0 -14 L${st.on ? 10 : -9} 12"/>`);
+      if (S.act) o.push(`<path class="thin dash" d="M-4 -1 H-26"/>`, actMark(S.act, -26));
+    } else if (S.look === 'nonc') {
+      // N.C. (left) and N.O. (right) contacts on one actuator, drawn as they are now
+      o.push(stub(-10, -30, -14), stub(-10, 14, 30), stub(10, -30, -14), stub(10, 14, 30));
+      o.push(st.on ? `<path d="M-10 -14 H-4 M-10 14 L-15 -12"/><path d="M10 14 L10 -14"/>` : `<path d="M-10 -14 H-4 M-10 14 L-3 -16"/><path d="M10 14 L3 -13"/>`);
+      if (S.act) o.push(`<path class="thin dash" d="M-12 0 H-30"/>`, actMark(S.act, -30));
+    } else if (S.look === 'xover') {
+      o.push(stub(-10, -30, -14), stub(10, -30, -14), stub(-10, 14, 30), stub(10, 14, 30));
+      o.push(st.on ? `<path d="M-10 -14 V14 M10 -14 V14"/>` : `<path d="M-10 -14 L10 14 M10 -14 L-10 14"/>`);
+      if (S.act) o.push(`<path class="thin dash" d="M-10 0 H-30"/>`, actMark(S.act, -30));
+    } else if (S.look === 'bell') {
+      o.push(stub(0, -30, -8), stub(0, 8, 30), `<path d="M-12 8 a12 14 0 0 1 24 0 Z"/><circle cx="0" cy="11" r="2.5" class="jdot"/>`);
+    } else if (S.look === 'siren') {
+      o.push(stub(0, -30, -12), stub(0, 12, 30), `<path d="M-12 -6 H-2 L10 -12 V12 L-2 6 H-12 Z"/><path class="thin" d="M14 -6 q4 6 0 12"/>`);
+    } else if (S.look === 'phm') {
+      // phase failure relay: a box on L1 L2 L3 (its measuring circuit); its contacts are drawn on their own
+      o.push(...S.terms.map(t => stub(t.x, -30, -12)), `<rect x="-30" y="-12" width="60" height="24"/>`);
     } else if (S.look === 'node') {
       o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
     } else if (S.look === 'pot') {
@@ -359,9 +509,14 @@
     } else if (S.look === 'batt') {
       o.push(stub(0, -30, -6), stub(0, 4, 30), `<path d="M-14 -6 H14"/><path d="M-7 4 H7" stroke-width="4"/><path class="thin" d="M10 -16 h6 M13 -19 v6"/>`);
     } else if (S.look === 'gen') {
-      o.push(`<circle cx="0" cy="0" r="22"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} 20"/>`), `<path class="pe" d="M22 0 H44"/>`);
+      o.push(`<circle cx="0" cy="0" r="22"/>`, ...S.terms.filter(t => t.id !== 'PE').map(t => `<path d="M${t.x} ${t.y} L${t.x * 0.4} ${t.y < 0 ? -20 : 20}"/>`), `<path class="pe" d="M22 0 H44"/>`);
     } else if (S.look === 'gnd') {
       o.push(`<path class="pe" d="M0 -20 V0 M-10 0 H10 M-6 4 H6 M-2 8 H2"/>`);
+    } else if (S.look === 'plcin') {
+      // a PLC input: a box with an arrow into the controller
+      o.push(stub(0, -30, -10), stub(0, 10, 30), `<rect x="-16" y="-10" width="32" height="20"/><path class="thin" d="M-9 0 H7 M3 -4 L7 0 L3 4"/>`);
+    } else if (S.look === 'plcpw') {
+      o.push(stub(0, -30, -12), stub(0, 12, 30), `<rect x="-20" y="-12" width="40" height="24" rx="3"/>`);
     } else if (S.look === 'text') {
       // drawn by labels()
     } else if (S.look === 'heat') {
@@ -373,10 +528,13 @@
       o.push(stub(0, -30, -12), stub(0, 12, 30), `<path d="M12 0 H30"/><rect x="-12" y="-12" width="24" height="24"/>`);
       o.push(S.photo ? `<path class="thin" d="M-22 -10 l8 6 m-4 0 h4 v-3 M-22 2 l8 6 m-4 0 h4 v-3"/>` : `<path class="thin" d="M-7 0 L0 -7 L7 0 L0 7 Z"/>`);
       if (st.on) o.push(`<path class="thin" d="M3 9 L9 3"/>`);
-    } else if (['coil', 'tcoil', 'tcoiloff', 'icoil'].includes(S.look)) {
+    } else if (['coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil'].includes(S.look)) {
       o.push(stub(0, -30, -9), stub(0, 9, 30), `<rect x="-14" y="-9" width="28" height="18"/>`);
       if (S.look === 'icoil') o.push(`<path class="thin" d="M-8 5 V-5 H0 V5 H8 V-5"/>`);
-      if (S.look !== 'coil') o.push(`<rect x="-26" y="-9" width="12" height="18"${S.look === 'tcoiloff' ? ' class="fill"' : ''}/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
+      // the timing box beside the coil: on/off delay half filled, flasher a square wave
+      if (S.look === 'tcoilfl') o.push(`<rect x="-26" y="-9" width="12" height="18"/><path class="thin" d="M-25 4 h2 v-8 h4 v8 h2 v-8"/>`);
+      else if (S.look === 'tcoilboth') o.push(`<rect x="-26" y="-9" width="6" height="18" class="fill"/><rect x="-26" y="-9" width="12" height="18"/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
+      else if (S.look !== 'coil') o.push(`<rect x="-26" y="-9" width="12" height="18"${S.look === 'tcoiloff' ? ' class="fill"' : ''}/><path class="thin" d="M-26 -9 L-14 9 M-14 -9 L-26 9"/>`);
     } else if (S.look === 'lamp') {
       o.push(stub(0, -30, -11), stub(0, 11, 30), `<circle cx="0" cy="0" r="11"/><path class="thin" d="M-8 -8 L8 8 M8 -8 L-8 8"/>`);
     } else if (S.look === 'horn') {
@@ -394,6 +552,7 @@
         if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
         else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/><path class="thin" d="M${x} -12 V12"/>`);
         else if (S.look === 'ol') o.push(stub(x, -30, -10), stub(x, 10, 30), `<path d="M${x} -10 h-4 v8 h8 v8 h-4 V10"/>`);
+        else if (S.look === 'kmn') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} -14 H${x + 8} M${x} 14 L${x + 10} -16"/><path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
         else {
           o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/>`);
           if (S.look === 'km') o.push(`<path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
@@ -408,6 +567,12 @@
     }
     return o.join('');
   }
+  /* the address of a PLC I/O symbol: the compact PLC is slot 0, a card its own slot */
+  function addrOf(it) {
+    const S = K[it.k], d = H && it.tag ? H.devOf(it.tag) : null;
+    const a = `${S.io.d}:${d && d.type !== 'plc' ? Number(d.props.slot) || 0 : 0}/${S.io.n}`;
+    return App.fmt ? App.fmt(a) : a;
+  }
   function labels(it, S) {
     if (S.look === 'node' || (S.look === 'wire' && !S.arrow)) return '';
     if (S.look === 'pot') return `<text class="mtxt sm" x="${it.x}" y="${it.y + 4}">${esc(POTNAME[S.pot] ? (S.pot === '+' ? '+' : '−') : S.pot)}</text>`;
@@ -417,11 +582,18 @@
     const at = (x, y) => { const [a, b] = rot(x, y, it.r); return [it.x + a, it.y + b]; };
     const o = [];
     if (S.look === 'gnd') { const [x, y] = at(14, 10); return `<text class="sterm" x="${x}" y="${y}">PE</text>`; }
-    const isPole = !['no', 'nc', 'coil', 'tcoil', 'tcoiloff', 'icoil', 'lamp', 'horn', 'heat', 'meter', 'sens'].includes(S.look);
+    const isPole = !['no', 'nc', 'co', 'nonc', 'xover', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat', 'meter', 'sens', 'plcin', 'plcpw'].includes(S.look);
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
+    if (S.look === 'plcpw') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">PLC ~</text>`); }
+    if (S.look === 'phm') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">3~ L1-L2-L3</text>`); }
+    if (S.look === 'lamp' && S.label) { const [mx, my] = at(20, -12); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
+    // the PLC address of an I/O point, in the project's address style (I:0/3, I0.3…)
+    if (S.io) { const [ax, ay] = at(-30, 4); o.push(`<text class="ftag faddr" x="${ax}" y="${ay}">${esc(addrOf(it))}</text>`); }
+    // the comment: a line under the tag (two when the address is there)
+    if (it.c) o.push(`<text class="ftag fcmt" x="${tx}" y="${ty + (S.io ? 28 : 14)}">${esc(it.c)}</text>`);
     // meter letter, S/R of a latching coil (in the symbol), PNP/NPN of a sensor (beside it)
     if (S.label && ['meter', 'coil', 'sens'].includes(S.look)) { const [mx, my] = S.look === 'sens' ? at(26, -16) : at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
     S.terms.forEach(t => {
@@ -444,16 +616,28 @@
     const x1 = Math.min(-big, ...xs) - 10, x2 = Math.max(big, ...xs) + 10, y1 = Math.min(-30, ...ys) - 10, y2 = Math.max(30, ...ys) + 10;
     return `<button class="fd-ico g-${slug(S.g)}" data-fk="${k}" draggable="true" title="${esc(S.n)}"><svg class="sch-svg iec-svg" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><g class="ssym">${shape(it, { on: false })}</g>${labels(it, S)}</svg></button>`;
   }
+  // search: words in the symbol's name or group, in every group (the group choice applies when the box is empty)
+  let libQ = '';
+  const libKeys = () => {
+    const q = libQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return Object.keys(K).filter(k => !K[k].hide && (q.length ? q.every(w => (K[k].n + ' ' + K[k].g).toLowerCase().includes(w)) : libUi.grp === 'All' || K[k].g === libUi.grp));
+  };
+  const gridHtml = () => { const ks = libKeys(); return ks.length ? ks.map(icon).join('') : '<p class="help">No symbol matches.</p>'; };
   function libHtml() {
-    const ks = Object.keys(K).filter(k => libUi.grp === 'All' || K[k].g === libUi.grp);
-    return `<select class="fd-grp" aria-label="Symbol group"><option value="All">All</option>${GROUPS.map(g => `<option value="${g}" ${g === libUi.grp ? 'selected' : ''}>${g}</option>`).join('')}</select><div class="fd-grid">${ks.map(icon).join('')}</div>`;
+    return `<input class="fd-search" type="search" placeholder="Search symbols" aria-label="Search symbols" value="${esc(libQ)}"><select class="fd-grp" aria-label="Symbol group"><option value="All">All</option>${GROUPS.map(g => `<option value="${g}" ${g === libUi.grp ? 'selected' : ''}>${g}</option>`).join('')}</select><div class="fd-grid">${gridHtml()}</div>`;
   }
+  FD.search = function (q) { libQ = String(q || ''); const g = body && body.querySelector('.fd-grid'); if (g) g.innerHTML = gridHtml(); };
   function shell(el) {
     el.innerHTML = `<div class="fd-wrap${libUi.open ? '' : ' nolib'}"><aside class="fd-lib">${libHtml()}</aside><div class="fd-canvas"><div class="fd-host"></div>
       <div class="fd-zoom"><button class="tbtn" data-fz="out" title="Zoom out" aria-label="Zoom out">−</button><button class="tbtn" data-fz="fit" title="Fit the drawing">⤢</button><button class="tbtn" data-fz="in" title="Zoom in" aria-label="Zoom in">＋</button></div></div></div>`;
     const lib = el.querySelector('.fd-lib'), host = el.querySelector('.fd-host');
     lib.addEventListener('change', ev => { if (ev.target.matches('.fd-grp')) { libUi.grp = ev.target.value; saveLib(); lib.innerHTML = libHtml(); } });
-    lib.addEventListener('click', ev => { const b = ev.target.closest('[data-fk]'); if (b && H.mode() === 'edit') FD.add(b.dataset.fk); });
+    lib.addEventListener('input', ev => { if (ev.target.matches('.fd-search')) FD.search(ev.target.value); });
+    lib.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-fk]'); if (!b || H.mode() !== 'edit') return;
+      FD.add(b.dataset.fk);
+      if (window.matchMedia && matchMedia('(max-width: 760px)').matches && libUi.open) { FD.toggleLib(); const lb = document.querySelector('#view-schematic [data-fdact="lib"]'); if (lb) lb.classList.remove('on'); }
+    });
     lib.addEventListener('dragstart', ev => { const b = ev.target.closest('[data-fk]'); if (b) { ev.dataTransfer.setData('text/fd-sym', b.dataset.fk); ev.dataTransfer.effectAllowed = 'copy'; } });
     host.addEventListener('dragover', ev => { if (ev.dataTransfer.types.includes('text/fd-sym')) ev.preventDefault(); });
     host.addEventListener('drop', ev => { const k = ev.dataTransfer.getData('text/fd-sym'); if (!K[k] || !svg) return; ev.preventDefault(); const p = world(ev); FD.add(k, undefined, snap10(p.x), snap10(p.y)); });
@@ -487,9 +671,33 @@
     if (S.jct) { const set = api.potsR(api.rootK(d.id + ':J')); return set && set.size ? Circuit.potText(set) : '—'; }
     const st = stateOf(it);
     if (['no', 'nc', 'km', 'brk', 'qm', 'rcd', 'isol', 'fsw', 'fuse', 'ol'].includes(S.look)) return st.on ? 'closed' : 'open';
+    if (['co', 'xover', 'nonc'].includes(S.look)) return st.on ? 'operated' : 'at rest';
     if (['src', 'gen', 'conv', 'batt'].includes(S.look)) return st.on ? 'on' : 'off';
     const a = S.terms[0], b = S.terms.find(t => t !== a && t.id !== 'PE');
     return a && b ? vText(api.v(d, a.id, b.id)) : '';
+  }
+  /* the time left on a timer relay that is timing, shown beside its coil (one decimal, so the drawing redraws ten times a second) */
+  const TIMERS = ['tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl'];
+  function countOf(it) {
+    const S = K[it.k], d = TIMERS.includes(S.look) && H.devOf(it.tag);
+    if (!d || !DEFS[d.type] || (FD.errs && FD.errs.has(it))) return '';
+    const s = d.state, p = d.props;
+    const t = d.type === 'timer' ? (s.pw && !s.done ? p.t : null)
+      : d.type === 'timer_off' ? (!s.pw && s.on ? p.t : null)
+      : d.type === 'timer_onoff' ? (s.pw !== s.on ? (s.pw ? p.t : p.t2) : null)
+      : d.type === 'flasher' ? (s.pw ? (s.on ? p.t : p.t2) : null) : null;
+    return t == null ? '' : `${Math.max(0, (Number(t) || 0) - (s.el || 0)).toFixed(1)} s`;
+  }
+  /* conductor colours: a wire takes the colour of what its net carries (L1 L2 L3 N PE, +24 V, 0 V), as in the Wiring */
+  FD.colors = false;
+  try { FD.colors = localStorage.getItem('plc-trainer.fdColors') === '1'; } catch (e) { /* private mode */ }
+  FD.setColors = function (on) { FD.colors = !!on; try { localStorage.setItem('plc-trainer.fdColors', FD.colors ? '1' : '0'); } catch (e) { /* private mode */ } if (body) FD.render(body); };
+  const PC = { L1: 'L1', L2: 'L2', L3: 'L3', N: 'N', PE: 'PE', 'DC+': 'dcp', 'DC-': 'dcm' };
+  function wireCls(w) {
+    const api = App.api, ia = itemOf(w.a.split(':')[0]), k = ia && devKey(ia, w.a.split(':')[1]);
+    if (!FD.colors || !api || !k) return '';
+    const p = PC[Circuit.potClass(api.potsR(api.rootK(k)))];
+    return p ? ' pc-' + p : '';
   }
   FD.render = function (el) {
     body = el;
@@ -498,12 +706,12 @@
     const F = fr();
     FD.errs = check();
     const o = [];
-    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="url(#fdGrid2)"/>`);
+    o.push(`<svg class="rung-svg sch-svg iec-svg free-svg" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
       const d = wirePath(a, b, w.pts);
-      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}" d="${d}"/></g>`);
+      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}${wireCls(w)}" d="${d}"/></g>`);
       if (sel && sel.w === w.id) (w.pts || []).forEach(([x, y], i) => o.push(`<circle class="fbend" data-fb="${w.id}:${i}" cx="${x}" cy="${y}" r="5"><title>Drag to move · double-click to remove</title></circle>`));
     }
     for (const it of F.items) {
@@ -512,14 +720,16 @@
         : S.look === 'text' ? `<rect class="hit" x="${it.x - 6}" y="${it.y - 12}" width="${(it.txt || '').length * 7.5 + 12}" height="22" rx="4"/>`
         : S.look === 'gnd' ? `<rect class="hit" x="${it.x - 14}" y="${it.y - 24}" width="28" height="36" rx="4"/>`
         : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`;
-      o.push(`<g class="fitem${sel && sel.i === it.id ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
+      o.push(`<g class="fitem${(sel && sel.i === it.id) || group.has(it.id) ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
       o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
+      const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" data-fc="${it.id}" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
       S.terms.forEach(t => { const p = termPos(it, t.id); o.push(`<circle class="fterm${wiring && wiring.from === it.id + ':' + t.id ? ' on' : ''}" data-ft="${it.id}:${t.id}" cx="${p.x}" cy="${p.y}" r="4"/>`); });
       o.push('</g>');
     }
     if (wiring && wiring.cur) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${wirePath(a, wiring.cur)}"/>`); }
+    if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
     if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — click or drag symbols from the Library, then click a terminal and another to wire them</text>`);
     o.push('</g></svg>');
     host.innerHTML = o.join('');
@@ -527,13 +737,35 @@
     bind();
     lastSig = sig();
   };
-  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0; }).join(''); };
-  FD.update = function () { if (body && sig() !== lastSig) FD.render(body); };
+  // a countdown only redraws the drawing when it appears or goes away; its value is written in place by FD.update
+  const sig = () => { const F = fr(); return (FD.values ? F.items.map(valueOf).join(',') : '') + F.items.map(it => (countOf(it) ? 1 : 0)).join('') + F.items.map(it => { const s = stateOf(it); return s.on ? 1 : 0; }).join('') + '|' + F.wires.map(w => { const ia = itemOf(w.a.split(':')[0]); return (ia && live(devKey(ia, w.a.split(':')[1])) ? 1 : 0) + wireCls(w); }).join(''); };
+  FD.update = function () {
+    if (!body) return;
+    if (sig() !== lastSig) { FD.render(body); return; }
+    if (svg) svg.querySelectorAll('[data-fc]').forEach(e => { const it = itemOf(e.dataset.fc), t = it ? countOf(it) : ''; if (e.textContent !== t) e.textContent = t; });
+  };
   const world = ev => { const r = svg.getBoundingClientRect(); return { x: (ev.clientX - r.left - view.x) / view.k, y: (ev.clientY - r.top - view.y) / view.k }; };
   const snap10 = v => Math.round(v / 10) * 10;
+  const boxOf = d => ({ x1: Math.min(d.x0, d.x1), y1: Math.min(d.y0, d.y1), x2: Math.max(d.x0, d.x1), y2: Math.max(d.y0, d.y1) });
   let held = null, lastTap = { k: '', t: 0 };
+  // touch: two fingers on the drawing zoom it (pinch) around their middle
+  // pointer capture keeps a drag going outside the drawing; a pointer that is already gone cannot be captured, which is harmless
+  const capture = ev => { try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* pointer already released */ } };
+  const touches = new Map();
+  let pinch = null, longT = null;
   function bind() {
     svg.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'touch') {
+        touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (touches.size === 2) {
+          const [a, b] = [...touches.values()];
+          pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: view.k, vx: view.x, vy: view.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+          // a symbol the first finger already moved is kept (synced and saved) before the pinch takes over
+          if (drag && drag.snapped) H.changed();
+          drag = null; wiring = null; clearTimeout(longT); if (held) { held(); held = null; }
+          return;
+        }
+      }
       const p = world(ev), term = ev.target.closest('[data-ft]'), itEl = ev.target.closest('[data-fi]'), wEl = ev.target.closest('[data-fw]'), bEl = ev.target.closest('[data-fb]');
       // double click / double tap (the drawing is redrawn between the two clicks, so the browser's dblclick is not used)
       const tapKey = bEl ? 'b' + bEl.dataset.fb : wEl ? 'w' + wEl.dataset.fw : itEl ? 'i' + itEl.dataset.fi : '';
@@ -547,7 +779,7 @@
       }
       if (bEl && H.mode() === 'edit') {
         const [wid, i] = bEl.dataset.fb.split(':'), w = fr().wires.find(x => x.id === wid);
-        if (w) { drag = { bend: w, i: Number(i), moved: false, snapped: false }; svg.setPointerCapture(ev.pointerId); }
+        if (w) { drag = { bend: w, i: Number(i), moved: false, snapped: false }; capture(ev); }
         return;
       }
       if (H.mode() === 'run') {
@@ -557,11 +789,11 @@
           else if (d && S.part) { ev.preventDefault(); held = App.operate(d, S.part); }
           return;
         }
-        drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(ev.pointerId); return;
+        drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; capture(ev); return;
       }
       if (term) {
         const key = term.dataset.ft;
-        if (!wiring) { wiring = { from: key, cur: null }; sel = null; FD.render(body); return; }
+        if (!wiring) { wiring = { from: key, cur: null }; sel = null; group.clear(); FD.render(body); return; }
         if (key !== wiring.from && !fr().wires.some(w => (w.a === wiring.from && w.b === key) || (w.b === wiring.from && w.a === key))) {
           H.snap(); const F = fr(); F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: key });
           wiring = null; H.changed(); return;
@@ -582,15 +814,41 @@
       if (wiring) { wiring = null; FD.render(body); return; }
       if (itEl) {
         const it = itemOf(itEl.dataset.fi);
-        sel = { i: it.id }; drag = { item: it, ox: p.x - it.x, oy: p.y - it.y, moved: false, snapped: false };
-        svg.setPointerCapture(ev.pointerId); FD.render(body); H.side(); return;
+        // Shift+click adds the symbol to the selection, or takes it out
+        if (ev.shiftKey) {
+          if (sel && sel.i && !group.size) group.add(sel.i);
+          if (group.has(it.id)) group.delete(it.id); else group.add(it.id);
+          sel = group.size ? { i: group.has(it.id) ? it.id : [...group][0] } : null;
+          FD.render(body); H.side(); return;
+        }
+        if (!group.has(it.id)) group.clear();
+        sel = { i: it.id };
+        // dragging one symbol of the selection moves them all
+        const others = [...group].filter(id => id !== it.id).map(id => itemOf(id)).filter(Boolean).map(o => ({ o, dx: o.x - it.x, dy: o.y - it.y }));
+        drag = { item: it, others, ox: p.x - it.x, oy: p.y - it.y, moved: false, snapped: false };
+        // a long press on a touch screen opens the symbol's tag form (as a double click does)
+        if (ev.pointerType === 'touch' && K[it.k].look !== 'node') { clearTimeout(longT); longT = setTimeout(() => { if (drag && drag.item === it && !drag.moved) { drag = null; FD.retag(it); } }, 600); }
+        capture(ev); FD.render(body); H.side(); return;
       }
-      if (wEl) { sel = { w: wEl.dataset.fw }; FD.render(body); H.side(); return; }
-      sel = null; H.side();
-      drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; svg.setPointerCapture(ev.pointerId);
+      if (wEl) { sel = { w: wEl.dataset.fw }; group.clear(); FD.render(body); H.side(); return; }
+      // Shift+drag on the background selects the symbols inside a box
+      if (ev.shiftKey) { drag = { box: true, x0: p.x, y0: p.y, x1: p.x, y1: p.y }; capture(ev); return; }
+      sel = null; group.clear(); H.side();
+      drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; capture(ev);
       FD.render(body);
     });
     svg.addEventListener('pointermove', ev => {
+      if (ev.pointerType === 'touch' && touches.has(ev.pointerId)) {
+        touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (pinch && touches.size === 2) {
+          const [a, b] = [...touches.values()], r = svg.getBoundingClientRect(), mx = pinch.mx - r.left, my = pinch.my - r.top;
+          const k = Math.max(0.3, Math.min(3, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+          view = { k, x: mx - (mx - pinch.vx) * k / pinch.k, y: my - (my - pinch.vy) * k / pinch.k };
+          gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
+          return;
+        }
+      }
+      if (drag && drag.box) { const q = world(ev); drag.x1 = q.x; drag.y1 = q.y; FD.render(body); return; }
       if (wiring) { const p = world(ev); wiring.cur = { x: snap10(p.x), y: snap10(p.y) }; const t = svg.querySelector('.wtemp'); const a = endPos(wiring.from); if (t && a) t.setAttribute('d', wirePath(a, wiring.cur)); else if (a) FD.render(body); }
       if (!drag) return;
       if (drag.bend) {
@@ -600,9 +858,23 @@
       }
       if (drag.pan) { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; gv.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`); return; }
       const p = world(ev), nx = snap10(p.x - drag.ox), ny = snap10(p.y - drag.oy);
-      if (nx !== drag.item.x || ny !== drag.item.y) { if (!drag.snapped) { H.snap(); drag.snapped = true; } drag.item.x = nx; drag.item.y = ny; drag.moved = true; FD.render(body); }
+      if (nx !== drag.item.x || ny !== drag.item.y) {
+        if (!drag.snapped) { H.snap(); drag.snapped = true; }
+        drag.item.x = nx; drag.item.y = ny; drag.others.forEach(q => { q.o.x = nx + q.dx; q.o.y = ny + q.dy; });
+        drag.moved = true; clearTimeout(longT); FD.render(body);
+      }
     });
-    const up = () => { if (held) { held(); held = null; } if (drag && drag.moved) { drag = null; H.changed(); return; } drag = null; };
+    const up = ev => {
+      if (ev && ev.pointerType === 'touch') { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; }
+      clearTimeout(longT);
+      if (held) { held(); held = null; }
+      if (drag && drag.box) {
+        const b = boxOf(drag), ins = fr().items.filter(i => i.x >= b.x1 && i.x <= b.x2 && i.y >= b.y1 && i.y <= b.y2).map(i => i.id);
+        drag = null; group = new Set(ins); sel = ins.length ? { i: ins[0] } : null; FD.render(body); H.side(); return;
+      }
+      if (drag && drag.moved) { drag = null; H.changed(); return; }
+      drag = null;
+    };
     svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
     svg.addEventListener('wheel', ev => {
       ev.preventDefault();
@@ -617,7 +889,7 @@
   const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
   function suggest(k) {
     const S = K[k], used = taken();
-    const same = H.circ().comps.filter(c => c.type === S.type).map(c => c.props.label);
+    const same = H.circ().comps.filter(c => (S.types ? S.types.includes(c.type) : Circuit.sameKind(c.type, S.type) && !Circuit.fitErr(c, S.type, S.terms.map(t => t.id), S.look))).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
     let n = 1; while (used.has(S.pre + n)) n++;
@@ -663,11 +935,13 @@
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
       const c = x != null ? { x, y } : freeSpot(snap10((r.width / 2 - view.x) / view.k), snap10((r.height / 2 - view.y) / view.k)), cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
-      F.items.push(it); sel = { i: it.id };
+      F.items.push(it); sel = { i: it.id }; group.clear();
       H.changed();
       return undefined;
     };
     if (tag) return go(tag);
+    // a PLC symbol: the controller or card from the Wiring, and the point (its kind)
+    if (K[k].types) return plcForm(K[k], null, (t, nk) => FD.add(nk, t, x, y));
     // wire pieces, junctions and potential points need no tag of their own
     if (K[k].auto) return go(suggest(k).def);
     if (k === 'text') { UI.form('Text', [{ key: 't', label: 'Text', value: '' }], v => go(v.t.trim())); return undefined; }
@@ -675,8 +949,29 @@
     UI.form(K[k].n, [{ key: 't', label: 'Device tag', value: sg.def, list: sg.list }], v => go(v.t.trim()),
       '<p class="help">Use the tag of a device in the Wiring (its contacts and coil share the tag), or a new tag: the device is added to the Wiring for you.</p>');
   };
+  /* form for a PLC symbol: which PLC or I/O card (from the Wiring) and, for an I/O point, which point. done(tag, kind) */
+  const base = k => k.replace(/\d+$/, '');
+  function plcForm(S, it, done) {
+    const devs = H.circ().comps.filter(c => S.types.includes(c.type)).map(c => c.props.label);
+    if (!devs.length && !it) { UI.toast(`Add a ${S.types.map(t => DEFS[t].name).join(' or ')} in the Wiring first: the diagram uses the real controller`, 'warn', 6000); return undefined; }
+    const b = it ? base(it.k) : base(Object.keys(K).find(k => K[k] === S)), pts = Object.keys(K).filter(k => base(k) === b && K[k].io).map(k => K[k].io.n);
+    const fields = [{ key: 't', label: 'PLC or I/O card tag (from the Wiring)', value: it ? it.tag : devs[0], list: devs }];
+    if (S.io) fields.push({ key: 'p', label: 'Point', value: String(it ? S.io.n : 0), options: pts.map(n => ({ v: String(n), l: `${S.io.d}${n}` })) });
+    UI.form(S.n, fields, v => {
+      const t = String(v.t || '').trim(); if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
+      return done(t, S.io ? b + Number(v.p) : (it ? it.k : b));
+    }, '<p class="help">A PLC symbol is a terminal of the controller or I/O card placed in the Wiring: its wires are wired to that terminal, and it shows the live state of the point.</p>');
+    return undefined;
+  }
+  /* a symbol gets another kind with terminals in the same order: its drawn wires follow (first terminal to first…) */
+  function setKind(it, nk) {
+    const S0 = K[it.k], S1 = K[nk], map = Object.fromEntries(S0.terms.map((t, i) => [t.id, S1.terms[i] ? S1.terms[i].id : t.id]));
+    fr().wires.forEach(w => ['a', 'b'].forEach(e => { const [id, t] = w[e].split(':'); if (id === it.id && map[t]) w[e] = id + ':' + map[t]; }));
+    it.k = nk;
+  }
   FD.retag = function (it) {
     if (!it) return;
+    if (K[it.k].types) return plcForm(K[it.k], it, (t, nk) => { H.snap(); if (nk !== it.k) setKind(it, nk); it.tag = t; H.changed(); return undefined; });
     if (it.k === 'text') {
       UI.form('Edit text', [{ key: 't', label: 'Text', value: it.txt || '' }], v => { const t = v.t.trim(); if (!t) return 'Type some text'; H.snap(); it.txt = t.slice(0, 80); H.changed(); return undefined; });
       return;
@@ -687,8 +982,67 @@
     });
   };
   FD.rotate = function () {
-    const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
-    H.snap(); it.r = (it.r + 90) % 360; H.changed();
+    const ids = many(); if (!ids.length) { UI.toast('Select a symbol first'); return; }
+    H.snap(); ids.forEach(id => { const it = itemOf(id); it.r = (it.r + 90) % 360; }); H.changed();
+  };
+  /* move the selection by a grid step (arrow keys; with Shift five steps) */
+  FD.nudge = function (dx, dy) {
+    const ids = many(); if (!ids.length) return false;
+    H.snap(); ids.forEach(id => { const it = itemOf(id); it.x += dx; it.y += dy; }); H.changed();
+    return true;
+  };
+  FD.selectAll = function () { group = new Set(fr().items.map(i => i.id)); sel = group.size ? { i: [...group][0] } : null; if (body) FD.render(body); H.side(); };
+  FD.selection = () => many();
+  /* clipboard: the selected symbols and the wires between them */
+  FD.copySel = function () {
+    const ids = many(); if (!ids.length) { UI.toast('Select a symbol first'); return false; }
+    const set = new Set(ids), F = fr();
+    clip = { items: ids.map(id => JSON.parse(JSON.stringify(itemOf(id)))), wires: F.wires.filter(w => set.has(w.a.split(':')[0]) && set.has(w.b.split(':')[0])).map(w => JSON.parse(JSON.stringify(w))) };
+    return true;
+  };
+  FD.hasClip = () => !!(clip && clip.items.length);
+  /* paste a copy beside the original: new devices with new tags, but a coil and its contacts copied together stay one
+     device (one new tag for one old tag); a PLC symbol stays on its controller, a text keeps its text */
+  FD.paste = function (dx = 40, dy = 40) {
+    if (!FD.hasClip()) return false;
+    const F = fr();
+    if (F.items.length + clip.items.length > MAXI) { UI.toast(`The drawing is full (${MAXI} symbols)`, 'warn'); return false; }
+    H.snap();
+    const used = taken(), tags = new Map(), ids = new Map(), added = [];
+    for (const it of clip.items) {
+      const S = K[it.k]; if (!S) continue;
+      let tag = it.tag;
+      if (S.type && !S.types) {
+        if (!tags.has(it.tag)) { let n = 1; while (used.has(S.pre + n)) n++; used.add(S.pre + n); tags.set(it.tag, S.pre + n); }
+        tag = tags.get(it.tag);
+      }
+      F.seq++; ids.set(it.id, 'd' + F.seq);
+      F.items.push({ ...it, id: 'd' + F.seq, tag, x: it.x + dx, y: it.y + dy }); added.push('d' + F.seq);
+    }
+    for (const w of clip.wires) {
+      const [a, ta] = w.a.split(':'), [b, tb] = w.b.split(':'); if (!ids.has(a) || !ids.has(b)) continue;
+      F.seq++; const nw = { id: 'fw' + F.seq, a: ids.get(a) + ':' + ta, b: ids.get(b) + ':' + tb };
+      if (w.pts && w.pts.length) nw.pts = w.pts.map(([x, y]) => [x + dx, y + dy]);
+      F.wires.push(nw);
+    }
+    // a pasted PLC I/O symbol keeps its controller and takes the next point of it that is not drawn yet (I0 → I1…);
+    // with every point drawn it stays as it is, shows the problem and says so
+    let noPoint = 0;
+    for (const id of added) {
+      const it = itemOf(id), S = K[it.k]; if (!S.io) continue;
+      const d = H.devOf(it.tag), b = base(it.k), D = d && DEFS[d.type];
+      const drawn = new Set(F.items.filter(x => x !== it && x.tag === it.tag && K[x.k].io && base(x.k) === b).map(x => K[x.k].io.n));
+      if (!drawn.has(S.io.n)) continue;
+      const nk = Object.keys(K).filter(k => base(k) === b && K[k].io).sort((p, q) => K[p].io.n - K[q].io.n)
+        .find(k => !drawn.has(K[k].io.n) && (!D || D.terms.some(t => t.id === S.io.d + K[k].io.n)));
+      if (nk) setKind(it, nk); else noPoint++;
+    }
+    if (noPoint) UI.toast(`Every ${K[itemOf(added.find(id => K[itemOf(id).k].io)).k].io.d === 'I' ? 'input' : 'output'} of that controller is drawn already: pick another PLC or card for the copy`, 'warn', 5000);
+    // the next paste lands further on
+    clip.items.forEach(i => { i.x += dx; i.y += dy; }); clip.wires.forEach(w => (w.pts || []).forEach(q => { q[0] += dx; q[1] += dy; }));
+    group = new Set(added); sel = added.length ? { i: added[0] } : null;
+    H.changed();
+    return true;
   };
   /* another actuator for the same contact. Its device follows: one the diagram added for this symbol alone changes type;
      a device you placed in the Wiring, or one other symbols use too, is left as it is and this symbol gets a new tag */
@@ -717,16 +1071,13 @@
     }
     H.changed();
   };
-  /* a copy of the selected symbol next to it, with a new tag (a text keeps its text) */
+  /* a copy of the selected symbols next to them (D): the clipboard's rules (FD.paste); the clipboard itself is kept */
   FD.copy = function () {
-    const it = sel && sel.i && itemOf(sel.i); if (!it) { UI.toast('Select a symbol first'); return; }
+    if (!many().length) { UI.toast('Select a symbol first'); return; }
     if (full()) return;
-    const F = fr(), S = K[it.k];
-    let tag = it.tag;
-    if (S.type) { const used = taken(); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
-    H.snap(); F.seq++;
-    const c = { ...it, id: 'd' + F.seq, tag, x: it.x + 40, y: it.y + 40 };
-    F.items.push(c); sel = { i: c.id }; H.changed();
+    const keep = clip;
+    if (FD.copySel()) FD.paste();
+    clip = keep;
   };
   /* drawing order: to the front (drawn last) or to the back */
   FD.order = function (front) {
@@ -737,37 +1088,148 @@
   };
   FD.del = function () {
     const F = fr();
+    if (group.size > 1) {
+      const ids = new Set(many()); H.snap();
+      F.items = F.items.filter(i => !ids.has(i.id)); F.wires = F.wires.filter(w => !ids.has(w.a.split(':')[0]) && !ids.has(w.b.split(':')[0]));
+      group.clear(); sel = null; H.changed(); return true;
+    }
+    group.clear();
     if (sel && sel.i) { H.snap(); F.items = F.items.filter(i => i.id !== sel.i); F.wires = F.wires.filter(w => !w.a.startsWith(sel.i + ':') && !w.b.startsWith(sel.i + ':')); sel = null; H.changed(); return true; }
     if (sel && sel.w) { H.snap(); F.wires = F.wires.filter(w => w.id !== sel.w); sel = null; H.changed(); return true; }
     return false;
   };
+  const STEP = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   FD.onKey = function (ev) {
-    const k = ev.key;
-    if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); FD.del(); }
+    const k = ev.key, c = ev.ctrlKey || ev.metaKey, lk = k.toLowerCase();
+    // ▶ Play operates the drawing: no editing keys there (Escape still clears the selection)
+    if (H.mode() === 'run' && k !== 'Escape') return;
+    if (c) {
+      // Ctrl+C copies text selected on the page as usual; it copies symbols only when symbols are selected
+      if (lk === 'c') { if (String(window.getSelection ? window.getSelection() : '') || !many().length) return; if (FD.copySel()) { ev.preventDefault(); UI.toast(`${clip.items.length} symbol${clip.items.length === 1 ? '' : 's'} copied`, 'ok', 1500); } }
+      else if (lk === 'v') { ev.preventDefault(); FD.paste(); }
+      else if (lk === 'a') { ev.preventDefault(); FD.selectAll(); }
+      return;
+    }
+    if (STEP[k]) { const s = ev.shiftKey ? 50 : 10; if (FD.nudge(STEP[k][0] * s, STEP[k][1] * s)) ev.preventDefault(); }
+    else if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); FD.del(); }
     else if (k === 'r' || k === 'R') { ev.preventDefault(); FD.rotate(); }
     else if (k === 'd' || k === 'D') { ev.preventDefault(); FD.copy(); }
-    else if (k === 'Escape') { wiring = null; sel = null; if (body) FD.render(body); H.side(); }
+    else if (k === 'Escape') { wiring = null; sel = null; group.clear(); if (body) FD.render(body); H.side(); }
   };
-  FD.resetSel = () => { sel = null; wiring = null; drag = null; lastSig = ''; };
+  FD.resetSel = () => { sel = null; group.clear(); wiring = null; drag = null; lastSig = ''; };
   FD.selected = () => (sel && sel.i ? itemOf(sel.i) : null);
+  /* Properties of the selected symbol: its tag (and PLC point), a comment, and the settings of its device — the same
+     settings the Wiring shows (one place: the device's props), so a delay or coil voltage changed here is the Wiring's too */
+  const field = (n, html) => `<label class="field"><span>${esc(n)}</span>${html}</label>`;
+  function propsHtml(it, S, d) {
+    if (it.k === 'text') return '';
+    const f = [];
+    if (S.type && !S.jct) f.push(field('Tag', `<input data-fp="tag" value="${esc(it.tag)}" maxlength="20" list="fd-tags" autocomplete="off"><datalist id="fd-tags">${suggest(it.k).list.map(t => `<option value="${esc(t)}">`).join('')}</datalist>`));
+    if (S.io) {
+      // only the points the placed controller or card has (an 8-input card has no I8–I11)
+      const b = base(it.k), pts = Object.keys(K).filter(k => base(k) === b && K[k].io).map(k => K[k].io.n)
+        .filter(n => n === S.io.n || !d || !DEFS[d.type] || DEFS[d.type].terms.some(t => t.id === S.io.d + n));
+      f.push(field('Point', `<select data-fp="point">${pts.map(n => `<option value="${n}" ${n === S.io.n ? 'selected' : ''}>${S.io.d}${n}</option>`).join('')}</select>`));
+    }
+    f.push(field('Comment', `<input data-fp="c" value="${esc(it.c || '')}" maxlength="80" placeholder="e.g. Pump 1 start">`));
+    // a PLC or I/O card keeps its settings (slot…) in the Wiring and the I/O Configuration
+    if (d && !S.types) for (const p of DEFS[d.type].pdefs || []) {
+      f.push(field(p.n, p.opts ? `<select data-fpd="${p.k}">${p.opts.map(o => `<option ${String(d.props[p.k]) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
+        : `<input data-fpd="${p.k}" type="${p.type || 'text'}" value="${esc(d.props[p.k] ?? '')}">`));
+    }
+    return `<div class="props fd-props">${f.join('')}</div>`;
+  }
+  /* grid: lines and dots, dots only, or none (this browser) */
+  const GRIDS = { lines: 'Lines and dots', dots: 'Dots', none: 'None' };
+  let grid = 'lines';
+  try { const g = localStorage.getItem('plc-trainer.fdGrid'); if (GRIDS[g]) grid = g; } catch (e) { /* private mode */ }
+  FD.setGrid = function (g) { if (!GRIDS[g]) return; grid = g; try { localStorage.setItem('plc-trainer.fdGrid', g); } catch (e) { /* private mode */ } if (body) FD.render(body); };
+  FD.grid = () => grid;
+  /* the drawing as a picture: an SVG of the symbols and wires with their colours written in (no grid, no handles) */
+  FD.imageSvg = function () {
+    if (!svg || !gv) return null;
+    const its = fr().items; if (!its.length) return null;
+    const PROPS = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'opacity', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor'];
+    const src = gv.querySelectorAll('*'), copy = gv.cloneNode(true), dst = copy.querySelectorAll('*');
+    src.forEach((e, i) => { const cs = getComputedStyle(e); dst[i].setAttribute('style', PROPS.map(p => `${p}:${cs.getPropertyValue(p)}`).join(';')); dst[i].removeAttribute('class'); });
+    copy.querySelectorAll('[data-ft], [data-fb]').forEach(e => e.remove());
+    // the background and the click areas (filled with the grid pattern or nothing visible) are not part of the picture
+    [...copy.querySelectorAll('rect')].filter(e => { const o = e.getAttribute('style') || ''; return /fill:\s*(url|transparent|rgba\(0, 0, 0, 0\))/.test(o) && !/stroke:\s*rgb/.test(o); }).forEach(e => e.remove());
+    copy.removeAttribute('transform');
+    const x1 = Math.min(...its.map(i => i.x)) - 80, x2 = Math.max(...its.map(i => i.x)) + 80, y1 = Math.min(...its.map(i => i.y)) - 60, y2 = Math.max(...its.map(i => i.y)) + 60;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--lad-bg').trim() || '#fff';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${x2 - x1}" height="${y2 - y1}" viewBox="${x1} ${y1} ${x2 - x1} ${y2 - y1}"><rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" fill="${bg}"/>${copy.innerHTML}</svg>`;
+  };
+  const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+  FD.exportImage = function (kind) {
+    const s = FD.imageSvg(); if (!s) { UI.toast('The drawing is empty', 'warn'); return; }
+    const name = (App.project.name || 'diagram').replace(/[^\w-]+/g, '_');
+    if (kind === 'svg') { download(new Blob([s], { type: 'image/svg+xml' }), name + '.svg'); return; }
+    const img = new Image(), url = URL.createObjectURL(new Blob([s], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = img.width * 2; c.height = img.height * 2;
+      const g = c.getContext('2d'); g.scale(2, 2); g.drawImage(img, 0, 0); URL.revokeObjectURL(url);
+      c.toBlob(b => { if (b) download(b, name + '.png'); }, 'image/png');
+    };
+    img.src = url;
+  };
   /* side panel for the free drawing */
   FD.side = function () {
-    const it = FD.selected(), errs = FD.errs ? [...FD.errs.values()] : [];
-    const d = it && H.devOf(it.tag);
-    return `${it ? `<h5>${esc(K[it.k].n)} <code>-${esc(it.tag)}</code></h5>
-      <div class="btn-row"><button class="btn" data-fd="retag">${it.k === 'text' ? 'Edit text…' : 'Tag…'}</button><button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Copy (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
-      <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>` : '<p class="help">Select a symbol to rotate it, change its tag or its type.</p>'}
+    const it = FD.selected(), errs = FD.errs ? [...FD.errs.values()] : [], ids = many();
+    const d = it && H.devOf(it.tag), S = it && K[it.k];
+    const head = ids.length > 1 ? `<h5>${ids.length} symbols selected</h5>
+      <div class="btn-row"><button class="btn" data-fd="rot">⟳ Rotate (R)</button><button class="btn" data-fd="copy">⧉ Duplicate (D)</button><button class="btn" data-fd="clip">Copy (Ctrl+C)</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <p class="help">Drag one of them to move them all. Arrow keys move them one grid step (Shift: five).</p>`
+      : it ? `<h5>${esc(S.n)} <code>-${esc(it.tag)}</code></h5>
+      ${propsHtml(it, S, d)}
+      <div class="btn-row">${it.k === 'text' ? '<button class="btn" data-fd="retag">Edit text…</button>' : ''}<button class="btn" data-fd="rot">⟳ Rotate (R)</button>${TYPES.some(l => l.includes(it.k)) ? '<button class="btn" data-fd="type">Type ⇄</button>' : ''}<button class="btn" data-fd="copy">⧉ Duplicate (D)</button><button class="btn" data-fd="front">To front</button><button class="btn" data-fd="back">To back</button><button class="btn danger" data-fd="del">Delete</button></div>
+      <p class="help">${it.k === 'text' ? 'A note on the drawing.' : d ? esc(Circuit.status(d, App.ctx) || '') : 'Not in the Wiring yet.'}</p>`
+      : `<p class="help">Select a symbol to change its tag, comment and settings. Shift+click or Shift+drag selects several.</p>
+      ${FD.hasClip() ? '<div class="btn-row"><button class="btn" data-fd="paste">Paste (Ctrl+V)</button></div>' : ''}
+      <div class="props fd-props">${field('Grid', `<select data-fgrid>${Object.entries(GRIDS).map(([k, n]) => `<option value="${k}" ${k === grid ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}</div>
+      <div class="btn-row"><button class="btn" data-fd="png">Save as PNG</button><button class="btn" data-fd="svg">Save as SVG</button></div>`;
+    return `${head}
       ${errs.length ? `<h5>Problems</h5><ul class="verify">${errs.map(m => `<li class="e">${esc(m)}</li>`).join('')}</ul>` : ''}
       <ul class="tips"><li><b>▦ Library</b>: pick a group, then click a symbol or drag it onto the drawing. Drag to move, <b>R</b> to rotate, <b>Del</b> to delete.</li>
       <li>Click a terminal ● then another to draw a wire. Every drawn wire is wired in the Wiring for you.</li>
       <li>End a wire on another wire to branch it (a junction dot). Double-click a wire to add a bend, drag the bend, double-click it to remove it.</li>
       <li>Symbols with the same tag are the same device: draw its coil and its contacts anywhere.</li>
-      <li><b>D</b> copies the selected symbol. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
+      <li><b>Shift</b>+click or Shift+drag a box selects several symbols; <b>Ctrl+A</b> selects all. Arrow keys move the selection (Shift: five steps).</li>
+      <li><b>D</b> duplicates the selection; <b>Ctrl+C</b> / <b>Ctrl+V</b> copy and paste it — a pasted coil and its contacts become one new device. Others › Text adds a note, Others › PE an earth symbol wired to the supply PE.</li>
+      <li>Properties (on the right when one symbol is selected): its tag, a comment, and the settings of its device — the same ones as in the Wiring. On a touch screen, a long press opens the tag form; pinch to zoom.</li>
       <li>Sources › Point L1, N, PE, +24 V… is wired to that conductor of the supply. Others › wire pieces (straight, corner, T, cross) join wires; link arrows with the same tag are connected.</li>
+      <li>PLC › outputs, inputs and power are terminals of the PLC or I/O card placed in the Wiring: pick its tag and the point. They show the live state of the point; the ladder decides the outputs.</li>
       <li>▶ Play: press buttons, switch breakers and trip overloads on the drawing. ✎ Values shows the voltage on each load and open/closed on each contact.</li></ul>`;
   };
   FD.bindSide = function (sideEl) {
-    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del })[b.dataset.fd](); });
+    sideEl.querySelectorAll('[data-fd]').forEach(b => { b.onclick = () => ({ retag: () => FD.retag(FD.selected()), rot: FD.rotate, type: FD.cycleType, copy: FD.copy, front: () => FD.order(true), back: () => FD.order(false), del: FD.del,
+      clip: () => { if (FD.copySel()) UI.toast('Copied', 'ok', 1500); }, paste: () => FD.paste(), png: () => FD.exportImage('png'), svg: () => FD.exportImage('svg') })[b.dataset.fd](); });
+    const gs = sideEl.querySelector('[data-fgrid]'); if (gs) gs.onchange = () => FD.setGrid(gs.value);
+    const it = FD.selected(); if (!it) return;
+    sideEl.querySelectorAll('[data-fp]').forEach(i => { i.onchange = () => FD.setProp(it, i.dataset.fp, i.value); });
+    sideEl.querySelectorAll('[data-fpd]').forEach(i => { i.onchange = () => FD.setDevProp(it, i.dataset.fpd, i.value); });
+  };
+  /* Properties: the symbol's tag (another tag = another device, as Tag… does), PLC point or comment */
+  FD.setProp = function (it, k, v) {
+    if (!it) return false;
+    if (k === 'tag') {
+      const t = String(v).trim();
+      if (t === it.tag) return true;
+      if (!TAG.test(t)) { UI.toast('Use letters, numbers, - or _ (up to 20)', 'warn'); H.side(); return false; }
+      H.snap(); it.tag = t; H.changed(); return true;
+    }
+    if (k === 'point') { const nk = base(it.k) + Number(v); if (!K[nk] || nk === it.k) return false; H.snap(); setKind(it, nk); H.changed(); return true; }
+    if (k === 'c') { const c = String(v).trim().slice(0, 80); H.snap(); if (c) it.c = c; else delete it.c; H.changed(); return true; }
+    return false;
+  };
+  /* a device setting from the Properties: written to the device itself, as the Wiring does */
+  FD.setDevProp = function (it, k, v) {
+    const d = it && H.devOf(it.tag), p = d && (DEFS[d.type].pdefs || []).find(f => f.k === k);
+    if (!p) return false;
+    if (p.opts && !p.opts.includes(v)) return false;
+    d.props[k] = p.type === 'number' ? Number(v) : v;
+    App.circuitChanged(); if (body) FD.render(body); H.side();
+    return true;
   };
   window.FreeDraw = FD;
 })();
