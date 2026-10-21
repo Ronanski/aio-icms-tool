@@ -1,7 +1,7 @@
 # Progress
 
 **Current version:** 2.1.0 (stable release authorized by the owner 2026-10-21: "go stable na yan. make it latest stable update" — v2.0.1 accuracy fixes, v2.1 lessons, the full audit, the Electrical Diagram roadmap Phases 0–6 and the Simurelay parity batch). Before it 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
-**Status:** v2.1.0 prepared for the Stable release (PR); Stable v2.0.0 (released and verified 2026-10-20) until the release workflow has run. Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
+**Status:** **Stable v2.1.0 released and verified 2026-10-21** (GitHub Release with exe, apk, web zip; APK release cert checked; Pages Stable = 2.1.0). Previous: v2.0.0 (2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
 ## Done (v1.0.0)
 - [x] PLC engine: addressing, scan, PROG/RUN, 25 instructions, forcing
@@ -217,7 +217,10 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
   - Hindi pa (partial): impulse coil at generator C1-C2 na eksaktong Simurelay behaviour, isolator 1P 13-14, roller CON 11-12-13, LV/HV PSU, GND, L1L2L3 bundles, I-II-III / I-0-II selectors, MCB thermal trip, directional link arrow
 - [x] Push at PR (owner GO, 2026-10-21): 11 branches naka-push; PR [#39](https://github.com/Ronanski/aio-icms-tool/pull/39) (Phase 0–1 → `main`) at [#40](https://github.com/Ronanski/aio-icms-tool/pull/40) (stacked sa #39)
 - [x] CI ng #39 at #40: **green** (2026-10-21) — test (npm test sa Ubuntu), windows, android, web, version: pass; publish: skipped (PR lang). Pareho ring nag-pass ang Phase 1 CI item sa itaas.
-- [ ] Merge sa `main` (Beta): #39 muna, saka #40 — kailangan ng hiwalay na GO; Stable release — hiwalay na GO
+- [x] Merge sa `main`: #39, #40, #41 (owner GO) → **Stable v2.1.0 released** 2026-10-21
+- [ ] v2.2 parity (PR #42): merge at Stable release — kailangan ng GO
+- [x] Parity v2.2: thermal-magnetic MCB, 3-position selectors, directional arrows, L1L2L3(N) points; REA metadata for generator/impulse coil/earth/PSU → 111/114 full (97.4%) (6 checks; branch `feature/parity-v2.2`)
+  - Natitirang Partial (3): isolator 1P (13-14), roller CON (11-12-13) — sinadyang IEC numbering; LV/HV power supply (walang 115 V)
 - [ ] Separate, needs its own approval: diode (one-way conduction in the solver)
 
 ## Audit findings not fixed yet

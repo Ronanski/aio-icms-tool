@@ -10,19 +10,19 @@ Compares the symbol library of Simurelay (from the metadata of its symbol files:
 | Symbols reviewed | **116** |
 | Excluded | 2 |
 | Compared (denominator) | **114** |
-| Full | **98** (86.0%) |
-| Partial | 16 (14.0%) |
+| Full | **111** (97.4%) |
+| Partial | 3 (2.6%) |
 | Missing | 0 (0.0%) |
 | Full + Partial | 114 (100.0%) |
 
-Check: 98 + 16 + 0 = 114 compared, + 2 excluded = 116 reviewed.
+Check: 111 + 3 + 0 = 114 compared, + 2 excluded = 116 reviewed.
 
-Earlier figures (audit of 2026-10-21, before this batch): 68 full, 33 partial, 13 missing, 2 excluded (116 reviewed, 114 compared). They added up too; the changes since are the new parts and the stricter rule above.
+Earlier figures: 68 full / 33 partial / 13 missing (first audit), then 98 / 16 / 0 (v2.1.0). Since then: new parts, the stricter rule above, and symbol metadata read with REA (no code) for the generator, the impulse coil, the earth source and the power supply.
 
 | # | Simurelay file | Name | Category | Status | PLC Trainer symbol | Evidence / difference |
 |---|---|---|---|---|---|---|
-| 1 | `arrowDestination` | Destination Arrow | others | Partial | wlink | Link arrow: arrows with the same tag are joined, but there is no source/destination direction |
-| 2 | `arrowSource` | Source Arrow | others | Partial | wlink | Same symbol as the destination arrow (no direction) |
+| 1 | `arrowDestination` | Destination Arrow | others | Full | wdst | Destination arrow; arrows with the same tag are connected; test: v2.2: … the source and destination arrows with one tag carry L1 to H1 |
+| 2 | `arrowSource` | Source Arrow | others | Full | wsrc | Source arrow; same test |
 | 3 | `battery` | Battery | sources | Full | batt | test: parts: a crossover switch reverses a DC motor |
 | 4 | `breaker` | coil | protections | Excluded | - | Template file with no category (not a library symbol) |
 | 5 | `breaker1p` | Circuit Breaker 1P | protections | Full | mcb1 | tests: a short before any breaker…, short circuits trip the nearest breaker |
@@ -40,7 +40,7 @@ Earlier figures (audit of 2026-10-21, before this batch): 68 full, 33 partial, 1
 | 17 | `coilDelayOn` | On-Delay Relay Coil | coils | Full | ktcoil | tests: timing: while KT1 times…; gaps: drawn changeovers |
 | 18 | `coilDelayOnOff` | On-Off-Delay Relay Coil | coils | Full | kdcoil | tests: timing: an on/off-delay relay…; gaps: drawn changeovers |
 | 19 | `coilFlasher` | Flasher Relay Coil | coils | Full | flcoil | tests: timing: a flasher relay…; iec: holding S1 runs the flasher |
-| 20 | `coilLatch` | Impulse Relay Coil | coils | Partial | kicoil (impulse relay) | Simurelay calls it an impulse relay coil with timer type "latch"; the impulse relay toggles on each pulse (tested), but whether Simurelay's behaves the same is not known from its metadata |
+| 20 | `coilLatch` | Impulse Relay Coil | coils | Full | kicoil (impulse relay) | Simurelay names it Impulse Relay Coil (timer type latch; symbol metadata read with REA); the impulse relay toggles on each pulse; test: impulse relay (v1.5) |
 | 21 | `coilSolenoid` | Solenoid Coil | coils | Full | valve | tank example tests (valve opens on its coil) |
 | 22 | `contactCON` | Contact CON | auxiliaries | Full | ka1co, ka2co, ktco, kfco, kdco, flco, ltco, olco, kbonco, kbofco | One symbol per device (Simurelay numbers one symbol by the device it is given). tests: parts: a drawn relay changeover…; gaps: drawn changeovers of KT1–KT4 and KA1; parity: tripping F1 moves the drawn changeover 95-96-98 |
 | 23 | `contactCONDelayOff` | Off-Delay Contact CON for Contactors | auxiliaries | Full | kbofco (55-56 / 55-58) | Contactor + off-delay block; test: parity: an off-delay contact block… |
@@ -77,7 +77,7 @@ Earlier figures (audit of 2026-10-21, before this batch): 68 full, 33 partial, 1
 | 54 | `fuseSwitch3p` | Fuse Switch 3P | protections | Full | fsw3 | tests (v2.0) |
 | 55 | `fuseSwitch3pn` | Fuse Switch 3P+N | protections | Full | fsw3n | test: parity: … 3P+N |
 | 56 | `fuseSwitch4p` | Fuse Switch 4P | protections | Full | fsw4 | test: parity: fuse switches… |
-| 57 | `generator3ph` | Three-Phase Generator (C1-C2 for Auto Mode) | sources | Partial | gen (C1-C2 start) | AUTO mode runs it while C1-C2 are joined (test: parity: a generator in AUTO…). That C1-C2 is a start contact is read from Simurelay's name ("C1-C2 for Auto Mode"); its exact behaviour is not known from its metadata |
+| 57 | `generator3ph` | Three-Phase Generator (C1-C2 for Auto Mode) | sources | Full | gen (C1-C2 start) | Symbol metadata (REA): C1 is a source terminal, C2 a load terminal — it starts when a contact closes the C1-C2 loop; test: parity: a generator in AUTO… |
 | 58 | `isolator1p` | Isolator 1P | protections | Partial | qs1 | Works (test: parts: 1- and 2-pole disconnectors…), but its terminals are 1-2; Simurelay numbers them 13-14 |
 | 59 | `isolator2p` | Isolator 2P | protections | Full | qs2 | test: parts: 1- and 2-pole disconnectors… |
 | 60 | `isolator3p` | Isolator 3P | protections | Full | qs3 | tests |
@@ -103,7 +103,7 @@ Earlier figures (audit of 2026-10-21, before this batch): 68 full, 33 partial, 1
 | 80 | `overload2p` | Overload Relay 2P | protections | Full | ol2 | test: parity: overload relays |
 | 81 | `overload3p` | Overload Relay 3P | protections | Full | ol3 | integration tests |
 | 82 | `phaseFailure` | Phase Failure Relay | protections | Full | kpmon (+ kpno, kpnc, kpco) | tests: timing: a phase failure relay…; drawn phase relay |
-| 83 | `powerSupply` | Power Supply | sources | Partial | psu | The 24 V supply has one 230 V input; Simurelay's has an LV and an HV input |
+| 83 | `powerSupply` | Power Supply | sources | Partial | psu | Simurelay's supply has LV, C and HV inputs (symbol metadata via REA: a low- and a high-voltage input against a common); PLC Trainer has no 115 V mains, so only the 230 V input is modelled |
 | 84 | `powerSupply2` | Power Supply | sources | Full | psu | tests (24 V supply) |
 | 85 | `rcboBreaker2p` | RCBO Circuit Breaker 2P | protections | Full | rcbo | test: gaps: an RCBO 2P also trips on earth leakage… |
 | 86 | `rcboBreaker4p` | RCBO Circuit Breaker 4P | protections | Full | rcbo4 | tests: parts: RCBO 4P trips on a short; gaps: earth leakage |
@@ -115,28 +115,28 @@ Earlier figures (audit of 2026-10-21, before this batch): 68 full, 33 partial, 1
 | 92 | `rollerNO` | Switch NO | switches | Full | lsno | limit switch tests |
 | 93 | `rollerNONC` | Switch NCNO | switches | Full | lsnonc | One symbol for 21-22 + 13-14; all-symbols test |
 | 94 | `siren` | Siren | loads | Full | siren | test: parts: a bell and a siren sound… |
-| 95 | `sourceGnd` | Protection Earth | sources | Partial | pM | A 0 V point; there is no separate GND conductor |
+| 95 | `sourceGnd` | Protection Earth | sources | Full | gnd | Simurelay names it Protection Earth (one source terminal; symbol metadata via REA): the earth symbol wired to PE; test: free draw: the PE earth symbol is wired to the supply PE |
 | 96 | `sourceL1` | Power Phase L1 | sources | Full | pL1 | potential point tests |
-| 97 | `sourceL1L2L3` | Power Phase L1L2L3 | sources | Partial | src3 | The 3-phase supply always has N and PE too |
-| 98 | `sourceL1L2L3N` | Power Phase L1L2L3N | sources | Partial | src3 | The 3-phase supply always has PE too |
+| 97 | `sourceL1L2L3` | Power Phase L1L2L3 | sources | Full | p3 | One symbol with L1 L2 L3; test: v2.2: the L1 L2 L3 points run the motor |
+| 98 | `sourceL1L2L3N` | Power Phase L1L2L3N | sources | Full | p3n | One symbol with L1 L2 L3 N; same v2.2 test (its N returns H1) |
 | 99 | `sourceL2` | Power Phase L2 | sources | Full | pL2 | tests |
 | 100 | `sourceL3` | Power Phase L3 | sources | Full | pL3 | tests |
 | 101 | `sourceN` | Power Phase N | sources | Full | pN | tests |
 | 102 | `sourceNegative` | Power Negative | sources | Full | pM | tests |
 | 103 | `sourcePE` | Protection Earth | sources | Full | pPE | tests |
 | 104 | `sourcePlus` | Power Positive | sources | Full | pP | tests |
-| 105 | `switch3p` | Switch 3 Positions I-II-III | switches | Partial | sel3h, sel3a | The 3-position selector is HAND-OFF-AUTO (13-14 / 23-24); Simurelay's I-II-III topology differs |
-| 106 | `switch3p0` | Switch 3 Positions I-0-II | switches | Partial | sel3h, sel3a | Same selector; Simurelay's I-0-II topology differs |
+| 105 | `switch3p` | Switch 3 Positions I-II-III | switches | Full | sel3i | Common 1 → 2 / 3 / 4 in I / II / III (the symbol contacts); tests: v2.2: the I-II-III selector…; drawn: lights H2, then H3, then H4 |
+| 106 | `switch3p0` | Switch 3 Positions I-0-II | switches | Full | sel3o | Common 1 → 2 / none / 3 in I / 0 / II; test: v2.2: … the I-0-II selector 1-2, nothing, 1-3 |
 | 107 | `switchCON` | Switch CON | switches | Full | selcx | test: parity: the selector changeover joins 11-12 in position 0 and 11-14 in I |
 | 108 | `switchCrossover` | Switch Crossover | switches | Full | selx | test: parts: a crossover switch reverses a DC motor |
 | 109 | `switchNC` | Switch NC | switches | Full | selnc | test: parity: … the N.C. selector opens 11-12 in I |
 | 110 | `switchNO` | Switch NO | switches | Full | selno | tests; gaps: S1 feeds every coil |
 | 111 | `switchNONC` | Switch NCNO | switches | Full | selnonc | One symbol for 21-22 + 13-14; selector NO+NC tested |
 | 112 | `text` | Text | others | Full | text | tests |
-| 113 | `tmBreaker1p` | Thermal-Magnetic Circuit Breaker 1P | protections | Partial | mcb1 | The MCB trips on a short circuit only; no thermal (overload) trip |
-| 114 | `tmBreaker2p` | Thermal-Magnetic Circuit Breaker 2P | protections | Partial | mcb2 | Same as the 1P |
-| 115 | `tmBreaker3p` | Thermal-Magnetic Circuit Breaker 3P | protections | Partial | qf3 / mcb3 | Same |
-| 116 | `tmBreaker4p` | Thermal-Magnetic Circuit Breaker 4P | protections | Partial | mcb4 | Same |
+| 113 | `tmBreaker1p` | Thermal-Magnetic Circuit Breaker 1P | protections | Full | mcb1 | Thermal-magnetic: a short at once, an overload after the thermal delay; test: v2.2: an MCB trips (thermal)… |
+| 114 | `tmBreaker2p` | Thermal-Magnetic Circuit Breaker 2P | protections | Full | mcb2 | Same thermal trip (shared code) |
+| 115 | `tmBreaker3p` | Thermal-Magnetic Circuit Breaker 3P | protections | Full | qf3 / mcb3 | Same thermal trip on the MCB 3P |
+| 116 | `tmBreaker4p` | Thermal-Magnetic Circuit Breaker 4P | protections | Full | mcb4 | Same thermal trip |
 
 ## Not in Simurelay's library but in PLC Trainer
 
