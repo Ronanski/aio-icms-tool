@@ -2617,6 +2617,24 @@ function check(name, cond, info = '') {
   }));
   check('hardware: one flat look — no device is drawn with shading (every fill of the device art is one colour)', await page.evaluate(() =>
     [...document.querySelectorAll('svg defs linearGradient, svg defs radialGradient')].every(g => new Set([...g.querySelectorAll('stop')].map(s => s.getAttribute('stop-color'))).size === 1)));
+  check('1756-style rack: modules are narrow and tall (70 × 300), terminals on the terminal block at the sides, and a wire leaves its terminal sideways', await page.evaluate(async () => {
+    const D = Circuit.DEFS, narrow = ['mcpu', 'mdi8', 'mdi16', 'mdi16ac', 'mdo8', 'mdo16', 'mdo16t', 'mai4', 'mao2'].every(t => D[t].w === 70 && D[t].h === 300);
+    const sides = D.mdi16.terms.every(t => t.side === -1 || t.side === 1);
+    const prev = App.currentId;
+    App.openNew({ name: 'Side', io: { slots: { 1: 'mdi16' } }, circuit: { seq: 4, comps: [{ id: 'c1', type: 'mdi16', x: 200, y: 0, props: { label: 'DI', slot: '1' }, state: {} }, { id: 'c2', type: 'pb_no', x: 0, y: 400, props: { label: 'S1' }, state: {} }, { id: 'c3', type: 'pb_no', x: 400, y: 400, props: { label: 'S2' }, state: {} }],
+      wires: [{ id: 'w1', a: 'c2:14', b: 'c1:I0', pts: [] }, { id: 'w2', a: 'c3:14', b: 'c1:I8', pts: [] }] } });
+    if (prev) Store.remove(prev);
+    App.showView('wiring'); await new Promise(q => setTimeout(q, 300));
+    const P = id => document.querySelector(`#view-wiring .wire[data-wid="${id}"] .wb`).getAttribute('d').replace('M', '').split(' L').map(t => t.trim().split(' ').map(Number));
+    const a = P('w1'), b = P('w2');
+    // I0 (left column) is reached from the left, I8 (right column) from the right
+    const left = a[a.length - 2][0] < 200 && a[a.length - 2][1] === a[a.length - 1][1], right = b[b.length - 2][0] > 270 && b[b.length - 2][1] === b[b.length - 1][1];
+    return narrow && sides && left && right;
+  }));
+  check('tag-based address style: I:1/0 is shown Local:1:I.Data.0, and Local:2:O.Data.3 typed is stored O:2/3', await page.evaluate(() => {
+    const book = Circuit.addrBook(App.project.circuit, App.project.io, 'tag');
+    return book.fmt('I:1/0') === 'Local:1:I.Data.0' && book.toFile('Local:2:O.Data.3') === 'O:2/3' && !!Circuit.STYLES.tag;
+  }));
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },

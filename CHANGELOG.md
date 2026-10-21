@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **AB-style 1756 chassis** (Wiring): every rack module is now drawn as a narrow, tall ControlLogix-like module (70 × 300): a colour stripe and module code on top (PA, L7, IB16, IA16, OW16, OB16, IF4, OF2), ST status LEDs, and a removable terminal block whose two columns of terminals sit on the module's sides, so their wires leave sideways. Leave a gap between modules for the wiring. Before, the 16-point cards were up to 380 wide.
+- **Tag-based address style** (*Local:1:I.Data.0*), next to file-based, bit/byte and basic.
 - **More I/O, AB-style hardware** (Wiring): a compact PLC with 16 inputs and 12 relay outputs (three output commons, VAC0–VAC2), and 16-point rack cards: 24 VDC input (IB16), 230 VAC input (IA16), relay output (OW16, four commons) and 24 VDC transistor output (OB16). Addresses I:slot/0–15 and O:slot/0–15. Verify, the I/O Configuration, the data table and the diagram symbols know the new points. The 12/8 controller and the 8-point cards stay, so older projects open unchanged.
 - **You draw the wire's path** (free draw, as in Simurelay): while drawing a wire, every click on the way is a corner, and **Esc** cancels. **Drag any part of a wire** to move it; the corners follow.
 - **Junction dots** where one circuit branches.
@@ -16,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Livelier run view** in free draw: current flows along the live wires, an energized coil is filled, and a lit lamp glows. A contact that has just switched flashes. All of this follows *reduce motion*.
 
 ### Changed
+- **Smaller compact controllers**: inputs 16 apart instead of 22 (the 16/12 one is 442 wide, was 522).
 - **One look for all the hardware**: flat 2D devices with no shading, and one sans-serif font on every device. The PLC rack is drawn AB-style: charcoal modules with a label plate (module code, kind, slot), a colour stripe by kind (red AC, blue DC, orange relay, green analog), and a numbered status LED for every point. Before, it was a grey-blue rack in a serif font. The timer kind labels no longer cover the terminal numbers.
 - **Automatic wire routes are clean**: a wire without corners of its own is routed on the grid with as few bends as possible. It never crosses a symbol, passes over a terminal it does not connect, or runs on top of another circuit's wire. Wires of one circuit share a line and branch with a dot.
 - **The Wiring built from the diagram is tidy**: its devices are placed side by side in panel rows (the gap used to grow with every device). Wires without bends are routed around the devices by the same router as the diagram: they never run along a row of terminals (that looked connected to every terminal) or over a device, and never lie on top of another wire.

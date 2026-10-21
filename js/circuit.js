@@ -615,6 +615,24 @@
      stripe by kind (red AC, blue DC, orange relay, green analog, grey CPU / power) and a status LED for every point */
   const AB = { body: '#2d2d2b', edge: '#121211', plate: '#e4e3de', AC: '#c8322a', DC: '#2c63b8', RLY: '#e07a1f', ANA: '#3c9a4a', SYS: '#8b8b86' };
   const plate = (x, w, code, sub, col) => R(x, 28, w, 34, AB.plate, 2, '#8d8c87') + R(x, 28, 6, 34, col, 0, 'none') + T(x + 12, 44, code, 'dt brand ink', 'start') + T(x + 12, 56, sub, 'dt xs', 'start');
+  /* 1756-style module: 70 wide, 300 tall; a colour stripe by kind on top, the module code, status LEDs (ST) and a
+     removable terminal block (RTB) whose terminals sit on the module's left and right edges, wires leaving sideways */
+  const MW = 70, MH = 300, Y0 = 132, PITCH = 15;
+  const rtbTerms = (left, right) => [...left.map((t, i) => ({ ...t, x: 0, y: Y0 + i * PITCH, side: -1 })), ...right.map((t, i) => ({ ...t, x: MW, y: Y0 + i * PITCH, side: 1 }))];
+  const modBody1756 = (W, code, sub, col, rows, slot) => R(0, 0, W, MH, AB.body, 3, AB.edge) + R(4, 4, W - 8, 5, col, 1, 'none') + T(W / 2, 26, code, 'dt brand') + T(W / 2, 38, sub, 'dt light xs') +
+    (slot != null ? T(W / 2, 114, 'SLOT ' + slot, 'dt light xs') : '') + (rows ? R(8, Y0 - 10, W - 16, (rows - 1) * PITCH + 20, '#d4d3ce', 2, '#8d8c87') : '');
+  // the module's address range at its foot (a tag-based range is shortened to fit: Local:1:I 0–15)
+  const rngFoot = (ctx, f, slot, n) => T(MW / 2, MH - 8, rng(ctx, f, slot, n).replace(/^Local:(\d+):([IO])\.Data\.(\d+) – Local:\d+:[IO]\.Data\.(\d+)$/, 'Local:$1:$2 $3–$4'), 'dt light xs');
+  // status LEDs: two columns, numbered outside (0–7 left, 8–15 right; 0–3 / 4–7 on an 8-point module)
+  const stLeds = (W, n, w, bad = 0) => {
+    const per = n > 8 ? 8 : 4;
+    let s = T(W / 2, 48, 'ST', 'dt light xs');
+    for (let i = 0; i < n; i++) {
+      const col = i >= per ? 1 : 0, cy = 56 + (i % per) * 7, cx = W / 2 + (col ? 7 : -7), b = (bad >> i) & 1, on = b || ((w >> i) & 1);
+      s += `<rect x="${cx - 4}" y="${cy - 2.5}" width="8" height="5" rx="1" fill="${on ? (b ? '#ff4b3a' : '#f2c230') : '#45443f'}" ${on ? 'filter="url(#fGlow)"' : ''}/>` + T(col ? cx + 8 : cx - 8, cy + 2.5, String(i), 'dt light xs', col ? 'start' : 'end');
+    }
+    return s;
+  };
   // point LEDs in rows of 8, numbered; a damaged point is red
   const ledMx = (x, y, n, w, bad = 0) => {
     let s = '';
@@ -627,13 +645,13 @@
   /* compact controller (fixed I/O, slot 0): DC inputs I0… with their common, relay outputs in groups of four, each group
      switching from its own VAC-VDC common; built-in 24 VDC sensor supply */
   function compactPlc(type, PLC_IN, PLC_OUT, name, extra) {
-    const W = Math.max(440, 170 + PLC_IN * 22), G = Math.ceil(PLC_OUT / 4);
+    const W = Math.max(380, 186 + PLC_IN * 16), G = Math.ceil(PLC_OUT / 4);
     def(type, {
       name, cat: 'Control', view: 'cabinet', prefix: 'PLC', w: W, h: 200, unique: 'cpu', uniqueMsg: 'Only one PLC (compact or CPU module) per project', compact: true, nIn: PLC_IN, nOut: PLC_OUT, ...extra,
       info: `Power L1/N 230 VAC. Built-in 24 VDC sensor supply (+24 / COM). Inputs I:0/0–I:0/${PLC_IN - 1} are 24 VDC, referenced to input COM. Relay outputs O:0/0–${PLC_OUT - 1} in groups of four: ${Array.from({ length: G }, (_, g) => `O:0/${g * 4}–${Math.min(PLC_OUT, g * 4 + 4) - 1} switch from VAC-VDC${g}`).join(', ')}. Click the key switch to change PROG/RUN.`,
       terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'N', x: 40, y: 0, l: 'L2/N' }, { id: 'PE', x: 62, y: 0 }, { id: 'V24', x: 90, y: 0, l: '+24' }, { id: 'C24', x: 112, y: 0, l: 'COM' },
-        { id: 'COM', x: 150, y: 0, l: 'COM' }, ...Array.from({ length: PLC_IN }, (_, i) => ({ id: 'I' + i, x: 174 + i * 22, y: 0, l: String(i) })),
-        ...Array.from({ length: G }, (_, g) => [{ id: 'VAC' + g, x: 20 + g * 140, y: 200, l: 'VAC' + g }, ...Array.from({ length: Math.min(4, PLC_OUT - g * 4) }, (_, k) => ({ id: 'O' + (g * 4 + k), x: 50 + g * 140 + k * 22, y: 200, l: String(g * 4 + k) }))]).flat()],
+        { id: 'COM', x: 150, y: 0, l: 'COM' }, ...Array.from({ length: PLC_IN }, (_, i) => ({ id: 'I' + i, x: 174 + i * 16, y: 0, l: String(i) })),
+        ...Array.from({ length: G }, (_, g) => [{ id: 'VAC' + g, x: 20 + g * 100, y: 200, l: 'VAC' + g }, ...Array.from({ length: Math.min(4, PLC_OUT - g * 4) }, (_, k) => ({ id: 'O' + (g * 4 + k), x: 44 + g * 100 + k * 16, y: 200, l: String(g * 4 + k) }))]).flat()],
       init: () => ({ pw: false, burnt: false, badIn: 0 }),
       conduct(c, ctx) {
         if (!c.state.pw || !ctx || ctx.plcId !== c.id) return null;
@@ -701,14 +719,12 @@
     const want = r.conf[c.props.slot];
     return want ? `I/O configuration expects ${DEFS[want].name} in slot ${c.props.slot} — inactive` : `Slot ${c.props.slot} is not in the I/O configuration — inactive`;
   };
-  const cardBody = (w, h, title, sub, col = AB.SYS) => R(0, 0, w, h, AB.body, 4, AB.edge) + plate(8, w - 16, title, sub, col);
   // the card's address range in the chosen address style (ctx.fmt), e.g. I:1/0 – I:1/7 or I0.0 – I0.7
   const rng = (ctx, f, s, n = 8) => { const fmt = (ctx && ctx.fmt) || (a => a); return `${fmt(`${f}:${s}/0`)} – ${fmt(`${f}:${s}/${n - 1}`)}`; };
-  const slotTag = (w, s) => T(w - 14, 44, s, 'dt xs', 'end');
   def('mpsu', {
-    name: 'Rack Power Supply 230VAC / 24VDC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PS', w: 100, h: 160, unique: 'psu', uniqueMsg: 'Only one rack power supply per project',
-    info: 'Powers the rack backplane (CPU and I/O cards) from L1/N 230 VAC. Also gives 24 VDC (+24 / COM) for sensors, input cards and transistor outputs. Snap it on the DIN rail with the CPU and the cards.',
-    terms: [{ id: 'L1', x: 20, y: 0 }, { id: 'N', x: 45, y: 0, l: 'N' }, { id: 'PE', x: 70, y: 0 }, { id: 'V24', x: 30, y: 160, l: '+24' }, { id: 'C24', x: 65, y: 160, l: 'COM' }],
+    name: 'Rack Power Supply 230VAC / 24VDC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PS', w: 80, h: MH, unique: 'psu', uniqueMsg: 'Only one rack power supply per project',
+    info: 'Powers the chassis backplane (controller and I/O modules) from L1/N 230 VAC. Also gives 24 VDC (+24 / COM) for sensors, input modules and transistor outputs. Put it at the left end of the chassis.',
+    terms: [{ id: 'L1', x: 16, y: 0 }, { id: 'N', x: 40, y: 0, l: 'N' }, { id: 'PE', x: 64, y: 0 }, { id: 'V24', x: 24, y: MH, l: '+24' }, { id: 'C24', x: 56, y: MH, l: 'COM' }],
     init: () => ({ pw: false, burnt: false }),
     sources: c => c.state.pw ? { V24: 'DC+:' + c.id, C24: 'DC-:' + c.id } : null,
     evaluate(c, api, ctx) {
@@ -719,14 +735,13 @@
       return ch;
     },
     draw(c) {
-      return cardBody(100, 160, 'PS', '230 VAC → 24 VDC') + band(0, 100, 22, '#1b1b1a') + band(138, 100, 22, '#1b1b1a') +
-        led(16, 86, c.state.pw, '#3ddc63', 3.6) + T(26, 89, 'DC OK', 'dt light xs', 'start') +
-        R(14, 106, 72, 24, '#2a2925', 3, '#111') + T(50, 122, 'RACK', 'dt light xs') + (c.state.burnt ? burnt(100, 160) : '');
+      return modBody1756(80, 'PA', '230 VAC IN', AB.SYS) + band(MH - 22, 80, 22, '#1b1b1a') + led(20, 70, c.state.pw, '#3ddc63', 3.6) + T(30, 73, 'DC OK', 'dt light xs', 'start') +
+        R(10, 90, 60, 120, '#232322', 3, '#111') + T(40, 154, '24 VDC', 'dt light xs') + T(40, 166, 'OUT', 'dt light xs') + (c.state.burnt ? burnt(80, MH) : '');
     },
     status: c => c.state.burnt ? 'Destroyed' : c.state.pw ? 'Backplane powered, 24 VDC out' : 'No 230 VAC on L1/N',
   });
   def('mcpu', {
-    name: 'PLC CPU Module (slot 0)', cat: 'PLC Rack', view: 'cabinet', prefix: 'CPU', w: 120, h: 160, unique: 'cpu', uniqueMsg: 'Only one PLC (compact or CPU module) per project',
+    name: 'PLC CPU Module (slot 0)', cat: 'PLC Rack', view: 'cabinet', prefix: 'CPU', w: MW, h: MH, unique: 'cpu', uniqueMsg: 'Only one PLC (compact or CPU module) per project',
     info: 'Controller of the modular PLC, always slot 0. It runs the ladder. Powered by the rack power supply. I/O cards in slots 1–7 are addressed I:slot/bit and O:slot/bit. Click the key switch to change PROG/RUN.',
     terms: [],
     init: () => ({ pw: false }),
@@ -739,22 +754,24 @@
     ctxSig: (c, ctx) => `|${ctx.plcId}|${ctx.mode}|${ctx.forces}|${ctx.rack && ctx.rack.bad.length}`,
     draw(c, ctx) {
       const me = ctx && ctx.plcId === c.id, pw = c.state.pw, run = me && pw && ctx.mode === 'RUN';
-      let s = cardBody(120, 160, 'CPU', 'Slot 0') + band(0, 120, 22, '#1b1b1a');
-      const st = [['PWR', pw, '#3ddc63'], ['RUN', run, '#3ddc63'], ['FLT', me && pw && ctx.rack && ctx.rack.bad.length > 0, '#ff4b3a'], ['FORCE', me && pw && ctx.forces, '#f2c230']];
-      st.forEach(([n, on, col], i) => { s += led(14, 80 + i * 14, on, col, 3.4) + T(23, 83 + i * 14, n, 'dt light xs', 'start'); });
-      s += `<g class="part" data-part="mode"><rect x="68" y="76" width="42" height="56" rx="4" fill="#33312c" stroke="#111"/><circle cx="89" cy="96" r="10" fill="#c9c5bb" stroke="#111"/><rect x="87" y="87" width="4" height="18" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 89 96)"/>${T(89, 124, me ? ctx.mode : '—', 'dt light xs')}</g>`;
-      return s + R(10, 140, 100, 12, '#2a2925', 2, '#111') + T(60, 149, 'COMM', 'dt light xs');
+      let s = modBody1756(MW, 'L7', 'Controller · slot 0', AB.SYS);
+      // 4-character display, status LEDs, key switch
+      s += R(9, 48, 52, 16, '#0d1a0d', 2, '#000') + T(35, 60, pw ? (me ? ctx.mode : 'IDLE') : '', 'dt light xs');
+      const st = [['RUN', run, '#3ddc63'], ['FORCE', me && pw && ctx.forces, '#f2c230'], ['I/O', me && pw && !(ctx.rack && ctx.rack.bad.length), '#3ddc63'], ['OK', pw && !(me && ctx.rack && ctx.rack.bad.length), me && ctx.rack && ctx.rack.bad.length ? '#ff4b3a' : '#3ddc63']];
+      st.forEach(([n, on, col], i) => { s += led(14, 80 + i * 13, on, col, 3) + T(22, 83 + i * 13, n, 'dt light xs', 'start'); });
+      s += `<g class="part" data-part="mode"><rect x="13" y="140" width="44" height="58" rx="4" fill="#3a3a37" stroke="#111"/><circle cx="35" cy="162" r="11" fill="#c9c5bb" stroke="#111"/><rect x="33" y="152" width="4" height="20" rx="1" fill="#333" transform="rotate(${run ? 40 : -40} 35 162)"/>${T(35, 191, 'RUN · PROG', 'dt light xs')}</g>`;
+      return s + R(13, 220, 44, 60, '#232322', 3, '#111') + T(35, 254, 'SD', 'dt light xs');
     },
     status: (c, ctx) => !c.state.pw ? 'No power from the rack power supply' : (ctx && ctx.plcId === c.id ? ctx.mode + ' mode' + (ctx.rack && ctx.rack.bad.length ? ' — I/O configuration mismatch: ' + ctx.rack.bad.map(b => b.msg).join('; ') : '') : 'Second PLC (inactive)'),
   });
   /* input card: n inputs I0… and their common on top; ok(v) says whether a voltage is a valid ON signal */
   function inCard(type, name, sub, info, ok, bad, n = 8, code = 'IB8', col = AB.DC) {
-    const sp = n > 8 ? 18 : 20, W = 15 + n * sp + 15;
+    const W = MW, h = n / 2;
     def(type, {
-      name, cat: 'PLC Rack', view: 'cabinet', prefix: 'DI', w: W, h: 160, slot: true, pts: n,
+      name, cat: 'PLC Rack', view: 'cabinet', prefix: 'DI', w: W, h: MH, slot: true, pts: n,
       props: { slot: '1' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
       info,
-      terms: [...Array.from({ length: n }, (_, i) => ({ id: 'I' + i, x: 15 + i * sp, y: 0, l: String(i) })), { id: 'COM', x: 15 + n * sp, y: 0 }],
+      terms: rtbTerms([...Array.from({ length: h }, (_, i) => ({ id: 'I' + i, l: String(i) })), { id: 'COM', l: 'COM' }], Array.from({ length: h }, (_, i) => ({ id: 'I' + (h + i), l: String(h + i) }))),
       init: () => ({ badIn: 0 }),
       evaluate(c, api, ctx) {
         if (!cardOn(c, ctx)) return false;
@@ -771,9 +788,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcInX[c.props.slot]}|${ctx.fmt && ctx.fmt(`I:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcInX[c.props.slot] || 0 : 0;
-        let s = cardBody(W, 160, code, sub, col) + band(0, W, 22, '#1b1b1a') + slotTag(W, 'SLOT ' + c.props.slot);
-        s += T(14, 80, 'INPUT  ' + rng(ctx, 'I', c.props.slot, n), 'dt light xs', 'start') + ledMx(22, 94, n, w, c.state.badIn);
-        return s + led(W - 14, 80, on, '#3ddc63', 3);
+        return modBody1756(W, code, sub, col, h + 1, c.props.slot) + stLeds(W, n, w, c.state.badIn) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'I', c.props.slot, n);
       },
       status: (c, ctx) => (c.state.badIn ? 'Damaged input(s) — right-click → Repair. ' : '') + (!cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: I:${c.props.slot}/0–${n - 1}` : 'Rack not powered'),
     });
@@ -788,12 +803,12 @@
     v => v.kind === 'AC' && v.label === '230VAC', v => v.label === '400VAC', 16, 'IA16', AB.AC);
   /* relay output card: n outputs in groups of four, each group switching from its own VAC-VDC common (AC or DC) */
   function relayCard(type, name, n, code) {
-    const sp = n > 8 ? 18 : 20, pitch = sp * 5 + 2, G = n / 4, W = 15 + (G - 1) * pitch + 22 + 3 * sp + 13;
+    const G = n / 4, W = MW, grp = g => [{ id: 'VAC' + g, l: 'VAC' + g }, ...[0, 1, 2, 3].map(k => ({ id: 'O' + (g * 4 + k), l: String(g * 4 + k) }))];
     def(type, {
-      name, cat: 'PLC Rack', view: 'cabinet', prefix: 'DO', w: W, h: 160, slot: true, pts: n,
+      name, cat: 'PLC Rack', view: 'cabinet', prefix: 'DO', w: W, h: MH, slot: true, pts: n,
       props: { slot: '2' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
       info: `${n === 8 ? 'Eight' : 'Sixteen'} relay outputs in groups of four: ${Array.from({ length: G }, (_, g) => `O${g * 4}–O${g * 4 + 3} switch from VAC${g}`).join(', ')} (AC or DC). Address: O:slot/0–${n - 1}.`,
-      terms: Array.from({ length: G }, (_, g) => [{ id: 'VAC' + g, x: 15 + g * pitch, y: 160 }, ...[0, 1, 2, 3].map(k => ({ id: 'O' + (g * 4 + k), x: 15 + g * pitch + 22 + k * sp, y: 160, l: String(g * 4 + k) }))]).flat(),
+      terms: rtbTerms(Array.from({ length: G / 2 }, (_, g) => grp(g)).flat(), Array.from({ length: G / 2 }, (_, g) => grp(G / 2 + g)).flat()),
       conduct(c, ctx) {
         if (!cardOn(c, ctx) || !rackOn(ctx)) return null;
         const w = ctx.plcOutX[c.props.slot] || 0, out = [];
@@ -803,9 +818,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx), w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
-        let s = cardBody(W, 160, code, 'Relay', AB.RLY) + band(138, W, 22, '#1b1b1a') + slotTag(W, 'SLOT ' + c.props.slot);
-        s += T(14, 78, 'OUTPUT  ' + rng(ctx, 'O', c.props.slot, n), 'dt light xs', 'start') + ledMx(22, 92, n, w);
-        return s + led(W - 14, 78, on, '#3ddc63', 3);
+        return modBody1756(W, code, 'RELAY OUT', AB.RLY, G * 5 / 2, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n);
       },
       status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–${n - 1}` : 'Rack not powered',
     });
@@ -814,12 +827,12 @@
   relayCard('mdo16', 'PLC Relay Output Card 16', 16, 'OW16');
   /* transistor (sourcing) output card: an ON output connects +V to its terminal */
   function transCard(type, name, n, code) {
-    const sp = n > 8 ? 18 : 20, W = 37 + n * sp - 2 + 15;
+    const W = MW, h = n / 2;
     def(type, {
-      name, cat: 'PLC Rack', view: 'cabinet', prefix: 'DO', w: W, h: 160, slot: true, pts: n,
+      name, cat: 'PLC Rack', view: 'cabinet', prefix: 'DO', w: W, h: MH, slot: true, pts: n,
       props: { slot: '2' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
       info: `${n === 8 ? 'Eight' : 'Sixteen'} 24 VDC sourcing outputs: an ON output connects +V to its terminal. Feed +V with +24 VDC and COM with 0 V. Address: O:slot/0–${n - 1}. AC on +V destroys the card.`,
-      terms: [{ id: 'VP', x: 15, y: 160, l: '+V' }, ...Array.from({ length: n }, (_, i) => ({ id: 'O' + i, x: 37 + i * sp, y: 160, l: String(i) })), { id: 'COM', x: 37 + n * sp - 2, y: 160 }],
+      terms: rtbTerms([{ id: 'VP', l: '+V' }, ...Array.from({ length: h }, (_, i) => ({ id: 'O' + i, l: String(i) }))], [...Array.from({ length: h }, (_, i) => ({ id: 'O' + (h + i), l: String(h + i) })), { id: 'COM', l: 'COM' }]),
       init: () => ({ burnt: false }),
       conduct(c, ctx) {
         if (c.state.burnt || !cardOn(c, ctx) || !rackOn(ctx)) return null;
@@ -835,9 +848,7 @@
       ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${ctx.plcOutX[c.props.slot]}|${ctx.fmt && ctx.fmt(`O:${c.props.slot}/0`)}`,
       draw(c, ctx) {
         const on = cardOn(c, ctx) && rackOn(ctx) && !c.state.burnt, w = on ? ctx.plcOutX[c.props.slot] || 0 : 0;
-        let s = cardBody(W, 160, code, '24 VDC source', AB.DC) + band(138, W, 22, '#1b1b1a') + slotTag(W, 'SLOT ' + c.props.slot);
-        s += T(14, 78, 'OUTPUT  ' + rng(ctx, 'O', c.props.slot, n), 'dt light xs', 'start') + ledMx(22, 92, n, w);
-        return s + led(W - 14, 78, on, '#3ddc63', 3) + (c.state.burnt ? burnt(W, 160) : '');
+        return modBody1756(W, code, 'DC OUT', AB.DC, h + 1, c.props.slot) + stLeds(W, n, w) + led(W - 10, 20, on, '#3ddc63', 2.6) + rngFoot(ctx, 'O', c.props.slot, n) + (c.state.burnt ? burnt(W, MH) : '');
       },
       status: (c, ctx) => c.state.burnt ? 'Destroyed' : !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: O:${c.props.slot}/0–${n - 1}` : 'Rack not powered',
     });
@@ -849,10 +860,10 @@
      a transmitter publishes ctx.anaSrc[key] = mA, an output card publishes ctx.anaOut[key] = V */
   const anaIn = (c, api, ctx, t) => { let v = null; for (const k in ctx.anaSrc || {}) if (api.sameNet(c.id + ':' + t, k)) v = Math.max(v || 0, ctx.anaSrc[k]); return v; };
   def('mai4', {
-    name: 'PLC Analog Input Card 4 × 4–20 mA', cat: 'PLC Rack', view: 'cabinet', prefix: 'AI', w: 150, h: 160, slot: true, analog: 'I', chans: 4,
+    name: 'PLC Analog Input Card 4 × 4–20 mA', cat: 'PLC Rack', view: 'cabinet', prefix: 'AI', w: MW, h: MH, slot: true, analog: 'I', chans: 4,
     props: { slot: '3' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
     info: 'Four 4–20 mA inputs CH0–CH3 (common COM = 0 V). Wire a transmitter output (e.g. a level transmitter OUT) to a channel. Value in I:slot.ch: 4 mA = 0, 20 mA = 32767; below 3.6 mA the channel reads 0 (wire break).',
-    terms: [...[0, 1, 2, 3].map(i => ({ id: 'CH' + i, x: 15 + i * 30, y: 0, l: String(i) })), { id: 'COM', x: 135, y: 0 }],
+    terms: rtbTerms([{ id: 'CH0', l: 'CH0' }, { id: 'CH1', l: 'CH1' }, { id: 'COM', l: 'COM' }], [{ id: 'CH2', l: 'CH2' }, { id: 'CH3', l: 'CH3' }]),
     init: () => ({ mA: [0, 0, 0, 0] }),
     transient: ['mA'],
     evaluate(c, api, ctx) {
@@ -865,17 +876,17 @@
     ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.mA || []).map(v => v.toFixed(1))}|${ctx.fmt && ctx.fmt('I:0/0')}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx);
-      let s = cardBody(150, 160, 'NI4', 'Analog in 4–20 mA', AB.ANA) + band(0, 150, 22, '#1e1d1a') + slotTag(150, 'SLOT ' + c.props.slot);
-      (c.state.mA || []).forEach((ma, i) => { s += T(12, 86 + i * 14, `CH${i}`, 'dt light xs', 'start') + R(40, 78 + i * 14, 70, 9, '#2a2925', 2, '#111') + R(41, 79 + i * 14, Math.max(0, Math.min(1, (ma - 4) / 16)) * 68, 7, '#f2c230', 1, 'none') + T(140, 86 + i * 14, on ? ma.toFixed(1) : '—', 'dt light xs', 'end'); });
-      return s + T(75, 148, `I:${c.props.slot}.0 – I:${c.props.slot}.3`, 'dt light xs') + led(140, 148, on, '#3ddc63', 3);
+      let s = modBody1756(MW, 'IF4', '4–20 mA IN', AB.ANA, 3, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
+      (c.state.mA || []).forEach((ma, i) => { s += T(8, 58 + i * 14, String(i), 'dt light xs', 'start') + R(16, 52 + i * 14, 46, 8, '#1c1c1b', 2, '#000') + R(17, 53 + i * 14, Math.max(0, Math.min(1, (ma - 4) / 16)) * 44, 6, '#f2c230', 1, 'none'); });
+      return s;
     },
     status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: ${(c.state.mA || []).map((v, i) => `CH${i} ${v.toFixed(1)} mA`).join(', ')}` : 'Rack not powered',
   });
   def('mao2', {
-    name: 'PLC Analog Output Card 2 × 0–10 V', cat: 'PLC Rack', view: 'cabinet', prefix: 'AO', w: 130, h: 160, slot: true, analog: 'O', chans: 2,
+    name: 'PLC Analog Output Card 2 × 0–10 V', cat: 'PLC Rack', view: 'cabinet', prefix: 'AO', w: MW, h: MH, slot: true, analog: 'O', chans: 2,
     props: { slot: '4' }, pdefs: [{ k: 'slot', n: 'Slot', opts: SLOTS }],
     info: 'Two 0–10 V outputs AO0, AO1 (common COM). O:slot.ch = 0 … 32767 gives 0 … 10 V. Wire AO0 to the speed reference (AI) of a VFD.',
-    terms: [{ id: 'AO0', x: 25, y: 160, l: '0' }, { id: 'AO1', x: 60, y: 160, l: '1' }, { id: 'COM', x: 100, y: 160 }],
+    terms: rtbTerms([{ id: 'AO0', l: 'AO0' }, { id: 'AO1', l: 'AO1' }], [{ id: 'COM', l: 'COM' }]),
     init: () => ({ v: [0, 0] }),
     transient: ['v'],
     evaluate(c, api, ctx) {
@@ -888,9 +899,9 @@
     ctxSig: (c, ctx) => `|${cardOn(c, ctx)}|${rackOn(ctx)}|${(c.state.v || []).map(v => v.toFixed(2))}`,
     draw(c, ctx) {
       const on = cardOn(c, ctx) && rackOn(ctx);
-      let s = cardBody(130, 160, 'NO2V', 'Analog out 0–10 V', AB.ANA) + band(138, 130, 22, '#1e1d1a') + slotTag(130, 'SLOT ' + c.props.slot);
-      (c.state.v || []).forEach((v, i) => { s += T(12, 90 + i * 16, `AO${i}`, 'dt light xs', 'start') + R(40, 82 + i * 16, 50, 9, '#2a2925', 2, '#111') + R(41, 83 + i * 16, v / 10 * 48, 7, '#2f6fd6', 1, 'none') + T(124, 90 + i * 16, on ? v.toFixed(1) + 'V' : '—', 'dt light xs', 'end'); });
-      return s + T(65, 128, `O:${c.props.slot}.0 – O:${c.props.slot}.1`, 'dt light xs') + led(118, 128, on, '#3ddc63', 3);
+      let s = modBody1756(MW, 'OF2', '0–10 V OUT', AB.ANA, 2, c.props.slot) + led(MW - 10, 20, on, '#3ddc63', 2.6);
+      (c.state.v || []).forEach((v, i) => { s += T(8, 58 + i * 14, String(i), 'dt light xs', 'start') + R(16, 52 + i * 14, 46, 8, '#1c1c1b', 2, '#000') + R(17, 53 + i * 14, v / 10 * 44, 6, '#2f6fd6', 1, 'none'); });
+      return s;
     },
     status: (c, ctx) => !cardOn(c, ctx) ? cardWhy(c, ctx) : rackOn(ctx) ? `Slot ${c.props.slot}: AO0 ${(c.state.v[0] || 0).toFixed(2)} V, AO1 ${(c.state.v[1] || 0).toFixed(2)} V` : 'Rack not powered',
   });
@@ -2340,9 +2351,9 @@
   function part(c, p, ev, ctx) { const d = DEFS[c.type]; return d && d.onPart ? !!d.onPart(c, p, ev, ctx) : false; }
   function drawTerms(d) {
     return d.terms.map(t => {
-      const ly = t.y === 0 ? 13 : t.y - 7;
+      const lx = t.side ? t.x - t.side * 13 : t.x, ly = t.side ? t.y + 2.5 : t.y === 0 ? 13 : t.y - 7;
       // screw terminal: a round head with a cross slot
-      return `<g class="term" data-term="${esc(t.id)}"><circle class="thit" cx="${t.x}" cy="${t.y}" r="9"/><circle cx="${t.x}" cy="${t.y}" r="5.2"/><line x1="${t.x - 3}" y1="${t.y}" x2="${t.x + 3}" y2="${t.y}"/><line x1="${t.x}" y1="${t.y - 3}" x2="${t.x}" y2="${t.y + 3}"/><text class="tlbl" x="${t.x}" y="${ly}">${esc(t.l)}</text></g>`;
+      return `<g class="term" data-term="${esc(t.id)}"><circle class="thit" cx="${t.x}" cy="${t.y}" r="9"/><circle cx="${t.x}" cy="${t.y}" r="5.2"/><line x1="${t.x - 3}" y1="${t.y}" x2="${t.x + 3}" y2="${t.y}"/><line x1="${t.x}" y1="${t.y - 3}" x2="${t.x}" y2="${t.y + 3}"/><text class="tlbl" x="${lx}" y="${ly}">${esc(t.l)}</text></g>`;
     }).join('');
   }
   function sig(c, ctx) {
@@ -2415,22 +2426,24 @@
   /* Address styles (display only; programs are always stored file-based):
      file 'I:1/0', bit/byte 'I0.0' / 'Q0.0', basic 'I1' / 'Q1'. Bit/byte and basic number the I/O points
      of the hardware in order (compact PLC, or the configured rack slots), inputs and outputs separately. */
-  const STYLES = { file: 'File-based (I:1/0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
+  const STYLES = { file: 'File-based (I:1/0)', tag: 'Tag-based (Local:1:I.Data.0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
   function addrBook(circ, io, style) {
     const idx = { I: [], O: [] };
     for (const m of ioMap(circ, io)) if (!m.analog) for (let b = 0; b < m.n; b++) idx[m.file].push(`${m.file}:${m.word}/${b}`);
     const L = f => (f === 'I' ? 'I' : 'Q');
-    const name = (f, i) => style === 'basic' ? `${L(f)}${i + 1}` : `${L(f)}${i >> 3}.${i & 7}`;
+    const name = (f, i, a) => style === 'basic' ? `${L(f)}${i + 1}` : style === 'tag' ? a.replace(/^([IO]):(\d+)\/(\d+)$/, (m, F, s, b) => `Local:${s}:${F}.Data.${b}`) : `${L(f)}${i >> 3}.${i & 7}`;
     const fwd = new Map();
-    for (const f of ['I', 'O']) idx[f].forEach((a, i) => fwd.set(a, name(f, i)));
+    for (const f of ['I', 'O']) idx[f].forEach((a, i) => fwd.set(a, name(f, i, a)));
     return {
       style,
       // file-based address → the address in this style (unchanged when it is not a hardware I/O point)
-      fmt: a => (style === 'file' ? a : fwd.get(a) || a),
+      // a tag-based name comes from the slot and bit themselves (Local:slot:I.Data.bit), so it needs no hardware list
+      fmt: a => (style === 'file' ? a : style === 'tag' ? name(a[0], 0, a) : fwd.get(a) || a),
       // address typed in any style → file-based (unchanged when it is not a bit/byte or basic I/O address)
       toFile(s) {
         const t = String(s).trim().toUpperCase().replace(/^%/, '');
         let m;
+        if ((m = t.match(/^LOCAL:(\d+):([IO])\.DATA\.(\d+)$/))) return `${m[2]}:${m[1]}/${m[3]}`;
         if ((m = t.match(/^([IQ])X?(\d+)\.([0-7])$/))) return idx[m[1] === 'I' ? 'I' : 'O'][Number(m[2]) * 8 + Number(m[3])] || t;
         if ((m = t.match(/^([IQ])(\d+)$/)) && Number(m[2]) > 0) return idx[m[1] === 'I' ? 'I' : 'O'][Number(m[2]) - 1] || t;
         return t;

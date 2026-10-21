@@ -37,19 +37,19 @@
     const d = DEFS[c.type];
     const t = d.terms.find(t => t.id === tid); if (!t) return null;
     const s = c.props.size || 1;
-    return { x: c.x + t.x * s, y: c.y + t.y * s, dir: t.dir ?? (t.y === 0 ? -1 : 1) };
+    return { x: c.x + t.x * s, y: c.y + t.y * s, dir: t.side ? 0 : t.dir ?? (t.y === 0 ? -1 : 1), hx: t.side || 0 };
   }
   // the horizontal height of each wire without bends, given out in renderWires so no two runs lie on one line
   let lanes = null;
   const laneY = new Map();
   function route(a, pts, b, id) {
     const P = [[a.x, a.y]];
-    const ea = [a.x, a.y + a.dir * 12];
+    const ea = a.hx ? [a.x + a.hx * 12, a.y] : [a.x, a.y + a.dir * 12];
     P.push(ea);
     let cur = ea;
     for (const p of pts) { P.push([cur[0], p[1]]); P.push(p); cur = p; }
     if (!b) return P;
-    const eb = [b.x, b.y + b.dir * 12];
+    const eb = b.hx ? [b.x + b.hx * 12, b.y] : [b.x, b.y + b.dir * 12];
     if (!pts.length) {
       let ym;
       if (a.dir === b.dir) ym = a.dir < 0 ? Math.min(ea[1], eb[1]) : Math.max(ea[1], eb[1]);
@@ -508,7 +508,7 @@
     const pc = api ? Circuit.potClass(api.potsR(api.rootK(w.a))) : '';
     return pc ? POT_TAG[pc] : COLOR_TAG[String(w.color).toLowerCase()] || '';
   }
-  function ferrule(p) { return `<g class="ferr" data-x="${p.x}" data-y="${p.y + p.dir * 15}"><rect height="9" rx="1.5"/><text></text></g>`; }
+  function ferrule(p) { return `<g class="ferr" data-x="${p.x + p.hx * 18}" data-y="${p.y + p.dir * 15}"><rect height="9" rx="1.5"/><text></text></g>`; }
   function setTag(we, txt) {
     if (we.tag === txt) return;
     we.tag = txt;
@@ -531,13 +531,13 @@
       const D = DEFS[c.type]; if (D.rail || D.layer) continue;
       const s = c.props.size || 1, dm = Circuit.dims(c);
       if (!D.junction) for (let gx = Math.floor(c.x / G) - 1; gx <= Math.ceil((c.x + dm.w * s) / G) + 1; gx++) for (let gy = Math.floor(c.y / G) - 1; gy <= Math.ceil((c.y + dm.h * s) / G) + 1; gy++) blocked.add(gx + ',' + gy);
-      for (const t of D.terms) { const p = tpos(c.id + ':' + t.id); if (!p) continue; blocked.add(Math.round(p.x / G) + ',' + Math.round(p.y / G)); for (let k = 1; k <= 3; k++) front.add(Math.round(p.x / G) + ',' + Math.round(p.y / G + p.dir * k)); }
+      for (const t of D.terms) { const p = tpos(c.id + ':' + t.id); if (!p) continue; blocked.add(Math.round(p.x / G) + ',' + Math.round(p.y / G)); for (let k = 1; k <= 3; k++) front.add(Math.round(p.x / G + p.hx * k) + ',' + Math.round(p.y / G + p.dir * k)); }
     }
     const wires = [];
     for (const w of C.wires) {
       const a = tpos(w.a), b = tpos(w.b); if (!a || !b) continue;
       if (w.pts && w.pts.length) { wires.push({ id: w.id, net: w.id, fixed: route(a, w.pts, b).map(([x, y]) => ({ x, y })) }); continue; }
-      wires.push({ id: w.id, net: w.id, a, b, da: [0, a.dir < 0 ? -1 : 1], db: [0, b.dir < 0 ? -1 : 1] });
+      wires.push({ id: w.id, net: w.id, a, b, da: a.hx ? [a.hx, 0] : [0, a.dir < 0 ? -1 : 1], db: b.hx ? [b.hx, 0] : [0, b.dir < 0 ? -1 : 1] });
     }
     const r = GridRoute.solve({ G, blocked, front, wires, stub: 3 });
     gridPaths = new Map([...r.paths].filter(([id]) => { const w = C.wires.find(x => x.id === id); return w && !(w.pts && w.pts.length); }).map(([id, P]) => [id, P.map(p => [p.x, p.y])]));
