@@ -316,6 +316,16 @@
     draw: c => DEFS.contactor.draw(c).replace('3P + 1NO 1NC', '4P + 1NO'),
     status: c => c.state.burnt ? 'Coil burnt' : c.state.pulled ? 'Energized (pulled in)' : 'De-energized',
   });
+  /* contactor with a front-mounted auxiliary block (2 N.O. + 2 N.C.): 53-54 and 83-84 close, 61-62 and 71-72 open when
+     the coil pulls in, together with the contactor's own 13-14 / 21-22 */
+  def('contactor_aux', {
+    ...DEFS.contactor, name: 'Contactor + Aux Block 2NO 2NC', family: 'contactor', w: 180,
+    info: 'Contactor 3P + 13-14 N.O. / 21-22 N.C., with a front auxiliary block: 53-54 N.O., 61-62 N.C., 71-72 N.C., 83-84 N.O. All aux contacts switch with the coil.',
+    terms: [...DEFS.contactor.terms, { id: '53', x: 132, y: 0 }, { id: '61', x: 147, y: 0 }, { id: '71', x: 162, y: 0 }, { id: '83', x: 174, y: 0 },
+      { id: '54', x: 132, y: 140 }, { id: '62', x: 147, y: 140 }, { id: '72', x: 162, y: 140 }, { id: '84', x: 174, y: 140 }],
+    conduct: c => [...(DEFS.contactor.conduct(c) || []), ...(c.state.pulled ? [['53', '54'], ['83', '84']] : [['61', '62'], ['71', '72']])],
+    draw: c => DEFS.contactor.draw(c) + R(122, 18, 56, 104, '#e2ddd0', 3, '#8b8b86') + T(150, 40, 'AUX', 'dt xs') + T(150, 52, '2NO 2NC', 'dt xs') + led(150, 80, c.state.pulled, '#3ddc63', 3),
+  });
   /* contactor with normally closed main poles: 1-2 … 7-8 are closed at rest and open when the coil pulls in */
   def('contactor_nc', {
     ...DEFS.contactor4, name: 'Contactor N.C. Poles (4-Pole)', family: 'contactor', famNo: ['km'], strict: true,

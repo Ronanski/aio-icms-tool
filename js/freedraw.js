@@ -100,6 +100,11 @@
     Auxiliaries: {
       kmno: two('contactor', '13', '14', 'no', 'KM', { n: 'Contactor aux N.O.' }),
       kmnc: two('contactor', '21', '22', 'nc', 'KM', { n: 'Contactor aux N.C.' }),
+      // the front auxiliary block of a contactor: a second / third N.O. or N.C. of the same contactor
+      kxno1: two('contactor_aux', '53', '54', 'no', 'KM', { n: 'Contactor aux block N.O. 53-54' }),
+      kxnc1: two('contactor_aux', '61', '62', 'nc', 'KM', { n: 'Contactor aux block N.C. 61-62' }),
+      kxnc2: two('contactor_aux', '71', '72', 'nc', 'KM', { n: 'Contactor aux block N.C. 71-72' }),
+      kxno2: two('contactor_aux', '83', '84', 'no', 'KM', { n: 'Contactor aux block N.O. 83-84' }),
       ka1no: two('relay', '11', '14', 'no', 'KA', { n: 'Relay contact 1 N.O.' }),
       ka1nc: two('relay', '11', '12', 'nc', 'KA', { n: 'Relay contact 1 N.C.' }),
       ka2no: two('relay', '21', '24', 'no', 'KA', { n: 'Relay contact 2 N.O.' }),
@@ -302,15 +307,70 @@
   const itemOf = id => fr().items.find(i => i.id === id);
   const endPos = e => { const [id, t] = e.split(':'); const it = itemOf(id); return it ? termPos(it, t) : null; };
   /* square wire route: straight if lined up, else down-across-down; with bends, an L between each pair of points */
-  function wirePath(a, b, pts) {
+  function wirePath(a, b, pts, ea, eb) {
     if (pts && pts.length) {
       const P = [a, ...pts.map(([x, y]) => ({ x, y })), b];
       let d = `M${a.x} ${a.y}`;
       for (let i = 1; i < P.length; i++) d += ` L${P[i - 1].x} ${P[i].y} L${P[i].x} ${P[i].y}`;
       return d;
     }
+    if (ea || eb) return autoRoute(a, b, ea, eb);
     const my = Math.round((a.y + b.y) / 20) * 10;
     return a.x === b.x || a.y === b.y ? `M${a.x} ${a.y} L${b.x} ${b.y}` : `M${a.x} ${a.y} L${a.x} ${my} L${b.x} ${my} L${b.x} ${b.y}`;
+  }
+  /* automatic route of a wire with no bends of its own: a short stub out of each terminal in its direction (a terminal on
+     top of a symbol leaves upwards), then the shortest of a few orthogonal routes that crosses no symbol body and passes
+     over no other terminal (a wire over a terminal would look connected to it) */
+  function termDir(it, tid) {
+    const t = K[it.k].terms.find(q => q.id === tid); if (!t) return [0, 0];
+    const [x, y] = rot(t.x, t.y, it.r);
+    return Math.abs(y) >= Math.abs(x) ? [0, Math.sign(y) || 1] : [Math.sign(x), 0];
+  }
+  function bodyBox(it) {
+    const S = K[it.k]; if (!S.type || (S.jct && S.look !== 'pot') || S.look === 'text') return null;   // a supply point's circle is in the way too
+    const ps = S.terms.map(t => rot(t.x, t.y, it.r)), xs = ps.map(p => p[0]), ys = ps.map(p => p[1]);
+    const w = Math.max(12, ...xs.map(Math.abs)), h = Math.max(12, ...ys.map(Math.abs));
+    // the body sits inside the terminals; the stubs (the last 12 units to each terminal) stay free for wires
+    return { x1: it.x - Math.min(w, 22) - (xs.length > 2 ? Math.max(...xs.map(Math.abs)) - 0 : 0) * 0, y1: it.y - h + 12, x2: it.x + Math.min(w, 22), y2: it.y + h - 12, wide: { x1: it.x + Math.min(...xs) - 10, x2: it.x + Math.max(...xs) + 10 } };
+  }
+  // segments of the wires already routed in this drawing pass: a new route must not run along one of them (two wires on
+  // one line would look like one connection)
+  let routed = [];
+  const along = (p, q) => routed.some(([u, v]) => (p.x === q.x && u.x === v.x && u.x === p.x && Math.min(p.y, q.y) < Math.max(u.y, v.y) - 2 && Math.max(p.y, q.y) > Math.min(u.y, v.y) + 2)
+    || (p.y === q.y && u.y === v.y && u.y === p.y && Math.min(p.x, q.x) < Math.max(u.x, v.x) - 2 && Math.max(p.x, q.x) > Math.min(u.x, v.x) + 2));
+  function autoRoute(a, b, ea, eb) {
+    const F = fr(), ida = ea && ea.split(':')[0], idb = eb && eb.split(':')[0];
+    const ia = ida && itemOf(ida), ib = idb && itemOf(idb);
+    const da = ia ? termDir(ia, ea.split(':')[1]) : [0, 0], db = ib ? termDir(ib, eb.split(':')[1]) : [0, 0];
+    const A = { x: a.x + da[0] * 12, y: a.y + da[1] * 12 }, B = { x: b.x + db[0] * 12, y: b.y + db[1] * 12 };
+    const boxes = F.items.map(bodyBox).filter(Boolean).map(bx => ({ x1: bx.wide.x1, x2: bx.wide.x2, y1: bx.y1, y2: bx.y2 }));
+    const terms = []; F.items.forEach(it => K[it.k].terms.forEach(t => { const key = it.id + ':' + t.id; if (key !== ea && key !== eb) { const p = termPos(it, t.id); terms.push(p); } }));
+    const segBad = (p, q) => {
+      let n = 0;
+      const x1 = Math.min(p.x, q.x), x2 = Math.max(p.x, q.x), y1 = Math.min(p.y, q.y), y2 = Math.max(p.y, q.y);
+      for (const t of terms) if (t.x >= x1 - 5 && t.x <= x2 + 5 && t.y >= y1 - 5 && t.y <= y2 + 5) n += 400;
+      for (const bx of boxes) if (x2 > bx.x1 && x1 < bx.x2 && y2 > bx.y1 && y1 < bx.y2) n += 250;
+      if (along(p, q)) n += 300;
+      return n;
+    };
+    const cost = P => { let c = 0; for (let i = 1; i < P.length; i++) c += Math.abs(P[i].x - P[i - 1].x) + Math.abs(P[i].y - P[i - 1].y) + segBad(P[i - 1], P[i]); return c + P.length * 4; };
+    const ys = [Math.round((A.y + B.y) / 20) * 10, A.y, B.y], xs = [Math.round((A.x + B.x) / 20) * 10, A.x, B.x];
+    [...xs].forEach(x => xs.push(x - 20, x + 20)); [...ys].forEach(y => ys.push(y - 20, y + 20));
+    // channels just above / below / beside the symbols in the way
+    boxes.forEach(bx => { ys.push(Math.floor((bx.y1 - 10) / 10) * 10, Math.ceil((bx.y2 + 10) / 10) * 10); xs.push(Math.floor((bx.x1 - 10) / 10) * 10, Math.ceil((bx.x2 + 10) / 10) * 10); });
+    const cands = [];
+    for (const y of ys) cands.push([a, A, { x: A.x, y }, { x: B.x, y }, B, b]);
+    for (const x of xs) cands.push([a, A, { x, y: A.y }, { x, y: B.y }, B, b]);
+    let best = null, bc = Infinity;
+    for (const P of cands) { const c = cost(P); if (c < bc) { bc = c; best = P; } }
+    // drop points that make no turn
+    const out = [best[0]];
+    for (let i = 1; i < best.length; i++) { const p = best[i], q = out[out.length - 1]; if (p.x === q.x && p.y === q.y) continue; out.push(p); }
+    const clean = [out[0]];
+    for (let i = 1; i < out.length - 1; i++) { const p = clean[clean.length - 1], q = out[i], r = out[i + 1]; if ((p.x === q.x && q.x === r.x) || (p.y === q.y && q.y === r.y)) continue; clean.push(q); }
+    clean.push(out[out.length - 1]);
+    for (let i = 1; i < clean.length; i++) routed.push([clean[i - 1], clean[i]]);
+    return 'M' + clean.map(p => `${p.x} ${p.y}`).join(' L');
   }
   const routeLen = (a, pts, b) => { const P = [a, ...pts.map(([x, y]) => ({ x, y })), b]; let n = 0; for (let i = 1; i < P.length; i++) n += Math.abs(P[i].x - P[i - 1].x) + Math.abs(P[i].y - P[i - 1].y); return n; };
 
@@ -379,6 +439,7 @@
   FD.sync = function (addWire, ensureType, ctlColor) {
     if (!H) return;
     const F = fr(), col = Circuit.POT_COLORS;
+    renumber();
     // devices first (a supply drawn on this sheet must exist before a potential point looks for it), then the checks
     const e0 = check();
     // a tag's device is made from its most specific symbol (a 1-pole overload relay rather than the contact's generic one);
@@ -439,7 +500,18 @@
   };
   const live = k => { const api = App.api; if (!api || !k) return false; for (const p of api.potsR(api.rootK(k))) if (/^L[123]$/.test(p) || p.startsWith('DC+')) return true; return false; };
   function devKey(it, t) { const d = H.devOf(it.tag); return d ? d.id + ':' + (K[it.k].jct ? 'J' : t) : null; }
+  /* a contact of a device whose coil (A1) is drawn nowhere and wired nowhere never switches by itself */
+  function coilless(it) {
+    const S = K[it.k], d = S.type && !S.jct && H.devOf(it.tag);
+    return !!d && (DEFS[d.type].pdefs || []).some(p => p.k === 'coil') && DEFS[d.type].terms.some(t => t.id === 'A1') && !S.terms.some(t => t.id === 'A1')
+      && !fr().items.some(i => i.tag === it.tag && K[i.k].terms.some(t => t.id === 'A1')) && !H.circ().wires.some(w => w.a === d.id + ':A1' || w.b === d.id + ':A1');
+  }
   function stateOf(it) {
+    const st = stateOf0(it);
+    if (!st.miss && !st.low && !(FD.errs && FD.errs.has(it)) && coilless(it)) st.nocoil = true;
+    return st;
+  }
+  function stateOf0(it) {
     const S = K[it.k];
     if (!S.type) return { on: false };
     const d = H.devOf(it.tag);
@@ -764,6 +836,7 @@
   try { lbl = { ...lbl, ...JSON.parse(localStorage.getItem('plc-trainer.fdLabels') || '{}') }; } catch (e) { /* private mode */ }
   FD.labelSettings = () => ({ ...lbl });
   FD.setLabels = function (o) { lbl = { ...lbl, ...o }; if (!TAG_COLORS[lbl.color]) lbl.color = 'auto'; try { localStorage.setItem('plc-trainer.fdLabels', JSON.stringify(lbl)); } catch (e) { /* private mode */ } if (body) FD.render(body); H.side(); };
+  const flips = new Map();
   FD.render = function (el) {
     body = el;
     if (!el.querySelector('.fd-host')) shell(el);
@@ -772,21 +845,25 @@
     FD.errs = check();
     const o = [];
     o.push(`<svg class="rung-svg sch-svg iec-svg free-svg${lbl.color !== 'auto' ? ' tagc-' + lbl.color : ''}" width="100%" height="100%"><defs><pattern id="fdGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0.5" cy="0.5" r="0.7" class="gridDot"/></pattern><pattern id="fdGrid2" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#fdGrid)"/><path d="M100 0 H0 V100" class="gridLine"/></pattern></defs><g class="fv" transform="translate(${view.x} ${view.y}) scale(${view.k})"><rect class="fbg" x="-5000" y="-5000" width="10000" height="10000" fill="${grid === 'lines' ? 'url(#fdGrid2)' : grid === 'dots' ? 'url(#fdGrid)' : 'transparent'}"/>`);
+    routed = [];
     for (const w of F.wires) {
       const a = endPos(w.a), b = endPos(w.b); if (!a || !b) continue;
       const ia = itemOf(w.a.split(':')[0]), on = live(devKey(ia, w.a.split(':')[1]));
-      const d = wirePath(a, b, w.pts);
-      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}${wireCls(w)}" d="${d}"/></g>`);
+      const d = wirePath(a, b, w.pts, w.a, w.b);
+      o.push(`<g class="fwire${sel && sel.w === w.id ? ' sel' : ''}" data-fw="${w.id}"><path class="fwh" d="${d}"/><path class="w${on ? ' on' : ''}${wireCls(w)}" d="${d}"/>${on ? `<path class="wflow" d="${d}"/>` : ''}</g>`);
       if (sel && sel.w === w.id) (w.pts || []).forEach(([x, y], i) => o.push(`<circle class="fbend" data-fb="${w.id}:${i}" cx="${x}" cy="${y}" r="5"><title>Drag to move · double-click to remove</title></circle>`));
     }
     for (const it of F.items) {
       const S = K[it.k], st = stateOf(it), err = FD.errs.has(it);
+      // a symbol that just switched flashes once
+      const was = flips.get(it.id); if (!was || was.on !== st.on) flips.set(it.id, { on: st.on, t: was ? Date.now() : 0 });
+      const flip = Date.now() - flips.get(it.id).t < 400;
       const hit = S.look === 'node' ? `<rect class="hit" x="${it.x - 8}" y="${it.y - 8}" width="16" height="16" rx="8"/>`
         : S.look === 'text' ? `<rect class="hit" x="${it.x - 6}" y="${it.y - 12}" width="${(it.txt || '').length * 7.5 + 12}" height="22" rx="4"/>`
         : S.look === 'gnd' ? `<rect class="hit" x="${it.x - 14}" y="${it.y - 24}" width="28" height="36" rx="4"/>`
         : `<rect class="hit" x="${it.x - 34}" y="${it.y - 34}" width="68" height="68" rx="6"/>`;
       o.push(`<g class="fitem${(sel && sel.i === it.id) || group.has(it.id) ? ' sel' : ''}" data-fi="${it.id}">${hit}`);
-      o.push(`<g class="ssym${st.on ? ' on' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}${st.low ? ' lowv' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${st.low ? `<title>${esc(it.tag)}: coil voltage too low — see Properties</title>` : ''}${shape(it, st)}</g>`);
+      o.push(`<g data-look="${S.look}" class="ssym${st.on ? ' on' : ''}${flip ? ' flip' : ''}${err ? ' err' : ''}${st.miss ? ' miss' : ''}${st.low || st.nocoil ? ' lowv' : ''}" transform="translate(${it.x} ${it.y}) rotate(${it.r})">${st.low ? `<title>${esc(it.tag)}: coil voltage too low — see Properties</title>` : st.nocoil ? `<title>${esc(it.tag)}: its coil (A1-A2) is drawn nowhere, so this contact never switches — draw the coil or give this contact the tag of a contactor that has one</title>` : ''}${shape(it, st)}</g>`);
       o.push(labels(it, S));
       if (FD.values) { const v = valueOf(it); if (v) o.push(`<text class="fval" x="${it.x + 26}" y="${it.y + 40}">${esc(v)}</text>`); }
       const cd = countOf(it); if (cd) o.push(`<text class="fval fcount" data-fc="${it.id}" x="${it.x + 20}" y="${it.y - 14}">${esc(cd)}</text>`);
@@ -953,13 +1030,36 @@
   /* ---------- editing ---------- */
   // tags in use: the Wiring's, this drawing's and those of parts a newer version made (kept in the project)
   const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
+  /* the contacts of one contactor in numbering order: the contactor's own 13-14 / 21-22, then its aux block */
+  const AUX = { kmno: ['kmno', 'kxno1', 'kxno2'], kxno1: ['kmno', 'kxno1', 'kxno2'], kxno2: ['kmno', 'kxno1', 'kxno2'],
+    kmnc: ['kmnc', 'kxnc1', 'kxnc2'], kxnc1: ['kmnc', 'kxnc1', 'kxnc2'], kxnc2: ['kmnc', 'kxnc1', 'kxnc2'] };
+  // the aux block fits a plain contactor (or one already given the block), not the 4-pole or time-delay ones
+  const auxDev = tag => { const d = H.devOf(tag); return !d || d.type === 'contactor' || d.type === 'contactor_aux'; };
+  // the first contact of this kind the device has free (skipping the item itself)
+  const nextAux = (k, tag, self) => AUX[k].find(a => !fr().items.some(i => i !== self && i.tag === tag && K[i.k].terms.some(t => K[a].terms.some(q => q.id === t.id))));
+  /* a second N.O. (or N.C.) drawn for a contactor takes the next free contact of its aux block (53-54, 83-84 / 61-62,
+     71-72); the wires on it follow, terminal by terminal */
+  function renumber() {
+    const F = fr();
+    for (const it of F.items) {
+      if (!AUX[it.k] || !auxDev(it.tag)) continue;
+      const clash = F.items.some(i => i !== it && i.tag === it.tag && K[i.k].terms.some(t => K[it.k].terms.some(q => q.id === t.id)) && F.items.indexOf(i) < F.items.indexOf(it));
+      if (!clash) continue;
+      const nk = nextAux(it.k, it.tag, it); if (!nk || nk === it.k) continue;
+      const map = Object.fromEntries(K[it.k].terms.map((t, i) => [t.id, K[nk].terms[i].id]));
+      for (const w of F.wires) for (const e of ['a', 'b']) { const [id, t] = w[e].split(':'); if (id === it.id && map[t]) w[e] = id + ':' + map[t]; }
+      it.k = nk;
+    }
+    // a contactor that has aux block contacts drawn gets the block
+    for (const it of F.items) if (K[it.k].type === 'contactor_aux') { const d = H.devOf(it.tag); if (d && d.type === 'contactor') { Circuit.retype(d, 'contactor_aux', H.circ()); d.state.pulled = false; } }
+  }
   function suggest(k) {
     const S = K[k], used = taken();
     const same = H.circ().comps.filter(c => (S.types ? S.types.includes(c.type) : Circuit.sameKind(c.type, S.type) && !Circuit.fitErr(c, S.type, S.terms.map(t => t.id), S.look))).map(c => c.props.label);
     // contacts, coils and poles suggest the last device of that kind that does not have this part drawn yet (a second coil
     // makes the next contactor, a contact goes to the contactor whose 13-14 is free); none free: the next new tag
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) {
-      const ids = S.terms.map(t => t.id), drawn = tag => fr().items.some(i => i.tag === tag && K[i.k] && K[i.k].terms.some(t => ids.includes(t.id)));
+      const ids = S.terms.map(t => t.id), drawn = tag => (AUX[k] && auxDev(tag) ? !nextAux(k, tag) : fr().items.some(i => i.tag === tag && K[i.k] && K[i.k].terms.some(t => ids.includes(t.id))));
       // first a device already on this drawing (its coil or another contact), then one the Wiring does not wire elsewhere
       // (the PLC motor example's KM1 is the motor contactor): never grab a device that belongs to another circuit
       const onSheet = tag => fr().items.some(i => i.tag === tag);
@@ -996,9 +1096,9 @@
   function visibleSpot() {
     if (!svg) return null;
     const r = svg.getBoundingClientRect(), k = view.k;
-    const x0 = snap10((90 - view.x) / k), x1 = (r.width - 40 - view.x) / k, y0 = snap10((60 - view.y) / k), y1 = (r.height - 50 - view.y) / k;
+    const x0 = snap10((90 - view.x) / k), x1 = (r.width - 40 - view.x) / k, y0 = snap10((80 - view.y) / k), y1 = (r.height - 90 - view.y) / k;   // a symbol reaches 40 above and below its middle
     const its = fr().items, ok = (x, y) => its.every(i => Math.abs(i.x - x) >= 90 || Math.abs(i.y - y) >= 110);
-    for (let y = y0; y <= y1; y += 130) for (let x = x0; x <= x1; x += 100) if (ok(x, y)) return { x, y };
+    for (let x = x0; x <= x1; x += 110) for (let y = y0; y <= y1; y += 120) if (ok(x, y)) return { x, y };
     return null;
   }
   function freeSpot(cx, cy) {
