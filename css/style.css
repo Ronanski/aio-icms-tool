@@ -735,6 +735,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .sch-body.operate .free-svg .fitem { cursor: pointer; }
 .free-svg .fbend { fill: var(--surface); stroke: var(--accent); stroke-width: 2; cursor: move; }
 .free-svg .ssym .jdot { fill: var(--lad-wire); stroke: none; }
+.free-svg .fjdot { fill: var(--lad-wire); pointer-events: none; }
+.free-svg .fjdot.on { fill: var(--lad-on); }
 .free-svg .ssym.on .jdot { fill: var(--lad-on); }
 .free-svg .ftext { font: 600 13px var(--sans); fill: var(--lad-text); pointer-events: none; }
 .org, .org ul { list-style: none; margin: 0; padding-left: 18px; }

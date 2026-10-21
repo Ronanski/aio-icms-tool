@@ -11,6 +11,8 @@
 - [x] Drag from a terminal to another to wire (tap, tap still works)
 - [x] Contact animation in the Ladder-style (NEMA) diagram view
 - [x] Supply points face the current: L/+ feed down, N/0 V/PE return up
+- [x] Wire path drawn by the user (click = corner, drag a segment), clean A* auto-route, junction dots
+- [x] Tidy Wiring built from the diagram (panel rows, one lane per wire)
 - [ ] Stable v2.2.2 (needs the owner's GO)
 
 ## Done (v1.0.0)

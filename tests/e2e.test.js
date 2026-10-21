@@ -996,7 +996,7 @@ function check(name, cond, info = '') {
   const wSeg = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => x.a === 'd2:2' && x.b === 'd3:11') || App.project.schematic.free.wires.find(x => x.b === 'd2:2' && x.a === 'd3:11'); const el = document.querySelector(`#view-schematic [data-fw="${w.id}"] .fwh`); const r = el.getBoundingClientRect(); return { id: w.id, x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
   await page.mouse.click(wSeg.x, wSeg.y); await wait(200);
   check('free draw: ending a wire on a wire makes a junction, and the new lamp gets power through it', await page.evaluate(() => { const F = App.project.schematic.free; return F.items.some(i => i.k === 'node') && F.wires.filter(w => w.a.endsWith(':J') || w.b.endsWith(':J')).length === 3; }) && await page.evaluate(() => { const C = App.project.circuit, h = C.comps.find(c => c.props.label === 'H8'), q = C.comps.find(c => c.props.label === 'QF1'); return App.api.sameNet(h.id + ':X1', q.id + ':2'); }));
-  const bendW = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => x.a === 'd8:PE' || x.b === 'd8:PE'); const el = document.querySelector(`#view-schematic [data-fw="${w.id}"] .fwh`); const r = el.getBoundingClientRect(); return { id: w.id, x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  const bendW = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => x.a === 'd8:PE' || x.b === 'd8:PE'); const el = document.querySelector(`#view-schematic [data-fw="${w.id}"] .w`), q = el.getPointAtLength(el.getTotalLength() / 2).matrixTransform(el.getScreenCTM()); return { id: w.id, x: q.x, y: q.y }; });
   await page.mouse.dblclick(bendW.x, bendW.y); await wait(200);
   check('free draw: double-clicking a wire adds a bend you can drag', await page.evaluate(id => { const w = App.project.schematic.free.wires.find(x => x.id === id); return !!w.pts && w.pts.length === 1 && !!document.querySelector('#view-schematic .fbend'); }, bendW.id));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); });
@@ -2531,6 +2531,15 @@ function check(name, cond, info = '') {
   check('engineer: START pulls KM1 in and the run lamp lights through KM1 53-54', await until(is(`d('KM1').pulled && d('${engr.hTag}').on`)));
   await page.evaluate(() => { if (typeof window.__up === 'function') window.__up(); });
   check('engineer: a live wire shows current flowing, a lit lamp glows and the energized coil is filled', await (async () => { await wait(200); return page.evaluate(() => document.querySelectorAll('#view-schematic .fwire .wflow').length >= 4 && !!document.querySelector('#view-schematic .ssym.on[data-look="lamp"]') && !!document.querySelector('#view-schematic .ssym.on[data-look="coil"]')); })());
+  check('engineer: where one circuit branches the drawing shows a junction dot, and the automatic routes do not overlap another circuit', await page.evaluate(() => {
+    if (!document.querySelector('#view-schematic .fjdot')) return false;
+    const segs = [...document.querySelectorAll('#view-schematic .fwire')].map(g => { const P = g.querySelector('.w').getAttribute('d').replace('M', '').split(' L').map(t => t.trim().split(' ').map(Number)); return { id: g.dataset.fw, P }; });
+    const F = App.project.schematic.free, net = new Map(); const find = k => { while (net.has(k) && net.get(k) !== k) k = net.get(k); return k; }; F.wires.forEach(w => { const a = find(w.a), b = find(w.b); if (a !== b) net.set(a, b); });
+    const n = id => { const w = F.wires.find(x => x.id === id); return find(w.a); };
+    const units = new Map();
+    for (const { id, P } of segs) for (let i = 1; i < P.length; i++) { const [x1, y1] = P[i - 1], [x2, y2] = P[i]; if (x1 !== x2 && y1 !== y2) continue; const dx = Math.sign(x2 - x1), dy = Math.sign(y2 - y1), len = Math.abs(x2 - x1 + y2 - y1); for (let s = 0; s < len; s += 10) { const k = (x1 + dx * s + dx * 5) + ',' + (y1 + dy * s + dy * 5); const o = units.get(k); if (o && o !== n(id)) return false; units.set(k, n(id)); } }
+    return true;
+  }));
   check('engineer: an automatic wire route never passes over a terminal it does not connect', await page.evaluate(() => {
     const ts = [...document.querySelectorAll('#view-schematic .fterm')].map(t => ({ k: t.dataset.ft, x: +t.getAttribute('cx'), y: +t.getAttribute('cy') }));
     const F = App.project.schematic.free;
@@ -2545,6 +2554,21 @@ function check(name, cond, info = '') {
     const q = id => document.querySelector('#view-schematic [data-fi="' + id + '"] .ssym'), g = q(it.id), km = q(runId);
     return g.classList.contains('lowv') && /drawn nowhere/.test(g.innerHTML) && !km.classList.contains('lowv');
   }, engr.runId));
+  check('engineer: the Wiring the diagram builds is tidy: its devices sit in one panel row without overlapping, and no two wires share a horizontal run', await page.evaluate(async () => {
+    App.showView('wiring'); await new Promise(q => setTimeout(q, 300));
+    const C = App.project.circuit, D = Circuit.DEFS, auto = C.comps.filter(c => c.schAuto);
+    const xs = auto.map(c => c.x), compact = Math.max(...xs) - Math.min(...xs) <= 1200;
+    const box = c => ({ x1: c.x, y1: c.y, x2: c.x + D[c.type].w, y2: c.y + D[c.type].h });
+    const apart = auto.every((a, i) => auto.every((b, j) => j <= i || (() => { const p = box(a), q = box(b); return p.x2 <= q.x1 || q.x2 <= p.x1 || p.y2 <= q.y1 || q.y2 <= p.y1; })()));
+    const runs = [];
+    for (const g of document.querySelectorAll('#view-wiring .wire .wb')) {
+      const P = g.getAttribute('d').replace('M', '').split(' L').map(t => t.trim().split(' ').map(Number));
+      for (let i = 1; i < P.length; i++) if (P[i][1] === P[i - 1][1] && P[i][0] !== P[i - 1][0]) runs.push({ y: P[i][1], x1: Math.min(P[i][0], P[i - 1][0]), x2: Math.max(P[i][0], P[i - 1][0]), w: g.parentNode.dataset.wid });
+    }
+    const shared = runs.some((r, i) => runs.some((q, j) => j > i && q.w !== r.w && Math.abs(q.y - r.y) < 1 && q.x1 < r.x2 - 2 && q.x2 > r.x1 + 2));
+    App.showView('schematic');
+    return compact && apart && !shared;
+  }));
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
@@ -2560,7 +2584,22 @@ function check(name, cond, info = '') {
   {
     const A = await ftBox('d1:13'); await page.mouse.move(A.x, A.y); await page.mouse.down(); await page.mouse.move(A.x + 60, A.y + 80, { steps: 6 }); await page.mouse.up(); await wait(200);
   }
-  check('finish: a wire dragged out and let go on empty space is cancelled', await page.evaluate(() => App.project.schematic.free.wires.length === 1 && !document.querySelector('#view-schematic .wtemp')));
+  check('finish: a wire dragged out and let go on empty space gets a corner there and goes on', await page.evaluate(() => !!document.querySelector('#view-schematic .wtemp') && App.project.schematic.free.wires.length === 1));
+  await page.keyboard.press('Escape'); await wait(150);
+  check('finish: Esc cancels the wire being drawn', await page.evaluate(() => App.project.schematic.free.wires.length === 1 && !document.querySelector('#view-schematic .wtemp')));
+  {
+    // click a terminal, click two places on the way, click the other terminal: the wire keeps those corners
+    const A = await ftBox('d1:13'), C = await ftBox('d3:J');
+    await page.mouse.click(A.x, A.y); await wait(120); await page.mouse.click(A.x, A.y - 60); await wait(120); await page.mouse.click(C.x, A.y - 60); await wait(120); await page.mouse.click(C.x, C.y); await wait(200);
+  }
+  check('finish: clicks on the way while drawing a wire are its corners', await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => [x.a, x.b].includes('d3:J')); return !!w && Array.isArray(w.pts) && w.pts.length === 2 && w.pts[0][1] === w.pts[1][1]; }));
+  {
+    // drag the middle (horizontal) part of that wire 40 lower
+    const P = await page.evaluate(() => { const w = App.project.schematic.free.wires.find(x => [x.a, x.b].includes('d3:J')); return { id: w.id, y: w.pts[0][1], x: (w.pts[0][0] + w.pts[1][0]) / 2 }; });
+    const m = await page.evaluate(({ x, y }) => { const svg = document.querySelector('#view-schematic .free-svg'), g = svg.querySelector('.fv'), pt = svg.createSVGPoint(); pt.x = x; pt.y = y; const q = pt.matrixTransform(g.getScreenCTM()); return { x: q.x, y: q.y }; }, P);
+    await page.mouse.move(m.x, m.y); await page.mouse.down(); await page.mouse.move(m.x, m.y + 20, { steps: 4 }); await page.mouse.move(m.x, m.y + 40, { steps: 4 }); await page.mouse.up(); await wait(200);
+    check('finish: dragging a part of a wire moves it (the corners follow)', await page.evaluate(({ id, y }) => { const w = App.project.schematic.free.wires.find(x => x.id === id); return w.pts.some(p => p[1] === y + 40) && !w.pts.some(p => p[1] === y); }, P), JSON.stringify(await page.evaluate(id => App.project.schematic.free.wires.find(x => x.id === id).pts, P.id)) + JSON.stringify(P) + JSON.stringify(m));
+  }
   check('finish: a supply point feeds downwards (L1 / +24 V terminal below the circle), a return point upwards (N / 0 V above)', await page.evaluate(() => {
     const K = FreeDraw.KINDS; return K.pL1.terms[0].y > 0 && K.pP.terms[0].y > 0 && K.pN.terms[0].y < 0 && K.pM.terms[0].y < 0 && K.pPE.terms[0].y < 0;
   }));

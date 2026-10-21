@@ -256,16 +256,24 @@
   };
 
   /* ---------- create devices and wire the rungs ---------- */
-  function freeSpot() {
-    let x1 = 0, y0 = 40;
-    for (const c of circ().comps) { const d = DEFS[c.type], s = c.props.size || 1; x1 = Math.max(x1, c.x + d.w * s); }
-    const n = circ().comps.filter(c => c.schAuto).length;
-    return { x: Math.round((x1 + 120) / 10) * 10 + (n % 6) * 110, y: y0 + Math.floor(n / 6) * 170 };
+  /* a device the diagram makes goes into rows to the right of the devices placed by hand, the first free place of a
+     row 1100 wide (a DIN rail), with room around it for the wires */
+  function freeSpot(type) {
+    const C = circ().comps, D = DEFS[type] || { w: 80, h: 120 }, size = c => c.props.size || 1;
+    let base = 40;
+    for (const c of C) if (!c.schAuto) base = Math.max(base, c.x + DEFS[c.type].w * size(c) + 80);
+    base = Math.round(base / 10) * 10;
+    const box = C.map(c => ({ x1: c.x - 30, y1: c.y - 30, x2: c.x + DEFS[c.type].w * size(c) + 30, y2: c.y + DEFS[c.type].h * size(c) + 60 }));
+    for (let row = 0; row < 60; row++) {
+      const y = 40 + row * 220;
+      for (let x = base; x <= base + 1100; x += 10) if (!box.some(b => x < b.x2 && x + D.w > b.x1 && y < b.y2 && y + D.h > b.y1)) return { x, y };
+    }
+    return { x: base, y: 40 };
   }
   function ensureType(type, tag) {
     let c = devOf(tag);
     if (c) return c;
-    const p = freeSpot();
+    const p = freeSpot(type);
     c = Circuit.create(type, p.x, p.y, circ());
     c.props.label = tag;
     if (DEFS[type].pdefs && DEFS[type].pdefs.some(f => f.k === 'coil')) c.props.coil = controlVoltage();

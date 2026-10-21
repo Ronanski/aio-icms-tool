@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- **You draw the wire's path** (free draw, as in Simurelay): while drawing a wire, every click on the way is a corner, and **Esc** cancels. **Drag any part of a wire** to move it; the corners follow.
+- **Junction dots** where one circuit branches.
 - **Wire by dragging** in free draw: press on a terminal, drag to another terminal (or onto a wire for a junction) and let go. Let go on empty space to cancel. Tap, tap still works.
 - **Contacts move in the Ladder-style view** too: a closed N.O. is bridged, and an opened N.C. has its blade lifted.
 - **Contactor auxiliary block** (front-mounted 2 N.O. + 2 N.C.: 53-54, 61-62, 71-72, 83-84), as on a real contactor. In free draw, a second N.O. (or N.C.) of KM1 is numbered on the block automatically, so a run lamp can be driven by KM1 53-54 while 13-14 holds the seal-in. Before, the second contact became a new KM2 with no coil, and the lamp never lit. The Wiring gets the matching *Contactor + Aux Block 2NO 2NC*.
@@ -13,6 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Livelier run view** in free draw: current flows along the live wires, an energized coil is filled, and a lit lamp glows. A contact that has just switched flashes. All of this follows *reduce motion*.
 
 ### Changed
+- **Automatic wire routes are clean**: a wire without corners of its own is routed on the grid with as few bends as possible. It never crosses a symbol, passes over a terminal it does not connect, or runs on top of another circuit's wire. Wires of one circuit share a line and branch with a dot.
+- **The Wiring built from the diagram is tidy**: its devices are placed side by side in panel rows (the gap used to grow with every device), and wires without bends each get their own lane instead of running on top of each other.
 - **Supply points face the way current flows**: L1, L2, L3 and +24 V have their terminal below the circle (they feed the current path from the top); N, PE and 0 V have it above.
 - **Wires route like a drawn diagram**: a wire without bends of its own leaves each terminal straight, goes around symbols, and never passes over a terminal it does not connect (that looked like a connection) or runs on top of another wire.
 - **New symbols are placed in columns** (a current path goes down), with room for the terminal numbers.

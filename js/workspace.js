@@ -39,7 +39,10 @@
     const s = c.props.size || 1;
     return { x: c.x + t.x * s, y: c.y + t.y * s, dir: t.dir ?? (t.y === 0 ? -1 : 1) };
   }
-  function route(a, pts, b) {
+  // the horizontal height of each wire without bends, given out in renderWires so no two runs lie on one line
+  let lanes = null;
+  const laneY = new Map();
+  function route(a, pts, b, id) {
     const P = [[a.x, a.y]];
     const ea = [a.x, a.y + a.dir * 12];
     P.push(ea);
@@ -52,6 +55,11 @@
       if (a.dir === b.dir) ym = a.dir < 0 ? Math.min(ea[1], eb[1]) : Math.max(ea[1], eb[1]);
       else ym = (ea[1] + eb[1]) / 2;
       ym = clearY(ea, eb, ym);
+      if (lanes) {
+        const x1 = Math.min(ea[0], eb[0]), x2 = Math.max(ea[0], eb[0]), away = a.dir < 0 && b.dir < 0 ? -8 : 8;
+        for (let k = 0; k < 16 && lanes.some(l => Math.abs(l.y - ym) < 5 && l.x1 < x2 + 6 && l.x2 > x1 - 6); k++) ym += away;
+        lanes.push({ y: ym, x1, x2 }); if (id) laneY.set(id, ym);
+      } else if (id && laneY.has(id)) ym = laneY.get(id);
       P.push([ea[0], ym], [eb[0], ym]);
     } else P.push([eb[0], cur[1]]);
     P.push(eb, [b.x, b.y]);
@@ -513,17 +521,18 @@
     });
   }
   function renderWires() {
-    boxes = null;
+    boxes = null; lanes = []; laneY.clear();
     const h = [];
     circ().wires.forEach(w => {
       const a = tpos(w.a), b = tpos(w.b);
       if (!a || !b) return;
-      const d = pathD(route(a, w.pts || [], b));
+      const d = pathD(route(a, w.pts || [], b, w.id));
       const wc = esc(w.color || '#1d1d1d');
       // earth wires are green/yellow
       // .wo is a thin outline under the wire so black wires show on dark backgrounds (and white ones on light)
       h.push(`<g class="wire${sel && sel.kind === 'wire' && sel.id === w.id ? ' sel' : ''}" data-wid="${esc(w.id)}"><path class="wh" d="${d}"/><path class="wo" d="${d}"/><path class="wb" d="${d}" stroke="${wc}"/>${String(w.color).toLowerCase() === '#58a83a' ? `<path class="wpe" d="${d}"/>` : ''}<path class="wl" d="${d}"/><circle class="wdot" cx="${a.x}" cy="${a.y}" r="2.6" fill="${wc}"/><circle class="wdot" cx="${b.x}" cy="${b.y}" r="2.6" fill="${wc}"/>${showTags ? ferrule(a) + ferrule(b) : ''}</g>`);
     });
+    lanes = null;
     gWires.innerHTML = h.join('');
     wireEls = [...gWires.querySelectorAll('.wire')].map(g => ({ g, id: g.dataset.wid, l: g.querySelector('.wl'), w: circ().wires.find(w => w.id === g.dataset.wid), cls: null, tag: null }));
     if (showTags) wireEls.forEach(we => setTag(we, wireTag(we.w, App.api)));
@@ -553,7 +562,7 @@
 
   /* ---------- wire geometry: nearest point, split at a junction, add a bend ---------- */
   function nearestOnWire(w, pt) {
-    const P = route(tpos(w.a), w.pts || [], tpos(w.b));
+    const P = route(tpos(w.a), w.pts || [], tpos(w.b), w.id);
     let best = null;
     for (let k = 0; k < P.length - 1; k++) {
       const [x1, y1] = P[k], [x2, y2] = P[k + 1], dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
