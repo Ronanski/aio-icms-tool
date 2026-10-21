@@ -476,6 +476,18 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .learn-nav button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--text); }
 .learn-nav button:hover { background: var(--surface-2); }
 .learn-nav button.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+/* Learn: Course / Exercises tabs, difficulty and topic of the exercises, done marks, the hint */
+.learn-tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 8px; background: var(--surface-2); border-radius: 10px; }
+.learn-nav .learn-tabs button.lt { flex: 1; text-align: center; padding: 7px 6px; font-weight: 600; }
+.learn-nav .learn-tabs button.lt.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.learn-tabs small, .ex-diff small { color: var(--muted); font-weight: 500; }
+.ex-diff { display: flex; gap: 4px; margin: 4px 0 8px; }
+.learn-nav .ex-diff button { flex: 1; text-align: center; padding: 6px 4px; border: 1px solid var(--border); font-size: 12.5px; }
+.learn-nav .ex-diff button.on { border-color: var(--accent); }
+.ex-topic { width: 100%; margin-bottom: 6px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.learn-nav button.done { color: var(--muted); }
+.learn-body details.hint { margin: 10px 0; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; }
+.learn-body details.hint summary { cursor: pointer; font-weight: 600; }
 .learn-body { flex: 1; overflow: auto; padding: 28px clamp(16px, 4vw, 56px) 60px; max-width: 980px; }
 .learn-body h2 { font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 4px 0 14px; letter-spacing: -.01em; }
 .learn-body h3 { font-family: var(--serif); font-weight: 600; font-size: 20px; }

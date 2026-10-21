@@ -1029,22 +1029,41 @@
     box.innerHTML = `<h3 class="mt">Your checklist</h3><p class="help">${goals.id === l.id ? (n === l.goals.length ? '✓ Lesson complete. Well done!' : 'Checked live while you work in the Wiring, Ladder and HMI, in this order.') : 'Load the example (or start working) to begin: each step is ticked off live while you work.'}</p>
       <ul class="grade-list">${l.goals.map((g, i) => `<li class="${i < n ? 'ok' : i === n ? 'next' : ''}">${i < n ? '✓' : i === n ? '▸' : '○'} ${esc(g.say)}</li>`).join('')}</ul>`;
   }
+  /* the Learn page: the course (lessons, basics to advanced) and 100 exercises (easy, medium, hard) by topic. A lesson or
+     exercise is one page: what to do, a starting project, Check my work, a hint and the solution. */
+  let learnTab = (() => { try { return localStorage.getItem('plc-trainer.learnTab') === 'ex' ? 'ex' : 'course'; } catch (e) { return 'course'; } })();
+  let exDiff = 'easy', exTopic = '';
+  const exDone = (() => { try { return new Set(JSON.parse(localStorage.getItem('plc-trainer.exDone') || '[]')); } catch (e) { return new Set(); } })();
+  const markDone = id => { exDone.add(id); try { localStorage.setItem('plc-trainer.exDone', JSON.stringify([...exDone])); } catch (e) { /* private mode */ } };
+  const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'cabinet']]];
+  App.EX_CATS = EX_CATS;
   function renderLearn() {
     const el = document.getElementById('view-learn');
-    const L = Examples.LESSONS;
-    const cur = L.find(l => l.id === lessonId) || L[0];
+    const L = Examples.LESSONS, XL = (window.Exercises && Exercises.LIST) || [];
+    const cur = L.find(l => l.id === lessonId) || XL.find(x => x.id === lessonId) || L[0];
+    const isEx = cur.kind === 'ex';
     const ex = Examples.EX[cur.ex];
     const INSTR = PLCcore.INSTR;
+    const tab = (k, label) => `<button class="lt${learnTab === k ? ' on' : ''}" data-ltab="${k}">${label}</button>`;
+    const counts = d => `${XL.filter(x => x.diff === d && exDone.has(x.id)).length}/${XL.filter(x => x.diff === d).length}`;
+    const course = `${[...new Set(L.map(l => l.level))].map(g => `<h6>${g}</h6>${L.filter(l => l.level === g).map(l => `<button class="${l.id === cur.id ? 'on' : ''}" data-lesson="${l.id}">${esc(l.title)}</button>`).join('')}`).join('')}
+        <h3 class="mt">Examples</h3>${EX_CATS.map(([c, ks]) => `<h6>${c}</h6>${ks.filter(k => Examples.EX[k]).map(k => `<button data-ex="${k}">${esc(Examples.EX[k].title)}</button>`).join('')}`).join('')}`;
+    const shown = XL.filter(x => x.diff === exDiff && (!exTopic || x.topic === exTopic));
+    const exercises = `<div class="ex-diff">${['easy', 'medium', 'hard'].map(d => `<button class="${exDiff === d ? 'on' : ''}" data-xdiff="${d}">${{ easy: 'Easy', medium: 'Medium', hard: 'Hard' }[d]} <small>${counts(d)}</small></button>`).join('')}</div>
+        <select class="ex-topic" data-xtopic aria-label="Topic"><option value="">All topics</option>${[...new Set(XL.filter(x => x.diff === exDiff).map(x => x.topic))].map(t => `<option ${t === exTopic ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+        ${[...new Set(shown.map(x => x.topic))].map(t => `<h6>${esc(t)}</h6>${shown.filter(x => x.topic === t).map(x => `<button class="${x.id === cur.id ? 'on' : ''}${exDone.has(x.id) ? ' done' : ''}" data-lesson="${x.id}">${exDone.has(x.id) ? '✓ ' : ''}${esc(x.title)}</button>`).join('')}`).join('')}`;
+    const startLabel = isEx ? (cur.build ? 'Start exercise' : `Start on “${esc(ex ? ex.title : '')}”`) : ex ? `Load “${esc(ex.title)}”` : '';
     el.innerHTML = `<div class="learn">
-      <aside class="learn-nav"><h3>Lessons</h3>${[...new Set(L.map(l => l.level))].map(g => `<h6>${g}</h6>${L.filter(l => l.level === g).map(l => `<button class="${l.id === cur.id ? 'on' : ''}" data-lesson="${l.id}">${esc(l.title)}</button>`).join('')}`).join('')}
-        <h3 class="mt">Examples</h3>${Object.entries(Examples.EX).map(([k, e]) => `<button data-ex="${k}">${esc(e.title)}</button>`).join('')}</aside>
+      <aside class="learn-nav"><div class="learn-tabs">${tab('course', 'Course')}${tab('ex', `Exercises <small>${XL.filter(x => exDone.has(x.id)).length}/${XL.length}</small>`)}</div>
+        ${learnTab === 'ex' ? exercises : course}</aside>
       <article class="learn-body">
-        <div class="kicker">${esc(cur.level)}</div><h2>${esc(cur.title)}</h2>
+        <div class="kicker">${isEx ? `Exercise · ${esc(cur.level)} · ${esc(cur.topic)}${exDone.has(cur.id) ? ' · ✓ done' : ''}` : esc(cur.level)}</div><h2>${esc(cur.title)}</h2>
         <div class="lesson">${cur.body}</div>
-        <div class="btn-row">${ex ? `<button class="btn${cur.test ? '' : ' primary'}" data-load="${cur.ex}">Load “${esc(ex.title)}”</button>` : ''}${cur.test ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution ? `<button class="btn" data-sol>Insert solution into ladder</button>` : ''}</div>
-        ${cur.test ? '<div class="grade" data-grade></div>' : ''}
+        ${cur.hint ? `<details class="hint"><summary>Hint</summary><p>${esc(cur.hint)}</p></details>` : ''}
+        <div class="btn-row">${startLabel ? `<button class="btn${cur.test || cur.check ? '' : ' primary'}" data-start${cur.ex && !isEx ? ` data-load="${cur.ex}"` : ''}>${startLabel}</button>` : ''}${cur.test || cur.check ? `<button class="btn primary" data-check>✓ Check my work</button>` : ''}${cur.solution || cur.solve ? `<button class="btn" data-sol>${cur.solve ? 'Show the solution (does it for you)' : 'Insert solution into ladder'}</button>` : ''}${isEx ? `<button class="btn ghost" data-next>Next exercise ▸</button>` : ''}</div>
+        ${cur.test || cur.check ? '<div class="grade" data-grade></div>' : ''}
         ${cur.goals ? '<div class="grade" data-goals></div>' : ''}
-        <h3 class="mt">Instruction reference</h3>
+        ${isEx ? '' : `<h3 class="mt">Instruction reference</h3>
         <table class="ref"><tr><th>Mnemonic</th><th>Name</th><th>Operands</th><th>What it does</th></tr>${Object.entries(INSTR).map(([k, d]) => `<tr><td><code>${k}</code></td><td>${esc(d.name)}</td><td>${d.args.map(a => esc(a.n)).join(', ')}</td><td>${esc(d.help)}</td></tr>`).join('')}</table>
         <h3 class="mt">Addressing (file-based style)</h3>
         <table class="ref"><tr><th>Address</th><th>Meaning</th></tr>
@@ -1056,26 +1075,54 @@
           <tr><td><code>N7:0</code></td><td>16-bit signed integer</td></tr>
           <tr><td><code>S:1/15</code></td><td>First-scan bit</td></tr></table>
         <h3 class="mt">Keyboard</h3>
-        <table class="ref"><tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save · Save as · Open project</td></tr><tr><td><kbd>Ctrl</kbd>+scroll</td><td>Zoom the ladder or the HMI (scroll alone zooms the wiring)</td></tr><tr><td>Drag an instruction</td><td>Move it to another place or rung (mouse). Right-click → Change to… swaps XIC ↔ XIO, TON ↔ TOF and so on.</td></tr><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>
+        <table class="ref"><tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save · Save as · Open project</td></tr><tr><td><kbd>Ctrl</kbd>+scroll</td><td>Zoom the ladder or the HMI (scroll alone zooms the wiring)</td></tr><tr><td>Drag an instruction</td><td>Move it to another place or rung (mouse). Right-click → Change to… swaps XIC ↔ XIO, TON ↔ TOF and so on.</td></tr><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>`}
       </article></div>`;
     renderGoals();
-    el.onclick = e => {
+    const go = id => { lessonId = id; const l = Examples.LESSONS.find(x => x.id === id); if (l && l.goals) trackLesson(id); renderLearn(); const bd = el.querySelector('.learn-body'); if (bd) bd.scrollTop = 0; };
+    const showResult = (res, note) => {
+      const box = el.querySelector('[data-grade]');
+      if (res.error) { box.innerHTML = `<p class="grade-bad">${esc(res.error)}</p>`; return; }
+      const pass = res.length > 0 && res.every(r => r.ok);
+      if (pass && isEx) markDone(cur.id);
+      box.innerHTML = `<p class="${pass ? 'grade-ok' : 'grade-bad'}">${pass ? `✓ All checks passed. Well done!${isEx ? ' This exercise is marked done.' : ''}` : `${res.filter(r => r.ok).length} of ${res.length} checks passed. Fix the red ones and check again.`}</p>
+        <ul class="grade-list">${res.map(r => `<li class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${esc(r.say)}${r.ok || !r.got ? '' : ` <small>(${esc(r.got)})</small>`}</li>`).join('')}</ul>
+        <p class="help">${note}</p>`;
+      // a newly done exercise: the list and the counts show it at once (the result stays)
+      if (pass && isEx) { const html = box.innerHTML; renderLearn(); const nb = el.querySelector('[data-grade]'); if (nb) nb.innerHTML = html; }
+    };
+    el.onchange = e => { if (e.target.matches('[data-xtopic]')) { exTopic = e.target.value; renderLearn(); } };
+    el.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.lesson) { lessonId = b.dataset.lesson; if (cur.goals || Examples.LESSONS.find(x => x.id === lessonId).goals) trackLesson(lessonId); renderLearn(); el.querySelector('.learn-body').scrollTop = 0; }
-      if (b.dataset.load) { loadExample(b.dataset.load); if (cur.goals) { goals.id = null; trackLesson(cur.id); } }
-      if (b.dataset.ex) loadExample(b.dataset.ex);
+      if (b.dataset.ltab) { learnTab = b.dataset.ltab; try { localStorage.setItem('plc-trainer.learnTab', learnTab); } catch (err) { /* private mode */ } renderLearn(); return; }
+      if (b.dataset.xdiff) { exDiff = b.dataset.xdiff; exTopic = ''; renderLearn(); return; }
+      if (b.dataset.lesson) { go(b.dataset.lesson); return; }
+      if (b.hasAttribute('data-next')) { const i = XL.indexOf(cur), nx = XL[i + 1]; if (nx) { exDiff = nx.diff; go(nx.id); } return; }
+      if (b.hasAttribute('data-start')) {
+        if (cur.build) { App.openNew(cur.build()); UI.toast('Exercise started as a new project. Your other projects are in File → Open project.', 'ok', 4000); App.showView(cur.topic === 'Electrical Diagram' || cur.topic === 'Integration' ? 'schematic' : cur.topic === 'HMI' ? 'hmi' : cur.topic === 'Wiring' ? 'wiring' : 'ladder'); }
+        else if (cur.ex) { loadExample(cur.ex); if (isEx) App.showView(cur.topic === 'Electrical Diagram' || cur.topic === 'Integration' ? 'schematic' : cur.topic === 'HMI' ? 'hmi' : cur.topic === 'Wiring' ? 'wiring' : 'ladder'); }
+        if (cur.goals) { goals.id = null; trackLesson(cur.id); }
+        return;
+      }
+      if (b.dataset.ex) { loadExample(b.dataset.ex); return; }
       if (b.hasAttribute('data-check')) {
-        const res = Examples.gradeLesson(cur, App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)));
-        const box = el.querySelector('[data-grade]');
-        if (res.error) { box.innerHTML = `<p class="grade-bad">${esc(res.error)}</p>`; return; }
-        const pass = res.every(r => r.ok);
-        box.innerHTML = `<p class="${pass ? 'grade-ok' : 'grade-bad'}">${pass ? '✓ All checks passed. Well done!' : `${res.filter(r => r.ok).length} of ${res.length} checks passed. Fix the red ones and check again.`}</p>
-          <ul class="grade-list">${res.map(r => `<li class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${esc(r.say)}${r.ok ? '' : ` <small>(${esc(r.got)})</small>`}</li>`).join('')}</ul>
-          <p class="help">The check runs your current ladder program on a simulated PLC with the inputs pressed for you. Your wiring is not used.</p>`;
+        if (cur.check) {
+          b.disabled = true; b.textContent = 'Checking… (the checker presses your buttons)';
+          let res; try { const A = Exercises.api(); if (cur.setup) cur.setup(A); res = await cur.check(A); } catch (err) { res = { error: 'The check could not run: ' + err.message }; }
+          b.disabled = false; b.textContent = '✓ Check my work';
+          showResult(res, 'The check works on your open project: it presses buttons, switches the PLC to RUN when needed (and back to PROG), and looks at what happens.');
+          return;
+        }
+        showResult(Examples.gradeLesson(cur, App.project.ladder.rungs.map(r => Ladder.serialize(r.elems))), 'The check runs your current ladder program on a simulated PLC with the inputs pressed for you. Your wiring is not used.');
         return;
       }
       if (b.hasAttribute('data-sol')) {
-        UI.confirm('Insert solution', 'Replace the current ladder program with the lesson solution?', () => {
+        if (cur.solve) {
+          UI.confirm('Show the solution', 'Do this exercise in your open project (start the exercise first)? It adds the reference drawing, wiring, ladder or HMI objects.', async () => {
+            try { await cur.solve(Exercises.api()); UI.toast('Solution added — have a look, then press Check my work'); } catch (err) { UI.toast('The solution could not be added: ' + err.message, 'danger'); }
+          }, 'Show');
+          return;
+        }
+        UI.confirm('Insert solution', 'Replace the current ladder program with the solution?', () => {
           App.plc.setMode('PROG');
           App.project.ladder.rungs = cur.solution.map(t => Ladder.newRung(Ladder.parseRung(t)));
           App.loadProgram(); App.plc.applyAll(true);
@@ -1122,7 +1169,10 @@
     });
     document.querySelector('[data-examples]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();
-      UI.menu(r.left, r.bottom + 4, [{ head: 'Load example' }, ...Object.entries(Examples.EX).map(([k, x]) => ({ label: x.title, onClick: () => loadExample(k) }))]);
+      // examples by category; the exercises and lessons are in Learn
+      const known = new Set(App.EX_CATS.flatMap(([, ks]) => ks)), rest = Object.keys(Examples.EX).filter(k => !known.has(k));
+      UI.menu(r.left, r.bottom + 4, [...[...App.EX_CATS, ...(rest.length ? [['More', rest]] : [])].flatMap(([c, ks]) => [{ head: c }, ...ks.filter(k => Examples.EX[k]).map(k => ({ label: Examples.EX[k].title, onClick: () => loadExample(k) }))]),
+        { sep: true }, { label: '✦ Lessons and 100 exercises…', onClick: () => App.showView('learn') }]);
     });
     document.querySelector('[data-help]').addEventListener('click', e => {
       const r = e.currentTarget.getBoundingClientRect();

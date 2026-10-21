@@ -33,6 +33,7 @@
   const RES = { t4: [480, 272, '4.3" terminal'], t6: [640, 480, '6" terminal'], t7: [800, 480, '7" terminal'], t10: [1024, 600, '10" terminal'], t12: [1280, 800, '12" terminal'], t15: [1024, 768, '15" terminal'], pc: [1280, 720, 'PC screen'] };
   const dims = () => RES[(App.project && App.project.hmi.res) || 't7'] || RES.t7;
   HMI.RES = RES;
+  HMI.TYPES = TYPES;
   const PROPS = {
     label: 'Label', tag: 'Tag (address)', mode: 'Button action', color: 'Color', onText: 'ON text', offText: 'OFF text', onColor: 'ON color', offColor: 'OFF color',
     shape: 'Shape', units: 'Units', scale: 'Scale ×', dec: 'Decimals', min: 'Min', max: 'Max', size: 'Font size',

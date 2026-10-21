@@ -80,6 +80,34 @@
     },
   };
 
+  EX.practice16 = {
+    title: 'Practice board 16 (16 in / 12 out PLC, 8 buttons, 8 lamps)', desc: 'The 16 in / 12 out compact PLC pre-wired to START, STOP, four push buttons, two selectors and eight lamps. Empty program — for the medium and hard exercises.',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply1', 40, 20, { label: 'Q0' }, { on: true });
+      const qf = B.add('mcb2', 40, 180, { label: 'QF1' }, { on: true });
+      const plc = B.add('plc16', 160, 400, { label: 'PLC' });
+      B.w(q0, 'L', qf, '1', C.L1); B.w(q0, 'N', qf, '3', C.N);
+      B.w(qf, '2', plc, 'L1', C.L1); B.w(qf, '4', plc, 'N', C.N);
+      B.w(plc, 'C24', plc, 'COM', C.DC0);
+      const ins = [['pb_no', 'S1', { color: 'green', text: 'START' }, '13', '14'], ['pb_nc', 'S2', { color: 'red', text: 'STOP' }, '11', '12'], ['pb_no', 'S3', { color: 'yellow', text: 'S3' }, '13', '14'], ['pb_no', 'S4', { color: 'yellow', text: 'S4' }, '13', '14'],
+        ['pb_no', 'S5', { color: 'black', text: 'S5' }, '13', '14'], ['pb_no', 'S6', { color: 'black', text: 'S6' }, '13', '14'], ['sel2', 'S7', { text: 'MAN  AUTO' }, '13', '14'], ['sel2', 'S8', { text: 'OFF  ON' }, '13', '14']];
+      let prev = null;
+      ins.forEach(([t, l, props, a, b], k) => {
+        const s = B.add(t, 200 + k * 80, 160, { label: l, ...props });
+        B.w(prev ? prev.s : plc, prev ? prev.a : 'V24', s, a, C.DC);
+        B.w(s, b, plc, 'I' + k, C.DC); prev = { s, a };
+      });
+      B.w(plc, 'V24', plc, 'VAC0', C.DC); B.w(plc, 'VAC0', plc, 'VAC1', C.DC);
+      const cols = ['green', 'red', 'amber', 'blue', 'white', 'green', 'red', 'amber'];
+      const H = cols.map((col, k) => B.add('lamp', 180 + k * 70, 720, { label: 'H' + (k + 1), color: col, coil: '24VDC' }));
+      H.forEach((h, k) => { B.w(plc, 'O' + k, h, 'X1', C.DC); B.w(h, 'X2', k ? H[k - 1] : plc, k ? 'X2' : 'C24', C.DC0); });
+      const io = { 'I:0/0': 'S1 START', 'I:0/1': 'S2 STOP (NC)', 'I:0/2': 'S3', 'I:0/3': 'S4', 'I:0/4': 'S5', 'I:0/5': 'S6', 'I:0/6': 'S7 MAN/AUTO', 'I:0/7': 'S8 OFF/ON' };
+      for (let k = 0; k < 8; k++) io['O:0/' + k] = 'H' + (k + 1) + ' ' + cols[k].toUpperCase();
+      return proj('Practice board 16', B.circ, [], io);
+    },
+  };
+
   EX.dol = {
     title: 'Hardwired DOL starter (no PLC)', desc: 'Classic 3-wire start/stop: stop NC, start NO with KM1 13-14 seal-in, overload 95-96 in the coil circuit, run & trip lamps.',
     build() {
@@ -916,6 +944,7 @@ XIO I:0/1 RES C5:0</pre>
       let w = 0;
       for (const b in st.in) if (st.in[b]) w |= 1 << b;
       plc.physIn = w;
+      for (const a in st.set || {}) plc.write(a, st.set[a]);
       let toggles = 0, prev = null;
       for (let n = Math.round(st.t / DT); n > 0; n--) {
         plc.scan(DT);

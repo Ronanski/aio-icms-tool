@@ -3194,6 +3194,51 @@ function check(name, cond, info = '') {
       const up = App.operate(s1, 'btn'); await new Promise(q => setTimeout(q, 600)); if (typeof up === 'function') up(); await new Promise(q => setTimeout(q, 300));
       return !!km && km.state.pulled;
     }));
+    check('free draw: a reversing power circuit (owner’s layout) is drawn with simple wires — L1 / L3 cross to KM2 in lanes beside each other, none loops around', await fo.evaluate(async () => {
+      App.openNew({ name: 'FwdRev power', circuit: { seq: 1, comps: [], wires: [] } }); App.showView('schematic');
+      const F = App.project.schematic.free; let n = 0;
+      const it = (k, tag, x, y) => { const o = { id: 'd' + (++n), k, tag, x, y, r: 0 }; F.items.push(o); return o.id; };
+      const xp = it('p3', 'XP4', 640, 80), qf = it('qf3', 'QF3', 660, 280), fu = it('fu3', 'FU1', 660, 560), k1 = it('km3', 'KM1', 660, 690), k2 = it('km3', 'KM2', 860, 660), m = it('m3', 'M2', 660, 900);
+      let w = 0; const W = (a, c) => F.wires.push({ id: 'fw' + (++w), a, b: c });
+      ['L1', 'L2', 'L3'].forEach((t, i) => W(xp + ':' + t, qf + ':' + ['1', '3', '5'][i])); ['2', '4', '6'].forEach((t, i) => W(qf + ':' + t, fu + ':' + ['1', '3', '5'][i]));
+      ['2', '4', '6'].forEach((t, i) => W(fu + ':' + t, k1 + ':' + ['1', '3', '5'][i])); W(fu + ':2', k2 + ':5'); W(fu + ':4', k2 + ':3'); W(fu + ':6', k2 + ':1');
+      ['2', '4', '6'].forEach((t, i) => W(k1 + ':' + t, m + ':' + ['U1', 'V1', 'W1'][i])); ['2', '4', '6'].forEach((t, i) => W(k2 + ':' + t, k1 + ':' + t));
+      F.seq = 200; Schematic.sync(); FreeDraw.render(document.querySelector('#view-schematic .sch-body')); await new Promise(q => setTimeout(q, 200));
+      return F.wires.every(x => document.querySelector(`#view-schematic [data-fw="${x.id}"] .w`).getAttribute('d').split(' L').length <= 4);
+    }));
+    console.log('Exercises: 100 graded tasks across the modules');
+    const xr = await fo.evaluate(async () => {
+      const L = Exercises.LIST, n = d => L.filter(x => x.diff === d).length, bad = [];
+      for (const e of L) {
+        if (e.test) {
+          const good = Examples.gradeLesson(e, e.solution), empty = Examples.gradeLesson(e, []);
+          if (good.error || !good.every(x => x.ok)) bad.push(e.title + ': solution fails');
+          if (!empty.error && empty.every(x => x.ok)) bad.push(e.title + ': passes with an empty program');
+          continue;
+        }
+        const open = () => { App.openNew(e.build ? e.build() : Examples.EX[e.ex].build()); App.plc.setMode('PROG'); };
+        open(); let A = Exercises.api(); if (e.setup) e.setup(A);
+        const before = await e.check(A);
+        open(); A = Exercises.api(); await e.solve(A); if (e.setup) e.setup(Exercises.api());
+        const after = await e.check(Exercises.api());
+        if (!after.every(x => x.ok)) bad.push(e.title + ': solution fails ' + after.filter(x => !x.ok).map(x => x.say).join('; '));
+        if (before.every(x => x.ok)) bad.push(e.title + ': passes before it is done');
+      }
+      return { total: L.length, easy: n('easy'), medium: n('medium'), hard: n('hard'), project: L.filter(x => x.check).length, hints: L.every(x => x.hint), bad };
+    });
+    check('exercises: 100 of them — 25 easy, 40 medium, 35 hard — each with a hint', xr.total === 100 && xr.easy === 25 && xr.medium === 40 && xr.hard === 35 && xr.hints, JSON.stringify(xr));
+    check('exercises: every solution passes its check and no exercise passes before it is done (ladder on a simulated PLC; drawing, wiring and HMI on the project, buttons pressed by the checker)', xr.bad.length === 0, xr.bad.join(' | '));
+    check('exercises: some use the Electrical Diagram, the Wiring and the HMI, and some all modules together', xr.project >= 15, String(xr.project));
+    await fo.evaluate(() => { App.showView('learn'); });
+    await fo.click('#view-learn [data-ltab="ex"]'); await fo.waitForTimeout(150);
+    check('Learn: Course and Exercises tabs; exercises by difficulty with a topic filter and a done count', await fo.evaluate(() => !!document.querySelector('#view-learn [data-ltab="course"]') && document.querySelectorAll('#view-learn [data-xdiff]').length === 3 && !!document.querySelector('#view-learn [data-xtopic]') && /0\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent)));
+    await fo.click('#view-learn [data-lesson="' + await fo.evaluate(() => Exercises.LIST[0].id) + '"]'); await fo.waitForTimeout(150);
+    await fo.click('#view-learn [data-sol]'); await fo.waitForTimeout(150); await fo.click('.modal .btn.primary'); await fo.waitForTimeout(200);
+    await fo.evaluate(() => App.showView('learn')); await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
+    check('Learn: an exercise passed with Check my work is marked done in the list and the count', await fo.evaluate(() => /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok')));
+    await fo.click('[data-examples]'); await fo.waitForTimeout(150);
+    check('Examples menu: grouped by category (practice boards, motor control, process, hardware)', await fo.evaluate(() => { const h = [...document.querySelectorAll('.ctx-menu .ctx-head, .ctx-menu .head, .ctx-menu h6')].map(x => x.textContent); return ['Practice boards', 'Motor control', 'Process', 'Hardware'].every(c => h.some(t => t.includes(c))); }));
+    await fo.keyboard.press('Escape');
     await fo.close();
   }
   check('app loads offline from cache', await web.evaluate(() => !!(window.App && App.project && document.querySelector('.rung'))));
