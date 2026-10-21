@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-21
+
 ### Fixed
 - **Contacts move on the drawing** (free draw and IEC current paths): a N.O. contact, main pole, breaker or PLC output is drawn closed when it closes and a N.C. contact open when it opens, as in Simurelay (before, only the colour changed).
 - **Wiring by touch**: tapping one terminal of a symbol and then its other terminal quickly no longer counts as a double tap (the second wire was lost).
