@@ -8,8 +8,9 @@
 - [x] Warning on a contact whose coil is drawn nowhere
 - [x] Wire routing around symbols and terminals; column placement
 - [x] Run view: current flow, filled coil, glowing lamp, switch flash
-- [ ] Drag from a terminal to another to wire (now: tap, tap)
-- [ ] Contact animation in the Ladder-style (NEMA) diagram view
+- [x] Drag from a terminal to another to wire (tap, tap still works)
+- [x] Contact animation in the Ladder-style (NEMA) diagram view
+- [x] Supply points face the current: L/+ feed down, N/0 V/PE return up
 - [ ] Stable v2.2.2 (needs the owner's GO)
 
 ## Done (v1.0.0)

@@ -2545,6 +2545,35 @@ function check(name, cond, info = '') {
     const q = id => document.querySelector('#view-schematic [data-fi="' + id + '"] .ssym'), g = q(it.id), km = q(runId);
     return g.classList.contains('lowv') && /drawn nowhere/.test(g.innerHTML) && !km.classList.contains('lowv');
   }, engr.runId));
+  console.log('Finish: drag to wire, supply points, Ladder-style contacts');
+  await page.evaluate(async () => {
+    const prev = App.currentId; App.openNew({ name: 'Drag wire', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
+      schematic: { free: { seq: 3, items: [{ id: 'd1', k: 'pbno', tag: 'S1', x: 100, y: 100, r: 0 }, { id: 'd2', k: 'lamp', tag: 'H1', x: 300, y: 100, r: 0 }, { id: 'd3', k: 'pL1', tag: 'XP1', x: 500, y: 100, r: 0 }], wires: [] } } }); if (prev) Store.remove(prev);
+    localStorage.setItem('plc-trainer.schStyle', 'free'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click(); document.querySelector('#view-schematic [data-smode="edit"]').click(); await new Promise(q => setTimeout(q, 200));
+  });
+  const ftBox = async k => { const e = await page.$(`#view-schematic [data-ft="${k}"]`); const b = await e.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  {
+    const A = await ftBox('d1:14'), C = await ftBox('d2:X1');
+    await page.mouse.move(A.x, A.y); await page.mouse.down(); await page.mouse.move((A.x + C.x) / 2, (A.y + C.y) / 2 + 30, { steps: 6 }); await page.mouse.move(C.x, C.y, { steps: 6 }); await page.mouse.up(); await wait(200);
+  }
+  check('finish: a wire is drawn by dragging from one terminal to another (tap, tap still works)', await page.evaluate(() => App.project.schematic.free.wires.some(w => [w.a, w.b].sort().join() === ['d1:14', 'd2:X1'].sort().join())));
+  {
+    const A = await ftBox('d1:13'); await page.mouse.move(A.x, A.y); await page.mouse.down(); await page.mouse.move(A.x + 60, A.y + 80, { steps: 6 }); await page.mouse.up(); await wait(200);
+  }
+  check('finish: a wire dragged out and let go on empty space is cancelled', await page.evaluate(() => App.project.schematic.free.wires.length === 1 && !document.querySelector('#view-schematic .wtemp')));
+  check('finish: a supply point feeds downwards (L1 / +24 V terminal below the circle), a return point upwards (N / 0 V above)', await page.evaluate(() => {
+    const K = FreeDraw.KINDS; return K.pL1.terms[0].y > 0 && K.pP.terms[0].y > 0 && K.pN.terms[0].y < 0 && K.pM.terms[0].y < 0 && K.pPE.terms[0].y < 0;
+  }));
+  check('finish: in the Ladder-style view a N.O. contact is drawn closed when it closes, a N.C. drawn open when it opens', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'NEMA', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] } }); if (prev) Store.remove(prev);
+    App.project.schematic.rungs = [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'pbnc', tag: 'S2' }, { k: 'lamp', tag: 'H1' }], comment: '' }]; Schematic.sync();
+    localStorage.setItem('plc-trainer.schStyle', 'nema'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="nema"]').click();
+    const h = () => { Schematic.render(); return [...document.querySelectorAll('#view-schematic .sel-el .ssym')].slice(0, 2).map(g => g.innerHTML); };
+    const s1 = App.project.circuit.comps.find(c => c.props.label === 'S1'), s2 = App.project.circuit.comps.find(c => c.props.label === 'S2');
+    const [a0, b0] = h(); s1.state.pressed = true; s2.state.pressed = true; App.circuitChanged(); const [a1, b1] = h(); s1.state.pressed = false; s2.state.pressed = false; App.circuitChanged();
+    localStorage.setItem('plc-trainer.schStyle', 'iec'); document.querySelector('#view-schematic [data-sstyle="iec"]').click();
+    return a0 !== a1 && b0 !== b1;
+  }));
   console.log('Moving contacts: every library symbol whose contact switches is drawn switched');
   check('moving contacts: every symbol in the library with a contact is drawn differently when that contact switches (all of them, not a few)', await page.evaluate(async () => {
     const K = FreeDraw.KINDS, D = Circuit.DEFS, still = [], moved = [];

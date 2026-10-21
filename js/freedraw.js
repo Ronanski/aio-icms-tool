@@ -24,7 +24,7 @@
   // a crossover (reversing) contact: 1-4 and 3-2 at rest, 1-2 and 3-4 operated
   const xov = (type, extra) => ({ type, pre: 'S', look: 'xover', terms: [{ id: '1', x: -10, y: -30 }, { id: '3', x: 10, y: -30 }, { id: '2', x: -10, y: 30 }, { id: '4', x: 10, y: 30 }], ...extra });
   // a potential point (L1, N, +24 V…): a junction wired to that conductor of the supply in the Wiring
-  const pot = (p, n) => ({ n, type: 'jct', pre: 'XP', look: 'pot', pot: p, jct: true, auto: true, terms: [{ id: 'J', x: 0, y: -30 }] });
+  const pot = (p, n) => ({ n, type: 'jct', pre: 'XP', look: 'pot', pot: p, jct: true, auto: true, terms: [{ id: 'J', x: 0, y: ['L1', 'L2', 'L3', '+'].includes(p) ? 30 : -30 }] });
   // wire pieces: junctions with several ends (all one point); a link arrow joins every arrow with the same tag
   const wire = (n, ends, extra) => ({ n, type: 'jct', pre: 'J', look: 'wire', jct: true, auto: true, terms: ends.map(([x, y], i) => ({ id: 'J' + i, x, y })), ...extra });
   /* PLC I/O: one symbol per point of the real controller or I/O card in the Wiring, found by its tag (`types`: the devices
@@ -601,7 +601,7 @@
     } else if (S.look === 'node') {
       o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
     } else if (S.look === 'pot') {
-      o.push(stub(0, -30, -11), `<circle cx="0" cy="0" r="11"/>`);
+      o.push(S.terms[0].y > 0 ? stub(0, 11, 30) : stub(0, -30, -11), `<circle cx="0" cy="0" r="11"/>`);
     } else if (S.look === 'wire') {
       o.push(...S.terms.map(t => `<path d="M0 0 L${t.x} ${t.y}"/>`));
       if (S.terms.length > 2) o.push(`<circle cx="0" cy="0" r="3.5" class="jdot"/>`);
@@ -895,6 +895,23 @@
   const capture = ev => { try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* pointer already released */ } };
   const touches = new Map();
   let pinch = null, longT = null;
+  /* the wire being drawn ends on terminal key, or on wire wEl at p (a junction dot there, and both wires meet on it) */
+  function endWire(key, wEl, p) {
+    if (key) {
+      if (key !== wiring.from && !fr().wires.some(w => (w.a === wiring.from && w.b === key) || (w.b === wiring.from && w.a === key))) {
+        H.snap(); const F = fr(); F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: key });
+        wiring = null; H.changed(); return true;
+      }
+      wiring = null; FD.render(body); return true;
+    }
+    const w = fr().wires.find(x => x.id === wEl.dataset.fw);
+    if (!w || w.a === wiring.from || w.b === wiring.from) return false;
+    if (full()) { wiring = null; FD.render(body); return true; }
+    H.snap();
+    const j = splitWire(w, { x: snap10(p.x), y: snap10(p.y) }), F = fr();
+    F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: j });
+    wiring = null; H.changed(); return true;
+  }
   function bind() {
     svg.addEventListener('pointerdown', ev => {
       if (ev.pointerType === 'touch') {
@@ -935,25 +952,11 @@
         drag = { pan: true, sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; capture(ev); return;
       }
       if (term) {
-        const key = term.dataset.ft;
-        if (!wiring) { wiring = { from: key, cur: null }; sel = null; group.clear(); FD.render(body); return; }
-        if (key !== wiring.from && !fr().wires.some(w => (w.a === wiring.from && w.b === key) || (w.b === wiring.from && w.a === key))) {
-          H.snap(); const F = fr(); F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: key });
-          wiring = null; H.changed(); return;
-        }
-        wiring = null; FD.render(body); return;
+        // a wire starts on a terminal: drag to the other terminal, or let go and tap it
+        if (!wiring) { wiring = { from: term.dataset.ft, cur: null, down: { x: ev.clientX, y: ev.clientY } }; sel = null; group.clear(); capture(ev); FD.render(body); return; }
+        endWire(term.dataset.ft); return;
       }
-      if (wiring && wEl) {
-        // ending a wire on another wire: a junction dot there, and both wires meet on it
-        const w = fr().wires.find(x => x.id === wEl.dataset.fw);
-        if (w && w.a !== wiring.from && w.b !== wiring.from) {
-          if (full()) { wiring = null; FD.render(body); return; }
-          H.snap();
-          const j = splitWire(w, { x: snap10(p.x), y: snap10(p.y) }), F = fr();
-          F.seq++; F.wires.push({ id: 'fw' + F.seq, a: wiring.from, b: j });
-          wiring = null; H.changed(); return;
-        }
-      }
+      if (wiring && wEl && endWire(null, wEl, p)) return;
       if (wiring) { wiring = null; FD.render(body); return; }
       if (itEl) {
         const it = itemOf(itEl.dataset.fi);
@@ -1008,6 +1011,14 @@
       }
     });
     const up = ev => {
+      // a wire dragged out of a terminal ends where it is let go: on a terminal, on a wire, or nowhere (cancelled)
+      if (wiring && wiring.down && ev) {
+        const d0 = wiring.down; wiring.down = null;
+        if (Math.hypot(ev.clientX - d0.x, ev.clientY - d0.y) > 8) {
+          const el = document.elementFromPoint(ev.clientX, ev.clientY), t = el && el.closest('[data-ft]'), we = el && el.closest('[data-fw]');
+          if (t) endWire(t.dataset.ft); else if (!(we && endWire(null, we, world(ev)))) { wiring = null; FD.render(body); }
+        }
+      }
       if (ev && ev.pointerType === 'touch') { touches.delete(ev.pointerId); if (touches.size < 2) pinch = null; }
       clearTimeout(longT);
       if (held) { held(); held = null; }

@@ -445,7 +445,9 @@
     const K = SK[e.k], cx = x + CW / 2, o = [];
     const cls = `ssym${st.on ? ' on' : ''}${SC.errs && SC.errs.has(e) ? ' err' : ''}${st.missing ? ' miss' : ''}`;
     o.push(`<g class="${cls}">`);
-    const contact = nc => `<path d="M${cx - 12} ${y - 12} V${y + 12} M${cx + 12} ${y - 12} V${y + 12}"/>` + (nc ? `<path d="M${cx - 14} ${y + 12} L${cx + 14} ${y - 12}"/>` : '');
+    // the contact moves: a closed N.O. is bridged across its plates, an opened N.C. has its blade lifted off
+    const shut = nc => (st.c ? !!st.closed : nc);
+    const contact = nc => `<path d="M${cx - 12} ${y - 12} V${y + 12} M${cx + 12} ${y - 12} V${y + 12}"/>` + (nc ? (shut(nc) ? `<path d="M${cx - 14} ${y + 12} L${cx + 14} ${y - 12}"/>` : `<path d="M${cx - 14} ${y + 12} L${cx + 2} ${y - 20}"/>`) : shut(nc) ? `<path d="M${cx - 12} ${y} H${cx + 12}"/>` : '');
     switch (K.sym) {
       case 'no': o.push(contact(false)); break;
       case 'nc': o.push(contact(true)); break;
