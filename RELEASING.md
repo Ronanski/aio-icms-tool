@@ -24,6 +24,13 @@ One version of the app ships four ways. All four are built from the same files b
 
 Every pull request also runs the build jobs without publishing, so a broken build shows up before merging. The files of a PR build can be downloaded from the run's **Artifacts**.
 
+## Release order for the Electrical Diagram work
+The released Stable (v2.0.0) drops parts and diagram symbols it does not know when it opens a project. Release in this order:
+1. **Project compatibility** (keep unknown parts, symbols, wires and settings, warn) — to Beta, then to Stable.
+2. Only then the new parts and symbols (PLC symbols, more parts, timing parts, the Simurelay parity parts), to Beta, then to Stable.
+
+A project saved with a new part and opened in a version from before step 1 loses that part; nothing in a newer version can prevent that. `FORMAT` stays 2 as long as only new types, terminals and settings are added (step 1 keeps them); bump it only for a new project structure, and test that older readers warn.
+
 ## Beta
 Merging into `main` is enough: the Beta copy updates within minutes. A pre-release (version with a suffix, e.g. `1.5.0-beta.1`, run **Release** on any branch) is only a downloadable snapshot.
 

@@ -2303,6 +2303,10 @@ function check(name, cond, info = '') {
       w(q, 'L', d, '11'); w(d, '12', a, 'X1'); w(d, '14', b, 'X1'); w(a, 'X2', q, 'N'); w(b, 'X2', q, 'N'); run(); const rest = a.state.on && !b.state.on;
       Circuit.part(d, t === 'estop_co' ? 'btn' : 'lever', 'down'); run(); return rest && !a.state.on && b.state.on; };
     return r('estop_co') && r('limit_co');`)));
+  check('parity: the selector changeover joins 11-12 in position 0 and 11-14 in I; the N.C. selector opens 11-12 in I', await page.evaluate(new Function(solveKit + `
+    const q = add('supply1'), s = add('sel_cx'), n = add('sel2_nc'), a = add('lamp', { coil: '230VAC' }), b = add('lamp', { coil: '230VAC' }), c = add('lamp', { coil: '230VAC' });
+    w(q, 'L', s, '11'); w(s, '12', a, 'X1'); w(s, '14', b, 'X1'); w(q, 'L', n, '11'); w(n, '12', c, 'X1'); [a, b, c].forEach(x => w(x, 'X2', q, 'N')); run(); const p0 = a.state.on && !b.state.on && c.state.on;
+    Circuit.part(s, 'knob', 'down'); Circuit.part(n, 'knob', 'down'); run(); return p0 && !a.state.on && b.state.on && !c.state.on;`)));
   check('parity: fuse switches 1P, 2P, 4P switch their poles; on a short the 1P+N and 3P+N fuses blow and the neutral pole stays closed', await page.evaluate(new Function(solveKit + `
     const q = add('supply3'), ok = [];
     for (const [t, n] of [['fsw1', 1], ['fsw2', 2], ['fsw4', 4]]) { const d = add(t, {}, { on: true }); ok.push(Circuit.DEFS[t].conduct(d).length === n); d.state.on = false; ok.push(!Circuit.DEFS[t].conduct(d)); }
