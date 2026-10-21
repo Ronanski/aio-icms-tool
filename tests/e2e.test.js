@@ -72,6 +72,9 @@ function check(name, cond, info = '') {
   await page.fill('#f_n', 'Test Project');
   await page.selectOption('#f_t', 'practice');
   await page.click('.modal .btn.primary');
+  await wait(200);
+  // page 2: the controller and its chassis
+  await page.click('.modal-wrap:last-child .btn.primary');
   await wait(300);
   check('project created with name', (await page.evaluate(() => App.project.name)) === 'Test Project');
   check('template loaded', (await page.evaluate(() => App.project.circuit.comps.length)) > 5);
@@ -2694,7 +2697,9 @@ function check(name, cond, info = '') {
   await page.evaluate(() => App.newProject()); await wait(150);
   const brandNew = await page.evaluate(re => !new RegExp(re, 'i').test(document.documentElement.outerHTML), BRANDS.source);
   await page.selectOption('.modal #f_plc', 'tag'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(300);
-  check('PLC target: New project asks for the target; a tag-based blank project uses tag-based addresses', await page.evaluate(() => App.project.target === 'tag' && App.project.addr === 'tag'));
+  check('PLC target: New project page 2 asks for the chassis, the controller slot and the connection (Realistic by default for tag-based)', await page.evaluate(() => /controller/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent) && document.querySelector('.modal-wrap:last-child #f_ch').value === '7' && document.querySelector('.modal-wrap:last-child #f_conn').value === 'real' && !!document.querySelector('.modal-wrap:last-child #f_slot')));
+  await page.click('.modal-wrap:last-child .btn.primary'); await wait(300);
+  check('PLC target: New project asks for the target; a tag-based blank project uses tag-based addresses, a 7-slot chassis and the Realistic connection', await page.evaluate(() => App.project.target === 'tag' && App.project.addr === 'tag' && App.project.io.chassis === '7' && App.project.conn.mode === 'real'));
   check('PLC target: no brand names in the target picker, the Organizer, the project tree or the New project form', brandTag && brandFile && brandNew);
   await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay0); document.querySelector('#view-ladder [data-lorg]').hidden = true; });
   console.log('PLC chassis: modules snap into slots, the slot is the position');
@@ -2887,7 +2892,8 @@ function check(name, cond, info = '') {
     await page.click('#view-ladder [data-lorg] [data-org="new"]'); await wait(150);
     await page.fill('#f_nm', 'drain'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
     check('routines: ＋ New Routine… in the Organizer adds a routine (DRAIN) and opens it', await page.evaluate(() => App.project.ladder.files.some(f => f.name === 'DRAIN' && f.n === 4) && Ladder.file() === 4 && document.querySelector('#view-ladder [data-lorg]').textContent.includes('DRAIN')));
-    await page.evaluate(() => { Ladder.openFile(2); }); await wait(100);
+    check('routines: a new routine starts with rung 0, empty (red ⊗) — Verify fails until it has an instruction', await page.evaluate(() => { const f = App.project.ladder.files.find(x => x.name === 'DRAIN'); return f.rungs.length === 1 && !f.rungs[0].elems.length && !!document.querySelector('#view-ladder .rung.empty') && !Ladder.verify(true); }));
+    await page.evaluate(() => { const f = App.project.ladder.files.find(x => x.name === 'DRAIN'); f.rungs = [Ladder.newRung(Ladder.parseRung('XIC B3:0/5 OTE B3:0/6'))]; App.programChanged(); Ladder.openFile(2); }); await wait(100);
     await page.evaluate(() => { const r = App.project.ladder.rungs; Ladder.resetSel(); });
     await page.evaluate(() => { App.project.ladder.rungs.push(Ladder.newRung(Ladder.parseRung('XIC B3:0/2 JSR U:3'))); App.programChanged(); Ladder.render(); }); await wait(150);
     const jsrId = await page.evaluate(() => App.project.ladder.rungs[1].elems[1].id);
@@ -3022,7 +3028,9 @@ function check(name, cond, info = '') {
     check('corrections: Who Active shows the project in the controller (\'Old line\')', await page.evaluate(() => /00, CPU1 — [^']*, 'Old line'/.test(document.querySelector('.modal-wrap[data-who]').textContent)));
     await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.download(); }); await wait(150);
     check('corrections: Download warns that the controller holds another project, which will be replaced', await page.evaluate(() => /holds another project, 'Old line'\. Download replaces it with 'Tank line'/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
-    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(30);
+    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(150);
+    check('corrections: overwriting another project asks once more (Overwrite)', await page.evaluate(() => /holds 'Old line'. Overwrite it with 'Tank line'?/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
+    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Overwrite")'); await wait(30);
     await page.evaluate(() => { App.project.circuit.wires = App.project.circuit.wires.filter(w => w.id !== 'w3'); App.circuitChanged(); }); await wait(600);
     check('corrections: a cable pulled out during the download gives "Communications timed out" and the download is cancelled', await page.evaluate(() => !App.conn.online && /Communications timed out\. Cancelling download/.test(Ladder.outLines().join('\n')) && App.project.conn.ctlName === 'Old line'));
     await page.evaluate(() => { App.project.circuit.wires.push({ id: 'w3', a: 'c6:USB', b: 'c3:PRG', pts: [] }); App.circuitChanged(); App.download(true); }); await wait(700);
@@ -3034,6 +3042,50 @@ function check(name, cond, info = '') {
     await page.evaluate(() => { App.setMode('PROG'); App.project.target = 'file'; App.addrChanged(); Ladder.statusUi(); }); await wait(200);
     check('corrections: a file-based controller with that mismatch shows Faulted in the mode box and a red OK light', await page.evaluate(() => document.querySelector('#view-ladder [data-st-mode]').textContent === 'Faulted' && document.querySelector('#view-ladder [data-st-led="ok"]').classList.contains('bad')));
     await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay8); });
+  }
+  console.log('Gap list: Upload, offline status, module catalog on the project, Controller Tags, placement, chassis example end to end');
+  {
+    await page.evaluate(() => { const prev = App.currentId; App.openNew({ name: 'No hardware', target: 'tag', conn: { mode: 'real' }, ladder: { rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] } }); if (prev) Store.remove(prev); window._lay9 = App.layout; App.setLayout('single'); App.showView('ladder'); });
+    await wait(250);
+    check('gaps: with no PLC in the Wiring the status box says Offline and Path: <none>', await page.evaluate(() => document.querySelector('#view-ladder [data-st-mode]').textContent === 'Offline' && document.querySelector('#view-ladder [data-st-path]').textContent === 'Path: <none>'));
+    await page.click('#view-ladder [data-act="upload"]'); await wait(150);
+    check('gaps: the toolbar Upload button shows "not available in the trainer" too', await page.evaluate(() => /Upload is not available in the trainer/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
+    await page.evaluate(() => document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()));
+    await page.click('#view-ladder [data-act="omenu"]'); await wait(150);
+    check('gaps: offline (Realistic), Run Mode and Program Mode are greyed out in the controller menu', await page.evaluate(() => { const b = t => [...document.querySelectorAll('.ctx-menu button')].find(x => x.textContent === t); return b('Run Mode').disabled && b('Program Mode').disabled; }));
+    await page.keyboard.press('Escape'); await page.evaluate(() => UI.closeMenu && UI.closeMenu());
+    // modules are configured in the project, before any hardware
+    await page.evaluate(() => App.newModule()); await wait(150);
+    check('gaps: New Module opens the catalog even with no hardware in the Wiring', await page.evaluate(() => /Select Module Type/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent) && document.querySelectorAll('.modal [data-mt]').length >= 10));
+    await page.click('.modal [data-mt="mdi16"]'); await page.click('.modal-wrap:last-child .modal-foot button:has-text("Create")'); await wait(200);
+    check('gaps: the module page has Name, Slot, Description and Connection (RPI, Inhibit Module, Major Fault on connection loss)', await page.evaluate(() => ['#f_name', '#f_slot', '#f_desc', '#f_rpi', '#f_inhibit', '#f_mf'].every(s => !!document.querySelector('.modal-wrap:last-child ' + s)) && document.querySelector('.modal-wrap:last-child #f_rpi').value === '20'));
+    await page.fill('.modal-wrap:last-child #f_name', 'DI_1'); await page.selectOption('.modal-wrap:last-child #f_slot', '1'); await page.selectOption('.modal-wrap:last-child #f_mf', 'Yes'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    check('gaps: the module is in the project I/O configuration with its properties, in the Organizer ([1] IB16 DI_1) and its tags in Controller Tags (Local:1:I)', await page.evaluate(() => { App.organizer(); const io = App.project.io; return io.slots['1'] === 'mdi16' && io.mods['1'].name === 'DI_1' && io.mods['1'].mf === true && /\[1\] IB16 DI_1/.test(document.querySelector('#view-ladder [data-lorg]').textContent) && /Local:1:I/.test(document.querySelector('#view-ladder .lad-side').textContent) && App.serialize().io.mods['1'].rpi === 20; }));
+    check('gaps: a tag-based project shows Controller Tags (module tags, then tags) instead of the I and O data files', await page.evaluate(() => { const side = document.querySelector('#view-ladder .lad-side'); const tabs = [...side.querySelectorAll('[data-file]')].map(b => b.dataset.file); return /Controller Tags/.test(side.querySelector('.side-head h4').textContent) && tabs[0] === 'TAGS' && !tabs.includes('I') && !tabs.includes('O') && /Module tags/.test(side.textContent) && /Local:1:I\.Data\.0/.test(side.textContent); }));
+    // the chassis example: the whole workflow with the hardware
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.chassis.build()); App.showView('ladder'); }); await wait(300);
+    check('gaps: the 1756-style chassis example opens tag-based, Realistic, Offline, with the PC wired to the controller\'s USB port', await page.evaluate(() => App.project.target === 'tag' && App.project.conn.mode === 'real' && document.querySelector('#view-ladder [data-st-mode]').textContent === 'Offline' && App.project.circuit.wires.some(w => /:USB$/.test(w.a) && /:PRG$/.test(w.b))));
+    await page.evaluate(() => { App.operate(App.project.circuit.comps.find(c => c.type === 'epc'), 'drv'); }); await wait(1800);
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    await page.click('.modal [data-who="set"]'); await wait(150);
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.download(true); }); await wait(700);
+    await page.evaluate(() => App.setMode('RUN')); await wait(300);
+    await press('S1'); await wait(300);
+    check('gaps: chassis example end to end — driver, Who Active, Set Project Path, Download, RUN, START lights the run lamp (Local:2:O.Data.0)', await page.evaluate(() => App.conn.online && App.plc.mode === 'RUN' && App.plc.read('O:2/0') === 1 && App.project.circuit.comps.find(c => c.props.label === 'H1').state.on !== false), await page.evaluate(() => JSON.stringify([App.conn.online, App.plc.mode, App.plc.read('O:2/0'), App.project.conn.path])));
+    check('gaps: the ladder shows the alias tags with the address under them (<Local:1:I.Data.0>)', await page.evaluate(() => [...document.querySelectorAll('#view-ladder .rung-svg .alias')].some(t => t.textContent === '<Local:1:I.Data.0>')));
+    // a module set to major fault on connection loss stops a tag-based controller
+    await page.evaluate(() => { App.project.io = Circuit.cleanIo({ ...App.project.io, mods: { 2: { mf: true } } }); App.project.io.slots['2'] = 'mdo16t'; App.addrChanged(); }); await wait(400);
+    check('gaps: a module set to "Major Fault on connection loss" that does not match stops the tag-based controller', await page.evaluate(() => App.plc.mode === 'PROG' && App.events().some(e => /CPU fault: I\/O configuration mismatch/.test(e.msg))));
+    await page.evaluate(() => { App.project.io = Circuit.cleanIo({ ...App.project.io, slots: { 1: 'mdi16', 2: 'mdo16' }, mods: { 2: { inhibit: true } } }); App.addrChanged(); }); await wait(300);
+    check('gaps: an inhibited module is not checked and does not run (status Inhibited)', await page.evaluate(() => /Inhibited/.test(Circuit.status(App.project.circuit.comps.find(c => c.props.label === 'DO1'), App.ctx)) && Circuit.rack(App.project.circuit, App.project.io).bad.length === 0));
+    // a part added from the library goes to free space
+    await page.evaluate(() => App.showView('wiring')); await wait(200);
+    await page.click('#view-wiring .pal-item[data-type="lamp"]'); await wait(200);
+    check('gaps: a part added from the library is placed where it covers no other part', await page.evaluate(() => {
+      const C = App.project.circuit.comps, n = C[C.length - 1], box = c => { const d = Circuit.dims(c); return [c.x, c.y, c.x + d.w, c.y + d.h]; }, [a0, b0, a1, b1] = box(n);
+      return C.filter(c => c !== n && !Circuit.DEFS[c.type].layer && !Circuit.DEFS[c.type].junction).every(c => { const [x0, y0, x1, y1] = box(c); return a1 <= x0 || a0 >= x1 || b1 <= y0 || b0 >= y1; });
+    }));
+    await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.setMode('PROG'); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay9); });
   }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {

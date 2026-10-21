@@ -223,8 +223,23 @@
     });
   }
 
+  // the nearest place to (x, y) where a new part of this type covers no other part (rails, plates and junctions do not count)
+  function freePlace(type, x, y) {
+    const d = DEFS[type], w = d.w, h = d.h, pad = 16;
+    const boxes = circ().comps.filter(c => !DEFS[c.type].layer && !DEFS[c.type].rail && !DEFS[c.type].junction).map(c => { const s = c.props.size || 1, m = Circuit.dims(c); return [c.x - pad, c.y - pad - 18, c.x + m.w * s + pad, c.y + m.h * s + pad]; });
+    const free = (px, py) => boxes.every(([x0, y0, x1, y1]) => px + w <= x0 || px >= x1 || py + h <= y0 || py >= y1);
+    for (let ring = 0; ring < 40; ring++) {
+      const step = 40, n = ring * 8 || 1;
+      for (let k = 0; k < n; k++) {
+        const ang = (k / n) * Math.PI * 2, px = Math.round((x + Math.cos(ang) * ring * step) / 10) * 10, py = Math.round((y + Math.sin(ang) * ring * step) / 10) * 10;
+        if (free(px, py)) return [px, py];
+      }
+    }
+    return [x, y];
+  }
   function addComp(type, x, y) {
     const d = DEFS[type];
+    if (!d.layer && !d.rail && !d.junction) [x, y] = freePlace(type, x, y);
     if (d.unique && circ().comps.some(c => DEFS[c.type].unique === d.unique)) { UI.toast(d.uniqueMsg || 'Only one of this device per project', 'warn'); return; }
     const c = Circuit.create(type, x, y, circ());
     circ().comps.push(c);

@@ -270,7 +270,7 @@
     if (n > 9) { UI.toast(tag ? 'Up to 7 routines besides MainRoutine' : 'Program files go up to LAD 9', 'warn'); return; }
     UI.form(tag ? 'New routine' : `New program file LAD ${n}`, [{ key: 'nm', label: 'Name', value: tag ? 'Routine' + (n - 2) : 'SUB' + n }], v => {
       const nm = v.nm.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10); if (!nm) return 'Type a name';
-      App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [] }].sort((a, b) => a.n - b.n);
+      App.project.ladder.files = [...(App.project.ladder.files || []), { n, name: nm, rungs: [Ladder.newRung([])] }].sort((a, b) => a.n - b.n);
       curFile = n; App.programChanged(); Ladder.render(); return undefined;
     }, tag ? '<p class="help">A routine runs when a JSR to it in MainRoutine (or another routine) is true. Pick it by name in the JSR.</p>' : '<p class="help">A subroutine runs when a JSR U:n instruction in LAD 2 (or another file) is true.</p>');
   };
@@ -744,7 +744,7 @@
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
         ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(true), tags: () => App.tagsDialog(),
-        network: () => App.network(), who: () => App.whoActive(), online: () => App.goOnline(), download: () => App.download(), upload: () => UI.confirm('Upload', 'Replace the ladder and the tags of the project with the program in the controller?', () => App.upload(), 'Upload'), compare: () => App.compare(),
+        network: () => App.network(), who: () => App.whoActive(), online: () => App.goOnline(), download: () => App.download(), upload: () => App.upload(), compare: () => App.compare(),
         test: () => App.testEdits(), assemble: () => App.assembleEdits(), cancel: () => App.cancelEdits(),
         outtog: () => outOpen(!outShown),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
@@ -823,8 +823,8 @@
       ...(real ? [{ label: on ? 'Go Offline' : 'Go Online', onClick: () => App.goOnline() }, { label: 'Download…', onClick: () => App.download() }, { label: 'Upload…', onClick: () => App.upload() }] : []),
       { label: 'Who Active…', onClick: () => App.whoActive() },
       { sep: true },
-      { label: 'Run Mode', disabled: run, onClick: () => App.setMode('RUN') },
-      { label: 'Program Mode', disabled: !run, onClick: () => App.setMode('PROG') },
+      { label: 'Run Mode', disabled: run || (real && !on), onClick: () => App.setMode('RUN') },
+      { label: 'Program Mode', disabled: !run || (real && !on), onClick: () => App.setMode('PROG') },
       { sep: true },
       { label: real ? 'Simple connection (edits run at once)' : 'Realistic connection (download)', onClick: () => App.setConnMode(real ? 'simple' : 'real') },
     ]);
@@ -835,7 +835,7 @@
     const plc = App.plc, c = App.project.conn, real = !!(c && c.mode === 'real'), on = !real || App.conn.online, run = plc.mode === 'RUN';
     const st = App.status ? App.status() : {};
     const set = (k, v) => { const e = root.querySelector(k); if (e && e.textContent !== v) e.textContent = v; };
-    set('[data-st-mode]', !on ? 'Offline' : st.fault ? 'Faulted' : run ? 'Rem Run' : 'Rem Prog');
+    set('[data-st-mode]', !on || !st.ctl ? 'Offline' : st.fault ? 'Faulted' : run ? 'Rem Run' : 'Rem Prog');
     const nr = root.querySelector('[data-st-io]'); if (nr) nr.hidden = st.io !== 'bad';
     if (rungsEl) rungsEl.classList.toggle('live', on && run && plc.powered);
     const n = plc.forceCount();
@@ -1016,13 +1016,19 @@
 
   /* ---------- Data table ---------- */
   const DataTable = {};
-  let dtFile = 'I', dtEl, dtCache = [];
+  let dtFile = 'I', dtEl, dtCache = [], dtProj = null;
   DataTable.init = function (el) { dtEl = el; };
-  DataTable.show = function (f) { if (['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'].includes(f)) { dtFile = f; DataTable.render(); } };
+  DataTable.show = function (f) { if (['TAGS', 'I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'].includes(f)) { dtFile = f; DataTable.render(); } };
   DataTable.render = function () {
     if (!dtEl || !App.project) return;
-    const files = ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
-    const names = { I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', R6: 'R6 Control (sequencers)', N7: 'N7 Integer' };
+    // a tag-based project shows Controller Tags (module tags and the project's tags) instead of the I and O data files
+    const tagMode = App.project.target === 'tag';
+    const files = tagMode ? ['TAGS', 'B3', 'T4', 'C5', 'R6', 'N7'] : ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
+    // another project opens on its first tab
+    if (dtProj !== App.project) { dtProj = App.project; dtFile = tagMode ? 'TAGS' : 'I'; }
+    if (tagMode && (dtFile === 'I' || dtFile === 'O')) dtFile = 'TAGS';
+    if (!tagMode && dtFile === 'TAGS') dtFile = 'I';
+    const names = { TAGS: 'Controller Tags', I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', R6: 'R6 Control (sequencers)', N7: 'N7 Integer' };
     let body = '';
     const bitHead = `<tr><th></th>${Array.from({ length: 16 }, (_, i) => `<th>${15 - i}</th>`).join('')}</tr>`;
     const bitRow = (f, w, n) => `<tr><th class="rowh">${f}:${w}</th>${Array.from({ length: 16 }, (_, i) => {
@@ -1030,7 +1036,17 @@
       const dead = (f === 'I' || f === 'O') && b >= n;
       return `<td class="bit${dead ? ' dead' : ''}" data-bit="${a}" title="${a}${App.project.ladder.desc[a] ? ' — ' + esc(App.project.ladder.desc[a]) : ''}">0</td>`;
     }).join('')}</tr>`;
-    if (dtFile === 'I' || dtFile === 'O') {
+    const ioRow = a => `<div class="io-row" data-io="${a}"><span class="io-led" data-bit="${a}"></span><code title="${a}">${esc(App.fmt(a))}</code><span class="io-desc">${esc(App.project.ladder.desc[a] || '')}</span><span class="io-force" data-force="${a}"></span><span class="io-btns"><button data-fon="${a}" title="Force On">F1</button><button data-foff="${a}" title="Force Off">F0</button><button data-frm="${a}" title="Remove force">✕</button></span></div>`;
+    if (dtFile === 'TAGS') {
+      // module tags from the I/O configuration (Local:slot:I / :O), then the project's tags with their values
+      const r = Circuit.rack(App.project.circuit, App.project.io), words = r.ctl || Object.keys(App.project.io.slots).length ? Circuit.ioMap(App.project.circuit, App.project.io).filter(m => !m.analog) : [];
+      const mods = words.map(m => `<div class="io-slot">Local:${m.word}:${m.file} — ${esc(m.name || 'controller I/O')}</div>` + Array.from({ length: m.n }, (_, i) => ioRow(`${m.file}:${m.word}/${i}`)).join('')).join('');
+      const val = t => { const a = parse(t.addr); if (!a) return '<td></td>'; if (t.type === 'TIMER' || t.type === 'COUNTER') return `<td class="num" data-word="${t.addr}.ACC">0</td>`; return a.kind === 'bit' ? `<td class="bit" data-bit="${a.norm}">0</td>` : `<td class="num" data-word="${a.norm}">0</td>`; };
+      const tags = App.project.tags;
+      body = `<div class="ctag-head">Scope: <b>Controller</b> <button class="tbtn sm" data-act="tagedit">Edit Tags…</button></div>
+        ${words.length ? `<h5 class="ctag-h">Module tags</h5>${mods}` : '<p class="help">No I/O modules yet: add them with <b>New Module…</b> in the Organizer (I/O Configuration).</p>'}
+        <h5 class="ctag-h">Tags</h5>${tags.length ? `<table class="dt ctag"><tr><th>Name</th><th>Value</th><th>Data Type</th></tr>${tags.map(t => `<tr><th class="rowh" title="${esc(t.desc || '')}">${esc(t.name)}</th>${val(t)}<td>${t.type === 'ALIAS' ? `→ <code>${esc(App.fmt(t.addr))}</code>` : t.type}</td></tr>`).join('')}</table>` : '<p class="help">No tags yet.</p>'}`;
+    } else if (dtFile === 'I' || dtFile === 'O') {
       // one word per I/O slot: the compact PLC's I:0/O:0, or each rack card in its slot
       const words = Circuit.ioMap(App.project.circuit, App.project.io).filter(m => m.file === dtFile);
       const dig = words.filter(m => !m.analog);
@@ -1055,8 +1071,8 @@
       body = `<table class="dt"><tr><th></th>${Array.from({ length: 4 }, (_, i) => `<th>${i}</th>`).join('')}</tr>${Array.from({ length: 8 }, (_, r) => `<tr><th class="rowh">N7:${r * 4}</th>${Array.from({ length: 4 }, (_, i) => `<td class="num" data-word="N7:${r * 4 + i}">0</td>`).join('')}</tr>`).join('')}</table><p class="help">Click a value to edit.</p>`;
     }
     const forces = Object.keys(App.plc.forces);
-    dtEl.innerHTML = `<div class="side-head"><h4>Data Files</h4></div>
-      <div class="dt-tabs">${files.map(f => `<button class="${f === dtFile ? 'on' : ''}" data-file="${f}" title="${names[f]}">${f}</button>`).join('')}</div>
+    dtEl.innerHTML = `<div class="side-head"><h4>${tagMode ? 'Controller Tags' : 'Data Files'}</h4></div>
+      <div class="dt-tabs">${files.map(f => `<button class="${f === dtFile ? 'on' : ''}" data-file="${f}" title="${names[f]}">${f === 'TAGS' ? 'Tags' : f}</button>`).join('')}</div>
       <div class="dt-body">${body}</div>
       <div class="side-head"><h4>Forces <span class="count">${forces.length}</span></h4>
         <button class="tbtn sm" data-act="fen">${App.plc.forcesEnabled ? 'Disable' : 'Enable'}</button>
@@ -1073,6 +1089,7 @@
       if (t.dataset.foff) return App.force(t.dataset.foff, 0);
       if (t.dataset.frm) return App.force(t.dataset.frm, null);
       if (t.dataset.act === 'iocfg') { App.ioConfig(); return; }
+      if (t.dataset.act === 'tagedit') { App.tagsDialog('edit'); return; }
       if (t.dataset.act === 'fen') { App.plc.forcesEnabled = !App.plc.forcesEnabled; App.forcesChanged(); return; }
       if (t.dataset.act === 'fclr') { Object.keys(App.plc.forces).forEach(k => App.plc.setForce(k, null)); App.forcesChanged(); return; }
       const bitEl = t.closest('[data-bit]');

@@ -435,7 +435,7 @@
     const ctl = `🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? (tag ? '1756-style chassis' : 'modular rack') : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}`;
     // every configured or installed module, with a fault mark where the module does not match the configuration
     const flt = s => { const b = r.bad.find(x => x.slot === s); return b ? ` <span class="flt" title="${esc(b.msg)}">⚠ ${esc(b.msg.replace(/^(slot \d+|chassis): /, ''))}</span>` : ''; };
-    const slots = r.cpu ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; return `<li>▭ [${s}] <code>${MCODE[t] || ''}</code> ${esc(Circuit.DEFS[t].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small>${flt(s)}</li>`; }).join('') : '';
+    const slots = r.cpu || !r.ctl ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; const m = (App.project.io.mods || {})[s]; return `<li>▭ <a href="#" data-org="m${s}">[${s}] <code>${MCODE[t] || ''}</code> ${esc(m && m.name ? m.name : Circuit.DEFS[t].name)}</a> <small>${tag ? 'Local:' + s : 'slot ' + s}${m && m.inhibit ? ' · inhibited' : ''}</small>${flt(s)}</li>`; }).join('') : '';
     const me = r.ctl && r.ctl.props.label;
     const path = esc(App.status().path);
     const DATA = [['O0', 'OUTPUT', 'O'], ['I1', 'INPUT', 'I'], ['S2', 'STATUS', ''], ['B3', 'BINARY', 'B3'], ['T4', 'TIMER', 'T4'], ['C5', 'COUNTER', 'C5'], ['R6', 'CONTROL', 'R6'], ['N7', 'INTEGER', 'N7']];
@@ -479,7 +479,7 @@
         el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
           ev.preventDefault();
           const k = a.dataset.org;
-          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k === 'newmod') App.newModule(); else if (k === 'new') { App.showView('ladder'); Ladder.newFile(); } else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
+          if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k === 'newmod') App.newModule(); else if (k[0] === 'm') App.moduleProps(k.slice(1)); else if (k === 'new') { App.showView('ladder'); Ladder.newFile(); } else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
         el.querySelectorAll('[data-orn]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.renameFile(Number(x.dataset.orn)); }; });
         el.querySelectorAll('[data-ordel]').forEach(x => { x.onclick = ev => { ev.preventDefault(); Ladder.deleteFile(Number(x.dataset.ordel)); }; });
@@ -536,7 +536,7 @@
   const mcat = t => (Circuit.DEFS[t].comm ? 'Communication' : Circuit.DEFS[t].analog ? 'Analog' : 'Digital');
   App.newModule = function () {
     const esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io);
-    if (!r.cpu) { App.ioConfig(); return; }
+    if (r.ctl && !r.cpu) { App.ioConfig(); return; }   // a compact PLC has fixed I/O
     const types = Circuit.CARDS();
     let pick = null;
     UI.modal({
@@ -554,28 +554,43 @@
         if (!pick) { UI.toast('Select a module type in the list', 'warn'); return false; }
         const t = pick, free = Circuit.SLOTS.filter(s => !App.project.io.slots[s]);
         if (!free.length) { UI.toast('Every slot (1–7) is configured already', 'warn'); return false; }
-        setTimeout(() => UI.form(`New Module — ${MCODE[t] || t}`, [
-          { key: 'type', label: 'Type', value: `${MCODE[t] || t} ${Circuit.DEFS[t].name}`, options: [`${MCODE[t] || t} ${Circuit.DEFS[t].name}`] },
-          { key: 'parent', label: 'Parent', value: 'Local', options: ['Local'] },
-          { key: 'slot', label: 'Slot', value: free.find(s => r.slots[s] && App.project.circuit.comps.find(c => c.id === r.slots[s]).type === t) || free[0], options: free },
-        ], v => {
-          App.project.io = Circuit.cleanIo({ ...App.project.io, slots: { ...App.project.io.slots, [v.slot]: t } });
-          App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.dirty.wiring = true; App.save();
-          const f = Circuit.DEFS[t].comm ? '' : Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O');
-          App.log('system', `New module: ${MCODE[t] || t} in slot ${v.slot}`);
-          UI.toast(`${MCODE[t] || t} added in slot ${v.slot}${f ? `: its data is ${App.fmt(`${f}:${v.slot}/0`).replace(/0$/, '…')}` : ''}`, 'ok', 5000);
-          return undefined;
-        }, '<p class="help">The module is added to the I/O Configuration. Put the same module in that slot of the chassis in the Wiring, or the controller shows a module fault.</p>'));
+        setTimeout(() => modForm(t, null, free.find(s => r.slots[s] && App.project.circuit.comps.find(c => c.id === r.slots[s]).type === t) || free[0], free));
         return undefined;
       } }],
     });
   };
+  /* the module pages of New Module / Module Properties: General (type, parent, name, slot, description) and
+     Connection (RPI, inhibit, major fault on connection loss) */
+  function modForm(t, slot, def, free) {
+    const io = App.project.io, m = (slot && io.mods && io.mods[slot]) || {}, code = MCODE[t] || t;
+    UI.form(slot ? `Module Properties — Local:${slot} ${code}` : `New Module — ${code}`, [
+      { key: 'type', label: 'Type', value: `${code} ${Circuit.DEFS[t].name}`, options: [`${code} ${Circuit.DEFS[t].name}`] },
+      { key: 'parent', label: 'Parent', value: 'Local', options: ['Local'] },
+      { key: 'name', label: 'Name', value: m.name || '' },
+      { key: 'slot', label: 'Slot', value: slot || def, options: slot ? [slot] : free },
+      { key: 'desc', label: 'Description', value: m.desc || '' },
+      { key: 'rpi', label: 'Connection: Requested Packet Interval (RPI, ms, 0.2–750)', value: String(m.rpi || 20), type: 'number' },
+      { key: 'inhibit', label: 'Connection: Inhibit Module', value: m.inhibit ? 'Yes' : 'No', options: ['No', 'Yes'] },
+      { key: 'mf', label: 'Connection: Major Fault On Controller If Connection Fails While in Run Mode', value: m.mf ? 'Yes' : 'No', options: ['No', 'Yes'] },
+    ], v => {
+      const s = String(v.slot), rpi = Number(v.rpi);
+      if (!(rpi >= 0.2 && rpi <= 750)) return 'RPI: 0.2 to 750 ms';
+      const name = v.name.trim(); if (name && !/^[A-Za-z_][A-Za-z0-9_]{0,19}$/.test(name)) return 'Name: letters, digits and _ (up to 20), starting with a letter or _';
+      App.project.io = Circuit.cleanIo({ ...io, slots: { ...io.slots, [s]: t }, mods: { ...(io.mods || {}), [s]: { name, desc: v.desc, rpi, inhibit: v.inhibit === 'Yes', mf: v.mf === 'Yes' } } });
+      App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.dirty.wiring = true; App.save();
+      const f = Circuit.DEFS[t].comm ? '' : Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O');
+      App.log('system', `${slot ? 'Module properties' : 'New module'}: ${code} in slot ${s}${v.inhibit === 'Yes' ? ' (inhibited)' : ''}`);
+      if (!slot) UI.toast(`${code} added in slot ${s}${f ? `: its data is ${App.fmt(`${f}:${s}/0`).replace(/0$/, '…')}` : ''}`, 'ok', 5000);
+      return undefined;
+    }, '<p class="help">The module is configured in the project. When you go online, the module in that slot of the chassis in the Wiring must be the same, or the controller shows a module fault (Code 16#0022).</p>');
+  }
+  App.moduleProps = function (slot) { const t = App.project.io.slots[slot]; if (t) modForm(t, String(slot)); };
   // the PLC target picker at the top of the I/O Configuration; a change reopens the dialog
   const targetPick = () => `<label class="io-target">PLC target <select data-target>${Object.entries(Circuit.TARGETS).map(([k, n]) => `<option value="${k}" ${k === App.project.target ? 'selected' : ''}>${UI.esc(n)}</option>`).join('')}</select></label>`;
   const bindTarget = el => { const s = el.querySelector('[data-target]'); if (s) s.onchange = () => { closeModal(el); App.setTarget(s.value); App.ioConfig(); }; };
   App.ioConfig = function () {
     const circ = App.project.circuit, r = Circuit.rack(circ, App.project.io), esc = UI.esc, tag = App.project.target === 'tag';
-    if (!r.cpu) { UI.modal({ title: 'I/O Configuration', onOpen: bindTarget, body: targetPick() + `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular ${tag ? 'chassis' : 'rack'}.${tag ? ' The tag-based target offers no compact controller in the Wiring library.' : ''}</p>` }); return; }
+    if (!r.cpu && r.ctl) { UI.modal({ title: 'I/O Configuration', onOpen: bindTarget, body: targetPick() + `<p class="help">${r.ctl ? `The compact PLC has fixed I/O: I:0/0–${(Circuit.DEFS[r.ctl.type].nIn || 12) - 1} and O:0/0–${(Circuit.DEFS[r.ctl.type].nOut || 8) - 1}.` : 'There is no PLC in the Wiring.'} Add a <b>PLC CPU Module</b>, a rack power supply and I/O cards (Wiring → PLC Rack) to configure a modular ${tag ? 'chassis' : 'rack'}.${tag ? ' The tag-based target offers no compact controller in the Wiring library.' : ''}</p>` }); return; }
     const run = App.plc.mode === 'RUN';
     const opts = sel => `<option value="">— Empty —</option>` + Circuit.CARDS().map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(Circuit.DEFS[t].name)}</option>`).join('');
     const inst = s => { const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]); return c ? c : null; };
@@ -585,7 +600,7 @@
     const chHave = r.chassis ? r.chassis.props.slots : '';
     const chRow = !chHave && !App.project.io.chassis ? '' : `<tr><th>⧉</th><td><select data-slot="ch" ${run ? 'disabled' : ''}><option value="">— Not checked —</option>${['4', '7', '10', '13'].map(n => `<option value="${n}" ${App.project.io.chassis === n ? 'selected' : ''}>${n}-slot chassis</option>`).join('')}</select></td><td></td><td data-have="${chHave}">${chHave ? `${esc(r.chassis.props.label)} — ${chHave}-slot chassis` : '—'}</td><td class="io-st" data-st="ch"></td></tr>`;
     const body = targetPick() + `${tag ? '<h5>I/O Configuration · 1756-style backplane · Local</h5>' : '<h5>I/O Configuration · rack</h5>'}<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
-      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>${tag ? 'Tags' : 'Data file'}</th><th>Installed in the ${tag ? 'chassis' : 'rack'}</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td></td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${chRow}${Circuit.SLOTS.map(row).join('')}</table>`;
+      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>${tag ? 'Tags' : 'Data file'}</th><th>Installed in the ${tag ? 'chassis' : 'rack'}</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td></td><td>${r.cpu ? esc(circ.comps.find(c => c.id === r.cpu).props.label) : '— (no controller in the Wiring yet)'}</td><td class="io-st ok">${r.cpu ? '✓' : ''}</td></tr>${chRow}${Circuit.SLOTS.map(row).join('')}</table>`;
     const mark = el => el.querySelectorAll('[data-slot]').forEach(sel => {
       const have = sel.closest('tr').querySelector('[data-have]').dataset.have, st = el.querySelector(`[data-st="${sel.dataset.slot}"]`);
       st.textContent = !sel.value && !have ? '' : sel.value === have ? '✓' : '✗ mismatch'; st.className = 'io-st ' + (sel.value === have ? 'ok' : 'bad');
@@ -600,7 +615,7 @@
           const slots = {};
           let chassis;
           el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.dataset.slot === 'ch') chassis = sel.value || undefined; else if (sel.value) slots[sel.dataset.slot] = sel.value; });
-          App.project.io = Circuit.cleanIo({ slots, chassis });
+          App.project.io = Circuit.cleanIo({ slots, chassis, mods: App.project.io.mods });
           App.addrChanged();
           App.log('system', 'I/O configuration changed: ' + ([...(chassis ? [`${chassis}-slot chassis`] : []), ...Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`)].join(', ') || 'empty'));
           App.renderOrg();
@@ -666,8 +681,8 @@
   /* for the Ladder's status box: the path to the controller, a major fault, the I/O state ('' | 'ok' | 'bad') */
   App.status = function () {
     const r = Circuit.rack(App.project.circuit, App.project.io);
-    const path = needsPath() ? pathText(App.project.conn.path) + (pathErr() ? ' ⚠' : '') : r.cpu ? `Backplane\\0 (${r.ctl.props.label})` : r.ctl ? `${r.ctl.props.label} (compact PLC)` : 'Virtual controller';
-    return { path, fault: !!(r.cpu && r.bad.length && App.project.target !== 'tag'), io: !r.cpu ? '' : r.bad.length ? 'bad' : 'ok' };
+    const path = needsPath() ? pathText(App.project.conn.path) + (pathErr() ? ' ⚠' : '') : r.cpu ? `Backplane\\0 (${r.ctl.props.label})` : r.ctl ? `${r.ctl.props.label} (compact PLC)` : '<none>';
+    return { path, ctl: !!r.ctl, fault: !!(r.cpu && r.bad.some(b => App.project.target !== 'tag' || b.major)), io: !r.cpu ? '' : r.bad.length ? 'bad' : 'ok' };
   };
   // a controller that does not fit the project's PLC target
   const typeErr = ctl => (App.project.target === 'tag' && Circuit.DEFS[ctl.type].compact ? `${ctl.props.label} is a compact file-based PLC, but the project is tag-based (1756-style). Change the PLC target in the I/O Configuration, or use a chassis controller.` : null);
@@ -739,6 +754,8 @@
     Ladder.out('w', `Controller not in correct mode (RUN): ${what.toLowerCase()} needs Program mode.`);
     UI.confirm(what, `The controller is in RUN. A ${what.toLowerCase()} needs Program mode (Rem Prog). Switch to Program mode now?`, () => { App.setMode('PROG'); go(); }, 'Switch to PROG');
   }
+  // a fixed serial number for a controller in the Wiring (made from its id), as the Download dialog shows one
+  const serialOf = ctl => '16#' + (([...String(ctl.id)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) & 0xFFFFFFFF) >>> 0).toString(16).toUpperCase().padStart(8, '0').replace(/^(.{4})/, '$1_');
   App.download = function (sure) {
     const c = App.project.conn; if (!c || c.mode !== 'real') return;
     if (!conn.online && !commsOk()) return;
@@ -748,11 +765,15 @@
       UI.modal({
         title: 'Download', wide: true,
         body: `<p class="dl-head">⚠ Download offline project '<b>${esc(App.project.name)}</b>' to the controller.</p>
-          <table class="io-cfg dl-ctl"><tr><th colspan="2">Connected Controller</th></tr><tr><td>Name</td><td>${esc(ctl ? ctl.props.label : 'Virtual controller')}</td></tr><tr><td>Type</td><td>${esc(ctl ? Circuit.DEFS[ctl.type].name : 'Virtual controller (no PLC in the Wiring)')}</td></tr><tr><td>Path</td><td><code>${esc(App.status().path)}</code></td></tr><tr><td>Project in the controller</td><td>${c.ctlName ? `'${esc(c.ctlName)}'` : '<i>none</i>'}</td></tr></table>
+          <table class="io-cfg dl-ctl"><tr><th colspan="2">Connected Controller</th></tr><tr><td>Name</td><td>${c.ctlName ? esc(c.ctlName) : '&lt;no name&gt;'}</td></tr><tr><td>Type</td><td>${esc(ctl ? `${Circuit.DEFS[ctl.type].name} (${ctl.props.label})` : 'Virtual controller (no PLC in the Wiring)')}</td></tr><tr><td>Path</td><td><code>${esc(App.status().path)}</code></td></tr><tr><td>Serial Number</td><td><code>${ctl ? serialOf(ctl) : '—'}</code></td></tr><tr><td>Security</td><td>No protection</td></tr></table>
           ${other ? `<p class="dl-warn">The controller holds another project, '<b>${esc(c.ctlName)}</b>'. Download replaces it with '<b>${esc(App.project.name)}</b>'.</p>` : ''}
           ${run ? '<p class="dl-warn">The controller is in Remote Run mode. The mode will be changed to Remote Program prior to download.</p>' : ''}
           <p class="dl-danger"><b>DANGER:</b> Unexpected hazardous motion of machinery may occur. Outputs can change when the controller changes mode or program: make sure the machine and the people near it are safe before you download.</p>`,
-        buttons: [{ label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => { setTimeout(() => App.download(true)); } }],
+        buttons: [{ label: 'Cancel' }, { label: 'Download', primary: true, onClick: () => {
+          // a controller that holds another project asks once more before it is overwritten
+          if (other) setTimeout(() => UI.confirm('Overwrite the controller project', `The controller holds '${c.ctlName}'. Overwrite it with '${App.project.name}'?`, () => App.download(true), 'Overwrite'));
+          else setTimeout(() => App.download(true));
+        } }],
       });
       return;
     }
@@ -866,8 +887,8 @@
   };
   App.setMode = function (m) {
     // a file-based processor will not run with an I/O mismatch; a tag-based controller runs and faults the modules
-    const rk = m === 'RUN' && App.project.target !== 'tag' && Circuit.rack(App.project.circuit, App.project.io);
-    if (rk && rk.cpu && rk.bad.length) {
+    const rk = m === 'RUN' && Circuit.rack(App.project.circuit, App.project.io);
+    if (rk && rk.cpu && rk.bad.some(b => App.project.target !== 'tag' || b.major)) {
       const msg = `I/O configuration does not match the rack: ${rk.bad.map(b => b.msg).join('; ')}`;
       UI.toast(msg + ' — open I/O Configuration', 'danger', 6000); App.log('system', 'Go to RUN refused: ' + msg); return;
     }
@@ -984,7 +1005,7 @@
       for (const m of modFaults) if (!now2.has(m)) App.log('system', `Module fault cleared — ${m}`);
       modFaults = now2;
     } else modFaults = new Set();
-    if (rack.cpu && rack.bad.length && plc.mode === 'RUN' && plc.powered && App.project.target !== 'tag') {
+    if (rack.cpu && rack.bad.some(b => App.project.target !== 'tag' || b.major) && plc.mode === 'RUN' && plc.powered) {
       plc.setMode('PROG');
       const msg = `CPU fault: I/O configuration mismatch (${rack.bad.map(b => b.msg).join('; ')}) — the controller stopped`;
       UI.toast(msg, 'danger', 6000); App.log('alarm', msg); updateBar(true);
@@ -1284,7 +1305,7 @@
   let exDiff = 'easy', exTopic = '';
   const exDone = (() => { try { return new Set(JSON.parse(localStorage.getItem('plc-trainer.exDone') || '[]')); } catch (e) { return new Set(); } })();
   const markDone = id => { exDone.add(id); try { localStorage.setItem('plc-trainer.exDone', JSON.stringify([...exDone])); } catch (e) { /* private mode */ } };
-  const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'cabinet']]];
+  const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'chassis', 'cabinet']]];
   App.EX_CATS = EX_CATS;
   function renderLearn() {
     const el = document.getElementById('view-learn');
@@ -1494,14 +1515,25 @@
     ], v => {
       const name = v.n.trim();
       if (!name) return 'Enter a project name';
-      const p = Examples.EX[v.t].build();
-      p.name = name;
-      // the PLC target picked here; an example keeps its own address style unless it used the other target's own
-      p.target = v.plc;
-      if (!p.addr || p.addr === (v.plc === 'tag' ? 'file' : 'tag')) p.addr = v.plc === 'tag' ? 'tag' : 'file';
-      App.openNew(p);
-      UI.toast(`Created project “${name}”`, 'ok');
-      App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
+      // page 2, as in the new-project wizard of PLC programming software: the controller and its chassis
+      setTimeout(() => UI.form(`New project “${name}” — controller`, [
+        { key: 'ch', label: v.plc === 'tag' ? 'Chassis' : 'Rack', value: v.plc === 'tag' ? '7' : '', options: [{ v: '', l: '— not checked —' }, ...['4', '7', '10', '13'].map(n => ({ v: n, l: `${n}-slot ${v.plc === 'tag' ? 'chassis' : 'rack'}` }))] },
+        { key: 'slot', label: 'Controller slot', value: '0', options: [{ v: '0', l: '0 (this trainer keeps the controller in slot 0)' }] },
+        { key: 'conn', label: 'Connection', value: v.plc === 'tag' ? 'real' : 'simple', options: [{ v: 'real', l: 'Realistic: offline project, Who Active, Download' }, { v: 'simple', l: 'Simple: edits run in the controller at once' }] },
+      ], w => {
+        const p = Examples.EX[v.t].build();
+        p.name = name;
+        // the PLC target picked here; an example keeps its own address style unless it used the other target's own
+        p.target = v.plc;
+        if (!p.addr || p.addr === (v.plc === 'tag' ? 'file' : 'tag')) p.addr = v.plc === 'tag' ? 'tag' : 'file';
+        if (w.ch) p.io = { ...(p.io || {}), slots: (p.io && p.io.slots) || {}, chassis: w.ch };
+        if (w.conn === 'real') p.conn = { mode: 'real' };
+        App.openNew(p);
+        UI.toast(`Created project “${name}”`, 'ok');
+        App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
+        return undefined;
+      }, '<p class="help">The chassis size and the connection can be changed later (I/O Configuration, controller menu).</p>'));
+      return undefined;
     }, '<p class="help">Your current project stays saved. Switch back any time with File → Open project. The PLC target can be changed later in the I/O Configuration.</p>');
   }
   function openDialog() {

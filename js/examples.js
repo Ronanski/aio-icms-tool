@@ -554,6 +554,42 @@
     },
   };
 
+  /* the same machine in a 1756-style chassis, programmed as with real software: Realistic connection, an engineering PC
+     wired to the controller's USB port, Who Active → Set Project Path → Download */
+  EX.chassis = {
+    title: '1756-style chassis: Who Active and Download', desc: 'A 7-slot chassis with power supply, controller (slot 0), a 16-input module (slot 1) and a 16-relay-output module (slot 2), and an engineering PC on the controller’s USB port. Start the PC’s comms driver, then in the Ladder: Who Active → Set Project Path → Download, and RUN. Tag-based addresses (Local:1:I.Data.0) and alias tags.',
+    build() {
+      const B = builder();
+      const q0 = B.add('supply1', 60, 20, { label: 'Q0' });
+      const qf = B.add('mcb2', 220, 20, { label: 'QF1' }, { on: true });
+      B.add('chassis', 50, 150, { label: 'RACK1', slots: '7' });
+      const ps = B.add('mpsu', 60, 202, { label: 'PS1' });
+      const cpu = B.add('mcpu', 152, 202, { label: 'CPU1' });
+      const di = B.add('mdi16', 226, 202, { label: 'DI1', slot: '1' });
+      const dq = B.add('mdo16', 300, 202, { label: 'DO1', slot: '2' });
+      const pc = B.add('epc', 120, 620, { label: 'PC1' });
+      B.w(q0, 'L', qf, '1', C.L1); B.w(q0, 'N', qf, '3', C.N);
+      B.w(qf, '2', ps, 'L1', C.L1); B.w(qf, '4', ps, 'N', C.N); B.w(q0, 'PE', ps, 'PE', C.PE);
+      B.w(pc, 'USB', cpu, 'PRG', C.DC0);
+      const s1 = B.add('pb_no', 760, 20, { label: 'S1', color: 'green', text: 'START' });
+      const s2 = B.add('pb_nc', 840, 20, { label: 'S2', color: 'red', text: 'STOP' });
+      B.w(ps, 'V24', s1, '13', C.DC); B.w(s1, '13', s2, '11', C.DC);
+      B.w(s1, '14', di, 'I0', C.DC); B.w(s2, '12', di, 'I1', C.DC); B.w(ps, 'C24', di, 'COM', C.DC0);
+      const h1 = B.add('lamp', 760, 560, { label: 'H1', color: 'green', coil: '230VAC' });
+      const h2 = B.add('lamp', 840, 560, { label: 'H2', color: 'red', coil: '230VAC' });
+      B.w(qf, '2', dq, 'VAC0', C.AC); B.w(dq, 'O0', h1, 'X1', C.AC); B.w(dq, 'O1', h2, 'X1', C.AC);
+      B.w(h1, 'X2', h2, 'X2', C.N); B.w(h2, 'X2', qf, '4', C.N);
+      const p = proj('1756-style chassis', B.circ, [
+        { text: 'BST XIC START_PB NXB XIC RUN_LAMP BND XIC STOP_PB OTE RUN_LAMP', comment: 'START with seal-in, STOP (N.C.) — alias tags on the modules’ data' },
+        { text: 'XIO RUN_LAMP OTE STOPPED_LAMP', comment: 'Stopped lamp' },
+      ], {}, [], { slots: { 1: 'mdi16', 2: 'mdo16' }, chassis: '7' });
+      p.target = 'tag'; p.addr = 'tag'; p.conn = { mode: 'real' };
+      p.tags = [{ name: 'START_PB', type: 'ALIAS', addr: 'I:1/0', desc: 'START' }, { name: 'STOP_PB', type: 'ALIAS', addr: 'I:1/1', desc: 'STOP (N.C.)' },
+        { name: 'RUN_LAMP', type: 'ALIAS', addr: 'O:2/0', desc: 'Run lamp' }, { name: 'STOPPED_LAMP', type: 'ALIAS', addr: 'O:2/1', desc: 'Stopped lamp' }];
+      return p;
+    },
+  };
+
   EX.analog = {
     title: 'Analog: tank level transmitter and VFD pump', desc: 'Modular PLC with an analog input card (level transmitter LT1 on tank TK1, 4–20 mA) and an analog output card (0–10 V speed reference to a VFD). The fill valve keeps the level between 30 % and 80 %; with S1 on, the pump runs at a speed that follows the level.',
     build() {

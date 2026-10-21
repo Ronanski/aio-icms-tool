@@ -719,11 +719,12 @@
   const SLOTS = ['1', '2', '3', '4', '5', '6', '7'];
   const rackOn = ctx => !!(ctx && ctx.rack && ctx.rack.pw);
   // the card works: a CPU is present, the card is the first one in its slot and the I/O configuration expects it there
-  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type && !ctx.rack.chBad);
+  const cardOn = (c, ctx) => !!(ctx && ctx.rack && ctx.rack.cpu && ctx.plcId === ctx.rack.cpu && ctx.rack.slots[c.props.slot] === c.id && ctx.rack.conf[c.props.slot] === c.type && !ctx.rack.chBad && !(ctx.rack.mods[c.props.slot] && ctx.rack.mods[c.props.slot].inhibit));
   // why a card does not work (for its status line)
   const cardWhy = (c, ctx) => {
     const r = ctx && ctx.rack;
     if (!r || !r.cpu) return 'No CPU module in the rack';
+    if (r.mods[c.props.slot] && r.mods[c.props.slot].inhibit) return `Inhibited in the I/O configuration (slot ${c.props.slot})`;
     if (r.chBad) return `Module fault: the ${r.chassis ? r.chassis.props.slots + '-slot ' : ''}chassis does not match the I/O configuration`;
     if (r.slots[c.props.slot] !== c.id) return `Slot ${c.props.slot} is already taken — inactive`;
     const want = r.conf[c.props.slot];
@@ -2545,7 +2546,14 @@
     for (const s of SLOTS) if (typeof src[s] === 'string' && DEFS[src[s]] && DEFS[src[s]].slot) slots[s] = src[s];
     // the chassis size the controller expects (only set once a chassis was configured)
     const chassis = io && ['4', '7', '10', '13'].includes(io.chassis) ? io.chassis : undefined;
-    return chassis ? { slots, chassis } : { slots };
+    // module properties set in the project (New Module pages): name, description, RPI, inhibit, major fault on connection loss
+    const mods = {}, ms = io && typeof io.mods === 'object' && io.mods ? io.mods : {};
+    for (const s of Object.keys(slots)) {
+      const m = ms[s]; if (!m || typeof m !== 'object') continue;
+      const rpi = Number(m.rpi);
+      mods[s] = { name: String(m.name || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 20), desc: String(m.desc || '').slice(0, 80), rpi: Number.isFinite(rpi) ? Math.min(750, Math.max(0.2, rpi)) : 20, inhibit: m.inhibit === true, mf: m.mf === true };
+    }
+    return { slots, ...(chassis ? { chassis } : {}), ...(Object.keys(mods).length ? { mods } : {}) };
   }
   /* the controller and its rack: which CPU runs, which card owns each slot (the first one found),
      the I/O configuration (conf) and every slot where the installed card does not match it (bad) */
@@ -2557,17 +2565,23 @@
     if (cpu) for (const s of SLOTS) {
       const c = slots[s] && circ.comps.find(x => x.id === slots[s]), have = c ? c.type : '', want = conf[s] || '';
       if (have === want) continue;
+      // an inhibited module is not checked (and does not run)
+      if (io && io.mods && io.mods[s] && io.mods[s].inhibit) continue;
       bad.push({ slot: s, want, have, msg: !want ? `slot ${s}: ${DEFS[have].name} installed but not configured` : !have ? `slot ${s}: ${DEFS[want].name} configured but missing` : `slot ${s}: ${DEFS[want].name} configured, ${DEFS[have].name} installed` });
     }
     // a chassis of another size than the configured one is a fault, as on real hardware
     const chassis = circ.comps.find(c => c.type === 'chassis') || null;
     if (cpu && io && io.chassis && (!chassis || chassis.props.slots !== io.chassis)) bad.push({ slot: 'ch', want: io.chassis, have: chassis ? chassis.props.slots : '', msg: chassis ? `chassis: ${io.chassis} slots configured, ${chassis.props.slots} installed` : `chassis: ${io.chassis} slots configured, no chassis installed` });
-    return { ctl, cpu, slots, conf, bad, chassis, chBad: bad.some(b => b.slot === 'ch'), pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
+    // a fault on a module set to "major fault on connection loss" stops the controller (major fault)
+    const mods = (io && io.mods) || {};
+    bad.forEach(b => { if (mods[b.slot] && mods[b.slot].mf) b.major = true; });
+    return { ctl, cpu, slots, conf, mods, bad, chassis, chBad: bad.some(b => b.slot === 'ch'), pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
   }
   /* I/O words the data table shows: the compact PLC's I:0/O:0, or the configured rack slots */
   function ioMap(circ, io) {
     const r = rack(circ, io);
-    if (!r.cpu) { const d = r.ctl && DEFS[r.ctl.type]; return [{ file: 'I', word: 0, n: (d && d.nIn) || 12 }, { file: 'O', word: 0, n: (d && d.nOut) || 8 }]; }
+    // no hardware yet but modules in the project's I/O configuration: the configured slots
+    if (!r.cpu && (r.ctl || !Object.keys(r.conf).length)) { const d = r.ctl && DEFS[r.ctl.type]; return [{ file: 'I', word: 0, n: (d && d.nIn) || 12 }, { file: 'O', word: 0, n: (d && d.nOut) || 8 }]; }
     return SLOTS.filter(s => r.conf[s] && !DEFS[r.conf[s]].comm).map(s => {
       const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]);
       const d = DEFS[r.conf[s]];
@@ -2610,7 +2624,7 @@
   /* is an I/O address real hardware? null when it is, else the reason (used by Verify) */
   function ioCheck(a, circ, io) {
     const r = rack(circ, io);
-    if (!r.cpu) {
+    if (!r.cpu && (r.ctl || !Object.keys(r.conf).length)) {
       const d = r.ctl && DEFS[r.ctl.type], n = a.file === 'I' ? (d && d.nIn) || 12 : (d && d.nOut) || 8;
       if (a.word !== 0 || (a.kind === 'bit' && a.bit >= n)) return { warn: true, msg: `${a.norm} is not on the compact PLC (${a.file}:0/0–${n - 1})` };
       return null;

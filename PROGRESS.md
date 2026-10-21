@@ -20,6 +20,9 @@
 - [x] Tag editor in a grid (Edit Tags / Monitor Tags)
 - [x] Aligned with the reference UI study: online bar, Errors pane, Download dialog and flow, Who Active layout, Select Module Type, Organizer nodes — `feature/plc-ui-align`
 - [x] Reference corrections: alias display, live rails, project in the controller, download timeout, Code 16#0022 module fault, I/O Not Responding, Faulted — `feature/plc-ui-align2`
+- [x] Gap list (side-by-side check): Upload everywhere, empty new routine, offline menu and status, module catalog on the project with RPI / Inhibit / Major fault, New project page 2, Controller Tags panel, Download dialog rows and overwrite confirm, free placement, chassis example — `feature/plc-gaps`
+- [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
+- [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
 - [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)
 - [ ] CPT (Compute) instruction
 - [ ] Tag browser on an operand and New Tag from an unknown operand (reference: right-click → New "tag")
