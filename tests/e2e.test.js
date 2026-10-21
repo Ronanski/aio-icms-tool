@@ -971,7 +971,9 @@ function check(name, cond, info = '') {
   check('free draw: pressing S1 on the drawing starts KM1, its seal-in holds it, the motor runs', (await get('KM1', 'state.pulled')) && (await get('H1', 'state.on')) && (await get('M1', 'state.drive')) === 'run');
   check('free draw: the live paths light up', await page.evaluate(() => document.querySelectorAll('#view-schematic .fwire .w.on').length > 8));
   await page.click('#view-schematic [data-smode="edit"]');
-  await page.selectOption('#view-schematic .fd-grp', 'Loads'); await wait(100); await page.click('#view-schematic .fd-ico[data-fk="lamp"]'); await page.fill('#f_t', 'H9'); await page.click('.modal .btn.primary'); await wait(200);
+  // with 'Ask for a tag when placing a symbol' on, the Library asks for the tag (off: the next tag is given, tested in the tagging section)
+  await page.evaluate(() => FreeDraw.setLabels({ ask: true }));
+  await page.selectOption('#view-schematic .fd-grp', 'Loads'); await wait(100); await page.click('#view-schematic .fd-ico[data-fk="lamp"]'); await page.fill('#f_t', 'H9'); await page.click('.modal .btn.primary'); await wait(200); await page.evaluate(() => FreeDraw.setLabels({ ask: false }));
   const h9 = await page.evaluate(() => App.project.schematic.free.items.find(i => i.tag === 'H9').id);
   check('free draw: the Library adds a symbol and its device', !!h9 && await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'H9')));
   const tA = await (await page.$(`#view-schematic [data-ft="${h9}:X1"]`)).boundingBox(), tB = await (await page.$('#view-schematic [data-ft="d2:2"]')).boundingBox();
@@ -2441,6 +2443,41 @@ function check(name, cond, info = '') {
     const c = await until(is("d('H4').on && !d('H3').on")); return a && b && c && s1 !== s2; })());
   check('v2.2: the drawing with the new symbols survives save and reload', await page.evaluate(() => { const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
     return ['p3', 'p3n', 'wsrc', 'wdst', 'sel3i'].every(k => p.schematic.free.items.some(i => i.k === k)) && p.schematic.free.wires.length === 13 && !(p.keep && p.keep.free.items.length); }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+
+  console.log('Tagging like Simurelay: automatic tags, rename from the diagram, tag and terminal visibility, tag colour, library order');
+  await page.evaluate(() => { const prev = App.currentId; localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew({ name: 'Tagging', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] } }); if (prev) Store.remove(prev); App.showView('schematic'); FreeDraw.setLabels({ ask: false, tags: true, terms: true, color: 'auto' }); });
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(250);
+  check('tagging: the library groups follow Simurelay (Sources, Switches, Auxiliaries, Coils, Loads, Contactors, Protections, Motors, Others), then Sensors and PLC', await page.evaluate(() =>
+    JSON.stringify([...document.querySelectorAll('#view-schematic .fd-grp option')].map(o => o.value)) === JSON.stringify(['All', 'Sources', 'Switches', 'Auxiliaries', 'Coils', 'Loads', 'Contactors', 'Protections', 'Motors', 'Others', 'Sensors', 'PLC'])));
+  check('tagging: a placed symbol gets the next tag of its kind at once, no form (KM1, KM2), and a contact the contactor it belongs to', await page.evaluate(async () => {
+    FreeDraw.add('kmcoil'); FreeDraw.add('kmcoil'); FreeDraw.add('kmno'); await new Promise(r => setTimeout(r, 100));
+    const F = App.project.schematic.free.items; return !document.querySelector('#modal-root .modal') && F.map(i => i.k + ':' + i.tag).join(' ') === 'kmcoil:KM1 kmcoil:KM2 kmno:KM2' && App.project.circuit.comps.filter(c => c.type === 'contactor').length === 2;
+  }));
+  // rename KM2 from the diagram: its coil and its contact (and the Wiring device) follow; KM1 stays
+  await page.evaluate(() => { const it = App.project.schematic.free.items.find(i => i.k === 'kmno'); FreeDraw.renameDevice(it); });
+  await wait(150); await page.fill('#f_t', 'KM7'); await page.click('.modal .btn.primary'); await wait(250);
+  check('tagging: Rename device from the diagram renames every symbol of it and the device in the Wiring', await page.evaluate(() => { const F = App.project.schematic.free.items, C = App.project.circuit.comps;
+    return F.map(i => i.tag).join(' ') === 'KM1 KM7 KM7' && C.some(c => c.props.label === 'KM7' && c.type === 'contactor') && !C.some(c => c.props.label === 'KM2') && FreeDraw.errs.size === 0; }));
+  await page.evaluate(() => FreeDraw.renameDevice(App.project.schematic.free.items.find(i => i.tag === 'KM7')));
+  await wait(150); await page.fill('#f_t', 'KM1'); await page.click('.modal .btn.primary'); await wait(200);
+  check('tagging: renaming to the tag of another device is refused and nothing changes', await page.evaluate(() => { const m = document.querySelector('#modal-root .modal'); const msg = m ? m.textContent : ''; const x = document.querySelector('#modal-root [data-x]'); if (x) x.click();
+    return /already the tag of another device/.test(msg) && App.project.schematic.free.items.map(i => i.tag).join(' ') === 'KM1 KM7 KM7'; }));
+  await page.evaluate(() => { document.querySelector('#modal-root').innerHTML = ''; });
+  await page.click(`#view-schematic [data-fi="${await page.evaluate(() => App.project.schematic.free.items[0].id)}"] .hit`); await wait(450);
+  await page.keyboard.press('F2'); await wait(150);
+  check('tagging: F2 on a selected symbol opens Rename device', await page.evaluate(() => { const m = document.querySelector('#modal-root .modal'); const ok = !!m && /Rename -KM1/.test(m.textContent); const x = document.querySelector('#modal-root [data-x]'); if (x) x.click(); return ok; }));
+  check('tagging: the Properties of a symbol have Rename device…', await page.evaluate(() => !!document.querySelector('#view-schematic .sch-side [data-fd="rename"]')));
+  check('tagging: tags and terminal numbers can be hidden and shown again; the choice is remembered', await page.evaluate(async () => {
+    const n = s => document.querySelectorAll('#view-schematic .free-svg ' + s).length; const t0 = n('.ftag'), s0 = n('.sterm');
+    FreeDraw.setLabels({ tags: false }); await new Promise(r => setTimeout(r, 50)); const t1 = n('.ftag'), s1 = n('.sterm');
+    FreeDraw.setLabels({ terms: false }); await new Promise(r => setTimeout(r, 50)); const s2 = n('.sterm'); const stored = JSON.parse(localStorage.getItem('plc-trainer.fdLabels'));
+    FreeDraw.setLabels({ tags: true, terms: true }); await new Promise(r => setTimeout(r, 50));
+    return t0 >= 3 && s0 >= 6 && t1 === 0 && s1 === s0 && s2 === 0 && stored.tags === false && stored.terms === false && n('.ftag') === t0 && n('.sterm') === s0; }));
+  check('tagging: the tag colour can be set (red) and back to the drawing colour', await page.evaluate(async () => {
+    FreeDraw.setLabels({ color: 'red' }); await new Promise(r => setTimeout(r, 50)); const f = getComputedStyle(document.querySelector('#view-schematic .free-svg .ftag')).fill;
+    FreeDraw.setLabels({ color: 'auto' }); await new Promise(r => setTimeout(r, 50)); const g = getComputedStyle(document.querySelector('#view-schematic .free-svg .ftag')).fill;
+    return f === 'rgb(198, 40, 40)' && g !== f && !document.querySelector('#view-schematic .free-svg.tagc-red'); }));
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
   console.log('IEC current paths: the newer devices and the PLC points');
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); });

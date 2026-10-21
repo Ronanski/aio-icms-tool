@@ -708,6 +708,13 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .ftag { font: 600 11.5px var(--mono); fill: var(--lad-text); text-anchor: end; pointer-events: none; }
 .free-svg .ftag.faddr { font-weight: 400; font-size: 10px; }
 .free-svg .ftag.fcmt { font: italic 400 10px var(--sans); fill: var(--muted); }
+/* tag colour (drawing settings) */
+.free-svg.tagc-red .ftag:not(.fcmt) { fill: #c62828; }
+.free-svg.tagc-blue .ftag:not(.fcmt) { fill: #1f5fbf; }
+.free-svg.tagc-green .ftag:not(.fcmt) { fill: #2e7d32; }
+.free-svg.tagc-orange .ftag:not(.fcmt) { fill: #d9730d; }
+.free-svg.tagc-purple .ftag:not(.fcmt) { fill: #7b3fb5; }
+.fd-props .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 4px 0; }
 .free-svg .ssym rect.fill { fill: var(--lad-wire); }
 .free-svg .wtemp { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
 .free-svg .fbox { fill: color-mix(in srgb, var(--accent-soft) 45%, transparent); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }

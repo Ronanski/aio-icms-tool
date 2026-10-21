@@ -221,6 +221,7 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [ ] v2.2 parity (PR #42): merge at Stable release — kailangan ng GO
 - [x] Parity v2.2: thermal-magnetic MCB, 3-position selectors, directional arrows, L1L2L3(N) points; REA metadata for generator/impulse coil/earth/PSU → 111/114 full (97.4%) (6 checks; branch `feature/parity-v2.2`)
   - Natitirang Partial (3): isolator 1P (13-14), roller CON (11-12-13) — sinadyang IEC numbering; LV/HV power supply (walang 115 V)
+- [x] Tagging tulad ng Simurelay: auto tags, Rename device (F2), show/hide tags at terminal numbers, tag colour, library order (8 checks; branch `feature/diagram-tagging`, 625/625 local)
 - [ ] Separate, needs its own approval: diode (one-way conduction in the solver)
 
 ## Audit findings not fixed yet
