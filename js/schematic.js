@@ -67,15 +67,40 @@
       .map(e => (PK[e.k].sd ? { k: e.k, tag: e.tag, delta: e.delta, star: e.star } : { k: e.k, tag: e.tag })).slice(0, 12);
     return { src: typeof o.src === 'string' && TAG.test(o.src) ? o.src : 'Q0', main: seq(o.main), feeders: (Array.isArray(o.feeders) ? o.feeders : []).filter(f => f && typeof f === 'object').slice(0, 20).map(f => ({ elems: seq(f.elems) })) };
   }
-  SC.clean = function (s, termOk) {
+  /* a symbol of a kind this version does not know, anywhere in a sequence (branches included) */
+  const unknownIn = (a, depth, KINDS) => (Array.isArray(a) ? a : []).some(e => e && typeof e === 'object' && (e.k === 'br' && depth < 4
+    ? (Array.isArray(e.legs) ? e.legs : []).some(l => unknownIn(l, depth + 1, KINDS))
+    : typeof e.k === 'string' && e.k !== 'br' && e.k !== '' && !Object.prototype.hasOwnProperty.call(KINDS, e.k)));
+  /* keep (optional, from App.buildProject): a current path or power feeder holding a symbol this version does not know is
+     put aside whole with its position (dropping just the symbol would join its neighbours and change the circuit), and so
+     is a main power sequence or a rail on a part that was put aside. App.serialize puts them back. */
+  // where a kept path or feeder sat: after `prev` (the live one before it, null = first; not saved) or at count `at`
+  const anchor = (x, list) => Object.defineProperty({ ...x, at: list.length }, 'prev', { value: list.length ? list[list.length - 1] : null, enumerable: false });
+  SC.clean = function (s, termOk, keep) {
     const o = s && typeof s === 'object' ? s : {};
-    return {
-      L: typeof o.L === 'string' && termOk(o.L) ? o.L : null,
-      N: typeof o.N === 'string' && termOk(o.N) ? o.N : null,
-      rungs: (Array.isArray(o.rungs) ? o.rungs : []).filter(r => r && typeof r === 'object').map(r => ({ elems: cleanSeq(r.elems, 0), comment: typeof r.comment === 'string' ? r.comment.slice(0, 200) : '' })),
-      power: cleanPower(o.power),
-      free: FreeDraw.clean(o.free),
-    };
+    const kp = keep || { rungs: [], feeders: [], kinds: [], fits: () => true, railOk: () => false };
+    const rungs = [];
+    (Array.isArray(o.rungs) ? o.rungs : []).forEach(r => {
+      if (!r || typeof r !== 'object') return;
+      if (unknownIn(r.elems, 0, SK) && kp.rungs.length < 200 && kp.fits(r)) { kp.rungs.push(anchor({ r: JSON.parse(JSON.stringify(r)) }, rungs)); kp.kinds.push('current path'); return; }
+      rungs.push({ elems: cleanSeq(r.elems, 0), comment: typeof r.comment === 'string' ? r.comment.slice(0, 200) : '' });
+    });
+    const p = o.power && typeof o.power === 'object' ? o.power : {}, live = { ...p };
+    if (unknownIn(p.main, 0, PK) && kp.fits(p.main)) { kp.main = JSON.parse(JSON.stringify(p.main)); live.main = []; kp.kinds.push('main power circuit'); }
+    const keptF = [];
+    if (Array.isArray(p.feeders)) {
+      live.feeders = [];
+      p.feeders.forEach(f => {
+        if (!f || typeof f !== 'object') return;
+        if (unknownIn(f.elems, 0, PK) && kp.feeders.length + keptF.length < 20 && kp.fits(f)) { keptF.push({ n: live.feeders.length, f: JSON.parse(JSON.stringify(f)) }); kp.kinds.push('motor feeder'); }
+        else live.feeders.push(f);
+      });
+    }
+    const power = cleanPower(live);
+    // feeders are anchored to the cleaned ones (cleanPower makes new objects and keeps 20 at most)
+    keptF.forEach(x => kp.feeders.push(anchor({ f: x.f }, power.feeders.slice(0, x.n))));
+    const rail = k => { if (typeof o[k] !== 'string') return null; if (termOk(o[k])) return o[k]; if (kp.railOk(o[k])) kp[k] = o[k]; return null; };
+    return { L: rail('L'), N: rail('N'), rungs, power, free: FreeDraw.clean(o.free, keep) };
   };
 
   /* ---------- supply rails ---------- */
@@ -98,6 +123,9 @@
     return [null, null];
   }
   const railOk = k => { if (!k) return false; const [cid, tid] = k.split(':'); const c = circ().comps.find(x => x.id === cid); return !!c && DEFS[c.type].terms.some(t => t.id === tid); };
+  /* a rail on a part this version does not know (kept in App.project.keep): no other supply is put in its place, so the
+     current paths that need it stay unpowered here instead of running from a supply the project does not use */
+  const pickRails = () => !(App.project && App.project.keep && (App.project.keep.L || App.project.keep.N));
   function controlVoltage() {
     const k = sch().L; const c = k && circ().comps.find(x => x.id === k.split(':')[0]);
     return c && c.type === 'psu24' ? '24VDC' : '230VAC';
@@ -139,10 +167,13 @@
      the device's in the Wiring, else the first symbol's (even before the device exists). A device terminal is wired by one
      view only. The view on screen is checked last, so a clash is reported where you are editing. */
   const WHERE = { r: 'current paths', p: 'power circuit', f: 'free drawing' };
+  SC.reservedMsg = tag => `${tag} is the tag of a part this version does not know (kept in the project) — use another tag`;
   function checks() {
     const want = new Map(), use = new Map(), free = style === 'free';
     const typeErr = (tag, type, what) => {
       const d = devOf(tag), t = d ? d.type : want.get(tag);
+      // the tag of a part a newer version made (kept in the project): no new device may take it
+      if (!d && circ().reserved && circ().reserved.has(tag)) return SC.reservedMsg(tag);
       if (!t) { want.set(tag, type); return null; }
       return t === type ? null : `${tag} is a ${DEFS[t].name} ${d ? 'in the Wiring' : 'elsewhere in the diagram'}, not a ${what || DEFS[type].name}`;
     };
@@ -285,7 +316,7 @@
     const kOf = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
     const old = new Map(C.wires.filter(w => w.sch).map(w => [kOf(w.a, w.b), w]));
     C.wires = C.wires.filter(w => !w.sch);
-    if (!railOk(s.L) || !railOk(s.N)) { [s.L, s.N] = autoRails(); }
+    if ((!railOk(s.L) || !railOk(s.N)) && pickRails()) { [s.L, s.N] = autoRails(); }
     checks();
     const seen = new Set();
     const tOk = k => { const [id, t] = k.split(':'), c = C.comps.find(x => x.id === id); return !!c && DEFS[c.type].terms.some(x => x.id === t); };
@@ -308,7 +339,7 @@
     };
     syncPower(addWire);
     FreeDraw.sync(addWire, ensureType, controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d');
-    if (!railOk(s.L) || !railOk(s.N)) { [s.L, s.N] = autoRails(); }
+    if ((!railOk(s.L) || !railOk(s.N)) && pickRails()) { [s.L, s.N] = autoRails(); }
     if (railOk(s.L) && railOk(s.N)) {
       const color = controlVoltage() === '24VDC' ? '#d33a2c' : '#1d1d1d';   // control wiring: 24 V red, 230 V black
       const wire = (a, b) => addWire(a, b, color);
@@ -782,14 +813,21 @@
     const same = circ().comps.filter(c => c.type === K.type).map(c => c.props.label);
     const free = same.find(t => !used.has(t));
     if (free) return { def: free, list: same };
-    const all = new Set([...circ().comps.map(c => c.props.label), ...used]); let n = 1; while (all.has(K.pre + n)) n++;
+    const all = new Set([...circ().comps.map(c => c.props.label), ...used, ...(circ().reserved || [])]); let n = 1; while (all.has(K.pre + n)) n++;
     return { def: K.pre + n, list: same };
   }
+  // what a newer version made is kept in App.project.keep (main power circuit, rails); this version must not replace it
+  const kept = () => (App.project && App.project.keep) || {};
+  const keptMain = () => !!kept().main;
+  const KEPT_MAIN = 'The main power circuit holds parts this version does not know. It is kept as it is and cannot be changed here.';
+  const KEPT_RAIL = 'This rail is on a part this version does not know. It is kept as it is and cannot be changed here.';
   /* new power device: into the selected feeder (or the main section when it is selected), after the selection */
   SC.insertPower = function (k, tag, extra) {
     const P = pw(), K = PK[k];
     const go = (t, more) => {
       if (!TAG.test(t)) return 'Use letters, numbers, - or _ (up to 20)';
+      // a main power circuit this version does not know is kept as it is: a new one here would replace it when saved
+      if (SELP && SELP.f === -1 && K.outs && keptMain()) { UI.toast(KEPT_MAIN, 'warn', 6000); return KEPT_MAIN; }
       snap();
       let arr, at;
       if (SELP && SELP.f === -1 && K.outs) { arr = P.main; at = SELP.i == null ? arr.length : SELP.i + 1; }
@@ -811,7 +849,7 @@
     if (tag) return go(tag, extra);
     const sg = suggestPowerTag(k);
     if (K.sd) {
-      const taken = new Set([...P.main, ...P.feeders.flatMap(f => f.elems)].flatMap(e => [e.tag, e.delta, e.star]).concat(circ().comps.map(c => c.props.label)));
+      const taken = new Set([...P.main, ...P.feeders.flatMap(f => f.elems)].flatMap(e => [e.tag, e.delta, e.star]).concat(circ().comps.map(c => c.props.label), [...(circ().reserved || [])]));
       const nextKM = skip => { let n = 1; while (taken.has('KM' + n) || skip.includes('KM' + n)) n++; return 'KM' + n; };
       const dk = nextKM([]), yk = nextKM([dk]);
       UI.form(K.n, [{ key: 't', label: 'Motor tag', value: sg.def }, { key: 'd', label: 'Delta contactor (Δ)', value: dk }, { key: 's', label: 'Star contactor (Y)', value: yk }], v => {
@@ -837,7 +875,7 @@
   SC.render = function () { renderRungs(); renderSide(); };
   function renderRungs() {
     if (!body || !App.project || !sch()) return;
-    if (!railOk(sch().L) || !railOk(sch().N)) { const [l, n] = autoRails(); sch().L = l; sch().N = n; }
+    if ((!railOk(sch().L) || !railOk(sch().N)) && pickRails()) { const [l, n] = autoRails(); sch().L = l; sch().N = n; }
     checks();
     const sl = body.scrollLeft, stp = body.scrollTop;
     const s = sch();
@@ -910,7 +948,10 @@
   }
   function bindSide() {
     // another supply: the diagram's wires take its colour (24 V red, 230 V black)
-    side.querySelectorAll('[data-rail]').forEach(sel => { sel.onchange = () => { snap(); sch()[sel.dataset.rail] = sel.value; recolor = true; changed(); }; });
+    side.querySelectorAll('[data-rail]').forEach(sel => { sel.onchange = () => {
+      if (kept()[sel.dataset.rail]) { UI.toast(KEPT_RAIL, 'warn', 6000); renderSide(); return; }
+      snap(); sch()[sel.dataset.rail] = sel.value; recolor = true; changed();
+    }; });
   }
 
   /* ---------- editing ---------- */
@@ -931,7 +972,7 @@
     // a contact or coil of a relay family suggests the last device of that family; inputs and loads a new tag
     if (!K.out && ['contactor', 'relay', 'timer', 'olr'].includes(K.type) && same.length) return { def: same[same.length - 1], list: same };
     if (K.out && ['contactor', 'relay', 'timer'].includes(K.type)) { const used = new Set(); sch().rungs.forEach(r => JSON.stringify(r.elems).replace(/"k":"(\w+coil)","tag":"([^"]+)"/g, (_, a, t) => used.add(t))); const free = same.find(t => !used.has(t)); if (free) return { def: free, list: same }; }
-    const used = new Set(circ().comps.map(c => c.props.label)); let n = 1; while (used.has(K.pre + n)) n++;
+    const used = new Set([...circ().comps.map(c => c.props.label), ...(circ().reserved || [])]); let n = 1; while (used.has(K.pre + n)) n++;
     return { def: K.pre + n, list: same };
   }
   SC.insert = function (k, tag) {

@@ -156,18 +156,47 @@
 
   /* ---------- data ---------- */
   const ID = /^d\d{1,6}$/;
-  FD.clean = function (f) {
+  /* keep (optional, from App.buildProject): symbols of a kind this version does not know, and the wires on them or on
+     terminals it does not know, are put aside in keep.free unchanged (saved back by App.serialize); damaged ones are counted */
+  FD.clean = function (f, keep) {
     const o = f && typeof f === 'object' ? f : {};
     const num = v => (Number.isFinite(v) ? Math.round(v / 10) * 10 : 0);
-    const items = (Array.isArray(o.items) ? o.items : []).filter(i => i && typeof i === 'object' && ID.test(i.id) && Object.prototype.hasOwnProperty.call(K, i.k) && typeof i.tag === 'string' && TAG.test(i.tag))
-      .slice(0, 400).map(i => ({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}) }));
-    const end = e => { if (typeof e !== 'string') return false; const [id, t] = e.split(':'); const it = items.find(i => i.id === id); return !!it && K[it.k].terms.some(x => x.id === t); };
-    const wires = (Array.isArray(o.wires) ? o.wires : []).filter(w => w && typeof w === 'object' && /^fw\d{1,6}$/.test(w.id) && end(w.a) && end(w.b) && w.a !== w.b).slice(0, 2000).map(w => {
-      const pts = (Array.isArray(w.pts) ? w.pts : []).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).slice(0, 20).map(q => [num(q[0]), num(q[1])]);
-      return pts.length ? { id: w.id, a: w.a, b: w.b, pts } : { id: w.id, a: w.a, b: w.b };
-    });
+    const kp = keep || { free: { items: [], wires: [] }, dropped: 0, kinds: [], fits: () => true };
+    const raw = Array.isArray(o.items) ? o.items : [], ids = new Set();
+    const unique = i => i && typeof i === 'object' && ID.test(i.id) && !ids.has(i.id) && (ids.add(i.id), true);
+    const items = [];
+    for (const i of raw) {
+      if (!unique(i)) { kp.dropped++; continue; }
+      if (Object.prototype.hasOwnProperty.call(K, i.k)) {
+        if (typeof i.tag !== 'string' || !TAG.test(i.tag) || items.length >= 400) { kp.dropped++; continue; }
+        items.push({ id: i.id, k: i.k, tag: i.tag, x: num(i.x), y: num(i.y), r: [0, 90, 180, 270].includes(i.r) ? i.r : 0, ...(i.k === 'text' ? { txt: typeof i.txt === 'string' ? i.txt.slice(0, 80) : '' } : {}) });
+      } else if (typeof i.k === 'string' && i.k && kp.free.items.length < 400 && kp.fits(i)) { kp.free.items.push(JSON.parse(JSON.stringify(i))); kp.kinds.push(i.k); }
+      else kp.dropped++;
+    }
+    const parked = new Set(kp.free.items.map(i => i.id));
+    // an end is known (a known symbol and terminal), kept (a kept symbol, or a terminal this version does not know) or broken
+    const end = e => {
+      if (typeof e !== 'string') return 'bad';
+      const [id, t] = e.split(':'); const it = items.find(i => i.id === id);
+      if (it) return K[it.k].terms.some(x => x.id === t) ? 'ok' : 'keep';
+      return parked.has(id) ? 'keep' : 'bad';
+    };
+    const wires = [], wids = new Set();
+    for (const w of Array.isArray(o.wires) ? o.wires : []) {
+      if (!w || typeof w !== 'object' || !/^fw\d{1,6}$/.test(w.id) || wids.has(w.id) || w.a === w.b) { kp.dropped++; continue; }
+      const a = end(w.a), b = end(w.b);
+      if (a === 'bad' || b === 'bad') { kp.dropped++; continue; }
+      wids.add(w.id);
+      if (a === 'ok' && b === 'ok') {
+        if (wires.length >= 2000) { kp.dropped++; continue; }
+        const pts = (Array.isArray(w.pts) ? w.pts : []).filter(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite)).slice(0, 20).map(q => [num(q[0]), num(q[1])]);
+        wires.push(pts.length ? { id: w.id, a: w.a, b: w.b, pts } : { id: w.id, a: w.a, b: w.b });
+      } else if (kp.free.wires.length < 2000 && kp.fits(w)) kp.free.wires.push(JSON.parse(JSON.stringify(w)));
+      else kp.dropped++;
+    }
     const n = s => Number(String(s).replace(/\D/g, '')) || 0;
-    const seq = Math.max(Number.isInteger(o.seq) && o.seq >= 0 && o.seq < 999999 ? o.seq : 0, ...items.map(i => n(i.id)), ...wires.map(w => n(w.id)), 0);
+    // new symbols and wires never reuse the id of one that was put aside
+    const seq = Math.max(Number.isInteger(o.seq) && o.seq >= 0 && o.seq < 999999 ? o.seq : 0, ...items.map(i => n(i.id)), ...wires.map(w => n(w.id)), ...kp.free.items.map(i => n(i.id)), ...kp.free.wires.map(w => n(w.id)), 0);
     return { items, wires, seq };
   };
 
@@ -215,7 +244,11 @@
   FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
     if (!H) return errs;
-    const te = typeErr || ((tag, type, what) => { const d = H.devOf(tag); return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null; });
+    const te = typeErr || ((tag, type, what) => {
+      const d = H.devOf(tag), R = H.circ().reserved;
+      if (!d && R && R.has(tag)) return window.Schematic.reservedMsg(tag);
+      return d && d.type !== type ? `${tag} is a ${DEFS[d.type].name} in the Wiring, not a ${what || DEFS[type].name}` : null;
+    });
     for (const it of fr().items) {
       const S = K[it.k];
       if (!S.type) continue;
@@ -580,8 +613,10 @@
   }
 
   /* ---------- editing ---------- */
+  // tags in use: the Wiring's, this drawing's and those of parts a newer version made (kept in the project)
+  const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
   function suggest(k) {
-    const S = K[k], used = new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag)]);
+    const S = K[k], used = taken();
     const same = H.circ().comps.filter(c => c.type === S.type).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
@@ -596,7 +631,7 @@
     H.snap(); w.pts = [...pts.slice(0, best), pt, ...pts.slice(best)]; H.changed();
   }
   function splitWire(w, pt) {
-    const F = fr(), used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]);
+    const F = fr(), used = taken();
     let n = 1; while (used.has('J' + n)) n++;
     F.seq++;
     const node = { id: 'd' + F.seq, k: 'node', tag: 'J' + n, x: pt.x, y: pt.y, r: 0 }, j = node.id + ':J';
@@ -674,7 +709,7 @@
         C.wires = C.wires.filter(w => [w.a, w.b].every(k => { const [id, t] = k.split(':'); return id !== d.id || ok.has(t); }));
         App.log('system', `Electrical Diagram: ${it.tag} is now a ${DEFS[S1.type].name}`);
       } else {
-        const used = new Set([...C.comps.map(c => c.props.label), ...fr().items.map(i => i.tag)]), old = it.tag;
+        const used = taken(), old = it.tag;
         let n = 1; while (used.has(S1.pre + n)) n++;
         it.tag = S1.pre + n;
         UI.toast(`${old} ${d.schAuto ? 'is also used by other symbols' : 'is a device placed in the Wiring'}, so it stays a ${DEFS[d.type].name}: this symbol is now ${it.tag}, a new ${DEFS[S1.type].name}`, 'warn', 5000);
@@ -688,7 +723,7 @@
     if (full()) return;
     const F = fr(), S = K[it.k];
     let tag = it.tag;
-    if (S.type) { const used = new Set([...H.circ().comps.map(c => c.props.label), ...F.items.map(i => i.tag)]); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
+    if (S.type) { const used = taken(); let n = 1; while (used.has(S.pre + n)) n++; tag = S.pre + n; }
     H.snap(); F.seq++;
     const c = { ...it, id: 'd' + F.seq, tag, x: it.x + 40, y: it.y + 40 };
     F.items.push(c); sel = { i: c.id }; H.changed();

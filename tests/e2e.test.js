@@ -1636,7 +1636,315 @@ function check(name, cond, info = '') {
   check('free draw: no more than 400 symbols can be added', await page.evaluate(() => { App.openNew({ name: 'F400', schematic: { free: { items: Array.from({ length: 400 }, (_, i) => ({ id: 'd' + (i + 1), k: 'text', tag: 'TXT', x: i * 10, y: 0, r: 0, txt: 'x' })), wires: [] } } }); FreeDraw.add('lamp', 'H1', 0, 0); return App.project.schematic.free.items.length === 400; }));
   check('HMI.mini is keyed on a version counter, and an edit changes its key', await page.evaluate(() => { App.openNew({ name: 'M', hmi: { objects: [{ id: 'h1', type: 'lamp', scr: 's1', x: 10, y: 10, w: 80, h: 90, label: 'RUN', tag: 'O:0/0' }] } }); const k1 = HMI.mini().key; HMI.render(); const k2 = HMI.mini().key; return k1 !== k2 && !k2.includes('"label"'); }));
   check('HMI.sample records trend history while the HMI view is hidden', await page.evaluate(() => { App.openNew({ name: 'TR', hmi: { objects: [{ id: 'h5', type: 'trend', scr: 's1', x: 0, y: 0, w: 320, h: 160, label: 'N7', tag: 'N7:0', min: 0, max: 100, span: 30 }] } }); App.showView('ladder'); const t = performance.now(); HMI.sample(t); HMI.sample(t + 300); HMI.sample(t + 600); App.showView('hmi'); return (document.querySelector('#view-hmi .hobj[data-id="h5"] [data-p]').getAttribute('d') || '').split('L').length > 2; }));
+
+  console.log('Integration baseline: HMI → PLC → Wiring → Electrical Diagram, through the real tick loop');
+  // these drive the running app (20 ms ticks): HMI writes PLC data, the scan drives the PLC output contacts, the solver moves the devices
+  const until = (fn, arg, ms = 3000) => page.waitForFunction(fn, arg, { timeout: ms, polling: 50 }).then(() => true, () => false);
+  const hmiTap = l => page.evaluate(async l => { const o = App.project.hmi.objects.find(x => x.label === l); HMI.pressId(o.id, 'down'); await new Promise(r => setTimeout(r, 30)); HMI.pressId(o.id, 'up'); }, l);
+  const op = async (l, p = 'btn') => { await page.evaluate(([l, p]) => { const up = App.operate(App.project.circuit.comps.find(c => c.props.label === l), p); if (typeof up === 'function') setTimeout(up, 40); }, [l, p]); await wait(100); };
+  const ST = 'const d = l => App.project.circuit.comps.find(c => c.props.label === l).state, r = a => App.plc.read(a);';
+  const is = body => new Function(ST + 'return ' + body + ';');
+  // every opened example is stored as a new project: drop the older ones so a full storage cannot block opening the next
+  await page.evaluate(() => Store.list().forEach(p => { if (p.id !== App.currentId) Store.remove(p.id); }));
+  await load('plcmotor'); await setMode('RUN');
+  check('integration: in RUN, STOP (N.C.) and overload OK read 1 and the motor is off', await until(is("r('I:0/1') === 1 && r('I:0/2') === 1 && r('O:0/0') === 0 && d('M1').drive === 'off'")));
+  await hmiTap('START');
+  check('integration: a 30 ms HMI START tap sets O:0/0, pulls in KM1 through the PLC output contact, runs M1 and lights H1', await until(is("r('O:0/0') === 1 && d('KM1').pulled && d('M1').drive === 'run' && d('H1').on")));
+  check('integration: the HMI START bit is released after the tap and the rung holds O:0/0', await until(is("r('B3:0/0') === 0 && r('O:0/0') === 1")));
+  await hmiTap('STOP');
+  check('integration: HMI STOP drops O:0/0, KM1 and the motor', await until(is("r('O:0/0') === 0 && !d('KM1').pulled && d('M1').drive === 'off'")));
+  await op('S1');
+  check('integration: the Wiring push button S1 starts the same motor through I:0/0', await until(is("r('O:0/0') === 1 && d('KM1').pulled && d('M1').drive === 'run'")));
+  const ev0 = await page.evaluate(() => App.events().length);
+  await op('M1', 'jam');
+  check('integration: a jammed motor trips F1; 95-96 opens I:0/2, the rung drops O:0/0 and KM1, O:0/2 lights H2 and sets the HMI alarm bit B3:0/15', await until(is("d('F1').tripped && r('I:0/2') === 0 && r('O:0/0') === 0 && !d('KM1').pulled && r('O:0/2') === 1 && d('H2').on && r('B3:0/15') === 1"), null, 10000));
+  check('integration: the overload trip is logged as an alarm', await page.evaluate(n => App.events().slice(n).some(e => e.kind === 'alarm' && e.msg.includes('F1')), ev0));
+  await op('M1', 'jam'); await op('F1', 'reset');
+  check('integration: after unjam and F1 reset the alarm clears and the motor stays off', await until(is("!d('F1').tripped && r('I:0/2') === 1 && r('B3:0/15') === 0 && r('O:0/2') === 0 && r('O:0/0') === 0")));
+  await hmiTap('START');
+  check('integration: the motor restarts from the HMI after the reset', await until(is("r('O:0/0') === 1 && d('M1').drive === 'run'")));
+  await setMode('PROG');
+  check('integration: PROG turns the PLC outputs off and KM1 drops', await until(is("r('O:0/0') === 0 && !d('KM1').pulled")));
+  await setMode('RUN'); await op('QF1', 'h');
+  await hmiTap('START');
+  const qf1Off = await until(is("!d('QF1').on && r('O:0/0') === 1 && d('KM1').pulled"));
+  await wait(600);
+  check('integration (current behaviour): with QF1 off, O:0/0 = 1 and KM1 pull in but M1 stays off — this example has no running feedback, so its HMI motor follows the command', qf1Off && await page.evaluate(is("r('O:0/0') === 1 && d('M1').drive === 'off' && d('M1').spd === 0")));
+  await hmiTap('STOP'); await op('QF1', 'h'); await setMode('PROG');
+
+  // hardwired: no PLC at all, the PLC stays in PROG
+  await load('dol'); await setMode('PROG');
+  await op('S1');
+  const sealed = await until(is("d('KM1').pulled && d('M1').drive === 'run' && d('H1').on"));
+  await wait(500);
+  check('hardwired: in PROG, S1 pulls in KM1 and KM1 13-14 holds it after the button is released', sealed && await page.evaluate(is("d('KM1').pulled && !d('S1').pressed")));
+  await op('S0');
+  check('hardwired: S0 drops KM1 and the motor', await until(is("!d('KM1').pulled && d('M1').drive === 'off'")));
+  await op('S1'); await until(is("d('KM1').pulled")); await op('M1', 'jam');
+  check('hardwired: a jammed motor trips F1; its 95-96 drops the coil and its 97-98 lights H2', await until(is("d('F1').tripped && !d('KM1').pulled && d('H2').on"), null, 10000));
+  await op('M1', 'jam'); await op('F1', 'reset');
+  const reset = await until(is("!d('F1').tripped && !d('H2').on"));
+  await wait(300);
+  check('hardwired: after the reset the starter stays off until START', reset && await page.evaluate(is("!d('KM1').pulled")));
+
+  // a circuit drawn only in the Electrical Diagram (free draw): the diagram makes the devices and wires, the same solver runs them
+  const sealIn = { name: 'Free draw seal-in', schematic: { free: { seq: 20, items: [
+    { id: 'd1', k: 'src1', tag: 'Q1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'pbnc', tag: 'S0', x: 0, y: 100, r: 0 }, { id: 'd3', k: 'pbno', tag: 'S1', x: 0, y: 200, r: 0 },
+    { id: 'd4', k: 'kmno', tag: 'KM1', x: 100, y: 200, r: 0 }, { id: 'd5', k: 'kmcoil', tag: 'KM1', x: 0, y: 300, r: 0 }, { id: 'd6', k: 'lamp', tag: 'H1', x: 100, y: 300, r: 0 }],
+  wires: [{ id: 'fw1', a: 'd1:L', b: 'd2:11' }, { id: 'fw2', a: 'd2:12', b: 'd3:13' }, { id: 'fw3', a: 'd3:13', b: 'd4:13' }, { id: 'fw4', a: 'd3:14', b: 'd4:14' },
+    { id: 'fw5', a: 'd3:14', b: 'd5:A1' }, { id: 'fw6', a: 'd5:A2', b: 'd1:N' }, { id: 'fw7', a: 'd4:14', b: 'd6:X1' }, { id: 'fw8', a: 'd6:X2', b: 'd1:N' }] } } };
+  await page.evaluate(p => { localStorage.setItem('plc-trainer.schStyle', 'free'); App.openNew(JSON.parse(JSON.stringify(p))); App.showView('schematic'); }, sealIn);
+  await page.click('#view-schematic [data-sstyle="free"]'); await wait(300);
+  check('free draw: a seal-in drawn only in the diagram creates its devices and 8 wires in the Wiring on load', await page.evaluate(() => {
+    const C = App.project.circuit, t = l => (C.comps.find(c => c.props.label === l) || {}).type;
+    return t('Q1') === 'supply1' && t('S0') === 'pb_nc' && t('S1') === 'pb_no' && t('KM1') === 'contactor' && t('H1') === 'lamp' && C.comps.length === 5 && C.wires.filter(w => w.sch).length === 8 && FreeDraw.errs.size === 0;
+  }));
+  const LIVE = '#view-schematic .fd-host svg .w.on';
+  const live0 = await page.evaluate(s => document.querySelectorAll(s).length, LIVE);
+  await op('S1');
+  check('free draw: the drawn START pulls in the coil and the drawn KM1 N.O. contact holds it', await until(is("d('KM1').pulled && d('H1').on && !d('S1').pressed")));
+  check('free draw: the diagram shows more live wires while the circuit is sealed in', live0 > 0 && await until(([s, n]) => document.querySelectorAll(s).length > n, [LIVE, live0]));
+  await op('S0');
+  check('free draw: the drawn STOP drops the coil and the live wires go back', await until(([s, n]) => !App.project.circuit.comps.find(c => c.props.label === 'KM1').state.pulled && document.querySelectorAll(s).length === n, [LIVE, live0]));
+  check('free draw: Undo removes an added symbol and the device the diagram made for it; Redo brings both back', await page.evaluate(() => {
+    const dev = () => App.project.circuit.comps.some(c => c.props.label === 'H7'), sym = () => App.project.schematic.free.items.some(i => i.tag === 'H7');
+    FreeDraw.add('lamp', 'H7', 300, 0); const a = dev() && sym();
+    Schematic.undo(); const b = !dev() && !sym();
+    Schematic.redo(); return a && b && dev() && sym();
+  }));
+  await (await page.$('#view-schematic [data-fi="d3"] .hit')).click(); await wait(100);
+  check('free draw: Delete removes a symbol and its wires from the diagram and the Wiring; Undo restores all of them', await page.evaluate(() => {
+    const F = () => App.project.schematic.free, sw = () => App.project.circuit.wires.filter(w => w.sch).length, n0 = [F().items.length, F().wires.length, sw()];
+    if (!FreeDraw.selected() || FreeDraw.selected().id !== 'd3') return false;
+    FreeDraw.del(); const gone = F().items.length === n0[0] - 1 && F().wires.length < n0[1] && sw() < n0[2];
+    Schematic.undo(); return gone && F().items.length === n0[0] && F().wires.length === n0[1] && sw() === n0[2];
+  }));
+  check('free draw (current behaviour): after Undo removes the selected symbol, Delete does not throw and removes nothing', await page.evaluate(() => {
+    FreeDraw.add('lamp', 'H8', 300, 100); Schematic.undo(); const before = JSON.stringify(App.project.schematic.free);
+    try { FreeDraw.del(); } catch (e) { return false; }
+    return FreeDraw.selected() === null && JSON.stringify(App.project.schematic.free) === before;
+  }));
+  check('save/load: the drawn circuit, its devices and diagram wires survive a save and reload', await page.evaluate(() => {
+    const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize())));
+    return JSON.stringify(p.schematic.free) === JSON.stringify(App.project.schematic.free) && p.circuit.comps.length === App.project.circuit.comps.length && p.circuit.wires.filter(w => w.sch).length === App.project.circuit.wires.filter(w => w.sch).length;
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); }); await page.click('#view-schematic [data-sstyle="iec"]'); await wait(150);
+
+  // save / load
+  // compare the saved form (loading rebuilds rungs from their text with new runtime ids) with sorted keys: a wire the diagram
+  // re-made lists its fields in another order. The event log grows on every open. openNew refuses to leave a project that
+  // cannot be saved, so the projects made here are removed again to keep storage free.
+  const unstable = await page.evaluate(() => Object.keys(Examples.EX).filter(k => {
+    const canon = v => JSON.stringify(v, (q, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, z) => { o[z] = x[z]; return o; }, {}) : x));
+    const save = () => { const s = JSON.parse(JSON.stringify(App.serialize())); delete s.events; return canon(s); };
+    const open = data => { const prev = App.currentId, ok = App.openNew(data); if (ok && prev) Store.remove(prev); return ok; };
+    if (!open(Examples.EX[k].build())) return true;
+    const a = save();
+    return !open(JSON.parse(JSON.stringify(App.serialize()))) || save() !== a;
+  }));
+  check('save/load: every example saves the same after a reload (the saved project is stable)', unstable.length === 0, unstable.join(', '));
+  check('save/load: device state is kept (a tripped overload stays tripped), a momentary press is not', await page.evaluate(() => {
+    App.openNew(Examples.EX.dol.build()); const d = l => App.project.circuit.comps.find(c => c.props.label === l);
+    d('F1').state.tripped = true; d('S1').state.pressed = true;
+    const p = App.buildProject(JSON.parse(JSON.stringify(App.serialize()))), e = l => p.circuit.comps.find(c => c.props.label === l);
+    return e('F1').state.tripped === true && e('S1').state.pressed === false;
+  }));
+  await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.openNew(JSON.parse(JSON.stringify(App.serialize()))); App.setMode('RUN'); });
+  await hmiTap('START');
+  check('save/load: a reloaded PLC motor project still runs the motor from the HMI', await until(is("r('O:0/0') === 1 && d('KM1').pulled && d('M1').drive === 'run'")));
+  await hmiTap('STOP'); await setMode('PROG');
   await page.evaluate(() => App.showView('ladder'));
+
+  console.log('Project compatibility: parts, symbols and wires a newer version made');
+  await page.evaluate(() => Store.list().forEach(p => { if (p.id !== App.currentId) Store.remove(p.id); }));
+  // a project saved by a newer version: format 3, a part type, a rail/rung symbol, a free-draw symbol and wires this version does not know
+  const future = { name: 'From a newer version', format: 3,
+    circuit: { seq: 60, comps: [
+      { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+      { id: 'c2', type: 'lamp', x: 100, y: 0, props: { label: 'H1', coil: '230VAC' } },
+      { id: 'c50', type: 'quantumRelay', x: 200, y: 0, props: { label: 'K9', future: { a: 1 } }, state: { x: 2 }, extra: 'kept as it is' }],
+    wires: [{ id: 'w1', a: 'c1:L', b: 'c2:X1', color: '#d32f2f', pts: [] }, { id: 'w2', a: 'c2:X2', b: 'c1:N', color: '#1d1d1d', pts: [] },
+      { id: 'w3', a: 'c1:L', b: 'c50:A1', color: '#d32f2f', pts: [[10, 10]], future: true },
+      { id: 'w4', a: 'c2:Z9', b: 'c1:N', color: '#123456', pts: [] }] },
+    schematic: { rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H3' }], comment: 'known' }, { elems: [{ k: 'pbno', tag: 'S2' }, { k: 'hyperCoil', tag: 'K9' }], comment: 'future' }],
+      free: { seq: 10, items: [{ id: 'd1', k: 'lamp', tag: 'H5', x: 0, y: 0, r: 0 }, { id: 'd7', k: 'warpDrive', tag: 'W1', x: 100, y: 0, r: 0, extra: { n: 1 } }],
+        wires: [{ id: 'fw3', a: 'd1:X1', b: 'd7:P' }] } } };
+  const canonJs = 'const canon = v => JSON.stringify(v, (q, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, z) => { o[z] = x[z]; return o; }, {}) : x));';
+  check('compat: a project from a newer version opens; its known parts are in the Wiring, the unknown ones are kept aside', await page.evaluate(f => {
+    if (!App.openNew(JSON.parse(JSON.stringify(f)))) return false;
+    const C = App.project.circuit, k = App.project.keep;
+    return C.comps.some(c => c.id === 'c2') && !C.comps.some(c => c.id === 'c50') && C.wires.some(w => w.id === 'w1') && !C.wires.some(w => w.id === 'w3' || w.id === 'w4')
+      && k.comps.length === 1 && k.wires.length === 2 && k.rungs.length === 1 && k.free.items.length === 1 && k.free.wires.length === 1 && App.project.schematic.free.items.length === 1;
+  }, future));
+  check('compat: the known circuit still simulates (H1 lights)', await until(() => App.project.circuit.comps.find(c => c.props.label === 'H1').state.on));
+  check('compat: a current path holding an unknown symbol is kept whole — its other symbols are not joined or wired', await page.evaluate(() => App.project.schematic.rungs.length === 1 && !App.project.circuit.comps.some(c => c.props.label === 'S2')));
+  check('compat: saving writes every unknown part, symbol and wire back unchanged and in place, and keeps the newer format', await page.evaluate(new Function('f', canonJs + `
+    const s = JSON.parse(JSON.stringify(App.serialize())), byId = (l, id) => l.find(x => x.id === id);
+    return s.format === 3 && canon(byId(s.circuit.comps, 'c50')) === canon(f.circuit.comps[2]) && canon(byId(s.circuit.wires, 'w3')) === canon(f.circuit.wires[2])
+      && canon(byId(s.circuit.wires, 'w4')) === canon(f.circuit.wires[3]) && canon(s.schematic.rungs[1]) === canon(f.schematic.rungs[1])
+      && canon(byId(s.schematic.free.items, 'd7')) === canon(f.schematic.free.items[1]) && canon(byId(s.schematic.free.wires, 'fw3')) === canon(f.schematic.free.wires[0]);`), future));
+  check('compat: save → reload → save gives the same project (two round trips)', await page.evaluate(new Function(canonJs + `
+    const save = () => { const s = JSON.parse(JSON.stringify(App.serialize())); delete s.events; return canon(s); };
+    const a = save(); if (!App.openNew(JSON.parse(a))) return false; const b = save(); if (!App.openNew(JSON.parse(b))) return false;
+    return a === b && b === save() && App.project.keep.comps.length === 1 && App.project.keep.free.items.length === 1;`)));
+  check('compat: new parts and diagram symbols never reuse the id of a kept one', await page.evaluate(() => {
+    const n = id => Number(String(id).replace(/\D/g, '')), c = Circuit.create('lamp', 0, 0, App.project.circuit);
+    return n(c.id) > 50 && App.project.schematic.free.seq >= 7;
+  }));
+  check('compat: a warning names the newer format and the unknown kinds, in a toast and in the event log', await page.evaluate(() => {
+    const m = App.compat().join(' '), t = document.getElementById('toast-root').textContent;
+    return /newer PLC Trainer \(project format 3/.test(m) && m.includes('quantumRelay') && m.includes('warpDrive') && m.includes('current path')
+      && t.includes('not known to this version') && App.events().some(e => e.msg.includes('not known to this version'));
+  }));
+  check('compat: deleting a known part leaves out the kept wires that ended on it (no broken references saved)', await page.evaluate(() => {
+    const C = App.project.circuit, h = C.comps.find(c => c.props.label === 'H1');
+    C.comps = C.comps.filter(c => c !== h); C.wires = C.wires.filter(w => ![w.a, w.b].some(e => e.startsWith(h.id + ':')));
+    const s = App.serialize(); return !s.circuit.wires.some(w => w.id === 'w4') && s.circuit.wires.some(w => w.id === 'w3') && s.circuit.comps.some(c => c.id === 'c50');
+  }));
+  check('compat: every example and a v2.0.0 project open with no compatibility warning; saved projects carry format 2', await page.evaluate(() => {
+    const quiet = Object.keys(Examples.EX).every(k => { const prev = App.currentId, ok = App.openNew(Examples.EX[k].build()); if (ok && prev) Store.remove(prev); return ok && App.compat().length === 0; });
+    const old = { version: 1, name: 'v2.0.0 file', circuit: { comps: [{ id: 'c1', type: 'lamp', x: 0, y: 0, props: { label: 'H1' }, state: {} }], wires: [], seq: 1 } };
+    const prev = App.currentId, ok = App.openNew(old); if (ok && prev) Store.remove(prev);
+    return quiet && ok && App.compat().length === 0 && App.project.format === 1 && App.serialize().format === 2;
+  }));
+  // damaged data: wrong types, missing or duplicate ids, oversized entries, wires to nothing — none of it may crash or spoil the rest
+  const damagedR = await page.evaluate(() => {
+    const bad = { name: 'Damaged', circuit: { comps: [null, 5, 'x', { type: 'lamp' }, { id: 'c1', type: 'lamp', props: { label: 'H1' } }, { id: 'c1', type: 'lamp' }, { id: 'c2' }, { id: 'c3', type: {} },
+      { id: 'c4', type: 'bigThing', blob: 'x'.repeat(30000) }, { id: 'c' + '9'.repeat(30), type: 'zz' }, { id: 'c5', type: 'futureThing', props: { label: 'U1' } }],
+    wires: [{ id: 'w1', a: 'c1:X1', b: 'c99:A' }, { id: 'w2' }, 'w', { id: 'w3', a: 5, b: null }, { id: 'w4', a: 'c5:A', b: 'c1:X2' }] },
+    schematic: { L: 'c5:L', rungs: [null, { elems: 'nope' }, { elems: [{ k: 'br', legs: 'x' }, { k: 'mystery' }] }], power: { main: [{ k: 'futureMain', tag: 'Q0' }], feeders: [null, { elems: [{ k: 'futureFeeder', tag: 'M1' }] }] },
+      free: { items: [null, { id: 'd1' }, { id: 'd2', k: 'lamp', tag: 'bad tag!' }, { id: 'd3', k: {} }, { id: 'd4', k: 'futureSym', tag: 'X' }], wires: [{ id: 'fw1', a: 'd4:A', b: 'd9:B' }, { id: 'bad' }, null] } } };
+    let ok;
+    try { ok = App.openNew(bad); } catch (e) { return 'threw: ' + e.message; }
+    const P = App.project, k = P.keep, m = App.compat().join(' ');
+    const s = JSON.parse(JSON.stringify(App.serialize()));
+    const again = App.openNew(JSON.parse(JSON.stringify(s)));
+    return ok && again && P.circuit.comps.length === 1 && k.comps.map(c => c.id).join() === 'c5' && k.wires.map(w => w.id).join() === 'w4'
+      && k.rungs.length === 1 && !!k.main && k.feeders.length === 1 && k.free.items.map(i => i.id).join() === 'd4' && k.L === 'c5:L'
+      && k.dropped >= 15 && /damaged entries/.test(m) && s.schematic.L === 'c5:L' && s.schematic.power.main[0].k === 'futureMain'
+      && App.compat().every(x => !/damaged/.test(x)) && App.project.keep.comps.length === 1;
+  });
+  check('compat: damaged data loads without errors; damaged entries are left out and reported, readable unknown ones kept', damagedR === true, String(damagedR));
+  // tags of kept parts and symbols are reserved; a tag the known part of the file also uses is not
+  const reserveP = { name: 'Reserved tags', format: 3,
+    circuit: { seq: 10, comps: [
+      { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } },
+      { id: 'c2', type: 'contactor', x: 0, y: 0, props: { label: 'KM2' } },
+      { id: 'c5', type: 'quantumRelay', x: 0, y: 0, props: { label: 'KA1' } },
+      { id: 'c6', type: 'mysteryBox', x: 0, y: 0 }], wires: [] },
+    schematic: { L: 'c5:L',
+      rungs: [{ elems: [{ k: 'pbno', tag: 'S3' }], comment: 'A' }, { elems: [{ k: 'pbno', tag: 'S1' }, { k: 'hyperCoil', tag: 'KM1' }, { k: 'kmcoil', tag: 'KM2' }], comment: 'kept' }, { elems: [{ k: 'pbno', tag: 'S4' }], comment: 'B' }],
+      power: { main: [{ k: 'futureMain', tag: 'QS1' }], feeders: [{ elems: [{ k: 'km3', tag: 'KM5' }] }, { elems: [{ k: 'futureVfd', tag: 'U1' }] }, { elems: [{ k: 'km3', tag: 'KM6' }] }] },
+      free: { seq: 5, items: [{ id: 'd1', k: 'warpLamp', tag: 'H1', x: 0, y: 0, r: 0 }], wires: [] } } };
+  check('compat: tags of kept parts, symbols, paths and feeders are reserved; one of a device this version knows is not',await page.evaluate(p => {
+    const prev = App.currentId; if (!App.openNew(JSON.parse(JSON.stringify(p)))) return false; if (prev) Store.remove(prev);
+    const R = App.project.circuit.reserved;
+    return ['KA1', 'H1', 'S1', 'KM1', 'U1', 'QS1'].every(t => R.has(t)) && !['KM2', 'S3', 'S4', 'Q1'].some(t => R.has(t)) && App.project.keep.untagged === 1
+      && Object.keys(App.project.circuit).indexOf('reserved') < 0 && !('reserved' in App.serialize().circuit);
+  }, reserveP));
+  check('compat: a kept part with no readable tag is reported (its tag could not be reserved)', await page.evaluate(() => App.compat().some(m => /1 of them has no tag this version can read/.test(m))));
+  check('compat: new devices skip reserved tags (relay KA2, lamp H2, push button S2, contactor KM3)', await page.evaluate(() => {
+    const C = App.project.circuit, lab = t => Circuit.create(t, 0, 0, C).props.label;
+    return lab('relay') === 'KA2' && lab('lamp') === 'H2' && lab('pb_no') === 'S2' && lab('contactor') === 'KM3';
+  }));
+  await page.evaluate(() => { App.showView('wiring'); Workspace.selectComp(App.project.circuit.comps.find(c => c.props.label === 'KM2').id); }); await wait(300);
+  await page.fill('[data-pk="label"]', 'KA1'); await page.dispatchEvent('[data-pk="label"]', 'change'); await wait(100);
+  check('compat: renaming a device to a reserved tag is refused', await page.evaluate(() => App.project.circuit.comps.some(c => c.props.label === 'KM2') && !App.project.circuit.comps.some(c => c.props.label === 'KA1')));
+  check('compat: a diagram symbol given a reserved tag by hand is reported and makes no device (free draw and current paths)', await page.evaluate(() => {
+    App.showView('schematic'); FreeDraw.add('lamp', 'H1', 300, 300);
+    const it = App.project.schematic.free.items.find(i => i.tag === 'H1' && i.k === 'lamp');
+    App.project.schematic.rungs.push({ elems: [{ k: 'pbno', tag: 'S1' }], comment: '' }); Schematic.sync();
+    const C = App.project.circuit.comps, msgF = FreeDraw.errs.get(it) || '', msgR = [...Schematic.errs.values()].join(' ');
+    return !!it && /H1 is the tag of a part this version does not know/.test(msgF) && /S1 is the tag of a part/.test(msgR) && !C.some(c => c.props.label === 'H1' || c.props.label === 'S1');
+  }));
+  check('compat: the kept main power circuit cannot be replaced here and is saved as it was', await page.evaluate(() => {
+    const r = Schematic.addMain('qf3', 'Q9');
+    return typeof r === 'string' && /main power circuit holds parts/.test(r) && App.project.schematic.power.main.length === 0 && App.serialize().schematic.power.main[0].k === 'futureMain';
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); Schematic.resetSel(); Schematic.render(); }); await wait(200);
+  // checks that can explain a failure return a string; only `true` passes
+  const railR = await page.evaluate(() => {
+    const sel = document.querySelector('#view-schematic [data-rail="L"]'); if (!sel) return 'no rail selector';
+    const opt = [...sel.options].find(o => o.value && o.value !== App.project.schematic.L); const before = App.project.schematic.L;
+    if (!opt) return 'no other rail to choose';
+    sel.value = opt.value; sel.dispatchEvent(new Event('change'));
+    return App.project.schematic.L === before && App.serialize().schematic.L === 'c5:L' && document.getElementById('toast-root').textContent.includes('rail is on a part this version does not know');
+  });
+  check('compat: a kept rail cannot be changed here, and is saved as it was', railR === true, String(railR));
+  check('compat: kept paths and feeders stay right after the ones they followed when others are inserted or deleted', await page.evaluate(() => {
+    const S = App.project.schematic, P = S.power;
+    S.rungs = S.rungs.filter(r => r.comment !== 'B' && r.comment !== ''); S.rungs.unshift({ elems: [], comment: 'X' });
+    P.feeders.unshift({ elems: [] });
+    const s = App.serialize();
+    return s.schematic.rungs.map(r => r.comment).join() === 'X,A,kept' && s.schematic.power.feeders.map(f => (f.elems[0] ? f.elems[0].tag : '-')).join() === '-,KM5,U1,KM6';
+  }));
+  check('compat: save → reload keeps the kept content and its reserved tags (a symbol refused for a reserved tag does not free it)',await page.evaluate(new Function('p', canonJs + `
+    const s = JSON.parse(JSON.stringify(App.serialize())), prev = App.currentId; if (!App.openNew(s)) return false; if (prev) Store.remove(prev);
+    const t = JSON.parse(JSON.stringify(App.serialize())), byId = (l, id) => l.find(x => x.id === id), R = App.project.circuit.reserved;
+    return canon(byId(t.circuit.comps, 'c5')) === canon(p.circuit.comps[2]) && canon(byId(t.circuit.comps, 'c6')) === canon(p.circuit.comps[3])
+      && canon(t.schematic.rungs.find(r => r.comment === 'kept')) === canon(p.schematic.rungs[1]) && t.schematic.power.main[0].k === 'futureMain' && t.schematic.L === 'c5:L'
+      && canon(byId(t.schematic.free.items, 'd1')) === canon(p.schematic.free.items[0]) && ['KA1', 'H1', 'S1', 'KM1', 'U1', 'QS1'].every(x => R.has(x));`), reserveP));
+  // a supply rail on a part this version does not know: no other supply takes its place (Cases A, B, C). The projects hold
+  // S1 and H1 already, as a newer version saves them, so S1 can be pressed and H1 watched. Opening syncs the diagram;
+  // render and sync run again here so every place that picks rails is passed through.
+  const railCase = (name, extra, L, N) => ({ name, format: 3, circuit: { seq: 30, comps: [{ id: 'c5', type: 'futureUps', x: 0, y: 0, props: { label: 'G9' } }, ...extra,
+    { id: 'c21', type: 'pb_no', x: 0, y: 0, props: { label: 'S1' } }, { id: 'c23', type: 'lamp', x: 0, y: 0, props: { label: 'H1', coil: '230VAC' } }], wires: [] },
+  schematic: { L, N, rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H1' }], comment: 'lamp' }] } });
+  const Q1 = { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, G1 = { id: 'c2', type: 'psu24', x: 0, y: 0, props: { label: 'G1' } };
+  const railRun = d => page.evaluate(async d => {
+    const prev = App.currentId; if (!App.openNew(JSON.parse(JSON.stringify(d)))) return null; if (prev) Store.remove(prev);
+    App.showView('schematic'); Schematic.render(); Schematic.sync();
+    const C = App.project.circuit, S = App.project.schematic, dev = l => C.comps.find(c => c.props.label === l);
+    const up = App.operate(dev('S1'), 'btn'); await new Promise(r => setTimeout(r, 400));
+    const lit = dev('H1').state.on; if (typeof up === 'function') up(); await new Promise(r => setTimeout(r, 150));
+    const s = JSON.parse(JSON.stringify(App.serialize()));
+    return { L: S.L, N: S.N, lit, sch: C.wires.filter(w => w.sch).length, savedL: s.schematic.L, savedN: s.schematic.N, savedSch: s.circuit.wires.filter(w => w.sch).length,
+      coil: dev('H1').props.coil, labels: C.comps.map(c => c.props.label).sort().join(), msg: App.compat().join(' ') };
+  }, d);
+  const rA = await railRun(railCase('Rail case A', [Q1], 'c5:L', 'c5:N'));
+  check('kept rail, case A: no substitute rail; pressing S1 does not light H1 from Q1; no diagram wires to Q1; L/N saved unchanged', !!rA && rA.L === null && rA.N === null && rA.lit === false
+    && rA.sch === 0 && rA.savedSch === 0 && rA.savedL === 'c5:L' && rA.savedN === 'c5:N' && rA.labels === 'H1,Q1,S1', JSON.stringify(rA));
+  check('kept rail: the warning says the current paths on that rail are not powered or simulated here', !!rA && rA.msg.includes('supply rail of the current paths is on a part this version does not know') && rA.msg.includes('not powered or simulated here'));
+  const rB = await railRun(railCase('Rail case B', [Q1, G1], 'c5:P', 'c1:N'));
+  check('kept rail, case B: N stays c1:N; no diagram wires to the 24 V PSU; H1 keeps its 230 VAC coil and no device is added', !!rB && rB.L === null && rB.N === 'c1:N' && rB.lit === false
+    && rB.sch === 0 && rB.savedSch === 0 && rB.savedL === 'c5:P' && rB.savedN === 'c1:N' && rB.coil === '230VAC' && rB.labels === 'G1,H1,Q1,S1', JSON.stringify(rB));
+  const rC = await railRun(railCase('Rail case C', [], 'c5:L', 'c5:N'));
+  check('kept rail, case C: with no other supply nothing is powered, nothing is wired, and L/N are saved unchanged', !!rC && rC.L === null && rC.N === null && rC.lit === false
+    && rC.sch === 0 && rC.savedL === 'c5:L' && rC.savedN === 'c5:N' && rC.labels === 'H1,S1', JSON.stringify(rC));
+  // save → reload → save: the saved form is compared with sorted keys and without the event log (the log grows on every
+  // open; key order can differ for re-made objects); rails, devices, wires and the kept part are also checked against the file
+  const railTrip = await page.evaluate(new Function('cases', canonJs + `
+    const out = [];
+    for (const d of cases) {
+      const save = () => { const s = JSON.parse(JSON.stringify(App.serialize())); delete s.events; return s; };
+      const open = x => { const prev = App.currentId, ok = App.openNew(JSON.parse(JSON.stringify(x))); if (ok && prev) Store.remove(prev); return ok; };
+      if (!open(d)) { out.push(d.name + ': not opened'); continue; }
+      const a = save(); if (!open(a)) { out.push(d.name + ': reload refused'); continue; }
+      const b = save(), dev = (s, id) => s.circuit.comps.find(c => c.id === id);
+      const ok = canon(a) === canon(b) && b.schematic.L === d.schematic.L && b.schematic.N === d.schematic.N && !b.circuit.wires.length
+        && canon(dev(b, 'c5')) === canon(d.circuit.comps[0]) && b.circuit.comps.length === d.circuit.comps.length && dev(b, 'c23').props.coil === '230VAC'
+        && d.circuit.comps.every(c => dev(b, c.id) && (dev(b, c.id).props || {}).label === (c.props || {}).label);
+      if (!ok) out.push(d.name + ': differs');
+    }
+    return out.length ? out.join('; ') : true;`), [railCase('Rail case A', [Q1], 'c5:L', 'c5:N'), railCase('Rail case B', [Q1, G1], 'c5:P', 'c1:N'), railCase('Rail case C', [], 'c5:L', 'c5:N')]);
+  check('kept rail: save → reload → save keeps rails, devices, wires and the kept part the same (cases A, B, C)', railTrip === true, String(railTrip));
+  // without a kept rail the diagram still picks the rails itself: a 24 V PSU fed from the 1-phase supply comes first
+  const rAuto = await page.evaluate(async () => {
+    const prev = App.currentId, ok = App.openNew({ name: 'Auto rails', circuit: { seq: 5, comps: [
+      { id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'psu24', x: 0, y: 0, props: { label: 'G1' } }],
+    wires: [{ id: 'w1', a: 'c1:L', b: 'c2:L', pts: [] }, { id: 'w2', a: 'c1:N', b: 'c2:N', pts: [] }] },
+    schematic: { rungs: [{ elems: [{ k: 'pbno', tag: 'S1' }, { k: 'lamp', tag: 'H1' }], comment: '' }] } });
+    if (!ok) return null; if (prev) Store.remove(prev);
+    const C = App.project.circuit, S = App.project.schematic, dev = l => C.comps.find(c => c.props.label === l);
+    await new Promise(r => setTimeout(r, 200));
+    const up = App.operate(dev('S1'), 'btn'); await new Promise(r => setTimeout(r, 400));
+    const lit = dev('H1').state.on; if (typeof up === 'function') up();
+    return { L: S.L, N: S.N, coil: dev('H1').props.coil, sch: C.wires.filter(w => w.sch).length, lit, msgs: App.compat().length };
+  });
+  check('no kept rail: the diagram still picks the rails itself (24 V PSU first), wires the path, and S1 lights H1', !!rAuto && rAuto.L === 'c2:P2' && rAuto.N === 'c2:M2' && rAuto.coil === '24VDC'
+    && rAuto.sch > 0 && rAuto.lit === true && rAuto.msgs === 0, JSON.stringify(rAuto));
+  check('compat: a file that is not a project is still refused and the open project stays', await page.evaluate(() => { const id = App.currentId; try { App.openNew(5); return false; } catch (e) { return App.currentId === id && /not a PLC Trainer project/.test(e.message); } }));
+  await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); });
 
   check('no page errors', errors.length === 0, errors.join(' | '));
 

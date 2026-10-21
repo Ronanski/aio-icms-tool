@@ -48,7 +48,7 @@ Release checklist:
 - Match the surrounding style: 2-space indent, single quotes, semicolons, small helpers, short comments only where the logic isn't obvious.
 - Colors come from the CSS tokens in `:root`. Every new color needs a dark-mode value.
 - The device drawings in `circuit.js` keep their real-world colors, independent of the theme.
-- **Project file compatibility**: never rename saved fields (`ladder.rungs[].text`, `circuit.comps[].type/props/state`, `wires[].a/b`). Add new fields with defaults through `Circuit.normalize`.
+- **Project file compatibility**: never rename saved fields (`ladder.rungs[].text`, `circuit.comps[].type/props/state`, `wires[].a/b`). Add new fields with defaults through `Circuit.normalize`. Raise `FORMAT` in `js/app.js` when saved projects gain content that older versions cannot read. Parts, diagram symbols and wires a version does not know are kept by `App.buildProject` (`project.keep`) and written back by `App.serialize`: keep that path working, never drop data you do not understand. Code that picks or accepts a device tag must also skip `circuit.reserved` (the tags of that kept content).
 - Allen-Bradley behaviour is the reference: when unsure how an instruction behaves, follow the SLC 500 instruction set manual.
 
 ## 5. Testing

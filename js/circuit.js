@@ -1928,7 +1928,8 @@
     const d = DEFS[type];
     circ.seq = (circ.seq || 0) + 1;
     const id = 'c' + circ.seq;
-    const used = new Set(circ.comps.map(c => c.props.label));
+    // tags of parts a newer version made (kept in the project, circ.reserved) are taken too
+    const used = new Set([...circ.comps.map(c => c.props.label), ...(circ.reserved || [])]);
     let n = 1; while (used.has(d.prefix + n)) n++;
     const props = { label: d.prefix + n, size: 1, ...JSON.parse(JSON.stringify(d.props)) };
     if (d.slot) {

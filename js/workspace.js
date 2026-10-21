@@ -732,6 +732,7 @@
     if (v === old) { inp.value = old; return; }
     if (!LABEL.test(v)) return no('A tag is 1 to 20 letters, numbers or + . - _ (no spaces)');
     if (circ().comps.some(x => x !== c && x.props.label === v)) return no(`${v} is already the tag of another device`);
+    if (circ().reserved && circ().reserved.has(v)) return no(`${v} is the tag of a part this version does not know (kept in the project): use another tag`);
     if (refs && !SCHTAG.test(v)) return no(`${old} is used in the Electrical Diagram: use letters, numbers, - or _ only`);
     c.props.label = v;
     App.log('operator', `Device ${old} renamed ${v}`);
