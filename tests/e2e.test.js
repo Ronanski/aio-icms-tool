@@ -2512,6 +2512,34 @@ function check(name, cond, info = '') {
     const coilIt = App.project.schematic.free.items.find(i => i.k === 'kmcoil');
     return App.events().some(e => /KM2: its coil is 230VAC but gets 24VDC/.test(e.msg)) && /gets only 24VDC/.test(Circuit.status(k, App.ctx)) && !!document.querySelector(`#view-schematic [data-fi="${coilIt.id}"] .ssym.lowv`) && (up(), true); }));
   await page.evaluate(() => { document.querySelector('#view-schematic [data-smode="edit"]').click(); localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
+  console.log('Moving contacts: every library symbol whose contact switches is drawn switched');
+  check('moving contacts: every symbol in the library with a contact is drawn differently when that contact switches (all of them, not a few)', await page.evaluate(async () => {
+    const K = FreeDraw.KINDS, D = Circuit.DEFS, still = [], moved = [];
+    const kinds = Object.keys(K).filter(k => K[k].type && !K[k].jct && !K[k].types && !K[k].pots && D[K[k].type] && D[K[k].type].conduct);
+    localStorage.setItem('plc-trainer.schStyle', 'free');
+    for (const k of kinds) {
+      const tag = (K[k].pre || 'X') + '9'; App.openNew({ name: 'sweep', schematic: { free: { seq: 3, items: [{ id: 'd1', k, tag, x: 100, y: 100, r: 0 }], wires: [] } } });
+      App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="free"]').click();
+      const dev = App.project.circuit.comps.find(c => c.props.label === tag); if (!dev) continue;
+      const ids = K[k].terms.map(t => t.id), mine = () => JSON.stringify((D[dev.type].conduct(dev, App.ctx) || []).filter(([a, b]) => ids.includes(a) && ids.includes(b)).map(x => x.slice().sort()).sort());
+      const html = () => { FreeDraw.render(document.querySelector('#view-schematic .sch-body')); return document.querySelector('#view-schematic [data-fi="d1"] .ssym').innerHTML; };
+      let any = false, ok = true;
+      for (const f of Object.keys(dev.state).filter(x => typeof dev.state[x] === 'boolean' || x === 'pos')) {
+        const c0 = mine(), h0 = html(), old = dev.state[f]; dev.state[f] = f === 'pos' ? (old ? 0 : 1) : !old; const c1 = mine(), h1 = html(); dev.state[f] = old;
+        if (c0 !== c1) { any = true; if (h0 === h1) ok = false; }
+      }
+      if (any) (ok ? moved : still).push(k);
+    }
+    return still.length === 0 && moved.length >= 110;
+  }));
+  check('moving contacts: in the IEC power circuit the breaker and contactor poles are drawn closed when they close', await page.evaluate(async () => {
+    App.openNew({ name: 'Power poles' }); const C = App.project.circuit, s = Circuit.create('supply3', 0, 0, C); s.props.label = 'Q0'; s.state.on = true; C.comps.push(s);
+    App.project.schematic.power = { src: 'Q0', main: [], feeders: [{ elems: [{ k: 'qf3', tag: 'QF1' }, { k: 'km3', tag: 'KM1' }, { k: 'm3', tag: 'M1' }] }] }; localStorage.setItem('plc-trainer.schStyle', 'iec'); Schematic.sync(); App.showView('schematic');
+    document.querySelector('#view-schematic [data-sstyle="iec"]').click(); const h = i => { Schematic.render(); return document.querySelectorAll('#view-schematic .pel .ssym')[i].innerHTML; };
+    const qf = C.comps.find(c => c.props.label === 'QF1'), km = C.comps.find(c => c.props.label === 'KM1'); qf.state.on = false; const q0 = h(0), k0 = h(1);
+    qf.state.on = true; km.state.pulled = true; const q1 = h(0), k1 = h(1); km.state.pulled = false; return q0 !== q1 && k0 !== k1;
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
   console.log('IEC current paths: the newer devices and the PLC points');
   await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); });
   await page.click('#view-schematic [data-sstyle="iec"]'); await wait(200);

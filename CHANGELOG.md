@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [2.2.1] - 2026-10-21
 
 ### Fixed
-- **Contacts move on the drawing** (free draw and IEC current paths): a N.O. contact, main pole, breaker or PLC output is drawn closed when it closes and a N.C. contact open when it opens, as in Simurelay (before, only the colour changed).
+- **Contacts move on the drawing** — every one of the 118 library symbols with a contact (checked by a test that switches each): N.O. contacts, main poles, breakers, disconnectors, fuse switches (each pole on its own, so the neutral of a 1P+N / 3P+N stays closed when the fuses blow), changeovers and PLC outputs; a blown fuse is drawn broken; in the IEC view the current paths and the power circuit (breaker, motor breaker, contactor, star-delta) switch too. Before, only the colour changed.
 - **Wiring by touch**: tapping one terminal of a symbol and then its other terminal quickly no longer counts as a double tap (the second wire was lost).
 - **A new symbol never takes a device that belongs to another circuit**: on the *PLC motor control* example a drawn coil became the 230 V motor contactor KM1 and stayed off; it is now the next contactor (KM2), and a contact goes with the coil on the same drawing.
 - **Coil voltage follows the drawn supply**: devices the drawing makes on +24 V / 0 V points get 24 V DC coils (L / N points: 230 V AC).
@@ -16,7 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **New symbols are placed in the visible part of the drawing**, left to right, never off the edge of a phone screen; no message for every symbol placed.
 
 ### Tests
-- 7 checks: the owner's case on the PLC motor example (KM2, 24 V DC, seal-in), moving N.O. and N.C. contacts, the coil voltage warning, quick touch wiring.
+- 9 checks: every library contact symbol is drawn switched when its contact switches; the IEC power poles; the owner's case on the PLC motor example (KM2, 24 V DC, seal-in), moving N.O. and N.C. contacts, the coil voltage warning, quick touch wiring.
 
 ## [2.2.0] - 2026-10-21
 

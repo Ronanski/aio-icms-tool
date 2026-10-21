@@ -467,7 +467,9 @@
     if (S.look === 'nonc') return { on: has(S.terms[2].id, S.terms[3].id) };
     if (S.look === 'rot') { const o = S.terms.find(t => t.y > 0 && has('1', t.id)); return { on: !!o, out: o && o.id }; }
     const ins = S.terms.filter(t => t.y < 0).map(t => t.id), outs = S.terms.filter(t => t.y > 0).map(t => t.id);
-    return { on: ins.some((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i]))), known: true };
+    // each pole on its own (a fuse switch with a neutral: the fuses blow, the neutral pole stays closed)
+    const poles = ins.map((a, i) => pr.some(([x, y]) => (x === a && y === outs[i]) || (y === a && x === outs[i])));
+    return { on: poles.some(Boolean), poles, known: true };
   }
   /* IEC drawing of one symbol, upright, centred on 0,0 */
   function shape(it, st) {
@@ -577,14 +579,14 @@
       if (S.terms.some(t => t.id === 'PE')) o.push(`<path class="pe" d="M22 0 H40 M40 0 V8 M33 8 H47 M36 12 H44 M39 16 H41"/>`);
     } else {
       // multi-pole power device: one symbol per pole and a dashed link
-      S.terms.filter(t => t.y < 0).forEach(t => {
-        const x = t.x;
-        if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
-        else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/><path class="thin" d="M${x} -12 V12"/>`);
+      S.terms.filter(t => t.y < 0).forEach((t, pi) => {
+        const x = t.x, st1 = st.poles ? { ...st, on: !!st.poles[pi] } : st;
+        if (S.look === 'fsw') o.push(stub(x, -30, -14), stub(x, 14, 30), st1.on ? `<path d="M${x} 14 L${x + 2} -16"/><rect class="thin" x="${x - 2}" y="-7" width="6" height="14"/>` : `<path d="M${x} 14 L${x - 10} -12"/><rect class="thin" x="${x - 8}" y="-7" width="6" height="14" transform="rotate(21 ${x - 5} 0)"/>`);
+        else if (S.look === 'fuse') o.push(stub(x, -30, -12), stub(x, 12, 30), `<rect x="${x - 5}" y="-12" width="10" height="24"/>${st1.known && !st1.on ? `<path class="thin" d="M${x} -12 V-3 M${x} 3 V12 M${x - 4} -3 l8 6"/>` : `<path class="thin" d="M${x} -12 V12"/>`}`);
         else if (S.look === 'ol') o.push(stub(x, -30, -10), stub(x, 10, 30), `<path d="M${x} -10 h-4 v8 h8 v8 h-4 V10"/>`);
-        else if (S.look === 'kmn') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} -14 H${x + 8} M${x} 14 ${st.known && !st.on ? `L${x - 10} -12` : `L${x + 10} -16`}"/><path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
+        else if (S.look === 'kmn') o.push(stub(x, -30, -14), stub(x, 14, 30), `<path d="M${x} -14 H${x + 8} M${x} 14 ${st1.known && !st1.on ? `L${x - 10} -12` : `L${x + 10} -16`}"/><path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
         else {
-          o.push(stub(x, -30, -14), stub(x, 14, 30), st.on ? `<path d="M${x} 14 L${x + 2} -16"/>` : `<path d="M${x} 14 L${x - 10} -12"/>`);
+          o.push(stub(x, -30, -14), stub(x, 14, 30), st1.on ? `<path d="M${x} 14 L${x + 2} -16"/>` : `<path d="M${x} 14 L${x - 10} -12"/>`);
           if (S.look === 'km') o.push(`<path class="thin" d="M${x - 4} -14 a4 4 0 0 0 8 0"/>`);
           if (S.look === 'brk' || S.look === 'qm' || S.look === 'rcd') o.push(`<path class="thin" d="M${x - 3} -17 l6 6 M${x + 3} -17 l-6 6"/>`);
         }
