@@ -1023,10 +1023,10 @@
     if (!dtEl || !App.project) return;
     // a tag-based project shows Controller Tags (module tags and the project's tags) instead of the I and O data files
     const tagMode = App.project.target === 'tag';
-    const files = tagMode ? ['TAGS', 'B3', 'T4', 'C5', 'R6', 'N7'] : ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
+    const files = tagMode ? ['TAGS'] : ['I', 'O', 'B3', 'T4', 'C5', 'R6', 'N7'];
     // another project opens on its first tab
     if (dtProj !== App.project) { dtProj = App.project; dtFile = tagMode ? 'TAGS' : 'I'; }
-    if (tagMode && (dtFile === 'I' || dtFile === 'O')) dtFile = 'TAGS';
+    if (tagMode) dtFile = 'TAGS';
     if (!tagMode && dtFile === 'TAGS') dtFile = 'I';
     const names = { TAGS: 'Controller Tags', I: 'I1 Input', O: 'O0 Output', B3: 'B3 Binary', T4: 'T4 Timer', C5: 'C5 Counter', R6: 'R6 Control (sequencers)', N7: 'N7 Integer' };
     let body = '';

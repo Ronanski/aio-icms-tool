@@ -563,8 +563,8 @@
      Connection (RPI, inhibit, major fault on connection loss) */
   function modForm(t, slot, def, free) {
     const io = App.project.io, m = (slot && io.mods && io.mods[slot]) || {}, code = MCODE[t] || t;
-    UI.form(slot ? `Module Properties — Local:${slot} ${code}` : `New Module — ${code}`, [
-      { key: 'type', label: 'Type', value: `${code} ${Circuit.DEFS[t].name}`, options: [`${code} ${Circuit.DEFS[t].name}`] },
+    UI.form(slot ? `Module Properties — Local:${slot} ${App.project.io.slots[slot] ? code : code + ' (installed, not configured)'}` : `New Module — ${code}`, [
+      { key: 'type', label: 'Type', value: t, options: slot ? Circuit.CARDS().map(x => ({ v: x, l: `${MCODE[x] || x} ${Circuit.DEFS[x].name}` })) : [{ v: t, l: `${code} ${Circuit.DEFS[t].name}` }] },
       { key: 'parent', label: 'Parent', value: 'Local', options: ['Local'] },
       { key: 'name', label: 'Name', value: m.name || '' },
       { key: 'slot', label: 'Slot', value: slot || def, options: slot ? [slot] : free },
@@ -576,15 +576,29 @@
       const s = String(v.slot), rpi = Number(v.rpi);
       if (!(rpi >= 0.2 && rpi <= 750)) return 'RPI: 0.2 to 750 ms';
       const name = v.name.trim(); if (name && !/^[A-Za-z_][A-Za-z0-9_]{0,19}$/.test(name)) return 'Name: letters, digits and _ (up to 20), starting with a letter or _';
-      App.project.io = Circuit.cleanIo({ ...io, slots: { ...io.slots, [s]: t }, mods: { ...(io.mods || {}), [s]: { name, desc: v.desc, rpi, inhibit: v.inhibit === 'Yes', mf: v.mf === 'Yes' } } });
+      App.project.io = Circuit.cleanIo({ ...io, slots: { ...io.slots, [s]: v.type }, mods: { ...(io.mods || {}), [s]: { name, desc: v.desc, rpi, inhibit: v.inhibit === 'Yes', mf: v.mf === 'Yes' } } });
       App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.dirty.wiring = true; App.save();
-      const f = Circuit.DEFS[t].comm ? '' : Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O');
-      App.log('system', `${slot ? 'Module properties' : 'New module'}: ${code} in slot ${s}${v.inhibit === 'Yes' ? ' (inhibited)' : ''}`);
+      const nt = v.type, f = Circuit.DEFS[nt].comm ? '' : Circuit.DEFS[nt].analog || (nt.startsWith('mdi') ? 'I' : 'O');
+      App.log('system', `${slot ? 'Module properties' : 'New module'}: ${MCODE[nt] || nt} in slot ${s}${v.inhibit === 'Yes' ? ' (inhibited)' : ''}`);
       if (!slot) UI.toast(`${code} added in slot ${s}${f ? `: its data is ${App.fmt(`${f}:${s}/0`).replace(/0$/, '…')}` : ''}`, 'ok', 5000);
       return undefined;
     }, '<p class="help">The module is configured in the project. When you go online, the module in that slot of the chassis in the Wiring must be the same, or the controller shows a module fault (Code 16#0022).</p>');
   }
-  App.moduleProps = function (slot) { const t = App.project.io.slots[slot]; if (t) modForm(t, String(slot)); };
+  App.moduleProps = function (slot) {
+    slot = String(slot);
+    const r = Circuit.rack(App.project.circuit, App.project.io), inst = r.slots[slot] && App.project.circuit.comps.find(c => c.id === r.slots[slot]);
+    const t = App.project.io.slots[slot] || (inst && inst.type); if (!t) return;
+    modForm(t, slot);
+    // Remove from the I/O configuration (the module in the Wiring stays; it is then not configured)
+    const m = [...document.querySelectorAll('.modal-wrap')].pop(); if (!m || !App.project.io.slots[slot]) return;
+    const b = document.createElement('button'); b.className = 'btn danger'; b.textContent = 'Remove module'; b.dataset.modrm = slot;
+    b.onclick = () => UI.confirm('Remove module', `Remove slot ${slot} (${MCODE[t] || t}) from the I/O configuration? Its tags Local:${slot}:… go too.`, () => {
+      const io = App.project.io, slots = { ...io.slots }, mods = { ...(io.mods || {}) }; delete slots[slot]; delete mods[slot];
+      App.project.io = Circuit.cleanIo({ ...io, slots, mods }); App.log('system', `Module removed from slot ${slot}`);
+      m.querySelector('[data-x]').click(); App.addrChanged(); App.renderOrg(); Ladder.DataTable.render(); App.save();
+    }, 'Remove');
+    m.querySelector('.modal-foot').prepend(b);
+  };
   // the PLC target picker at the top of the I/O Configuration; a change reopens the dialog
   const targetPick = () => `<label class="io-target">PLC target <select data-target>${Object.entries(Circuit.TARGETS).map(([k, n]) => `<option value="${k}" ${k === App.project.target ? 'selected' : ''}>${UI.esc(n)}</option>`).join('')}</select></label>`;
   const bindTarget = el => { const s = el.querySelector('[data-target]'); if (s) s.onchange = () => { closeModal(el); App.setTarget(s.value); App.ioConfig(); }; };
@@ -715,9 +729,10 @@
             const e = typeErr(f.ctl); if (e) { UI.toast(e, 'danger', 7000); App.log('system', 'Set Project Path: ' + e); return; }
             c.path = here; App.log('system', `Project path set: ${pathText(c.path)}`); App.save(); App.renderOrg(); Ladder.statusUi(); UI.toast('Project path set', 'ok'); App.whoActive();
           } else if (k === 'clear') { c.path = null; App.log('system', 'Project path cleared'); App.save(); App.renderOrg(); Ladder.statusUi(); App.whoActive(); }
-          else if (k === 'online') App.goOnline();
-          else if (k === 'upload') App.upload();
-          else if (k === 'download') App.download();
+          else if (k === 'online' || k === 'upload' || k === 'download') {
+            el.closest('.modal-wrap').querySelector('[data-x]').click();
+            ({ online: App.goOnline, upload: App.upload, download: App.download })[k]();
+          }
         });
       },
       buttons: [{ label: 'Close', primary: true }],
@@ -1528,9 +1543,10 @@
         if (!p.addr || p.addr === (v.plc === 'tag' ? 'file' : 'tag')) p.addr = v.plc === 'tag' ? 'tag' : 'file';
         if (w.ch) p.io = { ...(p.io || {}), slots: (p.io && p.io.slots) || {}, chassis: w.ch };
         if (w.conn === 'real') p.conn = { mode: 'real' };
+        if (!p.ladder || !(p.ladder.rungs || []).length) p.ladder = { ...(p.ladder || {}), rungs: [{ text: '', comment: '' }] };
         App.openNew(p);
         UI.toast(`Created project “${name}”`, 'ok');
-        App.showView(v.t === 'blank' ? 'wiring' : 'ladder');
+        App.showView(v.t === 'blank' && v.plc !== 'tag' ? 'wiring' : 'ladder');
         return undefined;
       }, '<p class="help">The chassis size and the connection can be changed later (I/O Configuration, controller menu).</p>'));
       return undefined;

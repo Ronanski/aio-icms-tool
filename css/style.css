@@ -131,6 +131,11 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 /* ---------- PLC status bar ---------- */
 .plcbar { display: flex; align-items: center; gap: 14px; padding: 6px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 12px; flex-wrap: wrap; }
 .plcbar .mode button { padding: 4px 14px; letter-spacing: .04em; }
+/* one line: the I/O lights and the message give way (clipped) before Events / View wrap to a second line */
+.plcbar { flex-wrap: nowrap; }
+.plcbar > * { flex-shrink: 0; }
+.plcbar .io-strip { flex-shrink: 1; min-width: 0; overflow: hidden; white-space: nowrap; }
+.plcbar .bar-msg { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plcbar .mode button[data-mode="RUN"].on { background: var(--ok); }
 .leds { display: flex; gap: 10px; }
 .led { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 11px; color: var(--muted); letter-spacing: .03em; }

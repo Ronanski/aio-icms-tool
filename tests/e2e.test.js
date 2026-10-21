@@ -3087,6 +3087,39 @@ function check(name, cond, info = '') {
     }));
     await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.setMode('PROG'); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay9); });
   }
+  console.log('Re-verification fixes: Who Active actions, wizard view, module properties, status strip, Tags only');
+  {
+    await page.evaluate(() => { const prev = App.currentId; App.openNew(Examples.EX.chassis.build()); if (prev) Store.remove(prev); window._lay10 = App.layout; App.setLayout('single'); App.showView('ladder');
+      App.project.circuit.comps.find(c => c.type === 'epc').state.drv = 'running'; App.circuitChanged(); });
+    await wait(300);
+    check('re-verify: the status strip stays on one line with the chassis example (Events and View on the first line)', await page.evaluate(() => { const b = document.querySelector('.plcbar'), ev = b.querySelector('[data-events]'), m = b.querySelector('[data-mode="PROG"]'); return Math.abs(ev.getBoundingClientRect().top - m.getBoundingClientRect().top) < 12; }));
+    check('re-verify: a tag-based project shows only the Tags tab in Controller Tags', await page.evaluate(() => [...document.querySelectorAll('#view-ladder .lad-side [data-file]')].map(b => b.dataset.file).join() === 'TAGS'));
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    await page.click('.modal [data-who="set"]'); await wait(150);
+    await page.click('.modal-wrap[data-who] .who-acts [data-who="upload"]'); await wait(200);
+    check('re-verify: Upload from Who Active closes Who Active and shows the notice on top', await page.evaluate(() => !document.querySelector('.modal-wrap[data-who]') && /Upload is not available in the trainer/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.whoActive(); }); await wait(150);
+    await page.click('.modal-wrap[data-who] .who-acts [data-who="download"]'); await wait(200);
+    check('re-verify: Download from Who Active closes Who Active and opens the Download dialog on top', await page.evaluate(() => !document.querySelector('.modal-wrap[data-who]') && /Download offline project/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent)));
+    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Download")'); await wait(800);
+    await page.evaluate(() => App.whoActive()); await wait(150);
+    check('re-verify: after the download Who Active shows the downloaded project on the controller and offers Go Offline', await page.evaluate(() => { const m = document.querySelector('.modal-wrap[data-who]'); return App.conn.online && /00, CPU1 — [^']*, '1756-style chassis'/.test(m.textContent) && m.querySelector('[data-who="online"]').textContent === 'Go Offline'; }));
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.organizer(); }); await wait(200);
+    await page.dblclick('#view-ladder [data-lorg] [data-org="m1"]'); await wait(250);
+    check('re-verify: a double-click on a module in the I/O tree opens Module Properties and it stays open', await page.evaluate(() => /Module Properties — Local:1 IB16/.test([...document.querySelectorAll('.modal-wrap')].pop().textContent) && !!document.querySelector('.modal-wrap:last-child [data-modrm]')));
+    await page.selectOption('.modal-wrap:last-child #f_type', 'mdi16ac'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    check('re-verify: changing the Type in Module Properties changes the configured module (IA16 in slot 1)', await page.evaluate(() => App.project.io.slots['1'] === 'mdi16ac'));
+    await page.evaluate(() => App.moduleProps('1')); await wait(150);
+    await page.click('.modal-wrap:last-child [data-modrm]'); await wait(150);
+    await page.click('.modal-wrap:last-child .modal-foot button:has-text("Remove")'); await wait(200);
+    check('re-verify: Remove module takes the slot out of the I/O configuration', await page.evaluate(() => !App.project.io.slots['1'] && !document.querySelector('#view-ladder [data-lorg] [data-org="m1"] code') || !App.project.io.slots['1']));
+    // the wizard opens a tag-based project on the Ladder with rung 0 empty
+    await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.showView('wiring'); App.newProject(); }); await wait(150);
+    await page.selectOption('.modal #f_plc', 'tag'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(200);
+    await page.click('.modal-wrap:last-child .btn.primary'); await wait(300);
+    check('re-verify: a new tag-based project opens on the Ladder (tab and view agree) with rung 0 empty (⊗) and Verify failing on it', await page.evaluate(() => App.view === 'ladder' && document.querySelector('.tabs [data-view="ladder"]').classList.contains('on') && document.getElementById('view-ladder').classList.contains('active') && App.project.ladder.rungs.length === 1 && !!document.querySelector('#view-ladder .rung.empty') && !Ladder.verify(true)));
+    await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay10); });
+  }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);
