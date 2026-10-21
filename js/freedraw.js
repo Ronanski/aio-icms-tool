@@ -330,16 +330,7 @@
      the terminals it uses must exist there; the overload changeover 95-96-98 needs the relay set that way */
   function devErr(it, S) {
     const d = H.devOf(it.tag); if (!d || !DEFS[d.type]) return null;
-    const D = DEFS[d.type];
-    if ((D.famNo || []).includes(S.look)) return `${it.tag} is a ${D.name}: draw its own symbols (${S.n} does not fit it)`;
-    const miss = S.terms.find(t => !D.terms.some(x => x.id === t.id));
-    if (miss) return `${it.tag} (${D.name}) has no terminal ${miss.id}`;
-    if (/^olr/.test(d.type)) {
-      const co = d.props.aux === '95-96-98 changeover';
-      if (S.olco && !co) return `${it.tag}: set its Aux contacts to "95-96-98 changeover" (Properties) to use this symbol`;
-      if (co && S.terms.some(t => t.id === '97')) return `${it.tag}: its aux is a 95-96-98 changeover, it has no 97-98 contact`;
-    }
-    return null;
+    return Circuit.fitErr(d, S.type, S.terms.map(t => t.id), S.olco ? 'olco' : S.look);
   }
   FD.check = function (typeErr, take) {
     const errs = new Map(), used = new Map();
@@ -358,6 +349,10 @@
       // a terminal pair of a device is drawn once (one N.O. aux on a contactor, one coil, one set of main contacts…)
       const key = it.tag + '|' + S.terms.map(t => t.id).join(',');
       if (used.has(key) && !SRC.includes(S.look)) errs.set(it, `${it.tag}: this part of the device is already drawn (${S.terms.map(t => t.id).join('-')})`);
+      else if (!SRC.includes(S.look) && !S.jct) {
+        const ids = S.terms.map(t => t.id), twin = [...used.values()].find(o => o.tag === it.tag && !SRC.includes(K[o.k].look) && (() => { const os = K[o.k].terms.map(t => t.id); return ids.every(t => os.includes(t)) || os.every(t => ids.includes(t)); })());
+        if (twin) errs.set(it, `${it.tag}: this contact is already drawn in another symbol (${K[twin.k].n})`);
+      }
       used.set(key, it);
     }
     // terminals the other views wire (a supply may be drawn in every view): this symbol is not wired
@@ -378,11 +373,13 @@
     // an overload relay made for the changeover symbol is set that way
     const pref = new Map();
     for (const it of F.items) { const t = K[it.k].type; if (!t || K[it.k].jct || K[it.k].types) continue; const p = pref.get(it.tag); if (!p || (!DEFS[p].family && DEFS[t].family)) pref.set(it.tag, t); }
+    const made = new Set();
     for (const it of F.items) {
       if (!K[it.k].type || K[it.k].pot || e0.has(it)) continue;
-      const known = !!H.devOf(it.tag), c = ensureType(K[it.k].jct || K[it.k].types ? K[it.k].type : pref.get(it.tag) || K[it.k].type, it.tag);
-      if (!known && K[it.k].olco && c && (DEFS[c.type].pdefs || []).some(p => p.k === 'aux')) c.props.aux = '95-96-98 changeover';
+      if (!H.devOf(it.tag)) made.add(it.tag);
+      ensureType(K[it.k].jct || K[it.k].types ? K[it.k].type : pref.get(it.tag) || K[it.k].type, it.tag);
     }
+    for (const it of F.items) if (K[it.k].olco && made.has(it.tag)) { const c = H.devOf(it.tag); if (c && (DEFS[c.type].pdefs || []).some(p => p.k === 'aux')) c.props.aux = '95-96-98 changeover'; }
     const errs = check();
     FD.errs = errs;
     const key = e => {
@@ -892,7 +889,7 @@
   const taken = () => new Set([...H.circ().comps.map(c => c.props.label), ...fr().items.map(i => i.tag), ...(H.circ().reserved || [])]);
   function suggest(k) {
     const S = K[k], used = taken();
-    const same = H.circ().comps.filter(c => (S.types ? S.types.includes(c.type) : Circuit.sameKind(c.type, S.type))).map(c => c.props.label);
+    const same = H.circ().comps.filter(c => (S.types ? S.types.includes(c.type) : Circuit.sameKind(c.type, S.type) && !Circuit.fitErr(c, S.type, S.terms.map(t => t.id), S.look))).map(c => c.props.label);
     // contacts and coils of an existing device suggest that device
     if (!['Sources', 'Switches', 'Sensors', 'Loads', 'Motors', 'Others'].includes(S.g) && same.length) return { def: same[same.length - 1], list: same };
     let n = 1; while (used.has(S.pre + n)) n++;

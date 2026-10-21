@@ -2457,6 +2457,45 @@ function check(name, cond, info = '') {
     return ['plci0', 'plcq0'].every(k => ks.includes(k)) && !(p.keep && p.keep.rungs && p.keep.rungs.length); }));
   await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
 
+
+  console.log('Review fixes: device variants in the current paths and power circuit, PLC inputs on 230 V, contacts drawn twice, the list keyboard, Tagalog');
+  check('review: in the power circuit a 3-pole symbol on a 1-pole MPCB or overload relay, and the contactor main poles on a N.C.-pole contactor, are reported and not wired', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'Variants' }); if (prev) Store.remove(prev); const C = App.project.circuit;
+    const mk = (t, l) => { const c = Circuit.create(t, 0, 0, C); c.props.label = l; C.comps.push(c); return c; }; mk('supply3', 'Q0'); mk('mpcb1', 'QMZ'); mk('contactor_nc', 'KMZ'); mk('olr1', 'FZ');
+    App.project.schematic.power = { src: 'Q0', main: [], feeders: [{ elems: [{ k: 'qm3', tag: 'QMZ' }, { k: 'km3', tag: 'KMZ' }, { k: 'ol3', tag: 'FZ' }, { k: 'm3', tag: 'MZ' }] }] }; Schematic.sync();
+    const m = [...Schematic.perrs.values()].join(' | '); return /QMZ .*no terminal/.test(m) && /KMZ is a Contactor N\.C\. Poles/.test(m) && /FZ .*no terminal/.test(m) && !C.wires.some(w => w.sch && /^(.*):/.test(w.a) && [w.a, w.b].some(k => k.startsWith(C.comps.find(c => c.props.label === 'KMZ').id + ':')));
+  }));
+  check('review: a PLC input in a 230 V current path is reported and not wired, so the input is not destroyed', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'PLC 230', circuit: { seq: 3, comps: [{ id: 'c1', type: 'supply1', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }, { id: 'c2', type: 'plc', x: 0, y: 200, props: { label: 'PLC' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);
+    App.project.schematic.rungs = [{ elems: [{ k: 'sel', tag: 'S7' }, { k: 'plci5', tag: 'PLC' }], comment: '' }]; Schematic.sync();
+    const plc = App.project.circuit.comps.find(c => c.type === 'plc');
+    return [...Schematic.errs.values()].some(x => /24 V DC/.test(x)) && !App.project.circuit.wires.some(w => w.sch && [w.a, w.b].includes(plc.id + ':I5'));
+  }));
+  check('review: a N.C.-pole symbol on a normal contactor is reported (it would be drawn N.C. but switch N.O.)', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'NC on NO', circuit: { seq: 2, comps: [{ id: 'c1', type: 'contactor', x: 0, y: 0, props: { label: 'KMX' }, state: {} }], wires: [] }, schematic: { free: { seq: 3, items: [{ id: 'd1', k: 'kmn2', tag: 'KMX', x: 0, y: 0, r: 0 }], wires: [] } } }); if (prev) Store.remove(prev);
+    const m = FreeDraw.check().get(App.project.schematic.free.items[0]); return !!m && /not a Contactor N\.C\. Poles/.test(m);
+  }));
+  check('review: the overload changeover sets the relay the drawing makes even when its poles are drawn first', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'OL first', circuit: { seq: 2, comps: [{ id: 'c1', type: 'supply3', x: 0, y: 0, props: { label: 'Q1' }, state: { on: true } }], wires: [] },
+      schematic: { free: { seq: 3, items: [{ id: 'd1', k: 'ol3', tag: 'FZ', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'olco', tag: 'FZ', x: 100, y: 0, r: 0 }], wires: [] } } }); if (prev) Store.remove(prev);
+    const f = App.project.circuit.comps.find(c => c.props.label === 'FZ'); return !!f && f.props.aux === '95-96-98 changeover' && FreeDraw.check().size === 0;
+  }));
+  check('review: a contact drawn twice (13-14 alone and inside an N.C.+N.O. of the same contactor, 55-56 inside the block changeover) is reported', await page.evaluate(() => {
+    const prev = App.currentId; App.openNew({ name: 'Twice', schematic: { free: { seq: 6, items: [{ id: 'd1', k: 'kmnonc', tag: 'KM1', x: 0, y: 0, r: 0 }, { id: 'd2', k: 'kmno', tag: 'KM1', x: 100, y: 0, r: 0 },
+      { id: 'd3', k: 'kbonco', tag: 'KM2', x: 200, y: 0, r: 0 }, { id: 'd4', k: 'kbonnc', tag: 'KM2', x: 300, y: 0, r: 0 }, { id: 'd5', k: 'ka1no', tag: 'KA1', x: 400, y: 0, r: 0 }, { id: 'd6', k: 'ka1nc', tag: 'KA1', x: 500, y: 0, r: 0 }], wires: [] } } }); if (prev) Store.remove(prev);
+    const e = FreeDraw.check(), F = App.project.schematic.free.items, has = id => e.has(F.find(i => i.id === id));
+    return has('d2') && has('d4') && !has('d1') && !has('d3') && !has('d5') && !has('d6');   // N.O. and N.C. of one relay changeover share 11: allowed
+  }));
+  await page.evaluate(() => { localStorage.setItem('plc-trainer.schStyle', 'iec'); App.showView('schematic'); document.querySelector('#view-schematic [data-sstyle="iec"]').click(); });
+  await wait(200);
+  check('review: arrow keys on the "More symbols…" list only move the choice; Enter adds it', await (async () => {
+    await page.focus('#view-schematic [data-smore]'); await page.keyboard.press('ArrowDown'); await wait(200);
+    const none = await page.evaluate(() => !document.querySelector('#modal-root .modal'));
+    await page.keyboard.press('Enter'); await wait(200); const form = await page.evaluate(() => !!document.querySelector('#modal-root .modal'));
+    await page.evaluate(() => { const x = document.querySelector('#modal-root [data-x]'); if (x) x.click(); }); return none && form; })());
+  check('review: in Tagalog the diagram toolbar words are translated (Edit, Undo, Play)', await page.evaluate(async () => { I18N.set('tl'); await new Promise(r => setTimeout(r, 200));
+    const t = document.querySelector('#view-schematic .sch-toolbar').textContent; I18N.set('en'); return t.includes('I-edit') && t.includes('Ibalik'); }));
+  await page.evaluate(() => { const prev = App.currentId; if (App.openNew(Examples.EX.plcmotor.build()) && prev) Store.remove(prev); App.showView('ladder'); });
   console.log('Verification gaps: RCBO 4P earth leakage, drawn changeover states of the timers and latch, mouse drag');
   check('gaps: a load fed from an RCBO 4P to PE (earth leakage) trips it; the same load to N does not', await page.evaluate(new Function(solveKit + `
     const t = ret => { circ.comps.length = 0; circ.wires.length = 0; const q = add('supply3'), r = add('rcbo4', {}, { on: true }), h = add('lamp', { coil: '230VAC' });

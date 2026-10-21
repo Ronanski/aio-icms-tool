@@ -314,7 +314,7 @@
   });
   /* contactor with normally closed main poles: 1-2 … 7-8 are closed at rest and open when the coil pulls in */
   def('contactor_nc', {
-    ...DEFS.contactor4, name: 'Contactor N.C. Poles (4-Pole)', family: 'contactor', famNo: ['km'],
+    ...DEFS.contactor4, name: 'Contactor N.C. Poles (4-Pole)', family: 'contactor', famNo: ['km'], strict: true,
     info: 'Coil A1-A2. Four N.C. main poles 1-2, 3-4, 5-6, 7-8: closed at rest, open while the coil is energized. Aux 13-14 N.O., 21-22 N.C.',
     terms: [{ id: 'A1', x: 10, y: 0 }, { id: '1', x: 28, y: 0 }, { id: '3', x: 46, y: 0 }, { id: '5', x: 64, y: 0 }, { id: '7', x: 82, y: 0 }, { id: '13', x: 98, y: 0 }, { id: '21', x: 112, y: 0 },
       { id: 'A2', x: 10, y: 140 }, { id: '2', x: 28, y: 140 }, { id: '4', x: 46, y: 140 }, { id: '6', x: 64, y: 140 }, { id: '8', x: 82, y: 140 }, { id: '14', x: 98, y: 140 }, { id: '22', x: 112, y: 140 }],
@@ -2383,5 +2383,19 @@
   /* a symbol made for one device type fits a device of the same family: a 1-pole overload relay is an overload relay
      (its contacts are the same), and an older drawing with the 3-pole device under a 1-pole symbol still works */
   const sameKind = (dev, sym) => dev === sym || (!!DEFS[dev] && DEFS[dev].family === sym) || (!!DEFS[sym] && DEFS[sym].family === dev);
-  window.Circuit = { sameKind, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
+  function fitErr(dev, sym, ids, look) {
+    const D = DEFS[dev.type], tag = dev.props.label;
+    if (!D) return null;
+    if (dev.type !== sym && DEFS[sym] && DEFS[sym].strict) return `${tag} is a ${D.name}, not a ${DEFS[sym].name}`;
+    if ((D.famNo || []).includes(look)) return `${tag} is a ${D.name}: draw its own symbols (this one does not fit it)`;
+    const miss = ids.find(t => !D.terms.some(x => x.id === t));
+    if (miss) return `${tag} (${D.name}) has no terminal ${miss}`;
+    if (/^olr/.test(dev.type)) {
+      const co = dev.props.aux === '95-96-98 changeover';
+      if (look === 'olco' && !co) return `${tag}: set its Aux contacts to "95-96-98 changeover" (Properties) to use this symbol`;
+      if (co && ids.includes('97')) return `${tag}: its aux is a 95-96-98 changeover, it has no 97-98 contact`;
+    }
+    return null;
+  }
+  window.Circuit = { sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook };
 })();

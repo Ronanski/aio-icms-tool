@@ -173,8 +173,9 @@
       if (e.k === 'br') { e.legs.forEach(walk); return; }
       const K = SK[e.k];
       if (K.plc && !devOf(e.tag)) { errs.set(e, `${e.tag}: there is no PLC with this tag in the Wiring — add it there first (the diagram does not add controllers)`); return; }
-      const m = typeErr(e.tag, K.type);
+      const d = devOf(e.tag), m = typeErr(e.tag, K.type) || (d && Circuit.fitErr(d, K.type, [K.a, K.b, ...(K.a2 ? [K.a2, K.b2] : [])], K.sym));
       if (m) { errs.set(e, m); return; }
+      if (K.io != null && controlVoltage() !== '24VDC') { errs.set(e, `${e.tag} I${K.io}: PLC inputs are 24 V DC — use the +24 V / 0 V rails (a PSU) for this current path`); return; }
       const u = use.get(e.tag) || { list: [] }; u.list.push(e); use.set(e.tag, u);
     });
     sch().rungs.forEach(r => walk(r.elems));
@@ -281,7 +282,7 @@
   function checkPower(typeErr, take) {
     const errs = new Map(), used = new Map(), P = pw();
     const one = (e, last) => {
-      const K = PK[e.k], m = typeErr(e.tag, K.type);
+      const K = PK[e.k], dv = devOf(e.tag), m = typeErr(e.tag, K.type) || (dv && Circuit.fitErr(dv, K.type, [...K.ins, ...(K.outs || [])], K.type === 'contactor' ? 'km' : ''));
       if (m) { errs.set(e, m); return; }
       if (used.has(e.tag)) { errs.set(e, `${e.tag}: its main contacts are already used in the power circuit`); return; }
       used.set(e.tag, e);
@@ -766,7 +767,15 @@
     setStyleUi();
     UI.drawer(el.querySelector('[data-sact="side"]'), side);
     // a power symbol in the list does what its toolbar button does
-    const mo = el.querySelector('[data-smore]'); if (mo) mo.onchange = () => { const k = mo.value; mo.value = ''; if (!k) return; if (k.startsWith('p:')) { const b = el.querySelector(k === 'p:feeder' ? '[data-sact="feeder"]' : `[data-pkind="${k.slice(2)}"]`); if (b) b.click(); } else SC.insert(k); };
+    const mo = el.querySelector('[data-smore]');
+    if (mo) {
+      let keyed = false;
+      const pick = () => { const k = mo.value; mo.value = ''; keyed = false; if (!k) return; if (k.startsWith('p:')) { const b = el.querySelector(k === 'p:feeder' ? '[data-sact="feeder"]' : `[data-pkind="${k.slice(2)}"]`); if (b) b.click(); } else SC.insert(k); };
+      mo.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); pick(); } else if (/^Arrow|^Page|^Home|^End/.test(ev.key)) keyed = true; });
+      mo.addEventListener('pointerdown', () => { keyed = false; });
+      mo.onchange = () => { if (!keyed) pick(); };
+      mo.addEventListener('blur', () => { keyed = false; });
+    }
     el.querySelector('.sch-toolbar').addEventListener('click', ev => {
       const b = ev.target.closest('button'); if (!b) return;
       if (b.dataset.smode) {
