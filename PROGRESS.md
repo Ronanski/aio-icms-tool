@@ -9,8 +9,9 @@
 - [x] One short drawing toolbar (Library, Play, Rotate, Delete, Undo, Redo, ⋯)
 - [x] 100 exercises (25 easy, 40 medium, 35 hard) with checks, hints and solutions, across all modules
 - [x] Practice board 16; Learn tabs; Examples grouped by category
-- [ ] PLC target per project: SLC-style (compact, rack, file-based) or 1756-style (chassis, tag-based)
-- [ ] Study Studio 5000 / RSLogix in the owner's VM (computer use session)
+- [x] PLC target per project: file-based (compact, rack, data files) or 1756-style (chassis, tag-based) — `feature/plc-target`: library, module look, address style, Organizer / Project Tree, ladder file names, I/O Configuration
+- [ ] Study Studio 5000 / RSLogix in the owner's VM (computer use session) — `docs/ROCKWELL_STUDY.md` written; only the Studio 5000 start page was seen in the VM, because VMware did not take computer-use input (likely run as administrator). Redo each step in the VM and replace the (kaalaman) marks
+- [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
 
 ## Engineer use (2026-10-21, `fix/wiring-engineer`)
 - [x] Contactor aux block 2NO 2NC; a second N.O./N.C. of a contactor takes 53-54 / 61-62 / 71-72 / 83-84
