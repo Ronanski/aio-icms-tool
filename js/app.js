@@ -392,12 +392,25 @@
   const closeModal = el => { const w = el.closest('.modal-wrap'), x = w && w.querySelector('[data-x]'); if (x) x.click(); else if (w) w.remove(); };
   /* the project tree in the names of the PLC target: Tasks → Programs → Routines (tag-based), or program files LAD 2–9
      and data files O0–N7 (file-based). Both run the same program files. */
-  App.organizer = function () {
+  // docked on the left of the Ladder: App.organizer() opens it, App.organizer(true) (the toolbar button) opens or closes it
+  const orgBox = () => document.querySelector('#view-ladder [data-lorg]');
+  const saveOrg = on => { try { localStorage.setItem('plc-trainer.orgOpen', on ? '1' : ''); } catch (e) { /* ignore */ } };
+  App.organizer = function (toggle) {
+    const box = orgBox(); if (!box) return;
+    if (toggle && !box.hidden) { box.hidden = true; saveOrg(false); return; }
+    box.hidden = false; saveOrg(true); App.renderOrg();
+  };
+  App.renderOrg = function () {
+    const box = orgBox(); if (!box || box.hidden || !App.project) return;
     const lad = App.project.ladder, esc = UI.esc, r = Circuit.rack(App.project.circuit, App.project.io), tag = App.project.target === 'tag';
     const PER = [0, 10, 50, 100, 250, 500, 1000];
     const per = lad.files.filter(f => f.period);
     const ctl = `🖥 <b>Controller</b> “${esc(App.project.name)}” · ${r.cpu ? (tag ? '1756-style chassis' : 'modular rack') : r.ctl ? 'compact PLC' : 'no PLC in the Wiring'} · ${App.plc.mode}`;
-    const slots = r.cpu ? Circuit.SLOTS.filter(s => r.conf[s]).map(s => `<li>▭ [${s}] ${esc(Circuit.DEFS[r.conf[s]].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small></li>`).join('') : '';
+    // every configured or installed module, with a fault mark where the module does not match the configuration
+    const flt = s => { const b = r.bad.find(x => x.slot === s); return b ? ` <span class="flt" title="${esc(b.msg)}">⚠ ${esc(b.msg.replace(/^(slot \d+|chassis): /, ''))}</span>` : ''; };
+    const slots = r.cpu ? (r.chassis ? `<li>▭ ${r.chassis.props.slots}-slot chassis${flt('ch')}</li>` : '') + Circuit.SLOTS.filter(s => r.conf[s] || r.slots[s]).map(s => { const t = r.conf[s] || App.project.circuit.comps.find(c => c.id === r.slots[s]).type; return `<li>▭ [${s}] ${esc(Circuit.DEFS[t].name)} <small>${tag ? 'Local:' + s : 'slot ' + s}</small>${flt(s)}</li>`; }).join('') : '';
+    const me = r.ctl && r.ctl.props.label;
+    const path = r.cpu ? `Backplane, slot 0 · ${esc(me)}` : r.ctl ? `Compact PLC · ${esc(me)}` : 'no controller in the Wiring';
     const DATA = [['O0', 'OUTPUT', 'O'], ['I1', 'INPUT', 'I'], ['S2', 'STATUS', ''], ['B3', 'BINARY', 'B3'], ['T4', 'TIMER', 'T4'], ['C5', 'COUNTER', 'C5'], ['R6', 'CONTROL', 'R6'], ['N7', 'INTEGER', 'N7']];
     const tree = tag ? `<ul class="org">
       <li>${ctl}
@@ -424,17 +437,20 @@
           <li>📁 <b>Data Files</b><ul>${DATA.map(([n, d, f]) => `<li>▦ ${f ? `<a href="#" data-org="d${f}">${n} – ${d}</a>` : `${n} – ${d}`}</li>`).join('')}</ul></li>
         </ul></li></ul>`;
     const body = tree + (lad.files.length ? `<h5>${tag ? 'Routines' : 'Program files'}</h5><table class="io-cfg">${lad.files.map(f => `<tr><td>${tag ? '' : 'LAD ' + f.n + ' '}${esc(f.name)}</td><td><select data-per="${f.n}">${PER.map(p => `<option value="${p}" ${p === (f.period || 0) ? 'selected' : ''}>${p ? `${tag ? 'Periodic task' : 'Timed'}, every ${p} ms` : 'Called by JSR'}</option>`).join('')}</select></td></tr>`).join('')}</table>` : `<p class="help">Add a ${tag ? 'routine' : 'subroutine file'} with ＋ ${tag ? 'Routine' : 'File'} in the Ladder: it runs on a JSR, or on its own every few ms.</p>`);
-    UI.modal({
-      title: tag ? 'Controller Organizer' : 'Project Tree', body, wide: true,
-      onOpen: el => {
+    box.innerHTML = `<div class="side-head"><h4>${tag ? 'Controller Organizer' : 'Project'}</h4><button class="icon-btn" data-orgx title="Close the Organizer" aria-label="Close the Organizer">×</button></div>
+      <div class="org-path" title="The controller found in the Wiring; the project goes online with it by itself">Path: <b>${path}</b></div><div class="org-body">${body}</div>`;
+    box.querySelector('[data-orgx]').onclick = () => { box.hidden = true; saveOrg(false); };
+    {
+      const el = box;
+      {
         el.querySelectorAll('[data-org]').forEach(a => { a.onclick = ev => {
-          ev.preventDefault(); closeModal(el);
+          ev.preventDefault();
           const k = a.dataset.org;
           if (k === 'tags') App.tagsDialog(); else if (k === 'io') App.ioConfig(); else if (k[0] === 'd') { App.showView('ladder'); Ladder.DataTable.show(k.slice(1)); } else { App.showView('ladder'); Ladder.openFile(Number(k.slice(1))); }
         }; });
-        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); closeModal(el); App.organizer(); }; });
-      },
-    });
+        el.querySelectorAll('[data-per]').forEach(s => { s.onchange = () => { const f = lad.files.find(x => x.n === Number(s.dataset.per)); f.period = Number(s.value); App.log('system', `LAD ${f.n} ${f.name}: ${f.period ? `periodic task every ${f.period} ms` : 'called by JSR'}`); App.programChanged(); App.renderOrg(); }; });
+      }
+    }
   };
   /* ---------- v2.0 part C: simulated network (who active, remote PLCs, produced / consumed) ---------- */
   App.network = function () {
@@ -491,8 +507,11 @@
     const inst = s => { const c = r.slots[s] && circ.comps.find(x => x.id === r.slots[s]); return c ? c : null; };
     const ad = s => { const t = r.conf[s]; if (!t) return ''; const f = Circuit.DEFS[t].analog || (t.startsWith('mdi') ? 'I' : 'O'); return tag ? `Local:${s}:${f}.Data` : `${f}:${s}`; };
     const row = s => { const c = inst(s); return `<tr><th>${s}</th><td><select data-slot="${s}" ${run ? 'disabled' : ''}>${opts(r.conf[s] || '')}</select></td><td><code>${ad(s)}</code></td><td data-have="${c ? c.type : ''}">${c ? `${esc(c.props.label)} — ${esc(Circuit.DEFS[c.type].name)}` : '—'}</td><td class="io-st" data-st="${s}"></td></tr>`; };
+    // the chassis size the controller expects: a chassis of another size is a fault (as with a module in the wrong slot)
+    const chHave = r.chassis ? r.chassis.props.slots : '';
+    const chRow = !chHave && !App.project.io.chassis ? '' : `<tr><th>⧉</th><td><select data-slot="ch" ${run ? 'disabled' : ''}><option value="">— Not checked —</option>${['4', '7', '10', '13'].map(n => `<option value="${n}" ${App.project.io.chassis === n ? 'selected' : ''}>${n}-slot chassis</option>`).join('')}</select></td><td></td><td data-have="${chHave}">${chHave ? `${esc(r.chassis.props.label)} — ${chHave}-slot chassis` : '—'}</td><td class="io-st" data-st="ch"></td></tr>`;
     const body = targetPick() + `${tag ? '<h5>I/O Configuration · 1756-style backplane · Local</h5>' : '<h5>I/O Configuration · rack</h5>'}<p class="help">The CPU runs only when every slot holds the card configured here. ${run ? '<b>Go to PROG to change the configuration.</b>' : 'Use <b>Read I/O Config</b> to copy the installed cards.'}</p>
-      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>${tag ? 'Tags' : 'Data file'}</th><th>Installed in the ${tag ? 'chassis' : 'rack'}</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td></td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${Circuit.SLOTS.map(row).join('')}</table>`;
+      <table class="io-cfg"><tr><th>Slot</th><th>Configured module</th><th>${tag ? 'Tags' : 'Data file'}</th><th>Installed in the ${tag ? 'chassis' : 'rack'}</th><th></th></tr><tr><th>0</th><td>PLC CPU Module</td><td></td><td>${esc(circ.comps.find(c => c.id === r.cpu).props.label)}</td><td class="io-st ok">✓</td></tr>${chRow}${Circuit.SLOTS.map(row).join('')}</table>`;
     const mark = el => el.querySelectorAll('[data-slot]').forEach(sel => {
       const have = sel.closest('tr').querySelector('[data-have]').dataset.have, st = el.querySelector(`[data-st="${sel.dataset.slot}"]`);
       st.textContent = !sel.value && !have ? '' : sel.value === have ? '✓' : '✗ mismatch'; st.className = 'io-st ' + (sel.value === have ? 'ok' : 'bad');
@@ -505,10 +524,12 @@
         { label: run ? 'Close' : 'Cancel' },
         ...(run ? [] : [{ label: 'Apply', primary: true, onClick: el => {
           const slots = {};
-          el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.value) slots[sel.dataset.slot] = sel.value; });
-          App.project.io = Circuit.cleanIo({ slots });
+          let chassis;
+          el.querySelectorAll('[data-slot]').forEach(sel => { if (sel.dataset.slot === 'ch') chassis = sel.value || undefined; else if (sel.value) slots[sel.dataset.slot] = sel.value; });
+          App.project.io = Circuit.cleanIo({ slots, chassis });
           App.addrChanged();
-          App.log('system', 'I/O configuration changed: ' + (Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`).join(', ') || 'empty'));
+          App.log('system', 'I/O configuration changed: ' + ([...(chassis ? [`${chassis}-slot chassis`] : []), ...Object.entries(slots).map(([s, t]) => `slot ${s} ${Circuit.DEFS[t].name}`)].join(', ') || 'empty'));
+          App.renderOrg();
           Ladder.DataTable.render(); updateBar(true); App.dirty.wiring = true; App.save();
         } }]),
       ],

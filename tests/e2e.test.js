@@ -1449,7 +1449,7 @@ function check(name, cond, info = '') {
   check('the Controller Organizer shows MainTask, MainProgram, MainRoutine and the periodic task', await page.evaluate(() => { const t = document.querySelector('.org').textContent; return t.includes('MainTask') && t.includes('MainProgram') && t.includes('MainRoutine') && t.includes('PeriodicTask 3') && t.includes('every 100 ms'); }));
   await page.selectOption('[data-per="3"]', '0'); await wait(150);
   check('a routine can be switched from periodic to called by JSR', await page.evaluate(() => App.project.ladder.files[0].period === 0 && !App.plc.periodic[3]));
-  await page.evaluate(() => { document.querySelectorAll('.modal-wrap').forEach(m => m.remove()); App.openNew(Examples.EX.plcmotor.build()); });
+  await page.evaluate(() => { document.querySelector('#view-ladder [data-lorg]').hidden = true; document.querySelectorAll('.modal-wrap').forEach(m => m.remove()); App.openNew(Examples.EX.plcmotor.build()); });
 
   console.log('v2.0 part B: Go Online, Download / Upload, Compare, online edits');
   await page.evaluate(() => { App.openNew({ name: 'Comms', ladder: { rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); }); await wait(150);
@@ -2695,7 +2695,7 @@ function check(name, cond, info = '') {
   await page.selectOption('.modal #f_plc', 'tag'); await page.click('.modal-wrap:last-child .btn.primary'); await wait(300);
   check('PLC target: New project asks for the target; a tag-based blank project uses tag-based addresses', await page.evaluate(() => App.project.target === 'tag' && App.project.addr === 'tag'));
   check('PLC target: no brand names in the target picker, the Organizer, the project tree or the New project form', brandTag && brandFile && brandNew);
-  await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay0); });
+  await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay0); document.querySelector('#view-ladder [data-lorg]').hidden = true; });
   console.log('PLC chassis: modules snap into slots, the slot is the position');
   {
     await page.evaluate(() => {
@@ -2738,6 +2738,34 @@ function check(name, cond, info = '') {
     check('chassis: drawn in the look of the PLC target (1756-style here)', await page.evaluate(() => !!document.querySelector(`#view-wiring [data-cid="${App.project.circuit.comps.find(c => c.type === 'chassis').id}"] .look-1756`)));
     check('chassis: a project without a chassis keeps its modules where they are (old projects unchanged)', await page.evaluate(() => { const c = { id: 'z', type: 'mdi16', x: 5000, y: 5000, props: { slot: '3' } }; return Circuit.chassisOf(App.project.circuit, c) === null && Circuit.seat(App.project.circuit, c, 'pos') === null && c.x === 5000; }));
     await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay1); });
+  }
+  console.log('PLC module: Organizer on the left, chassis size, module faults');
+  {
+    await page.evaluate(() => {
+      const prev = App.currentId;
+      App.openNew({ name: 'Organizer', target: 'tag', io: { slots: { 1: 'mdi16', 2: 'mdo16' }, chassis: '7' }, ladder: { rungs: [{ text: 'XIC I:1/0 OTE O:2/0' }], files: [{ n: 3, name: 'FILL', rungs: [] }] },
+        circuit: { seq: 6, comps: [{ id: 'c1', type: 'chassis', x: 0, y: 0, props: { label: 'RACK1', slots: '10' }, state: {} }, { id: 'c2', type: 'mpsu', x: 10, y: 52, props: { label: 'PS1' }, state: {} },
+          { id: 'c3', type: 'mcpu', x: 102, y: 52, props: { label: 'CPU1' }, state: {} }, { id: 'c4', type: 'mdi16', x: 176, y: 52, props: { label: 'DI1', slot: '1' }, state: {} }, { id: 'c5', type: 'mdo16t', x: 250, y: 52, props: { label: 'DO1', slot: '2' }, state: {} }], wires: [] } });
+      if (prev) Store.remove(prev);
+      window._lay2 = App.layout; App.setLayout('single'); App.showView('ladder');
+      document.querySelector('#view-ladder [data-lorg]').hidden = true;
+    });
+    await wait(200);
+    await page.click('#view-ladder [data-act="org"]'); await wait(200);
+    const org = await page.evaluate(() => { const b = document.querySelector('#view-ladder [data-lorg]'); return { open: !b.hidden, modal: !!document.querySelector('.modal-wrap'), text: b.textContent }; });
+    check('PLC module: the Organizer opens docked on the left of the ladder (no dialog), with the path to the controller found in the Wiring', org.open && !org.modal && /Path: Backplane, slot 0 · CPU1/.test(org.text) && org.text.includes('MainRoutine'), org.text.slice(0, 200));
+    check('PLC module: the I/O tree shows the chassis and each module, and marks a module that does not match (⚠ slot 2) and the chassis size (⚠ 7 configured, 10 installed)', /⚠[^⚠]*7 slots configured, 10 installed/.test(org.text) && /\[2\][^\[]*⚠/.test(org.text) && !/\[1\][^\[]*⚠/.test(org.text.split('[2]')[0]), org.text);
+    check('PLC module: a chassis of another size is a fault — RUN is refused', await page.evaluate(() => { App.setMode('RUN'); const m = App.plc.mode; App.setMode('PROG'); return m === 'PROG' && Circuit.rack(App.project.circuit, App.project.io).bad.some(b => b.slot === 'ch'); }));
+    await page.click('#view-ladder [data-lorg] [data-org="f3"]'); await wait(200);
+    check('PLC module: a routine clicked in the Organizer opens in the ladder and the Organizer stays open', await page.evaluate(() => Ladder.file() === 3 && !document.querySelector('#view-ladder [data-lorg]').hidden));
+    await page.evaluate(() => App.ioConfig()); await wait(150);
+    check('PLC module: the I/O Configuration has a chassis row (configured 7, installed 10, mismatch)', await page.evaluate(() => { const s = document.querySelector('.modal [data-slot="ch"]'); return !!s && s.value === '7' && /mismatch/.test(document.querySelector('.modal [data-st="ch"]').textContent); }));
+    await page.click('.modal-foot button:has-text("Read I/O Config")'); await page.click('.modal-foot button:has-text("Apply")'); await wait(200);
+    check('PLC module: Read I/O Config + Apply takes the installed chassis and modules; the faults clear in the tree', await page.evaluate(() => { const t = document.querySelector('#view-ladder [data-lorg]').textContent; return App.project.io.chassis === '10' && App.project.io.slots['2'] === 'mdo16t' && Circuit.rack(App.project.circuit, App.project.io).bad.length === 0 && !t.includes('⚠'); }));
+    check('PLC module: the chassis size is saved with the I/O configuration; a project without one has no chassis check', await page.evaluate(() => App.serialize().io.chassis === '10' && !('chassis' in Circuit.cleanIo({ slots: {} })) && Circuit.cleanIo({ slots: {}, chassis: '9' }).chassis === undefined));
+    await page.click('#view-ladder [data-act="org"]'); await wait(150);
+    check('PLC module: the Organizer button closes it again', await page.evaluate(() => document.querySelector('#view-ladder [data-lorg]').hidden));
+    await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay2); });
   }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {

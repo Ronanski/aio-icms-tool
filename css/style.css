@@ -185,7 +185,17 @@ tr.k-operator .evk { background: var(--accent-soft); color: var(--accent-text); 
 .ins-btn .mono { font-size: 11px; color: var(--lad-text); font-weight: 600; letter-spacing: -.04em; }
 .ins-btn .boxico { font-size: 10px; font-weight: 700; font-family: var(--mono); border: 1.5px solid var(--lad-wire); padding: 0 4px; border-radius: 3px; }
 .ins-btn small { font-size: 9.5px; color: var(--muted); }
-.lad-main { flex: 1; min-height: 0; display: flex; }
+.lad-main { flex: 1; min-height: 0; display: flex; position: relative; }
+/* Organizer docked on the left of the ladder, as in the programming software */
+.lad-org { width: 250px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--surface); overflow: auto; font-size: 12.5px; }
+.lad-org[hidden] { display: none; }
+.lad-org .org { font-size: 12.5px; line-height: 1.75; padding: 0 10px 0 6px; }
+.lad-org .org ul { padding-left: 14px; }
+.lad-org .io-cfg { margin: 0 10px; font-size: 12px; }
+.lad-org h5 { margin: 10px 12px 4px; }
+.org-path { margin: 0 12px 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 11.5px; color: var(--muted); background: var(--surface-2, var(--surface)); }
+.org-path b { color: var(--text); font-weight: 600; }
+.org .flt { color: var(--warn); font-size: 11.5px; }
 .lad-rungs { flex: 1; min-width: 0; overflow: auto; background: var(--lad-bg); padding: 10px 0 60px; outline: none; position: relative; }
 .lad-rungs.dragging, .lad-rungs.dragging * { cursor: grabbing !important; }
 .lad-rungs .el[data-uid] { cursor: grab; }
@@ -553,6 +563,7 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
   .ws-palette { width: 190px; }
 }
 @media (max-width: 760px) {
+  .lad-org { position: absolute; left: 0; top: 0; bottom: 0; z-index: 20; box-shadow: var(--shadow); }
   .topbar { gap: 8px; padding: 6px max(12px, env(safe-area-inset-right, 0px)) 6px max(12px, env(safe-area-inset-left, 0px)); }
   .brand { min-width: 0; flex: 1; }
   .brand-title { font-size: 16px; white-space: nowrap; }

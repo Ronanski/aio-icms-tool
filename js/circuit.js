@@ -2474,7 +2474,9 @@
   function cleanIo(io) {
     const slots = {}, src = io && typeof io === 'object' && io.slots && typeof io.slots === 'object' ? io.slots : {};
     for (const s of SLOTS) if (typeof src[s] === 'string' && DEFS[src[s]] && DEFS[src[s]].slot) slots[s] = src[s];
-    return { slots };
+    // the chassis size the controller expects (only set once a chassis was configured)
+    const chassis = io && ['4', '7', '10', '13'].includes(io.chassis) ? io.chassis : undefined;
+    return chassis ? { slots, chassis } : { slots };
   }
   /* the controller and its rack: which CPU runs, which card owns each slot (the first one found),
      the I/O configuration (conf) and every slot where the installed card does not match it (bad) */
@@ -2488,7 +2490,10 @@
       if (have === want) continue;
       bad.push({ slot: s, want, have, msg: !want ? `slot ${s}: ${DEFS[have].name} installed but not configured` : !have ? `slot ${s}: ${DEFS[want].name} configured but missing` : `slot ${s}: ${DEFS[want].name} configured, ${DEFS[have].name} installed` });
     }
-    return { ctl, cpu, slots, conf, bad, pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
+    // a chassis of another size than the configured one is a fault, as on real hardware
+    const chassis = circ.comps.find(c => c.type === 'chassis') || null;
+    if (cpu && io && io.chassis && (!chassis || chassis.props.slots !== io.chassis)) bad.push({ slot: 'ch', want: io.chassis, have: chassis ? chassis.props.slots : '', msg: chassis ? `chassis: ${io.chassis} slots configured, ${chassis.props.slots} installed` : `chassis: ${io.chassis} slots configured, no chassis installed` });
+    return { ctl, cpu, slots, conf, bad, chassis, pw: circ.comps.some(c => c.type === 'mpsu' && c.state.pw) };
   }
   /* I/O words the data table shows: the compact PLC's I:0/O:0, or the configured rack slots */
   function ioMap(circ, io) {

@@ -685,6 +685,7 @@
       </div>
       <div class="lad-banner" data-lbanner hidden></div>
       <div class="lad-main">
+        <aside class="lad-org" data-lorg hidden></aside>
         <div class="lad-rungs" tabindex="0"></div>
         <aside class="lad-side"></aside>
       </div>`;
@@ -700,7 +701,7 @@
       ({
         rung: () => Ladder.addRung(false), branch: Ladder.branch, extl: () => Ladder.extend(-1), extr: () => Ladder.extend(1),
         ml: () => Ladder.move(-1), mr: () => Ladder.move(1), del: Ladder.del, undo: Ladder.undo, redo: Ladder.redo,
-        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(), tags: () => App.tagsDialog(),
+        ascii: () => Ladder.editAscii(SEL.r < 0 ? 0 : SEL.r), verify: () => Ladder.verify(false), iocfg: () => App.ioConfig(), newfile: Ladder.newFile, org: () => App.organizer(true), tags: () => App.tagsDialog(),
         network: () => App.network(), online: () => App.goOnline(), download: () => App.download(), upload: () => UI.confirm('Upload', 'Replace the ladder and the tags of the project with the program in the controller?', () => App.upload(), 'Upload'), compare: () => App.compare(),
         test: () => App.testEdits(), assemble: () => App.assembleEdits(), cancel: () => App.cancelEdits(),
         zin: () => setZoom(LZ * 1.15), zout: () => setZoom(LZ / 1.15), zreset: () => setZoom(1),
@@ -729,6 +730,8 @@
       else { SEL = { r: ri, id: null, leg: null }; Ladder.render(); rungMenu(ev.clientX, ev.clientY, ri); }
     });
     DataTable.init(sideEl);
+    // the Organizer stays open (or closed) as the user left it in this browser
+    try { if (localStorage.getItem('plc-trainer.orgOpen')) el.querySelector('[data-lorg]').hidden = false; } catch (e) { /* ignore */ }
     UI.drawer(el.querySelector('[data-act="data"]'), sideEl);
     UI.longPress(rungsEl);
     new ResizeObserver(() => { if (root.offsetParent) Ladder.render(); }).observe(rungsEl);
@@ -846,6 +849,7 @@
     if (as) as.value = App.project.addr || 'file';
     if (curFile !== 2 && !fileOf(curFile)) curFile = 2;
     Ladder.connUi();
+    if (App.renderOrg) App.renderOrg();
     const lf = root.querySelector('[data-lfile]');
     // file-based target: program files LAD 2 · MAIN, LAD 3…; tag-based: MainRoutine and routines by name
     const tag = App.project.target === 'tag';
