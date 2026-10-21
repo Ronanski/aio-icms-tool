@@ -520,13 +520,37 @@
       t.setAttribute('x', x); t.setAttribute('y', y + 2.6); t.textContent = txt;
     });
   }
+  /* wires without bends of their own are routed on a 5-unit grid around the devices: out of each terminal 15 straight,
+     never along a row of terminals or over a device, never on top of another wire (each wire is its own conductor) */
+  let gridSig = '', gridPaths = new Map();
+  function gridRoutes() {
+    const C = circ(), sig = JSON.stringify([C.comps.map(c => [c.id, c.type, c.x, c.y, c.props.size]), C.wires.map(w => [w.id, w.a, w.b, w.pts])]);
+    if (sig === gridSig) return gridPaths;
+    const G = 5, blocked = new Set(), front = new Set();
+    for (const c of C.comps) {
+      const D = DEFS[c.type]; if (D.rail || D.layer) continue;
+      const s = c.props.size || 1, dm = Circuit.dims(c);
+      if (!D.junction) for (let gx = Math.floor(c.x / G) - 1; gx <= Math.ceil((c.x + dm.w * s) / G) + 1; gx++) for (let gy = Math.floor(c.y / G) - 1; gy <= Math.ceil((c.y + dm.h * s) / G) + 1; gy++) blocked.add(gx + ',' + gy);
+      for (const t of D.terms) { const p = tpos(c.id + ':' + t.id); if (!p) continue; blocked.add(Math.round(p.x / G) + ',' + Math.round(p.y / G)); for (let k = 1; k <= 3; k++) front.add(Math.round(p.x / G) + ',' + Math.round(p.y / G + p.dir * k)); }
+    }
+    const wires = [];
+    for (const w of C.wires) {
+      const a = tpos(w.a), b = tpos(w.b); if (!a || !b) continue;
+      if (w.pts && w.pts.length) { wires.push({ id: w.id, net: w.id, fixed: route(a, w.pts, b).map(([x, y]) => ({ x, y })) }); continue; }
+      wires.push({ id: w.id, net: w.id, a, b, da: [0, a.dir < 0 ? -1 : 1], db: [0, b.dir < 0 ? -1 : 1] });
+    }
+    const r = GridRoute.solve({ G, blocked, front, wires, stub: 3 });
+    gridPaths = new Map([...r.paths].filter(([id]) => { const w = C.wires.find(x => x.id === id); return w && !(w.pts && w.pts.length); }).map(([id, P]) => [id, P.map(p => [p.x, p.y])]));
+    gridSig = sig;
+    return gridPaths;
+  }
   function renderWires() {
     boxes = null; lanes = []; laneY.clear();
-    const h = [];
+    const h = [], gp = gridRoutes();
     circ().wires.forEach(w => {
       const a = tpos(w.a), b = tpos(w.b);
       if (!a || !b) return;
-      const d = pathD(route(a, w.pts || [], b, w.id));
+      const d = pathD(gp.get(w.id) || route(a, w.pts || [], b, w.id));
       const wc = esc(w.color || '#1d1d1d');
       // earth wires are green/yellow
       // .wo is a thin outline under the wire so black wires show on dark backgrounds (and white ones on light)
@@ -562,7 +586,7 @@
 
   /* ---------- wire geometry: nearest point, split at a junction, add a bend ---------- */
   function nearestOnWire(w, pt) {
-    const P = route(tpos(w.a), w.pts || [], tpos(w.b), w.id);
+    const P = (!(w.pts && w.pts.length) && gridPaths.get(w.id)) || route(tpos(w.a), w.pts || [], tpos(w.b), w.id);
     let best = null;
     for (let k = 0; k < P.length - 1; k++) {
       const [x1, y1] = P[k], [x2, y2] = P[k + 1], dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;

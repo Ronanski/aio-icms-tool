@@ -16,7 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 - **Automatic wire routes are clean**: a wire without corners of its own is routed on the grid with as few bends as possible. It never crosses a symbol, passes over a terminal it does not connect, or runs on top of another circuit's wire. Wires of one circuit share a line and branch with a dot.
-- **The Wiring built from the diagram is tidy**: its devices are placed side by side in panel rows (the gap used to grow with every device), and wires without bends each get their own lane instead of running on top of each other.
+- **The Wiring built from the diagram is tidy**: its devices are placed side by side in panel rows (the gap used to grow with every device). Wires without bends are routed around the devices by the same router as the diagram: they never run along a row of terminals (that looked connected to every terminal) or over a device, and never lie on top of another wire.
+- **Live voltage in the Wiring** is a thin row of dots flowing along the wire, instead of thick stripes over it.
 - **Supply points face the way current flows**: L1, L2, L3 and +24 V have their terminal below the circle (they feed the current path from the top); N, PE and 0 V have it above.
 - **Wires route like a drawn diagram**: a wire without bends of its own leaves each terminal straight, goes around symbols, and never passes over a terminal it does not connect (that looked like a connection) or runs on top of another wire.
 - **New symbols are placed in columns** (a current path goes down), with room for the terminal numbers.

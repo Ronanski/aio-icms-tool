@@ -363,7 +363,8 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .wire .wo { fill: none; stroke: var(--wire-halo); stroke-width: 4.8; stroke-linejoin: round; pointer-events: none; }
 .wire .wb { fill: none; stroke-width: 2.8; stroke-linejoin: round; }
 .wire .wl { fill: none; stroke-width: 2.2; stroke-linejoin: round; opacity: 0; pointer-events: none; }
-.wire .wl.live { opacity: .95; stroke-dasharray: 6 8; animation: flow .7s linear infinite; stroke-width: 3.6; }
+/* live voltage: thin dots flowing along the wire (the wire keeps its own colour) */
+.wire .wl.live { opacity: .9; stroke-dasharray: 2 12; stroke-linecap: round; animation: flow .7s linear infinite; stroke-width: 1.6; }
 .wire .wl.short { opacity: 1; stroke: #ff2d20; stroke-width: 4; animation: blink .5s steps(2) infinite; }
 .wl.p-L1 { stroke: #ff8a80; } .wl.p-L2 { stroke: #fff59d; } .wl.p-L3 { stroke: #9ec5ff; } .wl.p-N { stroke: #9e9e9e; }
 .wl.p-PE { stroke: #b6f08c; } .wl.p-DCp { stroke: #ff8c7a; } .wl.p-DCm { stroke: #8fb7ff; }

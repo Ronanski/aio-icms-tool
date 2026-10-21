@@ -637,8 +637,10 @@ function check(name, cond, info = '') {
   const wirePt = (a, b) => page.evaluate(([a, b]) => {
     const w = App.project.circuit.wires.find(x => (x.a.endsWith(a) && x.b.endsWith(b)) || (x.a.endsWith(b) && x.b.endsWith(a)));
     const path = document.querySelector(`.wire[data-wid="${w.id}"] .wb`);
-    const L = path.getTotalLength(), q = path.getPointAtLength(L * 0.6), m = path.getScreenCTM();
-    return { x: q.x * m.a + q.y * m.c + m.e, y: q.x * m.b + q.y * m.d + m.f, id: w.id };
+    // a point of this wire alone (not where another wire crosses it)
+    const L = path.getTotalLength(), m = path.getScreenCTM(), at = f => { const q = path.getPointAtLength(L * f); return { x: q.x * m.a + q.y * m.c + m.e, y: q.x * m.b + q.y * m.d + m.f, id: w.id }; };
+    for (const f of [0.6, 0.5, 0.4, 0.7, 0.3, 0.8, 0.2]) { const p = at(f), e = document.elementFromPoint(p.x, p.y), g = e && e.closest('.wire'); if (g && g.dataset.wid === w.id) return p; }
+    return at(0.6);
   }, [a, b]);
   const plcId = await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'plc').id);
   const s1Id = await page.evaluate(() => App.project.circuit.comps.find(c => c.props.label === 'S1').id);
@@ -652,7 +654,7 @@ function check(name, cond, info = '') {
     const c = App.project.circuit, j = c.comps.find(x => x.type === 'jct');
     return !!j && c.wires.filter(w => w.a === j.id + ':J' || w.b === j.id + ':J').length === 3 && !!document.querySelector('.comp.jct .jdot');
   }));
-  check('the junction really connects: +24 V reaches input I:0/9', await page.evaluate(() => (App.plc.physIn >> 9) & 1) === 1);
+  check('the junction really connects: +24 V reaches input I:0/9', await page.evaluate(() => (App.plc.physIn >> 9) & 1) === 1, JSON.stringify(await page.evaluate(() => { const c = App.project.circuit, j = c.comps.find(x => x.type === 'jct'); const lab = k => { const [id, t] = k.split(':'); const d = c.comps.find(x => x.id === id); return (d ? d.props.label || d.type : id) + ':' + t; }; return c.wires.filter(w => w.a.startsWith(j.id) || w.b.startsWith(j.id)).map(w => lab(w.a) + '>' + lab(w.b)); })));
   check('the split wires keep their route (no new bends at the junction)', await page.evaluate(() => {
     const c = App.project.circuit, j = c.comps.find(x => x.type === 'jct');
     return c.wires.filter(w => w.a === j.id + ':J' || w.b === j.id + ':J').every(w => w.pts.length <= 4);
@@ -2568,6 +2570,19 @@ function check(name, cond, info = '') {
     const shared = runs.some((r, i) => runs.some((q, j) => j > i && q.w !== r.w && Math.abs(q.y - r.y) < 1 && q.x1 < r.x2 - 2 && q.x2 > r.x1 + 2));
     App.showView('schematic');
     return compact && apart && !shared;
+  }));
+  check('engineer: in the Wiring no wire runs over a device or along its row of terminals (it would look connected to them)', await page.evaluate(async () => {
+    App.showView('wiring'); await new Promise(q => setTimeout(q, 300));
+    const C = App.project.circuit, D = Circuit.DEFS, bad = [];
+    const boxes = C.comps.filter(c => !D[c.type].rail && !D[c.type].junction && !D[c.type].layer).map(c => { const d = Circuit.dims(c); return { id: c.id, x1: c.x - 2, y1: c.y - 2, x2: c.x + d.w + 2, y2: c.y + d.h + 2 }; });
+    for (const g of document.querySelectorAll('#view-wiring .wire')) {
+      const w = C.wires.find(x => x.id === g.dataset.wid); if (w.pts && w.pts.length) continue;
+      const P = g.querySelector('.wb').getAttribute('d').replace('M', '').split(' L').map(t => t.trim().split(' ').map(Number));
+      // the first and last pieces leave / enter a terminal of the device itself
+      for (let i = 2; i < P.length - 1; i++) { const [x1, y1] = P[i - 1], [x2, y2] = P[i]; for (const b of boxes) if (Math.max(x1, x2) > b.x1 && Math.min(x1, x2) < b.x2 && Math.max(y1, y2) > b.y1 && Math.min(y1, y2) < b.y2) bad.push(w.id); }
+    }
+    App.showView('schematic');
+    return bad.length === 0;
   }));
   console.log('Finish: drag to wire, supply points, Ladder-style contacts');
   await page.evaluate(async () => {
