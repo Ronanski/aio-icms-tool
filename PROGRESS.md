@@ -18,6 +18,8 @@
 - [x] 1756-style chassis modules (narrow, terminal block at the sides), tag-based address style
 - [x] Simurelay-style wiring in free draw: simple connectors, alignment guides, potential colours; wire styles in the Wiring
 - [x] Seal-in built side by side in Simurelay and here (`docs/SIMURELAY_WALKTHROUGH.md`): + / 0 V points bring their own supply, seal-in branch over its own circuit's terminal with a dot, push button tag beside the head
+- [x] Free draw na kopya ng Simurelay (itsura, daloy, property bar, ⋯/Settings, Play/Stop rest state, manual protections, short stop, kulay ng conductor, Ctrl keys) — branch `feature/simurelay-clone`
+- [ ] Merge + Stable ng Simurelay clone (kailangan ng GO ng owner)
 - [ ] 32-point cards (need two words per slot in the data table)
 - [ ] Modules that touch: their side terminals face each other (leave a gap for now)
 - [x] Stable v2.2.2 (owner: "GO STABLE", 2026-10-21)

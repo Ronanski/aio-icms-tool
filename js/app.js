@@ -1276,6 +1276,10 @@
     });
   }
   App.saveAs = saveAs;
+  // for the free-draw ⋯ menu (Simurelay's New / Open / Settings → Dark Mode)
+  App.newProject = () => newProject();
+  App.openDialog = () => openDialog();
+  App.setTheme = t => setTheme(t);
 
   /* ---------- boot ---------- */
   function boot() {
