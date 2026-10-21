@@ -729,6 +729,60 @@
   };
   // the card's address range in the chosen address style (ctx.fmt), e.g. I:1/0 – I:1/7 or I0.0 – I0.7
   const rng = (ctx, f, s, n = 8) => { const fmt = (ctx && ctx.fmt) || (a => a); return `${fmt(`${f}:${s}/0`)} – ${fmt(`${f}:${s}/${n - 1}`)}`; };
+  /* PLC chassis: a backplane with a power-supply bay on the left and 4 / 7 / 10 / 13 module slots. A module dropped on it
+     snaps into a slot and takes that slot's number; moving the chassis moves its modules (it is a plate). The controller
+     sits in slot 0; the trainer's I/O files hold slots 1–7, so slots 8–12 of the larger chassis stay empty. */
+  const CH = { pad: 10, ps: 90, sw: 74, top: 52, bot: 18 };
+  const chassisDims = c => ({ w: CH.pad * 2 + CH.ps + (Number(c && c.props.slots) || 7) * CH.sw, h: CH.top + MH + CH.bot });
+  // where a module sits in the chassis: the power-supply bay, or slot n
+  const bayX = (ch, n) => ch.x + CH.pad + (n === 'ps' ? 0 : CH.ps + n * CH.sw + 2);
+  def('chassis', {
+    name: 'PLC Chassis (backplane)', cat: 'PLC Rack', view: 'cabinet', prefix: 'RACK', w: chassisDims(null).w, h: chassisDims(null).h, layer: 'back', plate: true,
+    props: { slots: '7' }, pdefs: [{ k: 'slots', n: 'Slots', opts: ['4', '7', '10', '13'] }],
+    info: 'The backplane of a modular PLC: the power supply goes in the bay on the left, the controller in slot 0 and the I/O modules in slots 1–7. Drop a module on it and it snaps into a slot; the slot it sits in is its slot number (I:3/0 or Local:3:I.Data.0 for slot 3). The controller sees every module in the chassis by itself — there is nothing to set up for the connection.',
+    terms: [],
+    dims: chassisDims,
+    draw(c, ctx) {
+      const n = Number(c && c.props.slots) || 7, { w, h } = chassisDims(c), tag = tagLook(ctx);
+      let s = R(0, 0, w, h, tag ? '#3b3d40' : '#6d7177', 4, '#1b1c1d', 1.5, `class="${tag ? 'look-1756' : 'look-slc'}"`) + R(CH.pad - 4, CH.top - 6, w - CH.pad * 2 + 8, MH + 12, tag ? '#232426' : '#4b4f54', 2, 'none');
+      s += T(CH.pad + 4, 14, `${tag ? '1756-STYLE CHASSIS' : 'RACK'} · ${n} SLOTS`, 'dt light xs', 'start') + T(CH.pad + CH.ps / 2, 32, 'POWER', 'dt light xs');
+      for (let i = 0; i < n; i++) {
+        const x = CH.pad + CH.ps + i * CH.sw, off = i > 7;
+        s += R(x + 2, CH.top, MW, MH, off ? '#2a2a2a' : tag ? '#2d2f31' : '#5b5f64', 1, '#111', 1, 'class="ch-slot"') + T(x + 2 + MW / 2, 32, 'SLOT ' + i, 'dt light xs');
+        if (off) s += T(x + 2 + MW / 2, CH.top + MH / 2, 'not used', 'dt light xs');
+      }
+      return s + R(CH.pad, CH.top, CH.ps - 6, MH, tag ? '#2d2f31' : '#5b5f64', 1, '#111');
+    },
+    status: c => `${c.props.slots} slots: power supply on the left, controller in slot 0, I/O in slots 1–7`,
+  });
+  // the chassis whose slot area holds the middle of module c (null when it is not in a chassis)
+  function chassisOf(circ, c) {
+    const d = DEFS[c.type]; if (!d || !(d.slot || c.type === 'mcpu' || c.type === 'mpsu')) return null;
+    const mx = c.x + d.w / 2, my = c.y + d.h / 2;
+    return circ.comps.find(k => k.type === 'chassis' && mx > k.x && mx < k.x + chassisDims(k).w && my > k.y && my < k.y + chassisDims(k).h) || null;
+  }
+  /* seat a module in its chassis. by 'pos' (it was dropped): the nearest slot gives its slot number; by 'slot' (its slot was
+     picked): it moves to that slot. Returns an error message when it cannot go there, else '' (or null: not in a chassis). */
+  function seat(circ, c, by) {
+    const ch = chassisOf(circ, c); if (!ch) return null;
+    const n = Number(ch.props.slots) || 7, d = DEFS[c.type], y = ch.y + CH.top;
+    if (c.type === 'mpsu') { c.x = bayX(ch, 'ps'); c.y = y; return ''; }
+    let i = c.type === 'mcpu' ? 0 : by === 'slot' ? Number(c.props.slot) : Math.round((c.x - bayX(ch, 0)) / CH.sw);
+    i = Math.max(0, Math.min(n - 1, i));
+    if (i > 7) return `Slot ${i} is not used in this trainer: put I/O modules in slots 1–7`;
+    if (d.slot && i === 0) return 'Slot 0 holds the controller: put I/O modules in slots 1–7';
+    const other = circ.comps.find(k => k !== c && chassisOf(circ, k) === ch && (k.type === 'mcpu' ? 0 : DEFS[k.type].slot ? Number(k.props.slot) : -1) === i);
+    if (other) return `Slot ${i} already holds ${other.props.label}`;
+    c.x = bayX(ch, i); c.y = y;
+    if (d.slot) c.props.slot = String(i);
+    return '';
+  }
+  // the first empty slot (1–7) of a chassis for a new I/O module (skip: that module itself), else null
+  function freeSlot(circ, ch, skip) {
+    const n = Math.min(8, Number(ch.props.slots) || 7), used = new Set(circ.comps.filter(k => k !== skip && k.type !== 'chassis' && chassisOf(circ, k) === ch && DEFS[k.type].slot).map(k => Number(k.props.slot)));
+    for (let i = 1; i < n; i++) if (!used.has(i)) return i;
+    return null;
+  }
   def('mpsu', {
     name: 'Rack Power Supply 230VAC / 24VDC', cat: 'PLC Rack', view: 'cabinet', prefix: 'PS', w: 80, h: MH, unique: 'psu', uniqueMsg: 'Only one rack power supply per project',
     info: 'Powers the chassis backplane (controller and I/O modules) from L1/N 230 VAC. Also gives 24 VDC (+24 / COM) for sensors, input modules and transistor outputs. Put it at the left end of the chassis.',
@@ -2519,5 +2573,5 @@
     return null;
   }
   const setManual = on => { manual = !!on; };
-  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook, TARGETS, forTarget };
+  window.Circuit = { setManual, isManual: () => manual, sameKind, fitErr, DEFS, ORDER, RATINGS, COLORS, POT_COLORS, solve, create, normalize, retype, part, draw, dims, drawTerms, sig, status, repair, potClass, potText, rack, ioMap, ioCheck, cleanIo, CARDS, SLOTS, STYLES, addrBook, TARGETS, forTarget, chassisOf, seat, freeSlot };
 })();

@@ -2696,6 +2696,49 @@ function check(name, cond, info = '') {
   check('PLC target: New project asks for the target; a tag-based blank project uses tag-based addresses', await page.evaluate(() => App.project.target === 'tag' && App.project.addr === 'tag'));
   check('PLC target: no brand names in the target picker, the Organizer, the project tree or the New project form', brandTag && brandFile && brandNew);
   await page.evaluate(() => { document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay0); });
+  console.log('PLC chassis: modules snap into slots, the slot is the position');
+  {
+    await page.evaluate(() => {
+      const prev = App.currentId; App.openNew({ name: 'Chassis', target: 'tag', circuit: { seq: 1, comps: [{ id: 'c1', type: 'chassis', x: 0, y: 0, props: { label: 'RACK1', slots: '7' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);
+      window._lay1 = App.layout; App.setLayout('single'); App.showView('wiring');
+    });
+    await wait(250);
+    const add = t => page.click(`#view-wiring .pal-item[data-type="${t}"]`);
+    for (const t of ['mpsu', 'mcpu', 'mdi16', 'mdo16']) { await add(t); await wait(120); }
+    const seated = await page.evaluate(() => {
+      const C = App.project.circuit.comps, ch = C.find(c => c.type === 'chassis'), by = t => C.find(c => c.type === t);
+      const x0 = ch.x + 10 + 90 + 2;
+      return { ps: by('mpsu').x === ch.x + 10 && by('mpsu').y === ch.y + 52, cpu: by('mcpu').x === x0 && by('mcpu').y === ch.y + 52,
+        di: by('mdi16').props.slot === '1' && by('mdi16').x === x0 + 74, dout: by('mdo16').props.slot === '2' && by('mdo16').x === x0 + 148,
+        inChassis: ['mpsu', 'mcpu', 'mdi16', 'mdo16'].every(t => Circuit.chassisOf(App.project.circuit, by(t)) === ch) };
+    });
+    check('chassis: with a chassis in the Wiring, a new power supply goes to the bay, the controller to slot 0 and I/O modules to the first free slots (1, 2)', Object.values(seated).every(Boolean), JSON.stringify(seated));
+    // drag the input module from slot 1 to slot 4 with the mouse
+    const box = async id => { const b = await (await page.$(`#view-wiring [data-cid="${id}"] .frame`)).boundingBox(); return b; };
+    const diId = await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'mdi16').id);
+    const ch74 = (await box(diId)).width / 80 * 74;   // one slot on screen (the frame is 10 wider than the 70-wide module)
+    { const b = await box(diId); await page.mouse.move(b.x + b.width / 2, b.y + 40); await page.mouse.down(); await page.mouse.move(b.x + b.width / 2 + ch74 * 3 + 6, b.y + 52, { steps: 8 }); await page.mouse.up(); await wait(200); }
+    check('chassis: an I/O module dragged to another slot snaps into it and takes its number (slot 4 → I:4 / Local:4)', await page.evaluate(() => { const c = App.project.circuit.comps.find(x => x.type === 'mdi16'), ch = App.project.circuit.comps.find(x => x.type === 'chassis'); return c.props.slot === '4' && c.x === ch.x + 10 + 90 + 2 + 4 * 74 && c.y === ch.y + 52; }));
+    { const b = await box(diId); await page.mouse.move(b.x + b.width / 2, b.y + 40); await page.mouse.down(); await page.mouse.move(b.x + b.width / 2 - ch74 * 2, b.y + 40, { steps: 8 }); await page.mouse.up(); await wait(200); }
+    check('chassis: a slot that is taken sends the module back (slot 2 holds the output module)', await page.evaluate(() => App.project.circuit.comps.find(x => x.type === 'mdi16').props.slot === '4' && !!document.querySelector('.toast')));
+    await page.evaluate(() => { const C = App.project.circuit.comps, d = C.find(x => x.type === 'mdo16'); d.props.slot = '5'; const err = Circuit.seat(App.project.circuit, d, 'slot'); window._err = err; App.circuitChanged(); });
+    check('chassis: picking a slot number moves the module to that slot', await page.evaluate(() => { const C = App.project.circuit.comps, d = C.find(x => x.type === 'mdo16'), ch = C.find(x => x.type === 'chassis'); return window._err === '' && d.x === ch.x + 10 + 90 + 2 + 5 * 74; }));
+    check('chassis: slot 0 is the controller\'s and slots 8–12 of a 13-slot chassis are not used', await page.evaluate(() => {
+      const C = App.project.circuit.comps, ch = C.find(x => x.type === 'chassis'), d = C.find(x => x.type === 'mdo16');
+      d.props.slot = '0'; const e0 = Circuit.seat(App.project.circuit, d, 'slot');
+      ch.props.slots = '13'; d.x = ch.x + 10 + 90 + 2 + 9 * 74; const e9 = Circuit.seat(App.project.circuit, d, 'pos');
+      d.props.slot = '5'; ch.props.slots = '7'; Circuit.seat(App.project.circuit, d, 'slot'); App.circuitChanged();
+      return /controller/.test(e0) && /not used/.test(e9) && Circuit.dims({ type: 'chassis', props: { slots: '13' } }).w > Circuit.dims({ type: 'chassis', props: { slots: '4' } }).w;
+    }));
+    await page.evaluate(() => { App.project.io = Circuit.cleanIo({ slots: { 4: 'mdi16', 5: 'mdo16' } }); App.addrChanged(); });
+    check('chassis: the controller sees the modules in their slots (I/O configuration matches, no fault)', await page.evaluate(() => { const r = Circuit.rack(App.project.circuit, App.project.io); return !!r.cpu && r.bad.length === 0 && App.fmt('I:4/0') === 'Local:4:I.Data.0'; }));
+    const chId = await page.evaluate(() => App.project.circuit.comps.find(c => c.type === 'chassis').id);
+    { const b = await box(chId); await page.mouse.move(b.x + 30, b.y + 20); await page.mouse.down(); await page.mouse.move(b.x + 130, b.y + 80, { steps: 8 }); await page.mouse.up(); await wait(200); }
+    check('chassis: moving the chassis moves its modules, which keep their slots', await page.evaluate(() => { const C = App.project.circuit.comps, ch = C.find(x => x.type === 'chassis'), di = C.find(x => x.type === 'mdi16'); return ch.x !== 0 && di.x === ch.x + 10 + 90 + 2 + 4 * 74 && di.y === ch.y + 52 && di.props.slot === '4'; }));
+    check('chassis: drawn in the look of the PLC target (1756-style here)', await page.evaluate(() => !!document.querySelector(`#view-wiring [data-cid="${App.project.circuit.comps.find(c => c.type === 'chassis').id}"] .look-1756`)));
+    check('chassis: a project without a chassis keeps its modules where they are (old projects unchanged)', await page.evaluate(() => { const c = { id: 'z', type: 'mdi16', x: 5000, y: 5000, props: { slot: '3' } }; return Circuit.chassisOf(App.project.circuit, c) === null && Circuit.seat(App.project.circuit, c, 'pos') === null && c.x === 5000; }));
+    await page.evaluate(() => { App.openNew(Examples.EX.plcmotor.build()); App.setLayout(window._lay1); });
+  }
   console.log('Like Simurelay: simple wires, alignment guides, potential colours');
   const simu = await page.evaluate(async () => {
     const prev = App.currentId; App.openNew({ name: 'Simple wires', circuit: { seq: 2, comps: [{ id: 'c1', type: 'battery', x: 0, y: 0, props: { label: 'GB1' }, state: {} }], wires: [] } }); if (prev) Store.remove(prev);

@@ -228,6 +228,12 @@
     if (d.unique && circ().comps.some(c => DEFS[c.type].unique === d.unique)) { UI.toast(d.uniqueMsg || 'Only one of this device per project', 'warn'); return; }
     const c = Circuit.create(type, x, y, circ());
     circ().comps.push(c);
+    // with a chassis in the Wiring, a new PLC module goes straight into it: power supply bay, slot 0 or the first free slot
+    const ch = (d.slot || type === 'mcpu' || type === 'mpsu') && circ().comps.find(k => k.type === 'chassis');
+    if (ch) {
+      const i = d.slot ? Circuit.freeSlot(circ(), ch, c) : 0, taken = !d.slot && circ().comps.some(k => k !== c && k.type === type && Circuit.chassisOf(circ(), k) === ch);
+      if (i != null && !taken) { if (d.slot) c.props.slot = String(i); c.x = ch.x + 20; c.y = ch.y + 40; if (Circuit.seat(circ(), c, 'slot')) { c.x = x; c.y = y; } }
+    }
     select({ kind: 'comp', id: c.id });
     App.circuitChanged();
   }
@@ -311,7 +317,7 @@
     if (compEl) {
       const c = byId(compEl.dataset.cid);
       select({ kind: 'comp', id: c.id });
-      drag = { kind: 'comp', c, ox: pt.x - c.x, oy: pt.y - c.y, moved: false, ...mounted(c) };
+      drag = { kind: 'comp', c, ox: pt.x - c.x, oy: pt.y - c.y, sx: c.x, sy: c.y, moved: false, ...mounted(c) };
       svg.setPointerCapture(e.pointerId);
       return;
     }
@@ -402,7 +408,12 @@
     }
     if (!drag) return;
     if (drag.kind === 'part') drag.rel();
-    if ((drag.kind === 'comp' || drag.kind === 'bend') && drag.moved) App.save();
+    // a PLC module let go on a chassis snaps into a slot and takes its number; a slot it cannot take sends it back
+    if (drag.kind === 'comp' && drag.moved && Circuit.chassisOf(circ(), drag.c)) {
+      const c = drag.c, slot = c.props.slot, err = Circuit.seat(circ(), c, 'pos');
+      if (err) { c.x = drag.sx; c.y = drag.sy; c.props.slot = slot; UI.toast(err, 'warn'); }
+      renderWires(); App.circuitChanged(); renderProps();
+    } else if ((drag.kind === 'comp' || drag.kind === 'bend') && drag.moved) App.save();
     if (drag.kind === 'comp' && drag.guide != null) { drag = null; renderTemp(); }
     svg.classList.remove('panning');
     try { svg.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
@@ -779,8 +790,11 @@
       propsEl.querySelectorAll('[data-pk]').forEach(i => i.addEventListener('change', () => {
         const k = i.dataset.pk;
         if (k === 'label') { setLabel(c, i); return; }
+        const was = c.props[k];
         c.props[k] = i.type === 'number' || k === 'size' ? Number(i.value) : i.value;
-        if (k === 'size') App.circuitChanged(); else App.save();
+        // a module in a chassis moves to the slot picked here
+        if (k === 'slot' && Circuit.chassisOf(circ(), c)) { const err = Circuit.seat(circ(), c, 'slot'); if (err) { c.props.slot = was; i.value = was; UI.toast(err, 'warn'); } App.circuitChanged(); return; }
+        if (k === 'size' || (k === 'slots' && c.type === 'chassis')) App.circuitChanged(); else App.save();
       }));
       const sa = propsEl.querySelector('[data-same]');
       if (sa) sa.onclick = () => { circ().comps.forEach(x => { if (!DEFS[x.type].junction) x.props.size = c.props.size || 1; }); App.circuitChanged(); UI.toast('All devices now have the same size', 'ok'); };
