@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-21
+
 ### Added
 - **Names in the symbol library**: every tile shows a short name under its icon — the device, the kind of contact, its timing and terminals (*KA N.O. 11-14*, *KT N.C. T-on 15-16*, *F C/O 95-96/98*); the full name is the tooltip, and on a touch screen a long press on a tile shows the full name and terminals without placing it. The third column of tiles is no longer cut off.
 - **Tagging like Simurelay** (Electrical Diagram, free draw): a placed symbol gets its tag at once — the next one of its kind (S1, KM1, KM2…), or for a contact, coil or pole the device of that kind whose part is not drawn yet — with no form (the old form is the option *Ask for a tag when placing a symbol*). **Rename device…** in Properties (or **F2**) renames a device from the diagram: every symbol of it and the device in the Wiring follow. Drawing settings: **show or hide the tags and the terminal numbers**, and a **tag colour**. The library groups follow Simurelay's order (Sources, Switches, Auxiliaries, Coils, Loads, Contactors, Protections, Motors, Others), then Sensors and PLC.
