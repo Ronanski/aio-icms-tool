@@ -199,7 +199,7 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
   - [x] Review corrections: reserved tags of kept content, kept main power circuit and rails protected and saved as they were, kept paths/feeders anchored to their neighbours
   - [x] Kept-rail fix: walang ibang supply na ipinapalit sa kept rail; hindi pinapagana ang current paths na umaasa dito (26 checks sa kabuuan)
   - [x] **Approved sa code-review level** (owner, 2026-10-20): commit `89d084158c9424c709ef93c1c6ea9a1cde2c9d70`, `480 passed, 0 failed` sa tatlong run, local Chrome lang
-  - [ ] CI run (kailangan ng push/PR — hiwalay na go signal ng owner); hindi pa CI-verified at hindi pa merge-ready
+  - [x] CI run: PR #39 green (2026-10-21); hindi pa merged
   - [ ] Merge sa `main` at Stable release (hiwalay na go signal; dapat mauna sa Phase 4 para hindi itapon ng lumang app ang bagong part types)
   - Hindi pa direktang tested: 3-phase fallback ng `autoRails()`, kept content na walang kept rail, `renderRungs` rail path, at ang `main`/v2.0.0 file comparison (scratch script lang). Mga limitation: nasa `HANDOFF.md`.
 - [x] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals (free draw: PLC power, relay output, transistor output, input; 15 checks; branch `feature/plc-io-symbols`, naghihintay ng review, hindi merged)
@@ -215,7 +215,9 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [x] Consolidated final audit: review + 7 fixes (3 checks, branch `fix/fd-audit`), 554/554 local, Windows portable at Android debug APK na-build nang local, Electron smoke test pass; CI hindi pa (walang push)
 - [x] Simurelay parity batch: N.C. poles, delay blocks 55-56/67-68, N.C.+N.O. symbols, E-stop/limit changeover, 1/2/4-pole MPCB, 1/2-pole overload, fuse switches 1P/2P/1P+N/3P+N/4P, overload 95-96-98, generator C1-C2, PLC paste points, IEC "More symbols" + PLC points, phone layout, RCBO earth leakage, kept unknown settings (57 checks kasama ang review fixes; 611/611 local; branches `feature/fd-parity-parts`, `fix/mobile-diagram`, `fix/parity-verification`, hindi merged). Inventory: `docs/SIMURELAY_PARITY.md` — 98/114 full (86.0%), 16 partial, 0 missing, 2 excluded
   - Hindi pa (partial): impulse coil at generator C1-C2 na eksaktong Simurelay behaviour, isolator 1P 13-14, roller CON 11-12-13, LV/HV PSU, GND, L1L2L3 bundles, I-II-III / I-0-II selectors, MCB thermal trip, directional link arrow
-- [ ] Push, PR, CI, merge sa `main` (Beta) — kailangan ng GO ng owner; Stable release — hiwalay na GO (Phase 1 muna, tingnan ang release order sa `HANDOFF.md`)
+- [x] Push at PR (owner GO, 2026-10-21): 11 branches naka-push; PR [#39](https://github.com/Ronanski/aio-icms-tool/pull/39) (Phase 0–1 → `main`) at [#40](https://github.com/Ronanski/aio-icms-tool/pull/40) (stacked sa #39)
+- [x] CI ng #39 at #40: **green** (2026-10-21) — test (npm test sa Ubuntu), windows, android, web, version: pass; publish: skipped (PR lang). Pareho ring nag-pass ang Phase 1 CI item sa itaas.
+- [ ] Merge sa `main` (Beta): #39 muna, saka #40 — kailangan ng hiwalay na GO; Stable release — hiwalay na GO
 - [ ] Separate, needs its own approval: diode (one-way conduction in the solver)
 
 ## Audit findings not fixed yet
