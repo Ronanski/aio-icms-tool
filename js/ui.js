@@ -16,7 +16,7 @@
     return el;
   };
 
-  UI.modal = function ({ title, body, buttons = [{ label: 'Close' }], wide = false, onOpen }) {
+  UI.modal = function ({ title, body, buttons = [{ label: 'Close' }], wide = false, onOpen, onClose }) {
     const root = document.getElementById('modal-root');
     const wrap = document.createElement('div');
     wrap.className = 'modal-wrap';
@@ -26,7 +26,9 @@
     const bodyEl = wrap.querySelector('.modal-body');
     if (typeof body === 'string') bodyEl.innerHTML = body; else if (body) bodyEl.appendChild(body);
     const foot = wrap.querySelector('.modal-foot');
-    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); };
+    // onClose runs once, however the dialog closes (a button, ×, Escape, a click outside)
+    let closed = false;
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); if (!closed) { closed = true; if (onClose) onClose(); } };
     const run = b => { if (b.onClick && b.onClick(bodyEl) === false) return; close(); };
     buttons.forEach(b => {
       const btn = document.createElement('button');
@@ -45,7 +47,8 @@
       const all = root.querySelectorAll('.modal-wrap');
       if (all[all.length - 1] !== wrap) return;
       if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); }
-      else if (e.key === 'Enter' && !e.shiftKey && e.target.tagName !== 'TEXTAREA') {
+      // Enter on a focused button presses that button (Cancel stays Cancel); elsewhere it means the primary button
+      else if (e.key === 'Enter' && !e.shiftKey && e.target.tagName !== 'TEXTAREA' && !(e.target.tagName === 'BUTTON' && wrap.contains(e.target))) {
         const p = buttons.find(b => b.primary);
         if (p) { e.preventDefault(); e.stopImmediatePropagation(); run(p); }
       }
@@ -59,7 +62,7 @@
   };
 
   /* fields: [{key,label,value,type,options,list,hint,rows}] ; onOk(values) returns error string or nothing */
-  UI.form = function (title, fields, onOk, extraHtml = '') {
+  UI.form = function (title, fields, onOk, extraHtml = '', opts = {}) {
     const html = fields.map(f => {
       const id = 'f_' + f.key;
       let input;
@@ -77,7 +80,7 @@
       return `<label class="field"><span>${UI.esc(f.label)}</span>${input}${f.hint ? `<small>${UI.esc(f.hint)}</small>` : ''}</label>`;
     }).join('') + extraHtml + `<div class="form-err"></div>`;
     return UI.modal({
-      title, body: html,
+      title, body: html, onClose: opts.onClose,
       buttons: [{ label: 'Cancel' }, {
         label: 'OK', primary: true, onClick: el => {
           const vals = {};
@@ -89,10 +92,15 @@
     });
   };
 
-  UI.confirm = (title, msg, onYes, label = 'OK') => UI.modal({
-    title, body: `<p>${UI.esc(msg)}</p>`,
-    buttons: [{ label: 'Cancel' }, { label, primary: true, onClick: () => { onYes(); } }]
-  });
+  // a destructive confirm (delete, remove, replace, reset, clear, discard) is red and starts on Cancel, so Enter does not destroy
+  UI.confirm = (title, msg, onYes, label = 'OK') => {
+    const danger = /delete|remove|replace|reset|clear|discard|without saving|start over/i.test(label);
+    return UI.modal({
+      title, body: `<p>${UI.esc(msg)}</p>`,
+      buttons: [{ label: 'Cancel' }, { label, primary: true, danger, onClick: () => { onYes(); } }],
+      onOpen: danger ? el => setTimeout(() => { const c = el.parentElement.querySelector('.modal-foot .btn'); if (c) c.focus(); }, 30) : undefined,
+    });
+  };
 
   UI.menu = function (x, y, items) {
     UI.closeMenu();
@@ -115,12 +123,25 @@
     m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 8)) + 'px';
     m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 8)) + 'px';
     setTimeout(() => document.addEventListener('pointerdown', UI._menuAway, true), 0);
+    document.addEventListener('keydown', UI._menuKey, true);
+  };
+  /* a menu answers the keyboard: Escape closes it, the arrows move between its items, Enter presses one */
+  UI._menuKey = e => {
+    const m = document.getElementById('ctxMenu'); if (!m) return;
+    const items = [...m.querySelectorAll('button:not(:disabled)')], i = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); UI.closeMenu(); }
+    else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const n = items.length, down = e.key === 'ArrowDown';
+      items[i < 0 ? (down ? 0 : n - 1) : (i + (down ? 1 : n - 1)) % n].focus();
+    }
   };
   UI._menuAway = e => { if (!e.target.closest('#ctxMenu')) UI.closeMenu(); };
   UI.closeMenu = () => {
     const m = document.getElementById('ctxMenu');
     if (m) m.remove();
     document.removeEventListener('pointerdown', UI._menuAway, true);
+    document.removeEventListener('keydown', UI._menuKey, true);
   };
 
   /* Touch: a long press acts as right-click (opens the same context menus).

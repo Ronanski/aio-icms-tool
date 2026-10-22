@@ -93,7 +93,11 @@ function check(name, cond, info = '') {
   const txt = await page.evaluate(() => App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)));
   check('toolbar builds XIC → OTE rung', txt.includes('XIC I:0/0 OTE O:0/0'), JSON.stringify(txt));
   await page.click('[data-ins="OTE"]'); await page.fill('#f_a0', 'X:9'); await page.click('.modal .btn.primary');
-  check('invalid address rejected', (await page.textContent('.modal .form-err')).includes('bit address'));
+  check('invalid address rejected, with the reason (X is not a data file)', (await page.textContent('.modal .form-err')).includes('X is not a data file'));
+  check('address errors say what is wrong: bit range, a word without its bit, a timer without its bit, an unknown name', await page.evaluate(() => {
+    const v = s => PLCcore.validArg('bit', s) || '';
+    return /0 to 15/.test(v('I:0/16')) && /whole word.*N7:0\/0/.test(v('N7:0')) && /timer.*T4:0\/DN/.test(v('T4:0')) && /not an address or a tag yet/.test(v('START')) && /Type a bit address/.test(v('')) && v('B3:0/2') === '';
+  }));
   await page.keyboard.press('Escape');
   check('ASCII round-trip', await page.evaluate(() => {
     const t = 'BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 TON T4:0 1.0 5 0';
@@ -341,6 +345,82 @@ function check(name, cond, info = '') {
     const all = document.querySelectorAll('#view-hmi .hmi-add [data-add]').length;
     document.querySelector('#view-ladder [data-lorg]').hidden = true;
     return !!cur && cur.dataset.org === 'f2' && groups === 'Controls,Indicators,Equipment,Drawing' && all === Object.keys(HMI.TYPES).length;
+  }));
+
+  console.log('Product audit fixes: PLC prescan, cancelled operands, Wiring undo, two windows, routine names');
+  {
+    const r = await page.evaluate(async () => {
+      const W = ms => new Promise(q => setTimeout(q, ms));
+      App.openNew({ name: 'Prescan', ladder: { rungs: [{ text: 'BST XIC I:0/4 NXB XIC B3:0/1 BND XIO I:0/5 OTE B3:0/1' }, { text: 'XIC B3:0/1 OTE O:0/3' }, { text: 'XIC I:0/2 OTL O:0/2' }, { text: 'XIC B3:0/1 TON T4:0 1.0 60 0' }] } });
+      const P = App.plc; P.setMode('RUN');
+      App.force('I:0/4', 1); App.force('I:0/2', 1); await W(400); App.force('I:0/4', null); App.force('I:0/2', null); await W(1300);
+      const before = { seal: P.read('B3:0/1'), out: P.read('O:0/3'), latch: P.read('O:0/2'), acc: P.read('T4:0.ACC') };
+      P.setMode('PROG'); await W(150); const prog = { term: P.physOut & 4 };
+      P.setMode('RUN'); await W(250);
+      const after = { seal: P.read('B3:0/1'), out: P.read('O:0/3'), latch: P.read('O:0/2'), acc: P.read('T4:0.ACC'), term: P.physOut & 4 };
+      P.setMode('PROG');
+      return { before, prog, after };
+    });
+    check('PLC: PROG → RUN does a prescan like the controller — an internal seal-in drops, an on-delay timer restarts, a latched output (OTL) stays on', r.before.seal === 1 && r.before.out === 1 && r.before.latch === 1 && r.before.acc >= 1 && r.prog.term === 0 && r.after.seal === 0 && r.after.out === 0 && r.after.latch === 1 && r.after.term === 4 && r.after.acc === 0, JSON.stringify(r));
+  }
+  check('Ladder: a new instruction whose address dialog is cancelled is taken out again (no hidden XIC I:0/0)', await page.evaluate(async () => {
+    App.openNew({ name: 'Cancel test', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 80));
+    Ladder.insert('XIC'); await new Promise(q => setTimeout(q, 80));
+    const opened = !!document.querySelector('.modal-wrap'); document.querySelector('.modal-wrap:last-child [data-x]').click(); await new Promise(q => setTimeout(q, 50));
+    return opened && Ladder.serialize(App.project.ladder.rungs[0].elems) === 'XIC I:0/1 OTE O:0/1';
+  }));
+  check('Wiring: deleting a device with its wires can be undone and redone (Ctrl+Z / Ctrl+Y)', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew(Examples.EX.plcmotor.build()); App.showView('wiring'); await W(100);
+    const C = () => App.project.circuit, n0 = C().comps.length, w0 = C().wires.length, km = C().comps.find(c => c.props.label === 'KM1');
+    Workspace.select && Workspace.select({ kind: 'comp', id: km.id });
+    C().comps = C().comps.filter(c => c !== km); C().wires = C().wires.filter(w => !w.a.startsWith(km.id + ':') && !w.b.startsWith(km.id + ':')); App.circuitChanged();
+    const gone = C().comps.length === n0 - 1 && C().wires.length < w0;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await W(50);
+    const back = C().comps.length === n0 && C().wires.length === w0 && C().comps.some(c => c.props.label === 'KM1');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', ctrlKey: true, bubbles: true })); await W(50);
+    const again = C().comps.length === n0 - 1;
+    return gone && back && again && !!document.querySelector('#view-wiring [data-wundo]');
+  }));
+  check('Two windows: a save of the same project from another window pauses saving here and asks which version to keep', await page.evaluate(async () => {
+    App.openNew({ name: 'Two windows' }); await new Promise(q => setTimeout(q, 50));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'plc-trainer.proj.' + App.currentId, newValue: '{}' }));
+    const m = document.querySelector('.modal-wrap:last-child'), asked = !!m && /another window/.test(m.textContent);
+    const paused = App.flushSave() === false;
+    [...m.querySelectorAll('button')].find(b => /Keep mine/.test(b.textContent)).click();
+    return asked && paused && App.flushSave() === true && Store.load(App.currentId).name === 'Two windows';
+  }));
+  check('Routines: a long, mixed-case routine name on the tag-based target survives saving and opening again', await page.evaluate(() => {
+    const p = App.buildProject({ name: 'Names', target: 'tag', ladder: { rungs: [{ text: 'JSR U:3' }], files: [{ n: 3, name: 'Tank_Fill_Sequence_Long_Name', rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] }] } });
+    const f = App.buildProject({ name: 'Names', target: 'file', ladder: { rungs: [], files: [{ n: 3, name: 'Tank_Fill_Sequence', rungs: [] }] } });
+    return p.ladder.files[0].name === 'Tank_Fill_Sequence_Long_Name' && f.ladder.files[0].name === 'TANK_FILL_';
+  }));
+
+  check('Errors pane: a verify error is a link to its rung; a destructive confirm is red and starts on Cancel; Escape closes a menu', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Links', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }, { text: 'XIC I:0/2 OTE O:0/2' }, { text: '' }] } }); App.setLayout('single'); App.showView('ladder'); await W(80);
+    Ladder.verify(true); await W(30);
+    const go = document.querySelector('#view-ladder [data-olog] .ol-go.e'); const link = !!go && go.dataset.ori === '2';
+    if (go) go.click(); await W(50);
+    UI.confirm('Delete thing', 'Really?', () => {}, 'Delete'); await W(60);
+    const m = document.querySelector('.modal-wrap:last-child'), red = !!m.querySelector('.btn.primary.danger'), onCancel = document.activeElement && document.activeElement.textContent === 'Cancel';
+    m.querySelector('[data-x]').click();
+    UI.menu(100, 100, [{ label: 'One', onClick: () => {} }, { label: 'Two', onClick: () => {} }]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(20);
+    return link && red && onCancel && !document.getElementById('ctxMenu');
+  }));
+  check('Ladder: Find an instruction by mnemonic or by words of its name; Enter adds it', await page.evaluate(async () => {
+    App.openNew({ name: 'Find', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 60));
+    const byName = Ladder.findInstr('on delay'), byMn = Ladder.findInstr('ctu');
+    const fi = document.querySelector('#view-ladder [data-insfind]'); fi.value = 'TON';
+    fi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(q => setTimeout(q, 60));
+    const opened = !!document.querySelector('.modal-wrap') && /TON/.test(document.querySelector('.modal-wrap:last-child h3').textContent);
+    document.querySelector('.modal-wrap:last-child [data-x]').click();
+    return byName.includes('TON') && byMn.length === 1 && byMn[0] === 'CTU' && opened && /Preset × Time Base/.test(PLCcore.INSTR.TON.help);
+  }));
+  check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
+    App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
+    return App.compat().some(m => /could not be read as ladder logic/.test(m));
   }));
 
   console.log('Dialogs: keys go to the top dialog only');
@@ -1744,7 +1824,8 @@ function check(name, cond, info = '') {
   await hmiTap('START');
   check('integration: the motor restarts from the HMI after the reset', await until(is("r('O:0/0') === 1 && d('M1').drive === 'run'")));
   await setMode('PROG');
-  check('integration: PROG turns the PLC outputs off and KM1 drops', await until(is("r('O:0/0') === 0 && !d('KM1').pulled")));
+  // the output terminals go off; the output image is kept (as in the controller: a latched output comes back in RUN)
+  check('integration: PROG turns the PLC outputs off and KM1 drops', await until(is("!(App.plc.physOut & 1) && !d('KM1').pulled")));
   await setMode('RUN'); await op('QF1', 'h');
   await hmiTap('START');
   const qf1Off = await until(is("!d('QF1').on && r('O:0/0') === 1 && d('KM1').pulled"));
@@ -3765,9 +3846,21 @@ function check(name, cond, info = '') {
     await fo.click('#view-learn [data-ltab="ex"]'); await fo.waitForTimeout(150);
     check('Learn: Course and Exercises tabs; exercises by difficulty with a topic filter and a done count', await fo.evaluate(() => !!document.querySelector('#view-learn [data-ltab="course"]') && document.querySelectorAll('#view-learn [data-xdiff]').length === 3 && !!document.querySelector('#view-learn [data-xtopic]') && /0\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent)));
     await fo.click('#view-learn [data-lesson="' + await fo.evaluate(() => Exercises.LIST[0].id) + '"]'); await fo.waitForTimeout(150);
-    await fo.click('#view-learn [data-sol]'); await fo.waitForTimeout(150); await fo.click('.modal .btn.primary'); await fo.waitForTimeout(200);
+    await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
+    check('Learn: Check my work refuses a project that is not the exercise (it names the open project)', await fo.evaluate(() => /is not this exercise/.test(document.querySelector('#view-learn .grade-bad').textContent)));
+    const projBefore = await fo.evaluate(() => ({ id: App.currentId, n: Store.list().length }));
+    await fo.click('#view-learn [data-sol]'); await fo.waitForTimeout(150); await fo.click('.modal .btn.primary'); await fo.waitForTimeout(400);
+    check('Learn: the solution goes into the exercise’s own project, never over the open one', await fo.evaluate(b => App.currentId !== b.id && App.project.lesson === Exercises.LIST[0].id && !!Store.load(b.id) && Store.list().length === b.n + 1, projBefore));
     await fo.evaluate(() => App.showView('learn')); await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
-    check('Learn: an exercise passed with Check my work is marked done in the list and the count', await fo.evaluate(() => /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok')));
+    check('Learn: passing with the solution is not counted as done — it asks to try it yourself', await fo.evaluate(() => /0\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && /try it yourself/.test(document.querySelector('#view-learn .grade-ok').textContent)));
+    await fo.click('#view-learn [data-start]'); await fo.waitForTimeout(150);
+    check('Learn: Start again offers Continue or Start over (one project per exercise)', await fo.evaluate(() => /started this exercise before/.test(document.querySelector('.modal-wrap:last-child').textContent) || App.project.lesson === Exercises.LIST[0].id));
+    await fo.evaluate(() => { const m = [...document.querySelectorAll('.modal-wrap:last-child button')].find(b => /Start over/.test(b.textContent)); if (m) m.click(); });
+    await fo.waitForTimeout(300);
+    const nAfter = await fo.evaluate(() => Store.list().length);
+    await fo.evaluate(() => { const x = Exercises.LIST[0]; App.project.ladder.rungs = x.solution.map(t => Ladder.newRung(Ladder.parseRung(t))); App.loadProgram(); App.plc.applyAll(true); App.showView('learn'); });
+    await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
+    check('Learn: an exercise done by hand in its own project is marked done in the list and the count; Start over did not add a project', await fo.evaluate(n => Store.list().length === n && /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok'), nAfter) && nAfter === projBefore.n + 1);
     await fo.click('[data-examples]'); await fo.waitForTimeout(150);
     check('Examples menu: grouped by category (practice boards, motor control, process, hardware)', await fo.evaluate(() => { const h = [...document.querySelectorAll('.ctx-menu .ctx-head, .ctx-menu .head, .ctx-menu h6')].map(x => x.textContent); return ['Practice boards', 'Motor control', 'Process', 'Hardware'].every(c => h.some(t => t.includes(c))); }));
     await fo.keyboard.press('Escape');

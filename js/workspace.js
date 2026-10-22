@@ -113,6 +113,7 @@
         <div class="ws-center">
           <div class="ws-toolbar">
             <button class="tbtn mobile-only" data-drawer="pal">＋ Parts</button>
+            <button class="tbtn" data-wundo title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button><button class="tbtn" data-wredo title="Redo (Ctrl+Y)" aria-label="Redo" disabled>↷</button>
             <div class="seg"><button class="on" data-tool="select" title="Select / move / operate (S)">✥ Select</button><button data-tool="meter" title="Multimeter: click two terminals (M)">⎓ Meter</button></div>
             <span class="tb-lbl">Wire</span>
             <div class="swatches">${WIRE_COLORS.map(([v, n, bg]) => `<button class="sw${v === wireColor ? ' on' : ''}" data-wc="${v}" title="${n}" style="background:${bg || v}"></button>`).join('')}</div>
@@ -157,6 +158,8 @@
     el.querySelector('.ws-toolbar').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.tool) setTool(b.dataset.tool);
+      if (b.hasAttribute('data-wundo')) WS.undo();
+      if (b.hasAttribute('data-wredo')) WS.redo();
       if (b.dataset.wc) { wireColor = b.dataset.wc; el.querySelectorAll('.sw').forEach(s => s.classList.toggle('on', s === b)); if (sel && sel.kind === 'wire' && wireColor !== 'auto') { const w = circ().wires.find(w => w.id === sel.id); if (w) { w.color = wireColor; renderWires(); App.save(); } } }
       if (b.dataset.zoom) { const z = Number(b.dataset.zoom); zoomAt(z > 0 ? 1.2 : z < 0 ? 1 / 1.2 : 1 / view.k); }
       if (b.hasAttribute('data-fit')) WS.fit();
@@ -508,7 +511,35 @@
     sel = null;
     App.circuitChanged();
   }
+  /* undo / redo for the Wiring: every change ends in App.circuitChanged, which calls WS.track. The devices (place, settings)
+     and wires are compared as they were after the last change; live state (a pressed button, a tripped breaker) is not an edit */
+  let undoW = [], redoW = [], shown = null, shownFor = null;
+  const shape = () => JSON.stringify({ c: circ().comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props })), w: circ().wires, s: circ().seq });
+  const full = () => JSON.stringify({ c: circ().comps.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, props: c.props, state: c.state })), w: circ().wires, s: circ().seq });
+  let shownFull = null;
+  WS.track = function () {
+    if (!App.project) return;
+    const now = shape();
+    if (shownFor !== App.project) { shownFor = App.project; shown = now; shownFull = full(); undoW = []; redoW = []; return; }
+    if (now === shown) { shownFull = full(); return; }
+    undoW.push(shownFull); if (undoW.length > 100) undoW.shift(); redoW = [];
+    shown = now; shownFull = full(); undoUi();
+  };
+  // a project just opened is the starting point: nothing to undo yet
+  WS.baseline = function () { shownFor = App.project; if (!App.project) return; shown = shape(); shownFull = full(); undoW = []; redoW = []; undoUi(); };
+  function restoreW(snap) {
+    const d = JSON.parse(snap), C = circ();
+    C.comps = d.c.map(c => Circuit.normalize(c)); C.wires = d.w; C.seq = Math.max(C.seq || 0, d.s || 0);
+    sel = null; wiring = null; shown = shape(); shownFull = full();
+    compEls.forEach(x => x.g.remove()); compEls.clear();
+    App.circuitChanged(); undoUi();
+  }
+  WS.undo = function () { if (!undoW.length) return; redoW.push(shownFull); restoreW(undoW.pop()); UI.toast('Undone'); };
+  WS.redo = function () { if (!redoW.length) return; undoW.push(shownFull); restoreW(redoW.pop()); UI.toast('Redone'); };
+  function undoUi() { const r = document.getElementById('view-wiring'); if (!r) return; const u = r.querySelector('[data-wundo]'), d = r.querySelector('[data-wredo]'); if (u) u.disabled = !undoW.length; if (d) d.disabled = !redoW.length; }
   WS.onKey = function (e) {
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) { e.preventDefault(); if (k === 'y' || e.shiftKey) WS.redo(); else WS.undo(); return; }
     if (e.key === 'Escape') { wiring = null; renderTemp(); select(null); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); delSel(); }
     else if (e.key === 'm' || e.key === 'M') setTool(tool === 'meter' ? 'select' : 'meter');

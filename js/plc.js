@@ -23,9 +23,9 @@
     OTU: { k: 'coil', out: true, lbl: 'U', name: 'Output Unlatch', grp: 'Bit', args: [A('Address', 'bit', 'O:0/0')], help: 'Clears the bit when rung is true.' },
     OSR: { k: 'box', out: true, name: 'One Shot Rising', grp: 'Bit', args: [A('Storage Bit', 'bit', 'B3:1/0'), A('Output Bit', 'bit', 'B3:1/1')], help: 'Output Bit is ON for one scan when the rung goes false-to-true.' },
     OSF: { k: 'box', out: true, name: 'One Shot Falling', grp: 'Bit', args: [A('Storage Bit', 'bit', 'B3:1/2'), A('Output Bit', 'bit', 'B3:1/3')], help: 'Output Bit is ON for one scan when the rung goes true-to-false.' },
-    TON: { k: 'box', out: true, name: 'Timer On Delay', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'Times while rung is true. DN after preset. Resets when rung goes false.' },
-    TOF: { k: 'box', out: true, name: 'Timer Off Delay', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'DN is ON while rung true and stays ON for preset after rung goes false.' },
-    RTO: { k: 'box', out: true, name: 'Retentive Timer On', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'Like TON but keeps its accumulated value. Use RES to reset.' },
+    TON: { k: 'box', out: true, name: 'Timer On Delay', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'Times while rung is true. DN after preset. Resets when rung goes false. The time is Preset × Time Base: base 1.0 and preset 5 = 5 s; base 0.01 and preset 150 = 1.5 s.' },
+    TOF: { k: 'box', out: true, name: 'Timer Off Delay', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'DN is ON while rung true and stays ON for preset after rung goes false. The time is Preset × Time Base: base 1.0 and preset 5 = 5 s; base 0.01 and preset 150 = 1.5 s.' },
+    RTO: { k: 'box', out: true, name: 'Retentive Timer On', grp: 'Timer/Counter', bits: ['EN', 'DN'], args: [A('Timer', 'timer', 'T4:0'), A('Time Base', 'base', '1.0'), A('Preset', 'int', '5'), A('Accum', 'int', '0')], help: 'Like TON but keeps its accumulated value. Use RES to reset. The time is Preset × Time Base: base 1.0 and preset 5 = 5 s; base 0.01 and preset 150 = 1.5 s.' },
     CTU: { k: 'box', out: true, name: 'Count Up', grp: 'Timer/Counter', bits: ['CU', 'DN'], args: [A('Counter', 'counter', 'C5:0'), A('Preset', 'int', '10'), A('Accum', 'int', '0')], help: 'Adds 1 on every false-to-true transition. DN when ACC ≥ PRE.' },
     CTD: { k: 'box', out: true, name: 'Count Down', grp: 'Timer/Counter', bits: ['CD', 'DN'], args: [A('Counter', 'counter', 'C5:0'), A('Preset', 'int', '10'), A('Accum', 'int', '0')], help: 'Subtracts 1 on every false-to-true transition.' },
     RES: { k: 'coil', out: true, lbl: 'RES', name: 'Reset', grp: 'Timer/Counter', args: [A('Structure', 'struct', 'T4:0')], help: 'Resets a timer or counter (ACC=0, status bits cleared).' },
@@ -121,10 +121,24 @@
     return null;
   }
 
+  /* why a typed text is not a bit address, in words a beginner can act on */
+  function bitWhy(str, p) {
+    const s = String(str || '').trim().toUpperCase();
+    if (!s) return 'Type a bit address, e.g. I:0/0, O:0/1 or B3:0/2';
+    if (p && p.kind === 'word') return `${p.norm} is a whole word (16 bits): add the bit number, e.g. ${p.norm}/0`;
+    if (p && p.kind === 'struct') return `${p.norm} is a ${p.file === 'T4' ? 'timer' : p.file === 'C5' ? 'counter' : 'control'}: use one of its bits, e.g. ${p.norm}/DN`;
+    if (p && p.kind === 'const') return 'A number is not an address: use a bit, e.g. B3:0/0';
+    const m = s.match(/^([A-Z]+)(\d*):?(\d*)\/(\d+)$/);
+    if (m && Number(m[4]) > 15) return `Bit numbers go from 0 to 15 (a word has 16 bits): ${s} has bit ${m[4]}`;
+    const fl = s.match(/^([A-Z]+)\d*:/);
+    if (fl && !['I', 'O', 'S', 'B', 'T', 'C', 'R', 'N'].includes(fl[1])) return `${fl[1]} is not a data file: use I (inputs), O (outputs), B3 (bits), T4 (timers), C5 (counters), N7 (integers) or S (status)`;
+    if (/^[A-Z_][A-Z0-9_]*$/.test(s)) return `“${s}” is not an address or a tag yet: add it in Tags, or type an address such as B3:0/0`;
+    return 'Expected a bit address, e.g. I:0/0, O:0/1, B3:0/2, T4:0/DN';
+  }
   function validArg(ty, str) {
     const p = parse(str);
     switch (ty) {
-      case 'bit': return p && p.kind === 'bit' ? null : 'Expected a bit address, e.g. I:0/0, O:0/1, B3:0/2, T4:0/DN';
+      case 'bit': return p && p.kind === 'bit' ? null : bitWhy(str, p);
       case 'timer': return p && p.kind === 'struct' && p.file === 'T4' ? null : 'Expected a timer, e.g. T4:0';
       case 'counter': return p && p.kind === 'struct' && p.file === 'C5' ? null : 'Expected a counter, e.g. C5:0';
       case 'struct': return p && p.kind === 'struct' ? null : 'Expected a timer or counter, e.g. T4:0 or C5:0';
@@ -217,12 +231,24 @@
       this.mode = m;
       if (m === 'RUN') {
         this.first = true;
-        // non-retentive outputs are cleared on entering RUN
-        this.data.O.fill(0);
+        this.prescan();
       } else {
-        this.data.O.fill(0);
+        // the output terminals go off (scan() writes 0 outside RUN); the output image is kept, as in the controller,
+        // so a latched output (OTL) is on again when the processor returns to RUN
         for (const k in this.pw) this.pw[k] = false;
       }
+    }
+    /* prescan on entering RUN (SLC 500): every OTE address and every on-delay timer start reset, so a seal-in held by an
+       internal bit drops out; OTL / OTU bits, RTO timers and counters keep their state */
+    prescan() {
+      const walk = arr => arr.forEach(e => {
+        if (e.t === 'BST') { e.legs.forEach(walk); return; }
+        const a = e.a && parse(e.a[0]);
+        if (!a) return;
+        if (e.t === 'OTE' && a.kind === 'bit') this.setBit(a, 0);
+        else if (e.t === 'TON' && a.kind === 'struct' && a.file === 'T4') { const s = this.data.T4[a.word]; s.EN = 0; s.TT = 0; s.DN = 0; s.ACC = 0; s._f = 0; }
+      });
+      this.allRungs().forEach(r => walk(r.elems));
     }
 
     isForceable(a) { return a && a.kind === 'bit' && (a.file === 'I' || a.file === 'O'); }

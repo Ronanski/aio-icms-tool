@@ -22,7 +22,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **One set of controller lights:** with the Ladder alone on screen, its status box (RUN / OK / BAT / I/O, forces, path) is the controller, and the bar's POWER / RUN / FORCE / FAULT lights step back. Other views and side-by-side layouts keep them. Below 1100 px the bar's I/O strip is hidden instead of cut to a few cells.
 - **Electrical Diagram:** a project whose devices are only in the Wiring now says so, and names the examples with a finished diagram, instead of just "Empty drawing".
 
+- **Learn:**
+  - each exercise has its own project. Start offers **Continue** or **Start over**, instead of a new project every time.
+  - **Check my work** only grades the exercise's own project.
+  - **The solution** goes into that project (Ctrl+Z undoes it). Passing with the solution is not counted as done.
+  - Switching tabs shows an exercise or a lesson to match.
+- **Ladder:**
+  - **Find…** in the instruction palette: type a mnemonic or words of its name ("on delay", "compare"), and Enter adds it.
+  - Error and warning lines in the Errors pane go to their rung.
+  - Address errors say what is wrong (bit 0–15, a word or timer without its bit, an unknown file, a name that is not a tag).
+  - The timer help explains Preset × Time Base.
+- **Wiring:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every change: placing, moving, wiring, deleting.
+- **Organizer:** a project tree, with the open routine marked.
+- **HMI Studio:** objects in Controls, Indicators, Equipment and Drawing groups.
+- **Dialogs and menus:**
+  - destructive confirms are red and start on Cancel, and Enter presses the focused button;
+  - menus close with Escape and move with ↑ ↓.
+
 ### Fixed
+- **PROG → RUN now behaves like the controller's prescan.**
+  - A seal-in held by an internal bit drops out, and on-delay timers start again.
+  - A latched output (OTL) is still on when the processor returns to RUN. It used to be lost, and an internal seal-in used to come back on.
+  - Outside RUN the output terminals are off and the output image is kept.
+- **Work could be lost:**
+  - "Insert solution into ladder" no longer replaces the program of whatever project is open.
+  - The same project open in two windows no longer overwrites the other window's changes without a word: saving pauses and asks which version to keep.
+  - The Wiring had no undo.
+- **Ladder:** cancelling the address dialog of a new instruction no longer leaves an `XIC I:0/0` behind.
+- **Import and open:** rungs that cannot be read are reported, and a file with no project parts is refused with the reason.
+- **Routine names** of the tag-based controller keep their case and length when the project is opened again.
+- **Verify** of a long program is about 5× faster (500 rungs: 1.1 s → 0.2 s).
+- **Project name:** a very long name no longer widens the top bar, and renaming to an empty name is refused.
 - **Phone and tablet:** the whole app could be panned sideways on the Ladder. Hidden instruction names escaped the scrolling toolbar and made the page 823 px wide on a 390 px phone.
 
 ### Added

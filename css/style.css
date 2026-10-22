@@ -1121,3 +1121,22 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 .hmi-props .taglist li { padding: 2px 4px; border-radius: var(--r-sm); }
 .hmi-props .taglist a { color: var(--text); text-decoration: none; font-weight: 500; }
 .hmi-props .taglist a:hover { color: var(--accent-text); }
+
+/* Errors pane: a line about a rung is a link to it */
+.lad-out-log .ol-go { cursor: pointer; border-radius: var(--r-sm); }
+.lad-out-log .ol-go:hover, .lad-out-log .ol-go:focus-visible { background: var(--accent-soft); text-decoration: underline; }
+.lad-out-log .ol-go.e { color: var(--danger); }
+.lad-out-log .ol-go.w { color: var(--warn); }
+
+/* destructive primary action */
+.btn.primary.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.primary.danger:hover { filter: brightness(.92); }
+
+/* a long project name is cut with … instead of widening the top bar (the full name is in File → Open project) */
+.brand > div { min-width: 0; }
+.brand-sub { white-space: nowrap; }
+.brand-sub [data-pname] { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+/* Find an instruction, at the end of the palette tabs */
+.ins-find { margin-left: auto; width: 96px; height: 20px; padding: 1px 6px; font-size: 11px; border-radius: var(--r-sm); align-self: center; }
+.ins-find:focus { width: 150px; }

@@ -34,6 +34,10 @@
 - [x] F5: one set of controller lights on the Ladder
 - [x] F6: decided — the desktop ladder toolbar keeps two full rows (one row would hide tools)
 - [x] F7: I/O strip hidden below 1100 px instead of cut
+- [x] Phase 2 functional audit (Q1–Q16): no lost work (solution, two windows, Wiring undo), SLC prescan on PROG → RUN, cancelled operands, one project per exercise, honest grading, clear address errors, Find instruction, error links, safe confirms, import notices, menus, faster Verify
+- [ ] HMI Studio undo (Q17)
+- [ ] Dialog focus trap, delete-project undo, object stacking, off-screen rung rendering (Q18)
+- [ ] Simulated time in a background tab (Q19, decide catch-up or pause)
 - [ ] Generate the Electrical Diagram from the Wiring
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
 - [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
