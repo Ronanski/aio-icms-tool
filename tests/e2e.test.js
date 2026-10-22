@@ -474,6 +474,17 @@ function check(name, cond, info = '') {
     const label = [...document.querySelectorAll('#view-ladder .ins-btn.show .mono + small')].some(s => s.offsetWidth > 0 && s.textContent === 'XIC');
     return ok && !!go && icons && label;
   }));
+  check('HMI Studio: new objects go to free places, not on top of each other', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    // a screen with room (when a screen is full, a new object is stacked as before)
+    App.openNew({ name: 'HMI free', hmi: { objects: [{ id: 'h1', type: 'text', scr: 's1', x: 20, y: 20, w: 220, h: 40, label: 'Title' }] } }); App.setLayout('single'); App.showView('hmi'); await W(60);
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Studio/.test(b.textContent)).click(); await W(40);
+    ['pb', 'lamp', 'num', 'bar'].forEach(k => document.querySelector(`#view-hmi [data-add="${k}"]`).click()); await W(40);
+    const os = App.project.hmi.objects.filter(o => (o.scr || 's1') === 's1');
+    const hit = (a, b) => !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+    const added = os.slice(-4);
+    return added.every(a => os.every(b => a === b || !hit(a, b)));
+  }));
   check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
     App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
     return App.compat().some(m => /could not be read as ladder logic/.test(m));

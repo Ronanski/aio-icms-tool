@@ -151,8 +151,13 @@
   function add(type) {
     const t = TYPES[type];
     hmi().seq = (hmi().seq || 0) + 1;
-    const n = hmi().objects.length % 8;
-    const o = { id: 'h' + hmi().seq, type, scr: cur, x: 40 + n * 20, y: 60 + n * 20, w: t.w, h: t.h, ...JSON.parse(JSON.stringify(t.d)), vis: '' };
+    // a new object goes to the first free place on the screen (left to right, top to bottom), not on top of another
+    const [W, H] = dims(), here = hmi().objects.filter(o => (o.scr || 's1') === cur), gap = 10;
+    const free = (x, y) => here.every(o => x + t.w + gap <= o.x || o.x + o.w + gap <= x || y + t.h + gap <= o.y || o.y + o.h + gap <= y);
+    let at = null;
+    for (let y = 20; !at && y + t.h <= H - 10; y += 20) for (let x = 20; x + t.w <= W - 10; x += 20) if (free(x, y)) { at = [x, y]; break; }
+    if (!at) { const n = here.length % 8; at = [40 + n * 20, 60 + n * 20]; }
+    const o = { id: 'h' + hmi().seq, type, scr: cur, x: at[0], y: at[1], w: t.w, h: t.h, ...JSON.parse(JSON.stringify(t.d)), vis: '' };
     hmi().objects.push(o);
     sel = o.id;
     saveEdit();
