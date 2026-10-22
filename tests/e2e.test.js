@@ -418,6 +418,50 @@ function check(name, cond, info = '') {
     document.querySelector('.modal-wrap:last-child [data-x]').click();
     return byName.includes('TON') && byMn.length === 1 && byMn[0] === 'CTU' && opened && /Preset × Time Base/.test(PLCcore.INSTR.TON.help);
   }));
+  check('HMI Studio: deleting an object can be undone and redone', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew(Examples.EX.plcmotor.build()); App.setLayout('single'); App.showView('hmi'); await W(80);
+    const n0 = App.project.hmi.objects.length;
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Studio/.test(b.textContent)).click(); await W(50);
+    document.querySelector('#view-hmi [data-add="lamp"]').click(); await W(50);
+    const added = App.project.hmi.objects.length === n0 + 1;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); await W(50);
+    const gone = App.project.hmi.objects.length === n0;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await W(50);
+    const back = App.project.hmi.objects.length === n0 + 1;
+    document.querySelector('#view-hmi [data-hredo]').click(); await W(50);
+    return added && gone && back && App.project.hmi.objects.length === n0;
+  }));
+  check('Timing: a late tick (a throttled background tab) is caught up, so a running TON keeps real time', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Late tick', ladder: { rungs: [{ text: 'XIC B3:0/0 TON T4:0 0.01 900 0' }] } });
+    App.plc.write('B3:0/0', 1); App.plc.setMode('RUN'); await W(200);
+    const a = App.plc.read('T4:0.ACC'); const t0 = performance.now(); while (performance.now() - t0 < 1000) { /* the page is busy for 1 s */ }
+    await W(80); const b = App.plc.read('T4:0.ACC'); App.plc.setMode('PROG');
+    return b - a >= 95 && b - a <= 140;
+  }));
+  check('Dialogs: Tab stays inside the dialog and focus goes back where it was when it closes', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    const start = document.querySelector('[data-theme-btn]'); start.focus();
+    UI.confirm('Trap', 'Tab test', () => {}, 'OK'); await W(60);
+    const m = document.querySelector('.modal-wrap:last-child'), btns = [...m.querySelectorAll('button')];
+    btns[btns.length - 1].focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })); await W(10);
+    const inside = m.contains(document.activeElement);
+    m.querySelector('[data-x]').click(); await W(20);
+    return inside && document.activeElement === start;
+  }));
+  check('Open project: a deleted project can be restored from the toast', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Keep me' }); const id = App.currentId; App.saveNow && App.saveNow(); App.flushSave(); App.openNew({ name: 'Other' }); await W(50);
+    const id2 = Store.list().find(p => p.id === id) ? id : null;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true })); await W(80);
+    const del = document.querySelector(`.modal-wrap:last-child [data-del="${id2}"]`); del.click(); del.click(); await W(50);
+    const gone = !Store.load(id);
+    const t = [...document.querySelectorAll('#toast-root .toast')].find(x => /click here to undo/.test(x.textContent)); t.click(); await W(30);
+    document.querySelector('.modal-wrap:last-child [data-x]').click();
+    return !!id2 && gone && !!Store.load(id) && Store.list().some(p => p.id === id);
+  }));
   check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
     App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
     return App.compat().some(m => /could not be read as ladder logic/.test(m));

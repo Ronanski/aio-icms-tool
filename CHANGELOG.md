@@ -33,6 +33,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Address errors say what is wrong (bit 0–15, a word or timer without its bit, an unknown file, a name that is not a tag).
   - The timer help explains Preset × Time Base.
 - **Wiring:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every change: placing, moving, wiring, deleting.
+- **HMI Studio:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every edit.
+- **Open project:** a deleted project can be restored from the toast for a few seconds.
+- **Dialogs:** Tab stays inside a dialog, and focus returns where it was when the dialog closes.
 - **Organizer:** a project tree, with the open routine marked.
 - **HMI Studio:** objects in Controls, Indicators, Equipment and Drawing groups.
 - **Dialogs and menus:**
@@ -52,6 +55,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Import and open:** rungs that cannot be read are reported, and a file with no project parts is refused with the reason.
 - **Routine names** of the tag-based controller keep their case and length when the project is opened again.
 - **Verify** of a long program is about 5× faster (500 rungs: 1.1 s → 0.2 s).
+- **Timers in a background tab** keep real time. The browser runs a hidden tab only about once a second, and the PLC used to count just 0.1 s of it.
 - **Project name:** a very long name no longer widens the top bar, and renaming to an empty name is refused.
 - **Phone and tablet:** the whole app could be panned sideways on the Ladder. Hidden instruction names escaped the scrolling toolbar and made the page 823 px wide on a 390 px phone.
 

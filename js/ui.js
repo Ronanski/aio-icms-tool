@@ -28,7 +28,9 @@
     const foot = wrap.querySelector('.modal-foot');
     // onClose runs once, however the dialog closes (a button, ×, Escape, a click outside)
     let closed = false;
-    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); if (!closed) { closed = true; if (onClose) onClose(); } };
+    // focus goes back where it was when the dialog closes (keyboard users keep their place)
+    const back = document.activeElement;
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey, true); if (!closed) { closed = true; if (onClose) onClose(); if (back && back.isConnected && typeof back.focus === 'function' && !document.querySelector('#modal-root .modal-wrap')) back.focus(); } };
     const run = b => { if (b.onClick && b.onClick(bodyEl) === false) return; close(); };
     buttons.forEach(b => {
       const btn = document.createElement('button');
@@ -47,6 +49,13 @@
       const all = root.querySelectorAll('.modal-wrap');
       if (all[all.length - 1] !== wrap) return;
       if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); }
+      // Tab stays inside the dialog
+      else if (e.key === 'Tab') {
+        const f = [...wrap.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent !== null);
+        if (!f.length) return;
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && (i === f.length - 1 || i < 0)) { e.preventDefault(); f[0].focus(); }
+      }
       // Enter on a focused button presses that button (Cancel stays Cancel); elsewhere it means the primary button
       else if (e.key === 'Enter' && !e.shiftKey && e.target.tagName !== 'TEXTAREA' && !(e.target.tagName === 'BUTTON' && wrap.contains(e.target))) {
         const p = buttons.find(b => b.primary);

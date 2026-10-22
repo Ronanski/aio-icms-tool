@@ -43,6 +43,18 @@
     blink: 'Blink when ON', span: 'Time span (s)', src: 'Picture', target: 'Go to screen', sec: 'Needs log-in', vis: 'Visible when tag = 1 (empty: always)',
   };
   const hmi = () => App.project.hmi;
+  /* undo / redo for the Studio: each edit is saved through saveEdit, which keeps the screens as they were before it */
+  let undoH = [], redoH = [], shownH = null, shownHFor = null;
+  const baselineH = () => { shownHFor = App.project; shownH = App.project ? JSON.stringify(hmi()) : null; undoH = []; redoH = []; };
+  function saveEdit() {
+    if (shownHFor !== App.project) baselineH();
+    const now = JSON.stringify(hmi());
+    if (now !== shownH) { undoH.push(shownH); if (undoH.length > 100) undoH.shift(); redoH = []; shownH = now; }
+    App.save();
+  }
+  function restoreH(snap) { App.project.hmi = JSON.parse(snap); shownH = snap; sel = null; if (!hmi().screens.some(x => x.id === cur)) cur = 's1'; App.save(); HMI.render(); }
+  HMI.undo = () => { if (!undoH.length) return; redoH.push(shownH); restoreH(undoH.pop()); UI.toast('Undone'); };
+  HMI.redo = () => { if (!redoH.length) return; undoH.push(shownH); restoreH(redoH.pop()); UI.toast('Redone'); };
   const MODES = ['momentary', 'toggle', 'set', 'reset'], SHAPES = ['box', 'round'], YN = ['no', 'yes'];
   const IMG = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
   const HEXC = /^#[0-9a-fA-F]{3,8}$/;
@@ -95,7 +107,7 @@
           <button class="tbtn" data-full title="Full screen (Esc to leave)">⛶</button>
           <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           <div class="hmi-zoom"><span class="tb-lbl">Zoom</span><button class="tbtn" data-hz="-1" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-hz="fit" data-hzv title="Fit the screen to the window">Fit</button><button class="tbtn" data-hz="1" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button></div>
-          <div class="hmi-add">${ADD_GROUPS.map(([g, ks]) => `<span class="hmi-addg"><span class="tb-lbl">${g}</span>${ks.filter(k => TYPES[k]).map(k => `<button class="tbtn" data-add="${k}" title="Add a ${TYPES[k].name}">${TYPES[k].name}</button>`).join('')}</span>`).join('')}</div>
+          <div class="hmi-add"><span class="hmi-addg"><button class="tbtn" data-hundo title="Undo (Ctrl+Z)" aria-label="Undo">↶</button><button class="tbtn" data-hredo title="Redo (Ctrl+Y)" aria-label="Redo">↷</button></span>${ADD_GROUPS.map(([g, ks]) => `<span class="hmi-addg"><span class="tb-lbl">${g}</span>${ks.filter(k => TYPES[k]).map(k => `<button class="tbtn" data-add="${k}" title="Add a ${TYPES[k].name}">${TYPES[k].name}</button>`).join('')}</span>`).join('')}</div>
         </div>
         <div class="hmi-main">
           <div class="hmi-stage"><div class="hmi-bezel"><div class="hmi-brand">Operator terminal</div><div class="hmi-screen"></div><div class="hmi-keys"><span></span><span></span><span></span><span></span></div></div></div>
@@ -110,6 +122,8 @@
       if (b.dataset.mode) setMode(b.dataset.mode);
       if (b.hasAttribute('data-full')) { const z = root.querySelector('.hmi-bezel'); if (document.fullscreenElement) document.exitFullscreen(); else if (z.requestFullscreen) z.requestFullscreen().catch(() => UI.toast('Full screen is not available here', 'warn')); }
       if (b.dataset.add) add(b.dataset.add);
+      if (b.hasAttribute('data-hundo')) HMI.undo();
+      if (b.hasAttribute('data-hredo')) HMI.redo();
       if (b.dataset.hz) setZoom(b.dataset.hz === 'fit' ? 'fit' : (zoomK() * (b.dataset.hz > 0 ? 1.15 : 1 / 1.15)));
     });
     root.querySelector('.hmi-stage').addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); setZoom(zoomK() * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }, { passive: false });
@@ -141,7 +155,7 @@
     const o = { id: 'h' + hmi().seq, type, scr: cur, x: 40 + n * 20, y: 60 + n * 20, w: t.w, h: t.h, ...JSON.parse(JSON.stringify(t.d)), vis: '' };
     hmi().objects.push(o);
     sel = o.id;
-    App.save();
+    saveEdit();
     HMI.render();
   }
   function objAt(e) { const el = e.target.closest('.hobj'); return el ? hmi().objects.find(o => o.id === el.dataset.id) : null; }
@@ -269,14 +283,16 @@
   function onUp() {
     if (!drag) return;
     if (drag.mom) drag.mom();
-    if (drag.o) App.save();
+    if (drag.o) saveEdit();
     drag = null;
   }
   HMI.onKey = function (e) {
+    const k = e.key.toLowerCase();
+    if (mode === 'edit' && (e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) { e.preventDefault(); if (k === 'y' || e.shiftKey) HMI.redo(); else HMI.undo(); return; }
     if (mode !== 'edit' || !sel) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
-      hmi().objects = hmi().objects.filter(o => o.id !== sel); sel = null; App.save(); HMI.render();
+      hmi().objects = hmi().objects.filter(o => o.id !== sel); sel = null; saveEdit(); HMI.render();
     }
   };
 
@@ -442,18 +458,18 @@
       let v = i.value;
       // a tag can be typed in any address style; it is stored file-based
       if ((i.dataset.k === 'tag' || i.dataset.k === 'vis') && v.trim()) { v = App.addrIn(v); const p = PLCcore.parse(v); if (p) v = p.norm; }
-      o[i.dataset.k] = v; App.save(); HMI.render();
+      o[i.dataset.k] = v; saveEdit(); HMI.render();
     }));
-    propsEl.querySelectorAll('[data-ck]').forEach(b => b.onclick = () => { o[b.dataset.ck] = b.dataset.cv; App.save(); HMI.render(); });
+    propsEl.querySelectorAll('[data-ck]').forEach(b => b.onclick = () => { o[b.dataset.ck] = b.dataset.cv; saveEdit(); HMI.render(); });
     const pick = propsEl.querySelector('[data-img]');
-    if (pick) pick.onclick = () => choosePicture(src => { o.src = src; App.save(); HMI.render(); });
+    if (pick) pick.onclick = () => choosePicture(src => { o.src = src; saveEdit(); HMI.render(); });
     const noimg = propsEl.querySelector('[data-noimg]');
-    if (noimg) noimg.onclick = () => { o.src = ''; App.save(); HMI.render(); };
-    propsEl.querySelector('[data-del]').onclick = () => { hmi().objects = hmi().objects.filter(x => x.id !== o.id); sel = null; App.save(); HMI.render(); };
+    if (noimg) noimg.onclick = () => { o.src = ''; saveEdit(); HMI.render(); };
+    propsEl.querySelector('[data-del]').onclick = () => { hmi().objects = hmi().objects.filter(x => x.id !== o.id); sel = null; saveEdit(); HMI.render(); };
     propsEl.querySelector('[data-dup]').onclick = () => {
       hmi().seq = (hmi().seq || 0) + 1;
       const n = { ...JSON.parse(JSON.stringify(o)), id: 'h' + hmi().seq, x: o.x + 20, y: o.y + 20 };
-      hmi().objects.push(n); sel = n.id; App.save(); HMI.render();
+      hmi().objects.push(n); sel = n.id; saveEdit(); HMI.render();
     };
   }
   /* Studio with nothing selected: terminal type, screens and the log-in PIN */
@@ -465,18 +481,18 @@
       <div class="btn-row"><button class="btn" data-sadd>＋ Screen</button><button class="btn" data-sren>Rename “${esc(s.name)}”</button>${cur !== 's1' ? '<button class="btn danger" data-sdel>Delete screen</button>' : ''}</div>
       <label class="field"><span>Log-in PIN (4–8 digits)</span><input data-pin type="password" value="${esc(h.pin)}" inputmode="numeric" autocomplete="new-password"></label>
       <p class="help">Add objects from the toolbar, then select one to bind a tag. <b>Go to Screen</b> buttons move between screens; <b>Log in / out</b> unlocks buttons marked “Needs log-in”. Any object can be shown only while a tag is 1 (Visible when…).</p></div>`;
-    propsEl.querySelector('[data-res]').onchange = ev => { h.res = ev.target.value; App.log('system', `HMI terminal: ${RES[h.res][2]}`); App.save(); HMI.render(); };
+    propsEl.querySelector('[data-res]').onchange = ev => { h.res = ev.target.value; App.log('system', `HMI terminal: ${RES[h.res][2]}`); saveEdit(); HMI.render(); };
     propsEl.querySelectorAll('[data-go]').forEach(a => { a.onclick = ev => { ev.preventDefault(); HMI.goto(a.dataset.go); }; });
     // a saved HMI keeps 30 screens (cleanAll)
     propsEl.querySelector('[data-sadd]').onclick = () => (h.screens.length >= 30 ? UI.toast('An HMI has at most 30 screens', 'warn') : UI.form('New screen', [{ key: 'n', label: 'Name', value: 'Screen ' + (h.screens.length + 1) }], v => {
       const n = v.n.trim().slice(0, 30); if (!n) return 'Type a name';
       let i = 2; while (h.screens.some(x => x.id === 's' + i)) i++;
-      h.screens.push({ id: 's' + i, name: n }); cur = 's' + i; App.save(); HMI.render(); return undefined;
+      h.screens.push({ id: 's' + i, name: n }); cur = 's' + i; saveEdit(); HMI.render(); return undefined;
     }));
-    propsEl.querySelector('[data-sren]').onclick = () => UI.form('Rename screen', [{ key: 'n', label: 'Name', value: s.name }], v => { const n = v.n.trim().slice(0, 30); if (!n) return 'Type a name'; s.name = n; App.save(); HMI.render(); return undefined; });
+    propsEl.querySelector('[data-sren]').onclick = () => UI.form('Rename screen', [{ key: 'n', label: 'Name', value: s.name }], v => { const n = v.n.trim().slice(0, 30); if (!n) return 'Type a name'; s.name = n; saveEdit(); HMI.render(); return undefined; });
     const del = propsEl.querySelector('[data-sdel]');
-    if (del) del.onclick = () => { h.objects = h.objects.filter(o => (o.scr || 's1') !== cur); h.objects.forEach(o => { if (o.type === 'nav' && o.target === cur) o.target = 's1'; }); h.screens = h.screens.filter(x => x.id !== cur); cur = 's1'; App.save(); HMI.render(); };
-    propsEl.querySelector('[data-pin]').onchange = ev => { if (/^\d{4,8}$/.test(ev.target.value)) { h.pin = ev.target.value; App.save(); } else { UI.toast('The PIN is 4 to 8 digits', 'warn'); ev.target.value = h.pin; } };
+    if (del) del.onclick = () => { h.objects = h.objects.filter(o => (o.scr || 's1') !== cur); h.objects.forEach(o => { if (o.type === 'nav' && o.target === cur) o.target = 's1'; }); h.screens = h.screens.filter(x => x.id !== cur); cur = 's1'; saveEdit(); HMI.render(); };
+    propsEl.querySelector('[data-pin]').onchange = ev => { if (/^\d{4,8}$/.test(ev.target.value)) { h.pin = ev.target.value; saveEdit(); } else { UI.toast('The PIN is 4 to 8 digits', 'warn'); ev.target.value = h.pin; } };
   }
   /* a picture from a file, scaled down to at most 400 px and stored in the project */
   function choosePicture(done) {
@@ -498,6 +514,6 @@
     };
     inp.click();
   }
-  HMI.resetSel = () => { sel = null; cur = 's1'; user = false; hist.clear(); ver++; if (root && mode === 'edit' && App.project && secured()) setMode('run'); };   // a project with a PIN opens on the Machine
+  HMI.resetSel = () => { sel = null; cur = 's1'; user = false; hist.clear(); ver++; baselineH(); if (root && mode === 'edit' && App.project && secured()) setMode('run'); };   // a project with a PIN opens on the Machine
   window.HMI = HMI;
 })();

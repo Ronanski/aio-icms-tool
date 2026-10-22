@@ -1018,10 +1018,15 @@
       if (wait <= 0) run(); else App.later(wait, run);
     };
   };
+  /* a tab in the background gets its timer only about once a second: the missed time is run in steps of at most 0.1 s,
+     so PLC timers keep real time (up to 2 s at once; a tab asleep longer simply pauses) */
   function tick() {
     const now = performance.now();
-    const dt = Math.min(0.1, (now - last) / 1000);
+    let left = Math.min(2, Math.max(0, (now - last) / 1000));
     last = now;
+    do { const dt = Math.min(0.1, left); left -= dt; step(now, dt); } while (left > 1e-6);
+  }
+  function step(now, dt) {
     const ctx = App.ctx, plc = App.plc, circ = App.project.circuit;
     const rack = Circuit.rack(circ, App.project.io), pc = rack.ctl;
     ctx.plcId = pc ? pc.id : null; ctx.rack = rack;
@@ -1653,8 +1658,18 @@
       if (b.dataset.open) { m.close(); App.openSaved(b.dataset.open); UI.toast('Project opened', 'ok'); }
       if (b.dataset.del) {
         const p = Store.list().find(x => x.id === b.dataset.del);
-        if (b.dataset.confirm) { Store.remove(b.dataset.del); draw(); UI.toast(`Deleted “${p ? p.name : 'project'}”`); }
-        else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; b.classList.add('danger-txt'); }
+        if (b.dataset.confirm) {
+          // a deleted project can be brought back from the toast for a few seconds
+          const id = b.dataset.del, data = Store.load(id);
+          Store.remove(id); draw();
+          const t = UI.toast(`Deleted “${p ? p.name : 'project'}” — click here to undo`, 'info', 7000);
+          t.style.cursor = 'pointer'; t.style.pointerEvents = 'auto'; t.setAttribute('role', 'button');
+          t.onclick = () => { if (data && Store.save(id, data)) { t.remove(); if (box.isConnected) draw(); UI.toast(`Restored “${data.name || 'project'}”`, 'ok'); } };
+        } else {
+          b.dataset.confirm = '1'; b.textContent = 'Delete?'; b.classList.add('danger-txt');
+          // the armed button goes back after a moment, so a later click cannot delete by surprise
+          setTimeout(() => { if (b.isConnected && b.dataset.confirm) { delete b.dataset.confirm; b.textContent = '🗑'; b.classList.remove('danger-txt'); } }, 4000);
+        }
       }
     };
   }
