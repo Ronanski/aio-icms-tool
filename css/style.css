@@ -538,6 +538,9 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .h-tank .vessel b { position: absolute; inset: 0; display: grid; place-items: center; font: 700 16px var(--mono); }
 .h-alarm { width: 100%; height: 100%; border-radius: 8px; display: flex; align-items: center; padding: 0 16px; font-weight: 700; font-size: 16px; background: #2a333d; color: #9aa5b0; border: 2px solid #3d4a57; }
 .t-alarm.on .h-alarm { background: #b3261e; color: #fff; border-color: #ff7a6b; animation: blink 1s steps(2) infinite; }
+.h-alarm .al-none { display: none; font-weight: 500; font-size: 14px; opacity: .8; }
+.hmi:not(.editing) .t-alarm:not(.on) .al-txt { display: none; }
+.hmi:not(.editing) .t-alarm:not(.on) .al-none { display: inline; }
 .h-text { width: 100%; height: 100%; display: flex; align-items: center; font-weight: 700; letter-spacing: .02em; }
 .h-shape { width: 100%; height: 100%; border-radius: 4px; background: #3d4a57; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
 .h-shape.round { border-radius: 50%; }
@@ -1192,3 +1195,12 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
    layout down under the user's pointer (a click meant for one thing hit another) */
 .update-bar { position: fixed; right: 16px; bottom: 44px; z-index: 60; max-width: min(460px, calc(100% - 32px)); justify-content: flex-start; padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); background: var(--surface); }
 @media (max-width: 760px) { .update-bar { left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); max-width: none; } }
+
+/* view tabs: drawn icons (the same size on every platform, unlike text glyphs); the project name gives way to the save state */
+.tabs .ti { display: inline-flex; line-height: 0; }
+.tabs .ti svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 760px) { .tabs .ti svg { width: 20px; height: 20px; } }
+.brand-sub { display: flex; align-items: center; min-width: 0; }
+.brand-sub [data-pname] { min-width: 0; flex: 0 1 auto; }
+.brand-sub .save-st { flex: none; }
+@media (min-width: 761px) and (max-width: 1100px) { .brand-sub, .tabs .ti { display: none; } }

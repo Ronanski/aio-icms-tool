@@ -722,7 +722,22 @@ function check(name, cond, info = '') {
     return getComputedStyle(bar).position === 'fixed' && r.top >= pb.bottom - 1 && r.right <= innerWidth && Math.abs(main.top - pb.bottom) <= 1;
   }));
   await page.click('.update-bar [data-u="later"]');
+  pagesInfo.stable = { version: await page.evaluate(() => App.VERSION), build: 'zz-next-build', notes: '' };
+  await page.evaluate(() => Updater.check(true));
+  check('a new build of the same version names the builds, not "v2.3.0 is ready. You have v2.3.0"', await page.evaluate(() => {
+    const t = document.querySelector('.update-bar')?.textContent || '';
+    return t.includes('zz-next-build') && t.includes('You have build') && !t.includes('You have v');
+  }));
+  await page.click('.update-bar [data-u="later"]');
   pagesInfo.stable = NOUP; pagesInfo.beta = NOUP;
+  check('the lessons are numbered in the order the course lists them', await page.evaluate(() => {
+    const L = Examples.LESSONS || [], lv = [...new Set(L.map(l => l.level))], shown = lv.flatMap(g => L.filter(l => l.level === g));
+    return shown.length > 10 && shown.every((l, i) => l.title.startsWith((i + 1) + ' '));
+  }));
+  check('the view tabs use drawn icons (the same size everywhere), not text glyphs', await page.evaluate(() => [...document.querySelectorAll('.tabs [data-view] .ti')].every(s => s.querySelector('svg path'))));
+  check('the project name gives way to the Saved state: the pill is never cut off', await page.evaluate(() => {
+    const st = document.querySelector('.brand-sub .save-st'); return getComputedStyle(st).flexShrink === '0' && getComputedStyle(st.parentElement).display === 'flex';
+  }));
   check('a failed update check is not retried at once', await page.evaluate(async () => {
     const f = window.fetch; window.fetch = () => Promise.reject(new Error('down'));
     const a = await Updater.check(true); let calls = 0; window.fetch = () => { calls++; return f.apply(window, arguments); };
@@ -1479,7 +1494,7 @@ function check(name, cond, info = '') {
   check('free draw: the new sources and wire pieces are in the library', await page.evaluate(() => ['pL1', 'pL2', 'pL3', 'pN', 'pPE', 'pP', 'pM', 'batt', 'gen', 'psu', 'wline', 'wcorner', 'wtee', 'wcross', 'wlink', 'mdc'].every(k => FreeDraw.KINDS[k])));
   await page.selectOption('#view-schematic .fd-grp', 'Others'); await wait(100);
   for (let i = 0; i < 4; i++) { await page.click('#view-schematic .fd-ico[data-fk="wcorner"]'); await wait(80); }
-  check('free draw: as in Simurelay, a symbol from the library lands in the middle of the view, selected', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && its.every(a => a.x === its[0].x && a.y === its[0].y) && FreeDraw.selected() === its[3]; }));
+  check('free draw: a symbol from the library lands in the middle of the view, selected; the next ones go to the next free spot instead of on top', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && new Set(its.map(a => a.x + ',' + a.y)).size === 4 && its.slice(1).every(a => a.y === its[0].y && a.x > its[0].x) && FreeDraw.selected() === its[3]; }));
   check('free draw: wire pieces need no tag dialog', await page.evaluate(() => !document.querySelector('.modal')));
   await page.dragAndDrop('#view-schematic .fd-ico[data-fk="wcross"]', '#view-schematic .fd-host', { targetPosition: { x: 60, y: 60 } }); await wait(200);
   check('free draw: a symbol dragged from the library lands where it is dropped', await page.evaluate(() => App.project.schematic.free.items.some(i => i.k === 'wcross')));
@@ -2511,6 +2526,7 @@ function check(name, cond, info = '') {
   check('feedback: START does nothing while the alarm is latched', await page.evaluate(is("r('B3:0/14') === 1 && r('O:0/0') === 0 && !d('KM1').pulled")));
   await hmiTap('RESET');
   check('feedback: HMI RESET clears the alarm and the banner', await until(is("r('B3:0/14') === 0 && !d('H2').on")) && await (async () => { await wait(150); return !(await hmiAlarm('DISCREPANCY')); })());
+  check('an inactive alarm banner shows "No active alarm", not the alarm text', await page.evaluate(() => [...document.querySelectorAll('#view-hmi .t-alarm:not(.on)')].every(a => a.querySelector('.al-txt').offsetParent === null && a.querySelector('.al-none').offsetParent !== null)));
   await hmiTap('START');
   check('feedback: with QF1 back on, START runs the motor again with RUNNING feedback', await until(is("r('O:0/0') === 1 && r('I:0/3') === 1 && d('M1').drive === 'run'")));
   await op('M1', 'jam');

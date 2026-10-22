@@ -63,6 +63,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Timers in a background tab** keep real time. The browser runs a hidden tab only about once a second, and the PLC used to count just 0.1 s of it.
 - **Project name:** a very long name no longer widens the top bar, and renaming to an empty name is refused.
 - **Phone and tablet:** the whole app could be panned sideways on the Ladder. Hidden instruction names escaped the scrolling toolbar and made the page 823 px wide on a 390 px phone.
+- **Electrical Diagram:** a second symbol from the library no longer lands exactly on top of the first one. It goes to the next free spot.
+- **HMI:** an alarm banner that is not active shows "No active alarm" instead of the alarm text in grey. Studio still shows the text.
+- **Update notice:** a new build of the same version names the builds, instead of "v2.3.0 is ready. You have v2.3.0".
+- **Lessons:** "Running feedback and a discrepancy alarm" is now lesson 12, in the Circuits group where it is listed. Lessons 12–16 become 13–17.
+- **Phone:** the view tabs use drawn icons of one size (the Wiring glyph was tiny), and the "Saved" pill is no longer cut off by a long project name.
 
 ### Added
 - **100 exercises** in Learn → Exercises: 25 easy, 40 medium and 35 hard, by topic (contacts and logic, seal-in and latches, timers, counters, compare and math, sequences, motor control, process, Electrical Diagram, Wiring, HMI, and integration of every module). Each has a hint, a starting project, **Check my work** and a solution. Ladder exercises are run on a simulated PLC. Drawing, wiring and HMI exercises are checked on your own project: the checker presses your buttons and switches the PLC to RUN when needed. Done exercises are ticked and counted.

@@ -79,7 +79,10 @@
     const beta = info.channel === 'beta';
     const bar = document.createElement('div');
     bar.className = 'update-bar';
-    bar.innerHTML = `<span>⬆ <b>PLC Trainer v${esc(info.version)}</b>${beta ? ' <span class="beta-tag">BETA</span>' : ''} is ready. You have v${esc(App.VERSION)}.</span>
+    // the same version in a new build (a beta, or a development copy): name the builds, not "v2.3.0 … You have v2.3.0"
+    const same = info.version === App.VERSION;
+    const have = same ? `build ${esc(App.BUILD)}` : `v${esc(App.VERSION)}`;
+    bar.innerHTML = `<span>⬆ <b>PLC Trainer v${esc(info.version)}</b>${beta ? ' <span class="beta-tag">BETA</span>' : ''}${same ? ` <small class="mono">(${esc(info.build)})</small>` : ''} is ready. You have ${have}.</span>
       <button class="btn" data-u="notes">What's new</button><button class="btn primary" data-u="go">⟳ Restart to update</button><button class="btn ghost" data-u="later" title="Hide until the next version">Later</button>`;
     bar.onclick = e => {
       const b = e.target.closest('[data-u]'); if (!b) return;

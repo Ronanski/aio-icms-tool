@@ -1313,7 +1313,15 @@
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
       // as in Simurelay: a symbol from the library lands in the middle of the view (selected, ready to drag into place)
-      const c = x != null ? { x, y } : { x: snap10((r.width / 2 - view.x) / view.k), y: snap10((r.height / 2 - view.y) / view.k) }, cx = c.x, cy = c.y;
+      const c = x != null ? { x, y } : { x: snap10((r.width / 2 - view.x) / view.k), y: snap10((r.height / 2 - view.y) / view.k) };
+      // the middle is taken (the symbol placed just before): the next free spot to the right, then the rows below,
+      // so a new symbol never hides one that is already there
+      if (x == null) {
+        const taken = (px, py) => F.items.some(o => Math.abs(o.x - px) < 60 && Math.abs(o.y - py) < 60);
+        let n = 0; const x0 = c.x, y0 = c.y;
+        while (taken(c.x, c.y) && n < 40) { n++; c.x = x0 + (n % 8) * 80; c.y = y0 + Math.floor(n / 8) * 100; }
+      }
+      const cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
       F.items.push(it); sel = { i: it.id }; group.clear();
       H.changed();

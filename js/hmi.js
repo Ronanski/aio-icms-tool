@@ -311,7 +311,8 @@
       case 'bar': return `<div class="h-bar"><small>${esc(o.label)}</small><div class="trk"><i data-f style="background:${col(o.color)}"></i></div><b data-t>0</b></div>`;
       case 'motor': return `<div class="h-motor"><svg viewBox="-50 -50 100 100"><circle r="44" class="mb"/><g data-r><path d="M0 0 L36 -8 Q40 0 36 8Z"/><path d="M0 0 L36 -8 Q40 0 36 8Z" transform="rotate(120)"/><path d="M0 0 L36 -8 Q40 0 36 8Z" transform="rotate(240)"/></g><circle r="7" class="hub"/></svg><small>${esc(o.label)}</small></div>`;
       case 'tank': return `<div class="h-tank"><small>${esc(o.label)}</small><div class="vessel"><i data-f></i><b data-t>0</b></div></div>`;
-      case 'alarm': return `<div class="h-alarm" data-a>⚠ ${esc(o.label)}</div>`;
+      // as on an operator panel: the alarm text shows only while the alarm is active (Studio shows it to edit it)
+      case 'alarm': return `<div class="h-alarm" data-a><span class="al-txt">⚠ ${esc(o.label)}</span><span class="al-none">No active alarm</span></div>`;
       case 'text': return `<div class="h-text" style="font-size:${Number(o.size) || 18}px;color:${col(o.color)}">${esc(o.label)}</div>`;
       case 'rect': case 'ellipse': return `<div class="h-shape${o.type === 'ellipse' ? ' round' : ''}" data-s>${o.label ? `<span>${esc(o.label)}</span>` : ''}</div>`;
       case 'line': return `<div class="h-shape pipe" data-s></div>`;
