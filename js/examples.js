@@ -699,9 +699,10 @@
     {
       id: 'l1', level: 'Basics', title: '1 · Your first rung: XIC → OTE', ex: 'practice',
       body: `<p>Inputs are read into the <b>input image</b> (<code>I:0/x</code>), the ladder is solved left to right, top to bottom, and the <b>output image</b> (<code>O:0/x</code>) is written to the relay outputs. That cycle is the <b>scan</b>.</p>
-      <ol><li>Go to <b>Ladder</b>. Click <b>＋ Rung</b>, then the <code>XIC</code> button and set the address to <code>I:0/0</code>.</li>
+      <ol><li>Press <b>Load “Practice board”</b> below: a clean board with buttons and lamps, so your rung is the only one driving <code>O:0/0</code>.</li>
+      <li>Go to <b>Ladder</b>. Click <b>＋ Rung</b>, then the <code>XIC</code> button and set the address to <code>I:0/0</code>.</li>
       <li>Click <code>OTE</code> and set it to <code>O:0/0</code>.</li>
-      <li>Switch the PLC to <b>RUN</b> (top bar). Open <b>Wiring</b><span class="desk-only"> (or pick <b>▦ Layout → Workbench</b> to see ladder, wiring and HMI together)</span> and hold the <b>S1 START</b> button there. Lamp H1 lights — and the instructions turn green.</li></ol>`,
+      <li>Switch the PLC to <b>RUN</b> (top bar). Open <b>Wiring</b><span class="desk-only"> (or pick <b>▦ View → Workbench</b> to see ladder, wiring and HMI together)</span> and hold the <b>S1 START</b> button there. Lamp H1 lights — and the instructions turn green.</li></ol>`,
       solution: ['XIC I:0/0 OTE O:0/0'],
     },
     {
@@ -773,7 +774,15 @@ XIO I:0/1 RES C5:0</pre>
       <ol><li>RUN the PLC. The consumer outlet (USE) drains the tank slowly; watch it refill automatically.</li><li>Switch S1 to MAN: filling stops.</li><li>Force <code>O:0/4</code> OFF while filling and wait for the timeout alarm.</li></ol>`,
     },
     {
-      id: 'l12', level: 'Challenge', title: '12 · Challenge: forward / reverse', ex: 'blank',
+      id: 'l17', level: 'Circuits', title: '12 · Running feedback and a discrepancy alarm', ex: 'plcfeedback',
+      body: `<p>A PLC output only says what the program <b>wants</b>. To know what the motor <b>does</b>, wire a contact of the contactor back to an input: here KM1 13-14 goes to <code>I:0/3</code>. The overload F1 95-96 is hardwired in the coil circuit, and the coil is fed after the main breaker QF1, so the feedback drops whenever the motor cannot run.</p>
+      <p>The HMI motor and the RUNNING indicator use <code>I:0/3</code>, not <code>O:0/0</code>. If the command and the feedback disagree for 2 s, <code>B3:0/14</code> latches a discrepancy alarm and stops the command until RESET.</p>
+      <ol><li>Put the PLC in RUN and press <b>START</b> on the HMI: the motor runs and the HMI shows RUNNING.</li>
+      <li>Switch <b>QF1</b> off in the Wiring and press START again: the command is ON but the HMI shows NOT RUNNING, and after 2 s the discrepancy alarm comes on.</li>
+      <li>Switch QF1 on, press <b>RESET</b> on the HMI, then START: the motor runs again.</li></ol>`,
+    },
+    {
+      id: 'l12', level: 'Challenge', title: '13 · Challenge: forward / reverse', ex: 'blank',
       body: `<p>Build a reversing starter yourself:</p>
       <ul><li>Two contactors KM1 (forward) and KM2 (reverse). Wire KM2 with <b>L1 and L3 swapped</b> — the motor reverses.</li>
       <li>Add electrical interlocking: KM1 21-22 (NC) in series with KM2’s coil and vice versa. Also interlock in the ladder with <code>XIO</code>.</li>
@@ -781,7 +790,7 @@ XIO I:0/1 RES C5:0</pre>
       <p>Hint: place a 3-phase supply, MCCB, two contactors, an overload relay and a motor from the palette.</p>`,
     },
     {
-      id: 'l13', level: 'Hardware', title: '13 · Modular PLC rack and I/O Configuration', ex: 'rack',
+      id: 'l13', level: 'Hardware', title: '14 · Modular PLC rack and I/O Configuration', ex: 'rack',
       body: `<p>A modular PLC is a <b>rack</b>: a power supply, the <b>CPU</b> in slot 0 and I/O cards in slots 1–7. The address follows the slot: a card in slot 1 is <code>I:1/0…7</code>, in slot 2 <code>O:2/0…7</code>.</p>
       <p>The CPU only runs when every card is in its <b>I/O Configuration</b> (Ladder → <b>I/O Config</b>). A card that is installed but not configured, or configured but missing, is a <b>CPU fault</b>: the FLT light is on and the CPU refuses RUN.</p>
       <ol><li>Put the PLC in RUN and press START: <code>O:2/0</code> turns on.</li>
@@ -790,14 +799,14 @@ XIO I:0/1 RES C5:0</pre>
       <li>Change the <b>Address</b> style in the Ladder toolbar to bit/byte: <code>I:1/0</code> is shown as <code>I0.0</code>.</li></ol>`,
     },
     {
-      id: 'l14', level: 'Hardware', title: '14 · Analog input, analog output and a VFD', ex: 'analog',
+      id: 'l14', level: 'Hardware', title: '15 · Analog input, analog output and a VFD', ex: 'analog',
       body: `<p>An analog input card turns <b>4–20 mA</b> into a number: 4 mA = 0, 20 mA = 32767 (<code>I:3.0</code> is slot 3, channel 0). An analog output card turns a number into <b>0–10 V</b> (<code>O:4.0</code>). The VFD runs the pump at the speed given by that 0–10 V signal.</p>
       <ol><li>Put the PLC in RUN. Watch <code>I:3.0</code> (level LT1) in the data table while the tank fills and drains.</li>
       <li>Switch <b>S1 PUMP</b> on: the VFD starts the motor; its frequency follows the level (<code>MOV I:3.0 O:4.0</code>).</li>
       <li>Click the VFD to see the frequency ramp, and the motor speed follow it.</li></ol>`,
     },
     {
-      id: 'l15', level: 'HMI', title: '15 · HMI screens, trends and navigation', ex: 'plcmotor',
+      id: 'l15', level: 'HMI', title: '16 · HMI screens, trends and navigation', ex: 'plcmotor',
       body: `<p>A real HMI has several <b>screens</b> and buttons to move between them. A <b>trend</b> draws a tag over time.</p>
       <ol><li>Open the HMI in <b>✎ Studio</b>. Add a <b>second screen</b> (Screens → ＋).</li>
       <li>On the first screen, add a <b>Go to Screen</b> button that opens the second screen.</li>
@@ -805,20 +814,12 @@ XIO I:0/1 RES C5:0</pre>
       <li>Switch to <b>▶ Machine</b>, start the motor and press your Go to Screen button: the trend rises.</li></ol>`,
     },
     {
-      id: 'l16', level: 'Online', title: '16 · Download and online edits', ex: 'plcmotor',
+      id: 'l16', level: 'Online', title: '17 · Download and online edits', ex: 'plcmotor',
       body: `<p>With real PLC software, the controller keeps the program that was last <b>downloaded</b>. Editing the project does not change the running machine until you download, or make an <b>online edit</b>.</p>
       <ol><li>Ladder → <b>Online</b>: choose <b>Realistic</b>.</li>
       <li>In PROG, <b>⇄ Go Online</b> and <b>Download</b>. Then put the PLC in RUN.</li>
       <li>While running, change a rung (for example the run lamp). The edit is pending: press <b>▶ Test edits</b> and check the machine.</li>
       <li>Press <b>✓ Assemble</b> to keep it in the controller.</li></ol>`,
-    },
-    {
-      id: 'l17', level: 'Circuits', title: '17 · Running feedback and a discrepancy alarm', ex: 'plcfeedback',
-      body: `<p>A PLC output only says what the program <b>wants</b>. To know what the motor <b>does</b>, wire a contact of the contactor back to an input: here KM1 13-14 goes to <code>I:0/3</code>. The overload F1 95-96 is hardwired in the coil circuit, and the coil is fed after the main breaker QF1, so the feedback drops whenever the motor cannot run.</p>
-      <p>The HMI motor and the RUNNING indicator use <code>I:0/3</code>, not <code>O:0/0</code>. If the command and the feedback disagree for 2 s, <code>B3:0/14</code> latches a discrepancy alarm and stops the command until RESET.</p>
-      <ol><li>Put the PLC in RUN and press <b>START</b> on the HMI: the motor runs and the HMI shows RUNNING.</li>
-      <li>Switch <b>QF1</b> off in the Wiring and press START again: the command is ON but the HMI shows NOT RUNNING, and after 2 s the discrepancy alarm comes on.</li>
-      <li>Switch QF1 on, press <b>RESET</b> on the HMI, then START: the motor runs again.</li></ol>`,
     },
   ];
 

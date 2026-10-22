@@ -5,7 +5,81 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- **New look: "Engineering Neutral"** (`docs/DESIGN_SYSTEM.md`):
+  - neutral grey surfaces in light and dark;
+  - blue for interaction and selection, with green, amber and red kept for PLC state (RUN, forced, fault);
+  - one sans font for the interface and mono for addresses and values, with no serif or italics in the working views;
+  - one control height and radius scale, and a keyboard focus ring;
+  - the view switcher is flat, with the active view underlined.
+  
+  Device drawings keep their real colours.
+- **Tablet layout:**
+  - the top bar stays on one row;
+  - the ladder toolbar is one row that scrolls sideways instead of five stacked rows.
+  
+  On a 834 × 1112 tablet the first rung now starts at 171 px instead of 448 px.
+- **One set of controller lights:** with the Ladder alone on screen, its status box (RUN / OK / BAT / I/O, forces, path) is the controller, and the bar's POWER / RUN / FORCE / FAULT lights step back. Other views and side-by-side layouts keep them. Below 1100 px the bar's I/O strip is hidden instead of cut to a few cells.
+- **Electrical Diagram:** a project whose devices are only in the Wiring now says so, and names the examples with a finished diagram, instead of just "Empty drawing".
+
+- **Learn:**
+  - each exercise has its own project. Start offers **Continue** or **Start over**, instead of a new project every time.
+  - **Check my work** only grades the exercise's own project.
+  - **The solution** goes into that project (Ctrl+Z undoes it). Passing with the solution is not counted as done.
+  - Switching tabs shows an exercise or a lesson to match.
+- **Ladder:**
+  - **Find…** in the instruction palette: type a mnemonic or words of its name ("on delay", "compare"), and Enter adds it.
+  - Error and warning lines in the Errors pane go to their rung.
+  - Address errors say what is wrong (bit 0–15, a word or timer without its bit, an unknown file, a name that is not a tag).
+  - The timer help explains Preset × Time Base.
+- **Wiring:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every change: placing, moving, wiring, deleting.
+- **One icon set:** every toolbar and dialog button uses the same line icons (download, undo, zoom, Who Active, network…) instead of emoji and symbols. Labels stay, and Tagalog still translates them.
+- **Ladder:**
+  - **Selected instruction** panel at the top of the side panel: the operands with live values (bits; PRE / ACC / EN TT DN), a timer's delay, the description, **Used in** (every other rung with the same address, as links), and Edit operands.
+  - The palette shows each instruction's mnemonic under its glyph.
+  - The toolbar fits two rows on a 1440 px screen.
+- **HMI Studio:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every edit.
+- **Open project:** a deleted project can be restored from the toast for a few seconds.
+- **Dialogs:** Tab stays inside a dialog, and focus returns where it was when the dialog closes.
+- **Organizer:** a project tree, with the open routine marked.
+- **HMI Studio:** objects in Controls, Indicators, Equipment and Drawing groups.
+- **Dialogs and menus:**
+  - destructive confirms are red and start on Cancel, and Enter presses the focused button;
+  - menus close with Escape and move with ↑ ↓.
+
+### Fixed
+- **PROG → RUN now behaves like the controller's prescan.**
+  - A seal-in held by an internal bit drops out, and on-delay timers start again.
+  - A latched output (OTL) is still on when the processor returns to RUN. It used to be lost, and an internal seal-in used to come back on.
+  - Outside RUN the output terminals are off and the output image is kept.
+- **Work could be lost:**
+  - "Insert solution into ladder" no longer replaces the program of whatever project is open.
+  - The same project open in two windows no longer overwrites the other window's changes without a word: saving pauses and asks which version to keep.
+  - The Wiring had no undo.
+- **Ladder:** cancelling the address dialog of a new instruction no longer leaves an `XIC I:0/0` behind.
+- **Import and open:** rungs that cannot be read are reported, and a file with no project parts is refused with the reason.
+- **Routine names** of the tag-based controller keep their case and length when the project is opened again.
+- **Verify** of a long program is about 5× faster (500 rungs: 1.1 s → 0.2 s).
+- **Timers in a background tab** keep real time. The browser runs a hidden tab only about once a second, and the PLC used to count just 0.1 s of it.
+- **Project name:** a very long name no longer widens the top bar, and renaming to an empty name is refused.
+- **Phone and tablet:** the whole app could be panned sideways on the Ladder. Hidden instruction names escaped the scrolling toolbar and made the page 823 px wide on a 390 px phone.
+- **Electrical Diagram:** a second symbol from the library no longer lands exactly on top of the first one. It goes to the next free spot.
+- **HMI:** an alarm banner that is not active shows "No active alarm" instead of the alarm text in grey. Studio still shows the text.
+- **HMI Studio:** an empty screen says "add objects from the toolbar above" on one line, instead of "switch to Studio" split over three lines while already in Studio.
+- **Update notice:** a new build of the same version names the builds, instead of "v2.3.0 is ready. You have v2.3.0".
+- **Lessons:** "Running feedback and a discrepancy alarm" is now lesson 12, in the Circuits group where it is listed. Lessons 12–16 become 13–17.
+- **Phone:** the view tabs use drawn icons of one size (the Wiring glyph was tiny), and the "Saved" pill is no longer cut off by a long project name.
+- **Tablet Ladder:**
+  - a short rung fits the pane, so its coil is in sight. Rungs used to be at least 600 px wide and ran past an 834 px tablet's pane.
+  - up to 1024 px the status box steps back as intended (a later rule kept it on screen), so the instruction palette is about twice as wide;
+  - all 16 bits of the Data Files grid fit beside the ladder. Bits 2–0 were scrolled out of sight.
+- **Data Files:** an ON bit is green (energized) instead of amber, the colour of a forced bit.
+- **Wiring toolbar:** Zoom and Fit stay together, and on a tablet the toolbar is two rows instead of three.
+- **Phone Ladder:** the Errors pane head is one row; the chips wrapped and "Rung n of m" was cut off.
+- **Phone Electrical Diagram:** the toolbar buttons show their icons (they were empty boxes), and the empty-drawing hint wraps instead of running off the screen.
+
 ### Added
+- **Task strip:** while an exercise's project is open, a strip above the work shows the exercise and its task, with **Task** (back to it in Learn) and **✓ Check my work**. You no longer have to switch to Learn to read the task again.
 - **100 exercises** in Learn → Exercises: 25 easy, 40 medium and 35 hard, by topic (contacts and logic, seal-in and latches, timers, counters, compare and math, sequences, motor control, process, Electrical Diagram, Wiring, HMI, and integration of every module). Each has a hint, a starting project, **Check my work** and a solution. Ladder exercises are run on a simulated PLC. Drawing, wiring and HMI exercises are checked on your own project: the checker presses your buttons and switches the PLC to RUN when needed. Done exercises are ticked and counted.
 - **Practice board 16**: the 16 in / 12 out compact PLC with START, STOP, four push buttons, two selectors and eight lamps, for the medium and hard exercises.
 - **Learn** has two tabs, Course (the lessons) and Exercises (by difficulty with a topic filter). The **Examples** menu is grouped by category: practice boards, motor control, process, hardware and cabinet.

@@ -553,6 +553,7 @@
     const files = App.project.ladder.files || [], tag = App.project.target === 'tag';
     const fields = d.args.map((spec, k) => (spec.ty === 'prog' && files.length ? { key: 'a' + k, label: tag ? 'Routine' : spec.n, value: e.a[k], options: files.map(f => ({ v: 'U:' + f.n, l: tag ? f.name : `U:${f.n} — LAD ${f.n} ${f.name}` })) } : spec.ty === 'mtype' ? { key: 'a' + k, label: spec.n, value: e.a[k], options: ['READ', 'WRITE'] } : { key: 'a' + k, label: spec.n, value: spec.ty === 'bit' ? App.fmt(e.a[k]) : e.a[k], list: suggestions(spec.ty) }));
     fields.push({ key: 'desc', label: 'Address description (optional)', value: descKey ? (App.project.ladder.desc[descKey] || '') : '', hint: 'Shown above the instruction, e.g. "START PB" or "MOTOR RUN".' });
+    let done = false;
     const m = UI.form(`${e.t} — ${d.name}`, fields, vals => {
       const a = [];
       for (let k = 0; k < d.args.length; k++) {
@@ -571,8 +572,13 @@
         if (ds) App.project.ladder.desc[p0.norm] = ds; else delete App.project.ladder.desc[p0.norm];
       }
       App.plc.applyInstr(e, true);
+      done = true;
       changed();
-    }, `<p class="help">${esc(d.help || '')}</p>`);
+    }, `<p class="help">${esc(d.help || '')}</p>`, {
+      // a new instruction whose operands were never confirmed is taken out again: it would stay with a placeholder
+      // address (I:0/0) that Verify cannot tell from a real one
+      onClose: () => { if (!isNew || done) return; const g = find(id); if (g) { g.arr.splice(g.idx, 1); if (SEL.id === id) SEL.id = null; changed(); } },
+    });
     // keep the description field in sync with the address being typed
     const a0 = m.el.querySelector('#f_a0'), dIn = m.el.querySelector('#f_desc');
     if (a0 && dIn) a0.addEventListener('input', () => {
@@ -609,10 +615,15 @@
     });
     ERR_IDS = new Set(errs.filter(x => x.id).map(x => x.id));
     const where = x => `${App.project.target === 'tag' ? 'MainProgram - ' + fileName(x.n) : fileName(x.n)}, rung ${x.ri}`;
+    // one pane update for the whole report (a line at a time made a long program slow to verify)
+    outHold = true;
     Ladder.out('m', 'Verifying routines...', true);
-    errs.forEach(x => Ladder.out('e', `Error: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`));
-    warns.forEach(x => Ladder.out('w', `Warning: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`));
+    errs.forEach(x => Ladder.out('e', `Error: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`, false, x));
+    warns.forEach(x => Ladder.out('w', `Warning: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`, false, x));
+    outHold = false;
     Ladder.out('m', `Complete - ${errs.length} error(s), ${warns.length} warning(s)`);
+    // what going to RUN tells the user (a warning does not stop RUN, but it should not go unseen)
+    Ladder.lastWarns = warns.map(x => `${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`);
     Ladder.render();
     if (quiet) return errs.length === 0;
     // I/O addresses in the messages follow the project's address style
@@ -698,7 +709,7 @@
           <div class="lad-stat-mid"><button class="lad-stat-btn" data-act="omenu" title="Controller mode — click for Go Online, Download, Run / Program Mode and Who Active"><b data-st-mode>Offline</b><span class="caret">▾</span></button><span class="lad-path" data-st-path title="Path to the controller"></span></div>
           <div class="lad-stat-lines"><span class="st-box" data-st-forces>No Forces</span><span class="st-box" data-st-edits>No Edits</span><span class="st-box bad" data-st-io hidden>I/O Not Responding</span></div></div>
         <div class="tb-group lad-ins"><div class="ins-row">${TB.flatMap(([g, list]) => list.map(t => `<button class="tbtn ins-btn${FAV.includes(t) ? ' fav' : ''}" data-ins="${t}" data-g="${g}" title="${t} — ${esc(INSTR[t].name)}: ${esc(INSTR[t].help)}" aria-label="${t} ${esc(INSTR[t].name)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`)).join('')}</div>
-          <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}</div></div>
+          <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}<input class="ins-find" data-insfind list="insFindList" placeholder="Find…" title="Find an instruction by mnemonic or name (e.g. TON, timer, compare) — Enter adds it" aria-label="Find an instruction" autocomplete="off" spellcheck="false"><datalist id="insFindList">${Object.keys(INSTR).map(t => `<option value="${t}">${t} — ${esc(INSTR[t].name)}</option>`).join('')}</datalist></div></div>
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
         <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><button class="tbtn" data-act="who" title="Who Active: find the controller through the engineering PC in the Wiring and set the project path">⇆ Who Active</button><button class="tbtn" data-act="network" title="Network: who active, remote PLCs, produced / consumed data">🖧 Network</button><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
@@ -727,7 +738,7 @@
       <div class="lad-main">
         <aside class="lad-org" data-lorg hidden></aside>
         <div class="lad-rungs" tabindex="0"></div>
-        <aside class="lad-side"></aside>
+        <aside class="lad-side"><section class="lad-props" data-lprops hidden></section><div class="lad-dt"></div></aside>
       </div>
       <div class="lad-out" data-lout><div class="lad-out-head"><button class="oc e" data-oc="e"></button><button class="oc w" data-oc="w"></button><button class="oc m" data-oc="m"></button><span class="lad-rungpos" data-rungpos></span><button class="oc-tog" data-act="outtog" title="Show or hide the Errors pane">▾</button></div><pre class="lad-out-log" data-olog></pre></div>`;
     rungsEl = el.querySelector('.lad-rungs');
@@ -774,9 +785,33 @@
       if (u) { SEL = { r: ri, id: Number(u.dataset.uid), leg: null }; Ladder.render(); elemMenu(ev.clientX, ev.clientY, SEL.id); }
       else { SEL = { r: ri, id: null, leg: null }; Ladder.render(); rungMenu(ev.clientX, ev.clientY, ri); }
     });
-    DataTable.init(sideEl);
+    DataTable.init(sideEl.querySelector('.lad-dt'));
+    sideEl.querySelector('[data-lprops]').addEventListener('click', ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.pedit) Ladder.edit(Number(b.dataset.pedit));
+      if (b.dataset.pgo) { const [n, ri] = b.dataset.pgo.split(':').map(Number); Ladder.goRung(n, ri); }
+    });
     setTab(insTab);
-    el.querySelector('[data-lout]').addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.oc) { const k = b.dataset.oc; if (outHide.has(k)) outHide.delete(k); else outHide.add(k); outUi(); } else if (b.dataset.act === 'outtog') outOpen(!outShown); });
+    // Find an instruction: a mnemonic, or words of its name or help ("timer", "compare"); Enter adds the one it finds
+    const find1 = q => {
+      const s = q.trim().toUpperCase(); if (!s) return [];
+      if (INSTR[s]) return [s];
+      const words = s.split(/\s+/);
+      return Object.keys(INSTR).filter(t => { const h = `${t} ${INSTR[t].name} ${INSTR[t].help || ''}`.toUpperCase(); return words.every(w => h.includes(w)); });
+    };
+    const fi = el.querySelector('[data-insfind]');
+    if (fi) fi.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') { fi.value = ''; fi.blur(); return; }
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      const hits = find1(fi.value);
+      if (hits.length === 1 || (hits.length && INSTR[fi.value.trim().toUpperCase()])) { fi.value = ''; Ladder.insert(hits[0]); }
+      else UI.toast(hits.length ? `${hits.length} instructions match: ${hits.slice(0, 8).join(', ')}${hits.length > 8 ? '…' : ''} — type more or pick one` : `No instruction matches “${fi.value.trim()}”`, hits.length ? 'info' : 'warn', 4000);
+    });
+    Ladder.findInstr = find1;
+    const goLine = ev => { const g = ev.target.closest('.ol-go'); if (!g) return false; Ladder.goRung(Number(g.dataset.on), Number(g.dataset.ori)); return true; };
+    el.querySelector('[data-olog]').addEventListener('keydown', ev => { if (ev.key === 'Enter' && goLine(ev)) ev.preventDefault(); });
+    el.querySelector('[data-lout]').addEventListener('click', ev => { if (goLine(ev)) return; const b = ev.target.closest('button'); if (!b) return; if (b.dataset.oc) { const k = b.dataset.oc; if (outHide.has(k)) outHide.delete(k); else outHide.add(k); outUi(); } else if (b.dataset.act === 'outtog') outOpen(!outShown); });
     outUi();
     // the Organizer stays open (or closed) as the user left it in this browser
     try { if (localStorage.getItem('plc-trainer.orgOpen')) el.querySelector('[data-lorg]').hidden = false; } catch (e) { /* ignore */ }
@@ -800,11 +835,19 @@
     box.classList.toggle('open', outShown);
     box.querySelector('[data-act="outtog"]').textContent = outShown ? '▾' : '▴';
     const log = box.querySelector('[data-olog]');
-    log.textContent = OUT.filter(x => !outHide.has(x.k)).map(x => x.t).join('\n');
+    // a line about a rung is a link to it (click, or Enter on it), as in the Errors pane of programming software
+    log.innerHTML = OUT.filter(x => !outHide.has(x.k)).map(x => (x.ri !== undefined ? `<span class="ol-go ${x.k}" data-on="${x.n}" data-ori="${x.ri}" tabindex="0" title="Go to this rung">${esc(x.t)}</span>` : esc(x.t))).join('\n');
     log.scrollTop = log.scrollHeight;
   }
   // write to the Errors pane (kind e / w / m); clear = start a new report
-  Ladder.out = function (k, text, clear) { if (clear) OUT.length = 0; String(text).split('\n').forEach(t => OUT.push({ k, t })); if (OUT.length > 400) OUT.splice(0, OUT.length - 400); if (k === 'e') outShown = true; outUi(); };
+  let outHold = false;
+  Ladder.out = function (k, text, clear, at) { if (clear) OUT.length = 0; String(text).split('\n').forEach(t => OUT.push(at ? { k, t, n: at.n, ri: at.ri } : { k, t })); if (OUT.length > 400) OUT.splice(0, OUT.length - 400); if (k === 'e') outShown = true; if (!outHold) outUi(); };
+  // go to a rung named in the Errors pane: open its file, select it and bring it into view
+  Ladder.goRung = function (n, ri) {
+    if (n !== curFile) Ladder.openFile(n);
+    SEL = { r: Math.max(0, Math.min(ri, rungs().length - 1)), id: null, leg: null }; Ladder.render();
+    const r = root && root.querySelector(`.rung[data-r="${SEL.r}"]`); if (r) r.scrollIntoView({ block: 'center' });
+  };
   Ladder.outLines = () => OUT.map(x => x.t);
 
   /* instruction palette tabs (remembered in this browser) */
@@ -959,6 +1002,7 @@
   }
 
   Ladder.render = function () {
+    propsSig = null;
     if (!rungsEl) return;
     const zl = root.querySelector('[data-lz]');
     if (zl) zl.textContent = Math.round(LZ * 100) + '%';
@@ -974,7 +1018,8 @@
     const nf = root.querySelector('[data-act="newfile"]');
     if (nf) { nf.textContent = tag ? '＋ Routine' : '＋ File'; nf.title = tag ? 'New routine in MainProgram' : 'New subroutine file'; }
     const list = rungs();
-    const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
+    // the rungs fill the pane; a short rung no longer runs past a tablet's pane (600 px put the coil out of sight)
+    const avail = Math.max(360, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
     list.forEach(r => { W = Math.max(W, rungLayout(r).need); });
     const html = list.map((r, i) => {
@@ -999,7 +1044,50 @@
     Ladder.update();
   };
 
+  /* ---------- Properties of the selected instruction (top of the side panel) ----------
+     its operands with their live values, a timer's delay, the description, and where else the same address is used */
+  let propsSig = null;
+  const keyOf = a => (!a ? null : ['T4', 'C5', 'R6'].includes(a.file) ? a.file + ':' + a.word : a.norm);
+  function liveOf(spec, a) {
+    const plc = App.plc;
+    if (!a) return '';
+    if (a.kind === 'bit') return String(plc.getBit(a));
+    if (a.kind === 'word') return String(plc.getWord(a));
+    if (a.kind === 'struct' && plc.data[a.file] && plc.data[a.file][a.word]) {
+      const s = plc.data[a.file][a.word];
+      if (a.file === 'T4') return `PRE ${s.PRE} · ACC ${s.ACC} · EN ${s.EN} TT ${s.TT} DN ${s.DN}`;
+      if (a.file === 'C5') return `PRE ${s.PRE} · ACC ${s.ACC} · CU ${s.CU} CD ${s.CD} DN ${s.DN}`;
+      if (a.file === 'R6') return `LEN ${s.LEN} · POS ${s.POS} · EN ${s.EN} DN ${s.DN}`;
+    }
+    return '';
+  }
+  function propsUi(force) {
+    const box = root && root.querySelector('[data-lprops]'); if (!box || !App.project) return;
+    const f = SEL.id ? find(SEL.id) : null;
+    if (!f || f.e.t === 'BST' || !INSTR[f.e.t]) { if (!box.hidden) { box.hidden = true; box.innerHTML = ''; } propsSig = null; return; }
+    const e = f.e, d = INSTR[e.t], args = d.args.map((spec, k) => ({ spec, v: e.a[k], a: parse(e.a[k]) }));
+    const live = args.map(x => liveOf(x.spec, x.a));
+    const sig = e.id + '|' + e.a.join(',') + '|' + live.join('|') + '|' + curFile + '|' + f.ri;
+    if (!force && sig === propsSig) return;
+    propsSig = sig;
+    const k0 = keyOf(args[0] && args[0].a), uses = [];
+    if (k0) [[2, App.project.ladder.rungs], ...(App.project.ladder.files || []).map(x => [x.n, x.rungs])].forEach(([n, list]) => list.forEach((r, ri) => {
+      const walk = arr => arr.forEach(x => { if (x.t === 'BST') { x.legs.forEach(walk); return; } if (x === e || !x.a) return; x.a.forEach(v => { const p = parse(v); if (p && keyOf(p) === k0) uses.push({ n, ri, t: x.t, v: p.norm }); }); });
+      walk(r.elems);
+    }));
+    const tb = e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' ? Number(e.a[1]) * Number(e.a[2]) : null;
+    const desc = args[0] && args[0].a && App.project.ladder.desc[args[0].a.norm];
+    box.hidden = false;
+    box.innerHTML = `<div class="side-head"><h4>Selected instruction</h4></div>
+      <div class="lp-body"><div class="lp-title"><b>${esc(e.t)}</b> — ${esc(d.name)}</div><div class="lp-sub">${esc(fileName(curFile))}, rung ${String(f.ri).padStart(4, '0')}${desc ? ` · ${esc(desc)}` : ''}</div>
+      <table class="lp-ops">${args.map((x, k) => `<tr><th>${esc(x.spec.n)}</th><td class="mono">${esc(x.spec.ty === 'bit' ? App.fmt(x.v) : x.v)}</td></tr>${live[k] ? `<tr class="lp-liverow"><td colspan="2" class="mono lp-live">${esc(live[k])}</td></tr>` : ''}`).join('')}</table>
+      ${tb !== null && Number.isFinite(tb) ? `<div class="lp-note">Delay = Preset × Time Base = <b class="mono">${+tb.toFixed(3)} s</b></div>` : ''}
+      <div class="lp-uses"><span>Used in</span>${uses.length ? uses.slice(0, 8).map(u => `<button class="lp-go" data-pgo="${u.n}:${u.ri}" title="Go to this rung">${esc(fileName(u.n))} · rung ${String(u.ri).padStart(4, '0')} · ${esc(u.t)} ${esc(App.fmt(u.v))}</button>`).join('') + (uses.length > 8 ? `<small>and ${uses.length - 8} more</small>` : '') : '<small>nowhere else</small>'}</div>
+      <div class="btn-row"><button class="btn" data-pedit="${e.id}">✎ Edit operands</button></div></div>`;
+  }
+  Ladder.propsUi = propsUi;
   Ladder.update = function () {
+    propsUi(false);
     if (!cache) return;
     const plc = App.plc;
     for (const c of cache.p) { const on = !!plc.pw[c.k]; if (on !== c.on) { c.on = on; c.el.classList.toggle('on', on); } }
@@ -1139,6 +1227,8 @@
 
   Ladder.parseRung = parseRung;
   Ladder.serialize = serialize;
+  // a change made from outside the editor (Learn's solution) can be undone with Ctrl+Z like an edit
+  Ladder.snapshot = () => { if (curFile !== 2) Ladder.openFile(2); snapshot(); };
   Ladder.newRung = newRung;
   window.Ladder = Ladder;
 })();

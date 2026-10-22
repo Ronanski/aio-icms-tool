@@ -81,16 +81,17 @@
   function buildProject(p) {
     if (!isObj(p)) throw new Error('This is not a PLC Trainer project file');
     const lad = isObj(p.ladder) ? p.ladder : {}, cir = isObj(p.circuit) ? p.circuit : {}, hm = isObj(p.hmi) ? p.hmi : {};
+    let badRungs = 0;
     const parseRungs = list => arr(list).filter(isObj).map(r => {
       const text = str(r.text, 20000), comment = str(r.comment);
       try { return Ladder.newRung(Ladder.parseRung(text), comment); }
-      catch (err) { return Ladder.newRung([], `${comment} [could not parse: ${text}]`); }
+      catch (err) { badRungs++; return Ladder.newRung([], `${comment} [could not parse: ${text}]`); }
     });
     const rungs = parseRungs(lad.rungs);
     // subroutine files LAD 3–9
     const files = arr(lad.files).filter(f => isObj(f) && Number.isInteger(f.n) && f.n >= 3 && f.n <= 9)
       .filter((f, i, a) => a.findIndex(g => g.n === f.n) === i).sort((a, b) => a.n - b.n)
-      .map(f => ({ n: f.n, name: str(f.name, 10).toUpperCase().replace(/[^A-Z0-9_]/g, '') || 'SUB' + f.n, period: Number.isInteger(f.period) && f.period >= 10 && f.period <= 10000 ? f.period : 0, rungs: parseRungs(f.rungs) }));
+      .map(f => ({ n: f.n, name: (p.target === 'tag' ? str(f.name, 40).replace(/[^A-Za-z0-9_]/g, '').replace(/^[^A-Za-z]+/, '') : str(f.name, 10).toUpperCase().replace(/[^A-Z0-9_]/g, '')) || (p.target === 'tag' ? 'Routine' : 'SUB') + f.n, period: Number.isInteger(f.period) && f.period >= 10 && f.period <= 10000 ? f.period : 0, rungs: parseRungs(f.rungs) }));
     // controller tags: unique valid names; base tags keep a valid address of their type, an alias needs a valid address
     const TT = { BOOL: 'bit', INT: 'word', TIMER: 'struct', COUNTER: 'struct', ALIAS: null };
     const tags = [];
@@ -110,6 +111,7 @@
        and written back by App.serialize: they are not shown or simulated, and never lost. Damaged entries are counted. */
     const keep = { comps: [], wires: [], rungs: [], feeders: [], free: { items: [], wires: [] }, kinds: [], dropped: 0,
       fits: x => { try { return JSON.stringify(x).length <= KEEP_MAX; } catch (e) { return false; } } };
+    keep.badRungs = badRungs;
     const isKnown = c => Object.prototype.hasOwnProperty.call(Circuit.DEFS, c.type);
     const comps = [];
     arr(cir.comps).forEach((c, i, a) => {
@@ -181,6 +183,8 @@
       target: p.target === 'tag' ? 'tag' : 'file',
       addr: Object.prototype.hasOwnProperty.call(Circuit.STYLES, p.addr) ? p.addr : p.target === 'tag' ? 'tag' : 'file',
       events: arr(p.events).filter(e => isObj(e) && Number.isFinite(e.t) && Object.prototype.hasOwnProperty.call(KINDS, e.kind)).slice(-LOG_KEEP).map(e => ({ t: e.t, kind: e.kind, msg: str(e.msg, 300) })),
+      // the exercise this project was started from (Learn): Start continues it, the check and the solution stay on it
+      lesson: typeof p.lesson === 'string' && /^[a-z0-9]{1,12}$/.test(p.lesson) ? p.lesson : '',
       keep, format,
     };
   }
@@ -194,6 +198,7 @@
     if (n || w) msgs.push(`${n} part${n === 1 ? '' : 's'} or symbol${n === 1 ? '' : 's'} and ${w} wire${w === 1 ? '' : 's'} are not known to this version${names.length ? ` (${names.join(', ')})` : ''}. They are kept and saved back unchanged, but not shown or simulated.`);
     if (k.untagged) msgs.push(`${k.untagged} of them ${k.untagged === 1 ? 'has' : 'have'} no tag this version can read, so ${k.untagged === 1 ? 'its tag' : 'their tags'} could not be reserved: a device you add here could get the same tag.`);
     if (k.L || k.N) msgs.push(`The supply rail of the current paths is on a part this version does not know: those current paths are not powered or simulated here, and no other supply is used in its place.`);
+    if (k.badRungs) msgs.push(`${k.badRungs} rung${k.badRungs === 1 ? '' : 's'} could not be read as ladder logic: ${k.badRungs === 1 ? 'it is' : 'they are'} empty now, and the original text is in the rung comment (“could not parse”).`);
     if (k.dropped) msgs.push(`${k.dropped} damaged entr${k.dropped === 1 ? 'y' : 'ies'} in the project could not be read and ${k.dropped === 1 ? 'was' : 'were'} left out.`);
     return msgs;
   }
@@ -221,8 +226,10 @@
     Ladder.resetSel(); Workspace.resetView(); HMI.resetSel(); Schematic.resetSel();
     // a drawing made in the classic IEC / ladder-style views opens as a free drawing
     if (Schematic.freeOnly() && Schematic.toFree()) Schematic.sync();
+    if (Workspace.baseline) Workspace.baseline();
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
     renderVisible();
+    taskStrip();
     document.querySelector('[data-pname]').textContent = App.project.name;
     clearTimeout(saveT); saveT = null;
     store();
@@ -246,6 +253,7 @@
       io: p.io,
       target: p.target,
       addr: p.addr,
+      lesson: p.lesson || undefined,
       events: LOG.slice(-LOG_KEEP),
     }, p);
   };
@@ -283,10 +291,12 @@
     }
     return out;
   }
-  let saveT = null, saveFailed = false;
+  let saveT = null, saveFailed = false, foreign = false;
   /* write the project to browser storage; warn once if it fails (storage full or blocked) */
   function store() {
     if (!App.project || !App.currentId) return true;
+    // another window changed this project: nothing is written until the user picks a version
+    if (foreign) return false;
     const ok = Store.save(App.currentId, App.serialize());
     if (!ok && !saveFailed) {
       UI.toast('Could not save: browser storage is full or blocked. Use File → Export to file to keep a copy.', 'danger', 7000);
@@ -303,6 +313,23 @@
     el.textContent = st === 'saved' ? 'Saved' : st === 'pending' ? 'Saving…' : 'Not saved';
     el.className = 'save-st ' + st;
   }
+  /* the same project open in two tabs (or the installed app and a tab): the later save used to replace the other's work
+     without a word. Now a save from another window stops this one saving and asks which version to keep. */
+  window.addEventListener('storage', e => {
+    if (foreign || !App.currentId || e.key !== 'plc-trainer.proj.' + App.currentId || e.newValue === null) return;
+    foreign = true; clearTimeout(saveT); saveT = null; saveState('failed');
+    App.log('system', 'This project was changed in another window');
+    UI.modal({
+      title: 'Changed in another window',
+      body: `<p>“${esc(App.project.name)}” was just saved by another tab or window of PLC Trainer. Saving here is paused so neither copy is lost.</p><p class="help">Load the other version (your changes here since then are dropped), or keep this one (it replaces the other copy).</p>`,
+      buttons: [{ label: 'Keep mine', onClick: () => { foreign = false; store(); App.log('system', 'Kept this window’s version'); } },
+        { label: 'Load the other version', primary: true, onClick: () => {
+          foreign = false;
+          let proj = null; try { proj = buildProject(Store.load(App.currentId)); } catch (err) { proj = null; }
+          if (proj) { applyProject(proj); UI.toast('Loaded the version from the other window', 'ok'); } else { store(); UI.toast('The other version could not be read — this one was kept', 'danger'); }
+        } }],
+    });
+  });
   App.save = function () {
     clearTimeout(saveT);
     saveState('pending');
@@ -311,6 +338,7 @@
   /* write any pending change now, before switching to another project */
   App.flushSave = function () {
     // nothing pending and the last save worked; a failed save is tried again
+    if (foreign) return false;
     if (saveT === null && !saveFailed) return true;
     clearTimeout(saveT); saveT = null;
     return store();
@@ -334,6 +362,7 @@
     // an example (or file) with diagram rungs or symbols but no diagram wires yet: let the Electrical Diagram make them now
     const sp = proj.schematic.power;
     if ((proj.schematic.rungs.length || sp.main.length || sp.feeders.some(f => f.elems.length) || proj.schematic.free.wires.length || proj.schematic.free.items.length) && !proj.circuit.wires.some(w => w.sch)) Schematic.sync();
+    if (Workspace.baseline) Workspace.baseline();
   }
   App.openSaved = function (id) {
     let proj = null;
@@ -473,6 +502,8 @@
     box.innerHTML = `<div class="side-head"><h4>${tag ? 'Controller Organizer' : 'Project'}</h4><button class="icon-btn" data-orgx title="Close the Organizer" aria-label="Close the Organizer">×</button></div>
       <div class="org-path" title="The controller found in the Wiring; the project goes online with it by itself">Path: <b>${path}</b></div><div class="org-body">${body}</div>`;
     box.querySelector('[data-orgx]').onclick = () => { box.hidden = true; saveOrg(false); };
+    // the routine open in the editor is marked in the tree
+    const open = box.querySelector(`[data-org="f${window.Ladder && Ladder.file ? Ladder.file() : 2}"]`); if (open) open.setAttribute('aria-current', 'page');
     {
       const el = box;
       {
@@ -858,7 +889,7 @@
   }
   App.updateConn = updateConn;
   App.programChanged = function () { App.loadProgram(); App.save(); };
-  App.circuitChanged = function () { App.addrChanged(false); App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
+  App.circuitChanged = function () { if (window.Workspace && Workspace.track) Workspace.track(); App.addrChanged(false); App.dirty.wiring = true; renderVisible(); Ladder.DataTable.render(); App.save(); };
   /* address style of the project (display only): App.fmt(norm) shows an address, App.addrIn(text) reads one typed in any style */
   let book = null;
   App.addrChanged = function (redraw = true) {
@@ -909,6 +940,11 @@
     }
     if (m === 'RUN' && (!App.project.conn || App.project.conn.mode !== 'real' || conn.same || conn.testing) && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
     if (App.plc.mode !== m) App.log('mode', `Controller mode changed to ${m}`);
+    // RUN with warnings (a duplicate OTE, a timer used twice…): the controller runs, and the user is told why it may misbehave
+    if (m === 'RUN' && App.plc.mode !== 'RUN' && Ladder.lastWarns && Ladder.lastWarns.length) {
+      const w = Ladder.lastWarns;
+      UI.toast(`Running with ${w.length} warning${w.length === 1 ? '' : 's'}: ${w[0]}${w.length > 1 ? ' …' : ''} (see the Errors pane under the ladder)`, 'warn', 7000);
+    }
     App.plc.setMode(m);
     updateBar(true); updateConn();
   };
@@ -988,10 +1024,15 @@
       if (wait <= 0) run(); else App.later(wait, run);
     };
   };
+  /* a tab in the background gets its timer only about once a second: the missed time is run in steps of at most 0.1 s,
+     so PLC timers keep real time (up to 2 s at once; a tab asleep longer simply pauses) */
   function tick() {
     const now = performance.now();
-    const dt = Math.min(0.1, (now - last) / 1000);
+    let left = Math.min(2, Math.max(0, (now - last) / 1000));
     last = now;
+    do { const dt = Math.min(0.1, left); left -= dt; step(now, dt); } while (left > 1e-6);
+  }
+  function step(now, dt) {
     const ctx = App.ctx, plc = App.plc, circ = App.project.circuit;
     const rack = Circuit.rack(circ, App.project.io), pc = rack.ctl;
     ctx.plcId = pc ? pc.id : null; ctx.rack = rack;
@@ -1166,6 +1207,8 @@
     main.classList.remove('panes-1', 'panes-2', 'panes-3');
     main.classList.add('panes-' + vis.length);
     main.classList.toggle('multi', vis.length > 1);
+    // the one view on screen, for styles that depend on it (the Ladder has its own controller lights)
+    document.body.dataset.solo = vis.length === 1 ? vis[0] : '';
     document.querySelectorAll('.tabs [data-view]').forEach(b => {
       b.classList.toggle('on', b.dataset.view === v);
       b.classList.toggle('shown', vis.length > 1 && vis.includes(b.dataset.view));
@@ -1175,6 +1218,7 @@
     lb.textContent = '▦ ' + (cur.panes ? cur.short : 'View');
     lb.classList.toggle('on', !!cur.panes);
     vis.forEach(k => renderView(k));
+    taskStrip();
     try { localStorage.setItem('plc-trainer.view', v); localStorage.setItem('plc-trainer.layout', App.layout); } catch (e) { /* ignore */ }
   };
   App.setLayout = function (k) {
@@ -1317,14 +1361,59 @@
   /* the Learn page: the course (lessons, basics to advanced) and 100 exercises (easy, medium, hard) by topic. A lesson or
      exercise is one page: what to do, a starting project, Check my work, a hint and the solution. */
   let learnTab = (() => { try { return localStorage.getItem('plc-trainer.learnTab') === 'ex' ? 'ex' : 'course'; } catch (e) { return 'course'; } })();
-  let exDiff = 'easy', exTopic = '';
+  let exDiff = 'easy', exTopic = '', lastEx = null, lastLesson = null;
   const exDone = (() => { try { return new Set(JSON.parse(localStorage.getItem('plc-trainer.exDone') || '[]')); } catch (e) { return new Set(); } })();
   const markDone = id => { exDone.add(id); try { localStorage.setItem('plc-trainer.exDone', JSON.stringify([...exDone])); } catch (e) { /* private mode */ } };
   const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'chassis', 'cabinet']]];
   App.EX_CATS = EX_CATS;
+  /* one project per exercise: Start opens it again (or starts over), and the check and the solution only work on it */
+  const EXP = 'plc-trainer.exProj', HELP = 'plc-trainer.exHelped';
+  const readJ = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v && typeof v === 'object' ? v : d; } catch (e) { return d; } };
+  const writeJ = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } };
+  const exHelped = new Set(readJ(HELP, []));
+  const markHelped = id => { exHelped.add(id); writeJ(HELP, [...exHelped]); };
+  const exView = x => (x.topic === 'Electrical Diagram' || x.topic === 'Integration' ? 'schematic' : x.topic === 'HMI' ? 'hmi' : x.topic === 'Wiring' ? 'wiring' : 'ladder');
+  const onExercise = x => !!App.project && App.project.lesson === x.id;
+  function startExercise(x, fresh, then) {
+    const map = readJ(EXP, {}), pid = map[x.id];
+    const open = () => { App.showView(exView(x)); if (then) then(); };
+    // the solution only needs the exercise open; Start asks every time the exercise was started before
+    if (!fresh && then && onExercise(x)) { open(); return; }
+    if (!fresh && ((pid && Store.load(pid)) || onExercise(x))) {
+      UI.modal({ title: x.title, body: '<p>You started this exercise before. Continue where you left off, or start over with a fresh project?</p>',
+        buttons: [{ label: 'Start over', onClick: () => { startExercise(x, true, then); } }, { label: 'Continue', primary: true, onClick: () => { if (onExercise(x) || App.openSaved(pid)) open(); } }] });
+      return;
+    }
+    const data = x.build ? x.build() : Examples.EX[x.ex].build();
+    data.lesson = x.id; data.name = 'Exercise: ' + x.title;
+    if (pid && pid !== App.currentId) Store.remove(pid);
+    const was = onExercise(x) ? App.currentId : null;
+    exHelped.delete(x.id); writeJ(HELP, [...exHelped]);
+    if (App.openNew(data)) { if (was) Store.remove(was); map[x.id] = App.currentId; writeJ(EXP, map); UI.toast('Exercise started in its own project. Start opens it again later.', 'ok', 4000); open(); }
+  }
+  /* while an exercise's project is open, a strip above the work keeps its task in sight, with Check one click away */
+  function taskStrip() {
+    const bar = document.querySelector('[data-task]'); if (!bar) return;
+    const id = App.project && App.project.lesson, x = id && ((window.Exercises && Exercises.LIST) || []).find(q => q.id === id);
+    if (!x || App.view === 'learn') { bar.hidden = true; return; }
+    const p = /<p>([\s\S]*?)<\/p>/.exec(x.body || ''), task = (p ? p[1] : '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    bar.hidden = false;
+    bar.innerHTML = `<span class="ts-kind">Exercise</span><b class="ts-title">${esc(x.title)}</b><span class="ts-task" title="${esc(task)}">${esc(task)}</span>
+      <button class="tbtn sm" data-ts="task" title="Open the exercise in Learn">Task</button><button class="btn primary sm" data-ts="check">✓ Check my work</button>`;
+    bar.onclick = e => {
+      const b = e.target.closest('[data-ts]'); if (!b) return;
+      learnTab = 'ex'; lessonId = x.id; exDiff = x.diff; lastEx = x.id;
+      App.showView('learn');
+      if (b.dataset.ts === 'check') { const c = document.querySelector('#view-learn [data-check]'); if (c) c.click(); }
+    };
+  }
+  App.taskStrip = taskStrip;
   function renderLearn() {
     const el = document.getElementById('view-learn');
     const L = Examples.LESSONS, XL = (window.Exercises && Exercises.LIST) || [];
+    // the page always belongs to the open tab (also after a restart, when only the tab was remembered)
+    if (learnTab === 'ex' && XL.length && !XL.some(x => x.id === lessonId)) { const x = XL.find(q => q.id === lastEx) || XL.find(q => q.diff === exDiff) || XL[0]; lessonId = x.id; exDiff = x.diff; }
+    if (learnTab === 'course' && XL.some(x => x.id === lessonId)) lessonId = lastLesson || L[0].id;
     const cur = L.find(l => l.id === lessonId) || XL.find(x => x.id === lessonId) || L[0];
     const isEx = cur.kind === 'ex';
     const ex = Examples.EX[cur.ex];
@@ -1368,28 +1457,39 @@
       const box = el.querySelector('[data-grade]');
       if (res.error) { box.innerHTML = `<p class="grade-bad">${esc(res.error)}</p>`; return; }
       const pass = res.length > 0 && res.every(r => r.ok);
-      if (pass && isEx) markDone(cur.id);
-      box.innerHTML = `<p class="${pass ? 'grade-ok' : 'grade-bad'}">${pass ? `✓ All checks passed. Well done!${isEx ? ' This exercise is marked done.' : ''}` : `${res.filter(r => r.ok).length} of ${res.length} checks passed. Fix the red ones and check again.`}</p>
+      const helped = isEx && exHelped.has(cur.id);
+      if (pass && isEx && !helped) markDone(cur.id);
+      box.innerHTML = `<p class="${pass ? 'grade-ok' : 'grade-bad'}">${pass ? (helped ? '✓ The solution passes. Now try it yourself: Start exercise → Start over, then check again to mark it done.' : `✓ All checks passed. Well done!${isEx ? ' This exercise is marked done.' : ''}`) : `${res.filter(r => r.ok).length} of ${res.length} checks passed. Fix the red ones and check again.`}</p>
         <ul class="grade-list">${res.map(r => `<li class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✗'} ${esc(r.say)}${r.ok || !r.got ? '' : ` <small>(${esc(r.got)})</small>`}</li>`).join('')}</ul>
         <p class="help">${note}</p>`;
       // a newly done exercise: the list and the counts show it at once (the result stays)
-      if (pass && isEx) { const html = box.innerHTML; renderLearn(); const nb = el.querySelector('[data-grade]'); if (nb) nb.innerHTML = html; }
+      if (pass && isEx && !helped) { const html = box.innerHTML; renderLearn(); const nb = el.querySelector('[data-grade]'); if (nb) nb.innerHTML = html; }
     };
     el.onchange = e => { if (e.target.matches('[data-xtopic]')) { exTopic = e.target.value; renderLearn(); } };
     el.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.ltab) { learnTab = b.dataset.ltab; try { localStorage.setItem('plc-trainer.learnTab', learnTab); } catch (err) { /* private mode */ } renderLearn(); return; }
+      if (b.dataset.ltab) {
+        learnTab = b.dataset.ltab; try { localStorage.setItem('plc-trainer.learnTab', learnTab); } catch (err) { /* private mode */ }
+        // the page follows the tab: its last item, else the first exercise of the shown difficulty or the first lesson
+        if (isEx) lastEx = cur.id; else lastLesson = cur.id;
+        if (learnTab === 'ex' && !isEx) { const x = XL.find(q => q.id === lastEx) || shown[0] || XL[0]; if (x) { lessonId = x.id; exDiff = x.diff; } }
+        if (learnTab === 'course' && isEx) lessonId = lastLesson || L[0].id;
+        renderLearn(); const bd = el.querySelector('.learn-body'); if (bd) bd.scrollTop = 0; return;
+      }
       if (b.dataset.xdiff) { exDiff = b.dataset.xdiff; exTopic = ''; renderLearn(); return; }
       if (b.dataset.lesson) { go(b.dataset.lesson); return; }
       if (b.hasAttribute('data-next')) { const i = XL.indexOf(cur), nx = XL[i + 1]; if (nx) { exDiff = nx.diff; go(nx.id); } return; }
       if (b.hasAttribute('data-start')) {
-        if (cur.build) { App.openNew(cur.build()); UI.toast('Exercise started as a new project. Your other projects are in File → Open project.', 'ok', 4000); App.showView(cur.topic === 'Electrical Diagram' || cur.topic === 'Integration' ? 'schematic' : cur.topic === 'HMI' ? 'hmi' : cur.topic === 'Wiring' ? 'wiring' : 'ladder'); }
-        else if (cur.ex) { loadExample(cur.ex); if (isEx) App.showView(cur.topic === 'Electrical Diagram' || cur.topic === 'Integration' ? 'schematic' : cur.topic === 'HMI' ? 'hmi' : cur.topic === 'Wiring' ? 'wiring' : 'ladder'); }
+        if (isEx) { startExercise(cur); return; }
+        if (cur.build) { App.openNew(cur.build()); UI.toast('Exercise started as a new project. Your other projects are in File → Open project.', 'ok', 4000); App.showView(exView(cur)); }
+        else if (cur.ex) loadExample(cur.ex);
         if (cur.goals) { goals.id = null; trackLesson(cur.id); }
         return;
       }
       if (b.dataset.ex) { loadExample(b.dataset.ex); return; }
       if (b.hasAttribute('data-check')) {
+        // an exercise is checked on its own project, never on whatever happens to be open
+        if (isEx && !onExercise(cur)) { showResult({ error: `The open project “${App.project.name}” is not this exercise. Press “${startLabel.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, '"')}” first, then do the exercise and check it.` }); return; }
         if (cur.check) {
           b.disabled = true; b.textContent = 'Checking… (the checker presses your buttons)';
           let res; try { const A = Exercises.api(); if (cur.setup) cur.setup(A); res = await cur.check(A); } catch (err) { res = { error: 'The check could not run: ' + err.message }; }
@@ -1401,20 +1501,23 @@
         return;
       }
       if (b.hasAttribute('data-sol')) {
-        if (cur.solve) {
-          UI.confirm('Show the solution', 'Do this exercise in your open project (start the exercise first)? It adds the reference drawing, wiring, ladder or HMI objects.', async () => {
-            try { await cur.solve(Exercises.api()); UI.toast('Solution added — have a look, then press Check my work'); } catch (err) { UI.toast('The solution could not be added: ' + err.message, 'danger'); }
-          }, 'Show');
-          return;
-        }
-        UI.confirm('Insert solution', 'Replace the current ladder program with the solution?', () => {
+        // the solution goes into the exercise's own project (started first if needed), never over another project
+        const apply = () => {
+          if (cur.solve) {
+            (async () => { try { await cur.solve(Exercises.api()); markHelped(cur.id); UI.toast('Solution added — have a look, then press Check my work'); } catch (err) { UI.toast('The solution could not be added: ' + err.message, 'danger'); } })();
+            return;
+          }
           App.plc.setMode('PROG');
+          Ladder.snapshot();
           App.project.ladder.rungs = cur.solution.map(t => Ladder.newRung(Ladder.parseRung(t)));
           App.loadProgram(); App.plc.applyAll(true);
-          Ladder.resetSel(); App.dirty.ladder = true; App.save();
-          UI.toast('Solution inserted — switch to RUN and try it');
+          App.dirty.ladder = true; App.save(); Ladder.render();
+          if (isEx) markHelped(cur.id);
+          UI.toast('Solution inserted (Ctrl+Z undoes it) — switch to RUN and try it');
           App.showView('ladder');
-        }, 'Replace');
+        };
+        if (isEx && !onExercise(cur)) { UI.confirm('Show the solution', `The solution goes into this exercise's own project. Your open project “${App.project.name}” is not changed.`, () => { startExercise(cur, false, apply); }, 'Start and show'); return; }
+        UI.confirm(cur.solve ? 'Show the solution' : 'Insert solution', cur.solve ? `Add the reference drawing, wiring, ladder or HMI objects to “${App.project.name}”?` : `Replace the ladder of “${App.project.name}” with the solution? Ctrl+Z in the Ladder undoes it.`, apply, cur.solve ? 'Show' : 'Replace');
       }
     };
   }
@@ -1486,7 +1589,12 @@
     });
     document.getElementById('importFile').addEventListener('change', e => {
       const f = e.target.files[0]; if (!f) return;
-      f.text().then(t => { App.openNew(JSON.parse(t)); UI.toast('Project imported as a new project', 'ok'); }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
+      f.text().then(t => {
+        const d = JSON.parse(t);
+        // a file with none of a project's parts is most likely not a PLC Trainer project
+        if (!d || typeof d !== 'object' || !['ladder', 'circuit', 'hmi', 'schematic'].some(k => d[k] && typeof d[k] === 'object')) throw new Error('this file has no ladder, wiring, diagram or HMI in it');
+        if (App.openNew(d) && !App.compat().length) UI.toast('Project imported as a new project', 'ok');
+      }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
       e.target.value = '';
     });
     document.querySelector('[data-lang-btn]').addEventListener('click', () => { I18N.set(I18N.lang === 'tl' ? 'en' : 'tl'); App.log('system', `Language: ${I18N.lang === 'tl' ? 'Tagalog' : 'English'}`); });
@@ -1574,8 +1682,18 @@
       if (b.dataset.open) { m.close(); App.openSaved(b.dataset.open); UI.toast('Project opened', 'ok'); }
       if (b.dataset.del) {
         const p = Store.list().find(x => x.id === b.dataset.del);
-        if (b.dataset.confirm) { Store.remove(b.dataset.del); draw(); UI.toast(`Deleted “${p ? p.name : 'project'}”`); }
-        else { b.dataset.confirm = '1'; b.textContent = 'Delete?'; b.classList.add('danger-txt'); }
+        if (b.dataset.confirm) {
+          // a deleted project can be brought back from the toast for a few seconds
+          const id = b.dataset.del, data = Store.load(id);
+          Store.remove(id); draw();
+          const t = UI.toast(`Deleted “${p ? p.name : 'project'}” — click here to undo`, 'info', 7000);
+          t.style.cursor = 'pointer'; t.style.pointerEvents = 'auto'; t.setAttribute('role', 'button');
+          t.onclick = () => { if (data && Store.save(id, data)) { t.remove(); if (box.isConnected) draw(); UI.toast(`Restored “${data.name || 'project'}”`, 'ok'); } };
+        } else {
+          b.dataset.confirm = '1'; b.textContent = 'Delete?'; b.classList.add('danger-txt');
+          // the armed button goes back after a moment, so a later click cannot delete by surprise
+          setTimeout(() => { if (b.isConnected && b.dataset.confirm) { delete b.dataset.confirm; b.textContent = '🗑'; b.classList.remove('danger-txt'); } }, 4000);
+        }
       }
     };
   }
@@ -1589,8 +1707,11 @@
   App.BUILD = BUILD;
   function rename() {
     UI.form('Rename project', [{ key: 'n', label: 'Project name', value: App.project.name }], v => {
-      App.project.name = v.n.trim() || 'Untitled';
+      const n = v.n.trim();
+      if (!n) return 'Enter a project name';
+      App.project.name = n.slice(0, 80);
       document.querySelector('[data-pname]').textContent = App.project.name;
+      document.querySelector('[data-pname]').title = App.project.name + ' — double-click to rename';
       App.save();
     });
   }

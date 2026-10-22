@@ -977,8 +977,14 @@
     }
     if (wiring && (wiring.cur || (wiring.pts && wiring.pts.length))) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${tempPath(a)}"/>`); }
     if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
-    if (!F.items.length) o.push(`<text class="hint" x="200" y="40">Empty drawing — add symbols from ▦ Library, then tap two terminals to wire them</text>`);
     o.push('</g></svg>');
+    if (!F.items.length) {
+      // a project with devices in the Wiring but no drawing says so: the drawing is not made from the Wiring by itself.
+      // Plain HTML over the drawing, so the text wraps on a phone instead of running off the edge
+      const wired = ((App.project && App.project.circuit && App.project.circuit.comps) || []).length;
+      o.push(`<div class="fd-empty"><b>${wired ? 'This project has no Electrical Diagram yet — its devices are only in the Wiring.' : 'Empty drawing.'}</b>
+        <span>Add symbols from ▦ Library, then tap two terminals to wire them.${wired ? ' Finished diagrams: Examples → Star-delta starter, Three motors.' : ''}</span></div>`);
+    }
     host.innerHTML = o.join('');
     applyPalette(el.querySelector('.fd-wrap'));
     const vw = el.closest('.view') || el, pb = vw.querySelector(':scope > .fd-pbar'), ph = pbar && H.mode() === 'edit' ? barHtml() : '';
@@ -1308,7 +1314,15 @@
       const F = fr(); F.seq++;
       const r = svg ? svg.getBoundingClientRect() : { width: 600, height: 400 };
       // as in Simurelay: a symbol from the library lands in the middle of the view (selected, ready to drag into place)
-      const c = x != null ? { x, y } : { x: snap10((r.width / 2 - view.x) / view.k), y: snap10((r.height / 2 - view.y) / view.k) }, cx = c.x, cy = c.y;
+      const c = x != null ? { x, y } : { x: snap10((r.width / 2 - view.x) / view.k), y: snap10((r.height / 2 - view.y) / view.k) };
+      // the middle is taken (the symbol placed just before): the next free spot to the right, then the rows below,
+      // so a new symbol never hides one that is already there
+      if (x == null) {
+        const taken = (px, py) => F.items.some(o => Math.abs(o.x - px) < 60 && Math.abs(o.y - py) < 60);
+        let n = 0; const x0 = c.x, y0 = c.y;
+        while (taken(c.x, c.y) && n < 40) { n++; c.x = x0 + (n % 8) * 80; c.y = y0 + Math.floor(n / 8) * 100; }
+      }
+      const cx = c.x, cy = c.y;
       const it = k === 'text' ? { id: 'd' + F.seq, k, tag: 'TXT', x: snap10(cx), y: snap10(cy), r: 0, txt: t.slice(0, 80) } : { id: 'd' + F.seq, k, tag: t, x: snap10(cx), y: snap10(cy), r: 0 };
       F.items.push(it); sel = { i: it.id }; group.clear();
       H.changed();

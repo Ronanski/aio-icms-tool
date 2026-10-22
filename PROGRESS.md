@@ -22,6 +22,27 @@
 - [x] Reference corrections: alias display, live rails, project in the controller, download timeout, Code 16#0022 module fault, I/O Not Responding, Faulted — `feature/plc-ui-align2`
 - [x] Gap list (side-by-side check): Upload everywhere, empty new routine, offline menu and status, module catalog on the project with RPI / Inhibit / Major fault, New project page 2, Controller Tags panel, Download dialog rows and overwrite confirm, free placement, chassis example — `feature/plc-gaps`
 - [x] Last gaps: routine names like tags (up to 40, case kept), connection chip shortens in the PLC bar — `fix/plc-last-gaps`
+- [x] On Beta: PR #64 (`6714da6`, build `beta.6714da6`, 2026-10-22) — PLC module, full audit and last gaps; #52–#63 closed as included
+- [ ] Owner's list of fixes after checking the Beta (next session starts here)
+
+## Product audit and redesign (2026-10-22, `feature/ui-redesign`, `docs/AUDIT_2026-10-22.md`)
+- [x] Baseline: 823 tests on `main`, 38 screenshots (7 screens × 3 sizes × 2 themes), measurements
+- [x] Design system v3 "Engineering Neutral" (`docs/DESIGN_SYSTEM.md`)
+- [x] Tablet: one-row top bar and ladder toolbar
+- [x] Phone / tablet: no sideways page panning on the Ladder
+- [x] Electrical Diagram empty state for Wiring-only projects
+- [x] F5: one set of controller lights on the Ladder
+- [x] F6: decided — the desktop ladder toolbar keeps two full rows (one row would hide tools)
+- [x] F7: I/O strip hidden below 1100 px instead of cut
+- [x] Phase 2 functional audit (Q1–Q16): no lost work (solution, two windows, Wiring undo), SLC prescan on PROG → RUN, cancelled operands, one project per exercise, honest grading, clear address errors, Find instruction, error links, safe confirms, import notices, menus, faster Verify
+- [x] HMI Studio undo (Q17)
+- [x] Dialog focus trap and focus restore, delete-project undo (Q18)
+- [x] Phase 3 redesign: prototype artifact, one icon set across the app, palette labels, Selected instruction panel with live values and cross references, two-row ladder toolbar
+- [x] Object stacking on add: a new diagram symbol goes to the next free spot
+- [x] Hands-on pass: HMI inactive alarm, update notice text, lesson order, phone tab icons, tablet rung width, Data Files bit grid, Wiring toolbar, exercise task strip
+- [ ] Off-screen rung rendering for very long programs (Q18)
+- [x] Simulated time in a background tab: caught up in 0.1 s steps (Q19)
+- [ ] Generate the Electrical Diagram from the Wiring
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
 - [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
 - [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)

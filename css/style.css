@@ -1,4 +1,4 @@
-/* PLC Trainer — warm, Claude-inspired palette. */
+/* PLC Trainer — base styles. The tokens and component shapes in use are set by "Design system v3" at the end of this file (docs/DESIGN_SYSTEM.md). */
 :root {
   --bg: #F3F0E8;
   --surface: #FBFAF6;
@@ -538,6 +538,9 @@ table.dt td.num { color: var(--accent-text); font-weight: 600; }
 .h-tank .vessel b { position: absolute; inset: 0; display: grid; place-items: center; font: 700 16px var(--mono); }
 .h-alarm { width: 100%; height: 100%; border-radius: 8px; display: flex; align-items: center; padding: 0 16px; font-weight: 700; font-size: 16px; background: #2a333d; color: #9aa5b0; border: 2px solid #3d4a57; }
 .t-alarm.on .h-alarm { background: #b3261e; color: #fff; border-color: #ff7a6b; animation: blink 1s steps(2) infinite; }
+.h-alarm .al-none { display: none; font-weight: 500; font-size: 14px; opacity: .8; }
+.hmi:not(.editing) .t-alarm:not(.on) .al-txt { display: none; }
+.hmi:not(.editing) .t-alarm:not(.on) .al-none { display: inline; }
 .h-text { width: 100%; height: 100%; display: flex; align-items: center; font-weight: 700; letter-spacing: .02em; }
 .h-shape { width: 100%; height: 100%; border-radius: 4px; background: #3d4a57; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; }
 .h-shape.round { border-radius: 50%; }
@@ -808,6 +811,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
   .sch-toolbar { flex-wrap: wrap; overflow: visible; gap: 4px; padding: 5px 8px; -webkit-mask-image: none; mask-image: none; }
   .sch-toolbar .tb-group { flex-wrap: wrap; flex-shrink: 1; border-right: 0; padding: 0; gap: 3px; }
   .sch-toolbar .tb-lbl, .sch-toolbar .tl, .sch-toolbar .ic, .sch-toolbar .tb-group.kinds, .sch-toolbar .pw-group { display: none; }
+  /* the free drawing's short toolbar: icons only (its labels give way; without the icons the buttons were empty) */
+  .free-style .sch-toolbar .free-group .ic { display: inline-block; margin-right: 0; }
   .sch-toolbar .tb-group.keep { flex-wrap: nowrap; gap: 6px; }
   .sch-toolbar .tbtn { padding: 5px 8px; min-height: 34px; }
   .sch-toolbar .seg button { padding: 5px 7px; }
@@ -952,3 +957,282 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .gridLine.minor { stroke: var(--fd-grid); stroke-width: .5; }
 .free-svg .gridLine { stroke-width: 1; }
 @media (min-width: 761px) { #view-schematic.free-style .sch-side { display: none; } }
+
+/* =====================================================================================================
+   Design system v3 — "Engineering Neutral"
+   Neutral greys for surfaces, colour only for state and action (control-room practice): blue for
+   interaction and selection, green = RUN / energized, amber = forced / warning, red = fault / alarm.
+   One sans family for the interface, mono for addresses and values. Device drawings keep their own colours.
+   ===================================================================================================== */
+:root {
+  --bg: #E9EDF1;
+  --surface: #FFFFFF;
+  --surface-2: #F3F5F8;
+  --surface-3: #E3E8EE;
+  --border: #D5DCE3;
+  --border-strong: #B4BEC9;
+  --text: #17202B;
+  --muted: #5A6675;
+  --accent: #1F64B8;
+  --accent-strong: #174E91;
+  --accent-text: #1A57A3;
+  --accent-soft: #DCE8F7;
+  --brand: #D97757;
+  --ok: #1E8E46;
+  --warn: #B87800;
+  --danger: #C8362B;
+  --lad-bg: #FFFFFF;
+  --lad-wire: #3A4350;
+  --lad-on: #1B9E48;
+  --lad-hl: #CDEFD8;
+  --lad-text: #1E2630;
+  --canvas: #E6EAEF;
+  --grid-dot: #C3CBD5;
+  --grid-line: #DCE2E9;
+  --wire-halo: rgba(20, 30, 45, .26);
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 2px 8px rgba(16, 24, 40, .05);
+  --shadow-lg: 0 12px 36px rgba(16, 24, 40, .20);
+  --serif: var(--sans);
+  --r-sm: 4px;
+  --r: 6px;
+  --r-lg: 8px;
+  --ctl-h: 30px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1419; --surface: #171D24; --surface-2: #1D242C; --surface-3: #262E38; --border: #2A333E; --border-strong: #404B58;
+    --text: #E4E9EF; --muted: #93A0AE; --accent: #4C8DFF; --accent-strong: #3874E0; --accent-text: #8DB6FF; --accent-soft: #1A2E4D;
+    --ok: #2FB866; --warn: #E0A12A; --danger: #F0594C;
+    --lad-bg: #12171D; --lad-wire: #AEB8C4; --lad-on: #3DDC75; --lad-hl: #173A26; --lad-text: #E2E8EE;
+    --canvas: #12171D; --grid-dot: #2B343F; --grid-line: #1C232B; --wire-halo: rgba(228, 233, 239, .55);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1419; --surface: #171D24; --surface-2: #1D242C; --surface-3: #262E38; --border: #2A333E; --border-strong: #404B58;
+  --text: #E4E9EF; --muted: #93A0AE; --accent: #4C8DFF; --accent-strong: #3874E0; --accent-text: #8DB6FF; --accent-soft: #1A2E4D;
+  --ok: #2FB866; --warn: #E0A12A; --danger: #F0594C;
+  --lad-bg: #12171D; --lad-wire: #AEB8C4; --lad-on: #3DDC75; --lad-hl: #173A26; --lad-text: #E2E8EE;
+  --canvas: #12171D; --grid-dot: #2B343F; --grid-line: #1C232B; --wire-halo: rgba(228, 233, 239, .55);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
+}
+body { font-size: 13.5px; }
+input, select, textarea { border-radius: var(--r); }
+code { border-radius: var(--r-sm); }
+
+/* top bar: one row; the brand mark keeps the product colour */
+.topbar { padding: 6px 14px; gap: 14px; }
+.logo g, .logo [fill="#D97757"] { fill: var(--brand); }
+.brand-title { font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
+.brand-sub { font-size: 11.5px; }
+.save-st { border-radius: var(--r-sm); }
+
+/* buttons: one shape, one height scale */
+.btn { border-radius: var(--r); padding: 6px 13px; min-height: var(--ctl-h); }
+.btn.primary { font-weight: 600; }
+.icon-btn { border-radius: var(--r); }
+.tbtn { border-radius: var(--r); padding: 4px 9px; min-height: 28px; border-color: var(--border); }
+.tbtn.sm { min-height: 24px; }
+.tbtn.on { font-weight: 600; }
+.tbtn.warn { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 55%, var(--surface)); color: var(--text); }
+.seg { border-radius: var(--r); }
+.seg button { padding: 4px 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* view tabs on a computer: a flat switcher, the active view underlined */
+@media (min-width: 761px) {
+  .tabs { background: transparent; border: 0; padding: 0; gap: 2px; border-radius: 0; align-self: stretch; }
+  .tabs button { border-radius: var(--r) var(--r) 0 0; padding: 8px 14px; position: relative; font-weight: 600; }
+  .tabs button:hover { background: var(--surface-2); }
+  .tabs button.on { background: transparent; box-shadow: none; color: var(--accent-text); }
+  .tabs button.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -7px; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); }
+  .tabs button.shown:not(.on) { background: var(--surface-2); }
+  .tabs .ti { color: inherit; opacity: .75; }
+}
+/* tablet: the top bar stays on one row */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .topbar { flex-wrap: nowrap; gap: 8px; }
+  .brand { min-width: 0; }
+  .brand-sub { display: none; }
+  .tabs button { padding: 8px 9px; }
+  .tabs .ti { display: none; }
+  .top-actions { gap: 0; flex-shrink: 0; }
+  .top-actions .btn { padding: 6px 8px; }
+}
+
+/* PLC status bar: PROG is the selected mode in the interaction colour, RUN in green */
+.plcbar { padding: 5px 14px; gap: 12px; }
+.plcbar .mode button { padding: 3px 13px; }
+.led { font-size: 10.5px; }
+.led::before { background: #7D8794; }
+
+/* ladder toolbar: tighter groups, no wrap into tall stacks on a computer */
+.lad-toolbar { padding: 6px 10px; gap: 4px; align-items: center; }
+.tb-group { padding: 1px 6px 1px 4px; gap: 3px; }
+.tb-lbl { font-size: 9.5px; font-weight: 600; margin-right: 2px; }
+.lad-status, .lad-stat-btn { border-radius: var(--r-sm); }
+.ins-btn { border-radius: var(--r-sm); }
+.rung-comment { font-style: normal; font-size: 12.5px; font-weight: 500; }
+.rung-svg .hint { font-style: normal; }
+
+/* panels, palette, dialogs */
+.pal-item { border-radius: var(--r); }
+.modal { border-radius: var(--r-lg); }
+.modal-head h3 { font-size: 16px; font-weight: 700; }
+.modal-wrap { background: rgba(10, 16, 24, .45); }
+.learn-body h2 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+.learn-body h3 { font-size: 18px; font-weight: 700; }
+.learn-nav h3 { font-weight: 700; }
+
+/* tablet and small laptop: every tool stays in sight (a beginner must find + Rung without scrolling), in as few rows
+   as fit: groups don't break inside, group names give way to the separators */
+@media (min-width: 761px) and (max-width: 1280px) {
+  #main:not(.multi) .lad-toolbar { flex-wrap: wrap; row-gap: 4px; }
+  #main:not(.multi) .lad-toolbar .tb-group { flex-wrap: nowrap; }
+  #main:not(.multi) .lad-toolbar .tb-lbl { display: none; }
+  /* the instruction palette takes the rest of its row; only its buttons and tabs scroll, like a ribbon */
+  #main:not(.multi) .lad-toolbar .lad-ins { flex: 1 1 320px; min-width: 0; }
+  #main:not(.multi) .lad-ins .ins-row, #main:not(.multi) .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  #main:not(.multi) .lad-ins .ins-row > *, #main:not(.multi) .lad-ins .ins-tabs > * { flex-shrink: 0; }
+  #main:not(.multi) .lad-toolbar .tb-addr select { max-width: 132px; }
+  #main:not(.multi) .lad-toolbar .zoomv { min-width: 0; padding: 4px 6px; }
+}
+/* up to 1024 px the bar above is the controller (PROG / RUN and its lights) and the ladder's status box steps back */
+@media (min-width: 761px) and (max-width: 1024px) {
+  #main:not(.multi) .lad-toolbar .lad-status { display: none; }
+  body[data-solo="ladder"] .plcbar .leds { display: flex; }
+}
+
+/* the visually hidden instruction names stay inside their button: without a positioned parent they escaped the
+   scrolling toolbar and widened the page (sideways panning on phones) */
+.ins-btn { position: relative; }
+
+/* one set of controller lights: on the Ladder alone its status box (RUN / OK / BAT / I/O, forces, path) is the
+   controller, so the bar's POWER / RUN / FORCE / FAULT lights step back; every other view and side-by-side layout keeps them */
+body[data-solo="ladder"] .plcbar .leds { display: none; }
+/* the I/O strip is shown whole or not at all: below 1100 px it would be cut to a few cells (the Data panel has the I/O) */
+@media (max-width: 1100px) { .plcbar .io-strip { display: none; } }
+
+/* Organizer: a project tree like engineering tools have — no bullets or underlined links, indent guides, row hover */
+.lad-org .org, .lad-org .org ul { list-style: none; margin: 0; }
+.lad-org .org { padding: 0 8px 8px 8px; line-height: 1.65; }
+.lad-org .org ul { padding-left: 12px; margin-left: 7px; border-left: 1px solid var(--border); }
+.lad-org .org li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lad-org .org a { color: var(--text); text-decoration: none; padding: 1px 5px; border-radius: var(--r-sm); }
+.lad-org .org a:hover { background: var(--accent-soft); color: var(--accent-text); }
+.lad-org .org a[aria-current] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.lad-org .org small { color: var(--muted); }
+.lad-org .org .org-add, .lad-org .org-add { color: var(--accent-text); }
+.lad-org .side-head, .lad-org h5 { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--muted); }
+
+/* HMI Studio: objects in labelled groups (Controls, Indicators, Equipment, Drawing) instead of one run of 17 buttons */
+.hmi-add { display: flex; flex-wrap: wrap; gap: 4px 0; align-items: center; }
+.hmi-addg { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; border-left: 1px solid var(--border); }
+.hmi-addg:first-child { border-left: 0; padding-left: 0; }
+.hmi-addg .tbtn { padding: 3px 8px; font-size: 12.5px; }
+@media (max-width: 760px) { .hmi-add, .hmi-addg { flex-wrap: nowrap; flex-shrink: 0; } }
+
+/* lists in the side panels (HMI screens, tag lists): rows, not bullets with underlined links */
+.hmi-props .taglist { list-style: none; padding: 0; margin: 4px 0 8px; }
+.hmi-props .taglist li { padding: 2px 4px; border-radius: var(--r-sm); }
+.hmi-props .taglist a { color: var(--text); text-decoration: none; font-weight: 500; }
+.hmi-props .taglist a:hover { color: var(--accent-text); }
+
+/* Errors pane: a line about a rung is a link to it */
+.lad-out-log .ol-go { cursor: pointer; border-radius: var(--r-sm); }
+.lad-out-log .ol-go:hover, .lad-out-log .ol-go:focus-visible { background: var(--accent-soft); text-decoration: underline; }
+.lad-out-log .ol-go.e { color: var(--danger); }
+.lad-out-log .ol-go.w { color: var(--warn); }
+
+/* destructive primary action */
+.btn.primary.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.primary.danger:hover { filter: brightness(.92); }
+
+/* a long project name is cut with … instead of widening the top bar (the full name is in File → Open project) */
+.brand > div { min-width: 0; }
+.brand-sub { white-space: nowrap; }
+.brand-sub [data-pname] { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+/* Find an instruction, at the end of the palette tabs */
+.ins-find { margin-left: auto; width: 96px; height: 20px; padding: 1px 6px; font-size: 11px; border-radius: var(--r-sm); align-self: center; }
+.ins-find:focus { width: 150px; }
+
+/* icon set (UI.icon / UI.iconize): one stroke weight and size everywhere; an icon before a label keeps a small gap */
+.ic { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+.ic { margin-right: 5px; }
+.ic.solo { margin-right: 0; }
+.icon-btn .ic { width: 18px; height: 18px; vertical-align: middle; }
+.btn .ic { width: 15px; height: 15px; }
+
+/* instruction palette: a glyph button names its mnemonic under the glyph (XIC, OTE…), so a beginner can read the palette;
+   box instructions already show their mnemonic. Side-by-side layouts keep the compact one-line buttons */
+#main:not(.multi) .ins-btn.show:has(.mono) { flex-direction: column; height: 34px; min-width: 40px; gap: 1px; }
+#main:not(.multi) .ins-btn .mono + small { position: static; width: auto; height: auto; overflow: visible; clip: auto; font: 600 8.5px var(--sans); color: var(--muted); letter-spacing: .03em; line-height: 1; }
+#main:not(.multi) .ins-btn.show { border-color: var(--border); background: var(--surface); }
+#main:not(.multi) .ins-btn.show:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Properties of the selected instruction (top of the Ladder side panel) */
+.lad-props { border-bottom: 1px solid var(--border); }
+.lad-props .lp-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.lad-props .lp-title { font-size: 14px; } .lad-props .lp-title b { font-family: var(--mono); }
+.lad-props .lp-sub { font-size: 12px; color: var(--muted); margin-top: -4px; }
+.lp-ops { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lp-ops th { text-align: left; font-weight: 500; color: var(--muted); padding: 3px 6px 3px 0; white-space: nowrap; }
+.lp-ops td { padding: 3px 4px; border-top: 1px solid var(--border); } .lp-ops tr:first-child td { border-top: 0; }
+.lp-ops .lp-live { color: var(--ok); font-weight: 600; font-size: 11.5px; padding-top: 0; }
+.lp-ops .lp-liverow td { border-top: 0; }
+.lp-note { font-size: 12px; padding: 6px 8px; border-radius: var(--r); background: var(--surface-2); }
+.lp-uses { display: flex; flex-direction: column; gap: 3px; font-size: 12px; } .lp-uses > span { color: var(--muted); font-weight: 600; }
+.lp-uses small { color: var(--muted); }
+.lp-go { text-align: left; border: 0; background: transparent; color: var(--accent-text); font: 500 12px var(--mono); padding: 2px 4px; border-radius: var(--r-sm); }
+.lp-go:hover { background: var(--accent-soft); }
+
+/* the ladder toolbar groups are told apart by their separators: the group names only show on very wide screens */
+@media (max-width: 1700px) { #main:not(.multi) .lad-toolbar .tb-lbl { display: none; } }
+
+/* parts library header: on a narrow panel the two buttons keep only their icons (the name is in the tooltip) instead of being cut */
+@media (max-width: 1100px) { .pal-tools .tbtn { font-size: 0; padding: 4px; } .pal-tools .tbtn .ic { margin-right: 0; } .ws-search { font-size: 12.5px; } }
+
+/* the update notice floats in the bottom-right corner: it arrives a few seconds after start and used to push the whole
+   layout down under the user's pointer (a click meant for one thing hit another) */
+.update-bar { position: fixed; right: 16px; bottom: 44px; z-index: 60; max-width: min(460px, calc(100% - 32px)); justify-content: flex-start; padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); background: var(--surface); }
+@media (max-width: 760px) { .update-bar { left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); max-width: none; } }
+
+/* view tabs: drawn icons (the same size on every platform, unlike text glyphs); the project name gives way to the save state */
+.tabs .ti { display: inline-flex; line-height: 0; }
+.tabs .ti svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 760px) { .tabs .ti svg { width: 20px; height: 20px; } }
+.brand-sub { display: flex; align-items: center; min-width: 0; }
+.brand-sub [data-pname] { min-width: 0; flex: 0 1 auto; }
+.brand-sub .save-st { flex: none; }
+@media (min-width: 761px) and (max-width: 1100px) { .brand-sub, .tabs .ti { display: none; } }
+/* Wiring: the zoom buttons and Fit stay together (Fit used to wrap to a row of its own) */
+.ws-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+@media (min-width: 761px) and (max-width: 1280px) { .ws-toolbar .tb-lbl { display: none; } .ws-toolbar { gap: 6px; } }
+/* Data Files: an ON bit is green (energized), so it is not mistaken for a forced one (amber) */
+.io-led.on, .io-row[data-io^="O"] .io-led.on { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 60%, transparent); }
+/* up to 1024 px (repeated here: the rules above lost to later ones) the bar above is the controller and the ladder status box steps back, so the instruction palette gets the room */
+@media (min-width: 761px) and (max-width: 1024px) {
+  #main:not(.multi) .lad-toolbar .lad-status { display: none !important; }
+  body[data-solo="ladder"] .plcbar .leds { display: flex; }
+}
+/* Data Files beside the ladder: all 16 bits fit the panel (bit 0, the one used most, was scrolled out of sight) */
+.lad-dt table.dt.bits { table-layout: fixed; font-size: 10px; }
+.lad-dt table.dt.bits td, .lad-dt table.dt.bits th { min-width: 0; padding-left: 0; padding-right: 0; }
+.lad-dt table.dt.bits th.rowh { width: 32px; padding-right: 4px; }
+.lad-dt table.dt.bits th:not(.rowh) { font-size: 8px; letter-spacing: -.4px; }
+/* the task of the open exercise, above the work */
+.task-strip { display: flex; align-items: center; gap: 10px; padding: 5px 12px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border-bottom: 1px solid var(--border); font-size: 12.5px; min-width: 0; }
+.task-strip[hidden] { display: none; }
+.task-strip .ts-kind { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); flex: none; }
+.task-strip .ts-title { flex: none; white-space: nowrap; }
+.task-strip .ts-task { flex: 1 1 auto; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-strip button { flex: none; }
+@media (max-width: 760px) { .task-strip .ts-task, .task-strip .ts-kind { display: none; } .task-strip .ts-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; } }
+/* Electrical Diagram: the empty-drawing hint wraps inside the view */
+.fd-empty { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12.5px; pointer-events: none; }
+.fd-empty b { color: var(--text); font-weight: 600; }
+/* the Errors pane head stays one tidy row (on a phone the chips wrapped and Rung n of m was cut) */
+.lad-out .oc, .lad-rungpos { white-space: nowrap; }
+.lad-out-head { min-width: 0; }
+@media (max-width: 760px) { .lad-out .oc { padding: 1px 6px; min-height: 28px; } .lad-out-head { gap: 3px; padding: 2px 6px; } }

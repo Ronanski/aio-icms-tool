@@ -93,7 +93,11 @@ function check(name, cond, info = '') {
   const txt = await page.evaluate(() => App.project.ladder.rungs.map(r => Ladder.serialize(r.elems)));
   check('toolbar builds XIC → OTE rung', txt.includes('XIC I:0/0 OTE O:0/0'), JSON.stringify(txt));
   await page.click('[data-ins="OTE"]'); await page.fill('#f_a0', 'X:9'); await page.click('.modal .btn.primary');
-  check('invalid address rejected', (await page.textContent('.modal .form-err')).includes('bit address'));
+  check('invalid address rejected, with the reason (X is not a data file)', (await page.textContent('.modal .form-err')).includes('X is not a data file'));
+  check('address errors say what is wrong: bit range, a word without its bit, a timer without its bit, an unknown name', await page.evaluate(() => {
+    const v = s => PLCcore.validArg('bit', s) || '';
+    return /0 to 15/.test(v('I:0/16')) && /whole word.*N7:0\/0/.test(v('N7:0')) && /timer.*T4:0\/DN/.test(v('T4:0')) && /not an address or a tag yet/.test(v('START')) && /Type a bit address/.test(v('')) && v('B3:0/2') === '';
+  }));
   await page.keyboard.press('Escape');
   check('ASCII round-trip', await page.evaluate(() => {
     const t = 'BST XIC I:0/0 NXB XIC O:0/0 BND XIC I:0/1 TON T4:0 1.0 5 0';
@@ -316,6 +320,202 @@ function check(name, cond, info = '') {
     check('no brand names in the source strings', !hits.length, hits.slice(0, 3).join(' | '));
   }
 
+  console.log('Design system: one set of controller lights');
+  check('the Ladder alone shows its own controller lights; the bar lights come back on other views and side by side', await page.evaluate(async () => {
+    const vis = () => getComputedStyle(document.querySelector('.plcbar .leds')).display !== 'none', lay = App.layout;
+    App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 50)); const lad = vis();
+    App.showView('wiring'); await new Promise(q => setTimeout(q, 50)); const wir = vis();
+    App.setLayout(lay); App.showView('ladder'); await new Promise(q => setTimeout(q, 50)); const multi = document.getElementById('main').classList.contains('multi') ? vis() : true;
+    App.setLayout('single'); App.showView('ladder');
+    return !lad && wir && multi && !!document.querySelector('#view-ladder [data-lstatus]');
+  }));
+
+  check('Learn: the page follows the tab — Exercises opens an exercise, Course goes back to the lesson', await page.evaluate(async () => {
+    const lay = App.layout; App.setLayout('single'); App.showView('learn'); await new Promise(q => setTimeout(q, 50));
+    const v = document.getElementById('view-learn'), kick = () => v.querySelector('.kicker').textContent;
+    v.querySelector('[data-ltab="course"]').click(); await new Promise(q => setTimeout(q, 30)); const c1 = kick();
+    v.querySelector('[data-ltab="ex"]').click(); await new Promise(q => setTimeout(q, 30)); const e1 = kick();
+    v.querySelector('[data-ltab="course"]').click(); await new Promise(q => setTimeout(q, 30)); const c2 = kick();
+    App.setLayout(lay); return !/^Exercise/.test(c1) && /^Exercise/.test(e1) && c2 === c1;
+  }));
+  check('Organizer: the routine open in the editor is marked in the tree; HMI Studio lists its objects in groups', await page.evaluate(async () => {
+    App.setLayout('single'); App.showView('ladder'); App.organizer(); await new Promise(q => setTimeout(q, 50));
+    const cur = document.querySelector('#view-ladder [data-lorg] [aria-current]');
+    const groups = [...document.querySelectorAll('#view-hmi .hmi-addg .tb-lbl')].map(x => x.textContent).join();
+    const all = document.querySelectorAll('#view-hmi .hmi-add [data-add]').length;
+    document.querySelector('#view-ladder [data-lorg]').hidden = true;
+    return !!cur && cur.dataset.org === 'f2' && groups === 'Controls,Indicators,Equipment,Drawing' && all === Object.keys(HMI.TYPES).length;
+  }));
+
+  console.log('Product audit fixes: PLC prescan, cancelled operands, Wiring undo, two windows, routine names');
+  {
+    const r = await page.evaluate(async () => {
+      const W = ms => new Promise(q => setTimeout(q, ms));
+      App.openNew({ name: 'Prescan', ladder: { rungs: [{ text: 'BST XIC I:0/4 NXB XIC B3:0/1 BND XIO I:0/5 OTE B3:0/1' }, { text: 'XIC B3:0/1 OTE O:0/3' }, { text: 'XIC I:0/2 OTL O:0/2' }, { text: 'XIC B3:0/1 TON T4:0 1.0 60 0' }] } });
+      const P = App.plc; P.setMode('RUN');
+      App.force('I:0/4', 1); App.force('I:0/2', 1); await W(400); App.force('I:0/4', null); App.force('I:0/2', null); await W(1300);
+      const before = { seal: P.read('B3:0/1'), out: P.read('O:0/3'), latch: P.read('O:0/2'), acc: P.read('T4:0.ACC') };
+      P.setMode('PROG'); await W(150); const prog = { term: P.physOut & 4 };
+      P.setMode('RUN'); await W(250);
+      const after = { seal: P.read('B3:0/1'), out: P.read('O:0/3'), latch: P.read('O:0/2'), acc: P.read('T4:0.ACC'), term: P.physOut & 4 };
+      P.setMode('PROG');
+      return { before, prog, after };
+    });
+    check('PLC: PROG → RUN does a prescan like the controller — an internal seal-in drops, an on-delay timer restarts, a latched output (OTL) stays on', r.before.seal === 1 && r.before.out === 1 && r.before.latch === 1 && r.before.acc >= 1 && r.prog.term === 0 && r.after.seal === 0 && r.after.out === 0 && r.after.latch === 1 && r.after.term === 4 && r.after.acc === 0, JSON.stringify(r));
+  }
+  check('Ladder: a new instruction whose address dialog is cancelled is taken out again (no hidden XIC I:0/0)', await page.evaluate(async () => {
+    App.openNew({ name: 'Cancel test', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 80));
+    Ladder.insert('XIC'); await new Promise(q => setTimeout(q, 80));
+    const opened = !!document.querySelector('.modal-wrap'); document.querySelector('.modal-wrap:last-child [data-x]').click(); await new Promise(q => setTimeout(q, 50));
+    return opened && Ladder.serialize(App.project.ladder.rungs[0].elems) === 'XIC I:0/1 OTE O:0/1';
+  }));
+  check('Wiring: deleting a device with its wires can be undone and redone (Ctrl+Z / Ctrl+Y)', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew(Examples.EX.plcmotor.build()); App.showView('wiring'); await W(100);
+    const C = () => App.project.circuit, n0 = C().comps.length, w0 = C().wires.length, km = C().comps.find(c => c.props.label === 'KM1');
+    Workspace.select && Workspace.select({ kind: 'comp', id: km.id });
+    C().comps = C().comps.filter(c => c !== km); C().wires = C().wires.filter(w => !w.a.startsWith(km.id + ':') && !w.b.startsWith(km.id + ':')); App.circuitChanged();
+    const gone = C().comps.length === n0 - 1 && C().wires.length < w0;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await W(50);
+    const back = C().comps.length === n0 && C().wires.length === w0 && C().comps.some(c => c.props.label === 'KM1');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', ctrlKey: true, bubbles: true })); await W(50);
+    const again = C().comps.length === n0 - 1;
+    return gone && back && again && !!document.querySelector('#view-wiring [data-wundo]');
+  }));
+  check('Two windows: a save of the same project from another window pauses saving here and asks which version to keep', await page.evaluate(async () => {
+    App.openNew({ name: 'Two windows' }); await new Promise(q => setTimeout(q, 50));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'plc-trainer.proj.' + App.currentId, newValue: '{}' }));
+    const m = document.querySelector('.modal-wrap:last-child'), asked = !!m && /another window/.test(m.textContent);
+    const paused = App.flushSave() === false;
+    [...m.querySelectorAll('button')].find(b => /Keep mine/.test(b.textContent)).click();
+    return asked && paused && App.flushSave() === true && Store.load(App.currentId).name === 'Two windows';
+  }));
+  check('Routines: a long, mixed-case routine name on the tag-based target survives saving and opening again', await page.evaluate(() => {
+    const p = App.buildProject({ name: 'Names', target: 'tag', ladder: { rungs: [{ text: 'JSR U:3' }], files: [{ n: 3, name: 'Tank_Fill_Sequence_Long_Name', rungs: [{ text: 'XIC B3:0/0 OTE B3:0/1' }] }] } });
+    const f = App.buildProject({ name: 'Names', target: 'file', ladder: { rungs: [], files: [{ n: 3, name: 'Tank_Fill_Sequence', rungs: [] }] } });
+    return p.ladder.files[0].name === 'Tank_Fill_Sequence_Long_Name' && f.ladder.files[0].name === 'TANK_FILL_';
+  }));
+
+  check('Errors pane: a verify error is a link to its rung; a destructive confirm is red and starts on Cancel; Escape closes a menu', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Links', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }, { text: 'XIC I:0/2 OTE O:0/2' }, { text: '' }] } }); App.setLayout('single'); App.showView('ladder'); await W(80);
+    Ladder.verify(true); await W(30);
+    const go = document.querySelector('#view-ladder [data-olog] .ol-go.e'); const link = !!go && go.dataset.ori === '2';
+    if (go) go.click(); await W(50);
+    UI.confirm('Delete thing', 'Really?', () => {}, 'Delete'); await W(60);
+    const m = document.querySelector('.modal-wrap:last-child'), red = !!m.querySelector('.btn.primary.danger'), onCancel = document.activeElement && document.activeElement.textContent === 'Cancel';
+    m.querySelector('[data-x]').click();
+    UI.menu(100, 100, [{ label: 'One', onClick: () => {} }, { label: 'Two', onClick: () => {} }]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(20);
+    return link && red && onCancel && !document.getElementById('ctxMenu');
+  }));
+  check('Ladder: Find an instruction by mnemonic or by words of its name; Enter adds it', await page.evaluate(async () => {
+    App.openNew({ name: 'Find', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 60));
+    const byName = Ladder.findInstr('on delay'), byMn = Ladder.findInstr('ctu');
+    const fi = document.querySelector('#view-ladder [data-insfind]'); fi.value = 'TON';
+    fi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(q => setTimeout(q, 60));
+    const opened = !!document.querySelector('.modal-wrap') && /TON/.test(document.querySelector('.modal-wrap:last-child h3').textContent);
+    document.querySelector('.modal-wrap:last-child [data-x]').click();
+    return byName.includes('TON') && byMn.length === 1 && byMn[0] === 'CTU' && opened && /Preset × Time Base/.test(PLCcore.INSTR.TON.help);
+  }));
+  check('HMI Studio: deleting an object can be undone and redone', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew(Examples.EX.plcmotor.build()); App.setLayout('single'); App.showView('hmi'); await W(80);
+    const n0 = App.project.hmi.objects.length;
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Studio/.test(b.textContent)).click(); await W(50);
+    document.querySelector('#view-hmi [data-add="lamp"]').click(); await W(50);
+    const added = App.project.hmi.objects.length === n0 + 1;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); await W(50);
+    const gone = App.project.hmi.objects.length === n0;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await W(50);
+    const back = App.project.hmi.objects.length === n0 + 1;
+    document.querySelector('#view-hmi [data-hredo]').click(); await W(50);
+    return added && gone && back && App.project.hmi.objects.length === n0;
+  }));
+  check('Timing: a late tick (a throttled background tab) is caught up, so a running TON keeps real time', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Late tick', ladder: { rungs: [{ text: 'XIC B3:0/0 TON T4:0 0.01 900 0' }] } });
+    App.plc.write('B3:0/0', 1); App.plc.setMode('RUN'); await W(200);
+    const a = App.plc.read('T4:0.ACC'); const t0 = performance.now(); while (performance.now() - t0 < 1000) { /* the page is busy for 1 s */ }
+    await W(80); const b = App.plc.read('T4:0.ACC'); App.plc.setMode('PROG');
+    return b - a >= 95 && b - a <= 140;
+  }));
+  check('Dialogs: Tab stays inside the dialog and focus goes back where it was when it closes', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    const start = document.querySelector('[data-theme-btn]'); start.focus();
+    UI.confirm('Trap', 'Tab test', () => {}, 'OK'); await W(60);
+    const m = document.querySelector('.modal-wrap:last-child'), btns = [...m.querySelectorAll('button')];
+    btns[btns.length - 1].focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })); await W(10);
+    const inside = m.contains(document.activeElement);
+    m.querySelector('[data-x]').click(); await W(20);
+    return inside && document.activeElement === start;
+  }));
+  check('Open project: a deleted project can be restored from the toast', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Keep me' }); const id = App.currentId; App.saveNow && App.saveNow(); App.flushSave(); App.openNew({ name: 'Other' }); await W(50);
+    const id2 = Store.list().find(p => p.id === id) ? id : null;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, bubbles: true })); await W(80);
+    const del = document.querySelector(`.modal-wrap:last-child [data-del="${id2}"]`); del.click(); del.click(); await W(50);
+    const gone = !Store.load(id);
+    const t = [...document.querySelectorAll('#toast-root .toast')].find(x => /click here to undo/.test(x.textContent)); t.click(); await W(30);
+    document.querySelector('.modal-wrap:last-child [data-x]').click();
+    return !!id2 && gone && !!Store.load(id) && Store.list().some(p => p.id === id);
+  }));
+  check('Ladder: the selected instruction shows its operands, live values, timer delay and where its address is used; buttons have icons', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Props', ladder: { rungs: [{ text: 'XIC B3:0/1 TON T4:0 1.0 5 0' }, { text: 'XIC T4:0/DN OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await W(80);
+    const ton = document.querySelector('#view-ladder .rung[data-r="0"] .el[data-uid] .ins') && [...document.querySelectorAll('#view-ladder .rung[data-r="0"] .el[data-uid]')].pop();
+    ton.querySelector('.ins').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 })); await W(80);
+    const box = document.querySelector('#view-ladder [data-lprops]'), t = box.textContent;
+    const ok = !box.hidden && /TON/.test(t) && /Timer On Delay/.test(t) && /PRE 5/.test(t) && /Delay = Preset × Time Base = 5 s/.test(t) && /rung 0001 · XIC/.test(t);
+    const go = box.querySelector('[data-pgo]'); if (go) go.click(); await W(50);
+    const icons = !!document.querySelector('#view-ladder [data-act="undo"] svg.ic, #view-ladder .tbtn svg.ic');
+    const label = [...document.querySelectorAll('#view-ladder .ins-btn.show .mono + small')].some(s => s.offsetWidth > 0 && s.textContent === 'XIC');
+    return ok && !!go && icons && label;
+  }));
+  check('HMI: an empty screen says what to do in each mode, in one line (Studio: the toolbar above)', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'HMI empty', hmi: { objects: [] } }); App.setLayout('single'); App.showView('hmi'); await W(60);
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Machine/.test(b.textContent)).click(); await W(40);
+    const run =document.querySelector('#view-hmi .hmi-empty').textContent;
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Studio/.test(b.textContent)).click(); await W(40);
+    const e = document.querySelector('#view-hmi .hmi-empty'), edit = e.textContent;
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Machine/.test(b.textContent)).click();
+    return /switch to/.test(run) && /toolbar above/.test(edit) && !/switch to/.test(edit) && e.children.length === 1;
+  }));
+  check('HMI Studio: new objects go to free places, not on top of each other', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    // a screen with room (when a screen is full, a new object is stacked as before)
+    App.openNew({ name: 'HMI free', hmi: { objects: [{ id: 'h1', type: 'text', scr: 's1', x: 20, y: 20, w: 220, h: 40, label: 'Title' }] } }); App.setLayout('single'); App.showView('hmi'); await W(60);
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Studio/.test(b.textContent)).click(); await W(40);
+    ['pb', 'lamp', 'num', 'bar'].forEach(k => document.querySelector(`#view-hmi [data-add="${k}"]`).click()); await W(40);
+    const os = App.project.hmi.objects.filter(o => (o.scr || 's1') === 's1');
+    const hit = (a, b) => !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+    const added = os.slice(-4);
+    return added.every(a => os.every(b => a === b || !hit(a, b)));
+  }));
+  check('RUN with a verify warning (duplicate OTE) says so; Lesson 1 starts by loading the practice board and names the View menu', await page.evaluate(async () => {
+    App.openNew({ name: 'Dup', ladder: { rungs: [{ text: 'XIC I:0/0 OTE O:0/0' }, { text: 'XIC I:0/1 OTE O:0/0' }] } }); App.setMode('PROG'); App.setMode('RUN');
+    await new Promise(q => setTimeout(q, 50));
+    const t = [...document.querySelectorAll('#toast-root .toast')].some(x => /Running with 1 warning: .*Duplicate OTE O:0\/0/.test(x.textContent));
+    App.setMode('PROG');
+    const l1 = Examples.LESSONS.find(l => l.id === 'l1').body;
+    return t && /Load “Practice board”/.test(l1) && /View → Workbench/.test(l1) && !/Layout → Workbench/.test(l1);
+  }));
+  check('Icons: every icon on every view draws something you can see (no blank buttons)', await page.evaluate(async () => {
+    const bad = [];
+    for (const v of ['ladder', 'schematic', 'wiring', 'hmi']) {
+      App.setLayout('single'); App.showView(v); await new Promise(q => setTimeout(q, 80));
+      document.querySelectorAll('svg.ic').forEach(s => { if (!s.closest('.view.active, .topbar, .plcbar') || !s.getClientRects().length || !s.getBoundingClientRect().width) return; const p = s.querySelector('path'); if (!p || p.getTotalLength() < 10) bad.push(v + ':' + (s.parentElement.title || s.parentElement.textContent)); });
+    }
+    return bad.length === 0 || bad.join(', ');
+  }) === true);
+  check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
+    App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
+    return App.compat().some(m => /could not be read as ladder logic/.test(m));
+  }));
+
   console.log('Dialogs: keys go to the top dialog only');
   await page.evaluate(() => { UI.modal({ title: 'Lower' }); UI.modal({ title: 'Upper' }); });
   await page.keyboard.press('Escape');
@@ -527,12 +727,32 @@ function check(name, cond, info = '') {
 
   pagesInfo.stable = { version: '99.0.0', build: 'v99.0.0', notes: '> note' };
   await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); return Updater.check(true); });
-  check('the update bar sits under the status bar and covers nothing', await page.evaluate(() => {
-    const bar = document.querySelector('.update-bar'), pb = document.querySelector('.plcbar').getBoundingClientRect(), r = bar.getBoundingClientRect();
-    return bar.nextElementSibling.id === 'main' && r.top >= pb.bottom - 1;
+  check('the update notice floats in a corner: it does not push the layout down or cover the status bar', await page.evaluate(() => {
+    const bar = document.querySelector('.update-bar'), pb = document.querySelector('.plcbar').getBoundingClientRect(), r = bar.getBoundingClientRect(), main = document.getElementById('main').getBoundingClientRect();
+    return getComputedStyle(bar).position === 'fixed' && r.top >= pb.bottom - 1 && r.right <= innerWidth && Math.abs(main.top - pb.bottom) <= 1;
+  }));
+  await page.click('.update-bar [data-u="later"]');
+  pagesInfo.stable = { version: await page.evaluate(() => App.VERSION), build: 'zz-next-build', notes: '' };
+  await page.evaluate(() => Updater.check(true));
+  check('a new build of the same version names the builds, not "v2.3.0 is ready. You have v2.3.0"', await page.evaluate(() => {
+    const t = document.querySelector('.update-bar')?.textContent || '';
+    return t.includes('zz-next-build') && t.includes('You have build') && !t.includes('You have v');
   }));
   await page.click('.update-bar [data-u="later"]');
   pagesInfo.stable = NOUP; pagesInfo.beta = NOUP;
+  check('the lessons are numbered in the order the course lists them', await page.evaluate(() => {
+    const L = Examples.LESSONS || [], lv = [...new Set(L.map(l => l.level))], shown = lv.flatMap(g => L.filter(l => l.level === g));
+    return shown.length > 10 && shown.every((l, i) => l.title.startsWith((i + 1) + ' '));
+  }));
+  check('Data Files: an ON bit is green (energized), not amber like a forced one', await page.evaluate(() => {
+    const d = document.createElement('span'); d.className = 'io-led on'; document.body.appendChild(d);
+    const ok = getComputedStyle(d).backgroundColor, ref = document.createElement('span'); ref.style.color = 'var(--ok)'; document.body.appendChild(ref);
+    const same = ok === getComputedStyle(ref).color; d.remove(); ref.remove(); return same;
+  }));
+  check('the view tabs use drawn icons (the same size everywhere), not text glyphs', await page.evaluate(() => [...document.querySelectorAll('.tabs [data-view] .ti')].every(s => s.querySelector('svg path'))));
+  check('the project name gives way to the Saved state: the pill is never cut off', await page.evaluate(() => {
+    const st = document.querySelector('.brand-sub .save-st'); return getComputedStyle(st).flexShrink === '0' && getComputedStyle(st.parentElement).display === 'flex';
+  }));
   check('a failed update check is not retried at once', await page.evaluate(async () => {
     const f = window.fetch; window.fetch = () => Promise.reject(new Error('down'));
     const a = await Updater.check(true); let calls = 0; window.fetch = () => { calls++; return f.apply(window, arguments); };
@@ -1289,7 +1509,7 @@ function check(name, cond, info = '') {
   check('free draw: the new sources and wire pieces are in the library', await page.evaluate(() => ['pL1', 'pL2', 'pL3', 'pN', 'pPE', 'pP', 'pM', 'batt', 'gen', 'psu', 'wline', 'wcorner', 'wtee', 'wcross', 'wlink', 'mdc'].every(k => FreeDraw.KINDS[k])));
   await page.selectOption('#view-schematic .fd-grp', 'Others'); await wait(100);
   for (let i = 0; i < 4; i++) { await page.click('#view-schematic .fd-ico[data-fk="wcorner"]'); await wait(80); }
-  check('free draw: as in Simurelay, a symbol from the library lands in the middle of the view, selected', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && its.every(a => a.x === its[0].x && a.y === its[0].y) && FreeDraw.selected() === its[3]; }));
+  check('free draw: a symbol from the library lands in the middle of the view, selected; the next ones go to the next free spot instead of on top', await page.evaluate(() => { const its = App.project.schematic.free.items; return its.length === 4 && new Set(its.map(a => a.x + ',' + a.y)).size === 4 && its.slice(1).every(a => a.y === its[0].y && a.x > its[0].x) && FreeDraw.selected() === its[3]; }));
   check('free draw: wire pieces need no tag dialog', await page.evaluate(() => !document.querySelector('.modal')));
   await page.dragAndDrop('#view-schematic .fd-ico[data-fk="wcross"]', '#view-schematic .fd-host', { targetPosition: { x: 60, y: 60 } }); await wait(200);
   check('free draw: a symbol dragged from the library lands where it is dropped', await page.evaluate(() => App.project.schematic.free.items.some(i => i.k === 'wcross')));
@@ -1446,7 +1666,7 @@ function check(name, cond, info = '') {
   await page.click('[data-lang-btn]'); await wait(200);
   check('the language button switches the menus to Tagalog', await page.evaluate(() => I18N.lang === 'tl' && document.querySelector('[data-examples]').textContent === 'Mga Halimbawa ▾' && document.querySelector('[data-lang-btn]').textContent === 'TL'));
   await page.evaluate(() => App.showView('wiring')); await wait(150);
-  check('views drawn later are translated too (Wiring search box, buttons)', await page.evaluate(() => document.querySelector('#view-wiring .ws-search').placeholder === 'Maghanap ng piyesa…' && [...document.querySelectorAll('#view-wiring button')].some(b => b.textContent.trim() === '⊟ Isara lahat')));
+  check('views drawn later are translated too (Wiring search box, buttons)', await page.evaluate(() => document.querySelector('#view-wiring .ws-search').placeholder === 'Maghanap ng piyesa…' && [...document.querySelectorAll('#view-wiring button')].some(b => b.textContent.trim() === 'Isara lahat' && !!b.querySelector('svg.ic'))));
   await page.click('[data-lang-btn]'); await wait(200);
   check('switching back restores English', await page.evaluate(() => I18N.lang === 'en' && document.querySelector('[data-examples]').textContent === 'Examples ▾' && document.querySelector('#view-wiring .ws-search').placeholder === 'Search components…'));
 
@@ -1717,7 +1937,8 @@ function check(name, cond, info = '') {
   await hmiTap('START');
   check('integration: the motor restarts from the HMI after the reset', await until(is("r('O:0/0') === 1 && d('M1').drive === 'run'")));
   await setMode('PROG');
-  check('integration: PROG turns the PLC outputs off and KM1 drops', await until(is("r('O:0/0') === 0 && !d('KM1').pulled")));
+  // the output terminals go off; the output image is kept (as in the controller: a latched output comes back in RUN)
+  check('integration: PROG turns the PLC outputs off and KM1 drops', await until(is("!(App.plc.physOut & 1) && !d('KM1').pulled")));
   await setMode('RUN'); await op('QF1', 'h');
   await hmiTap('START');
   const qf1Off = await until(is("!d('QF1').on && r('O:0/0') === 1 && d('KM1').pulled"));
@@ -2320,6 +2541,7 @@ function check(name, cond, info = '') {
   check('feedback: START does nothing while the alarm is latched', await page.evaluate(is("r('B3:0/14') === 1 && r('O:0/0') === 0 && !d('KM1').pulled")));
   await hmiTap('RESET');
   check('feedback: HMI RESET clears the alarm and the banner', await until(is("r('B3:0/14') === 0 && !d('H2').on")) && await (async () => { await wait(150); return !(await hmiAlarm('DISCREPANCY')); })());
+  check('an inactive alarm banner shows "No active alarm", not the alarm text', await page.evaluate(() => [...document.querySelectorAll('#view-hmi .t-alarm:not(.on)')].every(a => a.querySelector('.al-txt').offsetParent === null && a.querySelector('.al-none').offsetParent !== null)));
   await hmiTap('START');
   check('feedback: with QF1 back on, START runs the motor again with RUNNING feedback', await until(is("r('O:0/0') === 1 && r('I:0/3') === 1 && d('M1').drive === 'run'")));
   await op('M1', 'jam');
@@ -3545,6 +3767,31 @@ function check(name, cond, info = '') {
   check('the welcome message of the first start goes away when another project is opened', await phone.evaluate(() => { const has = () => [...document.querySelectorAll('#toast-root .toast')].some(t => /Welcome|Maligayang/.test(t.textContent));
     const a = has(); App.openNew(Examples.EX.dol.build()); const b = has(); App.openNew(Examples.EX.plcmotor.build()); return a && !b; }));
   await phone.evaluate(() => App.showView('ladder'));
+  await phone.waitForTimeout(200);
+  check('no horizontal page scroll on the Ladder (its toolbar scrolls by itself)', (await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0);
+  await phone.evaluate(() => { App.showView('schematic'); const b = document.querySelector('#view-schematic [data-sstyle="free"]'); if (b) b.click(); }); await phone.waitForTimeout(250);
+  check('phone: every free-draw toolbar button shows its icon (labels give way, icons stay)', await phone.evaluate(() => {
+    const bs = [...document.querySelectorAll('#view-schematic .sch-toolbar .free-group .tbtn')].filter(b => b.offsetParent && b.querySelector('svg.ic'));
+    return bs.length >= 5 && bs.every(b => b.querySelector('svg.ic').getBoundingClientRect().width > 8);
+  }), await phone.evaluate(() => [...document.querySelectorAll('#view-schematic .sch-toolbar .tbtn')].filter(b => b.offsetParent).map(b => (b.querySelector('svg.ic') ? Math.round(b.querySelector('svg.ic').getBoundingClientRect().width) : 'x') + b.textContent.trim().slice(0, 8)).join(',')));
+  await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(200);
+  check('phone: the Errors pane head is one row and "Rung n of m" is in sight', await phone.evaluate(() => {
+    const h = document.querySelector('#view-ladder .lad-out-head'), r = h.querySelector('.lad-rungpos').getBoundingClientRect();
+    return h.getBoundingClientRect().height <= 40 && r.right <= innerWidth && [...h.querySelectorAll('.oc')].every(c => c.getBoundingClientRect().height <= 32);
+  }));
+  await phone.setViewportSize({ width: 834, height: 1112 }); await phone.waitForTimeout(250);
+  check('tablet: the top bar is one row, every ladder tool is in sight (＋ Rung, Verify without scrolling), no page scroll', await phone.evaluate(() => {
+    const vis = s => { const b = document.querySelector('#view-ladder ' + s); if (!b) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; };
+    return document.querySelector('.topbar').getBoundingClientRect().height < 60 && vis('[data-act="rung"]') && vis('[data-act="verify"]') && vis('[data-act="undo"]') && document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect().height < 220 && document.documentElement.scrollWidth <= innerWidth;
+  }));
+  check('tablet: the I/O strip is hidden rather than cut to a few cells', await phone.evaluate(() => getComputedStyle(document.querySelector('.plcbar .io-strip')).display === 'none'));
+  check('tablet: the ladder status box steps back, so the instruction palette is wide', await phone.evaluate(() => getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && document.querySelector('#view-ladder .lad-ins').getBoundingClientRect().width > 400));
+  check('tablet: a short rung fits the pane, its coil in sight without scrolling sideways', await phone.evaluate(() => { const r = document.querySelector('#view-ladder .lad-rungs'); return r.scrollWidth <= r.clientWidth + 1; }));
+  check('tablet: all 16 bits of the Data Files grid fit beside the ladder (bit 0 in sight)', await phone.evaluate(() => { const t = document.querySelector('#view-ladder .lad-dt table.dt.bits'); return !!t && t.parentElement.scrollWidth <= t.parentElement.clientWidth + 1; }));
+  await phone.evaluate(() => App.showView('wiring')); await phone.waitForTimeout(250);
+  check('tablet: the Wiring zoom buttons and Fit stay on one row', await phone.evaluate(() => { const f = document.querySelector('#view-wiring [data-fit]').getBoundingClientRect(), z = document.querySelector('#view-wiring [data-z]').getBoundingClientRect(); return Math.abs(f.top - z.top) < 3; }));
+  await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(250);
+  await phone.setViewportSize({ width: 390, height: 844 }); await phone.waitForTimeout(250);
   await phone.tap('[data-act="data"]');
   await phone.waitForTimeout(300);
   check('Data drawer opens', await phone.evaluate(() => document.querySelector('.lad-side').classList.contains('open')));
@@ -3681,6 +3928,12 @@ function check(name, cond, info = '') {
     await fo.click('#view-schematic [data-fdact="more"]'); await fo.waitForTimeout(150);
     check('free draw only: Values, wire colours, Duplicate, Type and front / back are in the ⋯ menu', await fo.evaluate(() => { const t = [...document.querySelectorAll('.ctx-menu button')].map(b => b.textContent); return ['Show values', 'Wire colours', 'Duplicate', 'Change type', 'Bring to front', 'Send to back'].every(w => t.some(x => x.includes(w))); }));
     await fo.keyboard.press('Escape');
+    check('free draw only: a project with Wiring devices but no drawing says so and points to the examples with a diagram', await fo.evaluate(async () => {
+      App.openNew(Examples.EX.plcmotor.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 200));
+      const t = document.querySelector('#view-schematic').textContent;
+      App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 300));
+      return t.includes('no Electrical Diagram yet') && t.includes('Star-delta starter');
+    }));
     check('free draw only: the converted star-delta starter still runs (the start button pulls in its contactor)', await fo.evaluate(async () => {
       document.querySelector('#view-schematic [data-fdact="play"]').click();
       const C = App.project.circuit, s1 = C.comps.find(c => c.props.label === 'S1'), km = C.comps.find(c => c.props.label === 'KM1');
@@ -3726,9 +3979,23 @@ function check(name, cond, info = '') {
     await fo.click('#view-learn [data-ltab="ex"]'); await fo.waitForTimeout(150);
     check('Learn: Course and Exercises tabs; exercises by difficulty with a topic filter and a done count', await fo.evaluate(() => !!document.querySelector('#view-learn [data-ltab="course"]') && document.querySelectorAll('#view-learn [data-xdiff]').length === 3 && !!document.querySelector('#view-learn [data-xtopic]') && /0\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent)));
     await fo.click('#view-learn [data-lesson="' + await fo.evaluate(() => Exercises.LIST[0].id) + '"]'); await fo.waitForTimeout(150);
-    await fo.click('#view-learn [data-sol]'); await fo.waitForTimeout(150); await fo.click('.modal .btn.primary'); await fo.waitForTimeout(200);
+    await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
+    check('Learn: Check my work refuses a project that is not the exercise (it names the open project)', await fo.evaluate(() => /is not this exercise/.test(document.querySelector('#view-learn .grade-bad').textContent)));
+    const projBefore = await fo.evaluate(() => ({ id: App.currentId, n: Store.list().length }));
+    await fo.click('#view-learn [data-sol]'); await fo.waitForTimeout(150); await fo.click('.modal .btn.primary'); await fo.waitForTimeout(400);
+    check('Learn: the solution goes into the exercise’s own project, never over the open one', await fo.evaluate(b => App.currentId !== b.id && App.project.lesson === Exercises.LIST[0].id && !!Store.load(b.id) && Store.list().length === b.n + 1, projBefore));
     await fo.evaluate(() => App.showView('learn')); await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
-    check('Learn: an exercise passed with Check my work is marked done in the list and the count', await fo.evaluate(() => /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok')));
+    check('Learn: passing with the solution is not counted as done — it asks to try it yourself', await fo.evaluate(() => /0\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && /try it yourself/.test(document.querySelector('#view-learn .grade-ok').textContent)));
+    await fo.click('#view-learn [data-start]'); await fo.waitForTimeout(150);
+    check('Learn: Start again offers Continue or Start over (one project per exercise)', await fo.evaluate(() => /started this exercise before/.test(document.querySelector('.modal-wrap:last-child').textContent) || App.project.lesson === Exercises.LIST[0].id));
+    await fo.evaluate(() => { const m = [...document.querySelectorAll('.modal-wrap:last-child button')].find(b => /Start over/.test(b.textContent)); if (m) m.click(); });
+    await fo.waitForTimeout(300);
+    const nAfter = await fo.evaluate(() => Store.list().length);
+    await fo.evaluate(() => { const x = Exercises.LIST[0]; App.project.ladder.rungs = x.solution.map(t => Ladder.newRung(Ladder.parseRung(t))); App.loadProgram(); App.plc.applyAll(true); App.showView('ladder'); });
+    check('Learn: while the exercise is open, a strip above the work shows its title and task (not in Learn itself)', await fo.evaluate(() => { const s = document.querySelector('[data-task]'); return !s.hidden && s.textContent.includes(Exercises.LIST[0].title) && /lamp/i.test(s.querySelector('.ts-task').textContent); }));
+    await fo.click('[data-task] [data-ts="check"]'); await fo.waitForTimeout(300);
+    check('Learn: the strip hides in Learn and its Check grades the exercise there', await fo.evaluate(() => App.view === 'learn' && document.querySelector('[data-task]').hidden));
+    check('Learn: an exercise done by hand in its own project is marked done in the list and the count; Start over did not add a project', await fo.evaluate(n => Store.list().length === n && /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok'), nAfter) && nAfter === projBefore.n + 1);
     await fo.click('[data-examples]'); await fo.waitForTimeout(150);
     check('Examples menu: grouped by category (practice boards, motor control, process, hardware)', await fo.evaluate(() => { const h = [...document.querySelectorAll('.ctx-menu .ctx-head, .ctx-menu .head, .ctx-menu h6')].map(x => x.textContent); return ['Practice boards', 'Motor control', 'Process', 'Hardware'].every(c => h.some(t => t.includes(c))); }));
     await fo.keyboard.press('Escape');
