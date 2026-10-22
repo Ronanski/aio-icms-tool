@@ -811,6 +811,8 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
   .sch-toolbar { flex-wrap: wrap; overflow: visible; gap: 4px; padding: 5px 8px; -webkit-mask-image: none; mask-image: none; }
   .sch-toolbar .tb-group { flex-wrap: wrap; flex-shrink: 1; border-right: 0; padding: 0; gap: 3px; }
   .sch-toolbar .tb-lbl, .sch-toolbar .tl, .sch-toolbar .ic, .sch-toolbar .tb-group.kinds, .sch-toolbar .pw-group { display: none; }
+  /* the free drawing's short toolbar: icons only (its labels give way; without the icons the buttons were empty) */
+  .free-style .sch-toolbar .free-group .ic { display: inline-block; margin-right: 0; }
   .sch-toolbar .tb-group.keep { flex-wrap: nowrap; gap: 6px; }
   .sch-toolbar .tbtn { padding: 5px 8px; min-height: 34px; }
   .sch-toolbar .seg button { padding: 5px 7px; }
@@ -1227,3 +1229,6 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 .task-strip .ts-task { flex: 1 1 auto; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-strip button { flex: none; }
 @media (max-width: 760px) { .task-strip .ts-task, .task-strip .ts-kind { display: none; } .task-strip .ts-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; } }
+/* Electrical Diagram: the empty-drawing hint wraps inside the view */
+.fd-empty { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12.5px; pointer-events: none; }
+.fd-empty b { color: var(--text); font-weight: 600; }

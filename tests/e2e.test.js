@@ -3769,6 +3769,12 @@ function check(name, cond, info = '') {
   await phone.evaluate(() => App.showView('ladder'));
   await phone.waitForTimeout(200);
   check('no horizontal page scroll on the Ladder (its toolbar scrolls by itself)', (await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0);
+  await phone.evaluate(() => { App.showView('schematic'); const b = document.querySelector('#view-schematic [data-sstyle="free"]'); if (b) b.click(); }); await phone.waitForTimeout(250);
+  check('phone: every free-draw toolbar button shows its icon (labels give way, icons stay)', await phone.evaluate(() => {
+    const bs = [...document.querySelectorAll('#view-schematic .sch-toolbar .free-group .tbtn')].filter(b => b.offsetParent && b.querySelector('svg.ic'));
+    return bs.length >= 5 && bs.every(b => b.querySelector('svg.ic').getBoundingClientRect().width > 8);
+  }), await phone.evaluate(() => [...document.querySelectorAll('#view-schematic .sch-toolbar .tbtn')].filter(b => b.offsetParent).map(b => (b.querySelector('svg.ic') ? Math.round(b.querySelector('svg.ic').getBoundingClientRect().width) : 'x') + b.textContent.trim().slice(0, 8)).join(',')));
+  await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(200);
   await phone.setViewportSize({ width: 834, height: 1112 }); await phone.waitForTimeout(250);
   check('tablet: the top bar is one row, every ladder tool is in sight (＋ Rung, Verify without scrolling), no page scroll', await phone.evaluate(() => {
     const vis = s => { const b = document.querySelector('#view-ladder ' + s); if (!b) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; };

@@ -75,6 +75,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - all 16 bits of the Data Files grid fit beside the ladder. Bits 2–0 were scrolled out of sight.
 - **Data Files:** an ON bit is green (energized) instead of amber, the colour of a forced bit.
 - **Wiring toolbar:** Zoom and Fit stay together, and on a tablet the toolbar is two rows instead of three.
+- **Phone Electrical Diagram:** the toolbar buttons show their icons (they were empty boxes), and the empty-drawing hint wraps instead of running off the screen.
 
 ### Added
 - **Task strip:** while an exercise's project is open, a strip above the work shows the exercise and its task, with **Task** (back to it in Learn) and **✓ Check my work**. You no longer have to switch to Learn to read the task again.

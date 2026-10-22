@@ -977,13 +977,14 @@
     }
     if (wiring && (wiring.cur || (wiring.pts && wiring.pts.length))) { const a = endPos(wiring.from); if (a) o.push(`<path class="wtemp" d="${tempPath(a)}"/>`); }
     if (drag && drag.box) { const b = boxOf(drag); o.push(`<rect class="fbox" x="${b.x1}" y="${b.y1}" width="${b.x2 - b.x1}" height="${b.y2 - b.y1}"/>`); }
-    if (!F.items.length) {
-      // a project with devices in the Wiring but no drawing says so: the drawing is not made from the Wiring by itself
-      const wired = ((App.project && App.project.circuit && App.project.circuit.comps) || []).length;
-      o.push(`<text class="hint" x="24" y="40" style="text-anchor:start">${wired ? 'This project has no Electrical Diagram yet — its devices are only in the Wiring' : 'Empty drawing'}</text>`,
-        `<text class="hint" x="24" y="58" style="text-anchor:start">Add symbols from ▦ Library, then tap two terminals to wire them${wired ? '. Finished diagrams: Examples → Star-delta starter, Three motors' : ''}</text>`);
-    }
     o.push('</g></svg>');
+    if (!F.items.length) {
+      // a project with devices in the Wiring but no drawing says so: the drawing is not made from the Wiring by itself.
+      // Plain HTML over the drawing, so the text wraps on a phone instead of running off the edge
+      const wired = ((App.project && App.project.circuit && App.project.circuit.comps) || []).length;
+      o.push(`<div class="fd-empty"><b>${wired ? 'This project has no Electrical Diagram yet — its devices are only in the Wiring.' : 'Empty drawing.'}</b>
+        <span>Add symbols from ▦ Library, then tap two terminals to wire them.${wired ? ' Finished diagrams: Examples → Star-delta starter, Three motors.' : ''}</span></div>`);
+    }
     host.innerHTML = o.join('');
     applyPalette(el.querySelector('.fd-wrap'));
     const vw = el.closest('.view') || el, pb = vw.querySelector(':scope > .fd-pbar'), ph = pbar && H.mode() === 'edit' ? barHtml() : '';
