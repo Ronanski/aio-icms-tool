@@ -729,6 +729,10 @@ function check(name, cond, info = '') {
     const btns = [...document.querySelectorAll('#view-ladder .lad-toolbar button')].filter(b => b.offsetParent);
     return btns.length > 30 && btns.every(b => { const r = b.getBoundingClientRect(); return r.right <= pane.right + 1 && r.left >= pane.left - 1 && r.width > 0; });
   }));
+  check('Workbench: the Ladder toolbar is compact beside the other views (no second set of controller lights, palette one row)', await page.evaluate(() => {
+    const tb = document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect();
+    return getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && tb.height < 300 && getComputedStyle(document.querySelector('.plcbar .leds')).display !== 'none';
+  }));
   check('Workbench: the wiring zoom is visible', await page.evaluate(() => {
     const pane = document.getElementById('view-wiring').getBoundingClientRect(), z = document.querySelector('#view-wiring [data-z]').getBoundingClientRect();
     return z.right <= pane.right + 1 && z.width > 0;

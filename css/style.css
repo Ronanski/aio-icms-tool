@@ -1236,3 +1236,11 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 .lad-out .oc, .lad-rungpos { white-space: nowrap; }
 .lad-out-head { min-width: 0; }
 @media (max-width: 760px) { .lad-out .oc { padding: 1px 6px; min-height: 28px; } .lad-out-head { gap: 3px; padding: 2px 6px; } }
+/* the Ladder beside other views (Workbench): a compact toolbar. The bar above is the controller (its lights show when
+   the Ladder is not alone), the instruction palette is one scrolling row with its tabs, and the groups wrap as a whole */
+#main.multi .lad-toolbar { flex-wrap: wrap; row-gap: 4px; column-gap: 6px; }
+#main.multi .lad-toolbar .tb-group { flex-wrap: wrap; border-right: 0; padding-right: 0; row-gap: 4px; }
+#main.multi .lad-toolbar .tb-lbl, #main.multi .lad-toolbar .lad-status { display: none !important; }
+#main.multi .lad-toolbar .lad-ins { flex: 1 1 100%; min-width: 0; }
+#main.multi .lad-ins .ins-row, #main.multi .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+#main.multi .lad-ins .ins-row > *, #main.multi .lad-ins .ins-tabs > * { flex-shrink: 0; }
