@@ -1232,3 +1232,7 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 /* Electrical Diagram: the empty-drawing hint wraps inside the view */
 .fd-empty { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12.5px; pointer-events: none; }
 .fd-empty b { color: var(--text); font-weight: 600; }
+/* the Errors pane head stays one tidy row (on a phone the chips wrapped and Rung n of m was cut) */
+.lad-out .oc, .lad-rungpos { white-space: nowrap; }
+.lad-out-head { min-width: 0; }
+@media (max-width: 760px) { .lad-out .oc { padding: 1px 6px; min-height: 28px; } .lad-out-head { gap: 3px; padding: 2px 6px; } }

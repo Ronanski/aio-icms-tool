@@ -3775,6 +3775,10 @@ function check(name, cond, info = '') {
     return bs.length >= 5 && bs.every(b => b.querySelector('svg.ic').getBoundingClientRect().width > 8);
   }), await phone.evaluate(() => [...document.querySelectorAll('#view-schematic .sch-toolbar .tbtn')].filter(b => b.offsetParent).map(b => (b.querySelector('svg.ic') ? Math.round(b.querySelector('svg.ic').getBoundingClientRect().width) : 'x') + b.textContent.trim().slice(0, 8)).join(',')));
   await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(200);
+  check('phone: the Errors pane head is one row and "Rung n of m" is in sight', await phone.evaluate(() => {
+    const h = document.querySelector('#view-ladder .lad-out-head'), r = h.querySelector('.lad-rungpos').getBoundingClientRect();
+    return h.getBoundingClientRect().height <= 40 && r.right <= innerWidth && [...h.querySelectorAll('.oc')].every(c => c.getBoundingClientRect().height <= 32);
+  }));
   await phone.setViewportSize({ width: 834, height: 1112 }); await phone.waitForTimeout(250);
   check('tablet: the top bar is one row, every ladder tool is in sight (＋ Rung, Verify without scrolling), no page scroll', await phone.evaluate(() => {
     const vis = s => { const b = document.querySelector('#view-ladder ' + s); if (!b) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; };
