@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Fixed (hands-on pass 2)
+- **Electrical Diagram:** an opened project shows its whole drawing (Fit, no bigger than 100 %). It used to open on the corner the last project was looking at, so the star-delta power circuit was off screen.
+- **Electrical Diagram:** a timer coil's tag (-KT1) no longer lies on the symbol.
 - **Phone Ladder:** the instruction palette has a row of its own, and the other tools are one scrolling row under it with **+ Rung** first. Before, the status box filled the width (one instruction in sight) and + Rung was far off to the right. The bar above stays the controller.
 - **Phone Learn:** tapping a lesson or exercise in the list brings its page into sight. The page used to open below the long list, out of view.
 - **Workbench:** the Ladder toolbar beside the Wiring and HMI is about 110 px shorter (356 → 247 px at 1280 × 800). The bar above is the controller, the instruction palette is one scrolling row, and the groups wrap as a whole, so more rungs are in sight.

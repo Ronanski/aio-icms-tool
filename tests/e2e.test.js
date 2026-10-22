@@ -3972,6 +3972,11 @@ function check(name, cond, info = '') {
       App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 300));
       return t.includes('no Electrical Diagram yet') && t.includes('Star-delta starter');
     }));
+    check('Electrical Diagram: an opened project shows its whole drawing (every symbol inside the view)', await fo.evaluate(() => {
+      const box = document.querySelector('#view-schematic .free-svg').getBoundingClientRect();
+      const els = [...document.querySelectorAll('#view-schematic .fitem')].map(g => g.getBoundingClientRect()).filter(r => r.width > 0);
+      return els.length > 10 && els.every(r => r.left >= box.left - 1 && r.right <= box.right + 1 && r.top >= box.top - 1 && r.bottom <= box.bottom + 1);
+    }));
     check('free draw only: the converted star-delta starter still runs (the start button pulls in its contactor)', await fo.evaluate(async () => {
       document.querySelector('#view-schematic [data-fdact="play"]').click();
       const C = App.project.circuit, s1 = C.comps.find(c => c.props.label === 'S1'), km = C.comps.find(c => c.props.label === 'KM1');
