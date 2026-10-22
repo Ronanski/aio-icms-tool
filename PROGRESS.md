@@ -40,7 +40,8 @@
 - [x] Phase 3 redesign: prototype artifact, one icon set across the app, palette labels, Selected instruction panel with live values and cross references, two-row ladder toolbar
 - [x] Object stacking on add: a new diagram symbol goes to the next free spot
 - [x] Hands-on pass: HMI inactive alarm, update notice text, lesson order, phone tab icons, tablet rung width, Data Files bit grid, Wiring toolbar, exercise task strip
-- [ ] Off-screen rung rendering for very long programs (Q18)
+- [x] Long programs: rendering 500 rungs with errors 1.8 s → 0.14 s; off-screen rendering not needed at that size
+- [x] Hands-on pass 2: Wiring fit, Workbench toolbar, phone Ladder toolbar and Learn, diagram fit on open
 - [x] Simulated time in a background tab: caught up in 0.1 s steps (Q19)
 - [ ] Generate the Electrical Diagram from the Wiring
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
