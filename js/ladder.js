@@ -622,6 +622,8 @@
     warns.forEach(x => Ladder.out('w', `Warning: ${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`, false, x));
     outHold = false;
     Ladder.out('m', `Complete - ${errs.length} error(s), ${warns.length} warning(s)`);
+    // what going to RUN tells the user (a warning does not stop RUN, but it should not go unseen)
+    Ladder.lastWarns = warns.map(x => `${where(x)}: ${App.fmtText(x.msg.replace(/^LAD \d+: /, ''))}`);
     Ladder.render();
     if (quiet) return errs.length === 0;
     // I/O addresses in the messages follow the project's address style

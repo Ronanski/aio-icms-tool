@@ -1079,12 +1079,23 @@ code { border-radius: var(--r-sm); }
 .learn-body h3 { font-size: 18px; font-weight: 700; }
 .learn-nav h3 { font-weight: 700; }
 
-/* tablet and small laptop: the ladder toolbar is one row that scrolls sideways (as on a phone) instead of five
-   stacked rows; group names give way to the separators */
+/* tablet and small laptop: every tool stays in sight (a beginner must find + Rung without scrolling), in as few rows
+   as fit: groups don't break inside, group names give way to the separators */
 @media (min-width: 761px) and (max-width: 1280px) {
-  #main:not(.multi) .lad-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
-  #main:not(.multi) .lad-toolbar > *, #main:not(.multi) .lad-toolbar .tb-group { flex-shrink: 0; flex-wrap: nowrap; }
+  #main:not(.multi) .lad-toolbar { flex-wrap: wrap; row-gap: 4px; }
+  #main:not(.multi) .lad-toolbar .tb-group { flex-wrap: nowrap; }
   #main:not(.multi) .lad-toolbar .tb-lbl { display: none; }
+  /* the instruction palette takes the rest of its row; only its buttons and tabs scroll, like a ribbon */
+  #main:not(.multi) .lad-toolbar .lad-ins { flex: 1 1 320px; min-width: 0; }
+  #main:not(.multi) .lad-ins .ins-row, #main:not(.multi) .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  #main:not(.multi) .lad-ins .ins-row > *, #main:not(.multi) .lad-ins .ins-tabs > * { flex-shrink: 0; }
+  #main:not(.multi) .lad-toolbar .tb-addr select { max-width: 132px; }
+  #main:not(.multi) .lad-toolbar .zoomv { min-width: 0; padding: 4px 6px; }
+}
+/* up to 1024 px the bar above is the controller (PROG / RUN and its lights) and the ladder's status box steps back */
+@media (min-width: 761px) and (max-width: 1024px) {
+  #main:not(.multi) .lad-toolbar .lad-status { display: none; }
+  body[data-solo="ladder"] .plcbar .leds { display: flex; }
 }
 
 /* the visually hidden instruction names stay inside their button: without a positioned parent they escaped the
@@ -1173,3 +1184,6 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 
 /* the ladder toolbar groups are told apart by their separators: the group names only show on very wide screens */
 @media (max-width: 1700px) { #main:not(.multi) .lad-toolbar .tb-lbl { display: none; } }
+
+/* parts library header: on a narrow panel the two buttons keep only their icons (the name is in the tooltip) instead of being cut */
+@media (max-width: 1100px) { .pal-tools .tbtn { font-size: 0; padding: 4px; } .pal-tools .tbtn .ic { margin-right: 0; } .ws-search { font-size: 12.5px; } }

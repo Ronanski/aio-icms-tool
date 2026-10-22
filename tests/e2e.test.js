@@ -485,6 +485,14 @@ function check(name, cond, info = '') {
     const added = os.slice(-4);
     return added.every(a => os.every(b => a === b || !hit(a, b)));
   }));
+  check('RUN with a verify warning (duplicate OTE) says so; Lesson 1 starts by loading the practice board and names the View menu', await page.evaluate(async () => {
+    App.openNew({ name: 'Dup', ladder: { rungs: [{ text: 'XIC I:0/0 OTE O:0/0' }, { text: 'XIC I:0/1 OTE O:0/0' }] } }); App.setMode('PROG'); App.setMode('RUN');
+    await new Promise(q => setTimeout(q, 50));
+    const t = [...document.querySelectorAll('#toast-root .toast')].some(x => /Running with 1 warning: .*Duplicate OTE O:0\/0/.test(x.textContent));
+    App.setMode('PROG');
+    const l1 = Examples.LESSONS.find(l => l.id === 'l1').body;
+    return t && /Load “Practice board”/.test(l1) && /View → Workbench/.test(l1) && !/Layout → Workbench/.test(l1);
+  }));
   check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
     App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
     return App.compat().some(m => /could not be read as ladder logic/.test(m));
@@ -3723,7 +3731,10 @@ function check(name, cond, info = '') {
   await phone.waitForTimeout(200);
   check('no horizontal page scroll on the Ladder (its toolbar scrolls by itself)', (await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0);
   await phone.setViewportSize({ width: 834, height: 1112 }); await phone.waitForTimeout(250);
-  check('tablet: the top bar is one row and the ladder toolbar one scrolling row, no page scroll', await phone.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height < 60 && document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect().height < 90 && document.documentElement.scrollWidth <= innerWidth));
+  check('tablet: the top bar is one row, every ladder tool is in sight (＋ Rung, Verify without scrolling), no page scroll', await phone.evaluate(() => {
+    const vis = s => { const b = document.querySelector('#view-ladder ' + s); if (!b) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; };
+    return document.querySelector('.topbar').getBoundingClientRect().height < 60 && vis('[data-act="rung"]') && vis('[data-act="verify"]') && vis('[data-act="undo"]') && document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect().height < 220 && document.documentElement.scrollWidth <= innerWidth;
+  }));
   check('tablet: the I/O strip is hidden rather than cut to a few cells', await phone.evaluate(() => getComputedStyle(document.querySelector('.plcbar .io-strip')).display === 'none'));
   await phone.setViewportSize({ width: 390, height: 844 }); await phone.waitForTimeout(250);
   await phone.tap('[data-act="data"]');

@@ -939,6 +939,11 @@
     }
     if (m === 'RUN' && (!App.project.conn || App.project.conn.mode !== 'real' || conn.same || conn.testing) && !Ladder.verify(true)) { UI.toast('Program has errors — fix them before going to RUN', 'danger'); App.log('system', 'Go to RUN refused: the program has errors'); Ladder.verify(false); return; }
     if (App.plc.mode !== m) App.log('mode', `Controller mode changed to ${m}`);
+    // RUN with warnings (a duplicate OTE, a timer used twice…): the controller runs, and the user is told why it may misbehave
+    if (m === 'RUN' && App.plc.mode !== 'RUN' && Ladder.lastWarns && Ladder.lastWarns.length) {
+      const w = Ladder.lastWarns;
+      UI.toast(`Running with ${w.length} warning${w.length === 1 ? '' : 's'}: ${w[0]}${w.length > 1 ? ' …' : ''} (see the Errors pane under the ladder)`, 'warn', 7000);
+    }
     App.plc.setMode(m);
     updateBar(true); updateConn();
   };
