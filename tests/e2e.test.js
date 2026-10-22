@@ -474,6 +474,16 @@ function check(name, cond, info = '') {
     const label = [...document.querySelectorAll('#view-ladder .ins-btn.show .mono + small')].some(s => s.offsetWidth > 0 && s.textContent === 'XIC');
     return ok && !!go && icons && label;
   }));
+  check('HMI: an empty screen says what to do in each mode, in one line (Studio: the toolbar above)', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'HMI empty', hmi: { objects: [] } }); App.setLayout('single'); App.showView('hmi'); await W(60);
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Machine/.test(b.textContent)).click(); await W(40);
+    const run =document.querySelector('#view-hmi .hmi-empty').textContent;
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Studio/.test(b.textContent)).click(); await W(40);
+    const e = document.querySelector('#view-hmi .hmi-empty'), edit = e.textContent;
+    [...document.querySelectorAll('#view-hmi button')].find(b => /Machine/.test(b.textContent)).click();
+    return /switch to/.test(run) && /toolbar above/.test(edit) && !/switch to/.test(edit) && e.children.length === 1;
+  }));
   check('HMI Studio: new objects go to free places, not on top of each other', await page.evaluate(async () => {
     const W = ms => new Promise(q => setTimeout(q, ms));
     // a screen with room (when a screen is full, a new object is stacked as before)

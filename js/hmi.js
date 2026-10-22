@@ -336,7 +336,7 @@
     ss.hidden = mode !== 'edit' && hmi().screens.length < 2;
     const objs = hmi().objects.filter(o => (o.scr || 's1') === cur);
     screen.innerHTML = objs.map(o => `<div class="hobj t-${esc(o.type)}${sel === o.id ? ' sel' : ''}" data-id="${esc(o.id)}" style="left:${Number(o.x) || 0}px;top:${Number(o.y) || 0}px;width:${Number(o.w) || 0}px;height:${Number(o.h) || 0}px">${inner(o)}${mode === 'edit' ? '<span class="rs"></span>' : ''}</div>`).join('') +
-      (objs.length ? '' : `<div class="hmi-empty">Empty screen — switch to <b>✎ Studio</b> and add objects.</div>`);
+      (objs.length ? '' : `<div class="hmi-empty"><span>${mode === 'edit' ? 'Empty screen — add objects from the toolbar above.' : 'Empty screen — switch to <b>✎ Studio</b> and add objects.'}</span></div>`);
     els = objs.map(o => {
       const el = screen.querySelector(`[data-id="${o.id}"]`);
       return { o, el, t: el.querySelector('[data-t]'), f: el.querySelector('[data-f]'), l: el.querySelector('[data-l]'), r: el.querySelector('[data-r]'), s: el.querySelector('[data-s]'), p: el.querySelector('[data-p]'), last: null };

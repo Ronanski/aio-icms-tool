@@ -65,6 +65,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Phone and tablet:** the whole app could be panned sideways on the Ladder. Hidden instruction names escaped the scrolling toolbar and made the page 823 px wide on a 390 px phone.
 - **Electrical Diagram:** a second symbol from the library no longer lands exactly on top of the first one. It goes to the next free spot.
 - **HMI:** an alarm banner that is not active shows "No active alarm" instead of the alarm text in grey. Studio still shows the text.
+- **HMI Studio:** an empty screen says "add objects from the toolbar above" on one line, instead of "switch to Studio" split over three lines while already in Studio.
 - **Update notice:** a new build of the same version names the builds, instead of "v2.3.0 is ready. You have v2.3.0".
 - **Lessons:** "Running feedback and a discrepancy alarm" is now lesson 12, in the Circuits group where it is listed. Lessons 12–16 become 13–17.
 - **Phone:** the view tabs use drawn icons of one size (the Wiring glyph was tiny), and the "Saved" pill is no longer cut off by a long project name.
