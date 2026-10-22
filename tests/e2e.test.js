@@ -493,6 +493,14 @@ function check(name, cond, info = '') {
     const l1 = Examples.LESSONS.find(l => l.id === 'l1').body;
     return t && /Load “Practice board”/.test(l1) && /View → Workbench/.test(l1) && !/Layout → Workbench/.test(l1);
   }));
+  check('Icons: every icon on every view draws something you can see (no blank buttons)', await page.evaluate(async () => {
+    const bad = [];
+    for (const v of ['ladder', 'schematic', 'wiring', 'hmi']) {
+      App.setLayout('single'); App.showView(v); await new Promise(q => setTimeout(q, 80));
+      document.querySelectorAll('svg.ic').forEach(s => { if (!s.closest('.view.active, .topbar, .plcbar') || !s.getClientRects().length || !s.getBoundingClientRect().width) return; const p = s.querySelector('path'); if (!p || p.getTotalLength() < 10) bad.push(v + ':' + (s.parentElement.title || s.parentElement.textContent)); });
+    }
+    return bad.length === 0 || bad.join(', ');
+  }) === true);
   check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
     App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
     return App.compat().some(m => /could not be read as ladder logic/.test(m));
