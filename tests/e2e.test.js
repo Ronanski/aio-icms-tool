@@ -3801,6 +3801,18 @@ function check(name, cond, info = '') {
     return bs.length >= 5 && bs.every(b => b.querySelector('svg.ic').getBoundingClientRect().width > 8);
   }), await phone.evaluate(() => [...document.querySelectorAll('#view-schematic .sch-toolbar .tbtn')].filter(b => b.offsetParent).map(b => (b.querySelector('svg.ic') ? Math.round(b.querySelector('svg.ic').getBoundingClientRect().width) : 'x') + b.textContent.trim().slice(0, 8)).join(',')));
   await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(200);
+  check('phone: the instruction palette has a row of its own and + Rung is in sight without scrolling the toolbar', await phone.evaluate(() => {
+    const r = document.querySelector('#view-ladder [data-act="rung"]').getBoundingClientRect(), p = document.querySelector('#view-ladder .lad-ins').getBoundingClientRect();
+    return getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && r.right <= innerWidth && r.left >= 0 && r.top > p.bottom - 2 && p.width > innerWidth * 0.8;
+  }));
+  check('phone: a tapped exercise in Learn is brought into sight (the list is above it)', await phone.evaluate(async () => {
+    App.showView('learn'); await new Promise(q => setTimeout(q, 100));
+    const tab = document.querySelector('#view-learn [data-ltab="ex"]'); if (tab) tab.click(); await new Promise(q => setTimeout(q, 100));
+    document.querySelectorAll('#view-learn [data-lesson]')[2].click(); await new Promise(q => setTimeout(q, 200));
+    const h = document.querySelector('#view-learn .learn-body h2').getBoundingClientRect();
+    App.showView('ladder'); return h.top >= 0 && h.top < innerHeight / 2;
+  }));
+  await phone.waitForTimeout(200);
   check('phone: the Errors pane head is one row and "Rung n of m" is in sight', await phone.evaluate(() => {
     const h = document.querySelector('#view-ladder .lad-out-head'), r = h.querySelector('.lad-rungpos').getBoundingClientRect();
     return h.getBoundingClientRect().height <= 40 && r.right <= innerWidth && [...h.querySelectorAll('.oc')].every(c => c.getBoundingClientRect().height <= 32);
@@ -3908,7 +3920,7 @@ function check(name, cond, info = '') {
   check('tapping an HMI button on a phone starts the motor', await phone.evaluate(() => App.plc.read('O:0/0') === 1));
   await phone.evaluate(() => App.showView('ladder'));
   await phone.waitForTimeout(300);
-  check('phone toolbars show a fade where more buttons are hidden', await phone.evaluate(() => document.querySelector('.lad-toolbar').classList.contains('more-r')));
+  check('phone toolbars show a fade where more buttons are hidden', await phone.evaluate(() => document.querySelector('.lad-more').classList.contains('more-r') && document.querySelector('.lad-ins .ins-row').classList.contains('more-r')));
   check('no page errors on phone', perr.length === 0, perr.join(' | '));
 
   console.log('Installable app (PWA)');

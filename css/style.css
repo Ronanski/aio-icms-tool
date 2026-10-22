@@ -1244,3 +1244,17 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 #main.multi .lad-toolbar .lad-ins { flex: 1 1 100%; min-width: 0; }
 #main.multi .lad-ins .ins-row, #main.multi .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
 #main.multi .lad-ins .ins-row > *, #main.multi .lad-ins .ins-tabs > * { flex-shrink: 0; }
+/* the groups after the instruction palette: no box of their own on a computer or tablet */
+.lad-more { display: contents; }
+/* phone: the instruction palette is a row of its own, and every other tool is one scrolling row under it with + Rung
+   first (one long row hid + Rung far to the right). The bar above is the controller. */
+@media (max-width: 760px) {
+  .lad-toolbar { flex-wrap: wrap; overflow-x: visible; row-gap: 4px; }
+  .lad-toolbar .lad-status { display: none !important; }
+  .lad-toolbar .lad-ins { flex: 1 1 100%; min-width: 0; }
+  .lad-ins .ins-row, .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .lad-ins .ins-row > *, .lad-ins .ins-tabs > * { flex-shrink: 0; }
+  .lad-more { display: flex; flex: 1 1 100%; min-width: 0; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .lad-more > .tb-group { flex: none; flex-wrap: nowrap; }
+  .lad-more > .tb-group:has([data-act="rung"]) { order: -1; }
+}
