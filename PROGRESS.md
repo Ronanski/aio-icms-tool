@@ -3,6 +3,21 @@
 **Current version:** 2.2.0 (stable release authorized by the owner 2026-10-21 with "go" after the tagging and library-name changes: Simurelay parity v2.2 and Simurelay-like tagging). Before it 2.1.0 (stable release authorized by the owner 2026-10-21: "go stable na yan. make it latest stable update" — v2.0.1 accuracy fixes, v2.1 lessons, the full audit, the Electrical Diagram roadmap Phases 0–6 and the Simurelay parity batch). Before it 2.0.0 (stable release authorized 2026-10-20 with "GO" on the roadmap row "Release v2.0.0 … GO STABLE v2.0.0": v1.6.1 fixes, v1.7 HMI, v1.8 instructions and devices, v2.0 tags/online/network. Before it 1.6.0.)
 **Status:** **Stable v2.3.0 released and verified 2026-10-21** (free draw copies Simurelay; owner: "GO"; release run 39598949903: exe, apk, web zip; APK release cert checked; Pages Stable = 2.3.0). **Stable v2.2.2 released and verified 2026-10-21** (owner: "GO STABLE"; release run 39586781509: exe, apk, web zip; APK release cert checked; Pages Stable = 2.2.2). v2.2.1 released 2026-10-21; **Stable v2.2.0 released and verified 2026-10-21** (exe, apk, web zip; APK release cert checked; Pages Stable = 2.2.0). Before it v2.1.0 (2026-10-21) (GitHub Release with exe, apk, web zip; APK release cert checked; Pages Stable = 2.1.0). Previous: v2.0.0 (2026-10-20). Portable Windows exe, signed Android APK, web/PWA with in-app updates (Stable/Beta). `npm test`: 611/611 on `fix/parity-verification`, 554/554 on `fix/fd-audit`, 551/551 on `feature/feedback-example`, 538/538 on `feature/fd-timing`, 526/526 on `feature/fd-more-parts`, 516/516 on `feature/fd-properties-editing`, 495/495 on `feature/plc-io-symbols`, 480/480 on `feature/project-compatibility` (454 on `feature/integration-baseline-tests`, 428 on `main`).
 
+## Second full audit (2026-10-22, `ccr-85df8617-jwtaxb`): findings to fix
+Report: [docs/AUDIT_2026-10-22.md](docs/AUDIT_2026-10-22.md). `npm test` 823/823 on `main` (`6714da6`).
+- [x] Audit of engines, logic, UI/UX and display (code review, runtime probes, screenshots light/dark/phone)
+- [ ] H1: HMI Decimals outside 0–100 freezes every view for good (clamp `dec`; isolate view updates in `frame()`)
+- [ ] H2: diagram ▶ Play switches off protection tripping in the whole plant and stays on across projects
+- [ ] M1: status-bar FAULT LED is never lit
+- [ ] M2: data tables hide the words used by tags (B3/T4/C5 show words 0–7 / 0–11, tags start at 31)
+- [ ] M3: service worker network-first with no timeout (slow start on a bad network)
+- [ ] M4: `#import=` link adds projects without asking
+- [ ] M5: accessibility: toasts not announced, modal focus, menu keys, ladder keyboard navigation
+- [ ] M6: ladder toolbar height in split layouts
+- [ ] M7: Tagalog coverage (owner to choose the scope)
+- [ ] M8: README counts, install table and diagram description out of date; HANDOFF savepoint too long
+- [ ] Low items L1–L14 (see the report)
+
 ## Simpler app and education (2026-10-21, `feature/simplify-learn`)
 - [x] Update bar: no "ready" for the same version in the Android / Windows app
 - [x] Electrical Diagram is free draw only (classic drawings converted on open)
