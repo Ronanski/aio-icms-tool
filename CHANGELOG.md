@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Fixed (hands-on pass 2)
+- **Long programs:** a Ladder of 500 rungs with errors redraws in about 0.14 s instead of 1.8 s after every click or edit. Each rung used to search the whole program for every error.
 - **Wiring:** Fit leaves the hint line at the bottom out, so the lowest devices (the practice board lamps) are no longer under it.
 - **I/O strip** in the bar: an ON input or output is green, as in the Data Files (it was amber, the colour of a forced bit).
 - **Address style** "File-based (I:e/b)" and the PLC target name use SLC element/bit notation. "I:1/0" was wrong for the compact PLC (I:0/0).

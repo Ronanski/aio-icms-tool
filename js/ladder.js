@@ -1022,9 +1022,11 @@
     const avail = Math.max(360, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
     list.forEach(r => { W = Math.max(W, rungLayout(r).need); });
+    // the rungs with an error, found once (searching every error for every rung took seconds on long programs)
+    const errRungs = new Set(); ERR_IDS.forEach(id => { const f = find(id); if (f) errRungs.add(f.ri); });
     const html = list.map((r, i) => {
       const { svg, h } = renderRung(r, W);
-      const err = JSON.stringify(r.elems).includes('"id":') && [...ERR_IDS].some(id => find(id)?.ri === i);
+      const err = errRungs.has(i);
       return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}${r.elems.length ? '' : ' empty'}" data-r="${i}">
         <div class="rung-num" style="padding-top:${Math.round(50 * LZ)}px" title="Double-click to edit rung text; right-click (long-press on touch) for the rung menu">${String(i).padStart(4, '0')}</div>
         <div class="rung-body">${r.comment ? `<div class="rung-comment">${esc(r.comment)}</div>` : ''}

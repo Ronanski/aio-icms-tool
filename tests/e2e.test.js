@@ -440,6 +440,16 @@ function check(name, cond, info = '') {
     await W(80); const b = App.plc.read('T4:0.ACC'); App.plc.setMode('PROG');
     return b - a >= 95 && b - a <= 140;
   }));
+  check('Ladder: 500 rungs with errors and a selection render in well under a second (each rung searched every error before: ~1.8 s)', await page.evaluate(async () => {
+    const prev = App.currentId, view = App.view;
+    App.openNew({ name: 'Big errors', ladder: { rungs: Array.from({ length: 500 }, (_, i) => ({ text: `XIC B3:${i % 50}/${i % 16} BST XIC I:0/${i % 12} NXB XIO B3:1/${i % 16} BND OTE O:0/${i % 8}` })) } });
+    App.setLayout('single'); App.showView('ladder'); Ladder.verify(); await new Promise(q => setTimeout(q, 50));
+    document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); await new Promise(q => setTimeout(q, 30));
+    document.querySelector('#view-ladder .rung .el[data-uid]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(q => setTimeout(q, 50));
+    const t = performance.now(); Ladder.render(); const ms = performance.now() - t;
+    const ok = document.querySelectorAll('#view-ladder .rung.has-err').length > 50 && ms < 700;
+    const tmp = App.currentId; Ladder.resetSel(); App.openSaved(prev); Store.remove(tmp); App.showView(view); return ok;
+  }));
   check('Dialogs: Tab stays inside the dialog and focus goes back where it was when it closes', await page.evaluate(async () => {
     const W = ms => new Promise(q => setTimeout(q, ms));
     const start = document.querySelector('[data-theme-btn]'); start.focus();
