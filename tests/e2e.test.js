@@ -316,6 +316,16 @@ function check(name, cond, info = '') {
     check('no brand names in the source strings', !hits.length, hits.slice(0, 3).join(' | '));
   }
 
+  console.log('Design system: one set of controller lights');
+  check('the Ladder alone shows its own controller lights; the bar lights come back on other views and side by side', await page.evaluate(async () => {
+    const vis = () => getComputedStyle(document.querySelector('.plcbar .leds')).display !== 'none', lay = App.layout;
+    App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 50)); const lad = vis();
+    App.showView('wiring'); await new Promise(q => setTimeout(q, 50)); const wir = vis();
+    App.setLayout(lay); App.showView('ladder'); await new Promise(q => setTimeout(q, 50)); const multi = document.getElementById('main').classList.contains('multi') ? vis() : true;
+    App.setLayout('single'); App.showView('ladder');
+    return !lad && wir && multi && !!document.querySelector('#view-ladder [data-lstatus]');
+  }));
+
   console.log('Dialogs: keys go to the top dialog only');
   await page.evaluate(() => { UI.modal({ title: 'Lower' }); UI.modal({ title: 'Upper' }); });
   await page.keyboard.press('Escape');
@@ -3549,6 +3559,7 @@ function check(name, cond, info = '') {
   check('no horizontal page scroll on the Ladder (its toolbar scrolls by itself)', (await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0);
   await phone.setViewportSize({ width: 834, height: 1112 }); await phone.waitForTimeout(250);
   check('tablet: the top bar is one row and the ladder toolbar one scrolling row, no page scroll', await phone.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height < 60 && document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect().height < 90 && document.documentElement.scrollWidth <= innerWidth));
+  check('tablet: the I/O strip is hidden rather than cut to a few cells', await phone.evaluate(() => getComputedStyle(document.querySelector('.plcbar .io-strip')).display === 'none'));
   await phone.setViewportSize({ width: 390, height: 844 }); await phone.waitForTimeout(250);
   await phone.tap('[data-act="data"]');
   await phone.waitForTimeout(300);

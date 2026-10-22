@@ -47,7 +47,7 @@ This is the visual language of PLC Trainer from v2.4. It is implemented as token
   - scan time;
   - message.
 
-  It stays on one line, and the connection chip shortens with "…".
+  It stays on one line, and the connection chip shortens with "…". Below 1100 px the I/O strip is hidden rather than cut. With the Ladder alone on screen, the bar's lights step back, because the Ladder status box is the controller there.
 - **Ladder toolbar**:
   - status box (mode, path, forces, edits);
   - tabbed instruction palette;
@@ -80,5 +80,4 @@ Measured on the plcmotor example: how far down the first rung starts, and whethe
 
 ## Next steps (not done yet)
 - Instruction palette icons drawn as small ladder glyphs (SVG) instead of text, like the reference tools.
-- Status box and PLC bar: one source for the mode lights on the Ladder view (today both show).
 - HMI designer panels and the Wiring property panel brought onto the same field and section styles.

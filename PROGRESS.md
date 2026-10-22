@@ -31,9 +31,9 @@
 - [x] Tablet: one-row top bar and ladder toolbar
 - [x] Phone / tablet: no sideways page panning on the Ladder
 - [x] Electrical Diagram empty state for Wiring-only projects
-- [ ] F5: one set of mode lights on the Ladder (owner decides)
-- [ ] F6: instruction palette glyph icons and overflow menu (desktop toolbar to one row)
-- [ ] F7: compact I/O strip on narrow screens
+- [x] F5: one set of controller lights on the Ladder
+- [x] F6: decided — the desktop ladder toolbar keeps two full rows (one row would hide tools)
+- [x] F7: I/O strip hidden below 1100 px instead of cut
 - [ ] Generate the Electrical Diagram from the Wiring
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
 - [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)

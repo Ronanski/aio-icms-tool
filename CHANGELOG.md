@@ -19,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - the ladder toolbar is one row that scrolls sideways instead of five stacked rows.
   
   On a 834 × 1112 tablet the first rung now starts at 171 px instead of 448 px.
+- **One set of controller lights:** with the Ladder alone on screen, its status box (RUN / OK / BAT / I/O, forces, path) is the controller, and the bar's POWER / RUN / FORCE / FAULT lights step back. Other views and side-by-side layouts keep them. Below 1100 px the bar's I/O strip is hidden instead of cut to a few cells.
 - **Electrical Diagram:** a project whose devices are only in the Wiring now says so, and names the examples with a finished diagram, instead of just "Empty drawing".
 
 ### Fixed

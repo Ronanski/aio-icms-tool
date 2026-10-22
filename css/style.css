@@ -1090,3 +1090,9 @@ code { border-radius: var(--r-sm); }
 /* the visually hidden instruction names stay inside their button: without a positioned parent they escaped the
    scrolling toolbar and widened the page (sideways panning on phones) */
 .ins-btn { position: relative; }
+
+/* one set of controller lights: on the Ladder alone its status box (RUN / OK / BAT / I/O, forces, path) is the
+   controller, so the bar's POWER / RUN / FORCE / FAULT lights step back; every other view and side-by-side layout keeps them */
+body[data-solo="ladder"] .plcbar .leds { display: none; }
+/* the I/O strip is shown whole or not at all: below 1100 px it would be cut to a few cells (the Data panel has the I/O) */
+@media (max-width: 1100px) { .plcbar .io-strip { display: none; } }

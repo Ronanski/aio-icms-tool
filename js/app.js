@@ -1166,6 +1166,8 @@
     main.classList.remove('panes-1', 'panes-2', 'panes-3');
     main.classList.add('panes-' + vis.length);
     main.classList.toggle('multi', vis.length > 1);
+    // the one view on screen, for styles that depend on it (the Ladder has its own controller lights)
+    document.body.dataset.solo = vis.length === 1 ? vis[0] : '';
     document.querySelectorAll('.tabs [data-view]').forEach(b => {
       b.classList.toggle('on', b.dataset.view === v);
       b.classList.toggle('shown', vis.length > 1 && vis.includes(b.dataset.view));
