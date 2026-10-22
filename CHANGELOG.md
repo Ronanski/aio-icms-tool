@@ -5,6 +5,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- **New look: "Engineering Neutral"** (`docs/DESIGN_SYSTEM.md`):
+  - neutral grey surfaces in light and dark;
+  - blue for interaction and selection, with green, amber and red kept for PLC state (RUN, forced, fault);
+  - one sans font for the interface and mono for addresses and values, with no serif or italics in the working views;
+  - one control height and radius scale, and a keyboard focus ring;
+  - the view switcher is flat, with the active view underlined.
+  
+  Device drawings keep their real colours.
+- **Tablet layout:**
+  - the top bar stays on one row;
+  - the ladder toolbar is one row that scrolls sideways instead of five stacked rows.
+  
+  On a 834 × 1112 tablet the first rung now starts at 171 px instead of 448 px.
+- **Electrical Diagram:** a project whose devices are only in the Wiring now says so, and names the examples with a finished diagram, instead of just "Empty drawing".
+
+### Fixed
+- **Phone and tablet:** the whole app could be panned sideways on the Ladder. Hidden instruction names escaped the scrolling toolbar and made the page 823 px wide on a 390 px phone.
+
 ### Added
 - **100 exercises** in Learn → Exercises: 25 easy, 40 medium and 35 hard, by topic (contacts and logic, seal-in and latches, timers, counters, compare and math, sequences, motor control, process, Electrical Diagram, Wiring, HMI, and integration of every module). Each has a hint, a starting project, **Check my work** and a solution. Ladder exercises are run on a simulated PLC. Drawing, wiring and HMI exercises are checked on your own project: the checker presses your buttons and switches the PLC to RUN when needed. Done exercises are ticked and counted.
 - **Practice board 16**: the 16 in / 12 out compact PLC with START, STOP, four push buttons, two selectors and eight lamps, for the medium and hard exercises.

@@ -3545,6 +3545,11 @@ function check(name, cond, info = '') {
   check('the welcome message of the first start goes away when another project is opened', await phone.evaluate(() => { const has = () => [...document.querySelectorAll('#toast-root .toast')].some(t => /Welcome|Maligayang/.test(t.textContent));
     const a = has(); App.openNew(Examples.EX.dol.build()); const b = has(); App.openNew(Examples.EX.plcmotor.build()); return a && !b; }));
   await phone.evaluate(() => App.showView('ladder'));
+  await phone.waitForTimeout(200);
+  check('no horizontal page scroll on the Ladder (its toolbar scrolls by itself)', (await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0);
+  await phone.setViewportSize({ width: 834, height: 1112 }); await phone.waitForTimeout(250);
+  check('tablet: the top bar is one row and the ladder toolbar one scrolling row, no page scroll', await phone.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().height < 60 && document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect().height < 90 && document.documentElement.scrollWidth <= innerWidth));
+  await phone.setViewportSize({ width: 390, height: 844 }); await phone.waitForTimeout(250);
   await phone.tap('[data-act="data"]');
   await phone.waitForTimeout(300);
   check('Data drawer opens', await phone.evaluate(() => document.querySelector('.lad-side').classList.contains('open')));
@@ -3681,6 +3686,12 @@ function check(name, cond, info = '') {
     await fo.click('#view-schematic [data-fdact="more"]'); await fo.waitForTimeout(150);
     check('free draw only: Values, wire colours, Duplicate, Type and front / back are in the ⋯ menu', await fo.evaluate(() => { const t = [...document.querySelectorAll('.ctx-menu button')].map(b => b.textContent); return ['Show values', 'Wire colours', 'Duplicate', 'Change type', 'Bring to front', 'Send to back'].every(w => t.some(x => x.includes(w))); }));
     await fo.keyboard.press('Escape');
+    check('free draw only: a project with Wiring devices but no drawing says so and points to the examples with a diagram', await fo.evaluate(async () => {
+      App.openNew(Examples.EX.plcmotor.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 200));
+      const t = document.querySelector('#view-schematic').textContent;
+      App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 300));
+      return t.includes('no Electrical Diagram yet') && t.includes('Star-delta starter');
+    }));
     check('free draw only: the converted star-delta starter still runs (the start button pulls in its contactor)', await fo.evaluate(async () => {
       document.querySelector('#view-schematic [data-fdact="play"]').click();
       const C = App.project.circuit, s1 = C.comps.find(c => c.props.label === 'S1'), km = C.comps.find(c => c.props.label === 'KM1');

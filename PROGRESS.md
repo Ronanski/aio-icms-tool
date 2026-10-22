@@ -24,6 +24,17 @@
 - [x] Last gaps: routine names like tags (up to 40, case kept), connection chip shortens in the PLC bar — `fix/plc-last-gaps`
 - [x] On Beta: PR #64 (`6714da6`, build `beta.6714da6`, 2026-10-22) — PLC module, full audit and last gaps; #52–#63 closed as included
 - [ ] Owner's list of fixes after checking the Beta (next session starts here)
+
+## Product audit and redesign (2026-10-22, `feature/ui-redesign`, `docs/AUDIT_2026-10-22.md`)
+- [x] Baseline: 823 tests on `main`, 38 screenshots (7 screens × 3 sizes × 2 themes), measurements
+- [x] Design system v3 "Engineering Neutral" (`docs/DESIGN_SYSTEM.md`)
+- [x] Tablet: one-row top bar and ladder toolbar
+- [x] Phone / tablet: no sideways page panning on the Ladder
+- [x] Electrical Diagram empty state for Wiring-only projects
+- [ ] F5: one set of mode lights on the Ladder (owner decides)
+- [ ] F6: instruction palette glyph icons and overflow menu (desktop toolbar to one row)
+- [ ] F7: compact I/O strip on narrow screens
+- [ ] Generate the Electrical Diagram from the Wiring
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
 - [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
 - [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)

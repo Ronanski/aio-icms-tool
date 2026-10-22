@@ -1,4 +1,4 @@
-/* PLC Trainer — warm, Claude-inspired palette. */
+/* PLC Trainer — base styles. The tokens and component shapes in use are set by "Design system v3" at the end of this file (docs/DESIGN_SYSTEM.md). */
 :root {
   --bg: #F3F0E8;
   --surface: #FBFAF6;
@@ -952,3 +952,141 @@ table.ref td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertica
 .free-svg .gridLine.minor { stroke: var(--fd-grid); stroke-width: .5; }
 .free-svg .gridLine { stroke-width: 1; }
 @media (min-width: 761px) { #view-schematic.free-style .sch-side { display: none; } }
+
+/* =====================================================================================================
+   Design system v3 — "Engineering Neutral"
+   Neutral greys for surfaces, colour only for state and action (control-room practice): blue for
+   interaction and selection, green = RUN / energized, amber = forced / warning, red = fault / alarm.
+   One sans family for the interface, mono for addresses and values. Device drawings keep their own colours.
+   ===================================================================================================== */
+:root {
+  --bg: #E9EDF1;
+  --surface: #FFFFFF;
+  --surface-2: #F3F5F8;
+  --surface-3: #E3E8EE;
+  --border: #D5DCE3;
+  --border-strong: #B4BEC9;
+  --text: #17202B;
+  --muted: #5A6675;
+  --accent: #1F64B8;
+  --accent-strong: #174E91;
+  --accent-text: #1A57A3;
+  --accent-soft: #DCE8F7;
+  --brand: #D97757;
+  --ok: #1E8E46;
+  --warn: #B87800;
+  --danger: #C8362B;
+  --lad-bg: #FFFFFF;
+  --lad-wire: #3A4350;
+  --lad-on: #1B9E48;
+  --lad-hl: #CDEFD8;
+  --lad-text: #1E2630;
+  --canvas: #E6EAEF;
+  --grid-dot: #C3CBD5;
+  --grid-line: #DCE2E9;
+  --wire-halo: rgba(20, 30, 45, .26);
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 2px 8px rgba(16, 24, 40, .05);
+  --shadow-lg: 0 12px 36px rgba(16, 24, 40, .20);
+  --serif: var(--sans);
+  --r-sm: 4px;
+  --r: 6px;
+  --r-lg: 8px;
+  --ctl-h: 30px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1419; --surface: #171D24; --surface-2: #1D242C; --surface-3: #262E38; --border: #2A333E; --border-strong: #404B58;
+    --text: #E4E9EF; --muted: #93A0AE; --accent: #4C8DFF; --accent-strong: #3874E0; --accent-text: #8DB6FF; --accent-soft: #1A2E4D;
+    --ok: #2FB866; --warn: #E0A12A; --danger: #F0594C;
+    --lad-bg: #12171D; --lad-wire: #AEB8C4; --lad-on: #3DDC75; --lad-hl: #173A26; --lad-text: #E2E8EE;
+    --canvas: #12171D; --grid-dot: #2B343F; --grid-line: #1C232B; --wire-halo: rgba(228, 233, 239, .55);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1419; --surface: #171D24; --surface-2: #1D242C; --surface-3: #262E38; --border: #2A333E; --border-strong: #404B58;
+  --text: #E4E9EF; --muted: #93A0AE; --accent: #4C8DFF; --accent-strong: #3874E0; --accent-text: #8DB6FF; --accent-soft: #1A2E4D;
+  --ok: #2FB866; --warn: #E0A12A; --danger: #F0594C;
+  --lad-bg: #12171D; --lad-wire: #AEB8C4; --lad-on: #3DDC75; --lad-hl: #173A26; --lad-text: #E2E8EE;
+  --canvas: #12171D; --grid-dot: #2B343F; --grid-line: #1C232B; --wire-halo: rgba(228, 233, 239, .55);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .25);
+}
+body { font-size: 13.5px; }
+input, select, textarea { border-radius: var(--r); }
+code { border-radius: var(--r-sm); }
+
+/* top bar: one row; the brand mark keeps the product colour */
+.topbar { padding: 6px 14px; gap: 14px; }
+.logo g, .logo [fill="#D97757"] { fill: var(--brand); }
+.brand-title { font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
+.brand-sub { font-size: 11.5px; }
+.save-st { border-radius: var(--r-sm); }
+
+/* buttons: one shape, one height scale */
+.btn { border-radius: var(--r); padding: 6px 13px; min-height: var(--ctl-h); }
+.btn.primary { font-weight: 600; }
+.icon-btn { border-radius: var(--r); }
+.tbtn { border-radius: var(--r); padding: 4px 9px; min-height: 28px; border-color: var(--border); }
+.tbtn.sm { min-height: 24px; }
+.tbtn.on { font-weight: 600; }
+.tbtn.warn { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 55%, var(--surface)); color: var(--text); }
+.seg { border-radius: var(--r); }
+.seg button { padding: 4px 13px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* view tabs on a computer: a flat switcher, the active view underlined */
+@media (min-width: 761px) {
+  .tabs { background: transparent; border: 0; padding: 0; gap: 2px; border-radius: 0; align-self: stretch; }
+  .tabs button { border-radius: var(--r) var(--r) 0 0; padding: 8px 14px; position: relative; font-weight: 600; }
+  .tabs button:hover { background: var(--surface-2); }
+  .tabs button.on { background: transparent; box-shadow: none; color: var(--accent-text); }
+  .tabs button.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -7px; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); }
+  .tabs button.shown:not(.on) { background: var(--surface-2); }
+  .tabs .ti { color: inherit; opacity: .75; }
+}
+/* tablet: the top bar stays on one row */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .topbar { flex-wrap: nowrap; gap: 8px; }
+  .brand { min-width: 0; }
+  .brand-sub { display: none; }
+  .tabs button { padding: 8px 9px; }
+  .tabs .ti { display: none; }
+  .top-actions { gap: 0; flex-shrink: 0; }
+  .top-actions .btn { padding: 6px 8px; }
+}
+
+/* PLC status bar: PROG is the selected mode in the interaction colour, RUN in green */
+.plcbar { padding: 5px 14px; gap: 12px; }
+.plcbar .mode button { padding: 3px 13px; }
+.led { font-size: 10.5px; }
+.led::before { background: #7D8794; }
+
+/* ladder toolbar: tighter groups, no wrap into tall stacks on a computer */
+.lad-toolbar { padding: 6px 10px; gap: 4px; align-items: center; }
+.tb-group { padding: 1px 6px 1px 4px; gap: 3px; }
+.tb-lbl { font-size: 9.5px; font-weight: 600; margin-right: 2px; }
+.lad-status, .lad-stat-btn { border-radius: var(--r-sm); }
+.ins-btn { border-radius: var(--r-sm); }
+.rung-comment { font-style: normal; font-size: 12.5px; font-weight: 500; }
+.rung-svg .hint { font-style: normal; }
+
+/* panels, palette, dialogs */
+.pal-item { border-radius: var(--r); }
+.modal { border-radius: var(--r-lg); }
+.modal-head h3 { font-size: 16px; font-weight: 700; }
+.modal-wrap { background: rgba(10, 16, 24, .45); }
+.learn-body h2 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+.learn-body h3 { font-size: 18px; font-weight: 700; }
+.learn-nav h3 { font-weight: 700; }
+
+/* tablet and small laptop: the ladder toolbar is one row that scrolls sideways (as on a phone) instead of five
+   stacked rows; group names give way to the separators */
+@media (min-width: 761px) and (max-width: 1280px) {
+  #main:not(.multi) .lad-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  #main:not(.multi) .lad-toolbar > *, #main:not(.multi) .lad-toolbar .tb-group { flex-shrink: 0; flex-wrap: nowrap; }
+  #main:not(.multi) .lad-toolbar .tb-lbl { display: none; }
+}
+
+/* the visually hidden instruction names stay inside their button: without a positioned parent they escaped the
+   scrolling toolbar and widened the page (sideways panning on phones) */
+.ins-btn { position: relative; }
