@@ -37,6 +37,7 @@
 - [x] Phase 2 functional audit (Q1–Q16): no lost work (solution, two windows, Wiring undo), SLC prescan on PROG → RUN, cancelled operands, one project per exercise, honest grading, clear address errors, Find instruction, error links, safe confirms, import notices, menus, faster Verify
 - [x] HMI Studio undo (Q17)
 - [x] Dialog focus trap and focus restore, delete-project undo (Q18)
+- [x] Phase 3 redesign: prototype artifact, one icon set across the app, palette labels, Selected instruction panel with live values and cross references, two-row ladder toolbar
 - [ ] Object stacking on add, off-screen rung rendering for very long programs (Q18)
 - [x] Simulated time in a background tab: caught up in 0.1 s steps (Q19)
 - [ ] Generate the Electrical Diagram from the Wiring

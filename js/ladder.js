@@ -736,7 +736,7 @@
       <div class="lad-main">
         <aside class="lad-org" data-lorg hidden></aside>
         <div class="lad-rungs" tabindex="0"></div>
-        <aside class="lad-side"></aside>
+        <aside class="lad-side"><section class="lad-props" data-lprops hidden></section><div class="lad-dt"></div></aside>
       </div>
       <div class="lad-out" data-lout><div class="lad-out-head"><button class="oc e" data-oc="e"></button><button class="oc w" data-oc="w"></button><button class="oc m" data-oc="m"></button><span class="lad-rungpos" data-rungpos></span><button class="oc-tog" data-act="outtog" title="Show or hide the Errors pane">▾</button></div><pre class="lad-out-log" data-olog></pre></div>`;
     rungsEl = el.querySelector('.lad-rungs');
@@ -783,7 +783,12 @@
       if (u) { SEL = { r: ri, id: Number(u.dataset.uid), leg: null }; Ladder.render(); elemMenu(ev.clientX, ev.clientY, SEL.id); }
       else { SEL = { r: ri, id: null, leg: null }; Ladder.render(); rungMenu(ev.clientX, ev.clientY, ri); }
     });
-    DataTable.init(sideEl);
+    DataTable.init(sideEl.querySelector('.lad-dt'));
+    sideEl.querySelector('[data-lprops]').addEventListener('click', ev => {
+      const b = ev.target.closest('button'); if (!b) return;
+      if (b.dataset.pedit) Ladder.edit(Number(b.dataset.pedit));
+      if (b.dataset.pgo) { const [n, ri] = b.dataset.pgo.split(':').map(Number); Ladder.goRung(n, ri); }
+    });
     setTab(insTab);
     // Find an instruction: a mnemonic, or words of its name or help ("timer", "compare"); Enter adds the one it finds
     const find1 = q => {
@@ -995,6 +1000,7 @@
   }
 
   Ladder.render = function () {
+    propsSig = null;
     if (!rungsEl) return;
     const zl = root.querySelector('[data-lz]');
     if (zl) zl.textContent = Math.round(LZ * 100) + '%';
@@ -1035,7 +1041,50 @@
     Ladder.update();
   };
 
+  /* ---------- Properties of the selected instruction (top of the side panel) ----------
+     its operands with their live values, a timer's delay, the description, and where else the same address is used */
+  let propsSig = null;
+  const keyOf = a => (!a ? null : ['T4', 'C5', 'R6'].includes(a.file) ? a.file + ':' + a.word : a.norm);
+  function liveOf(spec, a) {
+    const plc = App.plc;
+    if (!a) return '';
+    if (a.kind === 'bit') return String(plc.getBit(a));
+    if (a.kind === 'word') return String(plc.getWord(a));
+    if (a.kind === 'struct' && plc.data[a.file] && plc.data[a.file][a.word]) {
+      const s = plc.data[a.file][a.word];
+      if (a.file === 'T4') return `PRE ${s.PRE} · ACC ${s.ACC} · EN ${s.EN} TT ${s.TT} DN ${s.DN}`;
+      if (a.file === 'C5') return `PRE ${s.PRE} · ACC ${s.ACC} · CU ${s.CU} CD ${s.CD} DN ${s.DN}`;
+      if (a.file === 'R6') return `LEN ${s.LEN} · POS ${s.POS} · EN ${s.EN} DN ${s.DN}`;
+    }
+    return '';
+  }
+  function propsUi(force) {
+    const box = root && root.querySelector('[data-lprops]'); if (!box || !App.project) return;
+    const f = SEL.id ? find(SEL.id) : null;
+    if (!f || f.e.t === 'BST' || !INSTR[f.e.t]) { if (!box.hidden) { box.hidden = true; box.innerHTML = ''; } propsSig = null; return; }
+    const e = f.e, d = INSTR[e.t], args = d.args.map((spec, k) => ({ spec, v: e.a[k], a: parse(e.a[k]) }));
+    const live = args.map(x => liveOf(x.spec, x.a));
+    const sig = e.id + '|' + e.a.join(',') + '|' + live.join('|') + '|' + curFile + '|' + f.ri;
+    if (!force && sig === propsSig) return;
+    propsSig = sig;
+    const k0 = keyOf(args[0] && args[0].a), uses = [];
+    if (k0) [[2, App.project.ladder.rungs], ...(App.project.ladder.files || []).map(x => [x.n, x.rungs])].forEach(([n, list]) => list.forEach((r, ri) => {
+      const walk = arr => arr.forEach(x => { if (x.t === 'BST') { x.legs.forEach(walk); return; } if (x === e || !x.a) return; x.a.forEach(v => { const p = parse(v); if (p && keyOf(p) === k0) uses.push({ n, ri, t: x.t, v: p.norm }); }); });
+      walk(r.elems);
+    }));
+    const tb = e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' ? Number(e.a[1]) * Number(e.a[2]) : null;
+    const desc = args[0] && args[0].a && App.project.ladder.desc[args[0].a.norm];
+    box.hidden = false;
+    box.innerHTML = `<div class="side-head"><h4>Selected instruction</h4></div>
+      <div class="lp-body"><div class="lp-title"><b>${esc(e.t)}</b> — ${esc(d.name)}</div><div class="lp-sub">${esc(fileName(curFile))}, rung ${String(f.ri).padStart(4, '0')}${desc ? ` · ${esc(desc)}` : ''}</div>
+      <table class="lp-ops">${args.map((x, k) => `<tr><th>${esc(x.spec.n)}</th><td class="mono">${esc(x.spec.ty === 'bit' ? App.fmt(x.v) : x.v)}</td></tr>${live[k] ? `<tr class="lp-liverow"><td colspan="2" class="mono lp-live">${esc(live[k])}</td></tr>` : ''}`).join('')}</table>
+      ${tb !== null && Number.isFinite(tb) ? `<div class="lp-note">Delay = Preset × Time Base = <b class="mono">${+tb.toFixed(3)} s</b></div>` : ''}
+      <div class="lp-uses"><span>Used in</span>${uses.length ? uses.slice(0, 8).map(u => `<button class="lp-go" data-pgo="${u.n}:${u.ri}" title="Go to this rung">${esc(fileName(u.n))} · rung ${String(u.ri).padStart(4, '0')} · ${esc(u.t)} ${esc(App.fmt(u.v))}</button>`).join('') + (uses.length > 8 ? `<small>and ${uses.length - 8} more</small>` : '') : '<small>nowhere else</small>'}</div>
+      <div class="btn-row"><button class="btn" data-pedit="${e.id}">✎ Edit operands</button></div></div>`;
+  }
+  Ladder.propsUi = propsUi;
   Ladder.update = function () {
+    propsUi(false);
     if (!cache) return;
     const plc = App.plc;
     for (const c of cache.p) { const on = !!plc.pw[c.k]; if (on !== c.on) { c.on = on; c.el.classList.toggle('on', on); } }

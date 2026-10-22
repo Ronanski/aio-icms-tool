@@ -462,6 +462,18 @@ function check(name, cond, info = '') {
     document.querySelector('.modal-wrap:last-child [data-x]').click();
     return !!id2 && gone && !!Store.load(id) && Store.list().some(p => p.id === id);
   }));
+  check('Ladder: the selected instruction shows its operands, live values, timer delay and where its address is used; buttons have icons', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'Props', ladder: { rungs: [{ text: 'XIC B3:0/1 TON T4:0 1.0 5 0' }, { text: 'XIC T4:0/DN OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await W(80);
+    const ton = document.querySelector('#view-ladder .rung[data-r="0"] .el[data-uid] .ins') && [...document.querySelectorAll('#view-ladder .rung[data-r="0"] .el[data-uid]')].pop();
+    ton.querySelector('.ins').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 })); await W(80);
+    const box = document.querySelector('#view-ladder [data-lprops]'), t = box.textContent;
+    const ok = !box.hidden && /TON/.test(t) && /Timer On Delay/.test(t) && /PRE 5/.test(t) && /Delay = Preset × Time Base = 5 s/.test(t) && /rung 0001 · XIC/.test(t);
+    const go = box.querySelector('[data-pgo]'); if (go) go.click(); await W(50);
+    const icons = !!document.querySelector('#view-ladder [data-act="undo"] svg.ic, #view-ladder .tbtn svg.ic');
+    const label = [...document.querySelectorAll('#view-ladder .ins-btn.show .mono + small')].some(s => s.offsetWidth > 0 && s.textContent === 'XIC');
+    return ok && !!go && icons && label;
+  }));
   check('Import: unreadable rungs are reported when the project opens (not only hidden in a rung comment)', await page.evaluate(() => {
     App.openNew({ name: 'Bad rung', ladder: { rungs: [{ text: 'XIC I:0/0 OTEE O:0/0' }] } });
     return App.compat().some(m => /could not be read as ladder logic/.test(m));
@@ -1597,7 +1609,7 @@ function check(name, cond, info = '') {
   await page.click('[data-lang-btn]'); await wait(200);
   check('the language button switches the menus to Tagalog', await page.evaluate(() => I18N.lang === 'tl' && document.querySelector('[data-examples]').textContent === 'Mga Halimbawa ▾' && document.querySelector('[data-lang-btn]').textContent === 'TL'));
   await page.evaluate(() => App.showView('wiring')); await wait(150);
-  check('views drawn later are translated too (Wiring search box, buttons)', await page.evaluate(() => document.querySelector('#view-wiring .ws-search').placeholder === 'Maghanap ng piyesa…' && [...document.querySelectorAll('#view-wiring button')].some(b => b.textContent.trim() === '⊟ Isara lahat')));
+  check('views drawn later are translated too (Wiring search box, buttons)', await page.evaluate(() => document.querySelector('#view-wiring .ws-search').placeholder === 'Maghanap ng piyesa…' && [...document.querySelectorAll('#view-wiring button')].some(b => b.textContent.trim() === 'Isara lahat' && !!b.querySelector('svg.ic'))));
   await page.click('[data-lang-btn]'); await wait(200);
   check('switching back restores English', await page.evaluate(() => I18N.lang === 'en' && document.querySelector('[data-examples]').textContent === 'Examples ▾' && document.querySelector('#view-wiring .ws-search').placeholder === 'Search components…'));
 

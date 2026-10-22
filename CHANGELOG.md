@@ -33,6 +33,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Address errors say what is wrong (bit 0–15, a word or timer without its bit, an unknown file, a name that is not a tag).
   - The timer help explains Preset × Time Base.
 - **Wiring:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every change: placing, moving, wiring, deleting.
+- **One icon set:** every toolbar and dialog button uses the same line icons (download, undo, zoom, Who Active, network…) instead of emoji and symbols. Labels stay, and Tagalog still translates them.
+- **Ladder:**
+  - **Selected instruction** panel at the top of the side panel: the operands with live values (bits; PRE / ACC / EN TT DN), a timer's delay, the description, **Used in** (every other rung with the same address, as links), and Edit operands.
+  - The palette shows each instruction's mnemonic under its glyph.
+  - The toolbar fits two rows on a 1440 px screen.
 - **HMI Studio:** undo and redo (Ctrl+Z / Ctrl+Y and ↶ ↷) for every edit.
 - **Open project:** a deleted project can be restored from the toast for a few seconds.
 - **Dialogs:** Tab stays inside a dialog, and focus returns where it was when the dialog closes.

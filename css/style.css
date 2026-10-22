@@ -1140,3 +1140,36 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 /* Find an instruction, at the end of the palette tabs */
 .ins-find { margin-left: auto; width: 96px; height: 20px; padding: 1px 6px; font-size: 11px; border-radius: var(--r-sm); align-self: center; }
 .ins-find:focus { width: 150px; }
+
+/* icon set (UI.icon / UI.iconize): one stroke weight and size everywhere; an icon before a label keeps a small gap */
+.ic { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+.ic { margin-right: 5px; }
+.ic.solo { margin-right: 0; }
+.icon-btn .ic { width: 18px; height: 18px; vertical-align: middle; }
+.btn .ic { width: 15px; height: 15px; }
+
+/* instruction palette: a glyph button names its mnemonic under the glyph (XIC, OTE…), so a beginner can read the palette;
+   box instructions already show their mnemonic. Side-by-side layouts keep the compact one-line buttons */
+#main:not(.multi) .ins-btn.show:has(.mono) { flex-direction: column; height: 34px; min-width: 40px; gap: 1px; }
+#main:not(.multi) .ins-btn .mono + small { position: static; width: auto; height: auto; overflow: visible; clip: auto; font: 600 8.5px var(--sans); color: var(--muted); letter-spacing: .03em; line-height: 1; }
+#main:not(.multi) .ins-btn.show { border-color: var(--border); background: var(--surface); }
+#main:not(.multi) .ins-btn.show:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Properties of the selected instruction (top of the Ladder side panel) */
+.lad-props { border-bottom: 1px solid var(--border); }
+.lad-props .lp-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.lad-props .lp-title { font-size: 14px; } .lad-props .lp-title b { font-family: var(--mono); }
+.lad-props .lp-sub { font-size: 12px; color: var(--muted); margin-top: -4px; }
+.lp-ops { width: 100%; border-collapse: collapse; font-size: 12px; }
+.lp-ops th { text-align: left; font-weight: 500; color: var(--muted); padding: 3px 6px 3px 0; white-space: nowrap; }
+.lp-ops td { padding: 3px 4px; border-top: 1px solid var(--border); } .lp-ops tr:first-child td { border-top: 0; }
+.lp-ops .lp-live { color: var(--ok); font-weight: 600; font-size: 11.5px; padding-top: 0; }
+.lp-ops .lp-liverow td { border-top: 0; }
+.lp-note { font-size: 12px; padding: 6px 8px; border-radius: var(--r); background: var(--surface-2); }
+.lp-uses { display: flex; flex-direction: column; gap: 3px; font-size: 12px; } .lp-uses > span { color: var(--muted); font-weight: 600; }
+.lp-uses small { color: var(--muted); }
+.lp-go { text-align: left; border: 0; background: transparent; color: var(--accent-text); font: 500 12px var(--mono); padding: 2px 4px; border-radius: var(--r-sm); }
+.lp-go:hover { background: var(--accent-soft); }
+
+/* the ladder toolbar groups are told apart by their separators: the group names only show on very wide screens */
+@media (max-width: 1700px) { #main:not(.multi) .lad-toolbar .tb-lbl { display: none; } }

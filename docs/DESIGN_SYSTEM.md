@@ -57,6 +57,24 @@ This is the visual language of PLC Trainer from v2.4. It is implemented as token
 - **Buttons**: `.btn` (dialogs and pages, 30 px), `.tbtn` (toolbars, 28 px), `.seg` (mode switch), `.icon-btn`. All share the radius and the focus ring (`:focus-visible`, 2 px accent).
 - **Dialogs**: 8 px radius, a darker scrim, and a 16 px bold title.
 
+## Icons
+- **One monoline set** on a 24 px grid with a 1.8 px stroke, in `UI.icon(name)` in `js/ui.js`. Names: download, upload, list, layout, plus, check, trash, fit, refresh, copy, full, gear, zoomin, zoomout, undo, redo, play, left, right, folder, tag, radar (Who Active), network, link, diff, data, branch, first, last, pencil, paint, more, collapse, expand, theme, moon, sun.
+- **Templates keep plain text.** A button written `⤓ Download` shows the download icon followed by the word. `UI.iconize`, run by a MutationObserver on every `.tbtn`, `.btn`, `.icon-btn` and `.seg button`, does the swap. No emoji is shown as an icon anywhere.
+- **Labels and data attributes are untouched.** The Tagalog table also matches the words without the glyph.
+- **Sizes:** 16 px in toolbars, 18 px in icon-only buttons, 15 px in dialog buttons.
+
+## Ladder workspace (prototype → app)
+The prototype is the Design artifact "PLC Trainer Redesign", artboard *Ladder workspace — desktop*. What was built from it:
+- **Command bar:** icon buttons with labels, the group names dropped (the separators show the groups), and two rows at 1440 px.
+- **Instruction palette:** each glyph button shows its mnemonic under the glyph (XIC, XIO, ONS, OTE…), and **Find…** sits at the end of the tabs.
+- **Selected instruction panel**, at the top of the side panel, above the data files:
+  - the operands, with their live values (bit 0/1; PRE · ACC · EN TT DN for timers; PRE · ACC · CU CD DN for counters);
+  - a timer's delay (Preset × Time Base);
+  - the address description;
+  - **Used in**: every other rung that uses the same address or structure, each one a link;
+  - **Edit operands**.
+- **Organizer:** a project tree, with the open routine marked.
+
 ## Before and after
 The images are in `docs/design/`, captured by `node scripts/shots.js <dir> <label>` (same browser setup as the tests).
 
@@ -69,6 +87,8 @@ The images are in `docs/design/`, captured by `node scripts/shots.js <dir> <labe
 | Wiring, desktop, dark | `before-desktop-dark-wiring.png` | `after-desktop-dark-wiring.png` |
 | Learn, desktop | `before-desktop-light-learn.png` | `after-desktop-light-learn.png` |
 | Electrical Diagram (project without a drawing) | `before-desktop-light-schematic.png` | `after-desktop-light-schematic.png` |
+| Ladder with Organizer → with a selected instruction, icons, palette labels | `before-desktop-light-ladder-organizer.png` | `after-desktop-light-ladder-selected.png`, `after-desktop-dark-ladder-selected.png` |
+| HMI Studio | `before-desktop-light-hmi-studio.png` | `after-desktop-dark-hmi-studio.png` |
 
 Measured on the plcmotor example: how far down the first rung starts, and whether the page scrolls sideways.
 

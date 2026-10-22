@@ -45,6 +45,9 @@
     'Welcome! A PLC motor-control example is loaded. Start with the lessons or press RUN.': 'Maligayang pagdating! May naka-load na PLC motor-control example. Magsimula sa mga lesson o pindutin ang RUN.',
     'Data table cleared': 'Na-clear ang data table', 'Rung copied': 'Na-copy ang rung', 'Select a symbol first': 'Pumili muna ng symbol',
   };
+  // a button whose glyph is shown as an icon (UI.iconize) keeps only its words: the same entries without the glyph
+  const GL = /^[^\p{L}\p{N}"“(]+\s+/u;
+  Object.keys(TL).forEach(k => { const m = k.match(GL); if (m) { const bare = k.slice(m[0].length); if (bare && !(bare in TL)) TL[bare] = TL[k].replace(GL, ''); } });
   const I18N = { lang: 'en', TL };
   try { I18N.lang = localStorage.getItem('plc-trainer.lang') === 'tl' ? 'tl' : 'en'; } catch (e) { /* private mode */ }
   const orig = new WeakMap();     // text node → English text
