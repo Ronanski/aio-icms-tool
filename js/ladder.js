@@ -1018,7 +1018,8 @@
     const nf = root.querySelector('[data-act="newfile"]');
     if (nf) { nf.textContent = tag ? '＋ Routine' : '＋ File'; nf.title = tag ? 'New routine in MainProgram' : 'New subroutine file'; }
     const list = rungs();
-    const avail = Math.max(600, (rungsEl.clientWidth - 70) / LZ);
+    // the rungs fill the pane; a short rung no longer runs past a tablet's pane (600 px put the coil out of sight)
+    const avail = Math.max(360, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
     list.forEach(r => { W = Math.max(W, rungLayout(r).need); });
     const html = list.map((r, i) => {

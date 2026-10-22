@@ -734,6 +734,11 @@ function check(name, cond, info = '') {
     const L = Examples.LESSONS || [], lv = [...new Set(L.map(l => l.level))], shown = lv.flatMap(g => L.filter(l => l.level === g));
     return shown.length > 10 && shown.every((l, i) => l.title.startsWith((i + 1) + ' '));
   }));
+  check('Data Files: an ON bit is green (energized), not amber like a forced one', await page.evaluate(() => {
+    const d = document.createElement('span'); d.className = 'io-led on'; document.body.appendChild(d);
+    const ok = getComputedStyle(d).backgroundColor, ref = document.createElement('span'); ref.style.color = 'var(--ok)'; document.body.appendChild(ref);
+    const same = ok === getComputedStyle(ref).color; d.remove(); ref.remove(); return same;
+  }));
   check('the view tabs use drawn icons (the same size everywhere), not text glyphs', await page.evaluate(() => [...document.querySelectorAll('.tabs [data-view] .ti')].every(s => s.querySelector('svg path'))));
   check('the project name gives way to the Saved state: the pill is never cut off', await page.evaluate(() => {
     const st = document.querySelector('.brand-sub .save-st'); return getComputedStyle(st).flexShrink === '0' && getComputedStyle(st.parentElement).display === 'flex';
@@ -3760,6 +3765,12 @@ function check(name, cond, info = '') {
     return document.querySelector('.topbar').getBoundingClientRect().height < 60 && vis('[data-act="rung"]') && vis('[data-act="verify"]') && vis('[data-act="undo"]') && document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect().height < 220 && document.documentElement.scrollWidth <= innerWidth;
   }));
   check('tablet: the I/O strip is hidden rather than cut to a few cells', await phone.evaluate(() => getComputedStyle(document.querySelector('.plcbar .io-strip')).display === 'none'));
+  check('tablet: the ladder status box steps back, so the instruction palette is wide', await phone.evaluate(() => getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && document.querySelector('#view-ladder .lad-ins').getBoundingClientRect().width > 400));
+  check('tablet: a short rung fits the pane, its coil in sight without scrolling sideways', await phone.evaluate(() => { const r = document.querySelector('#view-ladder .lad-rungs'); return r.scrollWidth <= r.clientWidth + 1; }));
+  check('tablet: all 16 bits of the Data Files grid fit beside the ladder (bit 0 in sight)', await phone.evaluate(() => { const t = document.querySelector('#view-ladder .lad-dt table.dt.bits'); return !!t && t.parentElement.scrollWidth <= t.parentElement.clientWidth + 1; }));
+  await phone.evaluate(() => App.showView('wiring')); await phone.waitForTimeout(250);
+  check('tablet: the Wiring zoom buttons and Fit stay on one row', await phone.evaluate(() => { const f = document.querySelector('#view-wiring [data-fit]').getBoundingClientRect(), z = document.querySelector('#view-wiring [data-z]').getBoundingClientRect(); return Math.abs(f.top - z.top) < 3; }));
+  await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(250);
   await phone.setViewportSize({ width: 390, height: 844 }); await phone.waitForTimeout(250);
   await phone.tap('[data-act="data"]');
   await phone.waitForTimeout(300);

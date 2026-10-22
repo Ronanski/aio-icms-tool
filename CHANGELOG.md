@@ -68,6 +68,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Update notice:** a new build of the same version names the builds, instead of "v2.3.0 is ready. You have v2.3.0".
 - **Lessons:** "Running feedback and a discrepancy alarm" is now lesson 12, in the Circuits group where it is listed. Lessons 12–16 become 13–17.
 - **Phone:** the view tabs use drawn icons of one size (the Wiring glyph was tiny), and the "Saved" pill is no longer cut off by a long project name.
+- **Tablet Ladder:**
+  - a short rung fits the pane, so its coil is in sight. Rungs used to be at least 600 px wide and ran past an 834 px tablet's pane.
+  - up to 1024 px the status box steps back as intended (a later rule kept it on screen), so the instruction palette is about twice as wide;
+  - all 16 bits of the Data Files grid fit beside the ladder. Bits 2–0 were scrolled out of sight.
+- **Data Files:** an ON bit is green (energized) instead of amber, the colour of a forced bit.
+- **Wiring toolbar:** Zoom and Fit stay together, and on a tablet the toolbar is two rows instead of three.
 
 ### Added
 - **100 exercises** in Learn → Exercises: 25 easy, 40 medium and 35 hard, by topic (contacts and logic, seal-in and latches, timers, counters, compare and math, sequences, motor control, process, Electrical Diagram, Wiring, HMI, and integration of every module). Each has a hint, a starting project, **Check my work** and a solution. Ladder exercises are run on a simulated PLC. Drawing, wiring and HMI exercises are checked on your own project: the checker presses your buttons and switches the PLC to RUN when needed. Done exercises are ticked and counted.

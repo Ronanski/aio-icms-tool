@@ -1204,3 +1204,18 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 .brand-sub [data-pname] { min-width: 0; flex: 0 1 auto; }
 .brand-sub .save-st { flex: none; }
 @media (min-width: 761px) and (max-width: 1100px) { .brand-sub, .tabs .ti { display: none; } }
+/* Wiring: the zoom buttons and Fit stay together (Fit used to wrap to a row of its own) */
+.ws-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+@media (min-width: 761px) and (max-width: 1280px) { .ws-toolbar .tb-lbl { display: none; } .ws-toolbar { gap: 6px; } }
+/* Data Files: an ON bit is green (energized), so it is not mistaken for a forced one (amber) */
+.io-led.on, .io-row[data-io^="O"] .io-led.on { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 60%, transparent); }
+/* up to 1024 px (repeated here: the rules above lost to later ones) the bar above is the controller and the ladder status box steps back, so the instruction palette gets the room */
+@media (min-width: 761px) and (max-width: 1024px) {
+  #main:not(.multi) .lad-toolbar .lad-status { display: none !important; }
+  body[data-solo="ladder"] .plcbar .leds { display: flex; }
+}
+/* Data Files beside the ladder: all 16 bits fit the panel (bit 0, the one used most, was scrolled out of sight) */
+.lad-dt table.dt.bits { table-layout: fixed; font-size: 10px; }
+.lad-dt table.dt.bits td, .lad-dt table.dt.bits th { min-width: 0; padding-left: 0; padding-right: 0; }
+.lad-dt table.dt.bits th.rowh { width: 28px; padding-right: 2px; }
+.lad-dt table.dt.bits th:not(.rowh) { font-size: 8px; letter-spacing: -.4px; }

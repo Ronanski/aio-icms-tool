@@ -121,8 +121,7 @@
             <label class="chk"><input type="checkbox" data-live checked> Live voltage</label>
             <label class="chk" title="Wire markers (ferrules) at both ends: L1, L2, L3, N, PE, +24V, 0V"><input type="checkbox" data-tags${showTags ? ' checked' : ''}> Wire labels</label>
             <span class="spacer"></span>
-            <span class="tb-lbl">Zoom</span><button class="tbtn" data-zoom="-1" title="Zoom out (scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-z data-zoom="0" title="Reset zoom to 100%">100%</button><button class="tbtn" data-zoom="1" title="Zoom in (scroll)" aria-label="Zoom in">🔍＋</button>
-            <button class="tbtn" data-fit title="Fit all">⤢ Fit</button>
+            <span class="ws-zoom"><span class="tb-lbl">Zoom</span><button class="tbtn" data-zoom="-1" title="Zoom out (scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-z data-zoom="0" title="Reset zoom to 100%">100%</button><button class="tbtn" data-zoom="1" title="Zoom in (scroll)" aria-label="Zoom in">🔍＋</button><button class="tbtn" data-fit title="Fit all">⤢ Fit</button></span>
             <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           </div>
           <div class="ws-canvas">
