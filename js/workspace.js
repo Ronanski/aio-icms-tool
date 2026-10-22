@@ -277,7 +277,9 @@
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     cs.forEach(c => { const d = Circuit.dims(c), s = c.props.size || 1; x0 = Math.min(x0, c.x); y0 = Math.min(y0, c.y - 16); x1 = Math.max(x1, c.x + d.w * s); y1 = Math.max(y1, c.y + d.h * s); });
     circ().wires.forEach(w => (w.pts || []).forEach(p => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }));
-    const W = svg.clientWidth, H = svg.clientHeight, pad = 40;
+    // the hint line over the bottom of the canvas is left out, so it never covers the lowest devices (the lamps)
+    const hint = root.querySelector('.ws-hint'), hb = hint && hint.offsetParent ? hint.offsetHeight : 0;
+    const W = svg.clientWidth, H = svg.clientHeight - hb, pad = 40;
     const k = Math.max(0.25, Math.min(1.4, Math.min((W - pad * 2) / (x1 - x0), (H - pad * 2) / (y1 - y0))));
     view.k = k; view.x = (W - (x1 - x0) * k) / 2 - x0 * k; view.y = (H - (y1 - y0) * k) / 2 - y0 * k;
     applyView();

@@ -724,6 +724,18 @@ function check(name, cond, info = '') {
     return z.right <= pane.right + 1 && z.width > 0;
   }));
   await page.evaluate(() => App.setLayout('single'));
+  check('Wiring: Fit keeps every device above the hint line at the bottom (the lamps were under it)', await page.evaluate(async () => {
+    const prev = App.currentId; App.loadExample('practice'); App.showView('wiring'); await new Promise(q => setTimeout(q, 300)); Workspace.fit(); await new Promise(q => setTimeout(q, 50));
+    const vp = document.querySelector('#view-wiring .ws-svg .vp'), c = [...vp.children].find(g => g.getAttribute('class') === 'comps').getBoundingClientRect();
+    const ok = c.bottom <= document.querySelector('#view-wiring .ws-hint').getBoundingClientRect().top; const tmp = App.currentId; App.openSaved(prev); Store.remove(tmp); return ok;
+  }));
+  check('the I/O strip in the bar shows an ON input in green, like the Data Files', await page.evaluate(() => {
+    const i = document.createElement('i'); i.className = 'on in'; const s = document.querySelector('.io-strip') || document.body; s.appendChild(i);
+    const ref = document.createElement('span'); ref.style.color = 'var(--ok)'; document.body.appendChild(ref);
+    const same = getComputedStyle(i).backgroundColor === getComputedStyle(ref).color; i.remove(); ref.remove(); return same;
+  }));
+  check('the file-based address style is named in SLC notation (I:e/b), true for a compact PLC and a rack', await page.evaluate(() => [...document.querySelectorAll('option')].some(o => /File-based \(I:e\/b\)/.test(o.textContent)) && ![...document.querySelectorAll('option')].some(o => /I:1\/0\)/.test(o.textContent))));
+  await page.evaluate(() => App.showView('ladder'));
 
   pagesInfo.stable = { version: '99.0.0', build: 'v99.0.0', notes: '> note' };
   await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); return Updater.check(true); });
