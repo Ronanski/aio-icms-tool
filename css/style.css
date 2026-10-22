@@ -1096,3 +1096,28 @@ code { border-radius: var(--r-sm); }
 body[data-solo="ladder"] .plcbar .leds { display: none; }
 /* the I/O strip is shown whole or not at all: below 1100 px it would be cut to a few cells (the Data panel has the I/O) */
 @media (max-width: 1100px) { .plcbar .io-strip { display: none; } }
+
+/* Organizer: a project tree like engineering tools have — no bullets or underlined links, indent guides, row hover */
+.lad-org .org, .lad-org .org ul { list-style: none; margin: 0; }
+.lad-org .org { padding: 0 8px 8px 8px; line-height: 1.65; }
+.lad-org .org ul { padding-left: 12px; margin-left: 7px; border-left: 1px solid var(--border); }
+.lad-org .org li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lad-org .org a { color: var(--text); text-decoration: none; padding: 1px 5px; border-radius: var(--r-sm); }
+.lad-org .org a:hover { background: var(--accent-soft); color: var(--accent-text); }
+.lad-org .org a[aria-current] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.lad-org .org small { color: var(--muted); }
+.lad-org .org .org-add, .lad-org .org-add { color: var(--accent-text); }
+.lad-org .side-head, .lad-org h5 { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--muted); }
+
+/* HMI Studio: objects in labelled groups (Controls, Indicators, Equipment, Drawing) instead of one run of 17 buttons */
+.hmi-add { display: flex; flex-wrap: wrap; gap: 4px 0; align-items: center; }
+.hmi-addg { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; border-left: 1px solid var(--border); }
+.hmi-addg:first-child { border-left: 0; padding-left: 0; }
+.hmi-addg .tbtn { padding: 3px 8px; font-size: 12.5px; }
+@media (max-width: 760px) { .hmi-add, .hmi-addg { flex-wrap: nowrap; flex-shrink: 0; } }
+
+/* lists in the side panels (HMI screens, tag lists): rows, not bullets with underlined links */
+.hmi-props .taglist { list-style: none; padding: 0; margin: 4px 0 8px; }
+.hmi-props .taglist li { padding: 2px 4px; border-radius: var(--r-sm); }
+.hmi-props .taglist a { color: var(--text); text-decoration: none; font-weight: 500; }
+.hmi-props .taglist a:hover { color: var(--accent-text); }

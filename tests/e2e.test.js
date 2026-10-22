@@ -326,6 +326,23 @@ function check(name, cond, info = '') {
     return !lad && wir && multi && !!document.querySelector('#view-ladder [data-lstatus]');
   }));
 
+  check('Learn: the page follows the tab — Exercises opens an exercise, Course goes back to the lesson', await page.evaluate(async () => {
+    const lay = App.layout; App.setLayout('single'); App.showView('learn'); await new Promise(q => setTimeout(q, 50));
+    const v = document.getElementById('view-learn'), kick = () => v.querySelector('.kicker').textContent;
+    v.querySelector('[data-ltab="course"]').click(); await new Promise(q => setTimeout(q, 30)); const c1 = kick();
+    v.querySelector('[data-ltab="ex"]').click(); await new Promise(q => setTimeout(q, 30)); const e1 = kick();
+    v.querySelector('[data-ltab="course"]').click(); await new Promise(q => setTimeout(q, 30)); const c2 = kick();
+    App.setLayout(lay); return !/^Exercise/.test(c1) && /^Exercise/.test(e1) && c2 === c1;
+  }));
+  check('Organizer: the routine open in the editor is marked in the tree; HMI Studio lists its objects in groups', await page.evaluate(async () => {
+    App.setLayout('single'); App.showView('ladder'); App.organizer(); await new Promise(q => setTimeout(q, 50));
+    const cur = document.querySelector('#view-ladder [data-lorg] [aria-current]');
+    const groups = [...document.querySelectorAll('#view-hmi .hmi-addg .tb-lbl')].map(x => x.textContent).join();
+    const all = document.querySelectorAll('#view-hmi .hmi-add [data-add]').length;
+    document.querySelector('#view-ladder [data-lorg]').hidden = true;
+    return !!cur && cur.dataset.org === 'f2' && groups === 'Controls,Indicators,Equipment,Drawing' && all === Object.keys(HMI.TYPES).length;
+  }));
+
   console.log('Dialogs: keys go to the top dialog only');
   await page.evaluate(() => { UI.modal({ title: 'Lower' }); UI.modal({ title: 'Upper' }); });
   await page.keyboard.press('Escape');

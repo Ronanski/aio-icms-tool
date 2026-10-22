@@ -473,6 +473,8 @@
     box.innerHTML = `<div class="side-head"><h4>${tag ? 'Controller Organizer' : 'Project'}</h4><button class="icon-btn" data-orgx title="Close the Organizer" aria-label="Close the Organizer">×</button></div>
       <div class="org-path" title="The controller found in the Wiring; the project goes online with it by itself">Path: <b>${path}</b></div><div class="org-body">${body}</div>`;
     box.querySelector('[data-orgx]').onclick = () => { box.hidden = true; saveOrg(false); };
+    // the routine open in the editor is marked in the tree
+    const open = box.querySelector(`[data-org="f${window.Ladder && Ladder.file ? Ladder.file() : 2}"]`); if (open) open.setAttribute('aria-current', 'page');
     {
       const el = box;
       {
@@ -1319,7 +1321,7 @@
   /* the Learn page: the course (lessons, basics to advanced) and 100 exercises (easy, medium, hard) by topic. A lesson or
      exercise is one page: what to do, a starting project, Check my work, a hint and the solution. */
   let learnTab = (() => { try { return localStorage.getItem('plc-trainer.learnTab') === 'ex' ? 'ex' : 'course'; } catch (e) { return 'course'; } })();
-  let exDiff = 'easy', exTopic = '';
+  let exDiff = 'easy', exTopic = '', lastEx = null, lastLesson = null;
   const exDone = (() => { try { return new Set(JSON.parse(localStorage.getItem('plc-trainer.exDone') || '[]')); } catch (e) { return new Set(); } })();
   const markDone = id => { exDone.add(id); try { localStorage.setItem('plc-trainer.exDone', JSON.stringify([...exDone])); } catch (e) { /* private mode */ } };
   const EX_CATS = [['Practice boards', ['practice', 'practice16', 'blank']], ['Motor control', ['dol', 'plcmotor', 'plcfeedback', 'fwdrev', 'stardelta', 'stardeltaplc', 'threemotors']], ['Process', ['conveyor', 'tank', 'analog']], ['Hardware and cabinet', ['rack', 'chassis', 'cabinet']]];
@@ -1327,6 +1329,9 @@
   function renderLearn() {
     const el = document.getElementById('view-learn');
     const L = Examples.LESSONS, XL = (window.Exercises && Exercises.LIST) || [];
+    // the page always belongs to the open tab (also after a restart, when only the tab was remembered)
+    if (learnTab === 'ex' && XL.length && !XL.some(x => x.id === lessonId)) { const x = XL.find(q => q.id === lastEx) || XL.find(q => q.diff === exDiff) || XL[0]; lessonId = x.id; exDiff = x.diff; }
+    if (learnTab === 'course' && XL.some(x => x.id === lessonId)) lessonId = lastLesson || L[0].id;
     const cur = L.find(l => l.id === lessonId) || XL.find(x => x.id === lessonId) || L[0];
     const isEx = cur.kind === 'ex';
     const ex = Examples.EX[cur.ex];
@@ -1380,7 +1385,14 @@
     el.onchange = e => { if (e.target.matches('[data-xtopic]')) { exTopic = e.target.value; renderLearn(); } };
     el.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.ltab) { learnTab = b.dataset.ltab; try { localStorage.setItem('plc-trainer.learnTab', learnTab); } catch (err) { /* private mode */ } renderLearn(); return; }
+      if (b.dataset.ltab) {
+        learnTab = b.dataset.ltab; try { localStorage.setItem('plc-trainer.learnTab', learnTab); } catch (err) { /* private mode */ }
+        // the page follows the tab: its last item, else the first exercise of the shown difficulty or the first lesson
+        if (isEx) lastEx = cur.id; else lastLesson = cur.id;
+        if (learnTab === 'ex' && !isEx) { const x = XL.find(q => q.id === lastEx) || shown[0] || XL[0]; if (x) { lessonId = x.id; exDiff = x.diff; } }
+        if (learnTab === 'course' && isEx) lessonId = lastLesson || L[0].id;
+        renderLearn(); const bd = el.querySelector('.learn-body'); if (bd) bd.scrollTop = 0; return;
+      }
       if (b.dataset.xdiff) { exDiff = b.dataset.xdiff; exTopic = ''; renderLearn(); return; }
       if (b.dataset.lesson) { go(b.dataset.lesson); return; }
       if (b.hasAttribute('data-next')) { const i = XL.indexOf(cur), nx = XL[i + 1]; if (nx) { exDiff = nx.diff; go(nx.id); } return; }

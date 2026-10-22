@@ -7,6 +7,9 @@
   let cur = 's1', user = false;          // screen on display; logged in (runtime only, never saved)
   const hist = new Map();                // trend samples per object id: [[t, v]…]
   const COLORS = ['#2fa84f', '#d33a2c', '#f2c230', '#f39c1e', '#2f6fd6', '#7a7770', '#ffffff', '#1d1d1d'];
+  // the Studio's object toolbar in groups, as HMI design software lists them (a type not listed here is not offered)
+  const ADD_GROUPS = [['Controls', ['pb', 'entry', 'nav', 'login']], ['Indicators', ['ind', 'lamp', 'num', 'bar', 'trend', 'alarm']],
+    ['Equipment', ['motor', 'tank', 'line']], ['Drawing', ['text', 'rect', 'ellipse', 'image']]];
   const TYPES = {
     pb: { name: 'Push Button', w: 130, h: 64, d: { label: 'START', tag: 'B3:0/0', mode: 'momentary', color: '#2fa84f' } },
     ind: { name: 'Indicator', w: 130, h: 64, d: { label: 'MOTOR', tag: 'O:0/0', onText: 'RUNNING', offText: 'STOPPED', onColor: '#2fa84f', offColor: '#5b5953', shape: 'box' } },
@@ -92,7 +95,7 @@
           <button class="tbtn" data-full title="Full screen (Esc to leave)">⛶</button>
           <button class="tbtn mobile-only" data-drawer="props">⚙ Props</button>
           <div class="hmi-zoom"><span class="tb-lbl">Zoom</span><button class="tbtn" data-hz="-1" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button><button class="tbtn zoomv" data-hz="fit" data-hzv title="Fit the screen to the window">Fit</button><button class="tbtn" data-hz="1" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button></div>
-          <div class="hmi-add">${Object.entries(TYPES).map(([k, t]) => `<button class="tbtn" data-add="${k}">${t.name}</button>`).join('')}</div>
+          <div class="hmi-add">${ADD_GROUPS.map(([g, ks]) => `<span class="hmi-addg"><span class="tb-lbl">${g}</span>${ks.filter(k => TYPES[k]).map(k => `<button class="tbtn" data-add="${k}" title="Add a ${TYPES[k].name}">${TYPES[k].name}</button>`).join('')}</span>`).join('')}</div>
         </div>
         <div class="hmi-main">
           <div class="hmi-stage"><div class="hmi-bezel"><div class="hmi-brand">Operator terminal</div><div class="hmi-screen"></div><div class="hmi-keys"><span></span><span></span><span></span><span></span></div></div></div>
