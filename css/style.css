@@ -1217,7 +1217,7 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 /* Data Files beside the ladder: all 16 bits fit the panel (bit 0, the one used most, was scrolled out of sight) */
 .lad-dt table.dt.bits { table-layout: fixed; font-size: 10px; }
 .lad-dt table.dt.bits td, .lad-dt table.dt.bits th { min-width: 0; padding-left: 0; padding-right: 0; }
-.lad-dt table.dt.bits th.rowh { width: 28px; padding-right: 2px; }
+.lad-dt table.dt.bits th.rowh { width: 32px; padding-right: 4px; }
 .lad-dt table.dt.bits th:not(.rowh) { font-size: 8px; letter-spacing: -.4px; }
 /* the task of the open exercise, above the work */
 .task-strip { display: flex; align-items: center; gap: 10px; padding: 5px 12px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border-bottom: 1px solid var(--border); font-size: 12.5px; min-width: 0; }
