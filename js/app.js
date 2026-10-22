@@ -229,6 +229,7 @@
     if (Workspace.baseline) Workspace.baseline();
     Object.keys(App.dirty).forEach(k => { App.dirty[k] = true; });
     renderVisible();
+    taskStrip();
     document.querySelector('[data-pname]').textContent = App.project.name;
     clearTimeout(saveT); saveT = null;
     store();
@@ -1217,6 +1218,7 @@
     lb.textContent = '▦ ' + (cur.panes ? cur.short : 'View');
     lb.classList.toggle('on', !!cur.panes);
     vis.forEach(k => renderView(k));
+    taskStrip();
     try { localStorage.setItem('plc-trainer.view', v); localStorage.setItem('plc-trainer.layout', App.layout); } catch (e) { /* ignore */ }
   };
   App.setLayout = function (k) {
@@ -1389,6 +1391,23 @@
     exHelped.delete(x.id); writeJ(HELP, [...exHelped]);
     if (App.openNew(data)) { if (was) Store.remove(was); map[x.id] = App.currentId; writeJ(EXP, map); UI.toast('Exercise started in its own project. Start opens it again later.', 'ok', 4000); open(); }
   }
+  /* while an exercise's project is open, a strip above the work keeps its task in sight, with Check one click away */
+  function taskStrip() {
+    const bar = document.querySelector('[data-task]'); if (!bar) return;
+    const id = App.project && App.project.lesson, x = id && ((window.Exercises && Exercises.LIST) || []).find(q => q.id === id);
+    if (!x || App.view === 'learn') { bar.hidden = true; return; }
+    const p = /<p>([\s\S]*?)<\/p>/.exec(x.body || ''), task = (p ? p[1] : '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    bar.hidden = false;
+    bar.innerHTML = `<span class="ts-kind">Exercise</span><b class="ts-title">${esc(x.title)}</b><span class="ts-task" title="${esc(task)}">${esc(task)}</span>
+      <button class="tbtn sm" data-ts="task" title="Open the exercise in Learn">Task</button><button class="btn primary sm" data-ts="check">✓ Check my work</button>`;
+    bar.onclick = e => {
+      const b = e.target.closest('[data-ts]'); if (!b) return;
+      learnTab = 'ex'; lessonId = x.id; exDiff = x.diff; lastEx = x.id;
+      App.showView('learn');
+      if (b.dataset.ts === 'check') { const c = document.querySelector('#view-learn [data-check]'); if (c) c.click(); }
+    };
+  }
+  App.taskStrip = taskStrip;
   function renderLearn() {
     const el = document.getElementById('view-learn');
     const L = Examples.LESSONS, XL = (window.Exercises && Exercises.LIST) || [];

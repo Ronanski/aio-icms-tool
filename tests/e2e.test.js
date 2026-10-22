@@ -3971,8 +3971,10 @@ function check(name, cond, info = '') {
     await fo.evaluate(() => { const m = [...document.querySelectorAll('.modal-wrap:last-child button')].find(b => /Start over/.test(b.textContent)); if (m) m.click(); });
     await fo.waitForTimeout(300);
     const nAfter = await fo.evaluate(() => Store.list().length);
-    await fo.evaluate(() => { const x = Exercises.LIST[0]; App.project.ladder.rungs = x.solution.map(t => Ladder.newRung(Ladder.parseRung(t))); App.loadProgram(); App.plc.applyAll(true); App.showView('learn'); });
-    await fo.click('#view-learn [data-check]'); await fo.waitForTimeout(200);
+    await fo.evaluate(() => { const x = Exercises.LIST[0]; App.project.ladder.rungs = x.solution.map(t => Ladder.newRung(Ladder.parseRung(t))); App.loadProgram(); App.plc.applyAll(true); App.showView('ladder'); });
+    check('Learn: while the exercise is open, a strip above the work shows its title and task (not in Learn itself)', await fo.evaluate(() => { const s = document.querySelector('[data-task]'); return !s.hidden && s.textContent.includes(Exercises.LIST[0].title) && /lamp/i.test(s.querySelector('.ts-task').textContent); }));
+    await fo.click('[data-task] [data-ts="check"]'); await fo.waitForTimeout(300);
+    check('Learn: the strip hides in Learn and its Check grades the exercise there', await fo.evaluate(() => App.view === 'learn' && document.querySelector('[data-task]').hidden));
     check('Learn: an exercise done by hand in its own project is marked done in the list and the count; Start over did not add a project', await fo.evaluate(n => Store.list().length === n && /1\/25/.test(document.querySelector('#view-learn [data-xdiff="easy"]').textContent) && !!document.querySelector('#view-learn .learn-nav button.done') && !!document.querySelector('#view-learn .grade-ok'), nAfter) && nAfter === projBefore.n + 1);
     await fo.click('[data-examples]'); await fo.waitForTimeout(150);
     check('Examples menu: grouped by category (practice boards, motor control, process, hardware)', await fo.evaluate(() => { const h = [...document.querySelectorAll('.ctx-menu .ctx-head, .ctx-menu .head, .ctx-menu h6')].map(x => x.textContent); return ['Practice boards', 'Motor control', 'Process', 'Hardware'].every(c => h.some(t => t.includes(c))); }));

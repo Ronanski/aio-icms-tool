@@ -76,6 +76,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Wiring toolbar:** Zoom and Fit stay together, and on a tablet the toolbar is two rows instead of three.
 
 ### Added
+- **Task strip:** while an exercise's project is open, a strip above the work shows the exercise and its task, with **Task** (back to it in Learn) and **✓ Check my work**. You no longer have to switch to Learn to read the task again.
 - **100 exercises** in Learn → Exercises: 25 easy, 40 medium and 35 hard, by topic (contacts and logic, seal-in and latches, timers, counters, compare and math, sequences, motor control, process, Electrical Diagram, Wiring, HMI, and integration of every module). Each has a hint, a starting project, **Check my work** and a solution. Ladder exercises are run on a simulated PLC. Drawing, wiring and HMI exercises are checked on your own project: the checker presses your buttons and switches the PLC to RUN when needed. Done exercises are ticked and counted.
 - **Practice board 16**: the 16 in / 12 out compact PLC with START, STOP, four push buttons, two selectors and eight lamps, for the medium and hard exercises.
 - **Learn** has two tabs, Course (the lessons) and Exercises (by difficulty with a topic filter). The **Examples** menu is grouped by category: practice boards, motor control, process, hardware and cabinet.
