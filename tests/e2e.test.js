@@ -717,9 +717,9 @@ function check(name, cond, info = '') {
 
   pagesInfo.stable = { version: '99.0.0', build: 'v99.0.0', notes: '> note' };
   await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); return Updater.check(true); });
-  check('the update bar sits under the status bar and covers nothing', await page.evaluate(() => {
-    const bar = document.querySelector('.update-bar'), pb = document.querySelector('.plcbar').getBoundingClientRect(), r = bar.getBoundingClientRect();
-    return bar.nextElementSibling.id === 'main' && r.top >= pb.bottom - 1;
+  check('the update notice floats in a corner: it does not push the layout down or cover the status bar', await page.evaluate(() => {
+    const bar = document.querySelector('.update-bar'), pb = document.querySelector('.plcbar').getBoundingClientRect(), r = bar.getBoundingClientRect(), main = document.getElementById('main').getBoundingClientRect();
+    return getComputedStyle(bar).position === 'fixed' && r.top >= pb.bottom - 1 && r.right <= innerWidth && Math.abs(main.top - pb.bottom) <= 1;
   }));
   await page.click('.update-bar [data-u="later"]');
   pagesInfo.stable = NOUP; pagesInfo.beta = NOUP;

@@ -1187,3 +1187,8 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 
 /* parts library header: on a narrow panel the two buttons keep only their icons (the name is in the tooltip) instead of being cut */
 @media (max-width: 1100px) { .pal-tools .tbtn { font-size: 0; padding: 4px; } .pal-tools .tbtn .ic { margin-right: 0; } .ws-search { font-size: 12.5px; } }
+
+/* the update notice floats in the bottom-right corner: it arrives a few seconds after start and used to push the whole
+   layout down under the user's pointer (a click meant for one thing hit another) */
+.update-bar { position: fixed; right: 16px; bottom: 44px; z-index: 60; max-width: min(460px, calc(100% - 32px)); justify-content: flex-start; padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); background: var(--surface); }
+@media (max-width: 760px) { .update-bar { left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); max-width: none; } }
