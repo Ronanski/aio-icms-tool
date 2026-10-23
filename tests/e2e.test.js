@@ -494,6 +494,14 @@ function check(name, cond, info = '') {
     [...document.querySelectorAll('#view-hmi button')].find(b => /Machine/.test(b.textContent)).click();
     return /switch to/.test(run) && /toolbar above/.test(edit) && !/switch to/.test(edit) && e.children.length === 1;
   }));
+  {
+    const prev = await page.evaluate(() => App.currentId);
+    const json = await page.evaluate(() => JSON.stringify(App.serialize()));
+    const name = await page.evaluate(() => App.project.name);
+    await page.setInputFiles('#importFile', { name: 'p.plc.json', mimeType: 'application/json', buffer: Buffer.from(json) }); await wait(300);
+    check('Import: a project with a name already in the list is opened as “name (2)”, so the two can be told apart', await page.evaluate(n => App.project.name === n + ' (2)' && Store.list().filter(p => p.name === n).length === 1, name));
+    await page.evaluate(p => { const tmp = App.currentId; App.openSaved(p); Store.remove(tmp); }, prev); await wait(150);
+  }
   check('HMI Studio: a new Go to Screen button goes to the next screen and is named after it', await page.evaluate(async () => {
     const W = ms => new Promise(q => setTimeout(q, ms));
     App.openNew({ name: 'HMI nav', hmi: { screens: [{ id: 's1', name: 'Main' }, { id: 's2', name: 'Alarms' }], objects: [] } }); App.setLayout('single'); App.showView('hmi'); await W(60);
