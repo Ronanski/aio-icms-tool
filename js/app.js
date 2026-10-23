@@ -1594,7 +1594,10 @@
         const d = JSON.parse(t);
         // a file with none of a project's parts is most likely not a PLC Trainer project
         if (!d || typeof d !== 'object' || !['ladder', 'circuit', 'hmi', 'schematic'].some(k => d[k] && typeof d[k] === 'object')) throw new Error('this file has no ladder, wiring, diagram or HMI in it');
-        if (App.openNew(d) && !App.compat().length) UI.toast('Project imported as a new project', 'ok');
+        // a name already in the project list gets a number, so the two can be told apart in Open project
+        const names = new Set(Store.list().map(p => p.name)), base = typeof d.name === 'string' && d.name.trim() ? d.name.trim() : 'Imported project';
+        let nm = base, n = 2; while (names.has(nm)) nm = `${base} (${n++})`; d.name = nm;
+        if (App.openNew(d) && !App.compat().length) UI.toast(`Project imported as “${nm}”`, 'ok');
       }).catch(err => UI.toast('Import failed: ' + err.message, 'danger'));
       e.target.value = '';
     });
