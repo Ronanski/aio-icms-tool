@@ -49,6 +49,8 @@
 - [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)
 - [x] CPT (Compute) instruction (2026-10-23; divide is | as in the controller)
 - [x] Tag browser on an operand and New Tag from an unknown operand (2026-10-23)
+- [x] UI/UX standards audit (ui-ux-design-master): 11 px text, 24 px targets, AA contrast, no overflow; owner picked direction A
+- [ ] Design system: spacing on the 4/8 grid, radius scale, font weights 400/600/700
 - [ ] Program Tags (scope of a program), several programs per task
 - [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
 

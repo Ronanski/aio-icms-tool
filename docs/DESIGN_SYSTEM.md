@@ -35,6 +35,18 @@ This is the visual language of PLC Trainer from v2.4. It is implemented as token
 | `--brand` | `#D97757` | same | the logo only |
 | `--r-sm` / `--r` / `--r-lg` | 4 / 6 / 8 px | same | radii |
 | `--ctl-h` | 30 px | same | control height |
+| `--fill-accent` | `#1F64B8` | `#2F6AD6` | fill under white text: primary buttons, selected toggles (5.1:1 or better) |
+| `--fill-ok` / `--fill-danger` | `#1E7F3F` / `#C0392B` | same | fill under white text: RUN, connection on, alarm (5.0:1 / 5.5:1) |
+| `--warn-text` | `#8A5A00` | `--warn` | amber text: saving, warnings (5.9:1 on white) |
+| `--lad-on-text` | `#116B30` | `--lad-on` | the ON bit "1" in data tables (5.4:1 on the pale green cell) |
+| `--on-warn` | `#1A1300` | same | text on an amber fill (forced) |
+
+### Hard rules (WCAG 2.2 AA, checked by `npm test`)
+- **Text:** no interface text under 11 px, including small print, palette labels and data-file bits. Drawings (ladder rungs, the Electrical Diagram, HMI terminal screens) follow their zoom instead.
+- **Targets:** every control is at least 24 × 24 px (WCAG 2.5.8). Touch layouts aim for 34–38 px on the main tools.
+- **Contrast:** text is at least 4.5:1 (large text 3:1). White text sits only on the `--fill-*` tokens, never on `--accent` or `--ok` directly. Disabled controls and unused data-table cells are exempt.
+- **No sideways page scroll** at 390, 800, 1280 and 1440 px, in English and Tagalog. A long bar (PLC bar, palette, Wiring toolbar) scrolls inside itself, like a ribbon.
+- **Dialogs** never grow wider than the screen.
 
 ## Components
 - **View switcher**: on a computer it is flat, with the active view underlined in the accent colour. On a phone it is the bottom navigation bar (unchanged).
@@ -98,6 +110,12 @@ Measured on the plcmotor example: how far down the first rung starts, and whethe
 | Tablet 834×1112 | top bar 114 px (2 rows), toolbar 282 px, first rung at **448 px** | top bar 49 px, toolbar 74 px, first rung at **171 px** |
 | Phone 390×844 | page 823 px wide (**sideways panning**) | 390 px, no page scroll |
 
+## Direction picked (2026-10-23)
+The owner compared three directions on the real app: **A · Engineering Neutral**, B · Control-room Dark (compact) and C · Industrial Light (ISA-101 / WinCC). The owner picked **A**: this system, now meeting WCAG AA. See `docs/UIUX_AUDIT_2026-10-23.md` for the audit and the measurements.
+
 ## Next steps (not done yet)
+- **Spacing on the 4 / 8 grid:** 61–82 % of spacing values are off the 4 px grid (5, 7, 9, 13 px). Move them to 4 / 8 / 12 / 16 one component at a time.
+- **Radii:** 5–8 different values are in use. Settle on `--r-sm` / `--r` / `--r-lg` (4 / 6 / 8) and 50 % for round lights.
+- **Font weights:** 4–5 are in use. Settle on 400 / 600 / 700.
 - Instruction palette icons drawn as small ladder glyphs (SVG) instead of text, like the reference tools.
 - HMI designer panels and the Wiring property panel brought onto the same field and section styles.
