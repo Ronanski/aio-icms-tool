@@ -157,7 +157,11 @@
       else if (p && p.kind === 'word') {
         o.push(`<text class="baddr" x="${bx + 78}" y="${ry}">${esc(p.norm)}</text>`);
         o.push(`<text class="bval" data-v="${p.norm}" x="${bx + BOXW - 8}" y="${ry}">0</text>`);
-      } else o.push(`<text class="bval${p || !validArg(spec.ty, raw) ? '' : ' bad'}" x="${bx + BOXW - 8}" y="${ry}">${esc(p ? p.norm : String(raw).toUpperCase())}</text>`);
+      } else {
+        // a long CPT expression is cut to the box (the Selected instruction panel shows all of it)
+        const s = p ? p.norm : String(raw).toUpperCase(), sh = spec.ty === 'expr' && s.length > 15 ? s.slice(0, 14) + '…' : s;
+        o.push(`<text class="bval${p || !validArg(spec.ty, raw) ? '' : ' bad'}" x="${bx + BOXW - 8}" y="${ry}">${spec.ty === 'expr' && sh !== s ? `<title>${esc(s)}</title>` : ''}${esc(sh)}</text>`);
+      }
     });
     const rx = bx + BOXW;
     o.push(hw(rx, x + BW, wy, 'o' + id));
@@ -525,6 +529,19 @@
 
   function suggestions(ty) {
     const L = [];
+    // the tag browser: the project's tags that fit the operand come first
+    for (const t of App.project.tags || []) {
+      const a = t.type === 'ALIAS' ? parse(t.addr) : null;
+      if (ty === 'bit') {
+        if (t.type === 'BOOL' || (a && a.kind === 'bit')) L.push(t.name);
+        if (t.type === 'TIMER') L.push(`${t.name}.DN`, `${t.name}.TT`, `${t.name}.EN`);
+        if (t.type === 'COUNTER') L.push(`${t.name}.DN`);
+      } else if (ty === 'src' || ty === 'dest') {
+        if (t.type === 'INT' || (a && a.kind === 'word')) L.push(t.name);
+        if (t.type === 'TIMER' || t.type === 'COUNTER') L.push(`${t.name}.ACC`, `${t.name}.PRE`);
+      } else if ((ty === 'timer' || ty === 'struct') && t.type === 'TIMER') L.push(t.name);
+      else if ((ty === 'counter' || ty === 'struct') && t.type === 'COUNTER') L.push(t.name);
+    }
     if (ty === 'bit') {
       // the real I/O points of the hardware, in the project's address style
       const io = Circuit.addrBook(App.project.circuit, App.project.io, App.project.addr || 'file').points;
@@ -558,8 +575,20 @@
       const a = [];
       for (let k = 0; k < d.args.length; k++) {
         // a bit address can be typed in any address style; it is stored file-based
-        const v = d.args[k].ty === 'bit' ? App.addrIn(vals['a' + k] || '') : String(vals['a' + k] || '').trim().toUpperCase();
+        const v = d.args[k].ty === 'bit' ? App.addrIn(vals['a' + k] || '') : d.args[k].ty === 'expr' ? String(vals['a' + k] || '').replace(/\s+/g, '').toUpperCase() : String(vals['a' + k] || '').trim().toUpperCase();
         const err = validArg(d.args[k].ty, v);
+        // a name that is not a tag yet: offer to create it with the type the operand needs, as programming software
+        // does ("New Tag"), then confirm the instruction with it
+        const nt = { bit: 'BOOL', src: 'INT', dest: 'INT', timer: 'TIMER', counter: 'COUNTER' }[d.args[k].ty];
+        if (err && nt && PLCcore.tagNameOk(v) && !PLCcore.tagOf(v) && App.newTag) {
+          UI.confirm('New tag', `“${v}” is not a tag yet. Create it as a ${nt} tag? It gets the next free ${nt === 'BOOL' ? 'bit' : nt === 'INT' ? 'integer' : nt.toLowerCase()} address, and you can make it an alias of an I/O point later in Tags.`, () => {
+            const e2 = App.newTag(v, nt);
+            if (e2) { UI.toast(e2, 'danger'); return; }
+            // once this question has closed, the instruction is confirmed with the new tag
+            setTimeout(() => { const box = m.el.closest('.modal-wrap') || m.el.parentElement, ok = box && box.querySelector('.modal-foot .btn.primary'); if (ok) ok.click(); }, 0);
+          }, 'Create tag');
+          return `“${v}” is not a tag yet`;
+        }
         if (err) return `${d.args[k].n}: ${err}`;
         const p = parse(v);
         a.push(!p || p.kind === 'const' ? v : p.norm);   // READ / WRITE of a MSG are not addresses
@@ -688,7 +717,7 @@
     ['Timer/Counter', ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES']],
     ['Input/Output', ['MSG']],
     ['Compare', ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM']],
-    ['Compute/Math', ['ADD', 'SUB', 'MUL', 'DIV']],
+    ['Compute/Math', ['CPT', 'ADD', 'SUB', 'MUL', 'DIV']],
     ['Move/Logical', ['MOV', 'CLR']],
     ['File/Misc', ['COP', 'FLL', 'SQO']],
     ['Program Control', ['JSR', 'SBR', 'RET', 'MCR']],

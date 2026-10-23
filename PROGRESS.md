@@ -47,8 +47,8 @@
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
 - [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
 - [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)
-- [ ] CPT (Compute) instruction
-- [ ] Tag browser on an operand and New Tag from an unknown operand (reference: right-click → New "tag")
+- [x] CPT (Compute) instruction (2026-10-23; divide is | as in the controller)
+- [x] Tag browser on an operand and New Tag from an unknown operand (2026-10-23)
 - [ ] Program Tags (scope of a program), several programs per task
 - [ ] Tag-based next: Program Tags, more programs per task, `JSR RoutineName`, TIMER preset in ms, DINT / REAL
 
@@ -316,7 +316,7 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [x] Auto-check for the circuit lessons (8–12): verify wiring, not only the ladder (v2.1)
 
 ## Backlog (v1.2+)
-- [ ] More instructions: CPT, SCP, BTD, AND/OR/XOR/NOT, MVM (done: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, MSG, analog words)
+- [ ] More instructions: SCP, BTD, AND/OR/XOR/NOT, MVM (done: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, MSG, analog words)
 - [x] More devices: VFD, star-delta starter, reversing contactor pair, analog level transmitter
 - [x] Rung drag-and-drop editing (instructions, PR #2) · [ ] wire dragging and re-routing (v1.3.0)
 - [x] Tagalog / English language toggle

@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **CPT (Compute)** in Compute/Math: Dest = an expression of constants and word addresses with + − * **|** (divide) ** and ( ), and SQR, ABS, NEG. Example: `(N7:1+5)*2` or `T4:0.ACC*10|4`.
+  - The result is rounded like DIV. Divide by zero or an overflow gives 32767 / −32768 and sets S:0/1.
+  - As in the controller, divide is `|`, because `/` belongs to bit addresses. Typing `/` gets a message that says so. A bit address is refused as a value.
+  - Spaces typed in the expression are taken out. A long expression is cut in the box, and the Selected instruction panel shows all of it.
+- **New Tag from an operand:** typing a name that is not a tag yet (`XIC START_PB`) offers to create it with the type the operand needs: BOOL for a bit, INT for a word, TIMER or COUNTER. The instruction then takes it.
+- **Tag browser:** an operand lists the project's tags that fit it first. A bit gets BOOL and bit aliases plus TIMER .DN/.TT/.EN; a word gets INT plus .ACC/.PRE; a timer or counter operand gets its own type.
+
 ## [2.4.0] - 2026-10-23
 
 ### Fixed

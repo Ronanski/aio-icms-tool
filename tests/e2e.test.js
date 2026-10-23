@@ -409,6 +409,35 @@ function check(name, cond, info = '') {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(20);
     return link && red && onCancel && !document.getElementById('ctxMenu');
   }));
+  check('CPT computes like the controller: ( ), * and | (divide), ** , SQR / ABS / NEG, rounding like DIV, divide by zero → 32767 and S:0/1', await page.evaluate(() => {
+    const P = PLCcore, run = (x, n1 = 7, n2 = 3) => { const e = new P.Engine(); e.data.N7[1] = n1; e.data.N7[2] = n2; e.setProgram([{ elems: [{ t: 'CPT', a: ['N7:0', x] }] }]); e.mode = 'RUN'; e.scan(0.01); return [e.read('N7:0'), !!(e.data.S[0] & 2)]; };
+    const eq = (x, v, o = false) => { const [r, ov] = run(x); return r === v && ov === o; };
+    return eq('(N7:1+N7:2)*2', 20) && eq('N7:1|N7:2', 2) && eq('-7|2', -4) && eq('7|2', 4) && eq('2**3', 8) && eq('SQR(16)+ABS(-5)', 9) && eq('NEG(N7:1)', -7) && eq('N7:1|0', 32767, true) && eq('30000*2', 32767, true);
+  }));
+  check('CPT: a wrong expression is refused with the reason (/ is for bit addresses, divide is |; bit addresses are not values)', await page.evaluate(() => {
+    const v = x => PLCcore.validArg('expr', x) || '';
+    return /divide is \|/.test(v('N7:1/N7:2')) && /not a constant or a word/.test(v('B3:0/0+1')) && /ends with an operator/.test(v('N7:1+')) && /not closed/.test(v('(N7:1')) && v('(N7:1 + 5) * 2') === '';
+  }));
+  check('New Tag from an operand: an unknown name offers to create the tag with the type the operand needs, then the instruction takes it', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.openNew({ name: 'New tag', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await W(60);
+    const id = App.project.ladder.rungs[0].elems[0].id; Ladder.edit(id); await W(40);
+    const f = document.querySelector('.modal-wrap:last-child'); f.querySelector('#f_a0').value = 'START_PB';
+    f.querySelector('.modal-foot .btn.primary').click(); await W(60);
+    const ask = document.querySelector('.modal-wrap:last-child'), asked = /not a tag yet/.test(ask.textContent) && /BOOL/.test(ask.textContent);
+    ask.querySelector('.modal-foot .btn.primary').click(); await W(120);
+    const t = (App.project.tags || []).find(x => x.name === 'START_PB');
+    return asked && t && t.type === 'BOOL' && App.project.ladder.rungs[0].elems[0].a[0] === 'START_PB' && !document.querySelector('.modal-wrap');
+  }));
+  check('Tag browser: an operand lists the project\'s tags that fit it first (BOOL for a bit, INT and .ACC/.PRE for a word, TIMER for a timer)', await page.evaluate(async () => {
+    const W = ms => new Promise(q => setTimeout(q, ms));
+    App.project.tags.push({ name: 'LEVEL', type: 'INT', addr: 'N7:40', desc: '' }, { name: 'DELAY', type: 'TIMER', addr: 'T4:20', desc: '' }); App.tagChanged();
+    const id = App.project.ladder.rungs[0].elems[0].id; Ladder.edit(id); await W(40);
+    const opts = [...document.querySelectorAll('.modal-wrap:last-child datalist option')].map(o => o.value);
+    document.querySelector('.modal-wrap:last-child [data-x]').click();
+    return opts[0] === 'START_PB' && opts.includes('DELAY.DN') && !opts.includes('LEVEL');
+  }));
+  check('CPT is in the Compute/Math palette tab', await page.evaluate(() => !!document.querySelector('#view-ladder .ins-btn[data-ins="CPT"][data-g="Compute/Math"]') || [...document.querySelectorAll('#view-ladder .ins-btn[data-ins="CPT"]')].length > 0));
   check('Ladder: Find an instruction by mnemonic or by words of its name; Enter adds it', await page.evaluate(async () => {
     App.openNew({ name: 'Find', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 60));
     const byName = Ladder.findInstr('on delay'), byMn = Ladder.findInstr('ctu');

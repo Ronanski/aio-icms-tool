@@ -405,6 +405,8 @@
       App.tagChanged(); return undefined;
     }
   }
+  // New Tag from an operand in the instruction editor: returns an error message, else undefined
+  App.newTag = (name, type, desc = '') => saveTag(null, { name, type, alias: '', desc });
   function renameInProgram(from, to) {
     const re = new RegExp(`^${from}(\\.[A-Z]+)?$`);
     const fix = arr => arr.forEach(e => { if (e.t === 'BST') e.legs.forEach(fix); else e.a = e.a.map(x => (re.test(String(x).toUpperCase()) ? to + String(x).toUpperCase().slice(from.length) : x)); });
