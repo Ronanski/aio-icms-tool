@@ -1201,6 +1201,8 @@
         <button class="tbtn sm" data-act="fen">${App.plc.forcesEnabled ? 'Disable' : 'Enable'}</button>
         <button class="tbtn sm" data-act="fclr" ${forces.length ? '' : 'disabled'}>Remove all</button></div>
       <div class="force-list">${forces.length ? forces.map(k => `<div><code title="${k}">${esc(App.fmt(k))}</code> <b class="${App.plc.forces[k] ? 'fon' : 'foff'}">${App.plc.forces[k] ? 'ON' : 'OFF'}</b> <button data-frm="${k}">✕</button></div>`).join('') : '<p class="help">No forces installed. Right-click an I/O instruction or use F1/F0 above.</p>'}</div>`;
+    // a narrow panel scrolls the 16-bit grid: it starts at bit 0 (on the right, as in the reference software)
+    dtEl.querySelectorAll('table.dt.bits').forEach(t => { t.scrollLeft = t.scrollWidth; });
     dtCache = [...dtEl.querySelectorAll('[data-bit]')].map(el => ({ el, a: parse(el.dataset.bit), led: el.classList.contains('io-led'), on: null, f: null }))
       .concat([...dtEl.querySelectorAll('[data-word]')].map(el => ({ el, a: parse(el.dataset.word), word: true, t: null })))
       .concat([...dtEl.querySelectorAll('[data-tb]')].map(el => ({ el, tb: Number(el.dataset.tb), t: null })))

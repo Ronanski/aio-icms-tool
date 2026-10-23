@@ -437,6 +437,27 @@ function check(name, cond, info = '') {
     document.querySelector('.modal-wrap:last-child [data-x]').click();
     return opts[0] === 'START_PB' && opts.includes('DELAY.DN') && !opts.includes('LEVEL');
   }));
+  check('UI standards: no interface text under 11 px and no control under 24 × 24 px in the Ladder (WCAG 2.5.8)', await page.evaluate(async () => {
+    App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 80));
+    const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(e).visibility !== 'hidden'; };
+    const small = [...document.querySelectorAll('#view-ladder *, .topbar *, .plcbar *')].filter(e => !e.closest('svg') && vis(e) && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && parseFloat(getComputedStyle(e).fontSize) < 11);
+    const tiny = [...document.querySelectorAll('#view-ladder button, #view-ladder select, #view-ladder input:not([type=checkbox])')].filter(e => vis(e) && !e.closest('.ins-row, .ins-tabs') && (e.getBoundingClientRect().width < 24 || e.getBoundingClientRect().height < 24));
+    return small.length === 0 && tiny.length === 0;
+  }));
+  check('UI standards: white text on the RUN button and on a primary button reaches 4.5:1 in both themes (WCAG 1.4.3)', await page.evaluate(() => {
+    const L = c => { const [r, g, b] = c.match(/[\d.]+/g).map(Number).map(x => { x /= 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const cr = (a, b) => (Math.max(L(a), L(b)) + .05) / (Math.min(L(a), L(b)) + .05);
+    const out = [], th0 = document.documentElement.dataset.theme;
+    for (const th of ['light', 'dark']) {
+      document.documentElement.dataset.theme = th;
+      const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'OK'; document.body.appendChild(b);
+      const run = document.querySelector('.plcbar .mode button[data-mode="RUN"]'), was = run.classList.contains('on'); run.classList.add('on');
+      out.push(cr(getComputedStyle(b).backgroundColor, getComputedStyle(b).color), cr(getComputedStyle(run).backgroundColor, getComputedStyle(run).color));
+      if (!was) run.classList.remove('on'); b.remove();
+    }
+    if (th0 === undefined) delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = th0;
+    return out.every(x => x >= 4.5);
+  }));
   check('CPT is in the Compute/Math palette tab', await page.evaluate(() => !!document.querySelector('#view-ladder .ins-btn[data-ins="CPT"][data-g="Compute/Math"]') || [...document.querySelectorAll('#view-ladder .ins-btn[data-ins="CPT"]')].length > 0));
   check('Ladder: Find an instruction by mnemonic or by words of its name; Enter adds it', await page.evaluate(async () => {
     App.openNew({ name: 'Find', ladder: { rungs: [{ text: 'XIC I:0/1 OTE O:0/1' }] } }); App.setLayout('single'); App.showView('ladder'); await new Promise(q => setTimeout(q, 60));
@@ -772,8 +793,11 @@ function check(name, cond, info = '') {
   await wait(400);
   check('Workbench: every ladder toolbar button is visible inside its pane', await page.evaluate(() => {
     const pane = document.getElementById('view-ladder').getBoundingClientRect();
-    const btns = [...document.querySelectorAll('#view-ladder .lad-toolbar button')].filter(b => b.offsetParent);
-    return btns.length > 30 && btns.every(b => { const r = b.getBoundingClientRect(); return r.right <= pane.right + 1 && r.left >= pane.left - 1 && r.width > 0; });
+    // the instruction palette is a ribbon that scrolls inside its own row; every other tool is in sight
+    const inPane = e => { const r = e.getBoundingClientRect(); return r.right <= pane.right + 1 && r.left >= pane.left - 1 && r.width > 0; };
+    const btns = [...document.querySelectorAll('#view-ladder .lad-toolbar button')].filter(b => b.offsetParent && !b.closest('.ins-row, .ins-tabs'));
+    const rows = [...document.querySelectorAll('#view-ladder .lad-ins .ins-row, #view-ladder .lad-ins .ins-tabs')];
+    return btns.length > 20 && btns.every(inPane) && rows.length === 2 && rows.every(inPane);
   }));
   check('Workbench: the Ladder toolbar is compact beside the other views (no second set of controller lights, palette one row)', await page.evaluate(() => {
     const tb = document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect();
@@ -3847,6 +3871,14 @@ function check(name, cond, info = '') {
     return bs.length >= 5 && bs.every(b => b.querySelector('svg.ic').getBoundingClientRect().width > 8);
   }), await phone.evaluate(() => [...document.querySelectorAll('#view-schematic .sch-toolbar .tbtn')].filter(b => b.offsetParent).map(b => (b.querySelector('svg.ic') ? Math.round(b.querySelector('svg.ic').getBoundingClientRect().width) : 'x') + b.textContent.trim().slice(0, 8)).join(',')));
   await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(200);
+  check('phone: a dialog with a long option (New project) fits the screen, OK and × in sight', await phone.evaluate(async () => {
+    App.newProjectDialog ? App.newProjectDialog() : [...document.querySelectorAll('button')].find(b => /^File/.test(b.textContent.trim())).click();
+    await new Promise(q => setTimeout(q, 150));
+    if (!document.querySelector('.modal')) { const n = [...document.querySelectorAll('.ctx-menu button')].find(b => /New project/.test(b.textContent)); if (n) n.click(); await new Promise(q => setTimeout(q, 200)); }
+    const m = document.querySelector('.modal'), r = m && m.getBoundingClientRect(), ok = m && [...m.parentElement.querySelectorAll('.modal-foot .btn')].pop().getBoundingClientRect();
+    const res = !!m && r.left >= 0 && r.right <= innerWidth + 1 && ok.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
+    if (m) m.parentElement.querySelector('[data-x]').click(); return res;
+  }));
   check('phone: the instruction palette has a row of its own and + Rung is in sight without scrolling the toolbar', await phone.evaluate(() => {
     const r = document.querySelector('#view-ladder [data-act="rung"]').getBoundingClientRect(), p = document.querySelector('#view-ladder .lad-ins').getBoundingClientRect();
     return getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && r.right <= innerWidth && r.left >= 0 && r.top > p.bottom - 2 && p.width > innerWidth * 0.8;
