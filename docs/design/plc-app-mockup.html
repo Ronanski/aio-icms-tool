@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PLC App Mockup</title>
+<title>Logic Studio MT Mockup</title>
 <!-- Visual mockup of the new PLC app (plc.html). Layout and sizes follow the desktop programming software
      the owner uses as the reference: 11 px text, 16 px icons, 22 px buttons, thin rungs. See docs/PLC_APP_SPEC.md. -->
 <style>
@@ -419,7 +419,7 @@ const ICO = {
 const ic = (k, t) => `<span class="btn" title="${t}"><svg width="16" height="16" viewBox="0 0 16 16">${ICO[k]}</svg></span>`;
 function chrome(info) {
   const live = online();
-  document.getElementById('ttl').textContent = `PLC Designer - Motor_Demo [PLC-CPU 1.0]${state === 'offline' || state === 'newtag' ? '*' : ''}`;
+  document.getElementById('ttl').textContent = `Logic Studio MT - Motor_Demo [PLC-CPU 1.0]${state === 'offline' || state === 'newtag' ? '*' : ''}`;
   document.getElementById('dirty').textContent = state === 'offline' || state === 'newtag' ? '*' : '';
   document.getElementById('tb').innerHTML = [ic('new', 'New'), ic('open', 'Open'), ic('save', 'Save'), '<span class="sep"></span>',
     ic('cut', 'Cut'), ic('copy', 'Copy'), ic('paste', 'Paste'), '<span class="sep"></span>', ic('undo', 'Undo'), ic('redo', 'Redo'),
