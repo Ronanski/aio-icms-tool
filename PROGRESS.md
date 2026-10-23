@@ -43,7 +43,7 @@
 - [x] Long programs: rendering 500 rungs with errors 1.8 s → 0.14 s; off-screen rendering not needed at that size
 - [x] Hands-on pass 2: Wiring fit, Workbench toolbar, phone Ladder toolbar and Learn, diagram fit on open
 - [x] Simulated time in a background tab: caught up in 0.1 s steps (Q19)
-- [ ] Generate the Electrical Diagram from the Wiring
+- [ ] Generate the Electrical Diagram from the Wiring (listed by the owner 2026-10-23 for later: a symbol for each Wiring device by its tag, the control circuit as current paths between the supply points, the power circuit beside it, wires following the Wiring terminals; it must lay out and route cleanly, so it is its own feature)
 - [ ] Controller in another slot than 0 (the trainer keeps it in slot 0)
 - [ ] Comms-software module in slot 0 as on the emulated chassis (real chassis have none; not planned unless the owner wants it)
 - [ ] 32-point I/O card with `Local:s:I.Data[1].b` / `O.Data[0].b` addressing (needs 32-bit I/O words)
