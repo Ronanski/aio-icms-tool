@@ -42,6 +42,7 @@
     MUL: { k: 'box', out: true, name: 'Multiply', grp: 'Math/Move', args: [A('Source A', 'src', 'N7:0'), A('Source B', 'src', '2'), A('Dest', 'dest', 'N7:1')], help: 'Dest = A × B' },
     DIV: { k: 'box', out: true, name: 'Divide', grp: 'Math/Move', args: [A('Source A', 'src', 'N7:0'), A('Source B', 'src', '2'), A('Dest', 'dest', 'N7:1')], help: 'Dest = A ÷ B (rounded)' },
     CLR: { k: 'box', out: true, name: 'Clear', grp: 'Math/Move', args: [A('Dest', 'dest', 'N7:0')], help: 'Dest = 0' },
+    CPT: { k: 'box', out: true, name: 'Compute', grp: 'Math/Move', args: [A('Dest', 'dest', 'N7:0'), A('Expression', 'expr', '(N7:1+N7:2)*2')], help: 'Dest = Expression: + − * | (divide; / is for bit addresses, as in the controller) ** and ( ), SQR, ABS, NEG of constants and word addresses, e.g. (N7:1+5)*2 or N7:1|4. Rounded like DIV; divide by zero or an overflow sets S:0/1.' },
     COP: { k: 'box', out: true, name: 'Copy File', grp: 'File/Seq', args: [A('Source', 'file', '#N7:0'), A('Dest', 'file', '#N7:10'), A('Length', 'len', '4')], help: 'Copies Length words from the Source file to the Dest file while the rung is true.' },
     FLL: { k: 'box', out: true, name: 'Fill File', grp: 'File/Seq', args: [A('Source', 'src', '0'), A('Dest', 'file', '#N7:10'), A('Length', 'len', '4')], help: 'Writes Source into Length words of the Dest file while the rung is true.' },
     SQO: { k: 'box', out: true, name: 'Sequencer Output', grp: 'File/Seq', bits: ['EN', 'DN'], args: [A('File', 'file', '#N7:20'), A('Mask', 'src', '-1'), A('Dest', 'dest', 'O:0'), A('Control', 'ctl', 'R6:0'), A('Length', 'len', '4'), A('Position', 'int', '0')], help: 'On each false-to-true rung: POS steps to the next word of the File (back to 1 after LEN) and writes it through the Mask into Dest. Step 0 is the reset state.' },
@@ -135,7 +136,55 @@
     if (/^[A-Z_][A-Z0-9_]*$/.test(s)) return `“${s}” is not an address or a tag yet: add it in Tags, or type an address such as B3:0/0`;
     return 'Expected a bit address, e.g. I:0/0, O:0/1, B3:0/2, T4:0/DN';
   }
+  /* CPT expression: constants and word addresses with + - * / ** ( ) and the functions SQR ABS NEG, compiled to
+     postfix once. Written without spaces in the rung text (spaces typed in the editor are taken out). */
+  const FN = ['SQR', 'ABS', 'NEG'], PREC = { '+': 1, '-': 1, '*': 2, '|': 2, '**': 3 };
+  function compileExpr(str) {
+    const s = String(str || '').toUpperCase().replace(/\s+/g, '');
+    if (!s) return { err: 'Type an expression, e.g. (N7:1+5)*2' };
+    // divide is | as in the controller's CPT: / belongs to bit addresses (B3:0/0)
+    const tk = s.match(/\*\*|[-+*|()]|[^-+*|()]+/g) || [];
+    const out = [], ops = [];
+    let prevVal = false;
+    for (const t of tk) {
+      if (t === '(') { ops.push(t); prevVal = false; continue; }
+      if (t === ')') {
+        while (ops.length && ops[ops.length - 1] !== '(') out.push({ op: ops.pop() });
+        if (!ops.length) return { err: 'A ) has no matching (' };
+        ops.pop();
+        if (FN.includes(ops[ops.length - 1]) || ops[ops.length - 1] === 'U-') out.push({ op: ops.pop() });
+        prevVal = true; continue;
+      }
+      if (PREC[t]) {
+        if (!prevVal) { if (t === '-') { ops.push('U-'); continue; } if (t === '+') continue; return { err: `"${t}" needs a value before it` }; }
+        while (ops.length && PREC[ops[ops.length - 1]] && (PREC[ops[ops.length - 1]] > PREC[t] || (PREC[ops[ops.length - 1]] === PREC[t] && t !== '**'))) out.push({ op: ops.pop() });
+        ops.push(t); prevVal = false; continue;
+      }
+      if (FN.includes(t)) { if (prevVal) return { err: `${t} needs an operator before it` }; ops.push(t); continue; }
+      if (prevVal) return { err: `An operator is missing before "${t}"` };
+      const p = parse(t);
+      if (!p || (p.kind !== 'const' && p.kind !== 'word')) return { err: /\//.test(t) && !(p && p.kind === 'bit') ? `"${t}": divide is | in a CPT expression, as in the controller (/ is for bit addresses), e.g. N7:1|2` : `"${t}" is not a constant or a word address (N7:0, T4:0.ACC)` };
+      out.push({ v: p }); prevVal = true;
+      while (ops.length && ops[ops.length - 1] === 'U-') out.push({ op: ops.pop() });
+    }
+    if (!prevVal) return { err: 'The expression ends with an operator' };
+    while (ops.length) { const o = ops.pop(); if (o === '(') return { err: 'A ( is not closed' }; if (FN.includes(o)) return { err: `${o} needs ( ) around its value, e.g. ${o}(N7:0)` }; out.push({ op: o }); }
+    return { rpn: out, text: s };
+  }
+  function evalExpr(rpn, get) {
+    const st = [];
+    for (const x of rpn) {
+      if (x.v) { st.push(get(x.v)); continue; }
+      if (x.op === 'U-' || x.op === 'NEG') { st.push(-st.pop()); continue; }
+      if (x.op === 'ABS') { st.push(Math.abs(st.pop())); continue; }
+      if (x.op === 'SQR') { const a = st.pop(); st.push(a < 0 ? NaN : Math.sqrt(a)); continue; }
+      const b = st.pop(), a = st.pop();
+      st.push(x.op === '+' ? a + b : x.op === '-' ? a - b : x.op === '*' ? a * b : x.op === '|' ? (b === 0 ? Infinity : a / b) : Math.pow(a, b));
+    }
+    return st.pop();
+  }
   function validArg(ty, str) {
+    if (ty === 'expr') { const c = compileExpr(str); return c.err || null; }
     const p = parse(str);
     switch (ty) {
       case 'bit': return p && p.kind === 'bit' ? null : bitWhy(str, p);
@@ -286,7 +335,7 @@
       this.pw = Object.create(null); this.hl = Object.create(null);
       const prep = arr => arr.forEach(e => {
         if (e.t === 'BST') e.legs.forEach(prep);
-        else e._p = (e.a || []).map(parse);
+        else e._p = (e.a || []).map((s, k) => (INSTR[e.t] && INSTR[e.t].args[k] && INSTR[e.t].args[k].ty === 'expr' ? compileExpr(s) : parse(s)));
       });
       const prepR = r => { prep(r.elems); r._mcr = r.elems.some(e => e.t === 'MCR'); };
       rungs.forEach(prepR);
@@ -444,6 +493,16 @@
           hl[e.id] = p; return p;
         }
         case 'CLR': if (p) { this.setWord(A[0], 0); this.mathFlags(0, false); } hl[e.id] = p; return p;
+        case 'CPT': {
+          if (p && A[1] && A[1].rpn) {
+            // a half rounds away from zero like DIV; divide by zero or an overflow: S:0/1, Dest 32767 / -32768
+            const x = evalExpr(A[1].rpn, a => this.getWord(a));
+            const r = Number.isNaN(x) ? Infinity : Number.isFinite(x) ? Math.sign(x) * Math.round(Math.abs(x)) : x;
+            this.setWord(A[0], Number.isFinite(r) ? r : r < 0 ? -32768 : 32767);
+            this.mathFlags(r, false);
+          }
+          hl[e.id] = p; return p;
+        }
         case 'OSR': case 'OSF': {
           const st = !!this.getBit(A[0]), edge = e.t === 'OSR' ? p && !st : !p && st;
           this.setBit(A[1], edge); this.setBit(A[0], p); hl[e.id] = edge; return p;
@@ -599,7 +658,7 @@
           }
         });
         walk(r.elems);
-        const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR|OSR|OSF|COP|FLL|SQO|MCR|JSR|RET|MSG)"/);
+        const hasOut = JSON.stringify(r.elems).match(/"t":"(OTE|OTL|OTU|TON|TOF|RTO|CTU|CTD|RES|MOV|ADD|SUB|MUL|DIV|CLR|CPT|OSR|OSF|COP|FLL|SQO|MCR|JSR|RET|MSG)"/);
         if (r.elems.length && !hasOut) warns.push({ ri, msg: 'Rung has no output instruction' });
       });
       // one timer used by two timer instructions shares one ACC; a CTU/CTD pair must agree on the preset
