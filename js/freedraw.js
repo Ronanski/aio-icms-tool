@@ -566,7 +566,7 @@
   };
 
   /* ---------- view ---------- */
-  let body = null, svg = null, gv = null, view = { x: 60, y: 60, k: 1 }, sel = null, wiring = null, drag = null, lastSig = '';
+  let body = null, svg = null, gv = null, view = { x: 60, y: 60, k: 1 }, sel = null, wiring = null, drag = null, lastSig = '', needFit = true;
   // several symbols selected (Shift+click, Shift+drag a box, Ctrl+A); sel.i stays the one the side panel shows
   let group = new Set(), clip = null;
   const many = () => (group.size ? [...group] : sel && sel.i ? [sel.i] : []).filter(id => itemOf(id));
@@ -778,7 +778,7 @@
     const [tx, ty] = S.look === 'src' ? at(0, -22) : S.look === 'motor' || S.look === 'gen' ? at(-30, -14) : S.look === 'conv' ? at(-28, -20) : at(isPole ? -((S.np || 1) * 10) - 22 : -30, -12);
     const upright = (it.r === 0 || it.r === 180) && !S.io && ['no', 'nc', 'co', 'nonc', 'coil', 'tcoil', 'tcoiloff', 'tcoilboth', 'tcoilfl', 'icoil', 'lamp', 'horn', 'bell', 'siren', 'heat'].includes(S.look);
     // left of the contact, and of its push button / knob head when it has one (not on top of it)
-    if (upright) { const ux = it.x - (S.act && it.r === 0 ? 38 : S.look === 'co' || S.look === 'nonc' ? 34 : 22); o.push(`<text class="ftag up" x="${ux}" y="${it.y}" transform="rotate(-90 ${ux} ${it.y})">-${esc(it.tag)}</text>`); }
+    if (upright) { const ux = it.x - (S.act && it.r === 0 ? 38 : S.look === 'co' || S.look === 'nonc' || /^tcoil/.test(S.look) ? 34 : 22); o.push(`<text class="ftag up" x="${ux}" y="${it.y}" transform="rotate(-90 ${ux} ${it.y})">-${esc(it.tag)}</text>`); }
     else o.push(`<text class="ftag" x="${tx}" y="${ty}">-${esc(it.tag)}</text>`);
     if (S.look === 'motor' || S.look === 'gen') { const [mx, my] = at(0, 0); S.label.split('\n').forEach((l, i, a) => o.push(`<text class="mtxt" x="${mx}" y="${my + 4 + (i - (a.length - 1) / 2) * 12}">${esc(l)}</text>`)); }
     if (S.look === 'src') { const [mx, my] = at(0, 0); o.push(`<text class="mtxt sm" x="${mx}" y="${my + 4}">${esc(S.label)}</text>`); }
@@ -866,15 +866,15 @@
   }
   FD.toggleLib = function () { libUi.open = !libUi.open; saveLib(); const w = body && body.querySelector('.fd-wrap'); if (w) w.classList.toggle('nolib', !libUi.open); return libUi.open; };
   FD.libOpen = () => libUi.open;
-  FD.zoom = function (how) {
+  FD.zoom = function (how, most = 2) {
     if (!svg) return;
     const r = svg.getBoundingClientRect();
     if (how === 'fit') {
       const its = fr().items;
       if (!its.length) { view = { x: 60, y: 60, k: 1 }; }
       else {
-        const x1 = Math.min(...its.map(i => i.x)) - 70, x2 = Math.max(...its.map(i => i.x)) + 70, y1 = Math.min(...its.map(i => i.y)) - 70, y2 = Math.max(...its.map(i => i.y)) + 70;
-        const k = Math.max(0.3, Math.min(2, Math.min(r.width / (x2 - x1), r.height / (y2 - y1))));
+        const x1 = Math.min(...its.map(i => i.x)) - 70, x2 = Math.max(...its.map(i => i.x)) + 70, y1 = Math.min(...its.map(i => i.y)) - 70, y2 = Math.max(...its.map(i => i.y)) + 110; // a symbol hangs below its anchor; the zoom buttons sit at the bottom
+        const k = Math.max(0.3, Math.min(most, Math.min(r.width / (x2 - x1), r.height / (y2 - y1))));
         view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: (r.height - (y2 - y1) * k) / 2 - y1 * k };
       }
     } else {
@@ -992,6 +992,8 @@
     pb.hidden = !ph; if (pb.innerHTML !== ph && !(pb.contains(document.activeElement) && /^(INPUT|SELECT)$/.test(document.activeElement.tagName))) pb.innerHTML = ph;
     vw.classList.toggle('fd-barred', !!ph);
     svg = host.querySelector('svg'); gv = svg.querySelector('.fv');
+    // an opened project shows its whole drawing (no bigger than 100 %), not the corner the last one was looking at
+    if (needFit && svg.clientWidth) { needFit = false; FD.zoom('fit', 1); }
     bind();
     lastSig = sig();
   };
@@ -1673,7 +1675,7 @@
     else if (k === 'd' || k === 'D') { ev.preventDefault(); FD.copy(); }
     else if (k === 'Escape') { wiring = null; pbar = null; sel = null; group.clear(); if (body) FD.render(body); H.side(); }
   };
-  FD.resetSel = () => { sel = null; group.clear(); wiring = null; drag = null; lastSig = ''; };
+  FD.resetSel = () => { sel = null; group.clear(); wiring = null; drag = null; lastSig = ''; needFit = true; };
   FD.selected = () => (sel && sel.i ? itemOf(sel.i) : null);
   /* Properties of the selected symbol: its tag (and PLC point), a comment, and the settings of its device — the same
      settings the Wiring shows (one place: the device's props), so a delay or coil voltage changed here is the Wiring's too */

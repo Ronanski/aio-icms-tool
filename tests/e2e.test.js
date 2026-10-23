@@ -440,6 +440,16 @@ function check(name, cond, info = '') {
     await W(80); const b = App.plc.read('T4:0.ACC'); App.plc.setMode('PROG');
     return b - a >= 95 && b - a <= 140;
   }));
+  check('Ladder: 500 rungs with errors and a selection render in well under a second (each rung searched every error before: ~1.8 s)', await page.evaluate(async () => {
+    const prev = App.currentId, view = App.view;
+    App.openNew({ name: 'Big errors', ladder: { rungs: Array.from({ length: 500 }, (_, i) => ({ text: `XIC B3:${i % 50}/${i % 16} BST XIC I:0/${i % 12} NXB XIO B3:1/${i % 16} BND OTE O:0/${i % 8}` })) } });
+    App.setLayout('single'); App.showView('ladder'); Ladder.verify(); await new Promise(q => setTimeout(q, 50));
+    document.querySelectorAll('.modal-wrap [data-x]').forEach(x => x.click()); await new Promise(q => setTimeout(q, 30));
+    document.querySelector('#view-ladder .rung .el[data-uid]').dispatchEvent(new MouseEvent('click', { bubbles: true })); await new Promise(q => setTimeout(q, 50));
+    const t = performance.now(); Ladder.render(); const ms = performance.now() - t;
+    const ok = document.querySelectorAll('#view-ladder .rung.has-err').length > 50 && ms < 700;
+    const tmp = App.currentId; Ladder.resetSel(); App.openSaved(prev); Store.remove(tmp); App.showView(view); return ok;
+  }));
   check('Dialogs: Tab stays inside the dialog and focus goes back where it was when it closes', await page.evaluate(async () => {
     const W = ms => new Promise(q => setTimeout(q, ms));
     const start = document.querySelector('[data-theme-btn]'); start.focus();
@@ -719,11 +729,27 @@ function check(name, cond, info = '') {
     const btns = [...document.querySelectorAll('#view-ladder .lad-toolbar button')].filter(b => b.offsetParent);
     return btns.length > 30 && btns.every(b => { const r = b.getBoundingClientRect(); return r.right <= pane.right + 1 && r.left >= pane.left - 1 && r.width > 0; });
   }));
+  check('Workbench: the Ladder toolbar is compact beside the other views (no second set of controller lights, palette one row)', await page.evaluate(() => {
+    const tb = document.querySelector('#view-ladder .lad-toolbar').getBoundingClientRect();
+    return getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && tb.height < 300 && getComputedStyle(document.querySelector('.plcbar .leds')).display !== 'none';
+  }));
   check('Workbench: the wiring zoom is visible', await page.evaluate(() => {
     const pane = document.getElementById('view-wiring').getBoundingClientRect(), z = document.querySelector('#view-wiring [data-z]').getBoundingClientRect();
     return z.right <= pane.right + 1 && z.width > 0;
   }));
   await page.evaluate(() => App.setLayout('single'));
+  check('Wiring: Fit keeps every device above the hint line at the bottom (the lamps were under it)', await page.evaluate(async () => {
+    const prev = App.currentId; App.loadExample('practice'); App.showView('wiring'); await new Promise(q => setTimeout(q, 300)); Workspace.fit(); await new Promise(q => setTimeout(q, 50));
+    const vp = document.querySelector('#view-wiring .ws-svg .vp'), c = [...vp.children].find(g => g.getAttribute('class') === 'comps').getBoundingClientRect();
+    const ok = c.bottom <= document.querySelector('#view-wiring .ws-hint').getBoundingClientRect().top; const tmp = App.currentId; App.openSaved(prev); Store.remove(tmp); return ok;
+  }));
+  check('the I/O strip in the bar shows an ON input in green, like the Data Files', await page.evaluate(() => {
+    const i = document.createElement('i'); i.className = 'on in'; const s = document.querySelector('.io-strip') || document.body; s.appendChild(i);
+    const ref = document.createElement('span'); ref.style.color = 'var(--ok)'; document.body.appendChild(ref);
+    const same = getComputedStyle(i).backgroundColor === getComputedStyle(ref).color; i.remove(); ref.remove(); return same;
+  }));
+  check('the file-based address style is named in SLC notation (I:e/b), true for a compact PLC and a rack', await page.evaluate(() => [...document.querySelectorAll('option')].some(o => /File-based \(I:e\/b\)/.test(o.textContent)) && ![...document.querySelectorAll('option')].some(o => /I:1\/0\)/.test(o.textContent))));
+  await page.evaluate(() => App.showView('ladder'));
 
   pagesInfo.stable = { version: '99.0.0', build: 'v99.0.0', notes: '> note' };
   await page.evaluate(() => { localStorage.setItem('plc-trainer.channel', 'stable'); return Updater.check(true); });
@@ -3775,6 +3801,18 @@ function check(name, cond, info = '') {
     return bs.length >= 5 && bs.every(b => b.querySelector('svg.ic').getBoundingClientRect().width > 8);
   }), await phone.evaluate(() => [...document.querySelectorAll('#view-schematic .sch-toolbar .tbtn')].filter(b => b.offsetParent).map(b => (b.querySelector('svg.ic') ? Math.round(b.querySelector('svg.ic').getBoundingClientRect().width) : 'x') + b.textContent.trim().slice(0, 8)).join(',')));
   await phone.evaluate(() => App.showView('ladder')); await phone.waitForTimeout(200);
+  check('phone: the instruction palette has a row of its own and + Rung is in sight without scrolling the toolbar', await phone.evaluate(() => {
+    const r = document.querySelector('#view-ladder [data-act="rung"]').getBoundingClientRect(), p = document.querySelector('#view-ladder .lad-ins').getBoundingClientRect();
+    return getComputedStyle(document.querySelector('#view-ladder .lad-status')).display === 'none' && r.right <= innerWidth && r.left >= 0 && r.top > p.bottom - 2 && p.width > innerWidth * 0.8;
+  }));
+  check('phone: a tapped exercise in Learn is brought into sight (the list is above it)', await phone.evaluate(async () => {
+    App.showView('learn'); await new Promise(q => setTimeout(q, 100));
+    const tab = document.querySelector('#view-learn [data-ltab="ex"]'); if (tab) tab.click(); await new Promise(q => setTimeout(q, 100));
+    document.querySelectorAll('#view-learn [data-lesson]')[2].click(); await new Promise(q => setTimeout(q, 200));
+    const h = document.querySelector('#view-learn .learn-body h2').getBoundingClientRect();
+    App.showView('ladder'); return h.top >= 0 && h.top < innerHeight / 2;
+  }));
+  await phone.waitForTimeout(200);
   check('phone: the Errors pane head is one row and "Rung n of m" is in sight', await phone.evaluate(() => {
     const h = document.querySelector('#view-ladder .lad-out-head'), r = h.querySelector('.lad-rungpos').getBoundingClientRect();
     return h.getBoundingClientRect().height <= 40 && r.right <= innerWidth && [...h.querySelectorAll('.oc')].every(c => c.getBoundingClientRect().height <= 32);
@@ -3882,7 +3920,7 @@ function check(name, cond, info = '') {
   check('tapping an HMI button on a phone starts the motor', await phone.evaluate(() => App.plc.read('O:0/0') === 1));
   await phone.evaluate(() => App.showView('ladder'));
   await phone.waitForTimeout(300);
-  check('phone toolbars show a fade where more buttons are hidden', await phone.evaluate(() => document.querySelector('.lad-toolbar').classList.contains('more-r')));
+  check('phone toolbars show a fade where more buttons are hidden', await phone.evaluate(() => document.querySelector('.lad-more').classList.contains('more-r') && document.querySelector('.lad-ins .ins-row').classList.contains('more-r')));
   check('no page errors on phone', perr.length === 0, perr.join(' | '));
 
   console.log('Installable app (PWA)');
@@ -3933,6 +3971,11 @@ function check(name, cond, info = '') {
       const t = document.querySelector('#view-schematic').textContent;
       App.openNew(Examples.EX.stardelta.build()); App.showView('schematic'); await new Promise(q => setTimeout(q, 300));
       return t.includes('no Electrical Diagram yet') && t.includes('Star-delta starter');
+    }));
+    check('Electrical Diagram: an opened project shows its whole drawing (every symbol inside the view)', await fo.evaluate(() => {
+      const box = document.querySelector('#view-schematic .free-svg').getBoundingClientRect();
+      const els = [...document.querySelectorAll('#view-schematic .fitem')].map(g => g.getBoundingClientRect()).filter(r => r.width > 0);
+      return els.length > 10 && els.every(r => r.left >= box.left - 1 && r.right <= box.right + 1 && r.top >= box.top - 1 && r.bottom <= box.bottom + 1);
     }));
     check('free draw only: the converted star-delta starter still runs (the start button pulls in its contactor)', await fo.evaluate(async () => {
       document.querySelector('#view-schematic [data-fdact="play"]').click();

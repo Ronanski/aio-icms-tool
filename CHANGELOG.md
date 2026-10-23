@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (hands-on pass 2)
+- **Electrical Diagram:** an opened project shows its whole drawing (Fit, no bigger than 100 %). It used to open on the corner the last project was looking at, so the star-delta power circuit was off screen.
+- **Electrical Diagram:** a timer coil's tag (-KT1) no longer lies on the symbol.
+- **Phone Ladder:** the instruction palette has a row of its own, and the other tools are one scrolling row under it with **+ Rung** first. Before, the status box filled the width (one instruction in sight) and + Rung was far off to the right. The bar above stays the controller.
+- **Phone Learn:** tapping a lesson or exercise in the list brings its page into sight. The page used to open below the long list, out of view.
+- **Workbench:** the Ladder toolbar beside the Wiring and HMI is about 110 px shorter (356 → 247 px at 1280 × 800). The bar above is the controller, the instruction palette is one scrolling row, and the groups wrap as a whole, so more rungs are in sight.
+- **Long programs:** a Ladder of 500 rungs with errors redraws in about 0.14 s instead of 1.8 s after every click or edit. Each rung used to search the whole program for every error.
+- **Wiring:** Fit leaves the hint line at the bottom out, so the lowest devices (the practice board lamps) are no longer under it.
+- **I/O strip** in the bar: an ON input or output is green, as in the Data Files (it was amber, the colour of a forced bit).
+- **Address style** "File-based (I:e/b)" and the PLC target name use SLC element/bit notation. "I:1/0" was wrong for the compact PLC (I:0/0).
+- **Examples:** "Three motors" is no longer called an IEC diagram; the Electrical Diagram is free draw only.
+
 ### Changed
 - **New look: "Engineering Neutral"** (`docs/DESIGN_SYSTEM.md`):
   - neutral grey surfaces in light and dark;

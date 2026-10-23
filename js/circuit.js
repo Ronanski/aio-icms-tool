@@ -2594,9 +2594,9 @@
   /* PLC target of a project: the file-based rack (data files, I:1/0) or the tag-based 1756-style chassis (Local:1:I.Data.0).
      It picks the look of the rack modules, which controllers the Wiring library offers (a def's target), the default
      address style and the names in the Organizer. The solver and the PLC engine are the same for both. */
-  const TARGETS = { file: 'File-based controller (data files, I:1/0)', tag: 'Tag-based controller, 1756-style chassis (Local:1:I.Data.0)' };
+  const TARGETS = { file: 'File-based controller (data files, I:e/b)', tag: 'Tag-based controller, 1756-style chassis (Local:1:I.Data.0)' };
   const forTarget = (type, target) => !DEFS[type].target || DEFS[type].target === (target === 'tag' ? 'tag' : 'file');
-  const STYLES = { file: 'File-based (I:1/0)', tag: 'Tag-based (Local:1:I.Data.0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
+  const STYLES = { file: 'File-based (I:e/b)', tag: 'Tag-based (Local:1:I.Data.0)', bitbyte: 'Bit/byte (I0.0, Q0.0)', basic: 'Basic (I1, Q1)' };
   function addrBook(circ, io, style) {
     const idx = { I: [], O: [] };
     for (const m of ioMap(circ, io)) if (!m.analog) for (let b = 0; b < m.n; b++) idx[m.file].push(`${m.file}:${m.word}/${b}`);

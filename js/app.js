@@ -1452,7 +1452,8 @@
         <table class="ref"><tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Save · Save as · Open project</td></tr><tr><td><kbd>Ctrl</kbd>+scroll</td><td>Zoom the ladder or the HMI (scroll alone zooms the wiring)</td></tr><tr><td>Drag an instruction</td><td>Move it to another place or rung (mouse). Right-click → Change to… swaps XIC ↔ XIO, TON ↔ TOF and so on.</td></tr><tr><td><kbd>Del</kbd></td><td>Delete selected instruction / rung / wire / device</td></tr><tr><td><kbd>Enter</kbd></td><td>Edit selected instruction</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Undo / redo (ladder)</td></tr><tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>New rung</td></tr><tr><td><kbd>Esc</kbd></td><td>Cancel wire / clear selection</td></tr><tr><td><kbd>M</kbd></td><td>Multimeter (Wiring)</td></tr></table>`}
       </article></div>`;
     renderGoals();
-    const go = id => { lessonId = id; const l = Examples.LESSONS.find(x => x.id === id); if (l && l.goals) trackLesson(id); renderLearn(); const bd = el.querySelector('.learn-body'); if (bd) bd.scrollTop = 0; };
+    // on a phone the list is above the page: a tap shows the page instead of leaving the list on screen
+    const go = id => { lessonId = id; const l = Examples.LESSONS.find(x => x.id === id); if (l && l.goals) trackLesson(id); renderLearn(); const bd = el.querySelector('.learn-body'); if (bd) { bd.scrollTop = 0; if (innerWidth <= 760) bd.scrollIntoView({ block: 'start' }); } };
     const showResult = (res, note) => {
       const box = el.querySelector('[data-grade]');
       if (res.error) { box.innerHTML = `<p class="grade-bad">${esc(res.error)}</p>`; return; }
@@ -1765,7 +1766,7 @@
     Schematic.init(document.getElementById('view-schematic'));
     bindChrome();
     bindGutters();
-    ['.plcbar', '.lad-toolbar', '.ws-toolbar', '.hmi-toolbar'].forEach(q => document.querySelectorAll(q).forEach(UI.scrollCue));
+    ['.plcbar', '.lad-toolbar', '.lad-more', '.lad-ins .ins-row', '.ws-toolbar', '.hmi-toolbar'].forEach(q => document.querySelectorAll(q).forEach(UI.scrollCue));
     setTheme(theme);
     I18N.apply();
     Store.migrate();

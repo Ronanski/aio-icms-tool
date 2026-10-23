@@ -1210,7 +1210,7 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 .ws-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 @media (min-width: 761px) and (max-width: 1280px) { .ws-toolbar .tb-lbl { display: none; } .ws-toolbar { gap: 6px; } }
 /* Data Files: an ON bit is green (energized), so it is not mistaken for a forced one (amber) */
-.io-led.on, .io-row[data-io^="O"] .io-led.on { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 60%, transparent); }
+.io-led.on, .io-row[data-io^="O"] .io-led.on, .io-strip i.on.in, .io-strip i.on.out { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 60%, transparent); }
 /* up to 1024 px (repeated here: the rules above lost to later ones) the bar above is the controller and the ladder status box steps back, so the instruction palette gets the room */
 @media (min-width: 761px) and (max-width: 1024px) {
   #main:not(.multi) .lad-toolbar .lad-status { display: none !important; }
@@ -1236,3 +1236,25 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
 .lad-out .oc, .lad-rungpos { white-space: nowrap; }
 .lad-out-head { min-width: 0; }
 @media (max-width: 760px) { .lad-out .oc { padding: 1px 6px; min-height: 28px; } .lad-out-head { gap: 3px; padding: 2px 6px; } }
+/* the Ladder beside other views (Workbench): a compact toolbar. The bar above is the controller (its lights show when
+   the Ladder is not alone), the instruction palette is one scrolling row with its tabs, and the groups wrap as a whole */
+#main.multi .lad-toolbar { flex-wrap: wrap; row-gap: 4px; column-gap: 6px; }
+#main.multi .lad-toolbar .tb-group { flex-wrap: wrap; border-right: 0; padding-right: 0; row-gap: 4px; }
+#main.multi .lad-toolbar .tb-lbl, #main.multi .lad-toolbar .lad-status { display: none !important; }
+#main.multi .lad-toolbar .lad-ins { flex: 1 1 100%; min-width: 0; }
+#main.multi .lad-ins .ins-row, #main.multi .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+#main.multi .lad-ins .ins-row > *, #main.multi .lad-ins .ins-tabs > * { flex-shrink: 0; }
+/* the groups after the instruction palette: no box of their own on a computer or tablet */
+.lad-more { display: contents; }
+/* phone: the instruction palette is a row of its own, and every other tool is one scrolling row under it with + Rung
+   first (one long row hid + Rung far to the right). The bar above is the controller. */
+@media (max-width: 760px) {
+  .lad-toolbar { flex-wrap: wrap; overflow-x: visible; row-gap: 4px; }
+  .lad-toolbar .lad-status { display: none !important; }
+  .lad-toolbar .lad-ins { flex: 1 1 100%; min-width: 0; }
+  .lad-ins .ins-row, .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .lad-ins .ins-row > *, .lad-ins .ins-tabs > * { flex-shrink: 0; }
+  .lad-more { display: flex; flex: 1 1 100%; min-width: 0; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .lad-more > .tb-group { flex: none; flex-wrap: nowrap; }
+  .lad-more > .tb-group:has([data-act="rung"]) { order: -1; }
+}

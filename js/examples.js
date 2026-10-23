@@ -503,13 +503,13 @@
   };
 
   EX.threemotors = {
-    title: 'Three motors (IEC Electrical Diagram)', desc: 'Three DOL motors drawn the IEC way: main breaker Q4, motor feeders Q1-Q3 → KM1-KM3 → F1-F3 → M1-M3, and the control current paths with stop/start, seal-in, run lamps and pilot lamps. The diagram wires everything in the Wiring for you.',
+    title: 'Three motors (hardwired, Electrical Diagram)', desc: 'Three DOL motors drawn the IEC way: main breaker Q4, motor feeders Q1-Q3 → KM1-KM3 → F1-F3 → M1-M3, and the control current paths with stop/start, seal-in, run lamps and pilot lamps. The diagram wires everything in the Wiring for you.',
     build() {
       const B = builder();
       const q0 = B.add('supply3', 60, 20, { label: 'Q0' });
       const q4 = B.add('mccb3', 60, 140, { label: 'Q4' }, { on: true });
       B.add('lamp', 900, 40, { label: 'H7', color: 'blue', coil: '230VAC' });
-      const p = proj('Three motors (IEC diagram)', B.circ, [{ comment: 'This project is hardwired — no PLC. See the Electrical Diagram tab.', text: '' }]);
+      const p = proj('Three motors (hardwired)', B.circ, [{ comment: 'This project is hardwired — no PLC. See the Electrical Diagram tab.', text: '' }]);
       const e = (k, tag) => ({ k, tag });
       const motor = n => ({ comment: `Motor M${n}: stop S${n}, start S${n + 4}, seal-in KM${n} 13-14, overload F${n}, run lamp H${n}`,
         elems: [e('olnc', 'F' + n), e('pbnc', 'S' + n), { k: 'br', legs: [[e('pbno', 'S' + (n + 4))], [e('kmno', 'KM' + n)]] }, { k: 'br', legs: [[e('kmcoil', 'KM' + n)], [e('lamp', 'H' + n)]] }] });

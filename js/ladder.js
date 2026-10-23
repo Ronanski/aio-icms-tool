@@ -710,6 +710,7 @@
           <div class="lad-stat-lines"><span class="st-box" data-st-forces>No Forces</span><span class="st-box" data-st-edits>No Edits</span><span class="st-box bad" data-st-io hidden>I/O Not Responding</span></div></div>
         <div class="tb-group lad-ins"><div class="ins-row">${TB.flatMap(([g, list]) => list.map(t => `<button class="tbtn ins-btn${FAV.includes(t) ? ' fav' : ''}" data-ins="${t}" data-g="${g}" title="${t} — ${esc(INSTR[t].name)}: ${esc(INSTR[t].help)}" aria-label="${t} ${esc(INSTR[t].name)}">${ICON[t] ? `<span class="mono">${ICON[t]}</span>` : `<span class="boxico">${t}</span>`}<small>${t}</small></button>`)).join('')}</div>
           <div class="ins-tabs" role="tablist">${["Favorites", ...TB.map(x => x[0])].map(g => `<button class="ins-tab" role="tab" data-itab="${g}">${g}</button>`).join("")}<input class="ins-find" data-insfind list="insFindList" placeholder="Find…" title="Find an instruction by mnemonic or name (e.g. TON, timer, compare) — Enter adds it" aria-label="Find an instruction" autocomplete="off" spellcheck="false"><datalist id="insFindList">${Object.keys(INSTR).map(t => `<option value="${t}">${t} — ${esc(INSTR[t].name)}</option>`).join('')}</datalist></div></div>
+        <div class="lad-more">
         <div class="tb-group"><span class="tb-lbl">File</span><select class="lad-file" data-lfile title="Program file: LAD 2 is the main program, LAD 3–9 are subroutines" aria-label="Program file"></select><button class="tbtn" data-act="newfile" title="New subroutine file">＋ File</button><button class="tbtn" data-act="org" title="Controller Organizer: tasks, programs, routines, tags, I/O">🗂 Organizer</button><button class="tbtn" data-act="tags" title="Controller Tags: names for bits, integers, timers, counters and I/O">🏷 Tags</button></div>
         <div class="tb-group lad-comm"><span class="tb-lbl">Online</span><select data-cmode title="Simple: edits run at once. Realistic: the controller keeps its own program; Go Online, Download and Upload as with real PLC software." aria-label="Connection"><option value="simple">Simple</option><option value="real">Realistic</option></select><button class="tbtn" data-act="who" title="Who Active: find the controller through the engineering PC in the Wiring and set the project path">⇆ Who Active</button><button class="tbtn" data-act="network" title="Network: who active, remote PLCs, produced / consumed data">🖧 Network</button><span class="lad-comm-real"><button class="tbtn" data-act="online" title="Go online / offline with the controller">⇄ Go Online</button><button class="tbtn" data-act="download" title="Write the project into the controller (PROG)">⤓ Download</button><button class="tbtn" data-act="upload" title="Read the controller program into the project">⤒ Upload</button><button class="tbtn" data-act="compare" title="Show what differs between the project and the controller">≠ Compare</button></span></div>
         <div class="tb-group"><span class="tb-lbl">Rung</span>
@@ -732,6 +733,7 @@
           <button class="tbtn" data-act="zout" title="Zoom out (Ctrl + scroll)" aria-label="Zoom out">🔍−</button>
           <button class="tbtn zoomv" data-act="zreset" data-lz title="Reset zoom to 100%">100%</button>
           <button class="tbtn" data-act="zin" title="Zoom in (Ctrl + scroll)" aria-label="Zoom in">🔍＋</button>
+        </div>
         </div>
       </div>
       <div class="lad-banner" data-lbanner hidden></div>
@@ -1022,9 +1024,11 @@
     const avail = Math.max(360, (rungsEl.clientWidth - 70) / LZ);
     let W = avail;
     list.forEach(r => { W = Math.max(W, rungLayout(r).need); });
+    // the rungs with an error, found once (searching every error for every rung took seconds on long programs)
+    const errRungs = new Set(); ERR_IDS.forEach(id => { const f = find(id); if (f) errRungs.add(f.ri); });
     const html = list.map((r, i) => {
       const { svg, h } = renderRung(r, W);
-      const err = JSON.stringify(r.elems).includes('"id":') && [...ERR_IDS].some(id => find(id)?.ri === i);
+      const err = errRungs.has(i);
       return `<div class="rung${SEL.r === i ? ' sel' : ''}${err ? ' has-err' : ''}${r.elems.length ? '' : ' empty'}" data-r="${i}">
         <div class="rung-num" style="padding-top:${Math.round(50 * LZ)}px" title="Double-click to edit rung text; right-click (long-press on touch) for the rung menu">${String(i).padStart(4, '0')}</div>
         <div class="rung-body">${r.comment ? `<div class="rung-comment">${esc(r.comment)}</div>` : ''}
