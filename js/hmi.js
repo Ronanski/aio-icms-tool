@@ -158,6 +158,11 @@
     for (let y = 20; !at && y + t.h <= H - 10; y += 20) for (let x = 20; x + t.w <= W - 10; x += 20) if (free(x, y)) { at = [x, y]; break; }
     if (!at) { const n = here.length % 8; at = [40 + n * 20, 60 + n * 20]; }
     const o = { id: 'h' + hmi().seq, type, scr: cur, x: at[0], y: at[1], w: t.w, h: t.h, ...JSON.parse(JSON.stringify(t.d)), vis: '' };
+    // a new Go to Screen button goes to another screen (the next one) and is named after it, not "NEXT" back to itself
+    if (type === 'nav') {
+      const S = hmi().screens, i = S.findIndex(s => s.id === cur), to = S.length > 1 ? S[(i + 1) % S.length] : null;
+      if (to) { o.target = to.id; o.label = '▶ ' + to.name.toUpperCase(); }
+    }
     hmi().objects.push(o);
     sel = o.id;
     saveEdit();

@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (hands-on pass 3)
+- **HMI Studio:** a new Go to Screen button goes to the next screen and is named after it ("▶ ALARMS"). Before, it was "NEXT ▶" and pointed at Main, even on Main itself.
+
 ### Fixed (hands-on pass 2)
 - **Electrical Diagram:** an opened project shows its whole drawing (Fit, no bigger than 100 %). It used to open on the corner the last project was looking at, so the star-delta power circuit was off screen.
 - **Electrical Diagram:** a timer coil's tag (-KT1) no longer lies on the symbol.
