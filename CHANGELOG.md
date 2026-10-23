@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (UI/UX standards audit, ui-ux-design-master)
+- **Readable text:** no interface text under 11 px. It went down to 8 px: palette labels, data-file bits, status boxes, tabs and small print. Drawings follow their zoom.
+- **Controls at least 24 × 24 px (WCAG 2.5.8):** the Data Files F1 / F0 / × were 18 px, and the Wiring colour swatches 18 px.
+- **Contrast at least 4.5:1 (WCAG 1.4.3):**
+  - white text on the RUN button (it was 2.6:1) and on primary buttons in the dark theme (3.2:1);
+  - the ON bit "1" in the data tables (2.8:1);
+  - amber text such as "Saving…" and Verify warnings (3.4:1).
+- **Phone:** a dialog with a long option (New project) no longer runs past the screen. OK and × were cut off.
+- **Tablet and Tagalog:**
+  - the top bar stays on one row;
+  - the PLC bar scrolls inside itself instead of widening the page (821 / 876 px in an 800 px screen);
+  - the instruction palette no longer runs under the program file list.
+- **Data Files:** on a narrow panel the 16-bit grid scrolls and opens at bit 0, as in the reference software.
+- Measured with the skill's scripts (Playwright, 4 screen sizes, about 350 clicks):
+  - text under 11 px: 507 → 0 in the interface;
+  - controls under 24 px in the Ladder: 51 → 0;
+  - JS errors: 0, before and after.
+
 ### Added
 - **CPT (Compute)** in Compute/Math: Dest = an expression of constants and word addresses with + − * **|** (divide) ** and ( ), and SQR, ABS, NEG. Example: `(N7:1+5)*2` or `T4:0.ACC*10|4`.
   - The result is rounded like DIV. Divide by zero or an overflow gives 32767 / −32768 and sets S:0/1.

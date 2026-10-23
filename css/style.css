@@ -1258,3 +1258,60 @@ body[data-solo="ladder"] .plcbar .leds { display: none; }
   .lad-more > .tb-group { flex: none; flex-wrap: nowrap; }
   .lad-more > .tb-group:has([data-act="rung"]) { order: -1; }
 }
+/* UI/UX standards pass (ui-ux-design-master audit, 2026-10-23) */
+/* a dialog never grows wider than the screen: a long option (a select) used to push it past a phone (OK and × cut off) */
+.modal { max-width: calc(100vw - 32px); min-width: 0; }
+.modal-body select, .modal-body input, .modal-body textarea { max-width: 100%; min-width: 0; }
+@media (max-width: 760px) { .modal-wrap { grid-template-columns: minmax(0, 1fr); } .modal { max-width: 100vw; } }
+/* the PLC bar scrolls inside itself when it is too long (long Tagalog words): the page no longer grows sideways */
+.plcbar { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.plcbar::-webkit-scrollbar { display: none; }
+/* fills that carry white text reach 4.5:1 (WCAG 1.4.3) in both themes: green RUN 2.6:1 and dark-theme blue 3.2:1 were too light */
+:root { --fill-accent: var(--accent); --fill-ok: #1E7F3F; --fill-danger: #C0392B; --on-warn: #1A1300; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fill-accent: #2F6AD6; } }
+:root[data-theme="dark"] { --fill-accent: #2F6AD6; }
+.btn.primary { background: var(--fill-accent); border-color: var(--fill-accent); }
+.tbtn.on, .seg button.on, .lad-ghost { background: var(--fill-accent); border-color: var(--fill-accent); }
+.plcbar .mode button[data-mode="RUN"].on, .conn-chip.on, tr.k-mode .evk { background: var(--fill-ok); color: #fff; }
+tr.k-alarm .evk { background: var(--fill-danger); }
+tr.k-force .evk { color: var(--on-warn); }
+.btn.primary.danger { background: var(--fill-danger); border-color: var(--fill-danger); }
+/* an ON bit's 1 in the data tables: dark green text on the pale green cell (2.8:1 → 5.4:1 in light; dark keeps its bright green) */
+:root { --lad-on-text: #116B30; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --lad-on-text: var(--lad-on); } }
+:root[data-theme="dark"] { --lad-on-text: var(--lad-on); }
+table.dt td.bit.on { color: var(--lad-on-text); }
+/* no interface text under 11 px (it was down to 8 px). Drawings (ladder rungs, diagram, terminal screens) follow their zoom instead */
+.save-st, .beta-tag, .badge, .tb-lbl, .lad-stat-btn .caret, .lad-stat-lines, .st-box, .ins-tab, .io-force, .io-btns button, .pal-item span,
+.learn-nav h6, .led, .fd-nm, .task-strip .ts-kind, .ins-btn .boxico { font-size: 11px; }
+.lad-leds { font-size: 11px; }
+#main:not(.multi) .ins-btn .mono + small { font-size: 11px; }
+.lad-dt table.dt.bits { font-size: 11px; }
+.lad-dt table.dt.bits th:not(.rowh) { font-size: 11px; letter-spacing: -.6px; }
+/* every control is at least 24 × 24 px (WCAG 2.5.8): F1 / F0 / × in the Data Files were 18 px, the Wiring colour swatches 18 px */
+.io-btns button { min-width: 24px; min-height: 24px; }
+.ins-tab, .lad-stat-btn, .ins-find, .lad-out .oc { min-height: 24px; }
+.oc-tog { min-width: 24px; min-height: 24px; }
+.ws-toolbar .sw { width: 24px; height: 24px; }
+/* the instruction palette stays inside its own box at every width: its button row and its tabs scroll like a ribbon
+   (with longer Tagalog words it ran under the program file list at 1280 px) */
+.lad-toolbar .lad-ins { min-width: 0; max-width: 100%; }
+.lad-ins .ins-row, .lad-ins .ins-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.lad-ins .ins-row > *, .lad-ins .ins-tabs > * { flex-shrink: 0; }
+@media (min-width: 1281px) { #main:not(.multi) .lad-toolbar .lad-ins { flex: 0 1 600px; } }
+/* the top bar keeps one row on a tablet: the name and the view tabs do not wrap */
+.brand-title, .tabs button { white-space: nowrap; }
+@media (min-width: 761px) and (max-width: 1100px) { .tabs { flex-wrap: nowrap; min-width: 0; } .brand { min-width: 0; } .tabs button { padding: 7px 8px; } }
+/* the 16-bit grid of a data file shows bit 0 first (as the reference software, bit 0 on the right): it scrolls from the right */
+.lad-dt table.dt.bits { display: block; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.lad-dt table.dt.bits th:not(.rowh) { letter-spacing: 0; }
+.lad-dt table.dt.bits td, .lad-dt table.dt.bits th { min-width: 15px; padding-left: 1px; padding-right: 1px; }
+.lad-ins > .ins-row, .lad-ins > .ins-tabs { align-self: stretch; min-width: 0; max-width: 100%; }
+.ins-btn small { font-size: 11px; }
+/* amber text (saving, warnings) reaches 4.5:1 on light surfaces; the dark theme keeps its bright amber */
+:root { --warn-text: #8A5A00; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --warn-text: var(--warn); } }
+:root[data-theme="dark"] { --warn-text: var(--warn); }
+.save-st.pending, .warn-txt, .org .flt, .verify li.w, .lad-out-log .ol-go.w { color: var(--warn-text); }
+/* small print in the interface is at least 11 px too (the operator-panel drawings keep their own scale) */
+small:not(.hmi small):not(svg small) { font-size: max(11px, .85em); }
