@@ -1,6 +1,6 @@
 # PLC Trainer
 
-**Version 2.3.0** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
+**Version 2.4.0** · [Changelog](CHANGELOG.md) · [Progress](PROGRESS.md) · [Rules](CONTRIBUTING.md) · [Handoff](HANDOFF.md)
 
 A PLC trainer that runs in the browser. Write ladder logic, wire real-looking power and control circuits, press the buttons right in the wiring, build an HMI, and watch the equipment respond.
 
@@ -92,7 +92,7 @@ Use **File ▾ → New project…** to start from a blank sheet or any example, 
 ```bash
 npm start                                # serve at http://localhost:8080 (optional; opening index.html works too)
 npm install && npx playwright install chromium
-npm test                                 # 685 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
+npm test                                 # 876 end-to-end checks (desktop, layouts, phone touch, offline, module integration, project compatibility)
 ```
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit and release rules, and [RELEASING.md](RELEASING.md) for building the installers.
 
