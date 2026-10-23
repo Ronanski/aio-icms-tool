@@ -1,6 +1,12 @@
 # Logic Studio MT: spec (v1, 2026-10-23)
 
-**Logic Studio MT** is a second app in this repo (`plc.html`). It is a tag-based PLC programming and simulation tool
+**Logic Studio MT** is a second app in this repo (`plc.html`). It has two parts:
+
+- **Software:** the programming tool (this spec).
+- **Hardware:** an emulator with a rack, I/O cards, field devices and the HMI. It comes later and plugs into the
+  interface in section 9.
+
+Logic Studio MT itself is the software part. It is a tag-based PLC programming and simulation tool
 that looks and works like the desktop programming software studied in `docs/ROCKWELL_UI_STUDY.md`. The current app
 (`index.html`) stays as it is. Later a hardware builder and the HMI connect to Logic Studio MT, and the combined app
 uses it as its PLC module.
@@ -36,6 +42,9 @@ uses it as its PLC module.
   - Online in Run, rails turn green (3 px), powered wire is 2 px green, and a true instruction is drawn green.
 - Plain HTML/CSS/JS. No build step and no runtime dependencies, as for the rest of the repo.
 - **Simple and clean.** Leave out what a trainer does not need. Do not show it disabled.
+- **Every button and menu item that is shown works.** A command is greyed out only when the current state does not
+  allow it, as in the reference. For example, Toggle Bit is greyed out offline.
+- **60 fps or better, also on a low-end PC.** See section 12.
 
 ## 2. Names
 
@@ -146,9 +155,26 @@ XIC(Motor_Run)TON(Run_Timer,5000,0);
 - A number is an immediate value: `5`, `-3`, `2.5`, `16#FF`, `2#1010`.
 
 ### Drawing
+- **Grid:** the ladder is laid out on cells of one width (104 px at 100 %).
+  - A bit instruction takes 1 cell, and a box instruction takes 2 cells.
+  - Instructions line up in columns across all rungs and branch legs.
+  - Branch legs start at the same column, and a shorter leg is filled with wire up to the branch end.
+  - Outputs fill the last cells against the right rail, so coils line up from rung to rung.
+  - The right rail is placed at the last whole cell, so the number of instructions in a row follows the window width,
+    as in the reference.
+- **Rung wrap:** a rung that does not fit in one row continues on the next row.
+  - The row ends with ▸ and the next row starts with ▸.
+  - The outputs go on the last row.
+  - A branch is never split between rows.
+- **Text inside a cell:**
+  - a description wraps to 3 lines;
+  - a tag name or an alias wraps at `:`, `_` or `.` to 2 lines;
+  - the text never runs into the next cell.
+- **Lines:** 1 px on the pixel grid (crisp edges). Only curves (coil arcs, the XIO slash) are anti-aliased.
 - **Rung:**
   - the number sits in the left margin (`0`, `1` …);
-  - the comment is above the rung, wrapped;
+  - the rung comment sits in a light box across the rung above it, left-aligned, so it looks different from a tag
+    description, which is centred above its instruction;
   - `(End)` follows the last rung;
   - a selected rung's number cell turns blue, and a selected instruction gets a light-blue box.
 - **Above a bit instruction:**
@@ -188,6 +214,12 @@ XIC(Motor_Run)TON(Run_Timer,5000,0);
 - **Typing a mnemonic:** with a rung selected, typing `XIC Start_PB` and pressing Enter inserts the instruction, as
   the reference's quick key entry does.
 - **Edit Rung as Text:** double-click the rung number to edit the rung as text.
+- **Change an instruction in place:** double-click the instruction symbol (not its tag). An inline box shows the
+  mnemonic with ▾.
+  - You can type another mnemonic or pick one from the list. The list shows instructions of the same kind first.
+  - The operands are kept where they fit.
+  - Enter accepts the change and Esc cancels it.
+- **Edit a tag in place:** double-click the tag above the instruction (see Addressing).
 - **Branches:**
   - Branch adds `[,]` around the selection;
   - Branch Level adds a leg;
@@ -210,19 +242,27 @@ XIC(Motor_Run)TON(Run_Timer,5000,0);
   - Create clears the error marker.
 - **Drag a tag** from the tag editor onto an operand.
 
-### Right-click on an instruction
-- New "tag" (Ctrl+W)
-- Cut / Copy / Paste / Delete
-- Add Ladder Element… (Alt+Ins)
-- Edit Main Operand Description (Ctrl+D)
-- Toggle Bit (Ctrl+T)
-- Force On / Force Off / Remove Force
-- Go To… (Ctrl+G)
-- Go to Cross Reference (Ctrl+E)
-- Instruction Help (F1)
+### Right-click menus
+The same menu is shown offline and online. Items the mode does not allow are greyed out.
 
-The rung number's own menu has Add Rung, Edit Rung, Edit Rung Comment, Cut / Copy / Paste / Delete Rung and Verify
-Rung.
+| Where | Items | Offline | Online |
+|---|---|---|---|
+| Instruction | New "tag" (Ctrl+W) | when the tag is missing | when the tag is missing |
+| | Cut / Copy / Paste / Delete Instruction | ✓ | Copy only, until Start Pending Rung Edits |
+| | Add Ladder Element… (Alt+Ins), Edit Instruction (Enter) | ✓ | in a pending-edit rung |
+| | Edit Main Operand Description (Ctrl+D) | ✓ | ✓ |
+| | Toggle Bit (Ctrl+T), Force On / Force Off / Remove Force | greyed | ✓ (BOOL; forces on I/O) |
+| | Go To… (Ctrl+G), Go to Cross Reference (Ctrl+E), Instruction Help (F1) | ✓ | ✓ |
+| Rung number | Cut / Copy / Paste / Delete Rung, Add Rung (Ctrl+R), Edit Rung, Edit Rung Comment, Verify Rung, Go To | ✓ | Copy, Go To; the others in a pending-edit rung |
+| | Start / Accept / Cancel Pending Rung Edits | greyed | ✓ |
+| Branch | Cut / Copy / Paste / Delete Branch, Add Branch Level | ✓ | in a pending-edit rung |
+| Tag in the tag editor | New Tag, Edit Tag Properties, Cross Reference, Toggle Bit, Force | edit items | value items |
+| I/O Configuration, backplane | New Module…, Paste, Properties | ✓ | Properties only |
+| Module | Cut / Copy / Paste / Delete, Cross Reference, Properties (Alt+Enter) | ✓ | Cross Reference, Properties (status, fault code) |
+| Routine / Program / Task in the Organizer | New Routine / Program, Rename, Delete, Properties, Open | ✓ | Open, Properties |
+
+Items that belong to left-out features are not in the menus. Examples are motion, safety, add-on instructions,
+alarms, trends and Discover Modules.
 
 ## 5. Online
 
@@ -238,6 +278,14 @@ reference, without the driver setup.
 - After a download the controller is in Rem Prog. "Return the controller to Remote Run?" offers to switch it.
 - While online, the I/O configuration is compared with the hardware. A missing or different card makes the I/O LED
   flash and shows a module fault (code and text) in the module's properties.
+
+### Look of a running routine
+- The rails turn green.
+- Wire that carries power is green at 2 px.
+- A true instruction is drawn green: a contact whose condition is true, a coil whose bit is 1, and the status bits
+  of a box.
+- A false instruction stays black.
+- Box values update live.
 
 ### Modes
 - **Run, Rem Run:** the ladder executes, and power flow is drawn.
@@ -256,9 +304,10 @@ reference, without the driver setup.
   - Monitor Tags shows the force mask.
   - Disable keeps the forces but stops applying them. Remove All clears them.
 - **Online edit:**
-  1. Start Pending Rung Edits keeps the running rung (marker **r**) and adds an editable copy (marker **i**). A new
-     rung gets **i**, and a deleted rung gets **d**.
-  2. Accept Pending Rung Edits verifies the edits and sends them. The old rungs still run.
+  1. Start Pending Rung Edits keeps the running rung (marker **r**) and adds a copy you edit (marker **e**). The
+     copy does not execute. A new rung gets **i**, and a deleted rung gets **d**.
+  2. Accept Pending Rung Edits verifies the edits and sends them. The markers become **R** / **I** / **D**, and the old
+     rungs still run.
   3. Test Accepted Program Edits runs the new rungs. Untest goes back to the old ones.
   4. Assemble Accepted Program Edits makes the edits final and removes the markers.
   - Each step can be cancelled.
@@ -384,11 +433,31 @@ tests/lsmt.test.js       engine tests (node) and UI tests (Playwright)
 5. Tag editor, built-in controller, Who Active / Download / Go Online, Toggle Bit, forces, online edit, cross reference.
 6. I/O panel, project file, release (Pages path, and later its own exe / apk).
 
-## 12. To confirm against the reference software
+## 12. Performance (60 fps or better on a low-end PC)
+
+- **Draw once, then patch.** The ladder SVG is built only when the program, the zoom or the window size changes.
+- **Live updates touch only what changed.** On each frame the live values are evaluated, and only changed nodes are
+  updated: a wire's `on` class, an instruction's `on` class, a box value's text. Nothing is rebuilt and no layout is
+  read in the frame loop.
+- **Only visible rungs.** Rungs outside the view (plus one screen above and below) are not drawn. Their layout is kept
+  so scrolling stays smooth on programs with thousands of rungs.
+- **Scan and draw are separate.**
+  - The controller scans on its own clock, every 10 ms by default, and catches up in fixed steps when the tab was
+    slow.
+  - Drawing runs on `requestAnimationFrame`.
+  - A scan never waits for drawing.
+- **Cached text.** Text widths and wrapped lines are measured once per tag and zoom.
+- **Budget:** at most 4 ms of script per frame for 500 visible instructions, at 6× CPU slowdown.
+- **Checks:** a test drives Rem Run with Chrome's CPU throttling at 6× and fails below 55 fps. The mockup already holds
+  60 fps at 6×.
+
+## 13. To confirm against the reference software
 
 These were written from memory and have not been seen in the VM yet:
 - the force marker on an instruction;
-- the online edit markers after Accept / Test;
-- the exact look of a true instruction;
+- the online edit markers after Accept (`R` / `I` uppercase);
+- the exact look of a true instruction (green glyph, or a green highlight behind it);
+- the rung comment box and the wrap markers;
+- the default instruction cell width (how many fit in a row at the same window width);
 - the text of the Edits box;
 - the DIV / MOV rounding rules for integers.

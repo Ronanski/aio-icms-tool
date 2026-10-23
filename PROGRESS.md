@@ -9,6 +9,8 @@
 - [x] Spec and mockup of every state (offline, errors, online, online edit, forces, menu, tag browser, New Tag, cross reference)
 - [x] Name: Logic Studio MT; tag-based only (no SLC / file-based target)
 - [x] Spec v1: window, ladder, addressing, online, forces, online edit, tags, instruction set, file, interfaces
+- [x] Mockup v2: equal-width cell grid and rung wrap, thin pixel-aligned toolbar glyphs, rung comment box, edit instruction in place, offline / online / rung / I/O menus, live Rem Run at 60 fps (6× CPU slowdown)
+- [ ] Owner check of the reference look (screenshots from the VM): true instruction, force marker, edit markers, comment box
 - [ ] Engine: typed tags, tasks / programs / routines, rung text, scan (tests first)
 - [ ] Shell, ladder editor, tag editor, online / forces / online edit, cross reference, I/O panel
 
