@@ -5,7 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Fixed (UI/UX standards audit, ui-ux-design-master)
+## [2.5.0] - 2026-10-23
+
+### Fixed
 - **Readable text:** no interface text under 11 px. It went down to 8 px: palette labels, data-file bits, status boxes, tabs and small print. Drawings follow their zoom.
 - **Controls at least 24 × 24 px (WCAG 2.5.8):** the Data Files F1 / F0 / × were 18 px, and the Wiring colour swatches 18 px.
 - **Contrast at least 4.5:1 (WCAG 1.4.3):**
