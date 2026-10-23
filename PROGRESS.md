@@ -77,7 +77,7 @@
 - [x] Seal-in built side by side in Simurelay and here (`docs/SIMURELAY_WALKTHROUGH.md`): + / 0 V points bring their own supply, seal-in branch over its own circuit's terminal with a dot, push button tag beside the head
 - [x] Free draw na kopya ng Simurelay (itsura, daloy, property bar, ⋯/Settings, Play/Stop rest state, manual protections, short stop, kulay ng conductor, Ctrl keys) — branch `feature/simurelay-clone`
 - [x] Merge + Stable v2.3.0 ng Simurelay clone (owner: "GO", 2026-10-21)
-- [ ] 32-point cards (need two words per slot in the data table)
+- (moved to the open list at the top: 32-point cards)
 - [ ] Modules that touch: their side terminals face each other (leave a gap for now)
 - [x] Stable v2.2.2 (owner: "GO STABLE", 2026-10-21)
 
@@ -141,7 +141,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Verify: timer preset/accum ≥ 0, whole-number constants in range; warnings for shared timers and CTU/CTD preset mismatch
 - [x] 24 VDC PSU: output short → DC OK off + alarm; overload trip delay 0 s trips at once; workflow permissions least-privilege
 - [x] DIV rounding of negative halves; earth-leakage teaching case (L-PE feed) (v2.0.1)
-- [ ] Owner's own list of v1.2 bugs/gaps (not received yet)
+- [x] ~~Owner's own list of v1.2 bugs/gaps~~ — superseded by the owner's list after checking the v2.4 Beta (top of this file)
 
 ## In progress: v1.3.0 builder overhaul, part 1 (owner: "gawin na ang mga pwedeng gawin na")
 - [x] View menu with checkboxes (pick up to 3 windows)
@@ -189,8 +189,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Windows portable only
 - [x] Star-delta motor in the diagram power section; wires route around devices
 - [x] Merged (PR #16); stable v1.4.1 authorized (GO STABLE)
-- [ ] Owner's report of bugs on a real phone and PC; owner's v1.2 bug list
-- [ ] v1.5 hardware (modular PLC, I/O configuration, addressing styles, cabinet)
+- [x] ~~Owner's report of bugs on a real phone and PC; owner's v1.2 bug list~~ — superseded by the owner's list after checking the v2.4 Beta (top of this file)
+- [x] v1.5 hardware (modular PLC, I/O configuration, addressing styles, cabinet)
 
 ## v1.5.0 part 1 (owner: "GO v1.5 part 1", after SimuRelay screenshots)
 - [x] Free-draw Electrical Diagram: grid, library by group, drag, rotate, wire terminal to terminal, Type ⇄, operate, live paths, saved with the project
@@ -210,7 +210,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Electrical Diagram in one line colour like the ladder (owner: "dapat kapareha ng ladder diagram"); power circuit in proportion with the control circuit
 - [x] PR #20 merged (`430aea8`); stable v1.5.0 authorized (GO STABLE v1.5.0), released (run #44) · [x] verified: 3 assets, APK cert 27:5F:A5…, Pages version.json 1.5.0
 - The hardware work moves to v1.6.0.
-- [ ] Next (v1.6): modular PLC rack, I/O configuration, addressing styles, cabinet; editable terminal numbers
+- [x] Next (v1.6): modular PLC rack, I/O configuration, addressing styles, cabinet; editable terminal numbers
 
 ## v1.6.0 part 1 (owner: "Continue v 1.6"): modular PLC rack
 - [x] Rack power supply, CPU module (slot 0), input cards 24 VDC / 230 VAC, relay and transistor output cards; snap on a DIN rail
@@ -221,7 +221,7 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Part 4: 2D cabinet: backplate, door, cable duct, HMI terminal on the door (live HMI screen, operable); plates carry their devices; example *Motor starter cabinet*
 - [x] Free draw like SimuRelay (owner: "GO dito"): library panel with icon grid and groups, drag or click to add, no more stacking, Points L1/L2/L3/N/PE/+24V/0V, battery, generator, AC/DC converter, DC motor, wire pieces and link arrows, toolbar order with Play and Values, zoom bottom right, major grid lines
 - [x] Stable v1.6.0 authorized ("GO STABLE v1.6.0", 2026-10-20)
-- [ ] Owner to point out the spacing issue in the IEC diagram screenshots (sent 2026-10-20) → fix in v1.6.1
+- [x] ~~IEC diagram spacing issue~~ — obsolete: the IEC view was replaced by free draw (v2.3)
 
 ## Roadmap agreed with the owner (updated 2026-10-20: v1.6.0 stable; v1.7–v2.0 done on `main`)
 **v1.4.0 — wiring like real hardware, 4 workspaces**
@@ -240,8 +240,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] Stable v1.6.0 (GO STABLE, 2026-10-20)
 
 **v1.6.1 — fixes from the owner's checks**
-- [ ] IEC diagram spacing issue (owner to point it out on the screenshots)
-- [ ] Owner's feedback from Beta / real devices; owner's v1.2 bug list
+- [x] ~~IEC diagram spacing issue~~ — obsolete: the IEC view was replaced by free draw (v2.3)
+- [x] ~~Owner's feedback from Beta / real devices; owner's v1.2 bug list~~ — superseded by the owner's list after checking the v2.4 Beta (top of this file)
 - [x] Address styles also in HMI tags, Verify messages and the event log (the ASCII rung editor stays file-based: it is the program text)
 
 **v1.7.0 — HMI** (done on `main`, not released)
@@ -264,8 +264,8 @@ From the v1.2.0 audit and the leftovers of the v1.1 audit:
 - [x] **Release v2.0.0** (owner: GO, 2026-10-20): ships v1.6.1, v1.7, v1.8 and v2.0 from `main` together. Project format changes (tags, program files): older apps cannot open new projects.
 - [x] **v2.0.1 — accuracy fixes**: DIV rounds halves away from zero; Verify checks COP/FLL/SQO/MSG lengths against the file end; earth leakage (L–PE load) trips the RCD or is reported; alarms in the first 4 s after start are no longer lost. (S:0/S:5 flags, breaker selectivity, the oscillation warning, constant range checks and DC OK were already fixed in v1.2.1; the audit list below was out of date.)
 - [x] **v2.1 — learning**: live checklists for lessons 8–16 (the wiring is checked, not only the ladder; lesson 12 checks the hardwired 21-22 interlock and the ladder XIO interlock); new lessons 13 rack + I/O Configuration, 14 analog + VFD, 15 HMI screens/trends, 16 download + online edits.
-- [ ] **v2.2 — publishing**: Play Store build (`.aab`) and listing, final product name and logo; release workflow refuses a debug-signed APK.
-- [ ] Owner's checks on real devices (Beta) and the owner's v1.2 bug list → fixes as they come.
+- [ ] **Publishing**: Play Store build (`.aab`) and listing, final product name and logo; release workflow refuses a debug-signed APK (same items in the Backlog)
+- [x] ~~Owner's checks on real devices (Beta) and the owner's v1.2 bug list~~ — superseded by the owner's list after checking the v2.4 Beta (top of this file)
 
 **v2.1.1 — full audit (owner: "PERFORM FULL AUDIT. INITIATE FIX"; "AYUSIN MO LAHAT")**
 - [x] Audit in 4 parts (PLC engine/ladder, electrical solver, app/storage/security, diagram/HMI/wiring): 40 findings, all fixed with tests (see CHANGELOG [Unreleased] "Fixed (full audit)")
@@ -278,10 +278,10 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
   - [x] Kept-rail fix: walang ibang supply na ipinapalit sa kept rail; hindi pinapagana ang current paths na umaasa dito (26 checks sa kabuuan)
   - [x] **Approved sa code-review level** (owner, 2026-10-20): commit `89d084158c9424c709ef93c1c6ea9a1cde2c9d70`, `480 passed, 0 failed` sa tatlong run, local Chrome lang
   - [x] CI run: PR #39 green (2026-10-21); hindi pa merged
-  - [ ] Merge sa `main` at Stable release (hiwalay na go signal; dapat mauna sa Phase 4 para hindi itapon ng lumang app ang bagong part types)
+  - [x] Merge sa `main` at Stable release (done: v2.x Stable)
   - Hindi pa direktang tested: 3-phase fallback ng `autoRails()`, kept content na walang kept rail, `renderRungs` rail path, at ang `main`/v2.0.0 file comparison (scratch script lang). Mga limitation: nasa `HANDOFF.md`.
 - [x] Phase 2 — PLC output-contact and input symbols in the diagram, on the real PLC and rack terminals (free draw: PLC power, relay output, transistor output, input; 15 checks; branch `feature/plc-io-symbols`, naghihintay ng review, hindi merged)
-  - [ ] Hindi pa: PLC symbols sa IEC current-path editor; analog cards; CI run
+  - [x] ~~PLC symbols sa IEC current-path editor; analog cards; CI run~~ — IEC editor obsolete (free draw), analog cards and CI done
 - [x] Phase 3 — inline properties panel, comments, IEC naming and numbering, duplicate warnings, editing (copy/paste, nudge, multi-select, touch, search, grid, image export) (21 checks; branch `feature/fd-properties-editing`, hindi merged)
   - Hindi pa: rename ng device mula sa diagram (sa Wiring pa rin), multi-prefix IEC naming, PNG/SVG download sa loob ng Android app
 - [x] Phase 4 — missing parts in small batches (see the Simurelay comparison) (10 checks; branch `feature/fd-more-parts`, hindi merged): changeover/crossover push buttons at selectors, selector NO+NC, E-stop NO, relay/timer/latch changeover contacts, contactor 1P, disconnector 1P/2P, RCBO 4P, 1-2 pole overload/MPCB/fuse switch symbols, bell, siren
@@ -296,7 +296,7 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [x] Push at PR (owner GO, 2026-10-21): 11 branches naka-push; PR [#39](https://github.com/Ronanski/aio-icms-tool/pull/39) (Phase 0–1 → `main`) at [#40](https://github.com/Ronanski/aio-icms-tool/pull/40) (stacked sa #39)
 - [x] CI ng #39 at #40: **green** (2026-10-21) — test (npm test sa Ubuntu), windows, android, web, version: pass; publish: skipped (PR lang). Pareho ring nag-pass ang Phase 1 CI item sa itaas.
 - [x] Merge sa `main`: #39, #40, #41 (owner GO) → **Stable v2.1.0 released** 2026-10-21
-- [ ] v2.2 parity (PR #42): merge at Stable release — kailangan ng GO
+- [x] v2.2 parity (PR #42): merged and released (v2.2.0)
 - [x] Parity v2.2: thermal-magnetic MCB, 3-position selectors, directional arrows, L1L2L3(N) points; REA metadata for generator/impulse coil/earth/PSU → 111/114 full (97.4%) (6 checks; branch `feature/parity-v2.2`)
   - Natitirang Partial (3): isolator 1P (13-14), roller CON (11-12-13) — sinadyang IEC numbering; LV/HV power supply (walang 115 V)
 - [x] Tagging tulad ng Simurelay: auto tags, Rename device (F2), show/hide tags at terminal numbers, tag colour, library order (8 checks) at mga pangalan sa library tiles + long press (2 checks); branch `feature/diagram-tagging`, 627/627 local
@@ -316,10 +316,10 @@ Four connected modules (Ladder, HMI, Wiring, Electrical Diagram) on the one exis
 - [x] Auto-check for the circuit lessons (8–12): verify wiring, not only the ladder (v2.1)
 
 ## Backlog (v1.2+)
-- [ ] More instructions: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, BTD, SCP, analog I/O (I:1.0 words)
-- [ ] More devices: VFD, star-delta starter, reversing contactor pair, 3-wire analog level transmitter
+- [ ] More instructions: CPT, SCP, BTD, AND/OR/XOR/NOT, MVM (done: OSR/OSF, JSR/SBR/RET, MCR, SQO, COP/FLL, MSG, analog words)
+- [x] More devices: VFD, star-delta starter, reversing contactor pair, analog level transmitter
 - [x] Rung drag-and-drop editing (instructions, PR #2) · [ ] wire dragging and re-routing (v1.3.0)
-- [ ] Tagalog / English language toggle
+- [x] Tagalog / English language toggle
 - [ ] Migrate to TypeScript + Vite and add unit tests for `plc.js` and `circuit.js`
 - [ ] Choose a license: proprietary for selling, or MIT
 
