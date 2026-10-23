@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logic Studio MT Mockup</title>
+<!-- Visual mockup of the new PLC app (plc.html). Layout and sizes follow the desktop programming software
+     the owner uses as the reference: 11 px text, 16 px icons, 22 px buttons, thin rungs. See docs/PLC_APP_SPEC.md. -->
+<style>
+  :root {
+    --face: #f0f0f0; --face2: #e3e3e3; --edge: #a0a0a0; --edge2: #c8c8c8; --text: #000; --muted: #555;
+    --sel: #316ac5; --selbg: #cce0f7; --paper: #fff; --wire: #000; --live: #00a000; --err: #d00000;
+    --amber: #f2b200; --navy: #1f3a5f;
+    --ui: Tahoma, Verdana, "Segoe UI", sans-serif; --lad: Arial, Helvetica, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #7a8796; font: 11px var(--ui); color: var(--text); }
+  .pick { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 16px; background: #2b3440; color: #fff; align-items: center; }
+  .pick b { margin-right: 6px; }
+  .pick button { font: 11px var(--ui); height: 22px; padding: 0 8px; border: 1px solid #556; background: #3a4554; color: #fff; cursor: pointer; }
+  .pick button.on { background: #fff; color: #000; }
+  .note { padding: 6px 16px; background: #fffbe6; border-bottom: 1px solid #e0d080; min-height: 26px; }
+  .scroller { overflow-x: auto; padding: 12px 16px; }
+  .win { position: relative; width: 1280px; height: 800px; margin: 0 auto; background: var(--face); border: 1px solid #333;
+         display: grid; grid-template-rows: 22px 20px 28px 54px 1fr 118px 20px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  .title { background: linear-gradient(#3d6ea8, #2c5a91); color: #fff; display: flex; align-items: center; padding: 0 6px; gap: 6px; }
+  .title .x { margin-left: auto; letter-spacing: 10px; }
+  .menu { display: flex; align-items: center; border-bottom: 1px solid var(--edge2); }
+  .menu span { padding: 0 7px; line-height: 20px; }
+  .menu span:hover { background: var(--selbg); }
+  .tb { display: flex; align-items: center; gap: 1px; padding: 0 4px; border-bottom: 1px solid var(--edge2); }
+  .btn { width: 23px; height: 22px; display: inline-grid; place-items: center; border: 1px solid transparent; }
+  .btn:hover { border-color: var(--edge); background: #fff; }
+  .sep { width: 1px; height: 18px; background: var(--edge2); margin: 0 3px; }
+  .combo { height: 20px; border: 1px solid var(--edge); background: #fff; display: inline-flex; align-items: center; padding: 0 3px; gap: 4px; }
+  .combo i { margin-left: auto; font-style: normal; border-left: 1px solid var(--edge2); padding-left: 3px; }
+  .bar2 { display: flex; border-bottom: 1px solid var(--edge); }
+  .online { width: 400px; height: 53px; display: grid; grid-template-columns: 96px 26px 1fr; gap: 4px; padding: 3px 6px; border-right: 1px solid var(--edge2); }
+  .leds { display: grid; grid-template-rows: repeat(4, 11px); align-content: center; font-size: 9.5px; line-height: 11px; }
+  .leds div { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .led { width: 9px; height: 7px; border: 1px solid #666; background: #bbb; flex: none; }
+  .led.g { background: #2ecc40; } .led.y { background: var(--amber); } .led.r { background: #e33; }
+  .key { display: grid; place-items: center; }
+  .stat { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 20px 20px; gap: 4px; align-content: center; }
+  .box { border: 1px solid var(--edge); background: #fff; display: flex; align-items: center; padding: 0 4px; gap: 4px; white-space: nowrap; overflow: hidden; }
+  .box i { margin-left: auto; font-style: normal; }
+  .box.mode { font-weight: bold; }
+  .box.warn { background: var(--amber); }
+  .instr { flex: 1; display: grid; grid-template-rows: 28px 22px; padding: 2px 4px; min-width: 0; }
+  .glyphs { display: flex; gap: 1px; align-items: center; }
+  .gl { width: 30px; height: 24px; margin-right: 1px; display: grid; place-items: center; border: 1px solid transparent; }
+  .gl:hover { border-color: var(--edge); background: #fff; }
+  .tabs { display: flex; align-items: flex-end; gap: 0; }
+  .tabs span { padding: 2px 7px; border: 1px solid var(--edge2); border-top: none; background: var(--face2); margin-right: -1px; }
+  .tabs span.on { background: var(--face); font-weight: bold; }
+  .tabs .arr { margin-left: 4px; border: 1px solid var(--edge2); padding: 1px 4px; background: var(--face); }
+  .main { display: grid; grid-template-columns: 236px 4px 1fr; min-height: 0; }
+  .org { background: #fff; border: 1px solid var(--edge); margin: 2px 0 0 2px; display: grid; grid-template-rows: 18px 1fr 20px; min-height: 0; }
+  .org .hdr, .pane-h { background: var(--face2); border-bottom: 1px solid var(--edge2); padding: 0 4px; line-height: 17px; }
+  .tree { overflow: auto; padding: 2px 0; }
+  .tree div { height: 17px; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .tree .pm { width: 9px; height: 9px; border: 1px solid #999; font-size: 9px; line-height: 7px; text-align: center; background: #fff; flex: none; }
+  .tree .sp { width: 9px; flex: none; }
+  .tree .on { background: var(--sel); color: #fff; }
+  .org .foot { border-top: 1px solid var(--edge2); display: flex; }
+  .org .foot span { padding: 2px 6px; border-right: 1px solid var(--edge2); }
+  .org .foot span.on { background: #fff; font-weight: bold; }
+  .editor { display: grid; grid-template-rows: 20px 24px 1fr; margin: 2px 2px 0 0; min-height: 0; border: 1px solid var(--edge); background: #fff; }
+  .rtabs { display: flex; background: var(--face2); border-bottom: 1px solid var(--edge2); }
+  .rtabs span { padding: 0 8px; line-height: 19px; border-right: 1px solid var(--edge2); }
+  .rtabs span.on { background: #fff; }
+  .rtb { display: flex; align-items: center; gap: 1px; padding: 0 3px; background: var(--face); border-bottom: 1px solid var(--edge2); }
+  .rtb .btn.dim { opacity: .35; }
+  .lad { overflow: auto; position: relative; }
+  /* ladder: 1 px lines on the pixel grid; online, powered wire and true instructions turn green */
+  svg.l { display: block; user-select: none; }
+  svg.l text { font: 11px var(--lad); fill: #000; }
+  svg.l .w, svg.l .rail { stroke: #000; stroke-width: 1; shape-rendering: crispEdges; }
+  svg.l.live .rail { stroke: var(--live); stroke-width: 2; }
+  svg.l.live .w.on { stroke: var(--live); stroke-width: 2; }
+  svg.l .g path, svg.l .g line, svg.l .g rect { stroke: #000; stroke-width: 1; fill: none; shape-rendering: crispEdges; }
+  svg.l .g .sl { shape-rendering: geometricPrecision; }
+  svg.l.live .g.on path, svg.l.live .g.on line, svg.l.live .g.on rect:not(.hit) { stroke: var(--live); stroke-width: 2; }
+  svg.l.live .g.on text { fill: var(--live); }
+  svg.l .g rect.hit { fill: transparent; stroke: none; }
+  svg.l.live .hit { cursor: pointer; }
+  svg.l .cm { fill: #fbfbfb; stroke: #b9b9b9; shape-rendering: crispEdges; }
+  svg.l .wrapm { fill: none; stroke: #000; }
+  svg.tg path, svg.tg rect { fill: none; stroke: #222; stroke-width: 1; shape-rendering: crispEdges; }
+  svg.tg .sl { shape-rendering: geometricPrecision; }
+  svg.tg text { font: 8px Tahoma, Verdana, sans-serif; text-anchor: middle; fill: #222; }
+  svg.tg text.sm { font: 7.5px Tahoma, Verdana, sans-serif; letter-spacing: .2px; }
+  .inl { height: 18px; border: 1px solid var(--sel); display: flex; align-items: center; padding: 0 3px; font: 11px var(--lad); box-shadow: none; }
+  .inl i { margin-left: auto; font-style: normal; border-left: 1px solid #aaa; padding-left: 3px; }
+  #fps { margin-left: auto; font: 11px Consolas, monospace; color: #9fe39f; }
+  .errs { margin: 2px; border: 1px solid var(--edge); background: #fff; display: grid; grid-template-rows: 18px 24px 1fr; min-height: 0; }
+  .chips { display: flex; gap: 4px; align-items: center; padding: 0 4px; background: var(--face); border-bottom: 1px solid var(--edge2); }
+  .chip { border: 1px solid var(--edge); background: #fff; height: 19px; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; }
+  .chip.on { background: var(--selbg); border-color: var(--sel); }
+  .log { font: 11px Consolas, "Courier New", monospace; padding: 2px 4px; overflow: auto; white-space: pre; }
+  .log .e { color: var(--err); }
+  .status { display: flex; border-top: 1px solid var(--edge2); }
+  .status span { padding: 0 6px; line-height: 19px; border-right: 1px solid var(--edge2); }
+  .status span:first-child { flex: 1; }
+  /* overlays */
+  .pop { position: absolute; background: #fff; border: 1px solid #555; box-shadow: 2px 2px 6px rgba(0,0,0,.3); z-index: 5; }
+  .cmenu { padding: 2px; min-width: 230px; background: var(--face); }
+  .cmenu div { display: flex; justify-content: space-between; padding: 0 8px 0 22px; line-height: 19px; gap: 16px; }
+  .cmenu div:hover, .cmenu div.on { background: var(--sel); color: #fff; }
+  .cmenu hr { border: none; border-top: 1px solid var(--edge2); margin: 2px 0; }
+  .cmenu .dis { color: #999; }
+  .dlg { background: var(--face); }
+  .dlg .dt { background: linear-gradient(#3d6ea8, #2c5a91); color: #fff; padding: 0 6px; line-height: 20px; display: flex; }
+  .dlg .dt span:last-child { margin-left: auto; }
+  .dlg .db { padding: 8px; }
+  .row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .inp { height: 20px; border: 1px solid var(--edge); background: #fff; display: flex; align-items: center; padding: 0 3px; }
+  .inp i { margin-left: auto; font-style: normal; }
+  .btns { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+  .pb { min-width: 72px; height: 22px; border: 1px solid #707070; background: linear-gradient(#fafafa, #e2e2e2); display: grid; place-items: center; }
+  .pb.def { border-color: var(--sel); box-shadow: inset 0 0 0 1px #8bb3e6; }
+  table.g { border-collapse: collapse; width: 100%; background: #fff; }
+  table.g th { background: var(--face2); font-weight: normal; text-align: left; border: 1px solid var(--edge2); padding: 0 4px; line-height: 17px; }
+  table.g td { border: 1px solid #e4e4e4; padding: 0 4px; line-height: 16px; white-space: nowrap; }
+  table.g tr.on td { background: var(--sel); color: #fff; }
+  .cb { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
+  .cb.off::before { content: ""; }
+  .cb::before { content: "✓"; width: 11px; height: 11px; border: 1px solid #777; background: #fff; font-size: 9px; line-height: 10px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="pick" id="pick"><b>State:</b></div>
+<div class="note" id="note"></div>
+<div class="scroller">
+<div class="win" id="win">
+  <div class="title"><svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" fill="#e8eef6" stroke="#fff"/><path d="M3 4v6M11 4v6M3 7h8" stroke="#2c5a91" stroke-width="1.4"/></svg>
+    <span id="ttl"></span><span class="x">_ □ ×</span></div>
+  <div class="menu"><span>File</span><span>Edit</span><span>View</span><span>Search</span><span>Logic</span><span>Communications</span><span>Tools</span><span>Window</span><span>Help</span></div>
+  <div class="tb" id="tb"></div>
+  <div class="bar2">
+    <div class="online">
+      <div class="leds" id="leds"></div>
+      <div class="key"><svg width="22" height="22" viewBox="0 0 22 22"><title>Key switch: PROG / REM / RUN</title><circle cx="11" cy="11" r="8" fill="#ddd" stroke="#666"/><rect id="keyb" x="9.5" y="4" width="3" height="14" fill="#444" transform="rotate(0 11 11)"/></svg></div>
+      <div class="stat" id="stat"></div>
+    </div>
+    <div class="instr"><div class="glyphs" id="glyphs"></div><div class="tabs" id="tabs"></div></div>
+  </div>
+  <div class="main">
+    <div class="org"><div class="hdr">Controller Organizer</div><div class="tree" id="tree"></div>
+      <div class="foot"><span class="on">Controller</span><span>Logical</span></div></div>
+    <div></div>
+    <div class="editor">
+      <div class="rtabs"><span class="on">MainProgram - MainRoutine<span id="dirty"></span></span><span>Controller Tags</span></div>
+      <div class="rtb" id="rtb"></div>
+      <div class="lad" id="lad"></div>
+    </div>
+  </div>
+  <div class="errs"><div class="pane-h">Errors</div>
+    <div class="chips" id="chips"></div><div class="log" id="log"></div></div>
+  <div class="status" id="status"></div>
+  <div id="ov"></div>
+</div>
+</div>
+
+<script>
+'use strict';
+/* ---------- project data (tag-based; rung text as in the reference: XIC(tag)[a,b]OTE(tag);) ---------- */
+const B = (desc, alias) => ({ type: 'BOOL', desc, alias });
+const TAGS = {
+  Start_PB: B('S1 START PB', 'Local:1:I.Data.0'), Stop_PB: B('S0 STOP PB (NC)', 'Local:1:I.Data.1'),
+  OL_OK: B('F1 OVERLOAD OK (NC)', 'Local:1:I.Data.2'), Motor_Run: B('Motor running (seal-in)'),
+  Run_Timer: { type: 'TIMER', desc: 'Run delay' }, Run_Lamp: B('H1 RUN LAMP', 'Local:2:O.Data.1'),
+  Motor_Cmd: B('KM1 MOTOR CONTACTOR', 'Local:2:O.Data.0'), Fault_Rst: B('Fault reset (HMI)'), Start_ONS: B(),
+  Start_Count: { type: 'COUNTER', desc: 'Motor starts' },
+  Auto_Mode: B('Selector in AUTO'), Door_Closed: B('Panel door closed'), Air_OK: B('Air pressure OK'), Guard_OK: B('Guard closed'),
+  EStop_Active: B('E-stop pressed'), Lube_OK: B(), Temp_OK: B(), Level_OK: B(), Pressure_OK: B(), Fault_Active: B('Any fault'),
+  Conveyor_Ready: B(), Ready: B('Machine ready'),
+};
+const ALARM = B('H2 ALARM HORN', 'Local:2:O.Data.2');
+const BASE = [
+  { c: 'Motor start / stop with seal-in. S0 STOP and F1 OVERLOAD are wired N.C., so XIC is true while they are healthy.',
+    t: '[XIC(Start_PB),XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);' },
+  { c: 'Run lamp 5 s after the motor starts.', t: 'XIC(Motor_Run)TON(Run_Timer,5000,0);' },
+  { t: 'XIC(Run_Timer.DN)OTE(Run_Lamp);' },
+  { t: 'XIC(Motor_Run)OTE(Motor_Cmd);' },
+  { c: 'Count motor starts.', t: 'XIC(Motor_Run)ONS(Start_ONS)CTU(Start_Count,9999,0);' },
+  { c: 'Machine ready when every permissive is made. A rung longer than the window wraps to the next row.',
+    t: 'XIC(Auto_Mode)XIC(Door_Closed)XIC(Air_OK)XIC(Guard_OK)XIO(EStop_Active)XIC(Lube_OK)XIC(Temp_OK)XIC(Level_OK)XIC(Pressure_OK)XIO(Fault_Active)XIC(Conveyor_Ready)OTE(Ready);' },
+  { t: 'XIC(Fault_Rst)OTE(Alarm_Horn);' },
+];
+let VALS;
+function resetVals() {
+  VALS = { Start_PB: 0, Stop_PB: 1, OL_OK: 1, Motor_Run: 1, 'Run_Timer.PRE': 5000, 'Run_Timer.ACC': 0, Run_Lamp: 0, Motor_Cmd: 1,
+    Fault_Rst: 0, Start_ONS: 1, 'Start_Count.PRE': 9999, 'Start_Count.ACC': 12, Alarm_Horn: 0,
+    Auto_Mode: 1, Door_Closed: 1, Air_OK: 1, Guard_OK: 1, EStop_Active: 0, Lube_OK: 1, Temp_OK: 1, Level_OK: 1, Pressure_OK: 1,
+    Fault_Active: 0, Conveyor_Ready: 1, Ready: 1 };
+  scan(0);
+}
+
+/* ---------- instructions used by the mockup ---------- */
+const DEF = {
+  XIC: { k: 'contact', n: 'Examine If Closed' }, XIO: { k: 'contact', n: 'Examine If Open' }, ONS: { k: 'ons', n: 'One Shot' },
+  OTE: { k: 'coil', l: '', n: 'Output Energize' }, OTL: { k: 'coil', l: 'L', n: 'Output Latch' }, OTU: { k: 'coil', l: 'U', n: 'Output Unlatch' },
+  TON: { k: 'box', n: 'Timer On Delay', f: ['Timer', 'Preset', 'Accum'], bits: ['EN', 'DN'] },
+  CTU: { k: 'box', n: 'Count Up', f: ['Counter', 'Preset', 'Accum'], bits: ['CU', 'DN'] },
+};
+const isOut = e => e.t === 'BR' ? e.legs.every(l => l.length && isOut(l[l.length - 1])) : DEF[e.t].k === 'coil' || DEF[e.t].k === 'box';
+function parse(s) {
+  let i = 0;
+  function seq() {
+    const out = [];
+    for (;;) {
+      const c = s[i];
+      if (c === undefined || c === ';' || c === ',' || c === ']') return out;
+      if (c === '[') { i++; const legs = [seq()]; while (s[i] === ',') { i++; legs.push(seq()); } i++; out.push({ t: 'BR', legs }); continue; }
+      const m = /^([A-Z]+)\(([^)]*)\)/.exec(s.slice(i));
+      out.push({ t: m[1], a: m[2].split(',').map(x => x.trim()) });
+      i += m[0].length;
+    }
+  }
+  return seq();
+}
+
+/* simulated scan of this one program (the real engine is js/lsmt/engine.js) */
+function scan(dt) {
+  const v = VALS;
+  if (state === 'force') v.OL_OK = 1;
+  v.Motor_Run = (v.Start_PB || v.Motor_Run) && v.Stop_PB && v.OL_OK ? 1 : 0;
+  if (v.Motor_Run) { v['Run_Timer.ACC'] = Math.min(5000, v['Run_Timer.ACC'] + dt); } else v['Run_Timer.ACC'] = 0;
+  v['Run_Timer.EN'] = v.Motor_Run; v['Run_Timer.DN'] = v.Motor_Run && v['Run_Timer.ACC'] >= 5000 ? 1 : 0;
+  v['Run_Timer.TT'] = v.Motor_Run && !v['Run_Timer.DN'] ? 1 : 0;
+  v.Run_Lamp = v['Run_Timer.DN']; v.Motor_Cmd = v.Motor_Run;
+  if (v.Motor_Run && !v.Start_ONS) v['Start_Count.ACC']++;
+  v.Start_ONS = v.Motor_Run; v['Start_Count.CU'] = v.Motor_Run; v['Start_Count.DN'] = 0;
+  v.Ready = v.Auto_Mode && v.Door_Closed && v.Air_OK && v.Guard_OK && !v.EStop_Active && v.Lube_OK && v.Temp_OK && v.Level_OK && v.Pressure_OK && !v.Fault_Active && v.Conveyor_Ready ? 1 : 0;
+  v.Alarm_Horn = v.Fault_Rst;
+}
+
+/* ---------- mockup states ---------- */
+const STATES = {
+  offline: ['Offline · errors', 'Offline. Every bit instruction takes one cell of the same width, so instructions line up in every rung and branch; outputs line up on the right rail. Rung 5 wraps because it does not fit in one row (marker ▸ at the end, ◂ at the start of the next row). Rung 6 uses <b>Alarm_Horn</b>, not a tag yet, and rung 7 has empty <b>?</b> operands: red ⊗ and the Errors pane. Rung comments are left-aligned in a box across the rung; tag descriptions are centred above their instruction.'],
+  run: ['Online · Rem Run (live)', 'Live: the timer counts, the lamp comes on at 5 s. <b>Click a contact to toggle its bit</b> (Toggle Bit). Rails and powered wire green; a true instruction green. Only the parts that change are redrawn each frame (see fps).'],
+  edit: ['Online edit', 'Start Pending Rung Edits on rung 2: the running rung keeps <b>r</b> (to be replaced), the copy you edit gets <b>e</b> and does not execute. Accept turns them into <b>R</b> / <b>I</b> in the controller (still untested), Test runs the new rung, Assemble makes it final. Buttons on the routine toolbar.'],
+  force: ['Forces', 'OL_OK forced ON: the Forces box is amber (Forces Enabled), the instruction shows <b>F</b>. Toggle the Stop / OL contacts: the forced bit stays on.'],
+  menuOff: ['Right-click (offline)', 'Offline: edit commands on; Toggle Bit and Force are greyed out.'],
+  menuOn: ['Right-click (online)', 'Online: Toggle Bit and Force on; editing needs Start Pending Rung Edits first, so Cut / Delete are greyed out.'],
+  rungMenu: ['Rung menu', 'Right-click the rung number.'],
+  mnem: ['Edit instruction', 'Double-click the instruction symbol (not the tag) to change it in place: type a mnemonic or pick one. The operand is kept.'],
+  browse: ['Tag browser', 'Double-click the tag to edit it in place; ▾ opens the tag browser. Members of a TIMER expand.'],
+  newtag: ['New Tag', 'Right-click an undefined tag → New "Alarm_Horn" (Ctrl+W). Type and scope are filled in from the instruction.'],
+  xref: ['Cross Reference', 'Ctrl+E: every use of the tag; double-click a row to go to the rung.'],
+  ioMenu: ['I/O Config menu', 'Right-click a module in I/O Configuration.'],
+};
+let state = 'offline';
+const online = () => ['run', 'edit', 'force', 'menuOn'].includes(state);
+const tag = name => {
+  const base = name.split('.')[0];
+  if (base === 'Alarm_Horn') return online() || state === 'xref' ? ALARM : null;
+  return TAGS[base] && (name.includes('.') ? { type: 'BOOL', member: true } : TAGS[base]);
+};
+const val = n => !!VALS[n];
+
+/* ---------- ladder layout: a grid of equal cells ---------- */
+const CELL = 104, LH = 12, GAP = 6;
+const mctx = document.createElement('canvas').getContext('2d');
+mctx.font = '11px Arial';
+const tw = s => mctx.measureText(s).width;
+function wrapWords(s, w, max) {
+  const out = []; let cur = '';
+  for (const word of s.split(' ')) { const t = cur ? cur + ' ' + word : word; if (tw(t) > w && cur) { out.push(cur); cur = word; } else cur = t; }
+  if (cur) out.push(cur);
+  return out.slice(0, max);
+}
+function wrapName(s, w, max) {
+  const out = []; let cur = '';
+  for (const ch of s) {
+    if (tw(cur + ch) > w) {
+      const k = cur.lastIndexOf(':') > 0 ? cur.lastIndexOf(':') : Math.max(cur.lastIndexOf('_'), cur.lastIndexOf('.'));
+      if (k > 0) { out.push(cur.slice(0, k + 1)); cur = cur.slice(k + 1); } else { out.push(cur); cur = ''; }
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.slice(0, max);
+}
+function measure(e) {
+  if (e.t === 'BR') {
+    const legs = e.legs.map(measureSeq);
+    let h = 0; legs.forEach((l, k) => { if (k) h += legs[k - 1].dn + GAP + l.up; });
+    return (e.m = { c: Math.max(1, ...legs.map(l => l.c)), up: legs[0].up, dn: h + legs[legs.length - 1].dn, legs });
+  }
+  const d = DEF[e.t];
+  if (d.k === 'box') return (e.m = { c: 2, up: 11, dn: 7 + 14 * d.f.length + 6 });
+  const n = e.a[0], tg = tag(n), w = CELL - 6, L = [];
+  if (tg && tg.desc) wrapWords(tg.desc, w, 3).forEach(t => L.push(['d', t]));
+  wrapName(n, w, 2).forEach(t => L.push(['n', t]));
+  if (tg && tg.alias) wrapName('<' + tg.alias + '>', w, 2).forEach(t => L.push(['a', t]));
+  e.lines = L;
+  return (e.m = { c: 1, up: 13 + L.length * LH, dn: 11 });
+}
+function measureSeq(arr) {
+  let c = 0, up = 11, dn = 11;
+  for (const e of arr) { const m = measure(e); c += m.c; up = Math.max(up, m.up); dn = Math.max(dn, m.dn); }
+  return { c, up, dn };
+}
+
+/* ---------- drawing (ctx.o = null: evaluate only, for the live update) ---------- */
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+function wire(ctx, x1, x2, Y, on) {
+  if (x2 <= x1) return;
+  const i = ctx.s.push(!!on) - 1;
+  if (ctx.o) ctx.o.push(`<line class="w${on ? ' on' : ''}" data-w="${i}" x1="${x1}" y1="${Y + 0.5}" x2="${x2}" y2="${Y + 0.5}"/>`);
+}
+function vwire(ctx, x, y1, y2, on) {
+  const i = ctx.s.push(!!on) - 1;
+  if (ctx.o) ctx.o.push(`<line class="w${on ? ' on' : ''}" data-w="${i}" x1="${x + 0.5}" y1="${y1 + 0.5}" x2="${x + 0.5}" y2="${y2 + 0.5}"/>`);
+}
+function glyph(ctx, on, body, tagName) {
+  const i = ctx.g.push(!!on) - 1;
+  if (ctx.o) ctx.o.push(`<g class="g${on ? ' on' : ''}" data-g="${i}"${tagName ? ` data-tag="${tagName}"` : ''}>${body}</g>`);
+}
+function value(ctx, x, y, v) {
+  const i = ctx.v.push(String(v)) - 1;
+  if (ctx.o) ctx.o.push(`<text x="${x}" y="${y}" text-anchor="end" data-v="${i}">${v}</text>`);
+}
+function draw(ctx, arr, x, Y, pin) {
+  let p = pin;
+  for (const e of arr) { p = drawEl(ctx, e, x, Y, p); x += e.m.c * CELL; }
+  return p;
+}
+function drawEl(ctx, e, x, Y, pin) {
+  const live = online();
+  if (e.t === 'BR') {
+    const { legs, c } = e.m, b2 = x + c * CELL;
+    let ly = Y, pout = false, last = Y;
+    e.legs.forEach((leg, k) => {
+      if (k) ly += legs[k - 1].dn + GAP + legs[k].up;
+      const p = draw(ctx, leg, x, ly, pin);
+      wire(ctx, x + legs[k].c * CELL, b2, ly, p);
+      pout = pout || p; last = ly;
+    });
+    vwire(ctx, x, Y, last, pin);
+    vwire(ctx, b2, Y, last, pout);
+    return pout;
+  }
+  const d = DEF[e.t], n = e.a[0], X = x + CELL / 2, Yc = Y + 0.5;
+  if (ctx.o && e.mark) ctx.pos[e.mark] = { x, y: Y, X, top: Y - e.m.up };
+  if (ctx.o && e.sel) ctx.o.push(`<rect x="${x + 2}" y="${Y - e.m.up + 2}" width="${e.m.c * CELL - 4}" height="${e.m.up + e.m.dn - 4}" fill="var(--selbg)" stroke="var(--sel)"/>`);
+  if (d.k === 'box') {
+    const bx = x + 8, bw = 2 * CELL - 52, top = Y - 7, h = 14 + d.f.length * 14 + 4, mw = Math.ceil(tw(e.t)) + 10;
+    wire(ctx, x, bx, Y, pin);
+    if (ctx.o) {
+      ctx.o.push(`<rect x="${bx + 0.5}" y="${top + 0.5}" width="${bw}" height="${h}" fill="#fff" stroke="#000"/>`);
+      ctx.o.push(`<rect x="${bx + 0.5}" y="${top + 0.5}" width="${mw}" height="14" fill="#fff" stroke="#000"/><text x="${bx + 5}" y="${Y + 4}" font-weight="bold">${e.t}</text>`);
+      ctx.o.push(`<text x="${bx + mw + 6}" y="${Y + 4}">${d.n}</text>`);
+      d.f.forEach((f, k) => { if (k === 0 || !live) ctx.o.push(`<text x="${bx + 5}" y="${Y + 18 + k * 14}">${f}</text><text x="${bx + bw - 5}" y="${Y + 18 + k * 14}" text-anchor="end">${esc(e.a[k])}</text>`); else ctx.o.push(`<text x="${bx + 5}" y="${Y + 18 + k * 14}">${f}</text>`); });
+    }
+    if (live) d.f.forEach((f, k) => { if (k) value(ctx, bx + bw - 5, Y + 18 + k * 14, Math.floor(VALS[e.a[0] + '.' + (k === 1 ? 'PRE' : 'ACC')])); });
+    d.bits.forEach((b, k) => {
+      const yy = Y + k * 14;
+      glyph(ctx, live && val(e.a[0] + '.' + b), `<line x1="${bx + bw}" y1="${yy + 0.5}" x2="${bx + bw + 5}" y2="${yy + 0.5}"/><text x="${bx + bw + 7}" y="${yy + 4}">(${b})</text>`);
+    });
+    wire(ctx, bx + bw + 34, x + 2 * CELL, Y, pin);
+    return pin;
+  }
+  if (ctx.o) e.lines.forEach(([cls, t], k) => ctx.o.push(`<text class="${cls}" x="${X}" y="${Y - 13 - (e.lines.length - 1 - k) * LH}" text-anchor="middle">${esc(t)}</text>`));
+  const bad = n === '?' || !tag(n);
+  let pout = pin, on = false, body = '';
+  if (d.k === 'contact') {
+    const t = e.t === 'XIC' ? val(n) : !val(n);
+    on = live && !bad && t; pout = pin && t;
+    body = `<path d="M${X - 9} ${Yc - 7}H${X - 6.5}V${Yc + 7}H${X - 9}M${X + 9} ${Yc - 7}H${X + 6.5}V${Yc + 7}H${X + 9}"/>` +
+      (e.t === 'XIO' ? `<path class="sl" d="M${X - 3} ${Yc + 6}L${X + 3} ${Yc - 6}"/>` : '');
+    wire(ctx, x, X - 6, Y, pin); wire(ctx, X + 7, x + CELL, Y, pout);
+  } else if (d.k === 'ons') {
+    pout = pin && !val(n);
+    body = `<rect x="${X - 15.5}" y="${Yc - 7}" width="31" height="14" style="fill:#fff"/><text x="${X}" y="${Y + 4}" text-anchor="middle">ONS</text>`;
+    wire(ctx, x, X - 15, Y, pin); wire(ctx, X + 16, x + CELL, Y, pout);
+  } else {
+    on = live && val(n);
+    body = `<path class="sl" d="M${X - 4} ${Yc - 7}Q${X - 9.5} ${Yc} ${X - 4} ${Yc + 7}M${X + 4} ${Yc - 7}Q${X + 9.5} ${Yc} ${X + 4} ${Yc + 7}"/>` +
+      (d.l ? `<text x="${X}" y="${Y + 4}" text-anchor="middle" font-size="10">${d.l}</text>` : '');
+    wire(ctx, x, X - 6, Y, pin); wire(ctx, X + 7, x + CELL, Y, pin);
+  }
+  glyph(ctx, on, body + (ctx.o ? `<rect class="hit" x="${x}" y="${Y - e.m.up}" width="${CELL}" height="${e.m.up + e.m.dn}"/>` : ''), n);
+  if (ctx.o && state === 'force' && n === 'OL_OK') ctx.o.push(`<rect x="${X + 11.5}" y="${Y + 2.5}" width="10" height="11" fill="var(--amber)" stroke="#000"/><text x="${X + 16.5}" y="${Y + 12}" text-anchor="middle" font-size="10" font-weight="bold">F</text>`);
+  return pout;
+}
+
+/* ---------- rungs ---------- */
+let LIST = [], GEO = {};
+function buildList() {
+  const r = BASE.map(x => ({ ...x }));
+  if (state === 'edit') r.splice(2, 1, { ...BASE[2], mk: 'r' }, { t: 'XIC(Run_Timer.DN)XIO(Fault_Rst)OTE(Run_Lamp);', mk: 'e' });
+  if (!online() && state !== 'xref') r.push({ t: 'XIC(?)OTE(?);' });
+  r.forEach(x => { x.el = parse(x.t); });
+  const at = (ri, path) => path.reduce((e, k) => (e.t === 'BR' ? e.legs[k[0]][k[1]] : e), r[ri].el[path[0]]);
+  if (['menuOff', 'menuOn', 'xref'].includes(state)) { const e = r[0].el[0].legs[1][0]; e.sel = true; e.mark = 'sel'; }
+  if (state === 'mnem' || state === 'browse') { const e = r[2].el[0]; e.sel = state === 'mnem'; e.mark = 'sel'; }
+  if (state === 'newtag') { const e = r[6].el[1]; e.sel = true; e.mark = 'sel'; }
+  void at;
+  return r;
+}
+function errorsOf(list) {
+  const errs = [];
+  list.forEach((r, ri) => {
+    const walk = arr => arr.forEach(e => {
+      if (e.t === 'BR') return e.legs.forEach(walk);
+      e.a.forEach((a, k) => {
+        if (/^-?\d+$/.test(a)) return;
+        if (a === '?') errs.push({ ri, m: `Rung ${ri}, ${e.t}, Operand ${k}: Missing operand.` });
+        else if (!tag(a)) errs.push({ ri, m: `Rung ${ri}, ${e.t}, Operand ${k}: Undefined tag '${a}'.` });
+      });
+    });
+    walk(r.el);
+  });
+  return errs;
+}
+function layout(W) {
+  const RL = 46, ncols = Math.floor((W - RL - 10) / CELL), RR = RL + ncols * CELL;
+  for (const r of LIST) {
+    const k = r.el.findIndex((e, i) => r.el.slice(i).every(isOut));
+    const ins = k < 0 ? r.el : r.el.slice(0, k), outs = k < 0 ? [] : r.el.slice(k);
+    const om = measureSeq(outs);
+    const rows = [{ els: [], c: 0 }];
+    for (const e of ins) { const m = measure(e); let row = rows[rows.length - 1]; if (row.c + m.c > ncols && row.els.length) rows.push(row = { els: [], c: 0 }); row.els.push(e); row.c += m.c; }
+    if (rows[rows.length - 1].c + om.c > ncols) rows.push({ els: [], c: 0 });
+    rows.forEach((row, i) => { const m = measureSeq(row.els); row.up = Math.max(m.up, i === rows.length - 1 ? om.up : 0); row.dn = Math.max(m.dn, i === rows.length - 1 ? om.dn : 0); });
+    Object.assign(r, { rows, outs, oc: om.c, cl: r.c ? wrapWords(r.c, RR - RL - 20, 4) : [] });
+  }
+  return { RL, RR };
+}
+function drawAll(ctx) {
+  const { RL, RR } = GEO, live = online(), o = ctx.o;
+  let y = 8;
+  LIST.forEach((r, ri) => {
+    const top = y;
+    if (r.cl.length) {
+      const h = r.cl.length * 13 + 6;
+      if (o) { o.push(`<rect x="${RL + 6.5}" y="${y + 0.5}" width="${RR - RL - 13}" height="${h}" class="cm"/>`); r.cl.forEach((t, i) => o.push(`<text x="${RL + 11}" y="${y + 14 + i * 13}">${esc(t)}</text>`)); }
+      y += h + 8;
+    }
+    const powered = live && r.mk !== 'e';
+    let p = powered, firstY = 0;
+    r.rows.forEach((row, i) => {
+      const Y = y + row.up, lastRow = i === r.rows.length - 1;
+      if (!i) firstY = Y;
+      p = draw(ctx, row.els, RL, Y, p);
+      if (i && o) o.push(`<rect x="${RL + 1}" y="${Y - 3}" width="12" height="7" fill="#fff"/><path class="wrapm" d="M${RL + 4} ${Y - 3.5}l4 4l-4 4"/>`);
+      if (!lastRow) {
+        wire(ctx, RL + row.c * CELL, RR - 14, Y, p);
+        if (o) o.push(`<path class="wrapm" d="M${RR - 11} ${Y - 3.5}l4 4l-4 4"/>`);
+      } else {
+        const ox = RR - r.oc * CELL;
+        wire(ctx, RL + row.c * CELL, ox, Y, p);
+        draw(ctx, r.outs, ox, Y, p);
+      }
+      y = Y + row.dn + 8;
+    });
+    if (o) {
+      const sel = (state === 'rungMenu' && ri === 0) || (['menuOff', 'menuOn', 'xref'].includes(state) && ri === 0);
+      if (sel) o.push(`<rect x="14" y="${firstY - 8}" width="${RL - 20}" height="16" fill="var(--sel)"/>`);
+      o.push(`<text x="${RL - 9}" y="${firstY + 4}" text-anchor="end" fill="${sel ? '#fff' : '#000'}">${ri}</text>`);
+      if (ctx.errRungs.has(ri)) o.push(`<circle cx="8.5" cy="${firstY + 0.5}" r="5.5" fill="none" stroke="var(--err)" stroke-width="1.2"/><path d="M6 ${firstY - 2}l5 5M11 ${firstY - 2}l-5 5" stroke="var(--err)" stroke-width="1.2"/>`);
+      if (r.mk) o.push(`<text x="4" y="${firstY + 4}" font-weight="bold">${r.mk}</text><line x1="${RL - 4.5}" y1="${top + 2}" x2="${RL - 4.5}" y2="${y - 6}" stroke="#000" stroke-dasharray="2 2"/>`);
+      if (ri === 0) ctx.pos.rung0 = { x: RL, y: firstY };
+    }
+    y += 2;
+  });
+  const mid = Math.round((RL + RR) / 2);
+  if (o) o.push(`<text x="${mid}" y="${y + 10}" text-anchor="middle">(End)</text>`);
+  wire(ctx, RL, mid - 22, y + 6, live); wire(ctx, mid + 22, RR, y + 6, live);
+  return y + 24;
+}
+
+let NODES = null, PREV = null;
+function renderLadder() {
+  const host = document.getElementById('lad');
+  LIST = buildList();
+  const errs = errorsOf(LIST);
+  GEO = layout(host.clientWidth - 18);
+  const ctx = { o: [], s: [], g: [], v: [], pos: {}, errRungs: new Set(errs.map(e => e.ri)) };
+  const H = drawAll(ctx), { RL, RR } = GEO;
+  host.innerHTML = `<svg class="l${online() ? ' live' : ''}" width="${RR + 8}" height="${H}">
+    <line class="rail" x1="${RL + 0.5}" y1="0" x2="${RL + 0.5}" y2="${H - 10}"/><line class="rail" x1="${RR + 0.5}" y1="0" x2="${RR + 0.5}" y2="${H - 10}"/>${ctx.o.join('')}</svg>`;
+  const svg = host.firstChild;
+  NODES = { w: [...svg.querySelectorAll('[data-w]')], g: [...svg.querySelectorAll('[data-g]')], v: [...svg.querySelectorAll('[data-v]')] };
+  PREV = { s: ctx.s, g: ctx.g, v: ctx.v };
+  return { errs, n: LIST.length, pos: ctx.pos };
+}
+/* live update: evaluate again, touch only what changed */
+function update() {
+  const ctx = { o: null, s: [], g: [], v: [] };
+  drawAll(ctx);
+  for (let i = 0; i < ctx.s.length; i++) if (ctx.s[i] !== PREV.s[i]) NODES.w[i].classList.toggle('on', ctx.s[i]);
+  for (let i = 0; i < ctx.g.length; i++) if (ctx.g[i] !== PREV.g[i]) NODES.g[i].classList.toggle('on', ctx.g[i]);
+  for (let i = 0; i < ctx.v.length; i++) if (ctx.v[i] !== PREV.v[i]) NODES.v[i].textContent = ctx.v[i];
+  PREV = ctx;
+}
+let raf = 0, lastT = 0, frames = 0, fpsT = 0;
+function loop(t) {
+  const dt = lastT ? Math.min(100, t - lastT) : 0; lastT = t;
+  scan(dt); update();
+  frames++;
+  if (t - fpsT >= 1000) { document.getElementById('fps').textContent = `${Math.round(frames * 1000 / (t - fpsT))} fps`; frames = 0; fpsT = t; }
+  raf = requestAnimationFrame(loop);
+}
+
+/* ---------- window chrome ---------- */
+const ICO = {
+  new: '<path d="M3.5 1.5h6l3 3v10h-9z" fill="#fff" stroke="#666"/><path d="M9.5 1.5v3h3" fill="none" stroke="#666"/>',
+  open: '<path d="M1.5 4.5h4l1 1h7v8h-12z" fill="#f2cf63" stroke="#9a7a1c"/>',
+  save: '<rect x="2.5" y="2.5" width="11" height="11" fill="#4f74ad" stroke="#2f4f80"/><rect x="5" y="3" width="6" height="4" fill="#fff"/><rect x="5" y="9" width="6" height="4" fill="#cfd8e6"/>',
+  cut: '<circle cx="5" cy="12" r="2" fill="none" stroke="#333"/><circle cx="11" cy="12" r="2" fill="none" stroke="#333"/><path d="M6 10.5 10.5 2M10 10.5 5.5 2" stroke="#333"/>',
+  copy: '<rect x="2.5" y="2.5" width="7" height="9" fill="#fff" stroke="#666"/><rect x="6.5" y="5.5" width="7" height="9" fill="#fff" stroke="#666"/>',
+  paste: '<rect x="3.5" y="3.5" width="9" height="11" fill="#d9b36c" stroke="#7a5a1a"/><rect x="6.5" y="2.5" width="3" height="2" fill="#ddd" stroke="#666"/>',
+  undo: '<path d="M5.5 3.5 2.5 6.5l3 3M2.5 6.5h6.5a3.5 3.5 0 0 1 0 7H6" fill="none" stroke="#2f4f80" stroke-width="1.3"/>',
+  redo: '<path d="M10.5 3.5l3 3-3 3M13.5 6.5H7a3.5 3.5 0 0 0 0 7h3" fill="none" stroke="#2f4f80" stroke-width="1.3"/>',
+  find: '<circle cx="6.5" cy="6.5" r="4" fill="#fff" stroke="#333" stroke-width="1.2"/><path d="M9.5 9.5 14 14" stroke="#333" stroke-width="1.8"/>',
+  xref: '<path d="M2 4.5h7M2 8.5h12M2 12.5h7" stroke="#666"/><circle cx="12.5" cy="4.5" r="1.8" fill="#c33"/>',
+  verc: '<rect x="1.5" y="2.5" width="13" height="11" fill="#fff" stroke="#666"/><path d="M4 8l3 3 5-6" fill="none" stroke="#1a8a1a" stroke-width="1.5"/>',
+  verr: '<path d="M2.5 3v10M13.5 3v10M2.5 8.5h11" stroke="#666"/><path d="M5 8l2.5 2.5L12 5" fill="none" stroke="#1a8a1a" stroke-width="1.5"/>',
+  tags: '<rect x="1.5" y="2.5" width="13" height="11" fill="#fff" stroke="#666"/><path d="M1.5 6.5h13M1.5 9.5h13M6.5 2.5v11" stroke="#aaa"/>',
+  zin: '<circle cx="6.5" cy="6.5" r="4.5" fill="#fff" stroke="#333"/><path d="M4.5 6.5h4M6.5 4.5v4M10 10l4 4" stroke="#333" stroke-width="1.2"/>',
+  zout: '<circle cx="6.5" cy="6.5" r="4.5" fill="#fff" stroke="#333"/><path d="M4.5 6.5h4M10 10l4 4" stroke="#333" stroke-width="1.2"/>',
+  ascii: '<rect x="1.5" y="3.5" width="13" height="9" fill="#fff" stroke="#666"/><path d="M4 6.5h8M4 9.5h5" stroke="#333"/>',
+  start: '<rect x="2.5" y="2.5" width="11" height="11" fill="#fff" stroke="#666"/><text x="8" y="11.5" font-size="10" font-family="Arial" font-weight="bold" fill="#b35c00" text-anchor="middle">e</text>',
+  accept: '<rect x="2.5" y="2.5" width="11" height="11" fill="#fff" stroke="#666"/><path d="M4.5 8l2.5 2.5 4.5-5" fill="none" stroke="#1a8a1a" stroke-width="1.5"/>',
+  cancel: '<rect x="2.5" y="2.5" width="11" height="11" fill="#fff" stroke="#666"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#c33" stroke-width="1.4"/>',
+  test: '<rect x="2.5" y="2.5" width="11" height="11" fill="#fff" stroke="#666"/><text x="8" y="11.5" font-size="10" font-family="Arial" font-weight="bold" fill="#2f4f80" text-anchor="middle">T</text>',
+  assemble: '<rect x="2.5" y="2.5" width="11" height="11" fill="#fff" stroke="#666"/><text x="8" y="11.5" font-size="10" font-family="Arial" font-weight="bold" fill="#1a8a1a" text-anchor="middle">A</text>',
+  online: '<rect x="1.5" y="4.5" width="6" height="7" fill="#fff" stroke="#666"/><rect x="9.5" y="3.5" width="5" height="9" fill="#ccc" stroke="#666"/><path d="M7.5 8h2" stroke="#1a8a1a" stroke-width="2"/>',
+};
+const ic = (k, t) => `<span class="btn" title="${t}"><svg width="16" height="16" viewBox="0 0 16 16">${ICO[k]}</svg></span>`;
+/* instruction toolbar glyphs: 26 × 16, 1 px lines on the pixel grid, wire at y = 8.5 */
+const GL = {
+  rung: '<path d="M2.5 3v11M23.5 3v11M2.5 8.5h21"/>',
+  branch: '<path d="M1 5.5h24M6.5 5.5v6h13v-6"/>',
+  level: '<path d="M6.5 3v8.5h13V3"/>',
+  XIC: '<path d="M1 8.5h8.5M16.5 8.5H25M7 3.5h2.5v10H7M19 3.5h-2.5v10H19"/>',
+  XIO: '<path d="M1 8.5h8.5M16.5 8.5H25M7 3.5h2.5v10H7M19 3.5h-2.5v10H19"/><path class="sl" d="M11.5 12.5l3-8"/>',
+  OTE: '<path d="M1 8.5h8M17 8.5h8"/><path class="sl" d="M10.5 3.5Q7 8.5 10.5 13.5M15.5 3.5Q19 8.5 15.5 13.5"/>',
+  OTL: '<path d="M1 8.5h7M18 8.5h7"/><path class="sl" d="M9.5 3Q5.5 8.5 9.5 14M16.5 3Q20.5 8.5 16.5 14"/><text x="13" y="11.5">L</text>',
+  OTU: '<path d="M1 8.5h7M18 8.5h7"/><path class="sl" d="M9.5 3Q5.5 8.5 9.5 14M16.5 3Q20.5 8.5 16.5 14"/><text x="13" y="11.5">U</text>',
+  ONS: '<rect x="1.5" y="2.5" width="23" height="12"/><text x="13" y="11.5" class="sm">ONS</text>',
+  TON: '<rect x="1.5" y="2.5" width="23" height="12"/><text x="13" y="11.5" class="sm">TON</text>',
+  CTU: '<rect x="1.5" y="2.5" width="23" height="12"/><text x="13" y="11.5" class="sm">CTU</text>',
+};
+const GLT = { rung: 'Rung (Ctrl+R)', branch: 'Branch', level: 'Branch Level' };
+function chrome(info) {
+  const live = online(), dirty = !live && state !== 'xref';
+  document.getElementById('ttl').textContent = `Logic Studio MT - Motor_Demo [PLC-CPU 1.0]${dirty ? '*' : ''}`;
+  document.getElementById('dirty').textContent = dirty ? '*' : '';
+  document.getElementById('tb').innerHTML = [ic('new', 'New'), ic('open', 'Open'), ic('save', 'Save'), '<span class="sep"></span>',
+    ic('cut', 'Cut'), ic('copy', 'Copy'), ic('paste', 'Paste'), '<span class="sep"></span>', ic('undo', 'Undo'), ic('redo', 'Redo'),
+    '<span class="sep"></span>', '<span class="combo" style="width:150px">Motor_Run<i>▾</i></span>', ic('find', 'Find'), ic('xref', 'Cross Reference (Ctrl+E)'),
+    '<span class="sep"></span>', ic('verc', 'Verify Controller'), ic('verr', 'Verify Routine'), '<span class="sep"></span>', ic('tags', 'Controller Tags'),
+    '<span style="margin-left:auto;display:flex;align-items:center;gap:4px">Path:<span class="combo" style="width:180px">Local\\0<i>▾</i></span>' + ic('online', 'Go Online') + '</span>'].join('');
+  const L = live ? [['g', 'Rem Run'], ['g', 'Controller OK'], ['g', 'Battery OK'], ['g', 'I/O OK']] : [['', 'RUN'], ['', 'OK'], ['', 'BAT'], ['', 'I/O']];
+  document.getElementById('leds').innerHTML = L.map(([c, t]) => `<div><span class="led ${c}"></span>${t}</div>`).join('');
+  document.getElementById('keyb').setAttribute('transform', `rotate(${live ? 0 : -45} 11 11)`);
+  const forces = state === 'force' ? '<div class="box warn">Forces Enabled<i>▾</i></div>' : '<div class="box">No Forces<i>▾</i></div>';
+  const edits = state === 'edit' ? '<div class="box">Edits Present<i>▾</i></div>' : '<div class="box">No Edits<i>▾</i></div>';
+  document.getElementById('stat').innerHTML = `<div class="box mode">${live ? 'Rem Run' : 'Offline'}<i>▾</i></div>${forces}${edits}<div class="box">Path: ${live ? 'Local\\0' : '&lt;none&gt;'}</div>`;
+  document.getElementById('glyphs').innerHTML = Object.entries(GL).map(([k, p]) => `<span class="gl" title="${GLT[k] || k + ' – ' + DEF[k].n}"><svg width="26" height="17" viewBox="0 0 26 17" class="tg">${p}</svg></span>`).join('');
+  document.getElementById('tabs').innerHTML = ['Favorites', 'Bit', 'Timer/Counter', 'Input/Output', 'Compare', 'Compute/Math', 'Move/Logical', 'File/Misc', 'Program Control']
+    .map((t, i) => `<span class="${i ? '' : 'on'}">${t}</span>`).join('') + '<span class="arr">◂</span><span class="arr" style="margin-left:0">▸</span>';
+  const oe = [ic('start', 'Start Pending Rung Edits'), ic('accept', 'Accept Pending Rung Edits'), ic('cancel', 'Cancel Pending Rung Edits'),
+    '<span class="sep"></span>', ic('test', 'Test Accepted Program Edits'), ic('assemble', 'Assemble Accepted Program Edits')].join('');
+  document.getElementById('rtb').innerHTML = [ic('zin', 'Zoom In'), ic('zout', 'Zoom Out'), '<span class="sep"></span>', ic('ascii', 'Edit Rung as Text'),
+    live ? '<span class="sep"></span>' + oe : ''].join('');
+  const TI = {
+    fold: '<path d="M1.5 2.5h5l1 1.5h7v8.5h-13z" fill="#f2cf63" stroke="#9a7a1c"/>',
+    ctl: '<rect x="3.5" y="1.5" width="9" height="11" fill="#dfe6ef" stroke="#666"/><path d="M5 4.5h6M5 6.5h6" stroke="#2c5a91"/><circle cx="6" cy="10" r="1" fill="#2ecc40"/>',
+    tags: '<rect x="1.5" y="1.5" width="13" height="11" fill="#fff" stroke="#666"/><path d="M1.5 5.5h13M1.5 8.5h13M6.5 1.5v11" stroke="#aaa"/>',
+    task: '<circle cx="8" cy="7" r="5.5" fill="#fff" stroke="#666"/><path d="M8 3.5V7l2.5 1.5" fill="none" stroke="#2c5a91" stroke-width="1.2"/>',
+    prog: '<rect x="1.5" y="1.5" width="13" height="11" fill="#f2cf63" stroke="#9a7a1c"/><rect x="4.5" y="4.5" width="7" height="5" fill="#fff" stroke="#9a7a1c"/>',
+    rtn: '<rect x="1.5" y="1.5" width="13" height="11" fill="#fff" stroke="#666"/><path d="M3.5 3v8M12.5 3v8M3.5 5.5h9M3.5 8.5h9" stroke="#000"/>',
+    io: '<rect x="1.5" y="3.5" width="13" height="7" fill="#ccc" stroke="#666"/><path d="M4.5 3.5v7M7.5 3.5v7M10.5 3.5v7" stroke="#888"/>',
+    mod: '<rect x="5.5" y="0.5" width="5" height="13" fill="#dfe6ef" stroke="#666"/><circle cx="8" cy="3" r="1" fill="#2ecc40"/>',
+  };
+  const T = (lvl, txt, icon, opt = {}) => `<div style="padding-left:${2 + lvl * 14}px" class="${opt.on ? 'on' : ''}"${opt.id ? ` id="${opt.id}"` : ''}>${opt.pm ? `<span class="pm">${opt.pm}</span>` : '<span class="sp"></span>'}<svg width="16" height="14" viewBox="0 0 16 14">${TI[icon]}</svg>${txt}</div>`;
+  const io = state === 'ioMenu';
+  document.getElementById('tree').innerHTML = [
+    T(0, 'Controller Motor_Demo', 'ctl', { pm: '−' }), T(1, 'Controller Tags', 'tags'),
+    T(0, 'Tasks', 'fold', { pm: '−' }), T(1, 'MainTask', 'task', { pm: '−' }), T(2, 'MainProgram', 'prog', { pm: '−' }),
+    T(3, 'Program Tags', 'tags'), T(3, 'MainRoutine', 'rtn', { on: !io }),
+    T(0, 'Data Types', 'fold', { pm: '−' }), T(1, 'User-Defined', 'fold', { pm: '+' }), T(1, 'Predefined', 'fold', { pm: '+' }), T(1, 'Module-Defined', 'fold', { pm: '+' }),
+    T(0, 'I/O Configuration', 'fold', { pm: '−' }), T(1, 'Backplane, PLC-RACK10', 'io', { pm: '−' }),
+    T(2, '[0] PLC-CPU Motor_Demo', 'mod'), T(2, '[1] PLC-DI16-24V DI_1', 'mod', { on: io, id: 'iomod' }), T(2, '[2] PLC-DO16-24V DO_1', 'mod'),
+  ].join('');
+  const ne = info.errs.length;
+  document.getElementById('chips').innerHTML = `<span class="chip on"><b style="color:var(--err)">⊗</b> ${ne} Errors</span><span class="chip on">⚠ 0 Warnings</span><span class="chip on">ⓘ ${live ? 2 : 1} Messages</span><span class="combo" style="width:180px;margin-left:8px">Search<i>⌕</i></span>`;
+  const msgs = live
+    ? ['Download completed.', state === 'edit' ? 'Online edit: rung 3 (e) will replace rung 2 (r) after Accept.' : 'Controller mode: Remote Run.']
+    : ['Verifying routine MainRoutine of program MainProgram...', ...info.errs.map(e => `<span class="e">Error: ${e.m}</span>`), `Complete - ${ne} error(s), 0 warning(s)`];
+  document.getElementById('log').innerHTML = msgs.join('\n');
+  document.getElementById('status').innerHTML = `<span>Ready</span><span>Communication: Built-in controller</span><span>Rung 0 of ${info.n}</span><span>APP</span><span>VER</span>`;
+}
+
+/* ---------- overlays, placed from the drawn positions ---------- */
+function menu(items, x, y) {
+  return `<div class="pop cmenu" style="left:${x}px;top:${y}px">${items.map(s => {
+    if (s === '-') return '<hr>';
+    const [a, b, c] = s.split('|'); return `<div class="${c || ''}"><span>${a}</span><span>${b || ''}</span></div>`;
+  }).join('')}</div>`;
+}
+function overlays(info) {
+  const ov = document.getElementById('ov'), win = document.getElementById('win').getBoundingClientRect();
+  const lad = document.getElementById('lad'), lr = lad.getBoundingClientRect();
+  const P = (p, dx = 0, dy = 0) => [Math.round(lr.left - win.left + p.x + dx), Math.round(lr.top - win.top - lad.scrollTop + p.y + dy)];
+  const s = info.pos.sel;
+  ov.innerHTML = '';
+  if (state === 'menuOff' || state === 'menuOn') {
+    const on = state === 'menuOn', dis = c => (c ? '' : '|dis');
+    const [x, y] = P(s, 70, 0);
+    ov.innerHTML = menu([`New "Motor_Run"|Ctrl+W|dis`, '-', `Cut Instruction|Ctrl+X${dis(!on)}`, `Copy Instruction|Ctrl+C`, `Paste|Ctrl+V${dis(!on)}`, `Delete Instruction|Del${dis(!on)}`, '-',
+      `Add Ladder Element...|Alt+Ins${dis(!on)}`, `Edit Instruction|Enter${dis(!on)}`, `Edit Main Operand Description|Ctrl+D`, '-',
+      `Toggle Bit|Ctrl+T${on ? '|on' : '|dis'}`, `Force On|${dis(on)}`, `Force Off|${dis(on)}`, `Remove Force|${dis(false)}`, '-',
+      'Go To...|Ctrl+G', 'Go to Cross Reference for "Motor_Run"|Ctrl+E', '-', 'Instruction Help|F1'], x, y);
+  }
+  if (state === 'rungMenu') {
+    const [x, y] = P(info.pos.rung0, -24, 10);
+    ov.innerHTML = menu(['Cut Rung|Ctrl+X', 'Copy Rung|Ctrl+C', 'Paste|Ctrl+V', 'Delete Rung|Del', '-', 'Add Rung|Ctrl+R|on', 'Edit Rung|Enter', 'Edit Rung Comment|Ctrl+D', '-',
+      'Verify Rung', 'Go To...|Ctrl+G', '-', 'Start Pending Rung Edits (online)||dis', 'Accept Pending Rung Edits (online)||dis', 'Cancel Pending Rung Edits (online)||dis'], x, y);
+  }
+  if (state === 'mnem') {
+    const [x, y] = P(s, 46 - 34, -7);
+    ov.innerHTML = `<div class="pop inl" style="left:${x}px;top:${y}px;width:68px">XIC<i>▾</i></div>
+      <div class="pop" style="left:${x}px;top:${y + 18}px;width:220px"><table class="g">${[['XIC', 'Examine If Closed', 1], ['XIO', 'Examine If Open'], ['ONS', 'One Shot'], ['OSR', 'One Shot Rising'], ['OSF', 'One Shot Falling']]
+        .map(([a, b, on]) => `<tr class="${on ? 'on' : ''}"><td style="width:40px"><b>${a}</b></td><td>${b}</td></tr>`).join('')}</table></div>`;
+  }
+  if (state === 'browse') {
+    const [x, y] = P(s, 46 - 56, -26);
+    ov.innerHTML = `<div class="pop inl" style="left:${x}px;top:${y}px;width:112px">Run_T<i>▾</i></div>
+    <div class="pop" style="left:${x}px;top:${y + 18}px;width:360px">
+    <div style="padding:4px;background:var(--face);border-bottom:1px solid var(--edge2);display:flex;gap:6px;align-items:center">Name Filter: <span class="inp" style="flex:1">Run_T</span> Show: <span class="combo" style="width:84px">All Tags<i>▾</i></span></div>
+    <table class="g"><tr><th style="width:55%">Name</th><th>Data Type</th></tr>
+      <tr><td>⊟ Run_Timer</td><td>TIMER</td></tr><tr><td style="padding-left:22px">Run_Timer.EN</td><td>BOOL</td></tr>
+      <tr><td style="padding-left:22px">Run_Timer.TT</td><td>BOOL</td></tr><tr class="on"><td style="padding-left:22px">Run_Timer.DN</td><td>BOOL</td></tr>
+      <tr><td style="padding-left:22px">Run_Timer.PRE</td><td>DINT</td></tr><tr><td style="padding-left:22px">Run_Timer.ACC</td><td>DINT</td></tr>
+      <tr><td>Run_Lamp</td><td>BOOL</td></tr></table>
+    <div style="padding:4px;background:var(--face);border-top:1px solid var(--edge2)"><span class="cb">Show controller tags</span><span class="cb">Show MainProgram tags</span></div></div>`;
+  }
+  if (state === 'newtag') ov.innerHTML = `<div class="pop dlg" style="left:420px;top:190px;width:380px">
+    <div class="dt"><span>New Tag</span><span>×</span></div><div class="db">
+    ${[['Name:', 'Alarm_Horn'], ['Description:', 'H2 ALARM HORN'], ['Usage:', '&lt;normal&gt;<i>▾</i>'], ['Type:', 'Alias<i>▾</i>'], ['Alias For:', 'Local:2:O.Data.2<i>▾</i>'],
+       ['Data Type:', 'BOOL<i>…</i>'], ['Scope:', 'Motor_Demo (controller)<i>▾</i>'], ['External Access:', 'Read/Write<i>▾</i>'], ['Style:', 'Decimal<i>▾</i>']]
+      .map(([a, b]) => `<div class="row"><span>${a}</span><span class="inp">${b}</span></div>`).join('')}
+    <div class="row"><span></span><span class="cb off">Constant</span></div>
+    <div class="btns"><span class="pb def">Create</span><span class="pb">Cancel</span><span class="pb">Help</span></div></div></div>`;
+  if (state === 'xref') ov.innerHTML = `<div class="pop dlg" style="left:300px;top:250px;width:620px">
+    <div class="dt"><span>Cross Reference - Motor_Run</span><span>×</span></div><div class="db" style="padding:6px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">Tag: <span class="combo" style="width:200px">Motor_Run<i>▾</i></span> Scope: <span class="combo" style="width:140px">Motor_Demo<i>▾</i></span><span class="pb" style="margin-left:auto">Refresh</span></div>
+    <table class="g"><tr><th>Container</th><th>Routine</th><th>Location</th><th>Reference</th><th>BaseTag</th><th>Destructive</th></tr>
+      ${[['Rung 0', 'XIC', 'N'], ['Rung 0', 'OTE', 'Y'], ['Rung 1', 'XIC', 'N'], ['Rung 3', 'XIC', 'N'], ['Rung 4', 'XIC', 'N']]
+        .map(([l, r, d], i) => `<tr class="${i === 1 ? 'on' : ''}"><td>MainProgram</td><td>MainRoutine</td><td>${l}</td><td>${r}</td><td>Motor_Run</td><td>${d}</td></tr>`).join('')}</table>
+    <div class="btns"><span class="pb">Go To</span><span class="pb def">Close</span></div></div></div>`;
+  if (state === 'ioMenu') {
+    const m = document.getElementById('iomod').getBoundingClientRect();
+    ov.innerHTML = menu(['New Module...||dis', '-', 'Cut|Ctrl+X', 'Copy|Ctrl+C', 'Paste|Ctrl+V|dis', 'Delete|Del', '-', 'Cross Reference|Ctrl+E', '-', 'Properties|Alt+Enter|on'],
+      Math.round(m.left - win.left + 110), Math.round(m.bottom - win.top - 2));
+  }
+}
+
+function render() {
+  cancelAnimationFrame(raf); lastT = 0; fpsT = performance.now(); frames = 0;
+  document.getElementById('pick').innerHTML = '<b>State:</b>' + Object.entries(STATES).map(([k, s]) => `<button data-s="${k}" class="${k === state ? 'on' : ''}">${s[0]}</button>`).join('') + '<span id="fps"></span>';
+  document.getElementById('note').innerHTML = STATES[state][1];
+  resetVals();
+  const info = renderLadder();
+  chrome(info);
+  overlays(info);
+  if (online()) raf = requestAnimationFrame(loop);
+}
+document.getElementById('pick').addEventListener('click', e => { const s = e.target.dataset.s; if (s) { state = s; render(); } });
+document.getElementById('lad').addEventListener('click', e => {
+  const g = e.target.closest('[data-tag]');
+  if (!g || !online()) return;
+  const n = g.dataset.tag;
+  if (n in VALS && !n.includes('.') && !(state === 'force' && n === 'OL_OK')) VALS[n] = VALS[n] ? 0 : 1;
+});
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(render, 100); });
+render();
+</script>
+</body>
+</html>
