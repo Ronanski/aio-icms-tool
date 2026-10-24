@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### MT PLC Studio 0.1.0 (first stable release)
+- The beta 1 to 3 changes below, as the first stable version. Apps on Stable and on Beta both get it as an in-app update.
+
 ### Fixed (MT PLC Studio 0.1.0-beta.3)
 - **Branches:** tapping a branch on the tablet or phone no longer breaks the screen.
 - **Branch levels:** each level of a branch, empty or not, can now be selected.
