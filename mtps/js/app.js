@@ -33,7 +33,7 @@
   const racks = (() => {
     try { const o = store.get('emu', null); if (o && Array.isArray(o.racks) && o.racks.length) return o.racks.map(r => E.Chassis.from(r)); } catch (e) { /* a broken copy: start again */ }
     try {
-      // the single chassis of 0.2.0-beta.3: its first controller gets the first address
+      // the single chassis of 0.2.0-beta.1: its first controller gets the first address
       const old = store.get('chassis', null);
       if (old && Array.isArray(old.mods)) { const c = E.Chassis.from(old), m = c.controllers()[0]; if (m && !m.ip) m.ip = '127.0.0.1'; return [c]; }
     } catch (e) { /* start again */ }
