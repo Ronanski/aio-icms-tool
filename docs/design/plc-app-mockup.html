@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Logic Studio MT Mockup</title>
+<title>MT PLC Studio Mockup</title>
 <!-- Visual mockup of the new PLC app (plc.html). Layout and sizes follow the desktop programming software
      the owner uses as the reference: 11 px text, 16 px icons, 22 px buttons, thin rungs. See docs/PLC_APP_SPEC.md. -->
 <style>
@@ -221,7 +221,7 @@ function parse(s) {
   return seq();
 }
 
-/* simulated scan of this one program (the real engine is js/lsmt/engine.js) */
+/* simulated scan of this one program (the real engine is mtps/js/engine.js) */
 function scan(dt) {
   const v = VALS;
   if (state === 'force') v.OL_OK = 1;
@@ -549,7 +549,7 @@ const GL = {
 const GLT = { rung: 'Rung (Ctrl+R)', branch: 'Branch', level: 'Branch Level' };
 function chrome(info) {
   const live = online(), dirty = !live && state !== 'xref';
-  document.getElementById('ttl').textContent = `Logic Studio MT - Motor_Demo [PLC-CPU 1.0]${dirty ? '*' : ''}`;
+  document.getElementById('ttl').textContent = `MT PLC Studio - Motor_Demo [PLC-CPU 1.0]${dirty ? '*' : ''}`;
   document.getElementById('dirty').textContent = dirty ? '*' : '';
   document.getElementById('tb').innerHTML = [ic('new', 'New'), ic('open', 'Open'), ic('save', 'Save'), '<span class="sep"></span>',
     ic('cut', 'Cut'), ic('copy', 'Copy'), ic('paste', 'Paste'), '<span class="sep"></span>', ic('undo', 'Undo'), ic('redo', 'Redo'),
