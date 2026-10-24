@@ -737,3 +737,40 @@ The points used here:
   - The marks sit beside the rung numbers.
 - **Emulator snapshots:** the whole emulator (`racks`) is saved under a name (`mtps.emu.snaps`, at most 20).
   Restore replaces it.
+
+## 17. Proposals P1 to P5 (0.3.0-beta.1)
+
+The mockups are on the canvas https://claude.ai/artifact/8GCDxrx7Vkatu6R6e8mfRM.
+
+- **P3 Setup and drivers:**
+  - Drivers (`mtps.emu.drivers`) are Emulate Ethernet. EtherNet/IP and Virtual Backplane are listed but not
+    available.
+  - With no running driver, Who Active lists nothing, and Go Online says to configure drivers.
+  - The wizard steps: Communications, Emulator (a powered controller with an IP), New Project (from the emulator
+    chassis), Who Active (Set Project Path), Ladder. Quick setup does them with the defaults.
+  - A first start with nothing saved opens the wizard with no driver.
+- **P1 Dock:** the emulator of the project path's chassis sits beside the ladder.
+  - Desktop and tablet portrait: at the bottom. Tablet landscape and phone landscape: at the side. Phone portrait: a
+    tab.
+  - A splitter sizes it. The rack fits the width; a narrow dock shows only the used slots and the first empty slot.
+- **Chassis graphics:** a power supply, a top rail with screws, slots (a backplane connector when empty) and a bottom
+  rail with slot numbers.
+  - The controller module shows a status display, LEDs, the name, the IP, the project and the key.
+  - An I/O module shows an LED matrix and a terminal block: input switches (`data-io`), output lamps, analog sliders
+    and bars.
+  - A chassis has 4 to 12 slots (`Chassis.resize`).
+- **P5 Tag Browser:** search with the match marked; chips for All / Inputs / Outputs / Tags / System; a scope list;
+  Recent (8); folding groups; structure members under their tag (open with the arrow, or by typing "."); ↑ ↓ Enter.
+- **P2 Classic look:**
+  - The `classic` theme is the default.
+  - Compact tree rows: 18 px with a mouse, 32 px on a tablet, 40 px on a phone. Options > Density changes them.
+  - The desktop toolbar has Who Active, Path, Go Online, Download and Upload.
+  - Tablet: Who Active always; Download and Upload in landscape; one row of instructions in portrait.
+  - Phone: Who Active in the strip.
+  - The menu button opens an accordion of the menus.
+- **P4 Files:**
+  - `.mtp` holds the project JSON. Open File and Save As use the File System Access API where there is one (Windows),
+    and otherwise a file input and a download. Save writes back to an opened or saved .mtp.
+  - Upload can save a .mtp.
+  - **L5X** export and import cover the controller, `Local` I/O modules (mapped by kind), base and alias tags,
+    programs, RLL routines, rungs and comments.

@@ -29,7 +29,7 @@
     'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O' },
     'PLC-ENET': { kind: 'enet' },
   };
-  const RACKS = [4, 7, 10, 13];
+  const RACKS = [4, 7, 10, 12];   // chassis sizes: 4 to 12 slots
   const SFLAGS = ['FS', 'N', 'Z', 'V', 'C', 'MINOR'];
   const validName = n => /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(String(n == null ? '' : n));
   const dot = m => (/[.!?]$/.test(m) ? m : m + '.');
@@ -547,7 +547,7 @@
 
     const rack = pj.rack || {};
     const size = RACKS.includes(rack.size) ? rack.size : 10;
-    if (rack.size != null && !RACKS.includes(rack.size)) ctlErr(`Rack size ${rack.size} does not exist (4, 7, 10 or 13 slots)`);
+    if (rack.size != null && !RACKS.includes(rack.size)) ctlErr(`Rack size ${rack.size} does not exist (4, 7, 10 or 12 slots)`);
     for (const m of rack.modules || []) {
       const d = MODULES[m.type];
       if (!d) { ctlErr(`Module in slot ${m.slot}: unknown module type '${m.type}'`); continue; }
@@ -1191,6 +1191,15 @@
       return { ok: true, module: m };
     }
     remove(slot) { const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok; }
+    /* another chassis size (4 to 12 slots); refused while a module sits in a slot that would go */
+    resize(n) {
+      n = Math.floor(n);
+      if (!(n >= 4 && n <= 12)) return { ok: false, msg: 'A chassis has 4 to 12 slots.' };
+      const out = [...this.mods.keys()].filter(s => s >= n);
+      if (out.length) return { ok: false, msg: `Take out the module in slot ${out.join(', ')} first.` };
+      this.size = n; this.emit('insert');
+      return { ok: true };
+    }
     module(slot) { return this.mods.get(slot) || null; }
     controller(slot) { const m = this.mods.get(slot); return m && m.ctl ? m.ctl : null; }
     controllers() { return [...this.mods.values()].filter(m => m.ctl).sort((a, b) => a.slot - b.slot); }
@@ -1240,7 +1249,7 @@
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
     }
     static from(o) {
-      const ch = new Chassis(o && o.size > 0 ? Math.min(17, Math.floor(o.size)) : 10, (o && o.name) || 'Chassis');
+      const ch = new Chassis(o && o.size > 0 ? Math.min(12, Math.max(4, Math.floor(o.size))) : 10, (o && o.name) || 'Chassis');
       ch.desc = (o && o.desc) || '';
       ((o && o.mods) || []).forEach(x => {
         const r = ch.insert(x.slot, x.type, x.name);
