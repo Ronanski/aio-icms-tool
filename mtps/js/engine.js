@@ -644,12 +644,17 @@
     return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
   }
 
+  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits */
+  // the project name is the file's name: an upload saved under another name still holds the same logic
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+
   /* ---------- Controller ---------- */
-  const RUN = m => m === 'run' || m === 'remrun';
+  // modes where the logic executes; Remote Test executes it with the outputs held off
+  const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
   class Controller {
     constructor() {
       this.key = 'REM';            // PROG | REM | RUN
-      this.mode = 'remprog';       // prog | run | remprog | remrun
+      this.mode = 'remprog';       // prog | run | remprog | remrun | remtest
       this.M = null; this.S = { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 };
       this.name = ''; this.copy = null; this.fault = null;
       this.phys = {};              // inputs from the field per slot (bits of a discrete card, channels of an analog card)
@@ -677,7 +682,7 @@
       this.emit('mode');
     }
     setMode(m) {
-      if (this.key !== 'REM' || (m !== 'remprog' && m !== 'remrun') || (m === 'remrun' && !this.M)) return false;
+      if (this.key !== 'REM' || !['remprog', 'remrun', 'remtest'].includes(m) || (m !== 'remprog' && !this.M)) return false;
       this.go(m);
       return true;
     }
@@ -686,7 +691,7 @@
       this.key = k;
       if (k === 'PROG') this.go('prog');
       else if (k === 'RUN') this.go('run');
-      else this.go(RUN(this.mode) ? 'remrun' : 'remprog');
+      else this.go(this.mode === 'run' ? 'remrun' : 'remprog');
       this.emit('key');
     }
     majorFault(type, code, text) {
@@ -791,7 +796,11 @@
       return res;
     }
     /* the controller keeps its own copy: a project changed offline must be downloaded again */
-    holds(project) { return this.copy !== null && this.copy === JSON.stringify(project); }
+    holds(project) {
+      if (this.copy === null) return false;
+      if (this.copyKeyOf !== this.copy) { this.copyKeyOf = this.copy; this.copyKey = logicKey(JSON.parse(this.copy)); }
+      return this.copyKey === logicKey(project);
+    }
 
     /* ---------- scan ---------- */
     /* one scan: inputs in, the programs (in Run), outputs are read through ioImage */
@@ -1083,7 +1092,8 @@
     ioImage(slot) {
       const m = this.M && this.M.mods.get(slot);
       if (!m) return null;
-      const V = this.M.vals, on = this.running && !m.inhibit && !this.pulled.has(slot), ch = o => [0, 1, 2, 3].map(k => o[`Ch${k}Data`]);
+      // Remote Test: the logic runs, the outputs stay off
+      const V = this.M.vals, on = this.running && this.mode !== 'remtest' && !m.inhibit && !this.pulled.has(slot), ch = o => [0, 1, 2, 3].map(k => o[`Ch${k}Data`]);
       switch (m.kind) {
         case 'di': return { in: V[m.I].Data & 0xFFFF, out: null };
         case 'do': return { in: null, out: on ? this.applyForce(slot, 'O', V[m.O].Data & 0xFFFF) & 0xFFFF : 0 };

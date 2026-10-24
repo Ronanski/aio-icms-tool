@@ -26,7 +26,8 @@
 - [ ] Owner test of 0.1.0
 - [x] Emulated chassis 0.2.0-beta.1 (owner request 2026-10-24): `MTPS.Chassis` (slots, CPU and I/O cards, 16#0204 / 16#0116, output owner, kept across restarts), Chassis Monitor (in the app and in its own window), Who Active with the project path, Go Online / Download / Upload through the path; spec section 15
 - [x] Emulator like FactoryTalk Logix Echo 0.2.0-beta.2 (from Rockwell guide 9310-GR001D): Devices / Controller / Device Status, several chassis, IP addresses and the Ethernet path, power on/off, [Emulator] titles, writable inputs of faulted modules; spec section 15
-- [ ] Emulator extras: snapshots, its own Download pane, virtual time
+- [x] RSLogix flows 0.2.0-beta.3: path bar, Connected To Go Online (Select File, empty controller), Download / Upload progress, Upload into a chosen file, Upload Tag Values and Save online, Remote Test, online edits e / i / I with Accept / Test / Untest / Assemble, emulator snapshots
+- [ ] Emulator extras: its own Download pane, virtual time
 - [ ] Network link: program an emulator that runs on another device (tablet) from the laptop
 - [ ] Next: online edit test / assemble steps and the r / i rung markers, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look
 

@@ -5,6 +5,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.2.0-beta.3): Download, Upload, Go Online and online edits work as in RSLogix 5000
+- **Path bar** on the toolbar, with a button that opens Who Active.
+- **Connected To Go Online** now comes up in more cases, and shows the path, the name, the mode and the contents of
+  the project in the controller beside the offline project:
+  - when the controller holds another project or version;
+  - when the controller is empty ("The controller contains no project").
+  - The choices are **Select File**, Upload and Download.
+- **Download** asks first; a running controller goes to Remote Program. Then a progress dialog, then "Return the
+  controller to Remote Run?".
+- **Upload** asks for the project file to save it in (a new one, or one that is replaced), shows a progress dialog,
+  then goes online.
+- **Upload Tag Values** (Communications menu), and **Save while online** asks whether to upload the tag values.
+  Different tag values or another project name no longer count as edits.
+- **Remote Test** mode: the logic runs, the outputs stay off.
+- **Online edits in Run:**
+  - Accept Pending Edits: the rung is marked **e**, then **i**. The controller still runs the old logic.
+  - Test Accepted Edits: marked **I**. The controller runs the new logic.
+  - Untest goes back to the old logic. Assemble keeps the new logic. Cancel Pending and Cancel Accepted Edits undo.
+  - In Program mode, Accept finalizes the edits at once.
+- **Emulator snapshots:** add and restore a saved state of the chassis and controllers.
+
 ### Changed (MT PLC Studio 0.2.0-beta.2): the emulator works like FactoryTalk Logix Echo
 - **Emulator dashboard** (Communications > Emulator) with the three panes of the reference emulator:
   - **Devices:** chassis, then cards as "[slot] name".
