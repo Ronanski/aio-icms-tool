@@ -660,6 +660,7 @@
       this.d = 0; this.ret = false; this.jmp = null; this.tnd = false; this.mcr = false;
       this.ls = []; this.refs = new Map();
       this.pulled = new Set();     // slots whose card is taken out (a simulated module fault)
+      this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
@@ -1082,12 +1083,19 @@
       if (on) this.pulled.add(slot); else this.pulled.delete(slot);
       this.emit('io');
     }
+    /* the chassis reports what is really in a slot: null (the right card, working) or a fault code */
+    linkFault(slot, code) {
+      if (code) { if (this.codes.get(slot) !== code) { this.pulled.add(slot); this.codes.set(slot, code); this.emit('io'); } }
+      else if (this.codes.has(slot)) { this.codes.delete(slot); this.pulled.delete(slot); this.emit('io'); }
+    }
     /* the state of a card, as Module Properties shows it */
     moduleStatus(slot) {
       const m = this.M && this.M.mods.get(slot);
       if (!m) return { state: 'Not in the controller', code: null, text: 'The project in the controller has no module in this slot. Download first.' };
       if (m.inhibit) return { state: 'Inhibited', code: null, text: 'The module is inhibited: no connection, its inputs hold and its outputs are off.' };
-      if (this.pulled.has(slot)) return { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+      if (this.pulled.has(slot)) return this.codes.get(slot) === '16#0116'
+        ? { state: 'Faulted', code: '16#0116', text: 'Electronic keying mismatch: the card in this slot is not the module of the I/O configuration.' }
+        : { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
       return { state: 'Running', code: null, text: '' };
     }
     /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted */
@@ -1134,9 +1142,91 @@
     forceState() { return !this.forces.size ? 'none' : this.forcesOn ? 'enabled' : 'disabled'; }
   }
 
+  /* ---------- Chassis: the emulated rack (spec section 15) ----------
+     A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
+     (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
+     module fault when the slot is empty (16#0204) or holds another module (16#0116). An output card follows the
+     controller that owns it: the first one, by slot, whose project configures it. */
+  const CPU = 'PLC-CPU';
+  class Chassis {
+    constructor(size = 10) { this.size = size; this.mods = new Map(); this.ls = []; }
+    on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
+    emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
+    static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
+    insert(slot, type, name) {
+      slot = Math.floor(slot);
+      if (!(slot >= 0 && slot < this.size)) return { ok: false, msg: `Slot ${slot} is not in a ${this.size}-slot chassis.` };
+      if (this.mods.has(slot)) return { ok: false, msg: `Slot ${slot} already holds a module.` };
+      if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
+      const kind = type === CPU ? 'cpu' : MODULES[type].kind;
+      const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
+      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; }
+      this.mods.set(slot, m);
+      this.emit('insert');
+      return { ok: true, module: m };
+    }
+    remove(slot) { const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok; }
+    module(slot) { return this.mods.get(slot) || null; }
+    controller(slot) { const m = this.mods.get(slot); return m && m.ctl ? m.ctl : null; }
+    controllers() { return [...this.mods.values()].filter(m => m.ctl).sort((a, b) => a.slot - b.slot); }
+    setBit(slot, bit, on) { const m = this.mods.get(slot); if (!m || m.kind !== 'di') return false; m.field = on ? m.field | (1 << bit) : m.field & ~(1 << bit); this.emit('field'); return true; }
+    setChannel(slot, ch, v) { const m = this.mods.get(slot); if (!m || m.kind !== 'ai') return false; m.field[ch] = Number(v) || 0; this.emit('field'); return true; }
+    setFault(slot, on) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu') return false; m.fault = !!on; this.emit('fault'); return true; }
+    /* the code a controller gets for a slot of its I/O configuration */
+    codeFor(slot, type) { const m = this.mods.get(slot); return !m || m.fault ? '16#0204' : m.type !== type ? '16#0116' : null; }
+    exchange(c) {
+      for (const m of c.M.mods.values()) {
+        const code = this.codeFor(m.slot, m.type);
+        c.linkFault(m.slot, code);
+        if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
+      }
+    }
+    /* time goes by: inputs into every controller, then its scans */
+    advance(ms) {
+      for (const m of this.controllers()) { const c = m.ctl; if (c.M) this.exchange(c); c.advance(ms); }
+    }
+    owner(slot) {
+      const m = this.mods.get(slot);
+      if (!m) return null;
+      const o = this.controllers().find(x => x.ctl.M && x.ctl.M.mods.has(slot) && x.ctl.M.mods.get(slot).type === m.type);
+      return o ? o.ctl : null;
+    }
+    /* what an output card drives: bits of a discrete card, channel values of an analog card (off without an owner) */
+    outputs(slot) {
+      const m = this.mods.get(slot);
+      if (!m || (m.kind !== 'do' && m.kind !== 'ao')) return null;
+      const o = this.owner(slot), img = o && !m.fault ? o.ioImage(slot) : null;
+      return img && img.out != null ? img.out : m.kind === 'do' ? 0 : [0, 0, 0, 0];
+    }
+    /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
+    toJSON() {
+      return { size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
+        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
+    }
+    static from(o) {
+      const ch = new Chassis(o && o.size > 0 ? Math.min(17, Math.floor(o.size)) : 10);
+      ((o && o.mods) || []).forEach(x => {
+        const r = ch.insert(x.slot, x.type, x.name);
+        if (!r.ok) return;
+        const m = r.module;
+        if (x.fault && m.kind !== 'cpu') m.fault = true;
+        if (m.kind === 'di') m.field = Number(x.field) | 0;
+        if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
+        if (m.ctl) {
+          if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
+          const key = m.ctl.key;
+          if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }
+          else if (x.project) { m.ctl.key = 'REM'; m.ctl.download(x.project); m.ctl.key = 'RUN'; m.ctl.go('run'); }
+          if (key === 'PROG') m.ctl.go('prog');
+        }
+      });
+      return ch;
+    }
+  }
+
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

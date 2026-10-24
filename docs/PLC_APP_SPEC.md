@@ -648,3 +648,36 @@ TON / TOF / RTO and CTU. See section 7.
 - **Android:**
   - Portrait and landscape both work, and the orientation is not locked.
   - The layout switches live when the device turns, without losing the routine, the selection or a pending edit.
+
+## 15. Emulated chassis (Chassis Monitor, Who Active, path)
+
+The owner asked for this on 2026-10-24. The laptop is the programming terminal. It connects to an emulated
+controller that sits in a rack, as the owner does with the emulator and the communications driver in the VM.
+
+- **Chassis:** `MTPS.Chassis` in `engine.js`, with 10 slots.
+  - Each slot holds one card: a controller (`PLC-CPU`, with a `Controller` of its own) or an I/O card (DI16, DO16,
+    AI4, AO4).
+  - The chassis is kept across restarts (`mtps.chassis`): its cards, their field switches, and each controller's
+    project with its values, key and mode.
+  - The default chassis matches a new project: CPU in slot 0, DI16 in slot 1, DO16 in slot 2.
+- **I/O exchange:** every step of time, each controller with a project reads the cards that its I/O configuration
+  names.
+  - An empty slot, or a card with *Fault* set, gives module fault **16#0204** (connection timed out).
+  - A different module in the slot gives **16#0116** (electronic keying mismatch).
+  - An output card follows its owner: the first controller, by slot, whose project configures that card.
+- **Path:** each project has a path, `Virtual\Backplane\<slot>`, kept per project (`mtps.path.<name>`).
+  - Go Online, Download and Upload talk only to the controller at that path.
+  - If nothing answers there, the app shows *Failed to go online*, with links to Who Active and the Chassis Monitor.
+  - Removing the controller card while online drops the app offline.
+- **Who Active:** browses *Workstation > Virtual Backplane > slots*.
+  - Picking a controller sets the project path.
+  - The buttons are Set Project Path, Upload, Download and Go Online.
+- **Chassis Monitor** (Communications menu, Who Active, the phone's Controller page):
+  - The rack of cards with their LEDs: RUN, FORCE, I/O and OK on the controller; OK on an I/O card.
+  - The controller card has the key switch and Clear fault, and shows the project name and the mode.
+  - Input cards have field switches, input analog cards have sliders, and output cards have lamps and bars.
+  - An empty slot inserts a card. A card can be removed, and an I/O card has *Fault*.
+  - *Open in a window* gives it a window of its own. The window opens blank, so it shares the app's origin, also for
+    the exe's file:// copy; the app writes it, draws it and takes its clicks. Electron allows it by its frame name
+    `mtps-chassis`.
+- **Later:** a network link, so a laptop can program an emulator that runs on another device (the tablet).
