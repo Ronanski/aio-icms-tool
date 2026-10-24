@@ -1,0 +1,192 @@
+name: Release MT PLC Studio
+# Builds MT PLC Studio's Windows exe, Android APK and web zip from mtps/ (docs/PLC_APP_SPEC.md section 14).
+# - pull_request touching MT PLC Studio: build only
+# - workflow_dispatch / tag push mtps-v*: build, then publish the GitHub Release mtps-v<version>
+# - the version is VERSION in mtps/js/app.js; one with a suffix (0.1.0-beta.1) is a pre-release
+# - an MT PLC Studio release is never marked Latest, so the trainer's release stays the latest one
+on:
+  pull_request:
+    paths: ['mtps/**', 'desktop-mtps/**', 'mobile-mtps/**', 'scripts/copy-mtps.sh', '.github/workflows/release-mtps.yml']
+  push:
+    tags: ['mtps-v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the GitHub Release (creates tag mtps-v<version> on this commit)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          v="$(sed -n "s/^  const VERSION = '\(.*\)';/\1/p" mtps/js/app.js)"
+          [ -n "$v" ] || { echo "::error::No VERSION in mtps/js/app.js"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = push ] && [ "$REF_NAME" != "mtps-v$v" ]; then
+            echo "::error::Tag $REF_NAME does not match mtps/js/app.js version $v"; exit 1; fi
+          if [ "$EVENT" = workflow_dispatch ] && [ "$PUBLISH" = true ] && [ "${v#*-}" = "$v" ] && [ "$REF" != refs/heads/main ]; then
+            echo "::error::Stable releases are published from main only (this is $REF)"; exit 1; fi
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/mtps.test.js && node tests/mtps-ui.test.js
+
+  web:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip the web app
+        env:
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          bash scripts/copy-mtps.sh "MT-PLC-Studio-$V-web" "mtps-v$V"
+          zip -qr "MT-PLC-Studio-$V-web.zip" "MT-PLC-Studio-$V-web"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mtps-web
+          path: MT-PLC-Studio-*-web.zip
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop-mtps
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm pkg set version=${{ needs.version.outputs.version }}
+      - run: npm install
+      - run: npm run dist:win
+        env:
+          BUILD_ID: mtps-v${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mtps-windows
+          path: desktop-mtps/dist/*.exe
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-mtps
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      BUILD_ID: mtps-v${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm pkg set version=$VERSION
+      - run: npm install
+      - name: Create the Android project, icons and splash
+        run: npm run android
+      - name: Set app version
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$VERSION\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+      - name: Build APK
+        working-directory: mobile-mtps/android
+        # the same signing key as the trainer (another app id, so both install side by side); never for pull requests
+        env:
+          KEYSTORE_B64: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_ALIAS || '' }}
+          KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_PASSWORD || '' }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          chmod +x gradlew
+          if [ -z "$KEYSTORE_B64" ] && [ "$EVENT" != pull_request ]; then
+            echo "::error::Android signing secrets are missing: not publishing a debug-signed APK. See RELEASING.md."; exit 1; fi
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release.keystore" \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MT-PLC-Studio-$VERSION-android.apk"
+          else
+            ./gradlew assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/MT-PLC-Studio-$VERSION-android.apk"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mtps-android
+          path: MT-PLC-Studio-*-android.apk
+
+  publish:
+    needs: [version, test, web, windows, android]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: mtps-*
+          merge-multiple: true
+      - name: Release notes
+        env:
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          awk '/^## \[Unreleased\]/ {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md | awk '/MT PLC Studio/ {p=1} p' > notes.md || true
+          case "$V" in *-*) printf '> **Preview (pre-release).** A snapshot of MT PLC Studio for testing. Installed apps on the Beta channel update themselves.\n\n' | cat - notes.md > n && mv n notes.md;; esac
+          {
+            echo ""
+            echo "## Downloads"
+            echo "- **Windows**: \`MT-PLC-Studio-$V-portable.exe\` (no install: run it from any folder; the window can be resized and maximized)"
+            echo "- **Android**: \`MT-PLC-Studio-$V-android.apk\` (phone and tablet, portrait and landscape; allow installing from this source when asked)"
+            echo "- **Web / any device**: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/mtps/beta/"
+            echo ""
+            echo "MT PLC Studio is a separate app from PLC Trainer: both can be installed side by side."
+          } >> notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mtps-v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: MT PLC Studio v${{ needs.version.outputs.version }}
+          body_path: notes.md
+          files: dist/*
+          prerelease: ${{ contains(needs.version.outputs.version, '-') }}
+          make_latest: false
+      - name: Update the hosted Stable copy
+        if: ${{ !contains(needs.version.outputs.version, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main --repo ${{ github.repository }}

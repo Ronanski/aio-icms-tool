@@ -1,0 +1,36 @@
+{
+  "name": "mt-plc-studio-desktop",
+  "productName": "MT PLC Studio",
+  "version": "0.1.0-beta.1",
+  "description": "MT PLC Studio for Windows (portable)",
+  "author": "Ronan",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "bash ../scripts/copy-mtps.sh app",
+    "start": "npm run prepare-app && electron .",
+    "dist:win": "npm run prepare-app && electron-builder --win portable --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "io.github.ronanski.mtplcstudio",
+    "productName": "MT PLC Studio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "app/**/*"
+    ],
+    "icon": "app/icons/icon-512.png",
+    "win": {
+      "icon": "app/icons/icon-512.png"
+    },
+    "portable": {
+      "artifactName": "MT-PLC-Studio-${version}-portable.exe"
+    }
+  }
+}

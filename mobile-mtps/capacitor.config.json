@@ -1,0 +1,14 @@
+{
+  "appId": "io.github.ronanski.mtplcstudio",
+  "appName": "MT PLC Studio",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#E9EDF1"
+  },
+  "server": {
+    "androidScheme": "https",
+    "allowNavigation": [
+      "ronanski.github.io"
+    ]
+  }
+}
