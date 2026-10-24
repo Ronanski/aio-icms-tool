@@ -10,6 +10,8 @@
   const MTPS = root.MTPS;
   const INSTR = MTPS.INSTR;
   const OPN = {
+    XIC: ['Bit'], XIO: ['Bit'], OTE: ['Bit'], OTL: ['Bit'], OTU: ['Bit'], ONS: ['Storage Bit'], OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
+    RES: ['Structure'], JMP: ['Label Name'], LBL: ['Label Name'], JSR: ['Routine Name', 'Input Par'],
     TON: ['Timer', 'Preset', 'Accum'], TOF: ['Timer', 'Preset', 'Accum'], RTO: ['Timer', 'Preset', 'Accum'],
     CTU: ['Counter', 'Preset', 'Accum'], CTD: ['Counter', 'Preset', 'Accum'],
     EQU: ['Source A', 'Source B'], NEQ: ['Source A', 'Source B'], LES: ['Source A', 'Source B'], LEQ: ['Source A', 'Source B'],
@@ -171,7 +173,15 @@
           const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, b.path);
           if (isSel) out += `<rect class="sel" x="${x1 - 3}" y="${ys[0] - 10}" width="${x2 - x1 + 6}" height="${ys[ys.length - 1] - ys[0] + 20}" rx="3" fill="none"/>`;
           // the branch rail is a hit target of its own (select the branch, add a leg)
-          taps += `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" x="${x1 - 6}" y="${ys[0] + 6}" width="12" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`;
+          taps += `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" x="${x1 - 10}" y="${ys[0] + 6}" width="20" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`;
+          // the free wire at the end of each leg is a hit target too: select the level, add an instruction into it
+          b.rows.forEach((r, k) => {
+            const lx = X(b.ends[k]) + (b.ends[k] === b.col ? 10 : 2), lw = x2 - lx - 2, lp = b.path.concat(k);
+            if (lw < 12) return;
+            if (o.sel && o.sel.leg && o.sel.ri === ri && same(o.sel.path, lp)) out += `<rect class="sel" x="${lx}" y="${ys[k] - 9}" width="${lw}" height="18" rx="3"/>`;
+            if (o.drop && o.drop.leg && o.drop.ri === ri && same(o.drop.path, lp)) out += `<line class="drop" x1="${lx + 2}" y1="${ys[k] - 18}" x2="${lx + 2}" y2="${ys[k] + 18}"/>`;
+            taps += `<rect class="tap" data-ri="${ri}" data-p="${lp.join('.')}" data-leg="1" x="${lx}" y="${ys[k] - 12}" width="${lw}" height="24"/>`;
+          });
         });
         if (o.drop && o.drop.ri === ri && o.drop.end && last) {
           const dx = X(startOut) - 2;
@@ -205,8 +215,9 @@
       out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
       // the rung itself (empty space) and its number are hit targets too
-      taps = `<rect class="tap rung" data-ri="${ri}" x="${LM}" y="${rungTop - 4}" width="${RR - LM}" height="${rungBot - rungTop + 4}"/>` + taps;
-      taps += `<rect class="tap" data-ri="${ri}" data-rn="1" x="0" y="${rungTop - 4}" width="${LM}" height="${rungBot - rungTop + 4}"/>`;
+      // (underneath the instructions and branches, so a branch that starts on the left rail can still be tapped)
+      taps = `<rect class="tap rung" data-ri="${ri}" x="${LM}" y="${rungTop - 4}" width="${RR - LM}" height="${rungBot - rungTop + 4}"/>`
+        + `<rect class="tap" data-ri="${ri}" data-rn="1" x="0" y="${rungTop - 4}" width="${LM}" height="${rungBot - rungTop + 4}"/>` + taps;
       y += 10;
     });
     out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="${y}" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="${y}" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;

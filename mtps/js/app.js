@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.1.0-beta.2';
+  const VERSION = '0.1.0-beta.3';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const ctl = E.controller;
@@ -115,7 +115,19 @@
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
   const rungs = () => curRoutine().rungs;
   const parsed = i => { const r = rungs()[i]; if (!r) return null; const pr = E.parseRung(r.t); return pr.err ? null : pr.elems; };
-  const editable = () => !S.online;
+  // the ladder and the tags can be edited offline and online (online edits wait for Accept Edits); modules only offline
+  const editable = () => true;
+  const offline = () => !S.online;
+  /* online edits: the project on this device differs from the copy in the controller */
+  const pending = () => S.online && !!ctl.M && !ctl.holds(S.p);
+  let ctlCopy = { s: null, p: null };
+  function ctlRungs() {
+    if (ctlCopy.s !== ctl.copy) ctlCopy = { s: ctl.copy, p: ctl.copy ? JSON.parse(ctl.copy) : null };
+    const P = ctlCopy.p && ctlCopy.p.tasks.flatMap(t => t.programs).find(g => U(g.name) === U(curProg().name));
+    const r = P && P.routines.find(x => U(x.name) === U(curRoutine().name));
+    return r ? r.rungs : null;
+  }
+  const routineEdited = () => pending() && JSON.stringify(ctlRungs()) !== JSON.stringify(rungs());
 
   /* ---------- verify ---------- */
   function reverify() {
@@ -127,7 +139,6 @@
   const snap = () => JSON.stringify({ p: S.p, prog: S.prog, routine: S.routine, sel: S.sel, selRung: S.selRung });
   function restore(s) { const o = JSON.parse(s); Object.assign(S, { p: o.p, prog: o.prog, routine: o.routine, sel: o.sel, selRung: o.selRung }); changed(); }
   function edit(fn) {
-    if (!editable()) { toast('Go offline to edit. Online edits come in a later version.'); return false; }
     const before = snap();
     if (fn() === false) return false;
     S.undo.push(before);
@@ -159,7 +170,8 @@
     elems.forEach((e, k) => { const p = path.concat(k); if (e.t === 'BR') e.legs.forEach((l, li) => flat(l, p.concat(li), out)); else out.push(p); });
     return out;
   }
-  const curEl = () => (S.sel && S.sel.path ? getEl(parsed(S.sel.ri) || [], S.sel.path) : null);
+  // the selected instruction (a selected branch is not one)
+  const curEl = () => { const e = S.sel && S.sel.path ? getEl(parsed(S.sel.ri) || [], S.sel.path) : null; return e && e.t !== 'BR' && !S.sel.leg ? e : null; };
 
   /* insert an instruction (or a pasted one) after the selection, at a drop target, or at the end of the rung */
   function insert(el, at, openAfter) {
@@ -170,7 +182,13 @@
       const elems = parsed(ri);
       if (!elems) { toast('This rung has a text error: fix it with Edit Rung first.', 'err'); return false; }
       const tgt = at && at.path ? at.path : !at && S.sel && S.sel.ri === ri && S.sel.path ? S.sel.path : null;
-      if (tgt) {
+      const leg = at ? at.leg : S.sel && S.sel.leg;
+      if (tgt && leg) {
+        // a selected branch level: the instruction goes at the end of that level
+        const lv = getEl(elems, tgt.slice(0, -1)).legs[tgt[tgt.length - 1]];
+        lv.push(el);
+        path = tgt.concat(lv.length - 1);
+      } else if (tgt) {
         const { arr, idx } = seqOf(elems, tgt), pos = at ? (at.after ? idx + 1 : idx) : idx + 1;
         arr.splice(pos, 0, el);
         path = tgt.slice(0, -1).concat(pos);
@@ -195,7 +213,7 @@
     });
   }
   function addBranch(at) {
-    if (!at && S.sel && S.sel.path && !S.sel.br) {
+    if (!at && S.sel && S.sel.path && !S.sel.br && !S.sel.leg) {
       return edit(() => {
         const elems = parsed(S.sel.ri); if (!elems) return false;
         const { arr, idx } = seqOf(elems, S.sel.path);
@@ -210,14 +228,28 @@
     if (!S.sel || !S.sel.path) { toast('Select a branch or an instruction in a branch first.'); return; }
     edit(() => {
       const elems = parsed(S.sel.ri); if (!elems) return false;
-      const bp = S.sel.br ? S.sel.path : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
+      const bp = S.sel.br ? S.sel.path : S.sel.leg ? S.sel.path.slice(0, -1) : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
       if (!bp) { toast('Select a branch or an instruction in a branch first.'); return false; }
-      getEl(elems, bp).legs.push([]);
+      const b = getEl(elems, bp);
+      b.legs.push([]);
       writeRung(S.sel.ri, elems);
-      S.sel = { ri: S.sel.ri, path: bp, br: true };
+      S.sel = { ri: S.sel.ri, path: bp.concat(b.legs.length - 1), leg: true };
     });
   }
   function delSel() {
+    if (S.sel && S.sel.leg) {
+      // delete a branch level with what is on it; a branch left with one level is unwrapped
+      return edit(() => {
+        const elems = parsed(S.sel.ri); if (!elems) return false;
+        const bp = S.sel.path.slice(0, -1), b = getEl(elems, bp);
+        b.legs.splice(S.sel.path[S.sel.path.length - 1], 1);
+        tidy(elems);
+        writeRung(S.sel.ri, elems);
+        const ri = S.sel.ri;
+        S.sel = getEl(elems, bp) && getEl(elems, bp).t === 'BR' ? { ri, path: bp, br: true } : null;
+        if (!S.sel) S.selRung = ri;
+      });
+    }
     if (S.sel && S.sel.path) {
       edit(() => {
         const elems = parsed(S.sel.ri); if (!elems) return false;
@@ -289,7 +321,7 @@
     branch: { l: 'Add Branch', i: 'tree', run: () => addBranch(), on: editable },
     level: { l: 'Add Branch Level', i: 'tree', run: addLevel, on: () => editable() && !!S.sel },
     ins: { l: 'Add Ladder Element…', k: 'Alt+Ins', i: 'plus', run: () => picker(''), on: editable },
-    edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && openEditor(S.sel.ri, S.sel.path, 0), on: () => editable() && !!S.sel && !S.sel.br },
+    edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, 0), on: () => editable() && !!curEl() },
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
     comment: { l: 'Edit Rung Comment', i: 'text', run: () => rungComment(curSelRung()), on: () => editable() && curSelRung() != null },
     desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => !!curEl() && !!tagFor(curEl().a[0]) },
@@ -304,6 +336,8 @@
     xref: { l: 'Cross Reference', k: 'Ctrl+E', i: 'xref', run: () => xref() },
     verifyr: { l: 'Verify Routine', i: 'checkr', run: () => verifyCmd(true) },
     verifyc: { l: 'Verify Controller', i: 'check', run: () => verifyCmd(false) },
+    accept: { l: 'Accept Edits', i: 'check', run: acceptEdits, on: pending },
+    cancele: { l: 'Cancel Edits', i: 'undo', run: cancelEdits, on: pending },
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: whoActive },
@@ -332,7 +366,7 @@
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
-    ['Logic', ['verifyr', 'verifyc', '-', 'tagsmon', 'tagsedit', 'newtag']],
+    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', '-', 'tagsmon', 'tagsedit', 'newtag']],
     ['Communications', ['who', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'clear', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'about']],
@@ -356,7 +390,7 @@
     const lw = $('#ladwrap'), st = lw ? [lw.scrollTop, lw.scrollLeft] : null;
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     app.className = document.body.className = lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone';
-    app.innerHTML = (upInfo ? upbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    app.innerHTML = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
     const nl = $('#ladwrap');
     if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     title();
@@ -368,7 +402,11 @@
     const st = S.online ? ctl.forceState() : 'none';
     return `<span class="sbox" data-box="forces" title="I/O forces" style="font-weight:400"><i class="fi${st === 'enabled' ? ' en' : st === 'disabled' ? ' dis' : ''}"></i>${st === 'none' ? 'No Forces' : 'Forces'}${ic('down')}</span>`;
   }
-  const editsBox = () => '<span class="sbox plain" title="Online edits">No Edits</span>';
+  const editsBox = () => `<span class="sbox plain${pending() ? ' edits' : ''}" title="Online edits">${pending() ? 'Edits Present' : 'No Edits'}</span>`;
+  function editbar() {
+    const run = ctl.mode === 'run' || ctl.mode === 'remrun';
+    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Edits are not in the controller yet.</b> ${run ? 'It keeps running the old logic until you accept.' : 'Accept them to send them to the controller.'}</span><button class="btn pri" data-cmd="accept">Accept Edits</button><button class="btn" data-cmd="cancele">Cancel Edits</button></div>`;
+  }
   function ledsHTML() {
     const on = S.online, run = on && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault;
     const L4 = on ? [[run ? 'g' : '', modeText()], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Battery OK'], ctl.ioOk() ? ['g', 'I/O OK'] : ['r blink', 'I/O Not Responding']] : [['', 'RUN'], ['', 'OK'], ['', 'BAT'], ['', 'I/O']];
@@ -504,7 +542,7 @@
     return P ? P.routines.get(U(curRoutine().name)) : null;
   }
   function ladderRungs() {
-    const R = liveRoutine();
+    const R = routineEdited() ? null : liveRoutine();
     if (R) {
       const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
       return R.rungs.map((r, i) => { r.elems.forEach(e => e && tag(e)); return { elems: r.elems.filter(Boolean), c: rungs()[i] && rungs()[i].c }; });
@@ -518,7 +556,7 @@
     const z = S.prefs.zoom;
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
-      live: S.online && !!liveRoutine(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
+      live: S.online && !routineEdited() && !!liveRoutine(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
       sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop, press,
     });
     w.innerHTML = res.svg;
@@ -534,16 +572,16 @@
   function zoom(f) { setZoom(S.prefs.zoom * f); savePrefs(); }
   function select(t) {
     if (!t) { S.sel = null; S.selRung = null; return; }
-    if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br }; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
+    if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br, leg: t.leg }; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
   }
   const hit = el => {
     const r = el && el.closest && el.closest('rect.tap');
     if (!r) return null;
     const d = r.dataset;
     if (d.end) return { end: true };
-    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, rn: !!d.rn };
+    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, leg: !!d.leg, rn: !!d.rn };
   };
-  const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.rn ? 'n' : ''}${t.end ? 'e' : ''}` : '');
+  const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.leg ? 'l' : ''}${t.rn ? 'n' : ''}${t.end ? 'e' : ''}` : '');
   let lastTap = { k: '', t: 0 };
   function onTap(t, x, y, isDbl) {
     const k = tkey(t), now = Date.now();
@@ -552,7 +590,7 @@
     select(t);
     render();
     if (!dbl || !t) return;
-    if (t.path && !t.br) { if (editable()) openEditor(t.ri, t.path, 0); }
+    if (t.path && !t.br && !t.leg) { if (editable()) openEditor(t.ri, t.path, 0); }
     else if (t.rn) { if (editable()) rungText(t.ri); }
   }
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom */
@@ -646,7 +684,8 @@
   function ctxMenu(t, x, y) {
     if (!t || t.end) return;
     let ids, head;
-    if (t.path && !t.br) {
+    if (t.leg) { head = `Rung ${t.ri} · Branch Level`; ids = ['paste', 'del', '-', 'level']; }
+    else if (t.path && !t.br) {
       const e = curEl();
       head = `Rung ${t.ri} · ${e ? e.t + ' ' + e.a.join(', ') : ''}`;
       ids = [];
@@ -654,15 +693,15 @@
       ids.push('cut', 'copy', 'paste', 'del', '-', 'ins', 'edit', 'desc', '-', 'toggle', 'fon', 'foff', 'frem', '-', 'goto', 'xref', 'help');
     } else if (t.br) { head = `Rung ${t.ri} · Branch`; ids = ['cut', 'copy', 'paste', 'del', '-', 'level']; }
     else { head = `Rung ${t.ri}`; ids = ['cut', 'copy', 'paste', 'del', '-', 'rung', 'rtext', 'comment', 'verifyr', '-', 'goto']; }
-    const items = menuItems(ids).map(it => (it === '-' ? it : { ...it, l: it.id === 'newtag' ? `New "${curEl().a[0]}"` : t.br && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Branch' : !t.path && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Rung' : it.id === 'del' ? 'Delete Instruction' : it.l }));
+    const items = menuItems(ids).map(it => (it === '-' ? it : { ...it, l: it.id === 'newtag' ? `New "${curEl().a[0]}"` : t.br && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Branch' : t.leg && it.id === 'del' ? 'Delete Branch Level' : !t.path && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Rung' : it.id === 'del' ? 'Delete Instruction' : it.l }));
     openMenu(items, { x, y }, head);
   }
   function orgMenu(key, x, y) {
     const items = [];
-    if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, { l: 'Rename…', run: () => renameRoutine(key), dis: !editable() }, { l: 'Delete', run: () => deleteRoutine(key), dis: !editable() }); }
+    if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, { l: 'Rename…', run: () => renameRoutine(key) }, { l: 'Delete', run: () => deleteRoutine(key) }); }
     else if (key.startsWith('prog:')) items.push({ l: 'New Routine…', run: () => newRoutine(key.slice(5)), dis: !editable() }, { l: 'Program Tags', run: () => tagEditor('mon', key.slice(5)) });
-    else if (key === 'bp' || key === 'io') items.push({ l: 'New Module…', run: newModule, dis: !editable() });
-    else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !editable() });
+    else if (key === 'bp' || key === 'io') items.push({ l: 'New Module…', run: newModule, dis: !offline() });
+    else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
     else if (key === 'ctl') items.push({ l: 'Properties…', run: controllerProps });
     if (items.length) openMenu(items, { x, y });
@@ -670,11 +709,16 @@
 
   /* ---------- layer: menus, sheets, dialogs, toasts ---------- */
   function closeLayer() { const l = $('#layer'); l.innerHTML = ''; layerKey = null; }
-  let layerKey = null;
+  let layerKey = null, layerAt = 0, lastDown = 0;
+  // the click that ends the press which opened a menu or a dialog (it can come late, on touch screens above all)
+  // must not close it: a click on the scrim counts only when its press started after the layer opened
+  document.addEventListener('pointerdown', () => { lastDown = performance.now(); }, true);
+  const freshLayer = () => lastDown <= layerAt;
   /* items: [{ id | run, l, k, i, dis, ck }] or '-'; at: {x, y} or an element */
   function openMenu(items, at, head) {
     const l = $('#layer');
     l.innerHTML = '';
+    layerAt = performance.now();
     const body = `<div class="menu">${head && S.layout !== 'desktop' ? '' : ''}${items.map((it, n) => (it === '-' ? '<hr>' : it.hd ? `<div class="hd">${esc(it.hd)}</div>` : `<div class="it${it.dis ? ' dis' : ''}" data-n="${n}">${it.ck !== undefined ? `<span class="ck">${it.ck ? '✓' : ''}</span>` : it.i ? ic(it.i) : ''}<span>${esc(it.l)}</span>${it.k ? `<span class="k">${esc(it.k)}</span>` : ''}</div>`)).join('')}</div>`;
     if (S.layout === 'phone') {
       l.innerHTML = `<div class="scrim" data-close="1"></div><div class="sheet"><div class="grab"></div>${head ? `<div class="ctx">${esc(head)}</div>` : ''}<div class="sb">${body}</div></div>`;
@@ -689,7 +733,7 @@
       pop.style.left = x + 'px'; pop.style.top = y + 'px';
     }
     l.onclick = ev => {
-      if (ev.target.closest('[data-close]')) { closeLayer(); return; }
+      if (ev.target.closest('[data-close]')) { if (!freshLayer()) closeLayer(); return; }
       const it = ev.target.closest('.it');
       if (!it || it.classList.contains('dis')) return;
       const x = items[+it.dataset.n];
@@ -705,9 +749,10 @@
       <div class="dh">${S.layout === 'phone' ? `<button class="ib" data-close="1">${ic('back')}</button>` : ''}<b>${esc(o.title)}</b>${S.layout !== 'phone' ? `<button class="ib" data-close="1" title="Close">${ic('close')}</button>` : ''}</div>
       <div class="db${o.flush ? ' flush' : ''}">${o.body}</div>${o.buttons && o.buttons.length ? `<div class="df">${o.buttons.map((b, n) => `<button class="btn${b.pri ? ' pri' : b.danger ? ' danger' : ''}" data-b="${n}">${esc(b.l)}</button>`).join('')}</div>` : ''}</div>`;
     const el = l.querySelector('.dlg');
+    layerAt = performance.now();
     const close = () => { if (o.onClose) o.onClose(); closeLayer(); };
     l.onclick = ev => {
-      if (ev.target.closest('[data-close]')) { close(); return; }
+      if (ev.target.closest('[data-close]')) { if (!ev.target.closest('.ib') && freshLayer()) return; close(); return; }
       const b = ev.target.closest('[data-b]');
       if (b) { const fn = o.buttons[+b.dataset.b].run; if (!fn || fn(el) !== false) closeLayer(); }
     };
@@ -720,8 +765,9 @@
     };
     if (o.mount) o.mount(el);
     const f = el.querySelector('[autofocus]') || el.querySelector('input,select,textarea');
-    if (f && S.layout === 'desktop') setTimeout(() => f.focus(), 0);
-    else if (f && o.focus) setTimeout(() => f.focus(), 50);
+    const fo = () => { f.focus(); if (f.select) f.select(); };
+    if (f && S.layout === 'desktop') setTimeout(fo, 0);
+    else if (f && o.focus) setTimeout(fo, 50);
     return el;
   }
   function confirmDlg(title, text, okLabel, fn, danger) {
@@ -762,10 +808,12 @@
   /* every name an operand can take, with its type */
   function candidates() {
     const out = [], P = curProg();
-    const add = (name, type, desc, scope, dim) => out.push({ name, type, desc: desc || '', scope, dim });
+    // grp: 'in' (input cards and the tags that alias them), 'out' (output cards), 'tag', 'sys'
+    const io = name => (/^Local:\d+:I\b/i.test(name) ? 'in' : /^Local:\d+:O\b/i.test(name) ? 'out' : 'tag');
+    const add = (name, type, desc, scope, dim, grp) => out.push({ name, type, desc: desc || '', scope, dim, grp: grp || 'tag' });
     const tags = (list, scope) => list.forEach(t => {
       const ty = typeOf(t);
-      add(t.name, ty, (t.alias ? `<${t.alias}> ` : '') + (t.desc || ''), scope, t.dim);
+      add(t.name, ty, (t.alias ? `<${t.alias}> ` : '') + (t.desc || ''), scope, t.dim, t.alias ? io(t.alias) : 'tag');
       const M = E.PREDEF[ty];
       if (M && !t.dim) M.forEach(m => add(`${t.name}.${m.name}`, m.type, '', scope));
     });
@@ -773,10 +821,11 @@
     tags(S.p.tags, 'Controller');
     S.p.rack.modules.forEach(m => {
       const d = E.MODULES[m.type]; if (!d) return;
-      if (d.kind === 'di' || d.kind === 'do') for (let b = 0; b < 16; b++) add(`Local:${m.slot}:${d.kind === 'di' ? 'I' : 'O'}.Data.${b}`, 'BOOL', m.name, 'Controller');
-      if (d.kind === 'ai' || d.kind === 'ao') for (let c = 0; c < 4; c++) add(`Local:${m.slot}:${d.kind === 'ai' ? 'I' : 'O'}.Ch${c}Data`, 'REAL', m.name, 'Controller');
+      const label = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`;
+      if (d.kind === 'di' || d.kind === 'do') for (let b = 0; b < 16; b++) add(`Local:${m.slot}:${d.kind === 'di' ? 'I' : 'O'}.Data.${b}`, 'BOOL', label, 'Controller', 0, d.kind === 'di' ? 'in' : 'out');
+      if (d.kind === 'ai' || d.kind === 'ao') for (let c = 0; c < 4; c++) add(`Local:${m.slot}:${d.kind === 'ai' ? 'I' : 'O'}.Ch${c}Data`, 'REAL', label, 'Controller', 0, d.kind === 'ai' ? 'in' : 'out');
     });
-    ['FS', 'N', 'Z', 'V', 'C', 'MINOR'].forEach(f => add('S:' + f, 'BOOL', 'Status flag', 'System'));
+    ['FS', 'N', 'Z', 'V', 'C', 'MINOR'].forEach(f => add('S:' + f, 'BOOL', 'Status flag', 'System', 0, 'sys'));
     return out;
   }
   function suggest(kind, text) {
@@ -789,7 +838,17 @@
     if (kind === 'elem' || kind === 'elemw') list = list.filter(c => c.dim).map(c => ({ ...c, name: c.name + '[0]' }));
     else if (types) list = list.filter(c => types.includes(c.type) && !c.dim);
     if (q) list = list.filter(c => U(c.name).includes(q)).sort((a, b) => (U(a.name).startsWith(q) ? 0 : 1) - (U(b.name).startsWith(q) ? 0 : 1));
-    return list.slice(0, 80);
+    return list.slice(0, 120);
+  }
+  /* the tag list of the operand editor, in groups like the tag browser: a contact looks at the inputs first, a coil at the outputs */
+  const GRPS = { in: 'Inputs', out: 'Outputs', tag: 'Tags', sys: 'System' };
+  function groupedRows(list, kind, mn, cur) {
+    const order = kind === 'bitw' || (INSTR[mn] && INSTR[mn].out) ? ['out', 'tag', 'in', 'sys'] : ['in', 'tag', 'out', 'sys'];
+    const row = c => `<div class="row${cur && U(c.name) === U(cur) ? ' on' : ''}" data-pick="${esc(c.name)}"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div><span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span></div>`;
+    return order.map(g => {
+      const its = list.filter(c => (c.grp || 'tag') === g);
+      return its.length ? `<div class="grp sgg">${GRPS[g]} <small>${its.length}</small></div>` + its.map(row).join('') : '';
+    }).join('');
   }
   const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER' })[kind] || 'DINT';
   function openEditor(ri, path, focusIdx) {
@@ -797,7 +856,7 @@
     if (!e || e.t === 'BR') return;
     let mn = e.t, ops = e.a.slice(), focus = focusIdx || 0;
     const names = () => L.OPN[mn] || (INSTR[mn] ? INSTR[mn].args.map((_, i) => 'Operand ' + i) : []);
-    const fields = () => (INSTR[mn] ? INSTR[mn].args : []).map((k, i) => `<div class="frow"><label>${esc(names()[i] || 'Operand ' + i)}${k.endsWith('?') ? ' (optional)' : ''}</label><input class="inp mono" data-op="${i}" value="${esc(ops[i] == null ? (k.endsWith('?') ? '' : '?') : ops[i])}" autocomplete="off" spellcheck="false"></div>`).join('');
+    const fields = () => (INSTR[mn] ? INSTR[mn].args : []).map((k, i) => `<div class="frow"><label>${esc(names()[i] || 'Operand ' + i)}${k.endsWith('?') ? ' (optional)' : ''}</label><input class="inp mono" data-op="${i}"${i === focus ? ' autofocus' : ''} value="${esc(ops[i] == null ? (k.endsWith('?') ? '' : '?') : ops[i])}" autocomplete="off" spellcheck="false"></div>`).join('');
     const el = dialog({
       title: `Rung ${ri} · ${mn}`, size: 'md', focus: true,
       body: `<div class="frow"><label>Instruction</label><input class="inp mono" id="mn" value="${esc(mn)}" list="mnlist" autocomplete="off" spellcheck="false"></div>
@@ -811,12 +870,16 @@
       const k = INSTR[mn] ? (INSTR[mn].args[focus] || '').replace('?', '') : '';
       const inp = el.querySelector(`[data-op="${focus}"]`);
       const text = inp ? inp.value.trim() : '';
-      const list = suggest(k, text);
-      const known = !text || text === '?' || list.some(c => U(c.name) === U(text)) || !E.validName(text) || ['imm', 'routine', 'label', 'order', 'expr'].includes(k) || E.parseNumber(text);
+      // an operand that already names a tag shows the whole list with it marked, like the tag browser
+      let list = suggest(k, text);
+      const exact = list.some(c => U(c.name) === U(text));
+      if (exact) list = suggest(k, '');
+      const known = !text || text === '?' || exact || !E.validName(text) || ['imm', 'routine', 'label', 'order', 'expr'].includes(k) || E.parseNumber(text);
       sgh.textContent = k === 'imm' ? 'A number (e.g. 5000)' : `Tags for ${names()[focus] || 'operand'}${KIND_TYPES[k] ? ' · ' + KIND_TYPES[k].join(', ') : ''}`;
       sg.innerHTML = (!known ? `<div class="row new" data-newtag="${esc(text)}">${ic('newtag')}<div class="grow"><div class="nm">New "${esc(text)}"</div><div class="sub">Create a ${defaultType(k)} tag · Ctrl+W</div></div></div>` : '') +
-        list.map(c => `<div class="row" data-pick="${esc(c.name)}"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div><span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span></div>`).join('') ||
+        groupedRows(list, k, mn, text) ||
         (known && k !== 'imm' ? '<div class="empty">No matching tags</div>' : '');
+      const on = sg.querySelector('.row.on'); if (on) sg.scrollTop = on.offsetTop - sg.offsetTop - 40;
     }
     function readOps() { el.querySelectorAll('[data-op]').forEach(i => { ops[+i.dataset.op] = i.value.trim(); }); }
     function accept() {
@@ -1116,6 +1179,7 @@
     confirmDlg('Delete Routine', `Delete <b>${esc(rn)}</b> and its rungs?`, 'Delete', () => { edit(() => { g.routines = g.routines.filter(x => x.name !== rn); if (S.routine === rn) { S.routine = g.main; S.sel = null; S.selRung = 0; } }); }, true);
   }
   function newModule() {
+    if (!offline()) { toast('Go offline to add a module.'); return; }
     const used = new Set(S.p.rack.modules.map(m => m.slot)), free = [];
     for (let s = 1; s < S.p.rack.size; s++) if (!used.has(s)) free.push(s);
     if (!free.length) { toast('The rack is full.', 'err'); return; }
@@ -1155,7 +1219,7 @@
     for (let s = 1; s < S.p.rack.size; s++) if (!used.has(s)) slots.push(s);
     const st = S.online && ctl.M ? ctl.moduleStatus(slot) : null;
     const io = S.online && ctl.M && ctl.M.mods.get(slot) ? ctl.ioImage(slot) : null;
-    const dis = editable() ? '' : ' disabled';
+    const dis = offline() ? '' : ' disabled';
     const general = `<div class="frow"><label>Type</label><span>${esc(m.type)} <span class="muted">· ${esc(MODNAMES[m.type] || '')}</span></span></div>
       <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
@@ -1165,7 +1229,7 @@
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
       ${st && st.code ? `<div class="kv" style="color:var(--danger)"><span>Module fault</span><span class="v">(Code ${st.code}) ${esc(st.text)}</span></div>` : ''}
-      <p class="help">${editable() ? 'These settings go to the controller with the next Download.' : 'Go offline to change them.'}</p>`;
+      <p class="help">${offline() ? 'These settings go to the controller with the next Download.' : 'Go offline to change them.'}</p>`;
     const bits = v => (typeof v === 'number' ? v.toString(2).padStart(16, '0') : v.map(x => (+x).toFixed(1)).join(', '));
     const status = !S.online ? '<p class="help">Offline. Go online to see the module status.</p>'
       : kv('Status', `<b style="color:${st.state === 'Running' ? 'var(--ok)' : st.state === 'Faulted' ? 'var(--danger)' : 'var(--warn-text)'}">${st.state}</b>`) +
@@ -1175,7 +1239,7 @@
     dialog({ title: `Module Properties - [${slot}] ${m.type}`, size: 'md',
       body: tabbed([['gen', 'General', general], ['con', 'Connection', conn], ['st', 'Status' + (st && st.state === 'Faulted' ? ' ⚠' : ''), status]], tab || (st && st.state === 'Faulted' ? 'st' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
-        if (!editable()) return;
+        if (!offline()) return;
         const name = el2.querySelector('#mp-n').value.trim(), ns = +el2.querySelector('#mp-s').value;
         if (!E.validName(name)) { toast('Module name: letters, digits and _.', 'err'); return false; }
         const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.max(2, Math.min(750, +el2.querySelector('#mp-r').value || 20)), inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked };
@@ -1192,24 +1256,24 @@
   }
   /* Controller Properties: General, Major Faults, Minor Faults */
   function controllerProps(tab) {
-    const on = S.online && ctl.M, dis = editable() ? '' : ' disabled';
+    const on = S.online && ctl.M, dis = offline() ? '' : ' disabled';
     const general = `<div class="frow"><label>Name</label><input class="inp" id="cp-n" value="${esc(S.p.controller.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="cp-d" value="${esc(S.p.controller.desc || '')}"${dis}></div>
       ${kv('Type', 'PLC-CPU (built-in controller)')}${kv('Revision', '1.0')}${kv('Chassis', `PLC-RACK${S.p.rack.size}, slot 0`)}
       <p class="help">The name is also the project name.</p>`;
-    const offline = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
+    const offMsg = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
     const row = f => `<div class="row"><div class="grow"><div class="sub" style="white-space:normal">${when(f.at)} · Type ${f.type} Code ${f.code}: ${esc(f.text)}${f.count > 1 ? ` (×${f.count})` : ''}</div></div></div>`;
-    const majors = !on ? offline
+    const majors = !on ? offMsg
       : (ctl.fault ? `<div class="kv" style="color:var(--danger)"><span>Current fault</span><span class="v">Type ${ctl.fault.type}, Code ${ctl.fault.code}</span></div><p>${esc(ctl.fault.text)}</p>` : '<p><b style="color:var(--ok)">No major faults.</b></p>') +
         (ctl.majors.length ? `<div class="grp">Recent</div>${ctl.majors.map(row).join('')}` : '') +
         `<div class="brow"><button class="btn danger" id="cp-cm"${ctl.fault ? '' : ' disabled'}>Clear Majors</button></div>`;
-    const minors = !on ? offline
+    const minors = !on ? offMsg
       : (ctl.minors.length ? ctl.minors.map(row).join('') : '<p><b style="color:var(--ok)">No minor faults.</b></p>') +
         `<div class="brow"><button class="btn" id="cp-cn"${ctl.minors.length ? '' : ' disabled'}>Clear Minors</button></div>`;
     dialog({ title: 'Controller Properties - ' + S.p.controller.name, size: 'md',
       body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors]], tab || (on && ctl.fault ? 'maj' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        if (!editable()) return;
+        if (!offline()) return;
         const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim();
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         if (U(v) !== U(S.p.controller.name) && index().some(x => U(x.name) === U(v))) { toast('A project with that name exists.', 'err'); return false; }
@@ -1290,6 +1354,32 @@
       } }] });
   }
   const RUNM = () => ctl.mode === 'run' || ctl.mode === 'remrun';
+  /* Accept Edits: the edited logic goes into the controller without a Download (spec section 8, online edits) */
+  function acceptEdits() {
+    reverify();
+    if (S.verify.errors.length) {
+      if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
+      render();
+      toast(`Fix ${S.verify.errors.length} error(s) before accepting the edits.`, 'err');
+      return;
+    }
+    const go = () => {
+      const r = ctl.edit(JSON.parse(JSON.stringify(S.p)));
+      if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits were not accepted.', 'err'); return; }
+      saveProject();
+      toast('Edits accepted: the controller runs the new logic.', 'ok');
+      live(true); render();
+    };
+    if (ctl.running) confirmDlg('Accept Edits', 'The controller is running. The edited logic starts on the next scan. Accept the edits?', 'Accept', go);
+    else go();
+  }
+  /* Cancel Edits: back to the logic in the controller */
+  function cancelEdits() {
+    confirmDlg('Cancel Edits', 'Throw away the edits that are not in the controller?', 'Cancel Edits', () => edit(() => {
+      const p = JSON.parse(ctl.copy);
+      S.p = p; S.sel = null; S.selRung = 0;
+    }), true);
+  }
   function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   function whoActive() {
@@ -1373,10 +1463,15 @@
     if (S.tagMode === 'mon') refreshTags();
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
-  function loop(now) {
-    const dt = Math.min(250, now - lastT);
+  /* the controller scans on a timer of its own, so it keeps running when the screen does not redraw
+     (a hidden or minimised window); the frame loop only draws */
+  function tick() {
+    const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
     if (ctl.M) ctl.advance(dt);
+  }
+  function loop(now) {
+    tick();
     // a turned tablet or a resized window may skip the resize event: check the layout a few times a second
     if (now - lastLay > 250) { lastLay = now; if (pickLayout() !== S.layout && !S.touching) render(); }
     live(false);
@@ -1458,6 +1553,7 @@
   function dropAt(x, y) {
     const el = document.elementFromPoint(x, y), t = hit(el);
     if (!t || t.end || t.ri == null) return null;
+    if (t.leg) return { ri: t.ri, path: t.path, leg: true };
     if (t.path && !t.br) { const r = el.getBoundingClientRect(); return { ri: t.ri, path: t.path, after: x > r.left + r.width / 2 }; }
     return { ri: t.ri, end: true };
   }
@@ -1595,6 +1691,7 @@
     S.layout = pickLayout();
     bind();
     openProject(p, true);
+    setInterval(tick, 20);
     requestAnimationFrame(loop);
     if (window.MTPSUpdater) window.MTPSUpdater.init({ version: VERSION, build: BUILD, onAvailable: info => { upInfo = info; render(); }, toast, dialog, esc });
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

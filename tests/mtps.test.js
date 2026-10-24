@@ -566,6 +566,30 @@ console.log('Modules: inhibit, fault, Upload, fault logs');
   check('nothing to upload from an empty controller', new MTPS.Controller().upload() === null);
 }
 
+console.log('Online edits (Accept Edits)');
+{
+  const o = { tags: [T('A', 'BOOL'), T('N', 'DINT'), T('Tm', 'TIMER'), T('Cn', 'COUNTER')], rungs: ['XIC(A)TON(Tm,5000,0);', 'ADD(N,1,N);', 'XIC(A)CTU(Cn,10,0);'] };
+  const c = run(o);
+  scans(c, 1); c.write('A', 1); scans(c, 49);
+  const cn = c.read('Cn').ACC;
+  const p = proj(o);
+  p.tags.push(T('B', 'BOOL'));
+  p.tasks[0].programs[0].routines[0].rungs.push({ t: 'XIC(A)OTE(B);' });
+  p.tasks[0].programs[0].routines[0].rungs[0].t = 'XIC(A)TON(Tm,8000,0);';
+  const r = c.edit(p);
+  check('Accept Edits builds the new logic without a Download', r.ok && c.holds(p));
+  check('the mode stays Rem Run', c.mode === 'remrun' && c.running);
+  check('tag values stay (DINT and BOOL)', c.read('N') === 50 && c.read('A') === 1);
+  check('a running timer keeps its accum, the edited preset is used', c.read('Tm').ACC === 480 && c.read('Tm').PRE === 8000 && c.read('Tm').TT === 1);
+  check('a counter keeps its accum', cn === 1 && c.read('Cn').ACC === 1);
+  scans(c, 1);
+  check('the new rung runs on the next scan', c.read('B') === 1 && c.read('N') === 51);
+  const bad = proj(o);
+  bad.tasks[0].programs[0].routines[0].rungs.push({ t: 'OTE(?);' });
+  check('edits with errors are refused and the old logic keeps running', !c.edit(bad).ok && c.holds(p));
+  check('an empty controller cannot take online edits', !new MTPS.Controller().edit(p).ok);
+}
+
 console.log('Project copy in the controller');
 {
   const p = proj({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)OTE(A);'] });

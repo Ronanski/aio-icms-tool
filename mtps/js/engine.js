@@ -750,6 +750,32 @@
       this.emit('mode');
       return res;
     }
+    /* online edit (Accept Edits): the new logic replaces the old without a Download. The mode, the forces and the
+       values of the tags that keep their name and type stay; new tags start from their start value. */
+    edit(project) {
+      if (!this.M) return { ok: false, errors: [], warnings: [], lines: ['The controller is empty: Download first.'] };
+      const p = JSON.parse(JSON.stringify(project)), kept = [];
+      const keep = (list, prog) => (list || []).forEach(t => {
+        if (t.alias) return;
+        const r = this.refOf(t.name, prog);
+        if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || (r.dim || 0) !== (t.dim || 0)) return;
+        const v = this.read(t.name, prog);
+        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER') kept.push([t.name, prog, v]); }
+      });
+      keep(p.tags, null);
+      (p.tasks || []).forEach(k => (k.programs || []).forEach(g => keep(g.tags, g.name)));
+      const r = build(p);
+      const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
+      if (!res.ok) return res;
+      Object.assign(r.model.S, this.S);
+      this.M = r.model; this.S = this.M.S; this.name = this.M.name;
+      this.copy = JSON.stringify(project);
+      this.refs.clear();
+      // a timer or a counter keeps its accum and bits: only the preset comes from the (maybe edited) rung
+      kept.forEach(([name, prog, v]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { PRE: o.PRE }); } });
+      this.emit('download');
+      return res;
+    }
     /* the controller keeps its own copy: a project changed offline must be downloaded again */
     holds(project) { return this.copy !== null && this.copy === JSON.stringify(project); }
 

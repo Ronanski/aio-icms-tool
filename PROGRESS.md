@@ -21,8 +21,9 @@
 - [x] App 0.1.0-beta.1: desktop / tablet / phone layouts that follow the window, ladder editor, operand editor + tag browser + New Tag, tags, verify, built-in controller online, toggle, forces, I/O panel, projects, cross reference, find; `tests/mtps-ui.test.js` 48 checks
 - [x] Release pipeline: `desktop-mtps/` (resizable exe), `mobile-mtps/` (APK, any orientation), `release-mtps.yml`, Pages `/mtps/` and `/mtps/beta/`, in-app updates
 - [x] Owner feedback on beta.1 fixed in 0.1.0-beta.2: selection after long-press / while running, zoom lag, Toggle Bit on inputs, empty first project, Module / Controller Properties with faults, simulated module fault, Upload
-- [ ] Owner test of 0.1.0-beta.2 (also the first in-app update)
-- [ ] Next: online edit, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look
+- [x] Owner feedback on beta.2 fixed in 0.1.0-beta.3: branch levels (select, insert, delete), tablet branch tap crash, operand box closing at once, controller scans when hidden, grouped tag list (Inputs / Outputs / Tags / System), online edits with Accept / Cancel Edits
+- [ ] Owner test of 0.1.0-beta.3
+- [ ] Next: online edit test / assemble steps and the r / i rung markers, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look
 
 ## Simpler app and education (2026-10-21, `feature/simplify-learn`)
 - [x] Update bar: no "ready" for the same version in the Android / Windows app

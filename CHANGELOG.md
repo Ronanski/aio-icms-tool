@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (MT PLC Studio 0.1.0-beta.3)
+- **Branches:** tapping a branch on the tablet or phone no longer breaks the screen.
+- **Branch levels:** each level of a branch, empty or not, can now be selected.
+  - A new instruction goes into the selected level, from the toolbar or by drag and drop.
+  - Delete removes the level (*Delete Branch Level*). The branch rail is easier to hit with a finger.
+- **Adding an instruction from the toolbar:** its operand box no longer closes by itself right after it opens.
+  This happened on touch screens above all.
+- **The controller keeps scanning when the window is hidden or minimised**, like a real PLC.
+  Before, it ran only while the screen redrew.
+- **The operand box focuses the operand**, not the instruction name, and names the operands (*Bit*,
+  *Storage Bit*, *Structure*, *Label Name*).
+
+### Added (MT PLC Studio 0.1.0-beta.3)
+- **Online edits:** the ladder can be edited while online, in Program or Run mode.
+  - The edits wait as *Edits Present*, with **Accept Edits** and **Cancel Edits** (bar on top, Logic menu).
+  - Accept sends the new logic to the controller without a Download and without leaving Run.
+  - Tag values, timer and counter accums stay; an edited preset is used.
+  - Modules and controller settings still need Go Offline.
+- **The tag list of the operand box is grouped** into Inputs, Outputs, Tags and System.
+  - A contact (XIC, XIO) shows Inputs first; a coil (OTE, OTL, OTU) shows Outputs first.
+  - Each I/O point says its slot and module. A tag aliased to an I/O point sits with that point's group.
+  - An operand that already names a tag shows the whole list, with that tag marked.
+
 ### Fixed (MT PLC Studio 0.1.0-beta.2)
 - **Selecting instructions:** after a long-press, or while a running timer redraws the ladder, taps were read as a
   pinch and nothing could be selected any more. The ladder now follows each finger or click until it is released.
