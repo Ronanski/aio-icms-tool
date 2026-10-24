@@ -799,3 +799,17 @@ them.
   `mtps.session`.
 - **Help:** `js/help.js` holds, for each instruction, `[what, how, example, comparison]` in `en` and `tl`, and the Tips;
   `prefs.helpLang` and `prefs.helpTab` remember the choice; `prefs.tipsSeen` hides the first-start card.
+
+## 19. Operands, organizer, emulator panel, help (0.3.0-beta.3)
+
+- **Operands:** ladder.js gives each operand row of a box a tap target (`data-opi`); `S.sel.op` is the selected
+  operand, drawn as `.osel`. Double-click opens `openEditor(ri, path, op)`; the context menu adds Edit, New,
+  Properties and Description for that operand; `editDesc` works on the selected operand.
+- **Organizer:** `taskProps`, `progProps`, `routineProps`; tasks keep `desc`, `watchdog`, `noOutputs`, `inhibit`;
+  programs `desc`, `main`, `fault`, `inhibit`; routines `desc`. The engine skips an inhibited program or task and
+  measures `scanUs` / `maxScanUs`.
+- **Emulator panel:** `dockSide(portrait)` picks right (landscape) or bottom; `prefs.dockAt` keeps a move,
+  `prefs.emuMin` the folded bar. Slots have a fixed width (`--slotw`).
+- **Module I/O window:** one per chassis (`ioWins` keyed by rack), inputs as `data-iobit` buttons.
+- **Help:** `js/help-ref.js` (`MTPS.HELPREF`) holds the reference page of each instruction; `js/help.js` keeps the
+  plain-language summary and Getting Started.

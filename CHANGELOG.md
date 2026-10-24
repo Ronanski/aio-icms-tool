@@ -5,6 +5,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.3.0-beta.3): operands, organizer, emulator panel and help as in RSLogix 5000
+- **Operands, one by one:** each operand inside an instruction box (Timer, Preset, Source, Dest…) can be selected on its
+  own. A double-click opens the operand editor on that operand. A right-click (long-press) gives Edit "operand", New
+  "tag", Edit "tag" Properties and Edit "tag" Description. Ctrl+D edits the description of the selected operand.
+- **Box instructions show the description** of their main operand above them, like contacts and coils.
+- **The operand editor keeps its size** while typing, so OK and Cancel stay in place.
+- **Controller Organizer:**
+  - Task, Program and Routine Properties (General, Configuration, Program Schedule, Monitor with scan times), from
+    a double-click or the right-click menu. Controller Properties adds Date/Time, Advanced, File and Memory.
+  - A tap on a folder, the controller, a task or a program folds it open or shut; rows are taller on touch screens.
+  - Inhibit Task and Inhibit Program stop their logic.
+- **Emulator panel:**
+  - In landscape it is docked to the right of the ladder by default; it can be moved under the ladder and back.
+  - It folds to a thin bar, like the organizer, and opens again from the bar.
+  - The modules keep their size instead of stretching across the panel.
+  - On a tablet in portrait the organizer drawer no longer covers it.
+- **Module I/O window:** smaller, with the inputs and outputs of the chassis together. Each input point is a button
+  that switches it and lights green; output points light amber. A tap on an I/O module opens it.
+- **Tablet menu:** the menu groups fold again (they all showed open before).
+- **Instruction Help** is laid out like the reference: a contents list, then for each instruction the operands table
+  (type, format, description), description, arithmetic status flags, fault conditions, the execution table
+  (Prescan, rung-condition-in false / true, Postscan) and a drawn example rung. A plain-language summary (English or
+  Filipino) is folded at the end.
+- **Getting Started** (Help menu) replaces the Tips and the first-start card.
+
 ### Changed (MT PLC Studio 0.3.0-beta.2): the owner's 14 points, with RSLogix 5000 and Logix Emulate as the reference
 - **Ladder:** the power rails run unbroken from the first rung down to (End), as in the reference editor.
 - **Descriptions:** any instruction operand can get a description (Edit Main Operand Description). For a tag, it is

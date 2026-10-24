@@ -703,21 +703,76 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .phone .fbp .lbl { display: none; }
 .phone .fbi .sub:not(.fbsz) { display: none; }
 
-/* Instruction help (Simple / Reference, English / Taglish) and Tips */
-.hhead { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; }
-.hpick { flex: 1; min-width: 180px; }
-.htabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-strong); margin-bottom: 10px; }
-.htabs span { padding: 6px 14px; cursor: pointer; color: var(--muted); border: 1px solid transparent; border-bottom: none; border-radius: var(--r) var(--r) 0 0; }
-.htabs span.on { color: inherit; font-weight: 600; border-color: var(--border-strong); background: var(--surface, #fff); margin-bottom: -1px; }
-.hsec { margin: 0 0 10px; }
-.hsec h4 { margin: 0 0 3px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.hsec p { margin: 0; line-height: 1.45; }
-.hbig { font-size: 15px; font-weight: 600; }
-.hex { background: var(--fill, rgba(0,0,0,.05)); padding: 6px 8px; border-radius: var(--r); white-space: pre-wrap; word-break: break-word; }
-.hsec.like { border-left: 3px solid var(--fill-accent); padding-left: 8px; }
-.tips { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.tips li { display: grid; grid-template-columns: 90px 1fr; gap: 8px; line-height: 1.4; }
-.tipcard { position: fixed; right: 16px; bottom: 16px; z-index: 40; max-width: 300px; display: grid; gap: 6px; padding: 12px; background: var(--surface, #fff); color: inherit; border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.2); }
-.tipcard div { display: flex; gap: 6px; justify-content: flex-end; }
-.phone .tips li { grid-template-columns: 1fr; gap: 2px; }
-.phone .tipcard { left: 16px; right: 16px; bottom: 72px; max-width: none; }
+
+/* the selected operand of a box instruction */
+svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); stroke-width: 1; }
+.menu .it[hidden] { display: none !important; }
+
+/* the ladder area of the tablet: the organizer drawer opens over it only (not over the emulator panel or the instruction bar) */
+.edmain { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.edmain > .org.over { top: 0; bottom: 0; }
+/* the emulator panel folded to a thin bar, opened again with one tap */
+.dock.min { background: var(--surface-2); }
+.dock.bottom.min { height: auto !important; }
+.dock.side.min { width: 40px !important; }
+.dkbar { display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 10px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.dkbar:hover { background: var(--surface-3); }
+.dock.side.min .dkbar { flex-direction: column; height: 100%; width: 40px; padding: 10px 0; writing-mode: vertical-rl; }
+.dock.side.min .dkbar svg { writing-mode: horizontal-tb; }
+.tab .dkbar { height: 44px; }
+/* modules keep their size: the rack does not stretch to the width of the panel */
+.chas { --slotw: 92px; width: max-content; max-width: none; }
+.tab .chas, .phone .chas { --slotw: 100px; }
+.rkrail, .rkslots { grid-template-columns: repeat(var(--n), var(--slotw)); }
+.rkbay { flex: none; }
+.rkps { width: 56px; }
+.dockb { align-items: flex-start; }
+/* Module I/O window: compact, inputs are buttons, outputs light up */
+.iowin { width: auto; min-width: 300px; max-width: min(460px, calc(100vw - 16px)); }
+.iowb { padding: 4px 6px 6px; display: grid; gap: 4px; }
+.iom { border: 1px solid var(--border); border-radius: var(--r); padding: 4px 6px 6px; }
+.iom.cur { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.iomh { display: flex; gap: 8px; align-items: baseline; font-size: 11px; margin-bottom: 4px; }
+.iofl { color: var(--danger); font-weight: 600; }
+.iobits { display: grid; grid-template-columns: repeat(16, 22px); gap: 2px; }
+.iob { width: 22px; height: 22px; padding: 0; border: 1px solid #4a525d; border-radius: 3px; background: #2b3139; color: #9aa4b1; font: 600 10px var(--mono); display: grid; place-items: center; cursor: pointer; }
+.iob.on { background: #2fbf4f; border-color: #1f8f39; color: #fff; box-shadow: 0 0 5px #2fbf4f; }
+.iob.out { cursor: default; }
+.iob.out.on { background: #ffc928; border-color: #c99a10; color: #3a2a00; box-shadow: 0 0 5px #ffc928; }
+.tab .iobits, .phone .iobits { grid-template-columns: repeat(8, 34px); gap: 4px; }
+.tab .iob, .phone .iob { width: 34px; height: 30px; font-size: 11px; }
+.ioana { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; }
+.ioana label, .ioana > span { display: inline-flex; align-items: center; gap: 4px; }
+.ioana .num { width: 64px; height: 24px; }
+/* properties dialogs: check boxes with their text */
+.dlg label.ck { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+/* the organizer on a touch screen: rows and fold arrows big enough for a finger; the selected row is marked */
+.tab .nd { height: 44px; font-size: 14px; }
+.tab .nd .tw { width: 40px; }
+.tab .nd .tw svg.i { width: 16px; height: 16px; }
+.tab .nd:active { background: var(--accent-soft); }
+/* Instruction Help: contents on the left, the reference page on the right (one column on a narrow screen) */
+.ihelp { display: grid; grid-template-columns: 210px minmax(0, 1fr); height: min(70vh, 640px); }
+.ihl { overflow: auto; border-right: 1px solid var(--border); background: var(--surface-2); padding: 4px 0; }
+.ihg { font-weight: 700; font-size: 11px; padding: 8px 10px 3px; color: var(--muted); }
+.ihi { display: flex; gap: 8px; align-items: baseline; padding: 3px 10px 3px 16px; cursor: pointer; font: 600 12px var(--mono); }
+.ihi span { font: 400 11px var(--font, inherit); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ihi:hover { background: var(--surface-3); }
+.ihi.on { background: var(--accent); color: #fff; } .ihi.on span { color: #fff; }
+.ihr { display: flex; flex-direction: column; min-height: 0; }
+.ihpick { display: none; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.ihc { overflow: auto; padding: 10px 16px 16px; line-height: 1.45; }
+.ihc h3 { margin: 0 0 2px; font-size: 16px; }
+.ihc h4 { margin: 14px 0 4px; font-size: 12px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+.ihc p { margin: 4px 0; }
+.iht { width: 100%; border-collapse: collapse; font-size: 12px; }
+.iht th, .iht td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; vertical-align: top; }
+.iht th { background: var(--surface-2); font-weight: 600; }
+.ihex { overflow: auto; border: 1px solid var(--border); background: var(--lad-bg); padding: 4px; }
+.ihex svg { display: block; }
+.ipl { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--r); padding: 6px 10px; }
+.ipl summary { cursor: pointer; font-weight: 600; font-size: 12px; }
+.phone .ihelp, .tab .ihelp { grid-template-columns: minmax(0, 1fr); height: auto; max-height: none; }
+.phone .ihl, .tab .ihl { display: none; }
+.phone .ihpick, .tab .ihpick { display: block; }
+@media (min-width: 1000px) { .tab .ihelp { grid-template-columns: 210px minmax(0, 1fr); height: min(70vh, 640px); } .tab .ihl { display: block; } .tab .ihpick { display: none; } }

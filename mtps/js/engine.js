@@ -584,7 +584,7 @@
     for (const task of pj.tasks || []) for (const pg of task.programs || []) {
       if (!validName(pg.name) || progNames.has(U(pg.name))) { ctlErr(`Invalid or repeated program name '${pg.name}'`); continue; }
       progNames.add(U(pg.name));
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null };
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit) };
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
@@ -812,8 +812,9 @@
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
+      const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
-        for (const P of this.M.programs) if (P.main) this.routine(P.main);
+        for (const P of this.M.programs) if (P.main && !P.inhibit) this.routine(P.main);
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         this.majorFault(e.type, e.code, e.message);
@@ -821,6 +822,9 @@
       this.S.FS = 0;
       this.first = false;
       this.scans++;
+      // scan times in microseconds (Task Properties, Monitor)
+      const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
+      this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
     }
     /* the controller's own clock: fixed scans of `period` ms, catching up after a slow frame (at most 1 s) */
     advance(ms) {

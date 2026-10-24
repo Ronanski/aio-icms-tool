@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.3.0-beta.2';
+  const VERSION = '0.3.0-beta.3';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -92,7 +92,8 @@
     undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3', redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3', cut: 'M6 7a2 2 0 1 0 0-.01M6 17a2 2 0 1 0 0 .01M8 8l12 10M8 16 20 6',
     copy: 'M8 8h11v11H8zM5 15V5h10', paste: 'M9 4h6v3H9zM7 5H5v15h14V5h-2', trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
     check: 'M5 12.5 10 17 19 7', checkr: 'M4 6h9M4 11h9M4 16h6M14 15l3 3 5-6', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4', tags: 'M3 5h18v14H3zM3 10h18M9 5v14',
-    online: 'M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v8', more: 'M12 5.5v.01M12 12v.01M12 18.5v.01', moreh: 'M5.5 12h.01M12 12h.01M18.5 12h.01',
+    online: 'M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v8', more: 'M12 5.5v.01M12 12v.01M12 18.5v.01', moreh: 'M5.5 12h.01M12 12h.01M18.5 12h.01', up: 'M6 15l6-6 6 6', left: 'M15 6l-6 6 6 6',
+    dockr: 'M4 5h16v14H4zM14 5v14', dockb: 'M4 5h16v14H4zM4 14h16',
     plus: 'M12 5v14M5 12h14', back: 'M15 5l-7 7 7 7', close: 'M6 6l12 12M18 6 6 18', down: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6',
     ladder: 'M5 3v18M19 3v18M5 8h4M15 8h4M9 5v6M15 5v6M5 16h14', chip: 'M7 7h10v10H7zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4',
     tree: 'M4 5h6M4 5v14M4 12h6M4 19h6M14 5h6M14 12h6M14 19h6', warn: 'M12 4l9 16H3L12 4zM12 10v4M12 17v.01', edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
@@ -566,10 +567,10 @@
     branch: { l: 'Add Branch', i: 'tree', run: () => addBranch(), on: editable },
     level: { l: 'Add Branch Level', i: 'tree', run: addLevel, on: () => editable() && !!S.sel },
     ins: { l: 'Add Ladder Element…', k: 'Alt+Ins', i: 'plus', run: () => picker(''), on: editable },
-    edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, 0), on: () => editable() && !!curEl() },
+    edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, selOpIdx()), on: () => editable() && !!curEl() },
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
     comment: { l: 'Edit Rung Comment', i: 'text', run: () => rungComment(curSelRung()), on: () => editable() && curSelRung() != null },
-    desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => !!curEl() && !!curEl().a[0] && curEl().a[0] !== '?' },
+    desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => isTagText(selOperand()) },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
@@ -612,7 +613,7 @@
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
-    tips: { l: 'Tips', i: 'info', run: () => tipsDlg() },
+    tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
@@ -718,28 +719,29 @@
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
-          <div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu ? dockHTML('bottom') : ''}</section></div>
+          <div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
   }
   const onlineBarHTML = () => `<div class="leds">${ledsHTML()}</div>${keyHTML()}<div class="boxes">${modeBox()}${forcesBox()}${editsBox()}</div>`;
 
   function tablet() {
-    const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org;
+    const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
+    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>`;
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small></span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
         <span class="vsep"></span><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
         ${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
-      <div class="tbody">${pinned || S.drawer ? `<aside class="org${pinned ? '' : ' over'}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>` : ''}
+      <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
-          ${S.view === 'ladder' ? `<div class="ladwrap" id="ladwrap" tabindex="0"></div>
-          ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}
-          ${S.prefs.emu && !land ? dockHTML('bottom') : ''}
+          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `<div class="ladwrap" id="ladwrap" tabindex="0"></div>
+          ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}</div>
+          ${S.prefs.emu && dockSide(port) === 'bottom' ? dockHTML('bottom') : ''}
           <div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div></section>
-        ${S.prefs.emu && land ? dockHTML('side') : ''}</div>`;
+        ${S.prefs.emu && dockSide(port) === 'side' ? dockHTML('side') : ''}</div>`;
   }
   const tabStatHTML = () => `${keyHTML()}${modeBox()}${forcesBox()}${editsBox()}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>`;
   const errHandle = () => { const n = S.verify ? S.verify.errors.length : 0; return `<span class="errh${n ? '' : ' ok'}" data-errh="1">${ic(n ? 'warn' : 'check')}<b>${n}</b> Errors${ic('down')}</span>`; };
@@ -883,16 +885,16 @@
   function zoom(f) { setZoom(S.prefs.zoom * f); savePrefs(); }
   function select(t) {
     if (!t) { S.sel = null; S.selRung = null; return; }
-    if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br, leg: t.leg }; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
+    if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br, leg: t.leg }; if (t.op != null) S.sel.op = t.op; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
   }
   const hit = el => {
     const r = el && el.closest && el.closest('rect.tap');
     if (!r) return null;
     const d = r.dataset;
     if (d.end) return { end: true };
-    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, leg: !!d.leg, rn: !!d.rn };
+    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, leg: !!d.leg, rn: !!d.rn, op: d.opi != null ? +d.opi : undefined };
   };
-  const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.leg ? 'l' : ''}${t.rn ? 'n' : ''}${t.end ? 'e' : ''}` : '');
+  const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.leg ? 'l' : ''}${t.rn ? 'n' : ''}${t.end ? 'e' : ''}|${t.op != null ? t.op : ''}` : '');
   let lastTap = { k: '', t: 0 };
   function onTap(t, x, y, isDbl) {
     const k = tkey(t), now = Date.now();
@@ -901,7 +903,7 @@
     select(t);
     render();
     if (!dbl || !t) return;
-    if (t.path && !t.br && !t.leg) { if (editable()) openEditor(t.ri, t.path, 0); }
+    if (t.path && !t.br && !t.leg) { if (editable()) openEditor(t.ri, t.path, t.op || 0); }
     else if (t.rn) { if (editable()) rungText(t.ri); }
   }
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom */
@@ -997,11 +999,20 @@
     let ids, head;
     if (t.leg) { head = `Rung ${t.ri} · Branch Level`; ids = ['paste', 'del', '-', 'level']; }
     else if (t.path && !t.br) {
-      const e = curEl();
+      const e = curEl(), oi = selOpIdx(), a = e && e.a ? e.a[oi] : undefined, onm = e ? (L.OPN[e.t] || [])[oi] || 'Operand' : '';
       head = `Rung ${t.ri} · ${e ? e.t + ' ' + e.a.join(', ') : ''}`;
-      ids = [];
-      if (e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) && /^[A-Za-z_]\w*$/.test(e.a[0])) ids.push('newtag', '-');
-      ids.push('cut', 'copy', 'paste', 'del', '-', 'ins', 'edit', 'desc', '-', 'toggle', 'fon', 'foff', 'frem', '-', 'goto', 'xref', 'help');
+      const pre = [];
+      if (e && e.a && e.a.length) {
+        pre.push({ l: `Edit "${onm}"…`, i: 'edit', run: () => openEditor(t.ri, t.path, oi), dis: !editable() });
+        const base = isTagText(a) ? String(a).split(/[.[]/)[0] : null, tg = base && tagFor(base);
+        if (base && !tg) pre.push({ l: `New "${base}"…`, i: 'newtag', run: () => newTag({ name: base, kind: (INSTR[e.t].args[oi] || '').replace('?', '') }), dis: !editable() });
+        if (tg) pre.push({ l: `Edit "${tg.name}" Properties…`, i: 'tag', run: () => newTag({ tag: tg }) });
+        if (base) pre.push({ l: oi ? `Edit "${a}" Description…` : 'Edit Main Operand Description…', i: 'tag', run: editDesc, k: 'Ctrl+D' });
+        pre.push('-');
+      }
+      ids = ['cut', 'copy', 'paste', 'del', '-', 'ins', 'edit', '-', 'toggle', 'fon', 'foff', 'frem', '-', 'goto', 'xref', 'help'];
+      openMenu(pre.concat(menuItems(ids)), { x, y }, head);
+      return;
     } else if (t.br) { head = `Rung ${t.ri} · Branch`; ids = ['cut', 'copy', 'paste', 'del', '-', 'level']; }
     else { head = `Rung ${t.ri}`; ids = ['cut', 'copy', 'paste', 'del', '-', 'rung', 'rtext', 'comment', 'verifyr', '-', 'goto']; }
     const items = menuItems(ids).map(it => (it === '-' ? it : { ...it, l: it.id === 'newtag' ? `New "${curEl().a[0]}"` : t.br && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Branch' : t.leg && it.id === 'del' ? 'Delete Branch Level' : !t.path && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Rung' : it.id === 'del' ? 'Delete Instruction' : it.l }));
@@ -1009,12 +1020,14 @@
   }
   function orgMenu(key, x, y) {
     const items = [];
-    if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, { l: 'Rename…', run: () => renameRoutine(key) }, { l: 'Delete', run: () => deleteRoutine(key) }); }
-    else if (key.startsWith('prog:')) items.push({ l: 'New Routine…', run: () => newRoutine(key.slice(5)), dis: !editable() }, { l: 'Program Tags', run: () => tagEditor('mon', key.slice(5)) });
+    if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, '-', { l: 'Rename…', run: () => renameRoutine(key), dis: !editable() }, { l: 'Delete', run: () => deleteRoutine(key), dis: !editable() }, '-', { l: 'Verify', run: () => { openRoutine(key); verifyCmd(true); } }, { l: 'Properties…', run: () => routineProps(key) }); }
+    else if (key.startsWith('prog:')) items.push({ l: 'New Routine…', run: () => newRoutine(key.slice(5)), dis: !editable() }, { l: 'Program Tags', run: () => tagEditor('mon', key.slice(5)) }, '-', { l: 'Properties…', run: () => progProps(key.slice(5)) });
+    else if (key.startsWith('task:')) items.push({ l: 'Properties…', run: () => taskProps(key.slice(5)) });
+    else if (key.startsWith('ptags:')) items.push({ l: 'Monitor Tags', run: () => tagEditor('mon', key.slice(6)) }, { l: 'Edit Tags', run: () => tagEditor('edit', key.slice(6)) });
     else if (key === 'bp' || key === 'io') items.push({ l: 'New Module…', run: newModule, dis: !offline() });
     else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
-    else if (key === 'ctl') items.push({ l: 'Properties…', run: controllerProps });
+    else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
     if (items.length) openMenu(items, { x, y });
   }
 
@@ -1219,7 +1232,7 @@
       title: `Rung ${ri} · ${mn}`, size: 'md', focus: true,
       body: `<div class="frow"><label>Instruction</label><input class="inp mono" id="mn" value="${esc(mn)}" list="mnlist" autocomplete="off" spellcheck="false"></div>
         <datalist id="mnlist">${Object.keys(INSTR).map(k => `<option value="${k}">${esc(INSTR[k].name)}</option>`).join('')}</datalist>
-        <div id="ops">${fields()}</div><div class="errtx" id="ee"></div><div class="grp" id="sgh">Tags</div><div class="sgbar" id="sgbar"></div><div class="list" id="sg" style="max-height:${S.layout === 'phone' ? 'none' : '240px'};border:1px solid var(--border);border-top:0"></div>`,
+        <div id="ops">${fields()}</div><div class="errtx" id="ee"></div><div class="grp" id="sgh">Tags</div><div class="sgbar" id="sgbar"></div><div class="list" id="sg" style="max-height:${S.layout === 'phone' ? 'none' : '240px'};${S.layout === 'phone' ? '' : 'height:240px;'}border:1px solid var(--border);border-top:0"></div>`,
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: accept }],
       noEnter: ev => ev.target.closest('#sg'),
     });
@@ -1337,11 +1350,14 @@
   /* the description of an operand: the tag's own description when the operand is the tag; otherwise (an I/O address,
      a member such as Timer.DN, a bit) an operand description kept with the project, as the reference allows */
   const opDesc = op => { const k = U(String(op || '')); const c = S.p.comments && S.p.comments[k]; if (c) return c; const t = tagFor(op); return t ? t.desc || '' : ''; };
+  const selOpIdx = () => (S.sel && S.sel.op != null ? S.sel.op : 0);
+  const selOperand = () => { const e = curEl(); return e && e.a ? e.a[selOpIdx()] : undefined; };
+  const isTagText = a => !!a && a !== '?' && /^[A-Za-z_]\w*$/.test(String(a).split(/[.[]/)[0]) && !E.parseNumber(a);
   function editDesc() {
-    const e = curEl(), op = e && e.a[0];
+    const e = curEl(), op = selOperand();
     if (!op || op === '?') return;
     const t = tagFor(op), own = t && U(t.name) === U(op);
-    prompt1('Edit Main Operand Description', op, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
+    prompt1(selOpIdx() ? `Edit "${op}" Description` : 'Edit Main Operand Description', op, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
       if (own) { const P = curProg(); const list = P.tags.includes(t) ? P.tags : S.p.tags; edit(() => { const i = list.indexOf(t); list[i] = { ...list[i], desc: v }; if (!v) delete list[i].desc; }); return; }
       edit(() => { S.p.comments = S.p.comments || {}; if (v) S.p.comments[U(op)] = v; else delete S.p.comments[U(op)]; });
     }, own ? 'The description of the tag: it shows wherever the tag is used.' : 'A description of this operand (an I/O point or a member): it shows above it in the ladder.');
@@ -1501,62 +1517,60 @@
         el.addEventListener('click', ev => { const r = ev.target.closest('[data-x]'); if (!r) return; const x = rows[+r.dataset.x]; closeLayer(); S.prog = x.g; S.routine = x.r; S.view = 'ladder'; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); });
       } });
   }
-  const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } };
-  const HL = {
-    en: { simple: 'Simple', ref: 'Reference', what: 'What it does', how: 'How it works', ex: 'Example', like: 'Think of it like', ops: 'Operands', text: 'Rung text', none: 'none', grp: 'Group', tips: 'Tips', tipsT: 'Tips for using MT PLC Studio', again: 'You can see these again in Help > Tips.' },
-    tl: { simple: 'Simple', ref: 'Reference', what: 'Ano ang ginagawa', how: 'Paano gumagana', ex: 'Halimbawa', like: 'Parang', ops: 'Operands', text: 'Rung text', none: 'wala', grp: 'Grupo', tips: 'Tips', tipsT: 'Tips sa paggamit ng MT PLC Studio', again: 'Makikita ulit ito sa Help > Tips.' },
-  };
+  const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
+  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['Program Control', 'Program Control Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
-  const langSeg = () => `<span class="seg hlang" title="Language"><span data-hl="en" class="${hlang() === 'en' ? 'on' : ''}">English</span><span data-hl="tl" class="${hlang() === 'tl' ? 'on' : ''}">Taglish</span></span>`;
+  /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
+     instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
+     rung. A plain-language summary (English or Taglish) is at the end, folded. */
   function instrHelp(start) {
     const e = curEl();
-    let mn = typeof start === 'string' && INSTR[start] ? start : e && INSTR[e.t] ? e.t : 'XIC', tab = S.prefs.helpTab === 'ref' ? 'ref' : 'simple';
-    const grps = [...new Set(Object.values(INSTR).map(d => d.grp))];
-    const pick = `<select class="hpick" aria-label="Instruction">${grps.map(g => `<optgroup label="${esc(g)}">${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<option value="${k}">${k} · ${esc(INSTR[k].name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
-    const page = () => {
-      const d = INSTR[mn], t = HL[hlang()], h = (HELP.H[mn] || {})[hlang()];
-      const names = L.OPN[mn] || d.args.map((_, i) => 'Operand ' + i);
-      const ref = `<p><b>${mn}</b> · ${esc(d.name)} · ${t.grp}: ${esc(d.grp)}</p>
-        <div class="frow"><label>${t.ops}</label><div class="mono">${d.args.length ? d.args.map((k, i) => `${esc(names[i] || 'Operand ' + i)} <span class="muted">(${k.replace('?', ', optional')})</span>`).join('<br>') : t.none}</div></div>
-        <div class="frow"><label>${t.text}</label><div class="mono">${mn}(${names.map(() => '?').join(',')})</div></div>
-        ${h ? `<p>${esc(h[1])}</p>` : ''}`;
-      const simple = h ? `<div class="hsec"><h4>${t.what}</h4><p class="hbig">${esc(h[0])}</p></div>
-        <div class="hsec"><h4>${t.how}</h4><p>${esc(h[1])}</p></div>
-        <div class="hsec"><h4>${t.ex}</h4><p class="mono hex">${esc(h[2])}</p></div>
-        <div class="hsec like"><h4>${t.like}</h4><p>${esc(h[3])}</p></div>` : `<p>${esc(d.name)}</p>`;
-      return `<div class="htabs"><span data-ht="simple" class="${tab === 'simple' ? 'on' : ''}">${t.simple}</span><span data-ht="ref" class="${tab === 'ref' ? 'on' : ''}">${t.ref}</span></div>
-        <div class="hbody">${tab === 'ref' ? ref : simple}</div>`;
+    let mn = typeof start === 'string' && INSTR[start] ? start : e && INSTR[e.t] ? e.t : 'XIC';
+    const grpOf = g => (HGRP.find(x => x[0] === g) || [g, g])[1];
+    const groups = [...new Set(Object.values(INSTR).map(d => d.grp))];
+    const toc = groups.map(g => `<div class="ihg">${esc(grpOf(g))}</div>${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<div class="ihi" data-ih="${k}">${k}<span>${esc(INSTR[k].name)}</span></div>`).join('')}`).join('');
+    const pick = `<select class="inp hpick" aria-label="Instruction">${groups.map(g => `<optgroup label="${esc(grpOf(g))}">${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<option value="${k}">${k} - ${esc(INSTR[k].name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
+    const example = () => {
+      const h = (HELP.H[mn] || {}).en; if (!h) return '';
+      const parts = h[2].split(';').map(x => x.trim()).filter(Boolean), rungsX = [], notes = [];
+      parts.forEach(p => { const pr = /^[A-Z]{2,4}\(|^\[/.test(p) ? E.parseRung(p + ';') : { err: 1 }; if (!pr.err) rungsX.push({ elems: pr.elems }); else if (p !== '…') notes.push(p); });
+      if (!rungsX.length) return `<p class="mono">${esc(h[2])}</p>`;
+      const svg = L.render(rungsX, { W: 520, cell: 64, font: 11, descLines: 1 }).svg;
+      return `<div class="ihex">${svg}</div>${notes.length ? `<p>${esc(notes.join('; ').replace(/^./, c => c.toUpperCase()).replace(/\.+$/, ''))}.</p>` : ''}`;
     };
-    dialog({ title: 'Instruction Help', size: 'md',
-      body: `<div class="hhead">${pick}${langSeg()}</div><div class="hpage">${page()}</div>`,
-      buttons: [{ l: HL[hlang()].tips, run: () => { setTimeout(tipsDlg, 0); } }, { l: 'Close', pri: true }],
+    const page = () => {
+      const d = INSTR[mn], r = HREF.R[mn] || { ops: [], exec: [] }, names = L.OPN[mn] || d.args.map((_, i) => 'Operand ' + i);
+      const ops = d.args.length ? `<table class="iht"><thead><tr><th>Operand</th><th>Type</th><th>Format</th><th>Description</th></tr></thead><tbody>${d.args.map((k, i) => { const kd = HREF.KIND[k.replace('?', '')] || ['', '']; return `<tr><td>${esc(names[i] || 'Operand ' + i)}${k.endsWith('?') ? ' (optional)' : ''}</td><td>${esc(kd[0])}</td><td>${esc(kd[1])}</td><td>${esc(r.ops[i] || '')}</td></tr>`; }).join('')}</tbody></table>${r.members ? `<p class="muted">Structure members: ${esc(r.members)}</p>` : ''}` : '<p>None.</p>';
+      const h = (HELP.H[mn] || {})[hlang()], lang = hlang();
+      return `<h3>${esc(d.name)} (${mn})</h3><p class="muted">${esc(grpOf(d.grp))} · Available language: Relay Ladder</p>
+        <h4>Operands</h4>${ops}
+        <h4>Rung text</h4><p class="mono">${mn}(${names.map(() => '?').join(',')})</p>
+        <h4>Description</h4><p>${esc(r.desc || d.name)}</p>
+        <h4>Arithmetic Status Flags</h4><p>${esc(r.flags || 'Not affected.')}</p>
+        <h4>Fault Conditions</h4><p>${esc(r.faults || 'None.')}</p>
+        <h4>Execution</h4><table class="iht"><thead><tr><th>Condition</th><th>Relay Ladder Action</th></tr></thead><tbody>${(r.exec || []).map(([c, t]) => `<tr><td>${esc(c)}</td><td>${esc(t)}</td></tr>`).join('')}</tbody></table>
+        <h4>Example</h4>${example()}
+        ${h ? `<details class="ipl"${S.prefs.helpPlain ? ' open' : ''}><summary>Plain-language summary</summary>
+          <div class="frow"><label>Language</label><select class="inp" data-hlsel="1" style="width:auto"><option value="en"${lang === 'en' ? ' selected' : ''}>English</option><option value="tl"${lang === 'tl' ? ' selected' : ''}>Filipino (Taglish)</option></select></div>
+          <p><b>${lang === 'tl' ? 'Sa madaling salita' : 'In short'}:</b> ${esc(h[0])}</p><p>${esc(h[1])}</p><p><b>${lang === 'tl' ? 'Maihahambing sa' : 'Comparable to'}:</b> ${esc(h[3])}</p></details>` : ''}`;
+    };
+    dialog({ title: 'Instruction Help', size: 'lg', flush: true,
+      body: `<div class="ihelp"><aside class="ihl">${toc}</aside><div class="ihr"><div class="ihpick">${pick}</div><article class="ihc">${page()}</article></div></div>`,
+      buttons: [{ l: 'Close', pri: true }],
       mount: el => {
-        const sel = el.querySelector('.hpick'); sel.value = mn;
-        const redraw = () => { el.querySelector('.hpage').innerHTML = page(); el.querySelector('.hlang').outerHTML = langSeg(); el.querySelector('.df [data-b="0"]').textContent = HL[hlang()].tips; };
-        sel.onchange = () => { mn = sel.value; redraw(); };
-        el.addEventListener('click', ev => {
-          const ht = ev.target.closest('[data-ht]'), hl = ev.target.closest('[data-hl]');
-          if (ht) { tab = ht.dataset.ht; S.prefs.helpTab = tab; savePrefs(); redraw(); }
-          if (hl) { S.prefs.helpLang = hl.dataset.hl; savePrefs(); redraw(); }
-        });
+        const sel = el.querySelector('.hpick'), art = el.querySelector('.ihc');
+        const show = () => { sel.value = mn; art.innerHTML = page(); art.scrollTop = 0; el.querySelectorAll('[data-ih]').forEach(x => x.classList.toggle('on', x.dataset.ih === mn)); const on = el.querySelector('.ihi.on'); if (on) on.scrollIntoView({ block: 'nearest' }); };
+        show();
+        sel.onchange = () => { mn = sel.value; show(); };
+        el.addEventListener('click', ev => { const i = ev.target.closest('[data-ih]'); if (i) { mn = i.dataset.ih; show(); } });
+        el.addEventListener('change', ev => { if (ev.target.dataset.hlsel) { S.prefs.helpLang = ev.target.value; S.prefs.helpPlain = true; savePrefs(); art.innerHTML = page(); } });
+        el.addEventListener('toggle', ev => { if (ev.target.matches && ev.target.matches('details.ipl')) { S.prefs.helpPlain = ev.target.open; savePrefs(); } }, true);
       } });
   }
-  /* Tips: how to work the app; shown once on the first start (a card that can be closed) and again from Help > Tips */
+  /* Getting Started: how to work the editor and the emulator (Help > Getting Started) */
   function tipsDlg() {
-    const body = () => { const t = HL[hlang()]; return `<div class="hhead"><span></span>${langSeg()}</div><ul class="tips">${(HELP.TIPS[hlang()] || []).map(([k, v]) => `<li><b>${esc(k)}</b><span>${esc(v)}</span></li>`).join('')}</ul><p class="help">${t.again}</p>`; };
-    dialog({ title: HL[hlang()].tipsT, size: 'md', body: `<div class="tipsb">${body()}</div>`, buttons: [{ l: 'Close', pri: true }],
-      mount: el => el.addEventListener('click', ev => { const hl = ev.target.closest('[data-hl]'); if (hl) { S.prefs.helpLang = hl.dataset.hl; savePrefs(); el.querySelector('.tipsb').innerHTML = body(); el.querySelector('.dh b').textContent = HL[hlang()].tipsT; } }) });
-    S.prefs.tipsSeen = true; savePrefs(); $('#tipcard') && $('#tipcard').remove();
-  }
-  function tipCard() {
-    if (S.prefs.tipsSeen || $('#tipcard')) return;
-    const c = document.createElement('div'); c.id = 'tipcard'; c.className = 'tipcard';
-    c.innerHTML = `<b>New here? / Bago ka lang?</b><span>Tips on how to select, edit and add instructions.</span><div><button class="btn pri" data-tipshow="1">Show tips</button><button class="btn" data-tipx="1">Close</button></div>`;
-    c.onclick = ev => {
-      if (ev.target.closest('[data-tipshow]')) tipsDlg();
-      else if (ev.target.closest('[data-tipx]')) { S.prefs.tipsSeen = true; savePrefs(); c.remove(); toast(HL[hlang()].again); }
-    };
-    document.body.appendChild(c);
+    const rows = (HELP.TIPS.en || []);
+    dialog({ title: 'Getting Started', size: 'md', body: `<table class="iht"><tbody>${rows.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`, buttons: [{ l: 'Close', pri: true }] });
   }
   function about() {
     dialog({ title: 'About MT PLC Studio', body: `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
@@ -1901,6 +1915,73 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       } });
   }
   /* Controller Properties: General, Major Faults, Minor Faults */
+  let orgTap = { k: '', t: 0 };
+  /* Task Properties: General, Configuration, Program Schedule, Monitor (the reference's tabs; one continuous task here) */
+  function taskProps(name) {
+    const T = S.p.tasks.find(x => x.name === name); if (!T) return;
+    const dis = editable() ? '' : ' disabled', on = S.online && ctl.M;
+    const general = `<div class="frow"><label>Name</label><input class="inp" id="tp-n" value="${esc(T.name)}"${offline() ? '' : ' disabled'}></div>
+      <div class="frow"><label>Description</label><textarea class="inp" id="tp-d" rows="3"${dis}>${esc(T.desc || '')}</textarea></div>`;
+    const conf = `<div class="frow"><label>Type</label><select class="inp" id="tp-t" disabled><option>Continuous</option></select></div>
+      <div class="frow"><label>Watchdog (ms)</label><input class="inp" id="tp-w" type="number" min="1" max="2000000" value="${T.watchdog || 500}"${dis}></div>
+      <label class="ck"><input type="checkbox" id="tp-o"${T.noOutputs ? ' checked' : ''}${dis}> Disable automatic output processing to reduce task overhead</label>
+      <label class="ck"><input type="checkbox" id="tp-i"${T.inhibit ? ' checked' : ''}${dis}> Inhibit task</label>
+      <p class="help">This controller has one continuous task. Periodic and event tasks are not emulated.</p>`;
+    const sched = `<div class="grp">Scheduled programs</div>${T.programs.map((g, i) => `<div class="row"><span class="mono">${i + 1}</span><span class="grow">${esc(g.name)}</span></div>`).join('') || '<p class="help">None.</p>'}`;
+    const mon = on ? `${kv('Last scan time', ((ctl.scanUs || 0) / 1000).toFixed(3) + ' ms')}${kv('Maximum scan time', ((ctl.maxScanUs || 0) / 1000).toFixed(3) + ' ms')}${kv('Scan period', ctl.period + ' ms')}${kv('Scans', ctl.scans)}<div class="brow"><button class="btn" id="tp-r">Reset</button></div>`
+      : '<p class="help">Offline. Go online to see the scan times.</p>';
+    dialog({ title: 'Task Properties - ' + T.name, size: 'md',
+      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['sch', 'Program Schedule', sched], ['mon', 'Monitor', mon]], 'gen'),
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        if (!editable()) return;
+        const n = el.querySelector('#tp-n').value.trim(), d = el.querySelector('#tp-d').value.trim(), w = Math.max(1, +el.querySelector('#tp-w').value || 500);
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        const no = el.querySelector('#tp-o').checked, inh = el.querySelector('#tp-i').checked;
+        if (n === T.name && d === (T.desc || '') && w === (T.watchdog || 500) && no === !!T.noOutputs && inh === !!T.inhibit) return;
+        edit(() => { T.name = n; if (d) T.desc = d; else delete T.desc; T.watchdog = w; if (no) T.noOutputs = true; else delete T.noOutputs; if (inh) T.inhibit = true; else delete T.inhibit; });
+      } }],
+      mount: el => { bindTabs(el); const r = el.querySelector('#tp-r'); if (r) r.onclick = () => { ctl.maxScanUs = 0; taskProps(name); }; } });
+  }
+  /* Program Properties: General, Configuration (main and fault routines), Monitor */
+  function progProps(name) {
+    const g = allProgs().find(x => x.name === name); if (!g) return;
+    const dis = editable() ? '' : ' disabled', opts = sel => `<option value="">&lt;none&gt;</option>${g.routines.map(r => `<option${r.name === sel ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}`;
+    const general = `<div class="frow"><label>Name</label><input class="inp" id="pp-n" value="${esc(g.name)}" disabled></div>
+      <div class="frow"><label>Description</label><textarea class="inp" id="pp-d" rows="3"${dis}>${esc(g.desc || '')}</textarea></div>
+      ${kv('Scheduled in', esc((S.p.tasks.find(t => t.programs.includes(g)) || {}).name || '-'))}`;
+    const conf = `<div class="frow"><label>Main</label><select class="inp" id="pp-m"${dis}>${opts(g.main)}</select></div>
+      <div class="frow"><label>Fault</label><select class="inp" id="pp-f"${dis}>${opts(g.fault)}</select></div>
+      <label class="ck"><input type="checkbox" id="pp-i"${g.inhibit ? ' checked' : ''}${dis}> Inhibit program</label>
+      <p class="help">The main routine runs each scan; it calls the other routines with JSR.</p>`;
+    const mon = `${kv('Routines', g.routines.length)}${kv('Rungs', g.routines.reduce((n, r) => n + r.rungs.length, 0))}${kv('Program tags', (g.tags || []).length)}`;
+    dialog({ title: 'Program Properties - ' + g.name, size: 'md',
+      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['mon', 'Monitor', mon]], 'gen'),
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        if (!editable()) return;
+        const d = el.querySelector('#pp-d').value.trim(), m = el.querySelector('#pp-m').value, fr = el.querySelector('#pp-f').value, inh = el.querySelector('#pp-i').checked;
+        if (d === (g.desc || '') && m === (g.main || '') && fr === (g.fault || '') && inh === !!g.inhibit) return;
+        edit(() => { if (d) g.desc = d; else delete g.desc; g.main = m || undefined; if (!m) delete g.main; if (fr) g.fault = fr; else delete g.fault; if (inh) g.inhibit = true; else delete g.inhibit; });
+      } }],
+      mount: bindTabs });
+  }
+  /* Routine Properties: General (name, description, type, program, rungs) */
+  function routineProps(key) {
+    const [gn, rn] = key.slice(3).split('/'), g = allProgs().find(x => x.name === gn), r = g && g.routines.find(x => x.name === rn);
+    if (!r) return;
+    const dis = editable() ? '' : ' disabled';
+    dialog({ title: 'Routine Properties - ' + r.name, size: 'md',
+      body: `<div class="frow"><label>Name</label><input class="inp" id="rp-n" value="${esc(r.name)}"${dis}></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="rp-d" rows="3"${dis}>${esc(r.desc || '')}</textarea></div>
+        ${kv('Type', 'Ladder Diagram')}${kv('In program', esc(g.name))}${kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        if (!editable()) return;
+        const n = el.querySelector('#rp-n').value.trim(), d = el.querySelector('#rp-d').value.trim();
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        if (n !== r.name && g.routines.some(x => U(x.name) === U(n))) { toast('A routine with that name exists.', 'err'); return false; }
+        if (n === r.name && d === (r.desc || '')) return;
+        edit(() => { if (n !== r.name) { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + n : k)); if (g.main === rn) g.main = n; if (S.routine === rn && S.prog === gn) S.routine = n; r.name = n; } if (d) r.desc = d; else delete r.desc; });
+      } }] });
+  }
   function controllerProps(tab) {
     const on = S.online && ctl.M, dis = offline() ? '' : ' disabled';
     const general = `<div class="frow"><label>Name</label><input class="inp" id="cp-n" value="${esc(S.p.controller.name)}"${dis}></div>
@@ -1908,6 +1989,11 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       ${kv('Type', 'PLC-CPU (built-in controller)')}${kv('Revision', '1.0')}${kv('Chassis', `PLC-RACK${S.p.rack.size}, slot 0`)}${kv('Path', esc(curPath()))}
       <p class="help">The name is also the project name.</p>`;
     const offMsg = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
+    const dateTab = `${kv('Controller time', new Date().toLocaleString())}<p class="help">The emulated controller uses the clock of this device.</p>`;
+    const advTab = `${kv('Controller fault handler', '&lt;none&gt;')}${kv('Power-up handler', '&lt;none&gt;')}${kv('System overhead time slice', '20 %')}${kv('Scan period', (ctl.period || 10) + ' ms')}`;
+    const fileTab = `${kv('File', esc(S.file ? S.file.path : '(not saved yet)'))}${kv('Changes', S.dirty ? 'Not saved' : 'Saved')}`;
+    const allR = allProgs().flatMap(g => g.routines);
+    const memTab = `${kv('Programs', allProgs().length)}${kv('Routines', allR.length)}${kv('Rungs', allR.reduce((n, r) => n + r.rungs.length, 0))}${kv('Controller tags', S.p.tags.length)}${kv('Program tags', allProgs().reduce((n, g) => n + (g.tags || []).length, 0))}${kv('I/O modules', S.p.rack.modules.length)}`;
     const row = f => `<div class="row"><div class="grow"><div class="sub" style="white-space:normal">${when(f.at)} · Type ${f.type} Code ${f.code}: ${esc(f.text)}${f.count > 1 ? ` (×${f.count})` : ''}</div></div></div>`;
     const majors = !on ? offMsg
       : (ctl.fault ? `<div class="kv" style="color:var(--danger)"><span>Current fault</span><span class="v">Type ${ctl.fault.type}, Code ${ctl.fault.code}</span></div><p>${esc(ctl.fault.text)}</p>` : '<p><b style="color:var(--ok)">No major faults.</b></p>') +
@@ -1917,7 +2003,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       : (ctl.minors.length ? ctl.minors.map(row).join('') : '<p><b style="color:var(--ok)">No minor faults.</b></p>') +
         `<div class="brow"><button class="btn" id="cp-cn"${ctl.minors.length ? '' : ' disabled'}>Clear Minors</button></div>`;
     dialog({ title: 'Controller Properties - ' + S.p.controller.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors]], tab || (on && ctl.fault ? 'maj' : 'gen')),
+      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['file', 'File', fileTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!offline()) return;
         const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim();
@@ -2216,18 +2302,24 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- the emulator dock (P1): the chassis of the project path beside the ladder, sized by a splitter ----------
      bottom (desktop, tablet portrait), side (tablet landscape, phone landscape), full (the phone's Emulator tab).
-     The rack fits the dock's width, so it never scrolls sideways. */
+     The modules keep their size; a side or full panel shows the used slots and one empty slot. */
   function dockBody() {
-    const ri = Math.max(0, racks.indexOf(chassis)), dk = $('#dock'), compact = !!dk && (dk.classList.contains('side') || dk.classList.contains('full') || dk.offsetWidth < 620);
+    const ri = Math.max(0, racks.indexOf(chassis)), compact = false;   // S.dockCompact: set by dockHTML for the side and full panels
     const cs = chassis.controllers();
     return rackHTML(ri, compact || S.dockCompact) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
   }
+  /* the emulator panel: on the right in landscape and at the bottom in portrait, unless it was moved; it can be
+     folded to a thin bar (like the organizer) and opened again from there */
+  const dockSide = portrait => (portrait ? 'bottom' : S.prefs.dockAt === 'bottom' ? 'bottom' : S.prefs.dockAt === 'right' ? 'side' : innerWidth > innerHeight ? 'side' : 'bottom');
   function dockHTML(where) {
+    if (S.prefs.emuMin && where !== 'full') {
+      return `<div class="dock ${where} min" id="dock"><button class="dkbar" data-dkmin="0" title="Show the emulator panel">${ic(where === 'side' ? 'left' : 'up')}<b>Emulator</b><span class="muted">${esc(chassis.name)}</span></button></div>`;
+    }
     S.dockCompact = where !== 'bottom' || (S.layout === 'phone');
     const P = S.prefs, size = where === 'bottom' ? `height:${S.layout === 'tablet' ? P.emuHp : P.emuH}px` : where === 'side' ? `width:${P.emuW}px` : '';
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
-      <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `<button class="ib" data-cmd="vio" title="Hide the emulator panel">${ic('close')}</button>`}</div>
+      <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `${innerWidth > innerHeight ? `<button class="ib" data-dkat="${where === 'side' ? 'bottom' : 'right'}" title="${where === 'side' ? 'Move the panel under the ladder' : 'Move the panel to the right of the ladder'}">${ic(where === 'side' ? 'dockb' : 'dockr')}</button>` : ''}<button class="ib" data-dkmin="1" title="Fold the emulator panel">${ic(where === 'side' ? 'right' : 'down')}</button>`}</div>
       <div class="dockb" id="iob">${dockBody()}</div></div>`;
   }
   /* ---------- Emulator dashboard (spec section 15), laid out like a PC emulator's dashboard ----------
@@ -2281,50 +2373,62 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div>`;
     }).join('');
   };
-  /* ---------- Module I/O windows: the points of an I/O module, in a window of their own that stays open (as the
-     reference emulator's module window). Input switches and analog values are set here; outputs are shown. ---------- */
-  const ioWins = new Map();   // "rack:slot" → element
-  function ioWinHTML(id) {
-    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
-    if (!m || m.ctl) return '<p class="help">The module is gone.</p>';
-    const names = r === chassis && S.p ? aliasNames() : {}, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O';
-    const nm = b => names[U(`Local:${s}:${dir}.Data.${b}`)] || '';
-    if (m.kind === 'di' || m.kind === 'do') {
-      const bits = m.kind === 'di' ? m.field : r.outputs(s);
-      return `<div class="iow">${Array.from({ length: 16 }, (_, b) => m.kind === 'di'
-        ? `<label class="iop"><input type="checkbox" data-iow="${id}:${b}"${(bits >> b) & 1 ? ' checked' : ''}><span class="n">${b}</span><span class="t">${esc(nm(b))}</span></label>`
-        : `<div class="iop"><i class="lamp${(bits >> b) & 1 ? ' on' : ''}"></i><span class="n">${b}</span><span class="t">${esc(nm(b))}</span></div>`).join('')}</div>`;
-    }
-    const vals = m.kind === 'ai' ? m.field : r.outputs(s);
-    return `<div class="iow ana">${vals.map((v, c) => m.kind === 'ai'
-      ? `<label class="iop"><span class="n">Ch${c}</span><input type="range" min="0" max="100" step="0.5" value="${v}" data-ana="${id}:${c}"><input class="inp num" type="number" step="0.5" value="${(+v).toFixed(1)}" data-anan="${id}:${c}" aria-label="Channel ${c} value"></label>`
-      : `<div class="iop"><span class="n">Ch${c}</span><span class="bar"><span style="width:${Math.max(0, Math.min(100, v))}%"></span></span><b class="mono">${(+v).toFixed(1)}</b></div>`).join('')}</div>`;
+  /* ---------- Module I/O window: the I/O of a chassis in one small window that stays open, inputs and outputs
+     together. Each input point is a button that switches it; each output point lights while it is on; analog
+     channels have a value box. The module that opened it is marked. ---------- */
+  const ioWins = new Map();   // rack index → element
+  function ioWinHTML(ri, focus) {
+    const r = racks[ri];
+    if (!r) return '<p class="help">The chassis is gone.</p>';
+    const mods = [...r.mods.values()].filter(m => !m.ctl).sort((x, y) => x.slot - y.slot);
+    if (!mods.length) return '<p class="help">No I/O modules in this chassis.</p>';
+    const names = r === chassis && S.p ? aliasNames() : {};
+    return mods.map(m => {
+      const s = m.slot, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O', inp = dir === 'I';
+      const nm = b => names[U(`Local:${s}:${dir}.Data.${b}`)] || '';
+      const head = `<div class="iomh"><b>[${s}] ${esc(m.name)}</b><span class="muted">${esc(m.type.replace('PLC-', ''))} · ${inp ? 'Inputs' : 'Outputs'}</span>${m.fault ? '<span class="iofl">Faulted</span>' : ''}</div>`;
+      let body;
+      if (m.kind === 'di' || m.kind === 'do') {
+        const bits = inp ? m.field : r.outputs(s);
+        body = `<div class="iobits">${Array.from({ length: 16 }, (_, b) => { const on = (bits >> b) & 1, t = `${dir === 'I' ? 'Input' : 'Output'} ${b}${nm(b) ? ' · ' + nm(b) : ''}: ${on ? 'ON' : 'OFF'}`;
+          return inp ? `<button class="iob${on ? ' on' : ''}" data-iobit="${ri}:${s}:${b}" title="${esc(t)}" aria-pressed="${on ? 'true' : 'false'}">${b}</button>` : `<span class="iob out${on ? ' on' : ''}" title="${esc(t)}">${b}</span>`; }).join('')}</div>`;
+      } else {
+        const vals = inp ? m.field : r.outputs(s);
+        body = `<div class="ioana">${vals.map((v, c) => inp
+          ? `<label><span>Ch${c}</span><input class="inp num" type="number" step="0.5" value="${(+v).toFixed(1)}" data-anan="${ri}:${s}:${c}" aria-label="Channel ${c} value"></label>`
+          : `<span><span>Ch${c}</span><b class="mono">${(+v).toFixed(1)}</b></span>`).join('')}</div>`;
+      }
+      return `<div class="iom${s === focus ? ' cur' : ''}" data-iom="${s}">${head}${body}</div>`;
+    }).join('');
   }
   function openIoWin(id, doc) {
-    const [ri, s] = ids(id), m = racks[ri] && racks[ri].module(s);
-    if (!m || m.ctl) return;
+    const [ri, s] = ids(id), r = racks[ri];
+    if (!r) return;
     doc = doc || document;
-    let w = ioWins.get(id);
+    let w = ioWins.get(ri);
     if (w && w.ownerDocument !== doc) { w.remove(); w = null; }
     if (!w) {
       const vw = doc.defaultView || window;
       w = doc.createElement('div');
-      w.className = 'iowin'; w.dataset.iowin = id;
-      const k = ioWins.size;
-      w.style.left = Math.max(0, Math.min(vw.innerWidth - 300, 80 + k * 28)) + 'px'; w.style.top = Math.max(0, Math.min(vw.innerHeight - 200, 90 + k * 28)) + 'px';
+      w.className = 'iowin'; w.dataset.iowin = String(ri);
+      w.style.left = Math.max(0, Math.min(vw.innerWidth - 420, 80 + ioWins.size * 28)) + 'px'; w.style.top = Math.max(0, Math.min(vw.innerHeight - 240, 90 + ioWins.size * 28)) + 'px';
       doc.body.appendChild(w);
-      ioWins.set(id, w);
+      ioWins.set(ri, w);
     }
-    w.innerHTML = `<div class="iowh" data-iodrag="1"><b>[${s}] ${esc(m.type.replace('PLC-', ''))} ${esc(m.name)}</b><span class="grow"></span><button class="ib" data-iox="${id}" aria-label="Close">${ic('close')}</button></div><div class="iowb">${ioWinHTML(id)}</div>`;
+    w.dataset.focus = String(s);
+    w.innerHTML = `<div class="iowh" data-iodrag="1"><b>Module I/O · ${esc(r.name)}</b><span class="grow"></span><button class="ib" data-iox="${ri}" aria-label="Close">${ic('close')}</button></div><div class="iowb">${ioWinHTML(ri, s)}</div>`;
+    const cur = w.querySelector('.iom.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
   }
-  function ioWinsLive() { ioWins.forEach((w, id) => { if (!w.isConnected) { ioWins.delete(id); return; } if (!w.contains(w.ownerDocument.activeElement)) w.querySelector('.iowb').innerHTML = ioWinHTML(id); }); }
+  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; b.innerHTML = ioWinHTML(ri, +w.dataset.focus); b.scrollTop = st; } }); }
   /* the Module I/O windows of one window (the app, or the Emulator window): close, input switches, analog values, dragging by the title */
   function bindIoWins(doc) {
     const vw = doc.defaultView;
-    doc.addEventListener('click', ev => { const x = ev.target.closest('[data-iox]'); if (x) { const w = ioWins.get(x.dataset.iox); if (w) w.remove(); ioWins.delete(x.dataset.iox); } });
+    doc.addEventListener('click', ev => {
+      const x = ev.target.closest('[data-iox]'); if (x) { const k = +x.dataset.iox, w = ioWins.get(k); if (w) w.remove(); ioWins.delete(k); return; }
+      const b = ev.target.closest('[data-iobit]');
+      if (b) { const p = ids(b.dataset.iobit), r = racks[p[0]], m = r && r.module(p[1]); if (m) { setPoint(p[1], p[2], !((m.field >> p[2]) & 1), r); live(true); } }
+    });
     doc.addEventListener('change', ev => {
-      const c = ev.target.closest && ev.target.closest('[data-iow]');
-      if (c) { const p = ids(c.dataset.iow); setPoint(p[1], p[2], c.checked, racks[p[0]]); live(true); }
       const n = ev.target.closest && ev.target.closest('[data-anan]');
       if (n) anaSet(n.dataset.anan, +n.value);
     });
@@ -2449,6 +2553,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return true;
     }
     // a click on a card that hit none of its controls selects it in the dashboard
+    // a tap on an I/O module in the chassis opens its Module I/O window
+    if ((el = t.closest('.ccard.io[data-cmod]')) && !t.closest('button')) { openIoWin(el.dataset.cmod, el.ownerDocument); }
     if ((el = t.closest('[data-esel]'))) {
       const p = el.dataset.esel.split(':');
       emuSel = p[0] === 'r' ? { k: 'r', ri: +p[1] } : { k: 'm', ri: +p[1], slot: +p[2] };
@@ -2724,7 +2830,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-orgprops]'))) { controllerProps(); return; }
       if ((el = t.closest('[data-tw]'))) { const k = el.dataset.tw, c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); return; }
       if ((el = t.closest('[data-org]'))) {
-        const k = el.dataset.org;
+        const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
+        orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
+        if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
+          // the first tap of the double-tap folded the node: put it back
+          if (!k.startsWith('rt:')) { const c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); }
+          if (k === 'ctl') controllerProps(); else if (k.startsWith('task:')) taskProps(k.slice(5)); else if (k.startsWith('prog:')) progProps(k.slice(5)); else routineProps(k);
+          return;
+        }
+        if (el.querySelector('[data-tw] svg') && !k.startsWith('rt:') && k !== 'bp') { const c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); return; }
         if (k.startsWith('rt:')) openRoutine(k);
         else if (k === 'ctags') tagEditor('mon', '');
         else if (k.startsWith('ptags:')) tagEditor('mon', k.slice(6));
@@ -2741,6 +2855,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-pull]'))) { const sl = +el.dataset.pull, on = !chassis.module(sl).fault; chassis.setFault(sl, on); chassis.advance(0); toast(on ? `The card in slot ${sl} faulted: see Module Properties for the code.` : `The card in slot ${sl} works again.`); live(true); render(); return; }
       if ((el = t.closest('[data-ptab]'))) { S.phoneEmu = el.dataset.ptab === '1'; render(); return; }
       if ((el = t.closest('[data-dkpop]'))) { popChassis(); return; }
+      if ((el = t.closest('[data-dkmin]'))) { S.prefs.emuMin = el.dataset.dkmin === '1'; savePrefs(); render(); return; }
+      if ((el = t.closest('[data-dkat]'))) { S.prefs.dockAt = el.dataset.dkat; S.prefs.emuMin = false; savePrefs(); render(); return; }
       if (chassisClick(t)) return;
       if ((el = t.closest('[data-ctx]'))) { const r = el.getBoundingClientRect(); ctxMenu(S.sel ? { ri: S.sel.ri, path: S.sel.path, br: S.sel.br } : curSelRung() != null ? { ri: curSelRung() } : null, r.left, r.top); return; }
       if ((el = t.closest('[data-more]'))) { openMenu(menuItems(['rung', 'branch', 'level', '-', 'rtext', 'comment', '-', 'verifyr', 'verifyc', 'xref', 'goto', '-', 'newtag', 'tagsmon', '-', 'options']), el); return; }
@@ -2875,7 +2991,6 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (ses && ses.p === p) { S.file = ses.file; S.dirty = !!ses.dirty; saveProject(); render(); }
     setTimeout(moveOldProjects, 500);
     if (!driverUp() && !drivers.length) setTimeout(() => setupWizard(0), 300);
-    setTimeout(tipCard, 1500);
     setInterval(tick, 20);
     requestAnimationFrame(loop);
     if (window.MTPSUpdater) window.MTPSUpdater.init({ version: VERSION, build: BUILD, onAvailable: info => { upInfo = info; render(); }, toast, dialog, esc });
