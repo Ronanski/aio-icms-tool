@@ -2,7 +2,7 @@
    the hosted copy (GitHub Pages /mtps/, Stable or Beta) when a newer version is there, and that copy is cached for
    offline use. If the hosted copy cannot load and was never cached, the built-in copy is used.
    The window can be resized and maximized (minimum 800 × 600); its size, position and maximized state are kept. */
-const { app, BrowserWindow, shell, screen } = require('electron');
+const { app, BrowserWindow, shell, screen, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -31,7 +31,7 @@ function createWindow() {
     icon: path.join(__dirname, 'app', 'icons', 'icon-512.png'),
     backgroundColor: '#E9EDF1',
     autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.js') },
   });
   if (b.maximized) win.maximize();
   const save = () => {
@@ -66,7 +66,44 @@ function createWindow() {
   win.loadFile(LOCAL);
 }
 
+/* Project files: the app's own file browser lists folders and reads and writes .mtp and .L5X files through
+   preload.js. Calls are taken only from the app's own pages; files written or removed must be .mtp or .L5X. */
+const fsp = fs.promises;
+const PROJ_EXT = /\.(mtp|l5x)$/i;
+const fromApp = e => { try { return ours(e.senderFrame.url); } catch (x) { return false; } };
+const checked = (e, p) => { if (!fromApp(e)) throw new Error('not allowed'); if (typeof p !== 'string' || !path.isAbsolute(p)) throw new Error('bad path'); return path.normalize(p); };
+function registerFiles() {
+  ipcMain.handle('fs:places', async e => {
+    if (!fromApp(e)) throw new Error('not allowed');
+    const docs = app.getPath('documents'), proj = path.join(docs, 'MT PLC Studio Projects');
+    await fsp.mkdir(proj, { recursive: true });
+    const list = [['MT PLC Studio Projects', proj], ['Documents', docs], ['Desktop', app.getPath('desktop')], ['Downloads', app.getPath('downloads')], ['Home', app.getPath('home')]];
+    // the drives of this computer
+    for (const d of 'CDEFGHIJ') { const r = d + ':\\'; try { await fsp.access(r); list.push([d + ': drive', r]); } catch (x) { /* none */ } }
+    return list.map(([label, p]) => ({ label, path: p }));
+  });
+  ipcMain.handle('fs:list', async (e, dir) => {
+    const d = checked(e, dir);
+    const ents = await fsp.readdir(d, { withFileTypes: true });
+    const out = [];
+    for (const x of ents) {
+      if (x.name.startsWith('.') || x.name.startsWith('$')) continue;
+      const p = path.join(d, x.name), isDir = x.isDirectory();
+      if (!isDir && !/\.(mtp|l5x|json)$/i.test(x.name)) continue;
+      let st = null; try { st = await fsp.stat(p); } catch (y) { continue; }
+      out.push({ name: x.name, path: p, dir: isDir, size: st.size, mtime: st.mtimeMs });
+    }
+    return { dir: d, parent: path.dirname(d) === d ? null : path.dirname(d), sep: path.sep, items: out };
+  });
+  ipcMain.handle('fs:read', async (e, f) => fsp.readFile(checked(e, f), 'utf8'));
+  ipcMain.handle('fs:write', async (e, f, text) => { const p = checked(e, f); if (!PROJ_EXT.test(p)) throw new Error('only .mtp or .L5X files'); await fsp.writeFile(p, String(text), 'utf8'); return p; });
+  ipcMain.handle('fs:mkdir', async (e, d) => { const p = checked(e, d); await fsp.mkdir(p, { recursive: true }); return p; });
+  ipcMain.handle('fs:remove', async (e, f) => { const p = checked(e, f); if (!PROJ_EXT.test(p)) throw new Error('only .mtp or .L5X files'); await fsp.unlink(p); return true; });
+  ipcMain.handle('fs:exists', async (e, f) => { try { await fsp.access(checked(e, f)); return true; } catch (x) { return false; } });
+}
+
 app.whenReady().then(() => {
+  registerFiles();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

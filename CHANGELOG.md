@@ -5,6 +5,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.3.0-beta.2): the owner's 14 points, with RSLogix 5000 and Logix Emulate as the reference
+- **Ladder:** the power rails run unbroken from the first rung down to (End), as in the reference editor.
+- **Descriptions:** any instruction operand can get a description (Edit Main Operand Description). For a tag, it is
+  the tag's description; for an I/O point or a member, it is a description of that operand. It shows above the
+  instruction.
+- **Workspace tabs:** each routine and the tag table open in tabs that stay open, each with a close (×) button.
+  Making a new routine opens it in a new tab and keeps the others.
+- **Monitor Tags / Edit Tags** is a table in a tab, as in the reference:
+  - Monitor: Name, Value, Force Mask, Style, Data Type, Description, with live values.
+  - Edit: Name, Alias For, Data Type, Style, Description, and a row for a new tag.
+- **I/O modules:** the module front is a terminal block with screws, under the LED points. A right-click (long-press
+  on touch) on a module, or its I/O button, opens a **Module I/O** window of its own (as in Logix Emulate): input
+  switches, analog sliders and values, and the output lamps. It can be moved and works in the Emulator window too.
+  The Toggle / Push choice is gone.
+- **Chassis rows:** a chassis past 8 slots (6 on a tablet or phone) goes on in a new row. Each row can be folded away.
+- **Tablet portrait:**
+  - One status row holds the key switch, the mode (Rem Run / Rem Prog), forces, online edits and the path.
+  - The Errors handle stays in place while the instruction row scrolls.
+  - On touch, an instruction is dragged only after it is held for a moment, so the row can be scrolled.
+  - The organizer has Controller Properties and a close button.
+  - The menu folds open one group at a time without redrawing (no flicker). It was broken past the File menu.
+- **Project files on the device:**
+  - Open, Save, Save As, Import L5X and Export L5X use the app's own file browser: places (MT PLC Studio Projects,
+    Documents, Desktop, Downloads, the drives), folders, New Folder, the file name and the type.
+  - Windows keeps the files in the folders picked (default Documents\MT PLC Studio Projects); Android in its
+    Documents folder; a browser keeps them in its own storage.
+  - The built-in project list is gone. The projects kept there before are moved into files on the first start.
+  - Upload asks first, opens the controller's project online, then asks where to save its file.
+- **Instruction Help (F1):** for every instruction, a **Simple** tab (what it does, how it works, an example rung,
+  an everyday comparison) and a **Reference** tab (operands, rung text, the rules), in **English or Taglish**.
+- **Tips:** how to select, edit, open menus and add instructions. A card offers them on the first start; they stay in
+  Help > Tips.
+
 ### Added (MT PLC Studio 0.3.0-beta.1): the five proposals
 - **Setup wizard** (first start, File > New Project), in the order of a real first project:
   1. Communications: Configure Drivers, add the Emulate Ethernet driver.

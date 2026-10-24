@@ -774,3 +774,28 @@ The mockups are on the canvas https://claude.ai/artifact/8GCDxrx7Vkatu6R6e8mfRM.
   - Upload can save a .mtp.
   - **L5X** export and import cover the controller, `Local` I/O modules (mapped by kind), base and alias tags,
     programs, RLL routines, rungs and comments.
+
+## 18. Owner feedback, 14 points (0.3.0-beta.2)
+
+The reference is RSLogix 5000 / Studio 5000 with Logix Emulate (Echo): where they differ from this app, the app follows
+them.
+
+- **Rails:** drawn once per routine, from the first rung down to (End).
+- **Descriptions:** `opDesc(op)` reads `p.comments[OPERAND]` or the tag's description; Edit Main Operand Description
+  writes the tag's description when the operand is the tag, else `p.comments`.
+- **Tabs:** `S.tabs` holds "program/routine" keys and "tags"; `S.view` is ladder, tags or none. Each tab has a close
+  button; a new or renamed routine keeps its tab.
+- **Tag table:** Monitor (Name, Value, Force Mask, Style, Data Type, Description) and Edit (Name, Alias For, Data Type,
+  Style, Description, a new-tag row), switched by tabs at the bottom.
+- **Modules:** a terminal block on each I/O module. Module I/O windows (`openIoWin(id, doc)`) hold the input switches,
+  analog values and output lamps; they open from the module's menu (right-click / long-press) or its I/O button, in
+  the window that asked (the app or the Emulator window).
+- **Chassis rows:** 8 slots per row on Windows, 6 on a tablet or phone; `S.rowHide` keeps the folded rows.
+- **Tablet portrait:** `.tstat` holds the key, mode, forces, edits and path; the Errors handle sits outside the
+  scrolling instruction row; a touch drag starts after a 350 ms hold.
+- **Files:** `FS` reaches the device (Electron `window.mtpsFS` through preload.js, which main.js limits to the app's
+  pages, absolute paths and .mtp / .L5X writes; Capacitor Filesystem, Documents/MT PLC Studio Projects; in a browser,
+  `mtps.vfs`). `fileDialog` is the one file browser for Open, Save As, Import and Export. The working copy is kept as
+  `mtps.session`.
+- **Help:** `js/help.js` holds, for each instruction, `[what, how, example, comparison]` in `en` and `tl`, and the Tips;
+  `prefs.helpLang` and `prefs.helpTab` remember the choice; `prefs.tipsSeen` hides the first-start card.
