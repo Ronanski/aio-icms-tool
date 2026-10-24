@@ -546,7 +546,8 @@ console.log('Modules: inhibit, fault, Upload, fault logs');
   check('a running card passes its inputs and outputs', c.read('In') === 1 && c.ioImage(2).out === 1 && c.moduleStatus(1).state === 'Running');
   check('an inhibited card keeps its inputs and has no connection', c.read('In3') === 0 && c.moduleStatus(3).state === 'Inhibited' && c.ioOk());
   c.setModuleFault(1, true); c.scan(10);
-  check('a card taken out: Fault = 16#FFFFFFFF, inputs drop, code 16#0204', c.read('Local:1:I.Fault') === -1 && c.read('In') === 0 && c.moduleStatus(1).code === '16#0204');
+  check('a card taken out: Fault = 16#FFFFFFFF, inputs hold, code 16#0204', c.read('Local:1:I.Fault') === -1 && c.read('In') === 1 && c.moduleStatus(1).code === '16#0204');
+  check('the input of a faulted card can be overwritten (as on an emulated controller)', c.write('In', 0) && c.read('In') === 0);
   check('the I/O LED is not OK, the controller keeps running (no major fault set for slot 1)', !c.ioOk() && !c.fault);
   c.setModuleFault(1, false); c.scan(10);
   check('put back: Fault = 0 and the inputs come back', c.read('Local:1:I.Fault') === 0 && c.read('In') === 1 && c.ioOk());
@@ -620,6 +621,30 @@ console.log('Chassis: controller and I/O cards in slots');
   const c2 = back.controller(0);
   check('the chassis is kept: cards, field switches, the project and the mode of each controller', back.mods.size === 4 && back.module(1).field === 1 && c2.name === 'Test' && c2.mode === 'remrun' && back.outputs(2) === 8);
   check('a controller that was empty stays empty', back.controller(5).M === null);
+}
+
+console.log('Emulator: power, IP address, chassis name');
+{
+  const ch = new MTPS.Chassis(10, 'LineA');
+  ch.insert(0, 'PLC-CPU', 'Emu'); ch.insert(1, 'PLC-DI16-24V', 'In'); ch.insert(2, 'PLC-DO16-24V', 'Out');
+  const c = ch.controller(0);
+  const p = proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }], tags: [T('N', 'DINT'), { name: 'S1', alias: 'Local:1:I.Data.0' }], rungs: ['ADD(N,1,N);'] });
+  c.download(p); c.setMode('remrun'); ch.advance(50);
+  check('a working input card: its input tag cannot be written', !c.write('S1', 1));
+  ch.setController(0, { ip: '127.0.0.1', desc: 'Line A' });
+  check('controller IP address and description', ch.module(0).ip === '127.0.0.1' && ch.module(0).desc === 'Line A');
+  const n = c.read('N');
+  ch.setController(0, { on: false }); ch.advance(50);
+  check('power off: the controller stops and keeps its project', c.read('N') === n && !c.powered && c.name === 'Test');
+  ch.setController(0, { on: true });
+  check('power on with the key in REM: back to Rem Run, faults cleared', c.powered && c.mode === 'remrun' && !c.fault);
+  ch.advance(50);
+  check('it runs again', c.read('N') > n);
+  c.setKey('PROG'); ch.setController(0, { on: false }); ch.setController(0, { on: true });
+  check('power on with the key in PROG: Program', c.mode === 'prog');
+  c.setKey('REM'); c.setMode('remrun'); ch.setController(0, { on: false });
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch)));
+  check('kept: chassis name, IP, description, and the power off', back.name === 'LineA' && back.module(0).ip === '127.0.0.1' && back.module(0).desc === 'Line A' && back.controller(0).powered === false);
 }
 
 console.log('Project copy in the controller');

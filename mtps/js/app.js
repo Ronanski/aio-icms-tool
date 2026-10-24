@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.2.0-beta.1';
+  const VERSION = '0.2.0-beta.2';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -16,36 +16,75 @@
   };
   const isElectron = /Electron\//.test(navigator.userAgent);
 
-  /* ---------- the emulated chassis (spec section 15) ----------
-     Like an emulator on a PC: a rack with a controller card and I/O cards, kept across restarts. The app reaches a
-     controller only through the path of the project (Virtual\Backplane\<slot>), as a programming terminal does. */
-  const DEFPATH = 'Virtual\\Backplane\\0';
-  const pathOf = slot => 'Virtual\\Backplane\\' + slot;
-  function defaultChassis() {
-    const c = new E.Chassis(10);
-    c.insert(0, 'PLC-CPU', 'Emulator'); c.insert(1, 'PLC-DI16-24V', 'DI_1'); c.insert(2, 'PLC-DO16-24V', 'DO_1');
-    return c;
+  /* ---------- the emulator (spec section 15): chassis, emulated controllers, I/O cards ----------
+     Like a PC emulator dashboard: one or more named chassis; an emulated controller is a card in a slot, with an IP
+     address, power and a key switch. The app reaches a controller only through the project path, over the emulated
+     Ethernet to a controller with an IP address and across its backplane to the slot (Emulate\<ip>\Backplane\<slot>).
+     I/O cards are an addition of this app: without them the I/O modules fault and their input tags can be written. */
+  const EMUIPS = ['127.0.0.1', '127.0.0.2', '127.0.0.3', '127.0.0.4', '127.0.0.5', '127.0.0.6', '127.0.0.7', '127.0.0.8', '127.0.0.9'];
+  const DEFPATH = 'Emulate\\127.0.0.1\\Backplane\\0';
+  const pathOf = (ip, slot) => 'Emulate\\' + ip + '\\Backplane\\' + slot;
+  function defaultRacks() {
+    const c = new E.Chassis(10, 'Chassis');
+    c.insert(0, 'PLC-CPU', 'Emulator'); c.setController(0, { ip: '127.0.0.1' });
+    c.insert(1, 'PLC-DI16-24V', 'DI_1'); c.insert(2, 'PLC-DO16-24V', 'DO_1');
+    return [c];
   }
-  const chassis = (() => { const o = store.get('chassis', null); try { if (o && Array.isArray(o.mods)) return E.Chassis.from(o); } catch (e) { /* a broken copy: start again */ } return defaultChassis(); })();
-  E.chassis = chassis;
+  const racks = (() => {
+    try { const o = store.get('emu', null); if (o && Array.isArray(o.racks) && o.racks.length) return o.racks.map(r => E.Chassis.from(r)); } catch (e) { /* a broken copy: start again */ }
+    try {
+      // the single chassis of 0.2.0-beta.2: its first controller gets the first address
+      const old = store.get('chassis', null);
+      if (old && Array.isArray(old.mods)) { const c = E.Chassis.from(old), m = c.controllers()[0]; if (m && !m.ip) m.ip = '127.0.0.1'; return [c]; }
+    } catch (e) { /* start again */ }
+    return defaultRacks();
+  })();
+  E.racks = racks;
+  let chassis = racks[0];             // the chassis of the project path (I/O panel, Module Properties)
   const NOCTL = new E.Controller();   // what the app sees when no controller answers at the path
   let ctl = NOCTL;
-  const pathSlot = p => { const m = /Backplane\\(\d+)$/i.exec(p || ''); return m ? +m[1] : -1; };
+  function parsePath(p) {
+    let m = /^Emulate\\([\d.]+)\\Backplane\\(\d+)$/i.exec(p || '');
+    if (m) return { ip: m[1], slot: +m[2] };
+    m = /Backplane\\(\d+)$/i.exec(p || '');   // an older path: the first chassis
+    return m ? { ip: null, slot: +m[1] } : null;
+  }
+  const pathSlot = p => { const x = parsePath(p); return x ? x.slot : -1; };
+  // the chassis reached at an address: the first one with a powered controller there (as the first emulator started)
+  const rackAt = ip => (ip == null ? racks[0] : racks.find(r => r.controllers().some(m => m.ip === ip && m.ctl.powered)) || null);
+  const gatewayIp = r => { const m = r.controllers().find(x => x.ip && x.ctl.powered); return m ? m.ip : null; };
+  function resolve(p) {
+    const x = parsePath(p); if (!x) return null;
+    const r = rackAt(x.ip); if (!r) return { ip: x.ip, slot: x.slot, rack: null, m: null, ctl: null };
+    const m = r.module(x.slot);
+    return { ip: x.ip, slot: x.slot, rack: r, m, ctl: m && m.ctl && m.ctl.powered ? m.ctl : null };
+  }
   const curPath = () => (S.p ? store.get('path.' + S.p.controller.name, DEFPATH) : DEFPATH);
   function setPath(p) { store.set('path.' + S.p.controller.name, p); relink(); }
-  /* the controller at the project's path; a controller that went away (card removed) drops the app offline */
+  /* the controller at the project's path; one that went away (card removed, power off) drops the app offline */
   function relink() {
-    const c = S.p ? chassis.controller(pathSlot(curPath())) : null;
+    const x = S.p ? resolve(curPath()) : null;
+    chassis = x && x.rack ? x.rack : racks.includes(chassis) ? chassis : racks[0];
+    const c = x && x.ctl;
     if (c === ctl || (!c && ctl === NOCTL)) return;
     if (S.online) { S.online = false; setTimeout(() => toast('Communication with the controller was lost: offline.', 'err'), 0); }
     ctl = c || NOCTL;
   }
   let chasSave = 0;
-  const saveChassis = () => { clearTimeout(chasSave); chasSave = 0; store.set('chassis', chassis.toJSON()); };
-  chassis.on('change', ev => {
-    if (!chasSave) chasSave = setTimeout(saveChassis, 800);
-    if (ev.what === 'insert' || ev.what === 'remove') { relink(); if (S.p) render(); }
-  });
+  const saveChassis = () => { clearTimeout(chasSave); chasSave = 0; store.set('emu', { racks: racks.map(r => r.toJSON()) }); };
+  function watchRack(r) {
+    r.on('change', ev => {
+      if (!chasSave) chasSave = setTimeout(saveChassis, 800);
+      if (ev.what === 'insert' || ev.what === 'remove' || ev.what === 'controller') { relink(); if (S.p) render(); }
+    });
+  }
+  racks.forEach(watchRack);
+  function addRack(name, desc) {
+    const r = new E.Chassis(10, name); r.desc = desc || '';
+    racks.push(r); watchRack(r); saveChassis();
+    return r;
+  }
+  function removeRack(r) { racks.splice(racks.indexOf(r), 1); saveChassis(); relink(); if (S.p) render(); }
 
   /* ---------- icons: one monoline set on a 24 px grid ---------- */
   const IC = {
@@ -328,7 +367,8 @@
   }
   function title() {
     if (!S.p) return;
-    document.title = `MT PLC Studio - ${S.p.controller.name}${S.dirty ? '*' : ''} [PLC-CPU 1.0]`;
+    // connected to an emulated controller, the title bars say so (as the reference software does)
+    document.title = `MT PLC Studio - ${S.p.controller.name}${S.dirty ? '*' : ''} [PLC-CPU 1.0]${S.online ? ' [Emulator]' : ''}`;
   }
 
   /* ---------- commands (menus, toolbars, keyboard and touch use the same list) ---------- */
@@ -372,7 +412,7 @@
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
-    chassis: { l: 'Chassis Monitor', i: 'rack', run: () => chassisMonitor() },
+    chassis: { l: 'Emulator', i: 'rack', run: () => chassisMonitor() },
     online: { l: 'Go Online', i: 'online', run: goOnline, on: () => !S.online },
     offline: { l: 'Go Offline', i: 'online', run: goOffline, on: () => S.online },
     download: { l: 'Download…', i: 'download', run: () => download() },
@@ -510,7 +550,7 @@
     return `<div class="card"><div class="ch">Status</div><div class="cb"><div class="leds4">${ledsHTML()}</div>
         <div class="muted" style="margin:14px 0 6px">Key switch</div><span class="seg" style="display:flex">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>
         <div style="margin-top:8px"><div class="kv"><span>Mode</span><span class="v">${modeText()}</span></div><div class="kv"><span>Controller holds</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Path</span><span class="v">${esc(curPath())}</span></div></div>
-        <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="chassis">${ic('rack')}Chassis Monitor</button></div>
+        <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
         <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button><button class="btn" data-cmd="download">${ic('download')}Download</button></div>
         <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
@@ -779,7 +819,7 @@
   function dialog(o) {
     const l = $('#layer');
     l.innerHTML = `<div class="scrim"${o.modal ? '' : ' data-close="1"'}></div><div class="dlg ${o.size || ''}" role="dialog" aria-label="${esc(o.title)}">
-      <div class="dh">${S.layout === 'phone' ? `<button class="ib" data-close="1">${ic('back')}</button>` : ''}<b>${esc(o.title)}</b>${S.layout !== 'phone' ? `<button class="ib" data-close="1" title="Close">${ic('close')}</button>` : ''}</div>
+      <div class="dh">${S.layout === 'phone' ? `<button class="ib" data-close="1">${ic('back')}</button>` : ''}<b>${esc(o.title)}</b>${S.online ? '<span class="emutag">[Emulator]</span>' : ''}${S.layout !== 'phone' ? `<button class="ib" data-close="1" title="Close">${ic('close')}</button>` : ''}</div>
       <div class="db${o.flush ? ' flush' : ''}">${o.body}</div>${o.buttons && o.buttons.length ? `<div class="df">${o.buttons.map((b, n) => `<button class="btn${b.pri ? ' pri' : b.danger ? ' danger' : ''}" data-b="${n}">${esc(b.l)}</button>`).join('')}</div>` : ''}</div>`;
     const el = l.querySelector('.dlg');
     layerAt = performance.now();
@@ -1269,7 +1309,7 @@
       : kv('Status', `<b style="color:${st.state === 'Running' ? 'var(--ok)' : st.state === 'Faulted' ? 'var(--danger)' : 'var(--warn-text)'}">${st.state}</b>`) +
         (st.code ? kv('Fault code', st.code) + kv('Fault', esc(st.text)) : st.text ? kv('Note', esc(st.text)) : '') +
         (io && io.in != null ? kv('Inputs', bits(io.in)) : '') + (io && io.out != null ? kv('Outputs', bits(io.out)) : '') +
-        (card && card.type === m.type ? `<div class="brow"><button class="btn" id="mp-x">${card.fault ? 'Clear the card fault' : 'Simulate a module fault'}</button></div>` : `<p class="help">${card ? `Slot ${slot} of the chassis holds a ${esc(card.type)}, not this module.` : `Slot ${slot} of the chassis is empty: insert the card in the Chassis Monitor.`}</p>`);
+        (card && card.type === m.type ? `<div class="brow"><button class="btn" id="mp-x">${card.fault ? 'Clear the card fault' : 'Simulate a module fault'}</button></div>` : `<p class="help">${card ? `Slot ${slot} of the chassis holds a ${esc(card.type)}, not this module.` : `Slot ${slot} of the chassis is empty: add the card in the Emulator.`}</p>`);
     dialog({ title: `Module Properties - [${slot}] ${m.type}`, size: 'md',
       body: tabbed([['gen', 'General', general], ['con', 'Connection', conn], ['st', 'Status' + (st && st.state === 'Faulted' ? ' ⚠' : ''), status]], tab || (st && st.state === 'Faulted' ? 'st' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
@@ -1372,10 +1412,14 @@
   function reachable() {
     relink();
     if (ctl !== NOCTL) return true;
-    const card = chassis.module(pathSlot(curPath()));
+    const x = resolve(curPath()) || {};
+    const why = !x.rack ? `No emulated controller is on at the address ${esc(x.ip || '?')}.`
+      : !x.m ? `Slot ${x.slot} of chassis ${esc(x.rack.name)} is empty.`
+        : !x.m.ctl ? `Slot ${x.slot} holds an I/O card (${esc(x.m.type)}), not a controller.`
+          : `The controller in slot ${x.slot} (${esc(x.m.name)}) is off.`;
     dialog({ title: 'Failed to go online', body: `<p>No controller answers at the path <b class="mono">${esc(curPath())}</b>.</p>
-        <p class="help">${card ? `Slot ${card.slot} holds an I/O card (${esc(card.type)}).` : 'That slot of the chassis is empty.'} Pick a controller in Who Active, or insert one in the Chassis Monitor.</p>`,
-      buttons: [{ l: 'Close' }, { l: 'Chassis Monitor…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
+        <p class="help">${why} Pick a controller in Who Active, or add or turn one on in the Emulator.</p>`,
+      buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
     return false;
   }
   function download() {
@@ -1431,45 +1475,55 @@
   }
   function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
-  /* Who Active: browse the virtual backplane like a communications driver and pick the controller (the path) */
-  function whoActive(pick) {
-    const cur = pathSlot(curPath());
-    let sel = pick != null ? pick : chassis.controller(cur) ? cur : (chassis.controllers()[0] || {}).slot;
+  /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
+     address, then its chassis backplane; a controller picked there becomes the project path */
+  function whoActive() {
+    const cur = parsePath(curPath());
     const modeOf = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[c.mode]);
-    const rows = () => Array.from({ length: chassis.size }, (_, s) => {
-      const m = chassis.module(s);
-      const pad = s < 10 ? '0' + s : s;
-      if (!m) return `<div class="nd dim" style="padding-left:36px">${ic('rack', 'i ti')}${pad}, Empty</div>`;
-      if (!m.ctl) return `<div class="nd dim" style="padding-left:36px">${ic('io', 'i ti')}${pad}, ${esc(m.type)} ${esc(m.name)}</div>`;
-      const c = m.ctl;
-      return `<div class="nd${s === sel ? ' on' : ''}" data-wa="${s}" style="padding-left:36px">${ic('chip', 'i ti')}${pad}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${s === cur ? ' <span class="muted">(project path)</span>' : ''}</div>`;
-    }).join('');
+    const gates = [];   // [ip, rack] once per address (the first chassis that answers there)
+    racks.forEach(r => r.controllers().forEach(m => { if (m.ip && m.ctl.powered && !gates.some(g => g[0] === m.ip)) gates.push([m.ip, r, m]); }));
+    let sel = null;
+    if (cur) { const x = resolve(curPath()); if (x && x.ctl) sel = { ip: x.ip || gatewayIp(x.rack), slot: x.slot }; }
+    if (!sel && gates.length) sel = { ip: gates[0][0], slot: gates[0][2].slot };
+    const pad = s => (s < 10 ? '0' + s : s);
+    const rows = () => gates.map(([ip, r, gm]) => `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${ip}, PLC-CPU ${esc(gm.name)}</div>
+      <div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` + Array.from({ length: r.size }, (_, s) => {
+      const m = r.module(s);
+      if (!m) return '';
+      if (!m.ctl) return `<div class="nd dim" style="padding-left:52px">${ic('io', 'i ti')}${pad(s)}, ${esc(m.type)} ${esc(m.name)}</div>`;
+      const c = m.ctl, on = sel && sel.ip === ip && sel.slot === s;
+      if (!c.powered) return `<div class="nd dim" style="padding-left:52px">${ic('chip', 'i ti')}${pad(s)}, PLC-CPU ${esc(m.name)} · off</div>`;
+      return `<div class="nd${on ? ' on' : ''}" data-wa="${ip}|${s}" style="padding-left:52px">${ic('chip', 'i ti')}${pad(s)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${cur && pathOf(ip, s) === curPath() ? ' <span class="muted">(project path)</span>' : ''}</div>`;
+    }).join('')).join('') || '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>';
+    const pick = () => (sel ? resolve(pathOf(sel.ip, sel.slot)) : null);
     const info = () => {
-      const c = sel != null ? chassis.controller(sel) : null;
-      if (!c) return 'There is no controller in the chassis. Insert one in the Chassis Monitor.';
-      return `Path: <b class="mono">${esc(pathOf(sel))}</b>. ${c.holds(S.p) ? 'It holds this project.' : c.name ? `It holds <b>${esc(c.name)}</b>${U(c.name) === U(S.p.controller.name) ? ' (another version)' : ''}: Upload or Download.` : 'It is empty: Download this project.'}`;
+      const x = pick();
+      if (!x || !x.ctl) return 'Pick a controller. An emulated controller answers only when it is on, and a chassis only through a controller with an IP address.';
+      const c = x.ctl;
+      return `Path: <b class="mono">${esc(pathOf(sel.ip, sel.slot))}</b>. ${c.holds(S.p) ? 'It holds this project.' : c.name ? `It holds <b>${esc(c.name)}</b>${U(c.name) === U(S.p.controller.name) ? ' (another version)' : ''}: Upload or Download.` : 'It is empty: Download this project.'}`;
     };
     // the picked controller becomes the project path, then the action runs against it
-    const via = fn => () => { if (sel == null || !chassis.controller(sel)) { toast('Pick a controller first.', 'err'); return false; } setPath(pathOf(sel)); setTimeout(fn, 0); };
+    const via = fn => () => { const x = pick(); if (!x || !x.ctl) { toast('Pick a controller first.', 'err'); return false; } setPath(pathOf(sel.ip, sel.slot)); setTimeout(fn, 0); };
     const el = dialog({ title: 'Who Active', size: 'md',
-      body: `<div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Virtual Backplane, ${chassis.size}-slot chassis</div><div id="wa-rows">${rows()}</div></div>
+      body: `<div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div class="nd" style="padding-left:6px">${ic('online', 'i ti')}Emulate, Ethernet</div><div id="wa-rows">${rows()}</div></div>
         <p class="help" id="wa-i">${info()}</p>`,
-      buttons: [{ l: 'Close' }, { l: 'Chassis Monitor…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { if (sel == null) return false; setPath(pathOf(sel)); render(); toast(`Project path: ${pathOf(sel)}`); return false; } },
+      buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(pathOf(sel.ip, sel.slot)); render(); toast(`Project path: ${pathOf(sel.ip, sel.slot)}`); return false; } },
         { l: 'Upload…', run: via(upload) }, { l: 'Download…', run: via(download) }, { l: 'Go Online', pri: true, run: via(goOnline) }] });
     el.querySelector('#wa').addEventListener('click', ev => {
       const r = ev.target.closest('[data-wa]'); if (!r) return;
-      sel = +r.dataset.wa;
+      const [ip, s] = r.dataset.wa.split('|');
+      sel = { ip, slot: +s };
       el.querySelector('#wa-rows').innerHTML = rows(); el.querySelector('#wa-i').innerHTML = info();
     });
   }
-  /* Toggle Bit: an input bit follows its field device, so on an input the I/O panel point is switched */
+  /* Toggle Bit: an input of a working card follows its field switch, so that switch is flipped; the input of a faulted
+     card (no card in the chassis) holds and is written directly, as on an emulated controller */
   function toggleSel() {
     const e = curEl(); if (!e || !e.a[0]) return;
     const r = ctl.refOf(e.a[0], S.prog);
-    if (r && r.input && r.force) {
+    if (r && typeof r !== 'string' && r.input && r.force && ctl.inputLive(r)) {
       const [slot, , bit] = r.force.split(':');
       const card = chassis.module(+slot);
-      if (!card || card.kind !== 'di') { toast(`${e.a[0]} is an input, but slot ${slot} of the chassis has no input card.`, 'err'); return; }
       setPoint(+slot, +bit, !((card.field >> +bit) & 1));
       toast(`${e.a[0]} is an input: its field switch ${slot}/${bit} on the chassis was switched.`);
     } else if (!ctl.toggle(e.a[0], S.prog)) toast(`${e.a[0]} cannot be toggled.`, 'err');
@@ -1503,124 +1557,251 @@
       }
       const vals = m.kind === 'ai' ? m.field : chassis.outputs(m.slot);
       return `<div class="mod">${head}${vals.map((v, c) => `<div class="ana"><span>Ch${c}</span>${m.kind === 'ai' ? `<input type="range" min="0" max="100" step="0.5" value="${v}" data-ana="${m.slot}:${c}">` : `<span style="height:8px;background:var(--surface-3);border-radius:4px;overflow:hidden;display:block"><span style="display:block;height:100%;width:${Math.max(0, Math.min(100, v))}%;background:var(--accent)"></span></span>`}<span style="text-align:right">${(+v).toFixed(1)}</span></div>`).join('')}</div>`;
-    }).join('') || '<div class="empty">No I/O cards in the chassis. Insert one in the Chassis Monitor.</div>';
+    }).join('') || '<div class="empty">No I/O cards in the chassis. Add one in the Emulator.</div>';
   }
-  function setPoint(slot, bit, v) {
-    chassis.setBit(slot, bit, v);
-    chassis.advance(0);
+  function setPoint(slot, bit, v, r = chassis) {
+    r.setBit(slot, bit, v);
+    r.advance(0);
     refreshIO();
   }
   const refreshIO = () => { const iob = $('#iob'); if (iob) iob.innerHTML = ioHTML(); chassisLive(true); };
 
-  /* ---------- Chassis Monitor: the emulated rack, its cards, LEDs, key switches and field devices ---------- */
+  /* ---------- Emulator dashboard (spec section 15), laid out like a PC emulator's dashboard ----------
+     Devices pane: the chassis and their cards. Details: the Controller pane (name, description, IP address, power),
+     a chassis (name, description, its rack of cards) or an I/O card. Device Status: every emulated controller with its
+     power switch, mode (Run / Remote / Program), RUN and OK lights and fault message. */
   const CARDNAMES = Object.assign({ 'PLC-CPU': 'Emulated controller' }, MODNAMES);
-  let chasWin = null;
-  function cardHTML(s) {
-    const m = chassis.module(s), sl = `<span class="cs">${s}</span>`;
-    if (!m) return `<div class="ccard empty" data-cins="${s}" title="Insert a module in slot ${s}">${sl}<span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
-    const led = (on, t, cls) => `<div class="cled"><i class="led ${on ? cls || 'g' : ''}"></i>${t}</div>`;
-    const tail = `<div class="cbtns">${m.ctl ? '' : `<button class="btn" data-cfault="${s}">${m.fault ? 'Clear fault' : 'Fault'}</button>`}<button class="btn" data-crem="${s}" title="Remove the card">${ic('trash')}</button></div>`;
+  let chasWin = null, emuSel = { k: 'r', ri: 0 };
+  const modeName = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[c.mode]);
+  const led = (on, t, cls) => `<div class="cled"><i class="led ${on ? cls || 'g' : ''}"></i>${t}</div>`;
+  function cardHTML(ri, s) {
+    const r = racks[ri], m = r.module(s), id = ri + ':' + s, sl = `<span class="cs">${s}</span>`;
+    if (!m) return `<div class="ccard empty" data-cins="${id}" title="Add a module in slot ${s}">${sl}<span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
+    const tail = `<div class="cbtns">${m.ctl ? '' : `<button class="btn" data-cfault="${id}">${m.fault ? 'Clear fault' : 'Fault'}</button>`}<button class="btn" data-crem="${id}" title="Remove the card">${ic('trash')}</button></div>`;
     if (m.ctl) {
-      const c = m.ctl, run = c.running, fs = c.forceState();
-      const mode = c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[c.mode];
-      return `<div class="ccard cpu">${sl}<b class="ct">PLC-CPU</b><small class="cn">${esc(m.name)}</small>
-        <div class="cleds">${led(run, 'RUN')}${led(fs !== 'none', 'FORCE', fs === 'enabled' ? 'a' : 'a blink')}${led(c.M, 'I/O', c.ioOk() ? 'g' : 'r blink')}${led(true, 'OK', c.fault ? 'r blink' : 'g')}</div>
-        <div class="cproj">${c.name ? esc(c.name) : '<span class="muted">No project</span>'}</div><div class="cmode${c.fault ? ' f' : run ? ' r' : ''}">${mode}</div>
-        <span class="seg ckey">${['PROG', 'REM', 'RUN'].map(k => `<span data-ckey="${s}:${k}" class="${c.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>
-        ${c.fault ? `<button class="btn danger" data-cclr="${s}">Clear fault</button>` : ''}${tail}</div>`;
+      const c = m.ctl, run = c.powered && c.running, fs = c.forceState();
+      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}">${sl}<b class="ct">PLC-CPU</b><small class="cn">${esc(m.name)}</small><small class="cn mono">${esc(m.ip || 'no IP address')}</small>
+        <div class="cleds">${led(run, 'RUN')}${led(c.powered && fs !== 'none', 'FORCE', fs === 'enabled' ? 'a' : 'a blink')}${led(c.powered && c.M, 'I/O', c.ioOk() ? 'g' : 'r blink')}${led(c.powered, 'OK', c.fault ? 'r blink' : 'g')}</div>
+        <div class="cproj">${c.name ? esc(c.name) : '<span class="muted">No project</span>'}</div><div class="cmode${!c.powered ? '' : c.fault ? ' f' : run ? ' r' : ''}">${c.powered ? modeName(c) : 'Off'}</div>
+        <span class="seg ckey">${['PROG', 'REM', 'RUN'].map(k => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>${tail}</div>`;
     }
-    const names = S.p ? aliasNames() : {}, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O';
+    const names = S.p ? aliasNames() : {}, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O', mine = r === chassis;
     let body = '';
     if (m.kind === 'di' || m.kind === 'do') {
-      const bits = m.kind === 'di' ? m.field : chassis.outputs(m.slot);
-      body = `<div class="cpts">${Array.from({ length: 16 }, (_, b) => `<div class="cpt" title="${esc(names[U(`Local:${s}:${dir}.Data.${b}`)] || 'Point ' + b)}"><b class="${m.kind === 'do' ? 'lamp ' : ''}${(bits >> b) & 1 ? 'on' : ''}"${m.kind === 'di' ? ` data-io="${s}:${b}"` : ''}>${b}</b></div>`).join('')}</div>`;
+      const bits = m.kind === 'di' ? m.field : r.outputs(s);
+      body = `<div class="cpts">${Array.from({ length: 16 }, (_, b) => `<div class="cpt" title="${esc((mine && names[U(`Local:${s}:${dir}.Data.${b}`)]) || 'Point ' + b)}"><b class="${m.kind === 'do' ? 'lamp ' : ''}${(bits >> b) & 1 ? 'on' : ''}"${m.kind === 'di' ? ` data-io="${id}:${b}"` : ''}>${b}</b></div>`).join('')}</div>`;
     } else if (m.kind === 'ai' || m.kind === 'ao') {
-      const vals = m.kind === 'ai' ? m.field : chassis.outputs(m.slot);
-      body = vals.map((v, c) => `<div class="cch"><span>Ch${c} ${(+v).toFixed(1)}</span>${m.kind === 'ai' ? `<input type="range" min="0" max="100" step="0.5" value="${v}" data-ana="${s}:${c}">` : `<span class="bar"><span style="width:${Math.max(0, Math.min(100, v))}%"></span></span>`}</div>`).join('');
+      const vals = m.kind === 'ai' ? m.field : r.outputs(s);
+      body = vals.map((v, c) => `<div class="cch"><span>Ch${c} ${(+v).toFixed(1)}</span>${m.kind === 'ai' ? `<input type="range" min="0" max="100" step="0.5" value="${v}" data-ana="${id}:${c}">` : `<span class="bar"><span style="width:${Math.max(0, Math.min(100, v))}%"></span></span>`}</div>`).join('');
     }
-    const own = chassis.owner(s);
+    const own = r.owner(s);
     return `<div class="ccard${m.fault ? ' flt' : ''}">${sl}<b class="ct">${esc(m.type.replace('PLC-', ''))}</b><small class="cn">${esc(m.name)}</small>
       <div class="cleds">${led(true, 'OK', m.fault ? 'r blink' : own && own.running ? 'g' : 'g blink')}</div>${body}${tail}</div>`;
   }
-  const chassisHTML = () => `<div class="chas">${Array.from({ length: chassis.size }, (_, s) => cardHTML(s)).join('')}</div>
-    <p class="help">Tap an empty slot to insert a card. The project talks to the controller at its path (<b class="mono">${esc(curPath())}</b>); Who Active picks it.</p>`;
-  const chassisSig = () => [...chassis.mods.values()].map(m => (m.ctl ? [m.slot, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.fault, JSON.stringify(m.field), JSON.stringify(chassis.outputs(m.slot))].join(','))).join('|') + curPath();
+  const rackHTML = ri => `<div class="chas">${Array.from({ length: racks[ri].size }, (_, s) => cardHTML(ri, s)).join('')}</div>`;
+  function devicesHTML() {
+    return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
+      [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
+  }
+  function detailsHTML() {
+    const r = racks[emuSel.ri];
+    if (!r) return '<p class="help">Select a device.</p>';
+    if (emuSel.k === 'r') {
+      return `<div class="ph" style="background:none">Chassis</div><div class="emuform">
+        <div class="frow"><label>Name</label><input class="inp" id="er-n" value="${esc(r.name)}"></div>
+        <div class="frow"><label>Description</label><input class="inp" id="er-d" value="${esc(r.desc || '')}"></div>
+        <div class="frow"><label>Slots</label><span>${r.size}</span></div>
+        <div class="brow"><button class="btn pri" data-erapply="${emuSel.ri}">Apply</button><button class="btn danger" data-erdel="${emuSel.ri}"${racks.length > 1 ? '' : ' disabled'}>Delete chassis</button></div></div>
+        <div class="emurack">${rackHTML(emuSel.ri)}</div>`;
+    }
+    const m = r.module(emuSel.slot);
+    if (!m) return '<p class="help">That slot is empty now.</p>';
+    if (!m.ctl) return `<div class="ph" style="background:none">I/O card</div><div class="emuform">${kv('Type', esc(m.type) + ' <span class="muted">· ' + esc(CARDNAMES[m.type] || '') + '</span>')}${kv('Name', esc(m.name))}${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}${kv('State', m.fault ? '<b style="color:var(--danger)">Faulted</b>' : 'OK')}
+        <p class="help">An addition of this app: the field devices of a card reach the controller whose project configures the same module in this slot.</p></div><div class="emurack">${rackHTML(emuSel.ri)}</div>`;
+    const c = m.ctl, id = emuSel.ri + ':' + m.slot;
+    return `<div class="ph" style="background:none">Controller</div><div class="emuform">
+      ${kv('Vendor', 'MT PLC Studio')}${kv('Type', 'PLC-CPU (emulated)')}${kv('Revision', '1.0')}
+      <div class="frow"><label>Name</label><input class="inp" id="ec-n" value="${esc(m.name)}"></div>
+      <div class="frow"><label>Description</label><input class="inp" id="ec-d" value="${esc(m.desc || '')}"></div>
+      <div class="frow"><label>IP Address</label><select class="inp" id="ec-ip"><option value=""${m.ip ? '' : ' selected'}>(none)</option>${EMUIPS.map(a => `<option${a === m.ip ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+      ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
+      <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
+      ${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
+      <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
+  }
+  function statusHTML() {
+    const rows = racks.flatMap((r, ri) => r.controllers().map(m => {
+      const c = m.ctl, id = ri + ':' + m.slot;
+      return `<div class="emurow"><span class="seg sw"><span data-epow="${id}:${c.powered ? 0 : 1}" class="${c.powered ? 'on' : ''}" title="Turn the controller ${c.powered ? 'off' : 'on'}">${c.powered ? 'On' : 'Off'}</span></span>
+        <span class="grow"><b>${esc(m.name)}</b> <small class="muted">${esc(r.name)} · slot ${m.slot}${m.ip ? ' · ' + esc(m.ip) : ''}</small></span>
+        <span class="seg">${[['RUN', 'Run'], ['REM', 'Remote'], ['PROG', 'Program']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span>
+        <span class="emuleds">${led(c.powered && c.running, 'Run')}${led(c.powered, 'OK', c.fault ? 'r' : 'g')}</span>
+        ${c.fault && c.powered ? `<span class="emuflt">Type ${c.fault.type} Code ${c.fault.code}: ${esc(c.fault.text)}</span>` : ''}</div>`;
+    }));
+    return rows.join('') || '<p class="help" style="padding:8px">No emulated controllers. Add one.</p>';
+  }
+  const emuHTML = () => `<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
+    <div class="emumain" id="emumain">${detailsHTML()}</div>
+    <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div>`;
+  const chassisSig = () => racks.map(r => r.name + ':' + [...r.mods.values()].map(m => (m.ctl ? [m.slot, m.name, m.ip, m.ctl.powered, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.name, m.fault, JSON.stringify(m.field), JSON.stringify(r.outputs(m.slot))].join(','))).join('|')).join('#') + curPath();
+  /* the emulator in the app and in its own window follows the controllers; a form being typed in is left alone */
   function chassisLive(force) {
     const docs = [document];
     if (chasWin && !chasWin.closed) docs.push(chasWin.document); else chasWin = null;
     const sg = chassisSig();
     docs.forEach(d => {
-      const b = d.getElementById('chasbody');
+      const b = d.getElementById('emubody');
       if (!b || (!force && b.dataset.sig === sg)) return;
-      if (d.activeElement && d.activeElement.type === 'range' && b.contains(d.activeElement)) return;
-      b.innerHTML = chassisHTML(); b.dataset.sig = sg;
+      b.dataset.sig = sg;
+      const a = d.activeElement, busy = a && b.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+      if (!busy) { b.innerHTML = emuHTML(); return; }
+      // typing in the details: refresh the devices, the status and the rack around it
+      d.getElementById('emudev').innerHTML = devicesHTML();
+      d.getElementById('emustat').innerHTML = statusHTML();
+      const rk = d.querySelector('#emumain .emurack');
+      if (rk && a.type !== 'range') rk.innerHTML = rackHTML(emuSel.ri);
     });
   }
-  /* the clicks of the Chassis Monitor (in the app or in its own window) */
+  const ids = v => v.split(':').map(Number);
+  /* the clicks of the emulator (in the app or in its own window) */
   function chassisClick(t) {
     let el;
-    if ((el = t.closest('[data-cins]'))) { insertCard(+el.dataset.cins); return true; }
-    if ((el = t.closest('[data-crem]'))) {
-      const s = +el.dataset.crem, m = chassis.module(s);
-      confirmDlg('Remove Module', `Remove <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from the chassis?${m.ctl && m.ctl.name ? ` The project <b>${esc(m.ctl.name)}</b> in it is lost.` : ''} Controllers that use the card get a module fault.`, 'Remove', () => { chassis.remove(s); chassis.advance(0); saveChassis(); refreshIO(); live(true); }, true);
+    const doc = t.ownerDocument;
+    if ((el = t.closest('[data-esel]'))) {
+      const p = el.dataset.esel.split(':');
+      emuSel = p[0] === 'r' ? { k: 'r', ri: +p[1] } : { k: 'm', ri: +p[1], slot: +p[2] };
+      if (doc.activeElement && doc.activeElement.blur) doc.activeElement.blur();
+      chassisLive(true); return true;
+    }
+    if ((el = t.closest('[data-emu]'))) {
+      openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
+      if (doc !== document) window.focus();
       return true;
     }
-    if ((el = t.closest('[data-cfault]'))) { const s = +el.dataset.cfault; chassis.setFault(s, !chassis.module(s).fault); chassis.advance(0); refreshIO(); live(true); return true; }
-    if ((el = t.closest('[data-ckey]'))) { const [s, k] = el.dataset.ckey.split(':'); chassis.controller(+s).setKey(k); saveChassis(); chassisLive(true); live(true); render(); return true; }
-    if ((el = t.closest('[data-cclr]'))) { chassis.controller(+el.dataset.cclr).clearFault(); chassisLive(true); live(true); render(); return true; }
+    if ((el = t.closest('[data-cins]'))) { const [ri, s] = ids(el.dataset.cins); insertCard(ri, s); if (doc !== document) window.focus(); return true; }
+    if ((el = t.closest('[data-crem]'))) {
+      const [ri, s] = ids(el.dataset.crem), r = racks[ri], m = r.module(s);
+      confirmDlg('Delete', `Delete <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from chassis ${esc(r.name)}?${m.ctl && m.ctl.name ? ` The project <b>${esc(m.ctl.name)}</b> in it is lost.` : ''}`, 'Delete', () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); }, true);
+      if (doc !== document) window.focus();
+      return true;
+    }
+    if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); refreshIO(); live(true); return true; }
+    if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
+    if ((el = t.closest('[data-epow]'))) { const [ri, s, on] = ids(el.dataset.epow); racks[ri].setController(s, { on: !!on }); saveChassis(); chassisLive(true); live(true); return true; }
+    if ((el = t.closest('[data-eapply]'))) {
+      const [ri, s] = ids(el.dataset.eapply), n = doc.getElementById('ec-n').value.trim();
+      if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return true; }
+      racks[ri].setController(s, { name: n, desc: doc.getElementById('ec-d').value.trim(), ip: doc.getElementById('ec-ip').value });
+      saveChassis(); doc.activeElement && doc.activeElement.blur(); chassisLive(true); toast('Controller settings applied.', 'ok'); return true;
+    }
+    if ((el = t.closest('[data-erapply]'))) {
+      const r = racks[+el.dataset.erapply], n = doc.getElementById('er-n').value.trim();
+      if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return true; }
+      if (racks.some(x => x !== r && U(x.name) === U(n))) { toast('Another chassis has that name.', 'err'); return true; }
+      r.name = n; r.desc = doc.getElementById('er-d').value.trim(); saveChassis(); doc.activeElement && doc.activeElement.blur(); chassisLive(true); toast('Chassis settings applied.', 'ok'); return true;
+    }
+    if ((el = t.closest('[data-erdel]'))) {
+      const ri = +el.dataset.erdel, r = racks[ri];
+      confirmDlg('Delete chassis', `Delete chassis <b>${esc(r.name)}</b>?${r.controllers().length ? ' Its controllers are deleted with it.' : ''}`, 'Delete', () => { removeRack(r); emuSel = { k: 'r', ri: 0 }; chassisLive(true); refreshIO(); }, true);
+      if (doc !== document) window.focus();
+      return true;
+    }
     return false;
   }
-  function insertCard(slot) {
-    const types = E.Chassis.types();
-    const el = dialog({ title: `Insert Module - Slot ${slot}`, size: 'md', focus: true,
-      body: `<div class="frow"><label>Module</label><select class="inp" id="ci-t">${types.map(t => `<option value="${t}">${t} · ${esc(CARDNAMES[t] || '')}</option>`).join('')}</select></div>
-        <div class="frow"><label>Name</label><input class="inp" id="ci-n" value="" autocomplete="off" spellcheck="false"></div>
-        <p class="help">A controller card holds a project (Download through Who Active). An I/O card brings field switches (inputs) or lamps (outputs); the project must configure the same module in the same slot.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Insert', pri: true, run: e2 => {
-        const t = e2.querySelector('#ci-t').value, n = e2.querySelector('#ci-n').value.trim() || (t === 'PLC-CPU' ? 'Emulator' + slot : E.MODULES[t].kind.toUpperCase() + '_' + slot);
-        if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
-        const r = chassis.insert(slot, t, n);
-        if (!r.ok) { toast(r.msg, 'err'); return false; }
-        chassis.advance(0); saveChassis();
-        setTimeout(() => { if (!chasWin) chassisMonitor(); refreshIO(); live(true); }, 0);
+  function newRack() {
+    let n = 1; while (racks.some(r => U(r.name) === U('Chassis' + n))) n++;
+    dialog({ title: 'Add Chassis', size: 'md', focus: true,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="nr-n" value="Chassis${n}"></div><div class="frow"><label>Description</label><input class="inp" id="nr-d" value=""></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
+        const v = e2.querySelector('#nr-n').value.trim();
+        if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        if (racks.some(r => U(r.name) === U(v))) { toast('Another chassis has that name.', 'err'); return false; }
+        addRack(v, e2.querySelector('#nr-d').value.trim());
+        emuSel = { k: 'r', ri: racks.length - 1 };
+        setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); }, 0);
       } }] });
-    const cfg = S.p && S.p.rack.modules.find(x => x.slot === slot);
-    if (cfg) el.querySelector('#ci-t').value = cfg.type;
+  }
+  /* Add Controller / Add I/O Card: the chassis, the slot, the module, its name; a controller also gets an IP address
+     and its power state */
+  function insertCard(ri, slot, type0) {
+    const types = E.Chassis.types();
+    const free = r => Array.from({ length: r.size }, (_, s) => s).filter(s => !r.module(s));
+    const el = dialog({ title: type0 === 'PLC-CPU' ? 'Add Controller' : 'Add Module', size: 'md', focus: true,
+      body: `<div class="frow"><label>Chassis</label><select class="inp" id="ci-r">${racks.map((r, i) => `<option value="${i}"${i === ri ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div>
+        <div class="frow"><label>Slot</label><select class="inp" id="ci-s"></select></div>
+        <div class="frow"><label>Module</label><select class="inp" id="ci-t">${types.map(t => `<option value="${t}">${t} · ${esc(CARDNAMES[t] || '')}</option>`).join('')}</select></div>
+        <div class="frow"><label>Name</label><input class="inp" id="ci-n" value="" autocomplete="off" spellcheck="false"></div>
+        <div id="ci-cpu"><div class="frow"><label>Description</label><input class="inp" id="ci-d" value=""></div>
+          <div class="frow"><label>IP Address</label><select class="inp" id="ci-ip"><option value="">(none)</option>${EMUIPS.map(a => `<option>${a}</option>`).join('')}</select></div>
+          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label></div>
+        <p class="help" id="ci-h"></p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
+        const r = racks[+e2.querySelector('#ci-r').value], s = +e2.querySelector('#ci-s').value, t = e2.querySelector('#ci-t').value;
+        if (e2.querySelector('#ci-s').value === '') { toast('That chassis has no free slot.', 'err'); return false; }
+        const n = e2.querySelector('#ci-n').value.trim() || (t === 'PLC-CPU' ? 'Emulator' + (racks.indexOf(r) ? racks.indexOf(r) + '_' : '') + s : E.MODULES[t].kind.toUpperCase() + '_' + s);
+        if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
+        const res = r.insert(s, t, n);
+        if (!res.ok) { toast(res.msg, 'err'); return false; }
+        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, on: e2.querySelector('#ci-on').checked });
+        r.advance(0); saveChassis();
+        emuSel = { k: 'm', ri: racks.indexOf(r), slot: s };
+        setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0);
+      } }] });
+    const q = sel => el.querySelector(sel);
+    const sync = () => {
+      const r = racks[+q('#ci-r').value], f = free(r), cur = +q('#ci-s').value;
+      q('#ci-s').innerHTML = f.map(s => `<option${s === (slot != null && f.includes(slot) ? slot : cur) ? ' selected' : ''}>${s}</option>`).join('');
+      const cpu = q('#ci-t').value === 'PLC-CPU';
+      q('#ci-cpu').hidden = !cpu;
+      if (cpu && !q('#ci-ip').dataset.touched) { const used = new Set(racks.flatMap(x => x.controllers().map(m => m.ip))); q('#ci-ip').value = gatewayIp(r) ? '' : EMUIPS.find(a => !used.has(a)) || ''; }
+      q('#ci-h').textContent = cpu ? 'An emulated controller holds a project (Download through Who Active). Give one controller in each chassis an IP address.' : 'An I/O card brings field switches (inputs) or lamps (outputs); the project must configure the same module in the same slot.';
+    };
+    q('#ci-t').value = type0 || 'PLC-DI16-24V';
+    const cfg = slot != null && S.p && S.p.rack.modules.find(x => x.slot === slot);
+    if (cfg && !type0) q('#ci-t').value = cfg.type;
+    q('#ci-r').onchange = () => { slot = null; sync(); };
+    q('#ci-t').onchange = sync;
+    q('#ci-ip').onchange = () => { q('#ci-ip').dataset.touched = '1'; };
+    sync();
   }
   function chassisMonitor() {
-    dialog({ title: `Chassis Monitor - Virtual Backplane, ${chassis.size} slots`, size: 'lg', flush: true,
-      body: `<div id="chasbody" class="chasbody">${chassisHTML()}</div>`,
+    dialog({ title: 'Emulator', size: 'lg', flush: true,
+      body: `<div id="emubody" class="emu">${emuHTML()}</div>`,
       buttons: (S.layout === 'phone' ? [] : [{ l: 'Open in a window', run: () => { setTimeout(popChassis, 0); } }]).concat([{ l: 'Who Active…', run: () => { setTimeout(whoActive, 0); } }, { l: 'Close', pri: true }]) });
   }
-  /* the Chassis Monitor in a window of its own, like the emulator's monitor next to the programming software.
-     The window starts blank (so it shares this window's origin, also for the exe's file:// copy) and this window
-     writes, draws and serves it. */
+  /* the emulator in a window of its own, beside the programming software. The window starts blank (so it shares this
+     window's origin, also for the exe's file:// copy) and this window writes, draws and serves it. */
   function popChassis() {
     if (chasWin && !chasWin.closed) { chasWin.focus(); return; }
-    const w = window.open('', 'mtps-chassis', 'width=1100,height=640');
-    if (!w) { toast('The window was blocked: the Chassis Monitor stays in the app.', 'err'); chassisMonitor(); return; }
+    const w = window.open('', 'mtps-chassis', 'width=1180,height=720');
+    if (!w) { toast('The window was blocked: the emulator stays in the app.', 'err'); chassisMonitor(); return; }
     const css = new URL('css/app.css', location.href).href, icon = new URL('icons/icon.svg', location.href).href;
     w.document.open();
-    w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MT PLC Studio - Chassis Monitor</title><link rel="icon" href="${icon}"><link rel="stylesheet" href="${css}"></head>
-      <body class="desk chaswin"><header class="chashead"><b>Chassis Monitor</b><span class="muted">Virtual Backplane, ${chassis.size} slots</span><span class="grow"></span><button class="btn" data-wa-open="1">Who Active…</button></header><div id="chasbody" class="chasbody"></div></body></html>`);
+    w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MT PLC Studio - Emulator</title><link rel="icon" href="${icon}"><link rel="stylesheet" href="${css}"></head>
+      <body class="desk chaswin"><header class="chashead"><b>Emulator</b><span class="muted">emulated chassis and controllers</span><span class="grow"></span><button class="btn" data-wa-open="1">Who Active…</button></header><div id="emubody" class="emu"></div></body></html>`);
     w.document.close();
     closeLayer();
     mountChassis(w);
   }
-  /* this window draws the Chassis Monitor window and takes its clicks (dialogs open here, in the app) */
+  /* this window draws the emulator window and takes its clicks (dialogs open here, in the app) */
   function mountChassis(w) {
     chasWin = w;
     const d = w.document;
     if (document.documentElement.dataset.theme) d.documentElement.dataset.theme = document.documentElement.dataset.theme;
     chassisLive(true);
-    d.addEventListener('click', ev => {
-      if (chassisClick(ev.target)) { if ($('#layer').innerHTML) window.focus(); return; }
-      if (ev.target.closest('[data-wa-open]')) { window.focus(); whoActive(); }
-    });
-    d.addEventListener('pointerdown', ev => { const b = ev.target.closest('[data-io]'); if (!b) return; const [s, bit] = b.dataset.io.split(':').map(Number); setPoint(s, bit, !((chassis.module(s).field >> bit) & 1)); ev.preventDefault(); });
-    d.addEventListener('input', ev => { const a = ev.target.closest('[data-ana]'); if (a) { const [s, c] = a.dataset.ana.split(':').map(Number); chassis.setChannel(s, c, +a.value); chassis.advance(0); } });
+    d.addEventListener('click', ev => { if (!chassisClick(ev.target) && ev.target.closest('[data-wa-open]')) { window.focus(); whoActive(); } });
+    d.addEventListener('pointerdown', ev => { const b = ev.target.closest('[data-io]'); if (!b) return; ioPress(b.dataset.io); ev.preventDefault(); });
+    d.addEventListener('input', ev => { const a = ev.target.closest('[data-ana]'); if (a) anaSet(a.dataset.ana, +a.value); });
     w.addEventListener('beforeunload', () => { chasWin = null; });
   }
+  /* a field switch (data-io "slot:bit" on the I/O panel, "rack:slot:bit" in the emulator) and an analog slider */
+  function ioPress(v) {
+    const p = ids(v), r = p.length === 3 ? racks[p[0]] : chassis, s = p[p.length - 2], bit = p[p.length - 1], m = r && r.module(s);
+    if (!m) return;
+    setPoint(s, bit, !((m.field >> bit) & 1), r);
+  }
+  function anaSet(v, val) { const p = ids(v), r = p.length === 3 ? racks[p[0]] : chassis; r.setChannel(p[p.length - 2], p[p.length - 1], val); r.advance(0); }
 
   /* ---------- the controller runs on its own clock; the screen follows only what changed ---------- */
   let lastT = performance.now(), sig = '', lastLive = 0, lastLay = 0;
@@ -1651,7 +1832,7 @@
   function tick() {
     const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
-    chassis.advance(dt);
+    racks.forEach(r => r.advance(dt));
   }
   function loop(now) {
     tick();
@@ -1788,7 +1969,7 @@
     document.addEventListener('input', ev => {
       if (ev.target.id === 'tq') { S.tagQ = ev.target.value; refreshTags(); }
       const a = ev.target.closest && ev.target.closest('[data-ana]');
-      if (a) { const [s, c] = a.dataset.ana.split(':').map(Number); chassis.setChannel(s, c, +a.value); chassis.advance(0); }
+      if (a) anaSet(a.dataset.ana, +a.value);
     });
     $('#layer').addEventListener('click', ev => {
       let el;
@@ -1802,9 +1983,9 @@
     // I/O points: Toggle latches, Push holds while pressed
     document.addEventListener('pointerdown', ev => {
       const b = ev.target.closest('[data-io]'); if (!b) return;
-      const [s, bit] = b.dataset.io.split(':').map(Number);
-      if (S.prefs.push) { setPoint(s, bit, 1); const upf = () => { setPoint(s, bit, 0); removeEventListener('pointerup', upf); removeEventListener('pointercancel', upf); }; addEventListener('pointerup', upf); addEventListener('pointercancel', upf); }
-      else setPoint(s, bit, !(((chassis.module(s) || {}).field >> bit) & 1));
+      const p = ids(b.dataset.io), r = p.length === 3 ? racks[p[0]] : chassis, s = p[p.length - 2], bit = p[p.length - 1];
+      if (S.prefs.push) { setPoint(s, bit, 1, r); const upf = () => { setPoint(s, bit, 0, r); removeEventListener('pointerup', upf); removeEventListener('pointercancel', upf); }; addEventListener('pointerup', upf); addEventListener('pointercancel', upf); }
+      else ioPress(b.dataset.io);
       ev.preventDefault();
     });
     document.addEventListener('keydown', onKey);
@@ -1881,7 +2062,7 @@
     if (window.MTPSUpdater) window.MTPSUpdater.init({ version: VERSION, build: BUILD, onAvailable: info => { upInfo = info; render(); }, toast, dialog, esc });
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, chassis, mountChassis, select: t => { select(t); render(); }, openEditor, toast };
+  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, select: t => { select(t); render(); }, openEditor, toast };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   start();
 })();

@@ -649,35 +649,58 @@ TON / TOF / RTO and CTU. See section 7.
   - Portrait and landscape both work, and the orientation is not locked.
   - The layout switches live when the device turns, without losing the routine, the selection or a pending edit.
 
-## 15. Emulated chassis (Chassis Monitor, Who Active, path)
+## 15. Emulator (modelled on FactoryTalk Logix Echo)
 
-The owner asked for this on 2026-10-24. The laptop is the programming terminal. It connects to an emulated
-controller that sits in a rack, as the owner does with the emulator and the communications driver in the VM.
+The owner asked for this on 2026-10-24. The laptop is the programming terminal. It connects to emulated controllers,
+as the owner does with the emulator in the VM, which is Studio 5000 v37 with Logix Echo.
 
-- **Chassis:** `MTPS.Chassis` in `engine.js`, with 10 slots.
-  - Each slot holds one card: a controller (`PLC-CPU`, with a `Controller` of its own) or an I/O card (DI16, DO16,
-    AI4, AO4).
-  - The chassis is kept across restarts (`mtps.chassis`): its cards, their field switches, and each controller's
-    project with its values, key and mode.
-  - The default chassis matches a new project: CPU in slot 0, DI16 in slot 1, DO16 in slot 2.
-- **I/O exchange:** every step of time, each controller with a project reads the cards that its I/O configuration
-  names.
-  - An empty slot, or a card with *Fault* set, gives module fault **16#0204** (connection timed out).
-  - A different module in the slot gives **16#0116** (electronic keying mismatch).
-  - An output card follows its owner: the first controller, by slot, whose project configures that card.
-- **Path:** each project has a path, `Virtual\Backplane\<slot>`, kept per project (`mtps.path.<name>`).
-  - Go Online, Download and Upload talk only to the controller at that path.
-  - If nothing answers there, the app shows *Failed to go online*, with links to Who Active and the Chassis Monitor.
-  - Removing the controller card while online drops the app offline.
-- **Who Active:** browses *Workstation > Virtual Backplane > slots*.
-  - Picking a controller sets the project path.
-  - The buttons are Set Project Path, Upload, Download and Go Online.
-- **Chassis Monitor** (Communications menu, Who Active, the phone's Controller page):
-  - The rack of cards with their LEDs: RUN, FORCE, I/O and OK on the controller; OK on an I/O card.
-  - The controller card has the key switch and Clear fault, and shows the project name and the mode.
-  - Input cards have field switches, input analog cards have sliders, and output cards have lamps and bars.
-  - An empty slot inserts a card. A card can be removed, and an I/O card has *Fault*.
-  - *Open in a window* gives it a window of its own. The window opens blank, so it shares the app's origin, also for
-    the exe's file:// copy; the app writes it, draws it and takes its clicks. Electron allows it by its frame name
-    `mtps-chassis`.
-- **Later:** a network link, so a laptop can program an emulator that runs on another device (the tablet).
+**Reference:** *FactoryTalk Logix Echo Getting Results Guide*, 9310-GR001D-EN-P, October 2025, read on 2026-10-24.
+The points used here:
+- **Panes:** the Devices pane holds the chassis and the controllers ("[slot] name"). The Controller pane has Vendor,
+  Type, Revision, Name, Description, IP Address, Chassis, Slot, and a switch to turn the controller on or off. The
+  Device Status pane has an on/off switch, Mode (Run, Remote, Program), the Run and OK lights and fault messages.
+- **Chassis:** a default chassis named *Chassis*. More can be added, each with a unique name.
+- **IP addresses:** Logix Designer connects over Ethernet to a controller's IP address and bridges across the emulated
+  backplane. One controller on each chassis needs an IP address. The loopback addresses are 127.x.x.x.
+- **Power:** Off saves the configuration, and the controller does not run.
+- **Title bars:** dialog title bars show **[Emulator]** while connected.
+- **I/O:** most I/O modules in the I/O Configuration are faulted. I/O values are simulated, and input values can be
+  overwritten.
+
+**What the app does:**
+- **Engine:** `MTPS.Chassis(size, name)`.
+  - Cards in slots: emulated controllers (`PLC-CPU`, each with its own `Controller`, `ip`, `desc`, and power
+    through `setController`) and I/O cards (DI16, DO16, AI4, AO4, an addition of this app).
+  - Controller power: `Controller.power(on)` and `powered`.
+    - Off keeps the project; the controller does not scan or answer.
+    - On starts it like a real controller: RUN key gives Run, PROG gives Program, and REM gives the mode it had. The
+      current fault is cleared, and a prescan runs before Run.
+  - I/O exchange: an empty or faulted slot gives **16#0204**; another module gives **16#0116**.
+    - The input data of a faulted module holds and can be written (`inputLive()`), as on Logix Echo.
+    - An output card follows the first powered controller, by slot, whose project configures it.
+- **App:** `racks`, a list of chassis, is kept across restarts (`mtps.emu`; the single `mtps.chassis` of
+  0.2.0-beta.1 migrates).
+  - **Path:** `Emulate\<ip>\Backplane\<slot>`, kept per project. The first chassis with a powered controller at
+    that IP answers.
+    - Go Online, Download and Upload talk only to the controller at the path.
+    - If nothing answers there (no device at the IP, an empty slot, an I/O card, a controller that is off), the app
+      shows *Failed to go online*.
+    - A controller removed or turned off while online drops the app offline.
+  - **Who Active:** *Workstation > Emulate, Ethernet > <ip>, PLC-CPU <name> > Backplane, <chassis> > slots*.
+    - Controllers that are off are greyed out.
+    - The buttons are Set Project Path, Upload, Download and Go Online.
+  - **Emulator dashboard** (Communications > Emulator, the phone's Controller page): Devices, details, Device Status.
+    - *Add*: Add Controller (chassis, slot, name, description, IP address, on), Add I/O Card, Add Chassis.
+    - Selecting a chassis shows its rack of cards: field switches, lamps, *Fault*.
+    - *Open in a window* opens a blank window that the app writes, so it shares the origin also for the exe's file://
+      copy. Electron allows the frame name `mtps-chassis`.
+  - The window title and dialog titles add **[Emulator]** while online.
+  - Toggle Bit on the input of a working card flips its field switch. On a faulted module's input, it writes the tag.
+- **Not done (yet):**
+  - Snapshots.
+  - The Download pane of the emulator itself.
+  - Virtual time and co-simulation.
+  - SD cards.
+  - Firmware revisions.
+  - Safety controllers.
+  - A real network link to another device.
