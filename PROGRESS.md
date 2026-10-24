@@ -20,7 +20,8 @@
 - [x] Renamed MT PLC Studio (2026-10-24, owner), own folder `mtps/`, icon, file names `MT-PLC-Studio-<version>-…`
 - [x] App 0.1.0-beta.1: desktop / tablet / phone layouts that follow the window, ladder editor, operand editor + tag browser + New Tag, tags, verify, built-in controller online, toggle, forces, I/O panel, projects, cross reference, find; `tests/mtps-ui.test.js` 48 checks
 - [x] Release pipeline: `desktop-mtps/` (resizable exe), `mobile-mtps/` (APK, any orientation), `release-mtps.yml`, Pages `/mtps/` and `/mtps/beta/`, in-app updates
-- [ ] Owner test of the preview on Windows and the tablet
+- [x] Owner feedback on beta.1 fixed in 0.1.0-beta.2: selection after long-press / while running, zoom lag, Toggle Bit on inputs, empty first project, Module / Controller Properties with faults, simulated module fault, Upload
+- [ ] Owner test of 0.1.0-beta.2 (also the first in-app update)
 - [ ] Next: online edit, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look
 
 ## Simpler app and education (2026-10-21, `feature/simplify-learn`)
