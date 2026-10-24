@@ -54,7 +54,8 @@ Release checklist:
 
 ## 5. Testing
 - Run `npm test` before every pull request (see the README for setup).
-- A new feature or bug fix gets a check in `tests/e2e.test.js`.
+- A new feature or bug fix gets a check in `tests/e2e.test.js`. MT PLC Studio changes get one in
+  `tests/mtps.test.js` (engine, node) or `tests/mtps-ui.test.js` (UI).
 - For UI changes, also check by hand in both light and dark themes.
 
 ## 6. Trademarks and naming
