@@ -1,0 +1,102 @@
+/* MT PLC Studio instruction reference, laid out as the reference software's instruction help: the operands (type,
+   format, description), the execution conditions (Prescan, rung-condition-in false / true, Postscan), the arithmetic
+   status flags, the fault conditions and an example. Written in our own words from the behaviour of js/engine.js
+   (docs/PLC_APP_SPEC.md section 7). app.js shows it (Help > Instruction Help, F1). */
+(function () {
+  'use strict';
+  const RCO_F = 'The rung-condition-out is set to false.';
+  // an input (condition) instruction: false in, false out; true in, the instruction decides
+  const IN = t => [['Prescan', RCO_F], ['Rung-condition-in is false', RCO_F], ['Rung-condition-in is true', t], ['Postscan', RCO_F]];
+  // an output instruction that acts only on a true rung
+  const ACT = t => [['Prescan', 'No action taken.'], ['Rung-condition-in is false', 'No action taken. ' + RCO_F], ['Rung-condition-in is true', t + ' The rung-condition-out is set to true.'], ['Postscan', 'No action taken.']];
+  const CMP = w => IN(`If ${w}, the rung-condition-out is set to true; otherwise it is set to false.`);
+  const MATHF = 'Affected: S:Z (result is zero), S:N (result is negative) and S:V (overflow).';
+  const MATHFC = MATHF + ' S:C (carry or borrow) for integer operands.';
+  const NOF = 'Not affected.';
+  const OVF = 'An overflow sets S:V and logs a minor fault (type 4, code 4).';
+  const R = {
+    XIC: { ops: ['The bit to examine.'], desc: 'Examines a data bit for a set (1) condition. The instruction is true while the bit is 1 and false while it is 0.',
+      exec: IN('If the data bit is 1, the rung-condition-out is set to true; if it is 0, the rung-condition-out is set to false.'), flags: NOF, faults: 'None.' },
+    XIO: { ops: ['The bit to examine.'], desc: 'Examines a data bit for a cleared (0) condition. The instruction is true while the bit is 0 and false while it is 1.',
+      exec: IN('If the data bit is 0, the rung-condition-out is set to true; if it is 1, the rung-condition-out is set to false.'), flags: NOF, faults: 'None.' },
+    OTE: { ops: ['The bit to set or clear.'], desc: 'Sets or clears a data bit according to the rung condition. Use one OTE per bit: when two OTE instructions write the same bit, the last one scanned determines its state.',
+      exec: [['Prescan', 'The data bit is cleared to 0. ' + RCO_F], ['Rung-condition-in is false', 'The data bit is cleared to 0. ' + RCO_F], ['Rung-condition-in is true', 'The data bit is set to 1. The rung-condition-out is set to true.'], ['Postscan', 'The data bit is cleared to 0.']], flags: NOF, faults: 'None.' },
+    OTL: { ops: ['The bit to latch.'], desc: 'Sets a data bit when the rung is true. The bit stays set when the rung goes false, until an OTU (or another write) clears it. The bit keeps its state through a mode change and a power cycle.',
+      exec: ACT('The data bit is set to 1.'), flags: NOF, faults: 'None.' },
+    OTU: { ops: ['The bit to unlatch.'], desc: 'Clears a data bit when the rung is true. The bit stays cleared when the rung goes false. Normally used with OTL on the same bit.',
+      exec: ACT('The data bit is cleared to 0.'), flags: NOF, faults: 'None.' },
+    ONS: { ops: ['A bit that keeps the rung state of the last scan. Use it for this instruction only.'], desc: 'Makes the rest of the rung true for one scan each time the rung-condition-in goes from false to true.',
+      exec: [['Prescan', 'The storage bit is set to 1, so the first scan in Run does not trigger. ' + RCO_F], ['Rung-condition-in is false', 'The storage bit is cleared to 0. ' + RCO_F], ['Rung-condition-in is true', 'If the storage bit is 0, it is set to 1 and the rung-condition-out is set to true for this scan. If it is already 1, the rung-condition-out is set to false.'], ['Postscan', 'The storage bit is cleared to 0.']], flags: NOF, faults: 'None.' },
+    OSR: { ops: ['A bit that keeps the rung state of the last scan.', 'The bit set for one scan on a rising edge.'], desc: 'Sets the output bit for one scan when the rung-condition-in goes from false to true. The rung-condition-out follows the rung-condition-in.',
+      exec: [['Prescan', 'The storage bit is set to 1 and the output bit is cleared to 0.'], ['Rung-condition-in is false', 'The storage bit and the output bit are cleared to 0. ' + RCO_F], ['Rung-condition-in is true', 'If the storage bit was 0, the output bit is set to 1 for this scan; otherwise it is cleared. The storage bit is set to 1. The rung-condition-out is set to true.'], ['Postscan', 'The storage bit is cleared to 0.']], flags: NOF, faults: 'None.' },
+    OSF: { ops: ['A bit that keeps the rung state of the last scan.', 'The bit set for one scan on a falling edge.'], desc: 'Sets the output bit for one scan when the rung-condition-in goes from true to false. The rung-condition-out follows the rung-condition-in.',
+      exec: [['Prescan', 'The storage bit and the output bit are cleared to 0.'], ['Rung-condition-in is false', 'If the storage bit was 1, the output bit is set to 1 for this scan; otherwise it is cleared. The storage bit is cleared to 0. ' + RCO_F], ['Rung-condition-in is true', 'The output bit is cleared to 0 and the storage bit is set to 1. The rung-condition-out is set to true.'], ['Postscan', 'The storage bit is cleared to 0.']], flags: NOF, faults: 'None.' },
+    TON: { ops: ['The TIMER structure.', 'The time to wait, in milliseconds (.PRE).', 'The elapsed time, in milliseconds (.ACC); normally 0.'], members: '.EN enable, .TT timing, .DN done, .PRE preset, .ACC accumulated (ms)',
+      desc: 'A non-retentive timer that counts time while the rung is true. .DN is set when .ACC reaches .PRE. When the rung goes false, the timer resets.',
+      exec: [['Prescan', '.EN, .TT and .DN are cleared and .ACC is set to 0. ' + RCO_F], ['Rung-condition-in is false', '.EN, .TT and .DN are cleared and .ACC is set to 0. ' + RCO_F], ['Rung-condition-in is true', '.EN is set. While .DN is clear, .TT is set and .ACC adds the elapsed time; when .ACC ≥ .PRE, .DN is set, .TT is cleared and .ACC stops at .PRE. The rung-condition-out is set to true.'], ['Postscan', 'As when the rung-condition-in is false.']], flags: NOF, faults: 'None.' },
+    TOF: { ops: ['The TIMER structure.', 'The time to wait, in milliseconds (.PRE).', 'The elapsed time, in milliseconds (.ACC); normally 0.'], members: '.EN enable, .TT timing, .DN done, .PRE preset, .ACC accumulated (ms)',
+      desc: 'A non-retentive timer that counts time after the rung goes false. .DN is set while the rung is true and is cleared when .ACC reaches .PRE after the rung goes false.',
+      exec: [['Prescan', '.EN, .TT and .DN are cleared and .ACC is set to .PRE. ' + RCO_F], ['Rung-condition-in is false', '.EN is cleared. While .DN is set, .TT is set and .ACC adds the elapsed time; when .ACC ≥ .PRE, .DN and .TT are cleared. ' + RCO_F], ['Rung-condition-in is true', '.EN and .DN are set, .TT is cleared and .ACC is set to 0. The rung-condition-out is set to true.'], ['Postscan', 'As when the rung-condition-in is false.']], flags: NOF, faults: 'None.' },
+    RTO: { ops: ['The TIMER structure.', 'The time to reach, in milliseconds (.PRE).', 'The elapsed time, in milliseconds (.ACC).'], members: '.EN enable, .TT timing, .DN done, .PRE preset, .ACC accumulated (ms)',
+      desc: 'A retentive timer: it counts time while the rung is true and keeps .ACC when the rung goes false. Use RES to set .ACC back to 0.',
+      exec: [['Prescan', '.EN and .TT are cleared; .ACC and .DN are kept. ' + RCO_F], ['Rung-condition-in is false', '.EN and .TT are cleared; .ACC and .DN are kept. ' + RCO_F], ['Rung-condition-in is true', '.EN is set. While .DN is clear, .TT is set and .ACC adds the elapsed time; when .ACC ≥ .PRE, .DN is set and .TT is cleared. The rung-condition-out is set to true.'], ['Postscan', 'As when the rung-condition-in is false.']], flags: NOF, faults: 'None.' },
+    CTU: { ops: ['The COUNTER structure.', 'The count to reach (.PRE).', 'The current count (.ACC); normally 0.'], members: '.CU count up enable, .DN done, .OV overflow, .PRE preset, .ACC count',
+      desc: 'Adds 1 to .ACC each time the rung-condition-in goes from false to true. .DN is set while .ACC ≥ .PRE. The count is kept until RES clears it.',
+      exec: [['Prescan', '.CU is set, so the first scan in Run does not count. ' + RCO_F], ['Rung-condition-in is false', '.CU is cleared. ' + RCO_F], ['Rung-condition-in is true', 'If .CU was clear, .ACC is incremented by 1 (past 2,147,483,647 it wraps and .OV is set). .CU is set. .DN is set while .ACC ≥ .PRE. The rung-condition-out is set to true.'], ['Postscan', '.CU is cleared.']], flags: NOF, faults: 'None.' },
+    CTD: { ops: ['The COUNTER structure.', 'The count to compare (.PRE).', 'The current count (.ACC).'], members: '.CD count down enable, .DN done, .UN underflow, .PRE preset, .ACC count',
+      desc: 'Subtracts 1 from .ACC each time the rung-condition-in goes from false to true. .DN is set while .ACC ≥ .PRE. Often shares its COUNTER with a CTU.',
+      exec: [['Prescan', '.CD is set, so the first scan in Run does not count. ' + RCO_F], ['Rung-condition-in is false', '.CD is cleared. ' + RCO_F], ['Rung-condition-in is true', 'If .CD was clear, .ACC is decremented by 1 (below -2,147,483,648 it wraps and .UN is set). .CD is set. .DN is set while .ACC ≥ .PRE. The rung-condition-out is set to true.'], ['Postscan', '.CD is cleared.']], flags: NOF, faults: 'None.' },
+    RES: { ops: ['The TIMER, COUNTER or CONTROL structure to reset.'], desc: 'Resets a TIMER, COUNTER or CONTROL structure when the rung is true.',
+      exec: ACT('TIMER: .ACC is set to 0 and .EN, .TT, .DN are cleared. COUNTER: .ACC is set to 0 and .CU, .CD, .DN, .OV, .UN are cleared. CONTROL: .POS is set to 0 and the status bits are cleared.'), flags: NOF, faults: 'None.' },
+    EQU: { ops: ['The value to test.', 'The value to compare with.'], desc: 'Tests whether Source A is equal to Source B. With REAL values an exact match is rare; use LIM for a band.', exec: CMP('Source A = Source B'), flags: NOF, faults: 'None.' },
+    NEQ: { ops: ['The value to test.', 'The value to compare with.'], desc: 'Tests whether Source A is not equal to Source B.', exec: CMP('Source A ≠ Source B'), flags: NOF, faults: 'None.' },
+    LES: { ops: ['The value to test.', 'The value to compare with.'], desc: 'Tests whether Source A is less than Source B.', exec: CMP('Source A < Source B'), flags: NOF, faults: 'None.' },
+    LEQ: { ops: ['The value to test.', 'The value to compare with.'], desc: 'Tests whether Source A is less than or equal to Source B.', exec: CMP('Source A ≤ Source B'), flags: NOF, faults: 'None.' },
+    GRT: { ops: ['The value to test.', 'The value to compare with.'], desc: 'Tests whether Source A is greater than Source B.', exec: CMP('Source A > Source B'), flags: NOF, faults: 'None.' },
+    GEQ: { ops: ['The value to test.', 'The value to compare with.'], desc: 'Tests whether Source A is greater than or equal to Source B.', exec: CMP('Source A ≥ Source B'), flags: NOF, faults: 'None.' },
+    LIM: { ops: ['The low limit.', 'The value to test.', 'The high limit.'], desc: 'Tests whether a value is inside a range. When Low Limit ≤ High Limit, the instruction is true while Low Limit ≤ Test ≤ High Limit. When Low Limit > High Limit, it is true while Test is outside the range between them.',
+      exec: CMP('the Test value is within the limits as described'), flags: NOF, faults: 'None.' },
+    MEQ: { ops: ['The value to test.', 'The bits to compare (1 = compare).', 'The value to compare with.'], desc: 'Passes Source and Compare through Mask and tests whether the results are equal. Only the bits that are 1 in Mask are compared.', exec: CMP('(Source AND Mask) = (Compare AND Mask)'), flags: NOF, faults: 'None.' },
+    CMP: { ops: ['A comparison expression, for example (Level * 2) > Max.'], desc: 'Evaluates the comparison written in Expression. Arithmetic operators (+ - * / MOD), comparisons (= <> < <= > >=) and parentheses can be used.', exec: CMP('the expression is true'), flags: NOF, faults: 'A divide by zero inside the expression logs a minor fault.' },
+    ADD: { ops: ['The first value.', 'The value to add.', 'Where the result is stored.'], desc: 'Dest = Source A + Source B.', exec: ACT('Dest is set to Source A + Source B.'), flags: MATHFC, faults: OVF },
+    SUB: { ops: ['The value to subtract from.', 'The value to subtract.', 'Where the result is stored.'], desc: 'Dest = Source A − Source B.', exec: ACT('Dest is set to Source A − Source B.'), flags: MATHFC, faults: OVF },
+    MUL: { ops: ['The first value.', 'The value to multiply by.', 'Where the result is stored.'], desc: 'Dest = Source A × Source B.', exec: ACT('Dest is set to Source A × Source B.'), flags: MATHF, faults: OVF },
+    DIV: { ops: ['The dividend.', 'The divisor.', 'Where the result is stored.'], desc: 'Dest = Source A ÷ Source B. With integer operands the fractional part is truncated; a REAL result stored in an integer Dest is rounded.',
+      exec: ACT('Dest is set to Source A ÷ Source B.'), flags: MATHF, faults: 'Source B = 0 sets S:V and logs a minor fault (type 4, code 4). An integer Dest receives Source A.' },
+    MOD: { ops: ['The dividend.', 'The divisor.', 'Where the remainder is stored.'], desc: 'Dest = the remainder of Source A ÷ Source B.', exec: ACT('Dest is set to the remainder of Source A ÷ Source B.'), flags: MATHF, faults: 'Source B = 0 sets S:V and logs a minor fault (type 4, code 4).' },
+    SQR: { ops: ['The value.', 'Where the square root is stored.'], desc: 'Dest = the square root of Source. The absolute value of Source is used.', exec: ACT('Dest is set to the square root of |Source|.'), flags: MATHF, faults: OVF },
+    NEG: { ops: ['The value.', 'Where the result is stored.'], desc: 'Dest = −Source (changes the sign).', exec: ACT('Dest is set to −Source.'), flags: MATHF, faults: OVF },
+    ABS: { ops: ['The value.', 'Where the result is stored.'], desc: 'Dest = the absolute value of Source.', exec: ACT('Dest is set to |Source|.'), flags: MATHF, faults: OVF },
+    CPT: { ops: ['Where the result is stored.', 'The expression to calculate, for example (A + B) * C / 2.'], desc: 'Calculates the expression and stores the result in Dest.', exec: ACT('Dest is set to the value of the expression.'), flags: MATHF, faults: 'A divide by zero or an overflow sets S:V and logs a minor fault.' },
+    MOV: { ops: ['The value to copy.', 'Where the value is stored.'], desc: 'Copies Source to Dest. A REAL Source stored in an integer Dest is rounded to the nearest whole number (halves to even).', exec: ACT('Dest is set to Source.'), flags: MATHF, faults: OVF },
+    MVM: { ops: ['The value to copy.', 'The bits to copy (1 = copy).', 'Where the bits are stored.'], desc: 'Copies the bits of Source that are 1 in Mask to Dest. The other bits of Dest keep their value.', exec: ACT('Dest is set to (Source AND Mask) OR (Dest AND NOT Mask).'), flags: MATHF, faults: 'None.' },
+    CLR: { ops: ['The value to clear.'], desc: 'Sets Dest to 0.', exec: ACT('Dest is set to 0.'), flags: MATHF, faults: 'None.' },
+    AND: { ops: ['The first value.', 'The second value.', 'Where the result is stored.'], desc: 'Dest = Source A AND Source B, bit by bit.', exec: ACT('Dest is set to Source A AND Source B.'), flags: MATHF, faults: 'None.' },
+    OR: { ops: ['The first value.', 'The second value.', 'Where the result is stored.'], desc: 'Dest = Source A OR Source B, bit by bit.', exec: ACT('Dest is set to Source A OR Source B.'), flags: MATHF, faults: 'None.' },
+    XOR: { ops: ['The first value.', 'The second value.', 'Where the result is stored.'], desc: 'Dest = Source A XOR Source B, bit by bit (1 where the bits differ).', exec: ACT('Dest is set to Source A XOR Source B.'), flags: MATHF, faults: 'None.' },
+    NOT: { ops: ['The value.', 'Where the result is stored.'], desc: 'Dest = the bitwise complement of Source (every bit inverted).', exec: ACT('Dest is set to NOT Source.'), flags: MATHF, faults: 'None.' },
+    BTD: { ops: ['The value that holds the bits.', 'The first bit to copy (0–31).', 'Where the bits are stored.', 'The first bit in Dest (0–31).', 'The number of bits (1–32).'], desc: 'Copies Length bits of Source, starting at Source Bit, into Dest starting at Dest Bit. The other bits of Dest are unchanged.', exec: ACT('The bits are copied.'), flags: NOF, faults: 'None.' },
+    SWPB: { ops: ['The value.', 'REVERSE, WORD or HIGH/LOW.', 'Where the result is stored.'], desc: 'Rearranges the bytes of Source. INT: the two bytes are swapped. DINT: REVERSE reverses the four bytes, WORD swaps the two words, HIGH/LOW swaps the bytes of each word.', exec: ACT('Dest is set to the rearranged value.'), flags: NOF, faults: 'None.' },
+    COP: { ops: ['The first element to copy.', 'The first element to write.', 'The number of Dest elements.'], desc: 'Copies Length elements from Source to Dest. The copy stops at the end of either array.', exec: ACT('The elements are copied.'), flags: NOF, faults: 'None. The length is limited to the end of the arrays.' },
+    FLL: { ops: ['The value to write.', 'The first element to write.', 'The number of elements.'], desc: 'Writes Source into Length elements of Dest.', exec: ACT('The elements are set to Source.'), flags: NOF, faults: 'None. The length is limited to the end of the array.' },
+    JSR: { ops: ['The routine to run.', 'Optional input parameter.'], desc: 'Runs another routine of the same program, then continues with the rest of this rung.', exec: ACT('The routine is scanned, then execution returns here.'), flags: NOF, faults: 'More than 32 nested subroutine calls cause a major fault (type 4, code 31).' },
+    RET: { ops: [], desc: 'Ends the subroutine and returns to the JSR that called it.', exec: ACT('The rest of the routine is skipped and execution returns to the calling JSR.'), flags: NOF, faults: 'None.' },
+    SBR: { ops: [], desc: 'Marks the start of a subroutine that receives parameters. It must be the first instruction of the routine.', exec: ACT('No action.'), flags: NOF, faults: 'None.' },
+    JMP: { ops: ['The label to jump to.'], desc: 'Skips to the rung that starts with the LBL of the same name. The rungs in between are not scanned and their outputs keep their state.', exec: ACT('Execution continues at the matching LBL.'), flags: NOF, faults: 'None.' },
+    LBL: { ops: ['The label name.'], desc: 'The target of a JMP. It must be the first instruction of its rung.', exec: IN('The rung-condition-out is set to true.'), flags: NOF, faults: 'None.' },
+    MCR: { ops: [], desc: 'A pair of MCR instructions makes a zone. When the first MCR is false, the non-retentive outputs inside the zone are turned off. The second MCR, without conditions, ends the zone.', exec: [['Prescan', 'No action.'], ['Rung-condition-in is false', 'The zone is switched; inside a false zone the rungs execute as false.'], ['Rung-condition-in is true', 'The rungs in the zone execute normally.'], ['Postscan', 'No action.']], flags: NOF, faults: 'None.' },
+    AFI: { ops: [], desc: 'Always false. Use it to disable a rung while testing.', exec: [['Prescan', RCO_F], ['Rung-condition-in is false', RCO_F], ['Rung-condition-in is true', RCO_F], ['Postscan', RCO_F]], flags: NOF, faults: 'None.' },
+    NOP: { ops: [], desc: 'No operation. A placeholder that passes the rung condition.', exec: IN('The rung-condition-out is set to true.'), flags: NOF, faults: 'None.' },
+    TND: { ops: [], desc: 'Ends the current scan at this point. The rungs after it are not scanned. Use it for testing.', exec: ACT('The scan of the routine ends here.'), flags: NOF, faults: 'None.' },
+  };
+  // the operand types and formats, by kind of operand
+  const KIND = {
+    bit: ['BOOL', 'tag'], bitw: ['BOOL', 'tag'], timer: ['TIMER', 'tag'], counter: ['COUNTER', 'tag'], struct: ['TIMER, COUNTER, CONTROL', 'tag'],
+    imm: ['DINT', 'immediate'], num: ['SINT, INT, DINT, REAL', 'immediate or tag'], dest: ['SINT, INT, DINT, REAL', 'tag'],
+    int: ['SINT, INT, DINT', 'immediate or tag'], idest: ['SINT, INT, DINT', 'tag'], expr: ['SINT, INT, DINT, REAL', 'expression'],
+    elem: ['SINT, INT, DINT, REAL, structure', 'array tag'], elemw: ['SINT, INT, DINT, REAL, structure', 'array tag'],
+    routine: ['ROUTINE', 'name'], label: ['LABEL', 'name'], order: ['keyword', 'REVERSE, WORD, HIGH/LOW'],
+  };
+  const G = window.MTPS || (window.MTPS = {});
+  G.HELPREF = { R, KIND };
+})();

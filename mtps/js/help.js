@@ -75,7 +75,7 @@
     ADD: { en: ['Dest = A + B.', 'On a true rung. Integer overflow wraps and sets the overflow flag (S:V) and a minor fault.', 'XIC(Tick)ADD(Total,Step,Total);', 'Adding to a running total.'], tl: ['Dest = A + B.', 'Kapag TRUE ang rung. Ang integer overflow ay babalik at magse-set ng S:V at minor fault.', 'XIC(Tick)ADD(Total,Step,Total);', 'Parang pagdagdag sa kabuuan.'] },
     SUB: { en: ['Dest = A − B.', 'On a true rung.', 'SUB(Setpoint,Actual,Error);', 'Finding how much is missing.'], tl: ['Dest = A − B.', 'Kapag TRUE ang rung.', 'SUB(Setpoint,Actual,Error);', 'Parang pagtingin kung gaano pa kulang.'] },
     MUL: { en: ['Dest = A × B.', 'On a true rung.', 'MUL(Count,Price,Amount);', 'Quantity times price.'], tl: ['Dest = A × B.', 'Kapag TRUE ang rung.', 'MUL(Count,Price,Amount);', 'Dami beses presyo.'] },
-    DIV: { en: ['Dest = A ÷ B.', 'Integer results are rounded. Dividing by zero is a minor fault; an integer destination gets Source A.', 'DIV(Total,Count,Average);', 'Sharing equally.'], tl: ['Dest = A ÷ B.', 'Naka-round ang integer. Ang hati sa zero ay minor fault; ang integer na Dest ay magiging Source A.', 'DIV(Total,Count,Average);', 'Parang paghahati nang pantay.'] },
+    DIV: { en: ['Dest = A ÷ B.', 'With integer values the fraction is dropped. Dividing by zero is a minor fault; an integer destination gets Source A.', 'DIV(Total,Count,Average);', 'Sharing equally.'], tl: ['Dest = A ÷ B.', 'Sa integer, tinatanggal ang decimal. Ang hati sa zero ay minor fault; ang integer na Dest ay magiging Source A.', 'DIV(Total,Count,Average);', 'Parang paghahati nang pantay.'] },
     MOD: { en: ['Dest = remainder of A ÷ B.', 'On a true rung.', 'MOD(Count,2,Odd);', 'What is left after sharing equally.'], tl: ['Dest = sukli ng A ÷ B.', 'Kapag TRUE ang rung.', 'MOD(Count,2,Odd);', 'Ang natira matapos maghati.'] },
     SQR: { en: ['Dest = square root of Source.', 'Uses the absolute value of Source.', 'SQR(Area,Side);', 'The side of a square floor from its area.'], tl: ['Dest = square root ng Source.', 'Absolute value ng Source ang ginagamit.', 'SQR(Area,Side);', 'Haba ng gilid ng sahig mula sa sukat nito.'] },
     NEG: { en: ['Dest = −Source.', 'Changes the sign.', 'NEG(Speed,Reverse_Speed);', 'Turning forward into reverse.'], tl: ['Dest = −Source.', 'Binabaliktad ang sign.', 'NEG(Speed,Reverse_Speed);', 'Parang pag-atras mula pasulong.'] },
@@ -104,13 +104,15 @@
   };
   const TIPS = {
     en: [
-      ['Select', 'Click (tap) an instruction or a rung number to select it.'],
-      ['Edit', 'Double-click (double-tap) an instruction to change it, or a rung number to edit the rung as text.'],
-      ['Menu', 'Right-click (long-press) an instruction, a rung, a tree item or a module for its commands.'],
-      ['Add', 'Pick an instruction on the toolbar: it goes after the selection. On a touch screen, hold an instruction, then drag it onto a rung.'],
-      ['Type', 'With a rung selected, type a mnemonic (XIC, TON…) to add it.'],
-      ['Online', 'Who Active picks the controller; Go Online, then Download. Work the inputs in a module\'s I/O window (right-click or long-press the module, or its I/O button).'],
-      ['Tags', 'Controller Tags opens the tag table in a tab: Monitor Tags shows live values, Edit Tags changes the tags.'],
+      ['Select', 'Click (tap) an instruction, an operand inside an instruction, or a rung number.'],
+      ['Edit', 'Double-click (double-tap) an instruction or one of its operands to edit it. Double-click a rung number to edit the rung as text.'],
+      ['Shortcut menu', 'Right-click (long-press) an instruction or operand: Edit, New Tag, Tag Properties, Edit Description, Cut, Copy, Paste, Go To, Cross Reference.'],
+      ['Add instructions', 'Select a rung or instruction, then pick an instruction on the toolbar; it is placed after the selection. On a touch screen, hold an instruction button, then drag it onto the rung. With a rung selected, typing a mnemonic (XIC, TON…) also adds it.'],
+      ['Organizer', 'Click a folder to expand it. Double-click the controller, a task, a program or a routine for its Properties; right-click for its commands.'],
+      ['Go online', 'Who Active selects the emulated controller; then Go Online and Download. The key switch and the mode box set Run, Remote and Program.'],
+      ['Field I/O', 'Click an I/O module in the emulator panel to open the Module I/O window: click an input point to switch it; output points light while they are on.'],
+      ['Emulator panel', 'Fold the panel with its arrow and open it again from its bar. In landscape it can be placed to the right of the ladder or under it.'],
+      ['Tags', 'Logic > Monitor Tags opens the tag table in a tab: Monitor Tags shows live values, Edit Tags changes the tags.'],
     ],
     tl: [
       ['Pumili', 'I-click (i-tap) ang instruction o numero ng rung para mapili.'],

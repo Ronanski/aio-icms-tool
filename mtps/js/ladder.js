@@ -79,9 +79,13 @@
     let y = 8, out = '', taps = '';
     const tagOf = a => (o.tag ? o.tag(String(a || '').split(/[.[]/)[0]) : null);
     const head = e => {
-      if (isBox(e) || !e.a || !e.a.length) return { lines: [], h: 4 };
+      if (!e.a || !e.a.length) return { lines: [], h: 4 };
       const a = e.a[0], lines = [], tag = tagOf(a);
       const dsc = o.desc ? o.desc(a) : tag && tag.desc;
+      if (isBox(e)) {
+        if (dsc) wrapWords(dsc, 2 * CW - 16, fDesc, descLines).forEach(t => lines.push(['ds', t]));
+        return lines.length ? { lines, h: lines.length * LH + 12 } : { lines: [], h: 4 };
+      }
       if (dsc) wrapWords(dsc, CW - 8, fDesc, descLines).forEach(t => lines.push(['ds', t]));
       wrapName(a, CW - 8, fName, 2).forEach(t => lines.push(['nm', t]));
       if (tag && tag.alias && !/[.[]/.test(a)) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
@@ -150,7 +154,7 @@
         const above = [], below = [];
         for (let r = 0; r < nRows; r++) {
           const its = all.filter(it => it.row === r);
-          above.push(Math.max(LH + 6, ...its.map(it => (isBox(it.e) ? 14 : head(it.e).h + 10))));
+          above.push(Math.max(LH + 6, ...its.map(it => (isBox(it.e) ? Math.max(14, head(it.e).h + 4) : head(it.e).h + 10))));
           below.push(Math.max(16, ...its.map(it => (isBox(it.e) ? boxH(it.e) - 6 : 14))));
         }
         const rowY = [];
@@ -205,6 +209,17 @@
           if (f !== null && f !== undefined) out += `<text class="frc" x="${x + 6}" y="${cy + 22}">▸${f ? 'ON' : 'OFF'}</text>`;
           if (e.a && e.a.some(a => a === '?' || a === '')) out += `<rect class="errw" x="${x + 4.5}" y="${cy - 12.5}" width="${w - 9}" height="25" rx="2"/>`;
           taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 28)}"/>`;
+          if (isBox(e)) {
+            const bits = (INSTR[e.t] || {}).bits || [], L = x + 8, Rt = x + w - (bits.length ? 30 : 8);
+            let yy = cy - 9 + 17 + LH + 2;
+            opsOf(e).forEach(([n, , val], i) => {
+              const hgt = (val !== null ? 2 : 1) * (LH + 3);
+              if (isSel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
+              const d = o.desc && e.a[i] ? o.desc(e.a[i]) : '';
+              taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="${i}" x="${L}" y="${yy - LH - 1}" width="${Rt - L}" height="${hgt}">${d ? `<title>${esc(n + ': ' + d)}</title>` : ''}</rect>`;
+              yy += hgt;
+            });
+          }
         });
         y = yy + 2;
       });
