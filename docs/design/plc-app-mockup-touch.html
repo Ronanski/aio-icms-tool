@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MT PLC Studio Touch</title>
+<!-- Mockup of the tablet and phone layouts of MT PLC Studio (docs/PLC_APP_SPEC.md section 3a). Same functionality
+     as the desktop mockup (plc-app-mockup.html), laid out for touch. The ladder runs on the real engine
+     (mtps/js/engine.js). URL: ?dev=phone|tab-l|tab-p&state=ladder|run|menu|add|tag|online|errors|tags|project|edit
+     &theme=dark&scale=1 -->
+<style>
+  :root {
+    --bg: #E9EDF1; --surface: #FFFFFF; --surface-2: #F3F5F8; --surface-3: #E3E8EE;
+    --border: #D5DCE3; --border-strong: #B4BEC9; --text: #17202B; --muted: #5A6675;
+    --accent: #1F64B8; --accent-soft: #DCE8F7; --accent-text: #1A57A3; --fill-accent: #1F64B8;
+    --ok: #1E8E46; --fill-ok: #1E7F3F; --warn: #B87800; --warn-text: #8A5A00; --on-warn: #1A1300; --amber: #F2B200;
+    --danger: #C8362B; --fill-danger: #C0392B;
+    --lad-bg: #FFFFFF; --lad-wire: #3A4350; --lad-on: #1B9E48; --lad-online: #2F6FD0; --lad-desc: #5A6675; --lad-alias: #1A57A3;
+    --scrim: rgba(15, 20, 25, .42); --shadow: 0 8px 28px rgba(15, 20, 25, .22);
+    --ui: Inter, Roboto, "Segoe UI", system-ui, sans-serif; --mono: "JetBrains Mono", Consolas, "Roboto Mono", monospace;
+    --r-sm: 4px; --r: 6px; --r-lg: 8px;
+  }
+  [data-theme="dark"] {
+    --bg: #0F1419; --surface: #171D24; --surface-2: #1D242C; --surface-3: #262E38;
+    --border: #2A333E; --border-strong: #404B58; --text: #E4E9EF; --muted: #93A0AE;
+    --accent: #4C8DFF; --accent-soft: #1A2E4D; --accent-text: #8DB6FF; --fill-accent: #2F6AD6;
+    --ok: #2FB866; --warn: #E0A12A; --warn-text: #E0A12A; --danger: #F0594C;
+    --lad-bg: #12171D; --lad-wire: #AEB8C4; --lad-on: #3DDC75; --lad-online: #6FA3FF; --lad-desc: #93A0AE; --lad-alias: #8DB6FF;
+    --scrim: rgba(0, 0, 0, .55); --shadow: 0 8px 28px rgba(0, 0, 0, .5);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #59626e; font: 13px var(--ui); color: var(--text); }
+  .pick { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 8px 12px; background: #232a33; color: #fff; align-items: center; }
+  .pick b { margin: 0 4px 0 8px; font-weight: 600; }
+  .pick b:first-child { margin-left: 0; }
+  .pick button { font: 12px var(--ui); min-height: 28px; padding: 0 10px; border: 1px solid #4a5563; border-radius: 4px; background: #333d4a; color: #fff; cursor: pointer; }
+  .pick button.on { background: #fff; color: #111; border-color: #fff; }
+  .note { padding: 8px 12px; background: #fffbe6; color: #2b2400; border-bottom: 1px solid #e6d58a; font-size: 12px; line-height: 1.45; }
+  .stage { display: flex; justify-content: center; padding: 16px 12px 24px; overflow: hidden; }
+  .holder { position: relative; flex: none; }
+  .dev { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--bg); color: var(--text); overflow: hidden;
+         border-radius: 18px; box-shadow: 0 0 0 10px #15191f, 0 12px 40px rgba(0,0,0,.45); font: 13px var(--ui); }
+  .dev.phone { border-radius: 28px; font-size: 14px; }
+  .scr { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  button { font: inherit; color: inherit; }
+  svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ib { min-width: 44px; height: 44px; border: 0; background: transparent; border-radius: var(--r); display: inline-grid; place-items: center; cursor: pointer; color: var(--text); }
+  .ib:active, .ib.on { background: var(--surface-3); }
+  .ib.dim { color: var(--muted); opacity: .45; }
+  .phone .ib { min-width: 48px; height: 48px; }
+  .grow { flex: 1; min-width: 0; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+
+  /* ---- shared: status boxes (mode, forces, edits) ---- */
+  .sbox { height: 36px; border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface); display: inline-flex; align-items: center;
+          gap: 6px; padding: 0 8px 0 10px; white-space: nowrap; font-weight: 600; cursor: pointer; }
+  .sbox .cv { width: 16px; height: 16px; }
+  .sbox.run { background: var(--fill-ok); border-color: var(--fill-ok); color: #fff; }
+  .sbox.forces { font-weight: 500; }
+  .sbox .fi { width: 12px; height: 12px; border-radius: 2px; background: var(--surface-3); border: 1px solid var(--border-strong); }
+  .sbox .fi.en { background: var(--amber); border-color: #9a7200; }
+  .sbox .fi.dis { background: #3fbf5f; border-color: #1e7f3f; }
+  .phone .sbox { height: 32px; padding: 0 8px; font-size: 13px; }
+
+  /* ---- tablet ---- */
+  .appbar { height: 56px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+  .appbar .proj { font-weight: 600; font-size: 15px; margin: 0 6px 0 2px; white-space: nowrap; }
+  .appbar .proj small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+  .appbar .vsep { width: 1px; height: 28px; background: var(--border); margin: 0 4px; }
+  .pbtn { height: 40px; padding: 0 14px; border-radius: var(--r); border: 1px solid var(--fill-accent); background: var(--fill-accent); color: #fff; font-weight: 600;
+          display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+  .pbtn.sec { background: var(--surface); color: var(--accent-text); border-color: var(--border-strong); }
+  .pbtn.danger { background: var(--fill-danger); border-color: var(--fill-danger); }
+  .tbody { flex: 1; display: flex; min-height: 0; position: relative; }
+  .drawer { width: 256px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; flex: none; }
+  .drawer.over { position: absolute; left: 0; top: 0; bottom: 0; z-index: 6; box-shadow: var(--shadow); }
+  .dh { height: 40px; display: flex; align-items: center; padding: 0 4px 0 14px; font-weight: 600; border-bottom: 1px solid var(--border); flex: none; }
+  .tree { overflow: auto; padding: 4px 0; flex: 1; }
+  .tree div { height: 40px; display: flex; align-items: center; gap: 6px; padding-right: 10px; white-space: nowrap; cursor: pointer; }
+  .phone .tree div { height: 48px; }
+  .tree .tw { width: 22px; display: grid; place-items: center; color: var(--muted); flex: none; }
+  .tree .tw svg { width: 16px; height: 16px; }
+  .tree .ti { width: 18px; height: 18px; color: var(--muted); }
+  .tree div.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; box-shadow: inset 3px 0 var(--accent); }
+  .tree .fault { margin-left: auto; color: var(--danger); font-size: 12px; font-weight: 600; }
+  .ed { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .rtabs { height: 44px; display: flex; align-items: stretch; background: var(--surface-2); border-bottom: 1px solid var(--border); flex: none; overflow: hidden; }
+  .rtabs .t { padding: 0 16px; display: flex; align-items: center; border-right: 1px solid var(--border); white-space: nowrap; color: var(--muted); }
+  .rtabs .t.on { background: var(--lad-bg); color: var(--text); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
+  .rtabs .ib { margin-left: auto; height: 43px; }
+  .lad { flex: 1; overflow: auto; background: var(--lad-bg); position: relative; -webkit-overflow-scrolling: touch; }
+  .selbar { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; background: var(--surface); border-top: 1px solid var(--border); flex: none; }
+  .selbar .mn { font-weight: 700; font-family: var(--mono); }
+  .selbar .op { font-family: var(--mono); color: var(--accent-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .selbar .ds { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .selbar .pos { color: var(--muted); white-space: nowrap; font-size: 12px; }
+  .ibar { background: var(--surface); border-top: 1px solid var(--border); flex: none; }
+  .ibar .gl { display: flex; gap: 4px; padding: 6px 8px 2px; overflow-x: auto; }
+  .gbtn { width: 52px; height: 48px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); display: grid; place-items: center;
+          align-content: center; gap: 1px; cursor: pointer; flex: none; }
+  .gbtn span { font: 600 10.5px var(--mono); color: var(--muted); }
+  .gbtn svg { width: 30px; height: 18px; }
+  .gbtn.drag { opacity: .35; }
+  .ibar .tabs { display: flex; align-items: center; gap: 2px; padding: 2px 8px 6px; overflow-x: auto; }
+  .chipt { height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid transparent; background: transparent; display: inline-flex; align-items: center; white-space: nowrap;
+           color: var(--muted); cursor: pointer; flex: none; }
+  .chipt.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+  .errh { margin-left: auto; height: 34px; padding: 0 10px; border-radius: 17px; border: 1px solid var(--border-strong); background: var(--surface); display: inline-flex;
+          align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; flex: none; }
+  .errh .n { color: var(--danger); font-weight: 700; }
+
+  /* ---- floating layers ---- */
+  .scrim { position: absolute; inset: 0; background: var(--scrim); z-index: 8; }
+  .pop { position: absolute; z-index: 9; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+  .menu { padding: 6px 0; min-width: 300px; }
+  .pop.fit { max-height: calc(100% - 16px); overflow: auto; }
+  .menu .it { min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 16px; cursor: pointer; white-space: nowrap; }
+  .menu .it .k { margin-left: auto; color: var(--muted); font-size: 12px; font-family: var(--mono); padding-left: 18px; }
+  .menu .it.dis { color: var(--muted); opacity: .5; }
+  .menu .it svg { width: 20px; height: 20px; color: var(--muted); }
+  .menu .it.new { color: var(--accent-text); font-weight: 600; }
+  .menu .it.new svg { color: var(--accent-text); }
+  .menu hr { border: 0; border-top: 1px solid var(--border); margin: 6px 0; }
+  .menu .hd { padding: 8px 16px 4px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 9; background: var(--surface); border-radius: 16px 16px 0 0; box-shadow: var(--shadow);
+           display: flex; flex-direction: column; max-height: 86%; }
+  .sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--border-strong); margin: 8px auto 4px; flex: none; }
+  .sheet .sh { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px 16px; flex: none; }
+  .sheet .sh b { font-size: 16px; }
+  .sheet .sb { overflow: auto; flex: 1; }
+  .ctx { padding: 0 16px 8px; font-family: var(--mono); color: var(--muted); font-size: 13px; flex: none; }
+  .field { height: 44px; border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface); display: flex; align-items: center; gap: 8px; padding: 0 10px; }
+  .field.focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .field .cur { width: 1.5px; height: 20px; background: var(--accent); margin-left: -6px; }
+  .phone .field { height: 48px; }
+  .fchips { display: flex; gap: 6px; padding: 10px 16px; overflow-x: auto; flex: none; }
+  .fchip { height: 34px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 17px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: none; }
+  .fchip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .list .row { min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 6px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .list .row.on { background: var(--accent-soft); }
+  .list .row .nm { font-family: var(--mono); font-weight: 600; }
+  .list .row .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .list .row .ty { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--surface-3); border-radius: var(--r-sm); padding: 2px 6px; white-space: nowrap; }
+  .list .row .val { margin-left: auto; font-family: var(--mono); font-weight: 600; min-width: 40px; text-align: right; }
+  .list .row .val.on { color: var(--ok); }
+  .list .row .exp { width: 22px; color: var(--muted); }
+  .list .grp { padding: 14px 16px 6px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; background: var(--surface-2); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; padding: 4px 16px 16px; }
+  .tile { min-height: 76px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-2); display: grid; justify-items: center; align-content: center;
+          gap: 4px; padding: 6px; text-align: center; cursor: pointer; }
+  .tile svg { width: 40px; height: 22px; }
+  .tile b { font: 700 13px var(--mono); }
+  .tile small { font-size: 11px; color: var(--muted); line-height: 1.2; }
+  .errline { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); align-items: flex-start; cursor: pointer; }
+  .errline .x { color: var(--danger); flex: none; margin-top: 1px; }
+  .errline .w { color: var(--warn); }
+  .errline .tx { font-family: var(--mono); font-size: 12.5px; line-height: 1.45; }
+  .errline .go { margin-left: auto; color: var(--accent-text); white-space: nowrap; font-weight: 600; flex: none; }
+  .echips { display: flex; gap: 6px; padding: 0 16px 10px; flex: none; }
+  .echip { height: 32px; padding: 0 10px; border-radius: 16px; border: 1px solid var(--border-strong); display: inline-flex; align-items: center; gap: 6px; }
+  .echip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .cmpl { border-bottom: 1px solid var(--border); padding: 10px 16px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+
+  /* ---- phone ---- */
+  .abar { height: 28px; display: flex; align-items: center; padding: 0 18px; font-size: 12px; font-weight: 600; flex: none; background: var(--surface); }
+  .abar .r { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .strip { height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; }
+  .strip .warn { margin-left: auto; height: 32px; padding: 0 10px; border-radius: 16px; background: #fbe4e1; color: var(--fill-danger); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  [data-theme="dark"] .strip .warn { background: #3b1d1a; color: #ff8a80; }
+  .pbar { height: 52px; display: flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+  .pbar .rt { display: flex; align-items: center; gap: 2px; font-weight: 600; font-size: 16px; padding: 0 8px; height: 48px; border-radius: var(--r); white-space: nowrap; min-width: 0; }
+  .pbar .rt .tt { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+  .pbar .rt small { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .pbar .rt svg { width: 18px; height: 18px; color: var(--muted); }
+  .fab { position: absolute; right: 16px; width: 56px; height: 56px; border-radius: 16px; border: 0; background: var(--fill-accent); color: #fff; display: grid; place-items: center;
+         box-shadow: 0 6px 16px rgba(20, 60, 120, .35); z-index: 4; cursor: pointer; }
+  .fab svg { width: 26px; height: 26px; stroke-width: 2.2; }
+  .pnav { height: 68px; display: flex; background: var(--surface); border-top: 1px solid var(--border); flex: none; padding-bottom: 4px; }
+  .pnav div { flex: 1; display: grid; justify-items: center; align-content: center; gap: 3px; font-size: 12px; color: var(--muted); cursor: pointer; position: relative; }
+  .pnav div .pill { width: 56px; height: 30px; border-radius: 15px; display: grid; place-items: center; }
+  .pnav div.on { color: var(--text); font-weight: 700; }
+  .pnav div.on .pill { background: var(--accent-soft); color: var(--accent-text); }
+  .pnav .bd { position: absolute; top: 6px; left: calc(50% + 8px); min-width: 18px; height: 18px; border-radius: 9px; background: var(--fill-danger); color: #fff; font-size: 11px;
+              font-weight: 700; display: grid; place-items: center; padding: 0 4px; }
+  .gest { height: 18px; display: grid; place-items: center; background: var(--surface); flex: none; }
+  .gest i { width: 120px; height: 4px; border-radius: 2px; background: var(--text); opacity: .7; }
+  .page { flex: 1; overflow: auto; background: var(--bg); min-height: 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); margin: 12px; overflow: hidden; }
+  .card .ch { display: flex; align-items: center; gap: 8px; padding: 12px 14px 4px; font-weight: 700; }
+  .card .cb { padding: 6px 14px 14px; }
+  .leds4 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .leds4 div { display: flex; align-items: center; gap: 8px; }
+  .led { width: 14px; height: 10px; border-radius: 2px; background: #c9ced5; border: 1px solid #8d96a1; flex: none; }
+  .led.g { background: #2ecc40; border-color: #1e7f3f; }
+  .led.y { background: var(--amber); }
+  .seg { display: flex; border: 1px solid var(--border-strong); border-radius: var(--r); overflow: hidden; height: 44px; }
+  .seg span { flex: 1; display: grid; place-items: center; border-right: 1px solid var(--border-strong); font-weight: 600; color: var(--muted); }
+  .seg span:last-child { border-right: 0; }
+  .seg span.on { background: var(--fill-accent); color: #fff; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .kv:last-child { border-bottom: 0; }
+  .kv .v { font-family: var(--mono); text-align: right; }
+  .brow { display: flex; gap: 8px; margin-top: 12px; }
+  .brow .pbtn { flex: 1; justify-content: center; height: 48px; }
+  .pts { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .pt { display: grid; justify-items: center; gap: 3px; font: 11px var(--mono); color: var(--muted); }
+  .pt i { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border-strong); background: var(--surface-2); display: grid; place-items: center; font-style: normal; }
+  .pt i.on { background: #2ecc40; border-color: #1e7f3f; }
+  .pt i.lamp.on { background: #ffd23f; border-color: #a68300; box-shadow: 0 0 10px #ffd23f; }
+  .pt i.pb { border-radius: 8px; }
+  .toggle { width: 44px; height: 26px; border-radius: 13px; background: var(--surface-3); border: 1px solid var(--border-strong); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .toggle.on { background: var(--amber); border-color: #9a7200; }
+  .toggle.on::after { left: 20px; }
+  .tsheet { position: absolute; z-index: 9; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+  .full { position: absolute; inset: 0; z-index: 9; background: var(--surface); display: flex; flex-direction: column; }
+  .seg2 { display: flex; background: var(--surface-3); border-radius: 18px; padding: 3px; margin: 8px 16px; flex: none; }
+  .seg2 span { flex: 1; height: 34px; display: grid; place-items: center; border-radius: 15px; color: var(--muted); font-weight: 600; }
+  .seg2 span.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .ghost { position: absolute; z-index: 7; width: 60px; height: 52px; border-radius: var(--r); background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow);
+           display: grid; place-items: center; align-content: center; gap: 2px; transform: rotate(-3deg); }
+  .ghost svg { width: 34px; height: 20px; }
+  .ghost span { font: 700 11px var(--mono); color: var(--accent-text); }
+  .hint { position: absolute; z-index: 7; background: #17202b; color: #fff; border-radius: var(--r); padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+
+  /* ---- ladder (SVG) ---- */
+  svg.l { display: block; user-select: none; -webkit-user-select: none; touch-action: pan-x pan-y pinch-zoom; }
+  svg.l text { font-family: Arial, Roboto, Helvetica, sans-serif; fill: var(--text); }
+  svg.l .nm { font-size: 12px; }
+  svg.l .ds { font-size: 11px; fill: var(--lad-desc); }
+  svg.l .al { font-size: 11px; fill: var(--lad-alias); }
+  svg.l .cm { font-size: 12px; fill: var(--lad-alias); }
+  svg.l .rn { font-size: 12px; fill: var(--muted); }
+  svg.l .w, svg.l .rail { stroke: var(--lad-wire); stroke-width: 1; shape-rendering: crispEdges; fill: none; }
+  svg.l.online .w, svg.l.online .rail { stroke: var(--lad-online); }
+  svg.l.run .rail { stroke: var(--lad-on); stroke-width: 3; }
+  svg.l .rail.ed { stroke: var(--lad-online); stroke-width: 1; }
+  svg.l .g { stroke: var(--lad-wire); stroke-width: 1; fill: none; shape-rendering: crispEdges; }
+  svg.l .g.cv { shape-rendering: geometricPrecision; }
+  svg.l .bar { fill: var(--lad-on); }
+  svg.l .bx { fill: var(--lad-bg); stroke: var(--lad-wire); shape-rendering: crispEdges; }
+  svg.l .bxh { fill: var(--surface-3); stroke: var(--lad-wire); shape-rendering: crispEdges; }
+  svg.l .bt { font-size: 11px; fill: var(--muted); }
+  svg.l .bv { font-size: 12px; font-family: var(--mono); }
+  svg.l .sel { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  svg.l .rsel { fill: var(--fill-accent); }
+  svg.l .rsel + text { fill: #fff; }
+  svg.l .err { fill: var(--danger); font-size: 15px; font-weight: 700; }
+  svg.l .errw { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 3 2; fill: none; }
+  svg.l .frc { fill: #c76a00; font-size: 10px; font-weight: 700; }
+  svg.l .mk { fill: var(--lad-online); font-size: 11px; font-family: var(--mono); }
+  svg.l .wrap { fill: var(--lad-wire); }
+  svg.l .tap { fill: transparent; cursor: pointer; }
+  svg.l .press { fill: var(--accent); opacity: .16; }
+  svg.l .drop { stroke: var(--accent); stroke-width: 3; }
+  svg.l .dropz { fill: var(--accent-soft); stroke: var(--accent); stroke-dasharray: 4 3; }
+</style>
+</head>
+<body>
+<div class="pick" id="pick"></div>
+<div class="note" id="note"></div>
+<div class="stage" id="stage"><div class="holder" id="holder"><div class="dev" id="dev"></div></div></div>
+<script src="../../mtps/js/engine.js"></script>
+<script>
+'use strict';
+/* ---------------- project (the same demo as the desktop mockup) ---------------- */
+const B = (name, desc, alias, value) => (alias ? { name, alias, desc } : { name, type: 'BOOL', desc, value });
+const TAGS = [
+  B('Start_PB', 'S1 START PB', 'Local:1:I.Data.0'), B('Stop_PB', 'S0 STOP PB (NC)', 'Local:1:I.Data.1'),
+  B('OL_OK', 'F1 OVERLOAD OK (NC)', 'Local:1:I.Data.2'), B('Motor_Run', 'Motor running (seal-in)'),
+  { name: 'Run_Timer', type: 'TIMER', desc: 'Run delay' }, B('Run_Lamp', 'H1 RUN LAMP', 'Local:2:O.Data.1'),
+  B('Motor_Cmd', 'KM1 MOTOR CONTACTOR', 'Local:2:O.Data.0'), B('Fault_Rst', 'Fault reset (HMI)'), B('Start_ONS', ''),
+  { name: 'Start_Count', type: 'COUNTER', desc: 'Motor starts' },
+  B('Auto_Mode', 'Selector in AUTO', null, 1), B('Door_Closed', 'Panel door closed', null, 1), B('Air_OK', 'Air pressure OK', null, 1),
+  B('Guard_OK', 'Guard closed', null, 1), B('EStop_Active', 'E-stop pressed'), B('Lube_OK', '', null, 1), B('Temp_OK', '', null, 1),
+  B('Level_OK', '', null, 1), B('Pressure_OK', '', null, 1), B('Fault_Active', 'Any fault'), B('Conveyor_Ready', '', null, 1), B('Ready', 'Machine ready'),
+];
+const RUNGS = [
+  { c: 'Motor start / stop with seal-in. S0 STOP and F1 OVERLOAD are wired N.C.', t: '[XIC(Start_PB),XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);' },
+  { c: 'Run lamp 5 s after the motor starts.', t: 'XIC(Motor_Run)TON(Run_Timer,5000,0);' },
+  { t: 'XIC(Run_Timer.DN)OTE(Run_Lamp);' },
+  { t: 'XIC(Motor_Run)OTE(Motor_Cmd);' },
+  { c: 'Count motor starts.', t: 'XIC(Motor_Run)ONS(Start_ONS)CTU(Start_Count,9999,0);' },
+  { c: 'Machine ready when every permissive is made. A long rung wraps to the next row.',
+    t: 'XIC(Auto_Mode)XIC(Door_Closed)XIC(Air_OK)XIC(Guard_OK)XIO(EStop_Active)XIC(Lube_OK)XIC(Temp_OK)XIC(Level_OK)XIC(Pressure_OK)XIO(Fault_Active)XIC(Conveyor_Ready)OTE(Ready);' },
+  { t: 'XIC(Fault_Rst)OTE(Alarm_Horn);' },
+];
+const project = (extraTags, extraRungs) => ({
+  format: 'mt-plc-studio', version: 1, controller: { name: 'Motor_Demo', type: 'PLC-CPU', rev: '1.0' },
+  rack: { size: 10, modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
+  dataTypes: [], tags: TAGS.concat(extraTags || []),
+  tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: 'MainRoutine', tags: [],
+    routines: [{ name: 'MainRoutine', rungs: RUNGS.concat(extraRungs || []) }] }] }],
+});
+// offline: Alarm_Horn is not a tag yet and the last rung has empty operands, as in the desktop mockup
+const OFFLINE = project([], [{ t: 'XIC(?)OTE(?);' }]);
+const ONLINE = project([B('Alarm_Horn', 'H2 ALARM HORN', 'Local:2:O.Data.2')]);
+const VERIFY = MTPS.verify(OFFLINE);
+const TAG = Object.fromEntries(TAGS.concat([B('Alarm_Horn', 'H2 ALARM HORN', 'Local:2:O.Data.2')]).map(t => [t.name.toUpperCase(), t]));
+
+/* the built-in controller, online in Rem Run: S0 and F1 healthy, S1 pressed for a moment */
+const ctl = new MTPS.Controller();
+ctl.download(ONLINE);
+ctl.setMode('remrun');
+let field = 0b110, pressT = 0.05, simT = 0;
+for (let k = 0; k < 120; k++) { simT += .01; ctl.setInputs(1, simT >= pressT && simT < pressT + .3 ? 0b111 : 0b110); ctl.advance(10); }
+
+/* ---------------- states ---------------- */
+const DEVS = { phone: { w: 390, h: 844, n: 'Phone 390 × 844' }, 'tab-l': { w: 1024, h: 768, n: 'Tablet landscape 1024 × 768' }, 'tab-p': { w: 768, h: 1024, n: 'Tablet portrait 768 × 1024' } };
+const STATES = {
+  ladder: ['Offline · errors', 'Offline. Rung 6 uses <b>Alarm_Horn</b>, not a tag yet, and rung 7 has empty <b>?</b> operands: a red ⊗ in the margin and the error count in the status strip / Errors handle (the real Verify of the engine). Tap selects (Start_PB, light-blue box); the selected-instruction bar shows it. Double-tap edits.'],
+  run: ['Online · Rem Run', 'Online in Rem Run on the built-in controller (the real engine scans every 10 ms). Rails thick green; rung wire stays thin blue; a true instruction gets short green bars on both sides of its glyph, as checked in the reference. Tap <b>Start_PB</b> to press S1 again.'],
+  menu: ['Long-press menu', 'Long-press on an instruction opens the same menu as the desktop right-click: same items, same order, same greying (Toggle Bit and Force greyed offline). Phone: bottom sheet. Tablet: popup at the finger.'],
+  add: ['Add instruction', 'Phone: the + button opens the instruction picker (tabs of the instruction toolbar, search; the new instruction goes after the selected one). Tablet: tap a glyph button to insert at the selection, or drag it; the drop target shows while dragging.'],
+  tag: ['Edit operand / New Tag', 'Double-tap the operand: the tag browser with search, type filter (BOOL for XIC) and scope. The typed name does not exist, so <b>New "Start_PB2"</b> is the first row. Phone: full screen. Tablet: a sheet under the operand.'],
+  online: ['Controller / online menu', 'Phone: the Controller page — LEDs, key switch, mode, path, Who Active / Go Online / Download, forces, and the I/O panel (inputs and output lamps). Tablet: the mode box ▾ menu, as on the desktop.'],
+  errors: ['Errors', 'The Errors pane with the same chips and lines (Verify of the engine). Tap a line to go to its rung and instruction. Phone: More → Errors. Tablet: bottom sheet from the Errors handle.'],
+  tags: ['Tags', 'Monitor Tags / Edit Tags as one list with a switch; structures expand. Online, BOOL values toggle and values can be typed. Phone: the Tags page. Tablet: a large sheet.'],
+  project: ['Project (Organizer)', 'The Controller Organizer: tasks, programs, routines, data types, I/O configuration. Phone: the Project page. Tablet: a drawer, pinned in landscape and sliding over the ladder in portrait.'],
+  edit: ['Online edit', 'Online edit in progress on rung 2: the copy you edit sits above with a dashed rail and an <b>e</b> column; the running rung keeps an <b>r</b> column. Accept / Test / Assemble are in the Edits menu and the rung long-press sheet.'],
+};
+const q = new URLSearchParams(location.search);
+let dev = DEVS[q.get('dev')] ? q.get('dev') : 'phone', state = STATES[q.get('state')] ? q.get('state') : 'ladder';
+let theme = q.get('theme') === 'dark' ? 'dark' : 'light';
+const fixedScale = q.get('scale') ? +q.get('scale') : 0;
+let sel = { ri: 0, path: [0, 0, 0] };   // Start_PB, first leg of the branch
+
+/* ---------------- icons (one monoline set, 24 px grid) ---------------- */
+const IC = {
+  menu: 'M4 7h16M4 12h16M4 17h16', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3', redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
+  check: 'M5 12.5 10 17 19 7', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4', more: 'M12 5.5v.01M12 12v.01M12 18.5v.01',
+  moreh: 'M5.5 12h.01M12 12h.01M18.5 12h.01', plus: 'M12 5v14M5 12h14', back: 'M15 5l-7 7 7 7', close: 'M6 6l12 12M18 6 6 18',
+  down: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6', ladder: 'M5 3v18M19 3v18M5 8h4M15 8h4M9 5v6M15 5v6M5 16h14',
+  tag: 'M3 12V4h8l10 10-8 8L3 12zM7.5 8.5h.01', chip: 'M7 7h10v10H7zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4',
+  tree: 'M4 5h6M4 5v14M4 12h6M4 19h6M14 5h6M14 12h6M14 19h6', warn: 'M12 4l9 16H3L12 4zM12 10v4M12 17v.01',
+  link: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5', toggle: 'M8 7h8a5 5 0 0 1 0 10H8A5 5 0 0 1 8 7zM8 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  cut: 'M6 7a2 2 0 1 0 0-.01M6 17a2 2 0 1 0 0 .01M8 8l12 10M8 16 20 6', copy: 'M8 8h11v11H8zM5 15V5h10', paste: 'M9 4h6v3H9zM7 5H5v15h14V5h-2',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3', edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4', text: 'M5 7h14M5 12h14M5 17h9',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.01', force: 'M13 3 6 13h5l-1 8 7-10h-5l1-8z',
+  xref: 'M4 6h10M4 12h16M4 18h10M18 4v4M16 6h4', goto: 'M5 12h12M13 6l6 6-6 6', newtag: 'M3 12V4h8l10 10-8 8L3 12zM16 2v6M13 5h6',
+  online: 'M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v8', play: 'M7 5l12 7-12 7z', stop: 'M7 7h10v10H7z', download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  wifi: 'M3 9a14 14 0 0 1 18 0M6.5 12.5a9 9 0 0 1 11 0M10 16a4 4 0 0 1 4 0', batt: 'M4 8h14v8H4zM20 11v2', drag: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
+  folder: 'M3 6h6l2 2h10v11H3z', file: 'M6 3h8l4 4v14H6zM14 3v4h4', task: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2', rack: 'M3 5h18v14H3zM7 5v14M11 5v14M15 5v14',
+  type: 'M5 5h14M12 5v14', prog: 'M4 5h16v14H4zM4 9h16',
+};
+const ic = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24"><path d="${IC[n]}"/></svg>`;
+/* instruction glyph, for the toolbar, the picker and the drag ghost */
+function glyph(mn) {
+  const s = 'stroke="currentColor" stroke-width="1.5" fill="none"';
+  const W = 'M0 9h10M20 9h10';
+  const con = `<path d="${W}M10 2v14M20 2v14" ${s}/>`;
+  const coil = l => `<path d="${W}" ${s}/><path d="M12 2c-4 3-4 11 0 14M18 2c4 3 4 11 0 14" ${s}/>${l ? `<text x="15" y="12.5" font-size="8" text-anchor="middle" fill="currentColor" font-family="Arial">${l}</text>` : ''}`;
+  const box = `<path d="M0 9h4M26 9h4" ${s}/><rect x="4" y="2" width="22" height="14" ${s}/>`;
+  let b;
+  if (mn === 'XIC') b = con; else if (mn === 'XIO') b = con + `<path d="M12 15 18 3" ${s}/>`;
+  else if (mn === 'OTE') b = coil(''); else if (mn === 'OTL') b = coil('L'); else if (mn === 'OTU') b = coil('U');
+  else if (mn === 'BR') b = `<path d="M0 5h30M6 5v9h18V5" ${s}/>`; else if (mn === 'RUNG') b = `<path d="M2 1v16M28 1v16M2 9h26" ${s}/>`;
+  else b = box + `<text x="15" y="12" font-size="6.5" text-anchor="middle" fill="currentColor" font-family="Arial" font-weight="700">${mn.slice(0, 4)}</text>`;
+  return `<svg viewBox="0 0 30 18">${b}</svg>`;
+}
+const TABS = {
+  Favorites: ['RUNG', 'BR', 'XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU'],
+  Bit: ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'OSR', 'OSF'],
+  'Timer/Counter': ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES'],
+  Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
+  'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
+  'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
+  'File/Misc': ['COP', 'FLL'],
+  'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
+};
+const NAMES = Object.fromEntries(Object.entries(MTPS.INSTR).map(([k, v]) => [k, v.name]));
+NAMES.RUNG = 'New rung'; NAMES.BR = 'Branch';
+
+/* ---------------- ladder layout and drawing ---------------- */
+const meas = document.createElement('canvas').getContext('2d');
+const tw = (s, f) => { meas.font = f; return meas.measureText(s).width; };
+// a tag name wraps at : _ . to fit the cell, at most 2 lines
+function wrapName(s, w, font, max = 2) {
+  if (tw(s, font) <= w) return [s];
+  const parts = s.split(/(?<=[:_.])/), out = [];
+  let cur = '';
+  for (const p of parts) { if (cur && tw(cur + p, font) > w) { out.push(cur); cur = p; } else cur += p; }
+  if (cur) out.push(cur);
+  if (out.length > max) { out.length = max; out[max - 1] = out[max - 1].replace(/.?$/, '…'); }
+  return out.map(l => { while (tw(l, font) > w && l.length > 2) l = l.slice(0, -2) + '…'; return l; });
+}
+function wrapWords(s, w, font, max) {
+  const out = [];
+  let cur = '';
+  for (const word of s.split(' ')) { const t = cur ? cur + ' ' + word : word; if (tw(t, font) > w && cur) { out.push(cur); cur = word; } else cur = t; }
+  if (cur) out.push(cur);
+  if (out.length > max) { out.length = max; out[max - 1] += '…'; }
+  return out;
+}
+const isBox = e => MTPS.INSTR[e.t] && MTPS.INSTR[e.t].k === 'box';
+const isOut = e => e.t === 'BR' ? e.legs.every(l => l.length && isOut(l[l.length - 1])) : !!(MTPS.INSTR[e.t] && MTPS.INSTR[e.t].out);
+const widthOf = e => e.t === 'BR' ? Math.max(1, ...e.legs.map(l => l.reduce((s, x) => s + widthOf(x), 0))) : isBox(e) ? 2 : 1;
+
+/* rungs: [{ elems, c, err, mark }]; o: { W, cell, live, run, sel, press, drop, forced } → svg string */
+function ladderSVG(rungs, o) {
+  const LM = o.cell < 100 ? 30 : 38, cols = Math.max(3, Math.floor((o.W - LM - 6) / o.cell)), RR = LM + cols * o.cell, CW = o.cell;
+  const fName = '12px Arial', fDesc = '11px Arial';
+  const descLines = o.cell < 100 ? 1 : 2;
+  let y = 6, out = '', tapAreas = '';
+  // the text block above a bit instruction: description, tag name, <alias>
+  const head = e => {
+    if (isBox(e) || !e.a || !e.a.length) return { lines: [], h: 4 };
+    const a = e.a[0], tag = TAG[String(a).split('.')[0].toUpperCase()], lines = [];
+    if (tag && tag.desc) wrapWords(tag.desc, CW - 8, fDesc, descLines).forEach(t => lines.push(['ds', t]));
+    wrapName(a, CW - 8, fName).forEach(t => lines.push(['nm', t]));
+    if (tag && tag.alias && !a.includes('.')) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
+    return { lines, h: lines.length * 13 + 6 };
+  };
+  const boxRows = e => (e.a || []).length + (e.t === 'TON' || e.t === 'CTU' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTD' ? 0 : 0);
+  const boxH = e => 22 + boxRows(e) * 16;
+  /* place a sequence on the grid: items { e, col, row, path } and branches { col, w, rows[], ends[] } */
+  function place(arr, col, row, items, brs, path) {
+    let c = col, rows = 1;
+    arr.forEach((e, k) => {
+      const p = path.concat(k);
+      if (e.t === 'BR') {
+        const w = widthOf(e), legRows = [], ends = [];
+        let r = row;
+        e.legs.forEach((leg, li) => {
+          legRows.push(r);
+          const res = place(leg, c, r, items, brs, p.concat(li));
+          ends.push(res.end);
+          r += res.rows;
+        });
+        brs.push({ col: c, w, rows: legRows, ends });
+        rows = Math.max(rows, r - row);
+        c += w;
+      } else { items.push({ e, col: c, row, path: p }); c += isBox(e) ? 2 : 1; }
+    });
+    return { end: c, rows };
+  }
+  rungs.forEach((R, ri) => {
+    const elems = R.elems || [];
+    // trailing outputs go against the right rail; the inputs wrap row by row, a branch is never split
+    let split = elems.length;
+    while (split > 0 && isOut(elems[split - 1])) split--;
+    if (split === elems.length && elems.length) split = elems.length - 1;
+    const ins = elems.slice(0, split), outs = elems.slice(split);
+    const outW = outs.reduce((s, e) => s + widthOf(e), 0);
+    const lines = [[]];
+    let used = 0;
+    ins.forEach(e => { const w = widthOf(e); if (used + w > cols - (lines.length ? 0 : 0) && lines[lines.length - 1].length) { lines.push([]); used = 0; } lines[lines.length - 1].push(e); used += w; });
+    if (used + outW > cols) lines.push([]);
+    const top0 = y;
+    // rung comment: plain blue text above the rung, centred
+    if (R.c) {
+      const cl = wrapWords(R.c, RR - LM - 20, '12px Arial', 3);
+      cl.forEach((t, i) => { out += `<text class="cm" x="${(LM + RR) / 2}" y="${y + 13 + i * 15}" text-anchor="middle">${esc(t)}</text>`; });
+      y += cl.length * 15 + 6;
+    }
+    const rungTop = y;
+    lines.forEach((line, li) => {
+      const last = li === lines.length - 1, items = [], brs = [];
+      // input index offset in the whole rung so selection paths stay the same after wrapping
+      const base = ins.indexOf(line[0]) >= 0 ? ins.indexOf(line[0]) : ins.length;
+      const pr = place(line, 0, 0, items, brs, []);
+      items.forEach(it => { it.path[0] += base; });
+      let outItems = [], outBrs = [];
+      if (last) {
+        const po = place(outs, cols - outW, 0, outItems, outBrs, []);
+        outItems.forEach(it => { it.path[0] += split; });
+        void po;
+      }
+      const all = items.concat(outItems), allBr = brs.concat(outBrs);
+      const nRows = Math.max(1, ...all.map(it => it.row + 1), ...allBr.map(b => b.rows[b.rows.length - 1] + 1));
+      // each grid row: text above the wire, the glyph or box below
+      const rowAbove = [], rowBelow = [];
+      for (let r = 0; r < nRows; r++) {
+        const its = all.filter(it => it.row === r);
+        rowAbove.push(Math.max(18, ...its.map(it => isBox(it.e) ? 14 : head(it.e).h + 10)));
+        rowBelow.push(Math.max(16, ...its.map(it => isBox(it.e) ? boxH(it.e) - 8 : 14)));
+      }
+      const rowY = []; let yy = y;
+      for (let r = 0; r < nRows; r++) { rowY.push(yy + rowAbove[r]); yy += rowAbove[r] + rowBelow[r] + 4; }
+      const X = col => LM + col * CW;
+      const wy = rowY[0];
+      // wire of the main row from the left rail to the outputs
+      const endIn = pr.end, startOut = last ? cols - outW : cols;
+      if (li > 0) out += `<path class="wrap" d="M${LM + 3} ${wy - 5}l6 5-6 5z"/>`;
+      out += `<line class="w" x1="${LM}" y1="${wy + .5}" x2="${X(Math.max(endIn, 0))}" y2="${wy + .5}"/>`;
+      if (last) out += `<line class="w" x1="${X(endIn)}" y1="${wy + .5}" x2="${X(startOut)}" y2="${wy + .5}"/>`;
+      else { out += `<line class="w" x1="${X(endIn)}" y1="${wy + .5}" x2="${RR - 12}" y2="${wy + .5}"/><path class="wrap" d="M${RR - 12} ${wy - 5}l6 5-6 5z"/>`; }
+      if (last && outs.length > 1) out += `<line class="w" x1="${X(startOut)}" y1="${wy + .5}" x2="${RR}" y2="${wy + .5}"/>`;
+      // branches: legs start and end at the same columns, a short leg is filled with wire
+      allBr.forEach(b => {
+        const x1 = X(b.col), x2 = X(b.col + b.w), ys = b.rows.map(r => rowY[r]);
+        b.rows.forEach((r, k) => { if (k) out += `<line class="w" x1="${X(b.ends[k])}" y1="${ys[k] + .5}" x2="${x2}" y2="${ys[k] + .5}"/><line class="w" x1="${x1}" y1="${ys[k] + .5}" x2="${x1 + 1}" y2="${ys[k] + .5}"/>`; });
+        out += `<line class="w" x1="${x1 + .5}" y1="${ys[0]}" x2="${x1 + .5}" y2="${ys[ys.length - 1]}"/><line class="w" x1="${x2 + .5}" y1="${ys[0]}" x2="${x2 + .5}" y2="${ys[ys.length - 1]}"/>`;
+      });
+      all.forEach(it => {
+        const e = it.e, x = X(it.col), w = (isBox(e) ? 2 : 1) * CW, cy = rowY[it.row], cx = x + w / 2;
+        const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, it.path);
+        const isPress = o.press && o.press.ri === ri && same(o.press.path, it.path);
+        const h = head(e);
+        if (isSel) out += `<rect class="sel" x="${x + 2.5}" y="${cy - h.h - 6.5}" width="${w - 5}" height="${h.h + 26}" rx="3"/>`;
+        if (isPress) out += `<circle class="press" cx="${cx}" cy="${cy}" r="${CW * .42}"/>`;
+        // text above the instruction
+        h.lines.forEach(([k, t], i) => { out += `<text class="${k}" x="${cx}" y="${cy - h.h + 4 + i * 13}" text-anchor="middle">${esc(t)}</text>`; });
+        const on = o.live && e.v;
+        if (isBox(e)) out += boxSVG(e, x, cy, w, on, o);
+        else {
+          const g = 7, k = e.t;
+          out += `<line class="w" x1="${x}" y1="${cy + .5}" x2="${cx - g}" y2="${cy + .5}"/><line class="w" x1="${cx + g}" y1="${cy + .5}" x2="${x + w}" y2="${cy + .5}"/>`;
+          if (k === 'XIC' || k === 'XIO' || k === 'ONS' || k === 'AFI' || k === 'LBL') {
+            out += `<path class="g" d="M${cx - g + .5} ${cy - 8}v17M${cx + g - .5} ${cy - 8}v17"/>`;
+            if (k === 'XIO') out += `<path class="g cv" d="M${cx - 4} ${cy + 7}l8 -15"/>`;
+            if (k === 'ONS') out += `<text class="bt" x="${cx}" y="${cy + 22}" text-anchor="middle">ONS</text>`;
+          } else {
+            out += `<path class="g cv" d="M${cx - 3} ${cy - 8}c-6 4-6 13 0 17M${cx + 3} ${cy - 8}c6 4 6 13 0 17"/>`;
+            const lb = MTPS.INSTR[k] && MTPS.INSTR[k].lbl;
+            if (lb && lb.length === 1) out += `<text class="nm" x="${cx}" y="${cy + 4}" text-anchor="middle">${lb}</text>`;
+            else if (lb) out += `<text class="bt" x="${cx}" y="${cy + 22}" text-anchor="middle">${lb}</text>`;
+          }
+          // a true instruction: short thick green bars on both sides of the glyph (checked in the reference)
+          if (on) out += `<rect class="bar" x="${cx - g - 15}" y="${cy - 1.5}" width="11" height="4"/><rect class="bar" x="${cx + g + 4}" y="${cy - 1.5}" width="11" height="4"/>`;
+          if (o.forced && e.a && o.forced[e.a[0]] != null) out += `<text class="frc" x="${x + 6}" y="${cy + 21}">▸${o.forced[e.a[0]] ? 'ON' : 'OFF'}</text>`;
+        }
+        if (e.a && e.a.some(a => a === '?')) out += `<rect class="errw" x="${x + 4.5}" y="${cy - 12.5}" width="${w - 9}" height="25" rx="2"/>`;
+        tapAreas += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h + 28}"/>`;
+      });
+      if (o.drop && o.drop.ri === ri && li === 0) {
+        const dx = X(o.drop.col);
+        out += `<rect class="dropz" x="${dx - CW / 2 + 4}" y="${wy - 26}" width="${CW - 8}" height="52" rx="4"/><line class="drop" x1="${dx}" y1="${wy - 30}" x2="${dx}" y2="${wy + 30}"/>`;
+      }
+      y = yy + 2;
+    });
+    const rungBot = y;
+    // rails, rung number, error marker and online-edit markers
+    const dashed = R.mark === 'e' ? ' stroke-dasharray="4 3"' : '';
+    out += `<line class="rail${R.mark === 'e' ? ' ed' : ''}"${dashed} x1="${LM + .5}" y1="${rungTop - 4}" x2="${LM + .5}" y2="${rungBot}"/><line class="rail" x1="${RR + .5}" y1="${rungTop - 4}" x2="${RR + .5}" y2="${rungBot}"/>`;
+    const selR = o.selRung === ri;
+    if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
+    out += `<text class="rn" x="${LM - 8}" y="${rungTop + 20}" text-anchor="end"${selR ? ' style="fill:#fff"' : ''}>${ri}</text>`;
+    if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 40}" text-anchor="end">⊗</text>`;
+    if (R.mark) for (let my = rungTop + 30; my < rungBot - 4; my += 13) out += `<text class="mk" x="${LM - 10}" y="${my}" text-anchor="end">${R.mark}</text>`;
+    y = rungBot + 10;
+    void top0;
+  });
+  // (End)
+  out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="${y}" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="${y}" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;
+  y += 40;
+  const cls = 'l' + (o.live ? ' online' : '') + (o.run ? ' run' : '');
+  return `<svg class="${cls}" width="${Math.max(o.W, RR + 8)}" height="${y}" viewBox="0 0 ${Math.max(o.W, RR + 8)} ${y}">${out}${tapAreas}</svg>`;
+}
+function boxSVG(e, x, cy, w, on, o) {
+  const L = x + 8, Rt = x + w - 26, top = cy - 9, ops = boxOps(e, o.live), h = 22 + ops.length * 16, bits = (MTPS.INSTR[e.t] || {}).bits || [];
+  let s = `<line class="w" x1="${x}" y1="${cy + .5}" x2="${L}" y2="${cy + .5}"/>`;
+  s += `<rect class="bx" x="${L + .5}" y="${top + .5}" width="${Rt - L}" height="${h}"/><rect class="bxh" x="${L + .5}" y="${top + .5}" width="${Math.min(46, Rt - L)}" height="16"/>`;
+  s += `<text class="nm" x="${L + 6}" y="${top + 13}" font-weight="700">${e.t}</text>`;
+  ops.forEach(([n, v], i) => {
+    const yy = top + 32 + i * 16;
+    s += `<text class="bt" x="${L + 6}" y="${yy}">${esc(n)}</text><text class="bv" x="${Rt - 5}" y="${yy}" text-anchor="end">${esc(String(v))}</text>`;
+  });
+  // status bits on the right edge: (EN) (DN)
+  if (bits.length) bits.forEach((b, i) => {
+    const by = cy + i * 16, bOn = o.live && e.bv && e.bv[b];
+    s += `<line class="w" x1="${Rt}" y1="${by + .5}" x2="${x + w}" y2="${by + .5}"/><text class="bt" x="${Rt + 13}" y="${by - 3}" text-anchor="middle">${b}</text>`;
+    if (bOn) s += `<rect class="bar" x="${Rt + 3}" y="${by - 1.5}" width="20" height="4"/>`;
+  });
+  else s += `<line class="w" x1="${Rt}" y1="${cy + .5}" x2="${x + w}" y2="${cy + .5}"/>`;
+  if (on && !bits.length) s += `<rect class="bar" x="${x + 1}" y="${cy - 1.5}" width="6" height="4"/>`;
+  return s;
+}
+const OPN = { TON: ['Timer', 'Preset', 'Accum'], TOF: ['Timer', 'Preset', 'Accum'], RTO: ['Timer', 'Preset', 'Accum'], CTU: ['Counter', 'Preset', 'Accum'], CTD: ['Counter', 'Preset', 'Accum'] };
+function boxOps(e, live) {
+  const names = OPN[e.t] || (e.a || []).map((_, i) => 'Source ' + 'AB'[i]);
+  return (e.a || []).map((a, i) => {
+    let v = a;
+    if (live && e.x && OPN[e.t] && i > 0) { const s = e.x[0].obj(); v = i === 1 ? s.PRE : s.ACC; }
+    return [names[i] || '', v];
+  });
+}
+const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const at = (elems, path) => path.reduce((e, k, i) => (i === 0 ? elems[k] : null) || e, null) && path.slice(1).reduce((e, k, i, arr) => (i % 2 === 0 ? e.legs[k] : e[k]), elems[path[0]]);
+
+/* the routine as drawn: offline from the rung text (with errors), online from the controller (live values) */
+function rungsNow(live) {
+  if (!live) {
+    const errR = new Set(VERIFY.errors.map(x => x.rung));
+    return OFFLINE.tasks[0].programs[0].routines[0].rungs.map((r, i) => ({ elems: MTPS.parseRung(r.t).elems || [], c: r.c, err: errR.has(i) }));
+  }
+  const R = [...ctl.M.programs[0].routines.values()][0];
+  const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (OPN[e.t]) e.bv = { ...e.x[0].obj() }; };
+  return R.rungs.map((r, i) => { r.elems.forEach(tag); return { elems: r.elems, c: RUNGS[i] && RUNGS[i].c }; });
+}
+function selInfo(live) {
+  const R = rungsNow(live)[sel.ri], e = elemAt(R.elems, sel.path);
+  return e || { t: '', a: [] };
+}
+function elemAt(elems, path) {
+  let e = elems[path[0]];
+  for (let k = 1; k < path.length; k += 2) e = e.legs[path[k]][path[k + 1]];
+  return e;
+}
+
+/* ---------------- screens ---------------- */
+const live = () => ['run', 'online', 'edit', 'tags'].includes(state);
+const modeBox = big => live()
+  ? `<span class="sbox run" data-act="online">Rem Run ${ic('down', 'i cv')}</span>`
+  : `<span class="sbox" data-act="online">Offline ${ic('down', 'i cv')}</span>`;
+const forcesBox = () => `<span class="sbox forces"><i class="fi"></i>No Forces ${ic('down', 'i cv')}</span>`;
+const editsBox = () => `<span class="sbox forces">${state === 'edit' ? 'Edits Present' : 'No Edits'}</span>`;
+const nErr = () => VERIFY.errors.length;
+
+function ladderHTML(W, cell) {
+  const lv = live();
+  const rungs = rungsNow(lv);
+  if (state === 'edit') {
+    // rung 2 being edited: the copy (e) above the running rung (r)
+    const ed = { elems: MTPS.parseRung('XIC(Run_Timer.DN)XIO(Fault_Rst)OTE(Run_Lamp);').elems, mark: 'e' };
+    rungs[2].mark = 'r';
+    rungs.splice(2, 0, ed);
+  }
+  const o = { W, cell, live: lv, run: lv, sel: state === 'menu' || state === 'ladder' || state === 'tag' || state === 'run' ? sel : null,
+    press: state === 'menu' ? sel : null, selRung: -1,
+    drop: state === 'add' && dev !== 'phone' ? { ri: 3, col: 1 } : null };
+  return ladderSVG(rungs, o);
+}
+
+/* ---- phone ---- */
+function phone() {
+  const area = { ladder: 'Ladder', run: 'Ladder', menu: 'Ladder', add: 'Ladder', tag: 'Ladder', edit: 'Ladder', online: 'Controller', errors: 'More', tags: 'Tags', project: 'Project' }[state];
+  const e = selInfo(live());
+  const statusbar = `<div class="abar">9:41<span class="r">${ic('wifi', 'i')}${ic('batt', 'i')}</span></div>`;
+  const strip = `<div class="strip">${modeBox()}${forcesBox()}${editsBox()}${nErr() && !live() ? `<span class="warn">${ic('warn', 'i')}${nErr()}</span>` : ''}</div>`;
+  let body = '';
+  if (area === 'Ladder') {
+    body = `<div class="pbar"><span class="rt grow"><span class="tt">MainRoutine<small>MainProgram</small></span>${ic('down')}</span><button class="ib">${ic('undo')}</button><button class="ib">${ic('search')}</button><button class="ib">${ic('more')}</button></div>
+      <div class="lad" id="ladwrap">${ladderHTML(390, 80)}</div>
+      <button class="fab" style="bottom:${68 + 18 + 56 + 14}px" title="Add instruction">${ic('plus')}</button>
+      <div class="selbar"><span class="mn">${e.t}</span><span class="op grow">${esc(e.a.join(', '))}</span>
+        <button class="ib">${ic('edit')}</button><button class="ib${live() ? '' : ' dim'}" title="Toggle Bit">${ic('toggle')}</button><button class="ib">${ic('moreh')}</button></div>`;
+  } else if (area === 'Controller') body = phoneController();
+  else if (area === 'More') body = phoneErrors();
+  else if (area === 'Tags') body = phoneTags();
+  else if (area === 'Project') body = phoneProject();
+  const nav = [['Ladder', 'ladder'], ['Tags', 'tag'], ['Controller', 'chip'], ['Project', 'tree'], ['More', 'moreh']].map(([n, i]) =>
+    `<div class="${area === n ? 'on' : ''}" data-go="${n}"><span class="pill">${ic(i)}</span>${n}${n === 'More' && nErr() && !live() ? `<span class="bd">${nErr()}</span>` : ''}</div>`).join('');
+  let over = '';
+  if (state === 'menu') over = `<div class="scrim"></div><div class="sheet"><div class="grab"></div><div class="ctx">Rung 0 · ${e.t} ${esc(e.a.join(', '))}</div><div class="sb">${ctxMenu(false)}</div></div>`;
+  if (state === 'add') over = `<div class="scrim"></div><div class="sheet" style="max-height:78%"><div class="grab"></div><div class="sh"><b class="grow">Add instruction</b><button class="ib">${ic('close')}</button></div>
+      <div style="padding:0 16px 4px"><div class="field">${ic('search')}<span class="muted">Search: XIC, timer, compare…</span></div></div>
+      <div class="fchips">${Object.keys(TABS).map((t, i) => `<span class="fchip${i === 2 ? ' on' : ''}">${t}</span>`).join('')}</div>
+      <div class="sb"><div class="tiles">${TABS['Timer/Counter'].map(m => `<div class="tile">${glyph(m)}<b>${m}</b><small>${NAMES[m]}</small></div>`).join('')}</div>
+      <div class="cmpl">Goes after: Rung 0 · XIC Start_PB</div></div></div>`;
+  if (state === 'tag') over = `<div class="full">${statusbar}${tagBrowser(true)}</div>`;
+  return `<div class="scr">${statusbar}${strip}${body}<div class="pnav">${nav}</div><div class="gest"><i></i></div>${over}</div>`;
+}
+function phoneController() {
+  const io1 = ctl.ioImage(1).in, io2 = ctl.ioImage(2).out;
+  const pts = (bits, lamp, names) => `<div class="pts">${Array.from({ length: 8 }, (_, b) => `<div class="pt"><i class="${lamp ? 'lamp ' : 'pb '}${(bits >> b) & 1 ? 'on' : ''}">${b}</i>${names[b] || '&nbsp;'}</div>`).join('')}</div>`;
+  return `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · Motor_Demo</small></span></span><button class="ib">${ic('more')}</button></div>
+    <div class="page">
+      <div class="card"><div class="ch">Status</div><div class="cb">
+        <div class="leds4"><div><i class="led g"></i>Rem Run</div><div><i class="led g"></i>Controller OK</div><div><i class="led g"></i>Battery OK</div><div><i class="led g"></i>I/O OK</div></div>
+        <div style="margin:14px 0 6px" class="muted">Key switch</div><div class="seg"><span>PROG</span><span class="on">REM</span><span>RUN</span></div>
+        <div style="margin-top:10px"><div class="kv"><span>Mode</span><span class="v">Rem Run</span></div><div class="kv"><span>Path</span><span class="v">Local\\Backplane\\0</span></div><div class="kv"><span>Scan</span><span class="v">10 ms</span></div></div>
+        <div class="brow"><span class="pbtn sec">Program Mode</span><span class="pbtn danger">${ic('online')}Go Offline</span></div>
+        <div class="brow" style="margin-top:8px"><span class="pbtn sec">${ic('search')}Who Active</span><span class="pbtn sec">${ic('download')}Download</span></div></div></div>
+      <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">No Forces</span></div><div class="cb">
+        <div class="kv"><span>Enable I/O forces</span><span class="toggle"></span></div><div class="kv"><span class="muted">Remove All</span><span></span></div></div></div>
+      <div class="card"><div class="ch">I/O panel · [1] PLC-DI16-24V DI_1</div><div class="cb">${pts(io1, false, ['S1', 'S0', 'F1'])}<div class="muted" style="margin-top:8px;font-size:12px">Tap a point to press it; long-press to latch.</div></div></div>
+      <div class="card"><div class="ch">[2] PLC-DO16-24V DO_1</div><div class="cb">${pts(io2, true, ['KM1', 'H1', 'H2'])}</div></div>
+    </div>`;
+}
+function errorsBody() {
+  const errs = VERIFY.errors;
+  return `<div class="echips"><span class="echip on">${ic('warn')} ${errs.length} Errors</span><span class="echip on">0 Warnings</span><span class="echip">2 Messages</span></div>
+    <div class="cmpl">Verifying routine 'MainRoutine' of program 'MainProgram'...</div>
+    ${errs.map(x => `<div class="errline"><span class="x">⊗</span><span class="tx">${esc(x.text)}</span><span class="go">Rung ${x.rung} ›</span></div>`).join('')}
+    <div class="cmpl">Complete - ${errs.length} error(s), 0 warning(s)</div>`;
+}
+function phoneErrors() {
+  return `<div class="pbar"><button class="ib">${ic('back')}</button><span class="rt grow"><span class="tt">Errors<small>More</small></span></span><button class="ib">${ic('search')}</button></div><div class="page" style="background:var(--surface)">${errorsBody()}</div>`;
+}
+function tagRows() {
+  const v = n => { const x = ctl.read(n); return typeof x === 'object' ? '{…}' : x; };
+  return TAGS.slice(0, 11).map(t => {
+    const val = live() ? v(t.name) : '';
+    const ty = t.type || 'BOOL';
+    return `<div class="row"><span class="exp">${ty === 'TIMER' || ty === 'COUNTER' ? ic('right') : ''}</span><div class="grow"><div class="nm">${t.name}</div><div class="sub">${esc(t.alias ? '<' + t.alias + '>  ' : '')}${esc(t.desc || '')}</div></div>
+      ${live() ? `<span class="val${val === 1 ? ' on' : ''}">${val}</span>` : ''}<span class="ty">${t.alias ? 'BOOL' : ty}</span></div>`;
+  }).join('');
+}
+function phoneTags() {
+  return `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>Controller · MainProgram</small></span></span><button class="ib">${ic('search')}</button><button class="ib">${ic('plus')}</button></div>
+    <div class="seg2"><span class="on">Monitor</span><span>Edit</span></div>
+    <div class="page list" style="background:var(--surface)">${tagRows()}</div>`;
+}
+function treeHTML() {
+  const T = (lvl, txt, icon, o = {}) => `<div class="${o.on ? 'on' : ''}" style="padding-left:${6 + lvl * 18}px"><span class="tw">${o.open === undefined ? '' : ic(o.open ? 'down' : 'right')}</span>${ic(icon, 'i ti')}<span>${txt}</span>${o.f ? `<span class="fault">${o.f}</span>` : ''}</div>`;
+  return T(0, 'Controller Motor_Demo', 'chip', { open: true }) + T(1, 'Controller Tags', 'tag') + T(0, 'Tasks', 'folder', { open: true }) + T(1, 'MainTask', 'task', { open: true }) +
+    T(2, 'MainProgram', 'prog', { open: true }) + T(3, 'Program Tags', 'tag') + T(3, 'MainRoutine', 'ladder', { on: true }) + T(0, 'Data Types', 'folder', { open: true }) +
+    T(1, 'User-Defined', 'type') + T(1, 'Predefined', 'type', { open: false }) + T(1, 'Module-Defined', 'type', { open: false }) + T(0, 'I/O Configuration', 'folder', { open: true }) +
+    T(1, 'Backplane, PLC-RACK10', 'rack', { open: true }) + T(2, '[0] PLC-CPU Motor_Demo', 'chip') + T(2, '[1] PLC-DI16-24V DI_1', 'rack') + T(2, '[2] PLC-DO16-24V DO_1', 'rack');
+}
+function phoneProject() {
+  return `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>Controller Organizer</small></span></span><button class="ib">${ic('plus')}</button><button class="ib">${ic('more')}</button></div><div class="page tree" style="background:var(--surface)">${treeHTML()}</div>`;
+}
+/* the right-click menu of an instruction, as the desktop (spec section 4) */
+function ctxMenu(compact) {
+  const lv = live(), it = (icon, t, k, dis) => `<div class="it${dis ? ' dis' : ''}">${ic(icon)}<span>${t}</span>${k ? `<span class="k">${k}</span>` : ''}</div>`;
+  return `<div class="menu">${it('cut', 'Cut Instruction', 'Ctrl+X', lv)}${it('copy', 'Copy Instruction', 'Ctrl+C')}${it('paste', 'Paste', 'Ctrl+V', lv)}${it('trash', 'Delete Instruction', 'Del', lv)}<hr>
+    ${it('plus', 'Add Ladder Element…', 'Alt+Ins', lv)}${it('edit', 'Edit Instruction', 'Enter', lv)}${it('text', 'Edit Main Operand Description', 'Ctrl+D')}<hr>
+    ${it('toggle', 'Toggle Bit', 'Ctrl+T', !lv)}${it('force', 'Force On', '', !lv)}${it('force', 'Force Off', '', !lv)}${it('close', 'Remove Force', '', true)}<hr>
+    ${it('goto', 'Go To…', 'Ctrl+G')}${it('xref', 'Go to Cross Reference', 'Ctrl+E')}${it('help', 'Instruction Help', 'F1')}</div>`;
+}
+function tagBrowser(full) {
+  return `${full ? `<div class="pbar"><button class="ib">${ic('back')}</button><span class="rt grow"><span class="tt">Operand<small>Rung 0 · XIC · Operand 0</small></span></span><button class="ib">${ic('check')}</button></div>` : ''}
+    <div style="padding:10px 16px 0"><div class="field focus"><span class="mono">Start_PB2</span><span class="cur"></span></div></div>
+    <div class="fchips"><span class="fchip on">${ic('check')}BOOL (bit)</span><span class="fchip on">Controller</span><span class="fchip on">MainProgram</span><span class="fchip">All types</span></div>
+    <div class="sb list" style="${full ? 'flex:1;overflow:auto' : ''}">
+      <div class="row" style="color:var(--accent-text)">${ic('newtag')}<div class="grow"><div class="nm" style="color:var(--accent-text)">New "Start_PB2"</div><div class="sub">Create a BOOL tag in MainProgram · Ctrl+W</div></div></div>
+      <div class="grp">Matching tags</div>
+      <div class="row on"><div class="grow"><div class="nm">Start_PB</div><div class="sub">&lt;Local:1:I.Data.0&gt;  S1 START PB</div></div><span class="ty">BOOL</span></div>
+      <div class="row"><div class="grow"><div class="nm">Start_ONS</div><div class="sub">Controller tag</div></div><span class="ty">BOOL</span></div>
+      <div class="row"><span class="exp">${ic('right')}</span><div class="grow"><div class="nm">Start_Count</div><div class="sub">Motor starts · .CU .DN .OV .UN</div></div><span class="ty">COUNTER</span></div>
+      <div class="row"><span class="exp">${ic('right')}</span><div class="grow"><div class="nm">Local:1:I</div><div class="sub">DI_1 · .Data.0 … .Data.15</div></div><span class="ty">PLC:DI16:I</span></div>
+    </div>`;
+}
+
+/* ---- tablet ---- */
+function tablet(land) {
+  const W = land ? 1024 : 768, H = land ? 768 : 1024, pinned = land, e = selInfo(live());
+  const tab = state === 'add' ? 'Favorites' : 'Favorites';
+  const app = `<div class="appbar"><button class="ib">${ic('menu')}</button><span class="proj">Motor_Demo<small>PLC-CPU 1.0</small></span>
+    ${modeBox()}${forcesBox()}${land || state === 'edit' ? editsBox() : ''}<span class="grow"></span>
+    <button class="ib">${ic('undo')}</button><button class="ib">${ic('redo')}</button><button class="ib" title="Verify">${ic('check')}</button><button class="ib">${ic('search')}</button>
+    <span class="vsep"></span>${live() ? `<span class="pbtn danger">${ic('online')}Go Offline</span>` : `<span class="pbtn">${ic('online')}Go Online</span>`}</div>`;
+  const drawer = pinned || state === 'project' ? `<div class="drawer${pinned ? '' : ' over'}"><div class="dh grow">Controller Organizer<span class="grow"></span><button class="ib">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></div>` : '';
+  const ladW = W - (pinned ? 256 : 0);
+  const ed = `<div class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" style="margin:0">${ic('tree')}</button>`}<span class="t on">MainProgram - MainRoutine</span><span class="t">Controller Tags</span><button class="ib">${ic('more')}</button></div>
+    <div class="lad" id="ladwrap">${ladderHTML(ladW, 112)}</div>
+    <div class="selbar"><span class="mn">${e.t}</span><span class="op">${esc(e.a.join(', '))}</span><span class="ds grow">${esc((TAG[String(e.a[0] || '').toUpperCase()] || {}).desc || '')}</span><span class="pos">Rung ${sel.ri} of ${rungsNow(live()).length}</span>
+      <button class="ib">${ic('edit')}</button><button class="ib${live() ? '' : ' dim'}">${ic('toggle')}</button><button class="ib">${ic('moreh')}</button></div>
+    <div class="ibar"><div class="gl">${TABS[tab].map(m => `<span class="gbtn${state === 'add' && m === 'XIO' ? ' drag' : ''}" title="${NAMES[m]}">${glyph(m)}<span>${m === 'RUNG' ? 'Rung' : m === 'BR' ? 'Branch' : m}</span></span>`).join('')}</div>
+      <div class="tabs">${Object.keys(TABS).map(t => `<span class="chipt${t === tab ? ' on' : ''}">${t}</span>`).join('')}<span class="errh">${ic('warn')}<span class="n">${live() ? 0 : nErr()}</span> Errors ${ic('down')}</span></div></div></div>`;
+  let over = '';
+  const L = pinned ? 256 : 0;
+  if (state === 'menu') over = `<div class="pop fit" style="left:${L + 150}px;top:${land ? 8 : 170}px">${ctxMenu(true)}</div>`;
+  if (state === 'add') over = `<div class="ghost" style="left:${L + 140}px;top:${land ? 430 : 560}px">${glyph('XIO')}<span>XIO</span></div><div class="hint" style="left:${L + 210}px;top:${land ? 440 : 570}px">Drop on rung 3 before XIC Motor_Run</div>`;
+  if (state === 'tag') over = `<div class="tsheet" style="left:${L + 40}px;top:${land ? 170 : 190}px;width:480px;height:${land ? 440 : 520}px"><div class="sh" style="padding:12px 8px 0 16px"><b class="grow">XIC · Operand 0</b><button class="ib">${ic('close')}</button></div>${tagBrowser(false)}</div>`;
+  if (state === 'online') over = `<div class="pop" style="left:170px;top:52px"><div class="menu"><div class="hd">Mode · key switch in REM</div>
+      <div class="it dis">${ic('online')}Go Online</div><div class="it">${ic('stop')}Program Mode</div><div class="it dis">${ic('play')}Run Mode</div><div class="it">${ic('download')}Download…</div><hr>
+      <div class="it">${ic('online')}Go Offline</div><div class="it">${ic('search')}Who Active…</div></div></div>`;
+  if (state === 'errors') over = `<div class="sheet" style="height:44%;left:${L}px"><div class="grab"></div><div class="sh"><b class="grow">Errors</b><button class="ib">${ic('search')}</button><button class="ib">${ic('close')}</button></div><div class="sb">${errorsBody()}</div></div>`;
+  if (state === 'tags') over = `<div class="scrim"></div><div class="tsheet" style="left:${(W - 720) / 2}px;top:64px;width:720px;height:${H - 120}px"><div class="sh" style="padding:12px 8px 0 16px"><b class="grow">Controller Tags · Motor_Demo</b><button class="ib">${ic('search')}</button><button class="ib">${ic('plus')}</button><button class="ib">${ic('close')}</button></div>
+      <div class="seg2" style="max-width:320px"><span class="on">Monitor Tags</span><span>Edit Tags</span></div><div class="sb list">${tagRows()}</div></div>`;
+  if (state === 'project' && !pinned) over = `<div class="scrim" style="z-index:5"></div>`;
+  return `<div class="scr">${app}<div class="tbody">${drawer}${ed}${over}</div></div>`;
+}
+
+/* ---------------- render ---------------- */
+function render() {
+  document.documentElement.dataset.theme = theme;
+  const D = DEVS[dev], el = document.getElementById('dev');
+  el.className = 'dev ' + (dev === 'phone' ? 'phone' : 'tablet');
+  el.dataset.theme = theme;
+  el.style.width = D.w + 'px'; el.style.height = D.h + 'px';
+  el.innerHTML = dev === 'phone' ? phone() : tablet(dev === 'tab-l');
+  const pick = document.getElementById('pick');
+  pick.innerHTML = `<b>Device</b>${Object.entries(DEVS).map(([k, v]) => `<button data-dev="${k}" class="${k === dev ? 'on' : ''}">${v.n}</button>`).join('')}
+    <b>State</b>${Object.entries(STATES).map(([k, v]) => `<button data-st="${k}" class="${k === state ? 'on' : ''}">${v[0]}</button>`).join('')}
+    <b>Theme</b><button data-th="light" class="${theme === 'light' ? 'on' : ''}">Light</button><button data-th="dark" class="${theme === 'dark' ? 'on' : ''}">Dark</button>`;
+  document.getElementById('note').innerHTML = `<b>${D.n} · ${STATES[state][0]}.</b> ${STATES[state][1]}`;
+  fit();
+  sig = '';
+}
+function fit() {
+  const D = DEVS[dev], el = document.getElementById('dev'), h = document.getElementById('holder');
+  const availW = innerWidth - 48, availH = innerHeight - document.getElementById('stage').getBoundingClientRect().top - 40;
+  const s = fixedScale || Math.min(1, availW / (D.w + 20), Math.max(.35, availH / (D.h + 20)));
+  el.style.transform = `scale(${s})`;
+  h.style.width = D.w * s + 'px'; h.style.height = D.h * s + 'px';
+}
+addEventListener('resize', fit);
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-dev],button[data-st],button[data-th]');
+  if (b) { if (b.dataset.dev) dev = b.dataset.dev; if (b.dataset.st) state = b.dataset.st; if (b.dataset.th) theme = b.dataset.th; render(); return; }
+  const g = ev.target.closest('[data-go]');
+  if (g) { state = { Ladder: live() ? 'run' : 'ladder', Tags: 'tags', Controller: 'online', Project: 'project', More: 'errors' }[g.dataset.go]; render(); return; }
+  const t = ev.target.closest('rect.tap');
+  if (t) {
+    sel = { ri: +t.dataset.ri, path: t.dataset.p.split('.').map(Number) };
+    // online: tapping S1 presses it in the field, as the I/O panel does
+    const e = selInfo(live());
+    if (live() && e.a && e.a[0] === 'Start_PB') pressT = simT + .05;
+    render();
+  }
+});
+
+/* ---------------- live: the controller scans on its own clock; the ladder is redrawn only when a value changes ---------------- */
+let sig = '', last = performance.now();
+function loop(now) {
+  const dt = Math.min(100, now - last); last = now; simT += dt / 1000;
+  field = simT >= pressT && simT < pressT + .3 ? 0b111 : 0b110;
+  ctl.setInputs(1, field);
+  ctl.advance(dt);
+  if (live()) {
+    const R = rungsNow(true), parts = [];
+    const walk = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(walk)); else parts.push(e.v ? 1 : 0, e.bv ? e.bv.ACC + ':' + e.bv.DN : ''); };
+    R.forEach(r => r.elems.forEach(walk));
+    const s = parts.join('');
+    if (s !== sig) {
+      sig = s;
+      const w = document.getElementById('ladwrap');
+      if (w) { const st = w.scrollTop; w.innerHTML = ladderHTML(dev === 'phone' ? 390 : (dev === 'tab-l' ? 1024 - 256 : 768), dev === 'phone' ? 80 : 112); w.scrollTop = st; }
+      if (state === 'online' && dev === 'phone') { const p = document.querySelector('.page'), st = p && p.scrollTop; render(); const p2 = document.querySelector('.page'); if (p2) p2.scrollTop = st; }
+    }
+  }
+  requestAnimationFrame(loop);
+}
+render();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

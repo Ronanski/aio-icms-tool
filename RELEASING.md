@@ -57,3 +57,21 @@ cd desktop && npm install && npm start            # run the Windows/desktop app
 cd desktop && npm run dist:win                    # build the .exe (on Windows)
 cd mobile && npm install && npm run android       # create mobile/android, then open it in Android Studio
 ```
+
+## MT PLC Studio (a separate app in `mtps/`)
+MT PLC Studio has its own version, files and updates (`docs/PLC_APP_SPEC.md` section 14):
+
+| Where | File | Built by |
+|---|---|---|
+| Hosted app | `…/aio-icms-tool/mtps/` (Stable: the latest `mtps-v*` release that is not a pre-release) and `/mtps/beta/` (main) | `pages.yml` |
+| Windows | `MT-PLC-Studio-X.Y.Z-portable.exe` (resizable window, size kept) | `release-mtps.yml` → `desktop-mtps/` |
+| Android | `MT-PLC-Studio-X.Y.Z-android.apk` (app id `io.github.ronanski.mtplcstudio`, same signing key) | `release-mtps.yml` → `mobile-mtps/` |
+| Offline copy | `MT-PLC-Studio-X.Y.Z-web.zip` | `release-mtps.yml` |
+
+- The version is `VERSION` in `mtps/js/app.js`; `desktop-mtps/package.json` and `mobile-mtps/package.json` are set from it
+  by the workflow. A preview is `X.Y.Z-beta.N`.
+- **Release:** push the tag `mtps-vX.Y.Z` on the commit (or, once the workflow is on `main`, **Actions → Release MT PLC
+  Studio → Run workflow**). A stable version must come from `main`.
+- An MT PLC Studio release is never marked *Latest*, so the trainer's latest release and its Pages Stable copy stay.
+- In-app updates work like the trainer's: the app checks `version.json` of its channel (`/mtps/` or `/mtps/beta/`).
+  Preview versions start on Beta.

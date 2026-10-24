@@ -39,6 +39,21 @@ jobs:
           awk '/^## \[Unreleased\]/ {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > "$RUNNER_TEMP/beta-notes.md"
           bash scripts/copy-web.sh _site/beta "beta.$(git rev-parse --short HEAD)" "$RUNNER_TEMP/beta-notes.md"
           cat _site/beta/version.json | head -3
+      - name: MT PLC Studio, Stable (latest mtps-v release) at /mtps/ and Beta (main) at /mtps/beta/
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release list --limit 100 --json tagName,isPrerelease -q '[.[] | select(.tagName | startswith("mtps-v")) | select(.isPrerelease | not)][0].tagName // empty' 2>/dev/null || true)"
+          if [ -n "$tag" ]; then
+            git worktree add -f "$RUNNER_TEMP/mtps-stable" "$tag"
+            SRC="$RUNNER_TEMP/mtps-stable" bash scripts/copy-mtps.sh _site/mtps "$tag"
+            echo "MT PLC Studio Stable: $tag"
+          else
+            echo "No stable MT PLC Studio release yet: /mtps/ gets main"
+            bash scripts/copy-mtps.sh _site/mtps "main.$(git rev-parse --short HEAD)"
+          fi
+          bash scripts/copy-mtps.sh _site/mtps/beta "beta.$(git rev-parse --short HEAD)" "$RUNNER_TEMP/beta-notes.md"
+          cat _site/mtps/beta/version.json | head -3
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

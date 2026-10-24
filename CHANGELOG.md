@@ -5,6 +5,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **MT PLC Studio 0.1.0-beta.1 (preview): a separate app** for tag-based PLC ladder programming and simulation, in
+  `mtps/`. It has its own Windows exe, Android APK, icon and in-app updates, and installs next to PLC Trainer.
+  - **Three layouts with the same functions:**
+    - desktop, like the reference software: menus, toolbars, online bar, Controller Organizer, Errors pane, status bar;
+    - tablet: an app bar, the Organizer as a drawer, an instruction bar with 44 px buttons;
+    - phone: bottom navigation, a + button and full-screen dialogs.
+  - **The layout follows the window.** A resized or maximized Windows window and a tablet in portrait or landscape
+    switch live, keeping the routine, the selection and the scroll position.
+  - **Ladder editor:**
+    - Click / tap selects. Insert an instruction from the toolbar (click, or drag onto a rung), or type a mnemonic.
+    - Branch, Branch Level, Add Rung, Delete, Cut / Copy / Paste and Undo / Redo.
+    - Edit Rung as text, rung comments, and right-click / long-press menus.
+    - The keyboard shortcuts of the reference work, and pinch zooms.
+  - **Operand editor with a tag browser** that lists the tags that fit the operand. *New "name"* creates a missing
+    tag (BOOL for a bit, TIMER for TON …).
+  - **Tags:** Monitor Tags / Edit Tags, controller and program scope, aliases, start values. Online, values can be
+    toggled and typed.
+  - **Built-in controller:**
+    - Verify; Go Online with Download (and "Return the controller to Remote Run?"); Rem Run / Rem Prog and the key switch.
+    - Toggle Bit; forces on I/O bits with the ▸ON / ▸OFF marker.
+    - Live green bars on true instructions and live timer / counter values.
+    - Clear Faults.
+  - **I/O panel:** input points (Toggle or Push), output lamps, analog sliders.
+  - **Projects** are saved on the device. New / Open / Save As / Import / Export (`.mtps.json`), plus an example
+    (motor start / stop with a timer and a counter).
+  - **The engine** (`mtps/js/engine.js`, no DOM, `tests/mtps.test.js`): data types, tags, aliases, rung text,
+    verify with the reference's lines, modes, prescan, faults, forces and the v1 instruction set.
+    - Behaviour checked against the reference's instruction help: DIV by zero, SQR, rounding, `S:MINOR` / `S:V` /
+      `S:C`, JMP, TND, MCR and timer pause.
+  - **Tests:** `tests/mtps-ui.test.js` (layouts, resize / rotate, editing, New Tag, verify, online, I/O, forces,
+    persistence) is part of `npm test`.
+  - **Release:** `.github/workflows/release-mtps.yml` publishes tags `mtps-v*` with
+    `MT-PLC-Studio-<version>-portable.exe`, `-android.apk` and `-web.zip`. Pages hosts `/mtps/` (Stable) and
+    `/mtps/beta/` (Beta) for the in-app updates.
+- **Spec and mockups:** `docs/PLC_APP_SPEC.md` (the reference look checked in the VM, tablet and phone layouts,
+  release section) and the touch mockup `docs/design/plc-app-mockup-touch.html`.
+
 ## [2.5.0] - 2026-10-23
 
 ### Fixed

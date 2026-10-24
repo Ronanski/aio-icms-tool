@@ -6,3 +6,7 @@ desktop/app/
 desktop/dist/
 mobile/www/
 mobile/android/
+desktop-mtps/app/
+desktop-mtps/dist/
+mobile-mtps/www/
+mobile-mtps/android/

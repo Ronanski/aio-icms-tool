@@ -1,14 +1,16 @@
-# Logic Studio MT: spec (v1, 2026-10-23)
+# MT PLC Studio: spec (v1, 2026-10-23)
 
-**Logic Studio MT** is a second app in this repo (`plc.html`). It has two parts:
+**MT PLC Studio** (renamed from "Logic Studio MT" on 2026-10-24; the name avoids the reference's trademarks) is a
+second app in this repo, in its own folder `mtps/`, with its own Windows exe, Android APK and in-app updates
+(section 14). It has two parts:
 
 - **Software:** the programming tool (this spec).
 - **Hardware:** an emulator with a rack, I/O cards, field devices and the HMI. It comes later and plugs into the
   interface in section 9.
 
-Logic Studio MT itself is the software part. It is a tag-based PLC programming and simulation tool
+MT PLC Studio itself is the software part. It is a tag-based PLC programming and simulation tool
 that looks and works like the desktop programming software studied in `docs/ROCKWELL_UI_STUDY.md`. The current app
-(`index.html`) stays as it is. Later a hardware builder and the HMI connect to Logic Studio MT, and the combined app
+(`index.html`) stays as it is. Later a hardware builder and the HMI connect to MT PLC Studio, and the combined app
 uses it as its PLC module.
 
 - Visual reference: `docs/design/plc-app-mockup.html`. Open it in a browser and switch states at the top.
@@ -34,12 +36,13 @@ uses it as its PLC module.
   | Tree rows | 17 px |
   | Dialog rows | 20 px |
 
-  There are no large touch-style controls. The first target is a desktop browser and the Windows app. A tablet must
-  still work, and the phone is not a target in v1.
+  These sizes are for the desktop layout, which has no large touch-style controls. The tablet and the phone (Android
+  first) get their own layouts with the same functionality (section 3a).
 - **Thin drawing:**
   - Offline, rails and rungs are 1 px black.
   - Contacts `] [` and coils `( )` are about 16 px tall.
-  - Online in Run, rails turn green (3 px), powered wire is 2 px green, and a true instruction is drawn green.
+  - Online, rails and rung wire are 1 px blue. In Run, only the rails turn green (3 px). The rung wire stays thin
+    blue, and a true instruction gets a short thick green bar on each side of its glyph (see section 5).
 - Plain HTML/CSS/JS. No build step and no runtime dependencies, as for the rest of the repo.
 - **Simple and clean.** Leave out what a trainer does not need. Do not show it disabled.
 - **Every button and menu item that is shown works.** A command is greyed out only when the current state does not
@@ -66,7 +69,7 @@ Module-defined tags have generic names:
 
 ## 3. Main window (top to bottom)
 
-1. **Title:** `Logic Studio MT - <project> [PLC-CPU 1.0]`, with `*` when there are unsaved changes.
+1. **Title:** `MT PLC Studio - <project> [PLC-CPU 1.0]`, with `*` when there are unsaved changes.
 2. **Menu.** Each menu holds only the commands of v1:
    - **File:** New, Open, Save, Save As, Import / Export, Close, Recent, Exit.
    - **Edit:** Undo, Redo, Cut, Copy, Paste, Delete, Select All.
@@ -90,8 +93,8 @@ Module-defined tags have generic names:
    - **Key switch:** PROG / REM / RUN.
    - **Mode box:** `Offline`, `Rem Prog`, `Rem Run`, `Program` or `Run`. Its ▾ menu has Go Online, Program Mode,
      Run Mode and Download….
-   - **Forces box:** `No Forces`, `Forces Enabled` (amber) or `Forces Disabled`. Its ▾ menu has Enable, Disable and
-     Remove All.
+   - **Forces box:** `No Forces`, or `Forces` with a green icon (disabled) or an amber icon (enabled). Its ▾ menu has
+     Enable, Disable and Remove All.
    - **Edits box:** `No Edits` or `Edits Present`.
    - **Path.**
 5. **Instruction toolbar (right):**
@@ -138,6 +141,103 @@ Module-defined tags have generic names:
 - SFC, FBD and ST editors;
 - Upload. The command says it is not available.
 
+## 3a. Tablet and phone (Android first)
+
+**One app, three layouts, the same functionality.** Every command of the desktop menus, toolbars and right-click
+menus is on the tablet and the phone too, in a place that suits touch. Only the layout and the way commands are reached
+differ. The engine, the project file and the controller are the same.
+
+Visual reference: `docs/design/plc-app-mockup-touch.html` (serve the repo, then open it). It shows phone, tablet
+landscape and tablet portrait, ten states each, in light and dark, and its ladder runs on the real engine.
+
+### Choosing the layout
+| Layout | When | Input |
+|---|---|---|
+| Desktop | width ≥ 1200 px | mouse and keyboard |
+| Tablet | 768–1199 px, or a coarse pointer at ≥ 1200 px | touch; keyboard optional |
+| Phone | width < 768 px | touch |
+
+- The layout follows the window, and rotating the device switches it live. Nothing is lost when it switches: the
+  open routine, the selection, a pending edit and the scroll position are kept.
+- Tools → Options → Layout can force Desktop, Tablet or Phone.
+- An attached keyboard keeps every shortcut in section 4 on all three layouts.
+
+### Touch rules (tablet and phone)
+- Targets are at least 44 × 44 px on the tablet and 48 × 48 dp on the phone. Text is at least 13 px on the tablet and
+  14 px on the phone. The ladder keeps its own zoom.
+- Tap selects. Double-tap does what a double-click does: edit the operand, change the instruction, edit the rung as
+  text.
+- Long-press (500 ms) opens the same menu as the right-click, as a bottom sheet on the phone and a popup on the tablet.
+  The items, their order and when they are greyed out are the same as in section 4, *Right-click menus*.
+- Pinch zooms the ladder and two-finger drag scrolls it. One-finger drag on an instruction moves it, and the drop
+  target shows as on the desktop.
+- Hover-only information (tooltips, the tag of a glyph) is shown on long-press or in the selected-instruction bar.
+
+### Tablet
+```
+┌ app bar: ☰ menu · project · mode box ▾ · Forces ▾ · Edits · Go Online ┐
+├ Organizer ┬ routine tabs ─────────────────────────────────────────────┤
+│ (drawer;  │ ladder (cells 112 px at 100 %)                             │
+│  pinned in│                                                           │
+│  landscape│                                                           │
+├───────────┴ selected instruction: mnemonic · operands · Edit · ⋯ ─────┤
+└ instruction bar: tabs + 44 px glyph buttons · Errors (n) ▴ ──────────┘
+```
+- ☰ holds all the desktop menus (File … Help) with the same items.
+- In portrait there is less room. The Edits box shows only while edits are present, and its state is also in ☰.
+- The standard toolbar's commands are in the app bar (Undo, Redo, Verify, Find) and in ☰.
+- The Organizer is a drawer: pinned in landscape, sliding over the ladder in portrait.
+- The Errors pane is a bottom sheet with the same chips and lines. Tapping a line goes to its rung.
+- Tag editor, cross reference and dialogs open as large sheets at most 720 px wide.
+
+### Phone
+```
+┌ status strip: Rem Run ▾ · Forces · Edits · ⚠ 2 ┐
+│ routine name ▾                         🔍  ⋯   │
+│ ladder (rungs wrap to the width;                │
+│ cells 80 px at 100 %)                           │
+│                                      ( + )      │  ← add instruction
+├ selected: XIC Start_PB  ·  Edit · Toggle · ⋯ ──┤
+└ Ladder · Tags · Controller · Project · More ───┘  ← bottom navigation
+```
+- **Bottom navigation, five areas:**
+  - **Ladder:** the routine, the selected-instruction bar and the + button.
+  - **Tags:** Monitor Tags and Edit Tags as one list with a toggle, plus search, filter and scope. Tap a tag to see
+    its value and properties.
+  - **Controller:** the online bar as a full page: LEDs, key switch, mode, path, Who Active, Go Online, Download,
+    modes, forces, the I/O panel and module status.
+  - **Project:** the Controller Organizer as a tree: tasks, programs, routines, data types, I/O configuration.
+  - **More:** Errors, Search and Cross Reference, File (New, Open, Save, Import / Export), Options, Help.
+- **The + button** opens the instruction picker, a sheet with the same tabs as the instruction toolbar and a search
+  box. The new instruction goes after the selected one.
+- **Operand editing** opens a full-screen tag browser with search, the same type filter, *Show controller / program
+  tags*, and *New "name"* (New Tag) at the top when the typed name does not exist.
+- **Online edit** works the same way. Start / Accept / Cancel / Test / Assemble are in the rung's long-press sheet
+  and in the status strip's *Edits* menu.
+- The status strip is always visible. Tapping the mode, Forces or Edits opens the same menu as its desktop box.
+- Back (the Android back button or gesture) closes the top sheet first, then returns to the previous area. It never
+  drops a pending edit without asking.
+
+### Same functionality: where each desktop command lives
+| Desktop | Tablet | Phone |
+|---|---|---|
+| Menu bar (File … Help) | ☰ | More, and each item's own area |
+| Standard toolbar | app bar + ☰ | ⋯ on the Ladder page, More |
+| Online bar | app bar boxes | status strip + Controller page |
+| Instruction toolbar | instruction bar | + button → picker |
+| Right-click menu | long-press popup | long-press bottom sheet |
+| Controller Organizer | drawer | Project page |
+| Errors pane | bottom sheet | More → Errors, ⚠ badge in the status strip |
+| Tag editor | sheet | Tags page |
+| Status bar (`Rung n of m`) | under the ladder | in the selected-instruction bar |
+
+### Android app
+- The Android app wraps `mtps/index.html` with the existing Capacitor wrapper in `mobile/`, as its own app ("Logic Studio
+  MT"), next to the current trainer APK.
+- Projects are saved on the device (as in section 8). Export / Import use the Android share sheet and file picker.
+- It works offline. The screen stays on while online in Run.
+- Minimum: Android 8, 2 GB RAM, a 720 × 1280 screen. The 60 fps rule of section 12 applies on such a device.
+
 ## 4. Ladder
 
 ### Rung text
@@ -173,8 +273,7 @@ XIC(Motor_Run)TON(Run_Timer,5000,0);
 - **Lines:** 1 px on the pixel grid (crisp edges). Only curves (coil arcs, the XIO slash) are anti-aliased.
 - **Rung:**
   - the number sits in the left margin (`0`, `1` …);
-  - the rung comment sits in a light box across the rung above it, left-aligned, so it looks different from a tag
-    description, which is centred above its instruction;
+  - the rung comment is plain blue text above the rung, centred across it, with no box;
   - `(End)` follows the last rung;
   - a selected rung's number cell turns blue, and a selected instruction gets a light-blue box.
 - **Above a bit instruction:**
@@ -280,12 +379,15 @@ reference, without the driver setup.
   flash and shows a module fault (code and text) in the module's properties.
 
 ### Look of a running routine
-- The rails turn green.
-- Wire that carries power is green at 2 px.
-- A true instruction is drawn green: a contact whose condition is true, a coil whose bit is 1, and the status bits
-  of a box.
-- A false instruction stays black.
-- Box values update live.
+Seen in the reference (VM, 2026-10-23):
+- Online, the rails and the rung wire are thin blue. In Run, the rails turn thick green (about 3 px).
+- The rung wire is **not** drawn green, even where it carries power.
+- A true instruction gets a short thick green bar on each side of its glyph. The glyph itself stays black. This
+  applies to a contact whose condition is true, a coil whose bit is 1, and each true status bit of a box (`(EN)`,
+  `(DN)`).
+- A false instruction has no bars.
+- The same bars show online in Program mode and when Faulted: they follow the tag values, not the power flow.
+- Box values update live, with a small blue ◂ beside each live value.
 
 ### Modes
 - **Run, Rem Run:** the ladder executes, and power flow is drawn.
@@ -299,16 +401,19 @@ reference, without the driver setup.
   - It works on BOOL tags and members only.
   - On an input bit, the next input update overwrites it, as on the real controller.
 - **Force On / Force Off** apply to I/O (`Local:` bits and aliases to them).
-  - The Forces box shows `Forces Enabled` in amber.
-  - The forced instruction shows a small **F**.
+  - The Forces box shows `No Forces`. Once a force is set it shows `Forces`, with a green icon while forces are
+    installed but off, and an amber icon when they are enabled.
+  - The forced instruction shows a small orange `▸ON` or `▸OFF` under its glyph, on the left of the cell.
   - Monitor Tags shows the force mask.
   - Disable keeps the forces but stops applying them. Remove All clears them.
 - **Online edit:**
-  1. Start Pending Rung Edits keeps the running rung (marker **r**) and adds a copy you edit (marker **e**). The
-     copy does not execute. A new rung gets **i**, and a deleted rung gets **d**.
-  2. Accept Pending Rung Edits verifies the edits and sends them. The markers become **R** / **I** / **D**, and the old
+  1. Start Pending Rung Edits adds a copy you edit **above** the running rung. The copy has a dashed left rail and
+     does not execute. The running rung below keeps a column of **r** letters down its left rail. A new rung gets
+     **i**, and a deleted rung gets **d**.
+  2. Accept Pending Rung Edits verifies the edits and sends them. The old rung's letters become **R**, and the old
      rungs still run.
-  3. Test Accepted Program Edits runs the new rungs. Untest goes back to the old ones.
+  3. Test Accepted Program Edits runs the new rungs. Their rail turns green and the old rung's rail goes back to
+     blue. The routine tab reads `(Testing Edits)`. Untest goes back to the old ones.
   4. Assemble Accepted Program Edits makes the edits final and removes the markers.
   - Each step can be cancelled.
   - The Edits box shows `Edits Present` while there are markers.
@@ -359,11 +464,37 @@ reference, without the driver setup.
 | Program Control | JSR, RET, SBR, JMP, LBL, MCR, AFI, NOP, TND |
 | Input/Output | GSV, SSV (later), MSG (later) |
 
-**Math rules:**
-- With integer Dest and sources, the fractional part of DIV is truncated. With a REAL source or Dest, the result is
-  rounded or kept.
-- An overflow wraps and sets the overflow status flag (`S:V`).
-- Status flags `S:N`, `S:Z`, `S:V`, `S:C` and `S:FS` (first scan) can be read in the ladder.
+**Math rules** (checked against the reference's instruction help, 2026-10-24):
+- With integer Dest and sources, the fractional part of DIV and SQR is truncated. With a REAL source or Dest, the
+  result is kept, or rounded into an integer Dest.
+- A REAL goes into an integer by rounding: below .5 down, above .5 up, exactly .5 to the even number (2.5 → 2,
+  3.5 → 4). A DINT goes into an INT or SINT by dropping the upper bits.
+- An overflow wraps, sets `S:V` and is a minor fault (`S:MINOR`).
+- DIV by zero is a minor fault. The result is Source A for integers and infinite for REAL.
+- MOD is `Source A − trunc(Source A / Source B) × Source B`.
+- SQR takes the absolute value of a negative Source.
+- The flags are set from the stored value. `S:C` comes from ADD and SUB only.
+- Status flags `S:N`, `S:Z`, `S:V`, `S:C`, `S:MINOR` and `S:FS` (first scan) can be read in the ladder. `S:V` and
+  `S:MINOR` can also be written (OTE / OTL). `S:MINOR` clears at the start of every scan.
+
+**Program control:**
+- A true JMP goes at once to the rung of its LBL. The rest of the JMP's rung is not scanned.
+- LBL is the first instruction of its rung, and its name is unique in the routine.
+- TND ends the routine. In a subroutine it returns to the caller, and in a main routine the next program runs.
+- An MCR with rung-condition-in false toggles the override (all rungs false), so a zone is a conditioned MCR and an
+  unconditional one.
+  - MCR is the last instruction of its rung.
+  - The override is reset at the end of the routine.
+- Jumping backward too often trips the watchdog, a major fault.
+
+**Timers and counters:**
+- Each scan adds the real time since the last scan: `ACC = ACC + (now − last scan)`.
+- Setting DN pauses a TON or RTO, and clearing DN pauses a TOF.
+- Prescan:
+  - TON: EN, TT and DN cleared, ACC = 0.
+  - TOF: EN, TT and DN cleared, ACC = PRE.
+  - RTO: EN and TT cleared.
+  - CTU / CTD: CU / CD set, so a true input does not count on the first scan.
 
 **CMP and CPT** take an expression with `+ - * / MOD ** AND OR XOR NOT ( )` and SQR, ABS, NEG, SIN, COS, LN, LOG.
 In this tag-based form, `/` is the divide.
@@ -375,10 +506,10 @@ In this tag-based form, `/` is the divide.
 ## 8. Project file and storage
 
 - Projects are saved in the browser (`localStorage`, one key each), as in the current app.
-- File → Export saves `.lsmt.json`, and Import opens one.
+- File → Export saves `.mtps.json`, and Import opens one.
 - Format:
   ```json
-  { "format": "logic-studio-mt", "version": 1,
+  { "format": "mt-plc-studio", "version": 1,
     "controller": { "name": "Motor_Demo", "type": "PLC-CPU", "rev": "1.0" },
     "rack": { "size": 10, "modules": [{ "slot": 1, "type": "PLC-DI16-24V", "name": "DI_1" }] },
     "dataTypes": [{ "name": "Pump", "members": [{ "name": "Running", "type": "BOOL" }] }],
@@ -393,7 +524,7 @@ In this tag-based form, `/` is the divide.
 ## 9. Interfaces (for the hardware builder and the HMI)
 
 ```js
-LSMT.controller           // the built-in controller
+MTPS.controller           // the built-in controller
   .mode                   // 'prog' | 'run' | 'remprog' | 'remrun'; .key = 'PROG' | 'REM' | 'RUN'
   .scan(dtMs)             // one scan when in Run
   .read(tag) / .write(tag, value)   // for the HMI and Toggle Bit; writing an input image is refused
@@ -402,7 +533,7 @@ LSMT.controller           // the built-in controller
   .on('change', fn)       // mode, faults, forces
 ```
 
-The engine (`js/lsmt/engine.js`) has no DOM, so the tests and the combined app can use it directly.
+The engine (`mtps/js/engine.js`) has no DOM, so the tests and the combined app can use it directly.
 
 Until the hardware builder exists, an **I/O panel** (View → I/O Panel) stands in for the field devices:
 - each input point has a toggle or a push button;
@@ -411,27 +542,41 @@ Until the hardware builder exists, an **I/O panel** (View → I/O Panel) stands 
 
 ## 10. Files
 
+The app is self-contained in `mtps/`, so it can be packaged, hosted and updated on its own, and the trainer can load
+it later as its PLC module.
+
 ```
-plc.html                 entry of Logic Studio MT
-css/lsmt.css             its styles (separate from css/style.css)
-js/lsmt/engine.js        tags, types, rung text, verify, scan, instructions (no DOM)
-js/lsmt/ladder.js        ladder drawing and editing
-js/lsmt/organizer.js     tree, tag editor, dialogs
-js/lsmt/app.js           window, menus, toolbars, online bar, errors pane
-tests/lsmt.test.js       engine tests (node) and UI tests (Playwright)
+mtps/index.html            entry
+mtps/manifest.webmanifest  installable web app (name, icons, any orientation)
+mtps/sw.js                 offline cache of its own
+mtps/css/app.css           styles: tokens, desktop / tablet / phone layouts, light and dark
+mtps/js/engine.js          tags, types, rung text, verify, scan, instructions (no DOM)
+mtps/js/ladder.js          ladder layout, drawing and hit testing
+mtps/js/app.js             window, menus, toolbars, online bar, organizer, editor, dialogs, I/O panel, storage
+mtps/js/update.js          in-app updates (section 14)
+mtps/icons/                app icon (SVG and PNG)
+desktop-mtps/              Windows wrapper (Electron, portable exe)
+mobile-mtps/               Android wrapper (Capacitor, APK)
+scripts/copy-mtps.sh       copies mtps/ for Pages, the exe and the APK, and stamps the build
+tests/mtps.test.js         engine tests (node)
+tests/mtps-ui.test.js      UI tests (Playwright): layouts, resize, rotate, editing, online
 ```
 
-`js/ui.js` and `js/store.js` may be shared when they fit. Otherwise Logic Studio MT gets its own. Nothing in
-`index.html` changes.
+Nothing in `index.html` changes.
 
 ## 11. Steps
 
 1. Spec and mockup (done; this file).
 2. Engine: types, tags, rung text, verify, scan, instruction set. Tests first.
-3. Shell: `plc.html`, menu, toolbars, online bar, organizer, errors pane, status bar.
-4. Ladder editor and instruction toolbar: operand editing, tag browser, New Tag, keyboard.
+3. Mockup of the tablet and phone layouts (section 3a), then the shell: `mtps/index.html`, menu, toolbars, online bar,
+   organizer, errors pane, status bar, in all three layouts.
+4. Ladder editor and instruction toolbar: operand editing, tag browser, New Tag, keyboard, touch (tap, double-tap,
+   long-press, pinch, the + picker).
 5. Tag editor, built-in controller, Who Active / Download / Go Online, Toggle Bit, forces, online edit, cross reference.
-6. I/O panel, project file, release (Pages path, and later its own exe / apk).
+6. I/O panel, project file, release: Pages path, the Android app first, then the Windows exe.
+
+Each step is tested at 1440 × 900 (desktop), 1024 × 768 and 768 × 1024 (tablet) and 390 × 844 (phone), in both
+themes, with screenshots checked by eye.
 
 ## 12. Performance (60 fps or better on a low-end PC)
 
@@ -453,11 +598,53 @@ tests/lsmt.test.js       engine tests (node) and UI tests (Playwright)
 
 ## 13. To confirm against the reference software
 
-These were written from memory and have not been seen in the VM yet:
-- the force marker on an instruction;
-- the online edit markers after Accept (`R` / `I` uppercase);
-- the exact look of a true instruction (green glyph, or a green highlight behind it);
-- the rung comment box and the wrap markers;
-- the default instruction cell width (how many fit in a row at the same window width);
-- the text of the Edits box;
-- the DIV / MOV rounding rules for integers.
+**Seen in the VM on 2026-10-23** (Logix Designer 33, emulated controller; sections 1, 4 and 5 are corrected):
+- true instruction: a short thick green bar on each side of the glyph. The glyph stays black, and the rung wire is
+  not green;
+- rails online: thin blue, thick green in Run;
+- force marker: a small orange `▸ON` under the instruction. The Forces box reads `Forces`, with an amber icon when
+  enabled;
+- online edit: the edit copy sits above with a dashed rail, the running rung has an `r` column, which becomes `R`
+  after Accept. The Edits box reads `Edits Present`;
+- rung comment: plain blue text, centred, with no box.
+
+**Checked in the reference's instruction help on 2026-10-24** (the same help as in the VM, from the publisher's online
+documentation, version 37): DIV / MOD / SQR, data conversion and rounding, math status flags, JMP / LBL, TND, MCR,
+TON / TOF / RTO and CTU. See section 7.
+
+**Still to confirm:**
+- the marker letter on the edit copy (too small to read over the remote link; `e` assumed);
+- the wrap markers of a long rung;
+- the default instruction cell width;
+- MOD by zero (the help page's fault table did not come through; Source A is assumed, as for DIV).
+
+## 14. Release, names and updates
+
+| | |
+|---|---|
+| App name | **MT PLC Studio** |
+| Version | its own, in `mtps/js/app.js` (`VERSION`), e.g. `0.1.0-beta.1` |
+| Tag | `mtps-v<version>` (the trainer keeps `v<version>`) |
+| Windows | `MT-PLC-Studio-<version>-portable.exe` (Electron, `desktop-mtps/`, app id `io.github.ronanski.mtplcstudio`) |
+| Android | `MT-PLC-Studio-<version>-android.apk` (Capacitor, `mobile-mtps/`, the same app id, launcher name "MT PLC Studio") |
+| Web / offline copy | `MT-PLC-Studio-<version>-web.zip`; hosted at `…/aio-icms-tool/mtps/` (Stable) and `…/mtps/beta/` (Beta) |
+| Workflow | `.github/workflows/release-mtps.yml` |
+
+- **Separate from the trainer.** Another app id, so both install side by side and keep their own projects. On the web
+  both share one origin, so MT PLC Studio's storage keys start with `mtps.`.
+- An MT PLC Studio release is never marked *Latest* on GitHub, so the trainer's release stays the latest, and the
+  trainer's Pages copy (the latest release) is not replaced by it.
+- **Updates in the app**, as in the trainer:
+  - The exe and the APK open their built-in copy. When online it checks `version.json` of its channel (Stable
+    `/mtps/`, Beta `/mtps/beta/`).
+  - When the hosted copy is newer it shows **Restart to update**, which loads the hosted copy. The service worker
+    keeps it for offline use.
+  - Help → Updates… switches the channel. A preview (`-beta.N`) starts on Beta.
+  - A new exe / APK is needed only when the wrapper changes.
+- **Windows window:**
+  - It is resizable and can be maximized, with a minimum of 800 × 600. Its size, position and maximized state are
+    kept between runs.
+  - The layout follows the window (section 3a): a narrow window gets the tablet layout.
+- **Android:**
+  - Portrait and landscape both work, and the orientation is not locked.
+  - The layout switches live when the device turns, without losing the routine, the selection or a pending edit.
