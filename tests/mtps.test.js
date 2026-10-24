@@ -538,6 +538,34 @@ console.log('Toggle and forces');
   check('force changes are events', ev.filter(x => x === 'forces').length >= 5);
 }
 
+console.log('Modules: inhibit, fault, Upload, fault logs');
+{
+  const mods = [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1', majorOnFail: true }, { slot: 3, type: 'PLC-DI16-24V', name: 'DI_3', inhibit: true }];
+  const c = run({ modules: mods, tags: [{ name: 'In', alias: 'Local:1:I.Data.0' }, { name: 'Out', alias: 'Local:2:O.Data.0' }, { name: 'In3', alias: 'Local:3:I.Data.0' }], rungs: ['XIC(In)OTE(Out);'] });
+  c.setInputs(1, 1); c.setInputs(3, 1); c.scan(10);
+  check('a running card passes its inputs and outputs', c.read('In') === 1 && c.ioImage(2).out === 1 && c.moduleStatus(1).state === 'Running');
+  check('an inhibited card keeps its inputs and has no connection', c.read('In3') === 0 && c.moduleStatus(3).state === 'Inhibited' && c.ioOk());
+  c.setModuleFault(1, true); c.scan(10);
+  check('a card taken out: Fault = 16#FFFFFFFF, inputs drop, code 16#0204', c.read('Local:1:I.Fault') === -1 && c.read('In') === 0 && c.moduleStatus(1).code === '16#0204');
+  check('the I/O LED is not OK, the controller keeps running (no major fault set for slot 1)', !c.ioOk() && !c.fault);
+  c.setModuleFault(1, false); c.scan(10);
+  check('put back: Fault = 0 and the inputs come back', c.read('Local:1:I.Fault') === 0 && c.read('In') === 1 && c.ioOk());
+  c.setModuleFault(2, true); c.scan(10);
+  check('"Major fault on controller if the connection fails": type 3 code 16', c.fault && c.fault.type === 3 && c.fault.code === 16);
+  check('outputs of a faulted card are off', c.ioImage(2).out === 0);
+  check('the major fault is logged', c.majors.length === 1 && c.majors[0].code === 16);
+  const m = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT')], rungs: ['ADD(A,1,D);'] });
+  scans(m, 3);
+  check('an overflow is logged as a minor fault, repeats counted', m.minors.length === 1 && m.minors[0].type === 4 && m.minors[0].count === 3);
+  m.clearMinors();
+  check('Clear Minors empties the log', m.minors.length === 0);
+  const u = run({ tags: [T('N', 'DINT')], rungs: ['ADD(N,1,N);'] });
+  scans(u, 4);
+  const up = u.upload();
+  check('Upload gives the controller\'s project with the current tag values', up && up.tags.find(t => t.name === 'N').value === 4 && up.controller.name === 'Test');
+  check('nothing to upload from an empty controller', new MTPS.Controller().upload() === null);
+}
+
 console.log('Project copy in the controller');
 {
   const p = proj({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)OTE(A);'] });

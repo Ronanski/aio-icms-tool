@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (MT PLC Studio 0.1.0-beta.2)
+- **Selecting instructions:** after a long-press, or while a running timer redraws the ladder, taps were read as a
+  pinch and nothing could be selected any more. The ladder now follows each finger or click until it is released.
+- **Zoom no longer lags:** one redraw per frame, and the ladder no longer redraws over and over when a scrollbar
+  comes and goes.
+- **Toggle Bit on an input** (such as a push button) now switches its point on the I/O panel, because an input
+  follows its field device. Online-only commands used offline say "press Go Online first".
+- **First start opens an empty project.** The example is in File > Open.
+
+### Added (MT PLC Studio 0.1.0-beta.2)
+- **Module Properties** (click a module in I/O Configuration) with three tabs:
+  - General: name, description, slot.
+  - Connection: RPI, *Inhibit module*, and *Major fault on controller if the connection fails*.
+  - Status: Running / Inhibited / Faulted, fault code and inputs / outputs.
+- **Simulate a module fault:** *Fault* on the I/O panel, or in Module Properties, takes the card out.
+  - The I/O LED flashes *I/O Not Responding*, a ⚠ shows on the module, and its Fault tag reads 16#FFFFFFFF.
+  - With *Major fault on controller* ticked, the controller faults (type 3, code 16).
+- **Controller Properties:** General, *Major Faults* (current and recent, Clear Majors) and *Minor Faults*
+  (overflows, Clear Minors).
+- **Upload:** opens the project that is in the built-in controller, with its current values.
+  - Go Online with another version in the controller asks: Upload or Download.
+- **Going online shows the I/O panel** (desktop).
+
 ### Added
 - **MT PLC Studio 0.1.0-beta.1 (preview): a separate app** for tag-based PLC ladder programming and simulation, in
   `mtps/`. It has its own Windows exe, Android APK, icon and in-app updates, and installs next to PLC Trainer.

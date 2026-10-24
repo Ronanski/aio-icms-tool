@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.1.0-beta.1';
+  const VERSION = '0.1.0-beta.2';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const ctl = E.controller;
@@ -310,6 +310,7 @@
     online: { l: 'Go Online', i: 'online', run: goOnline, on: () => !S.online },
     offline: { l: 'Go Offline', i: 'online', run: goOffline, on: () => S.online },
     download: { l: 'Download…', i: 'download', run: () => download() },
+    upload: { l: 'Upload…', i: 'upload', run: () => upload(), on: () => !!ctl.M },
     prog: { l: 'Program Mode', i: 'stop', run: () => setMode('remprog'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remprog' && !ctl.fault },
     runm: { l: 'Run Mode', i: 'play', run: () => setMode('remrun'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remrun' && !ctl.fault },
     clear: { l: 'Clear Faults', i: 'fault', run: () => { ctl.clearFault(); live(true); }, on: () => S.online && !!ctl.fault },
@@ -332,12 +333,18 @@
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
     ['Logic', ['verifyr', 'verifyc', '-', 'tagsmon', 'tagsedit', 'newtag']],
-    ['Communications', ['who', '-', 'online', 'offline', 'download', '-', 'prog', 'runm', 'clear', '-', 'fen', 'fdis', 'fall']],
+    ['Communications', ['who', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'clear', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
-  function run(id) { const c = C[id]; if (c && can(id)) c.run(); }
+  const ONLINE_ONLY = ['toggle', 'fon', 'foff', 'frem', 'prog', 'runm', 'clear', 'fen', 'fdis', 'fall'];
+  function run(id) {
+    const c = C[id];
+    if (!c) return;
+    if (can(id)) { c.run(); return; }
+    if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
+  }
   const menuItems = ids => ids.filter(id => id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' ? '-' : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
@@ -364,7 +371,7 @@
   const editsBox = () => '<span class="sbox plain" title="Online edits">No Edits</span>';
   function ledsHTML() {
     const on = S.online, run = on && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault;
-    const L4 = on ? [[run ? 'g' : '', modeText()], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Battery OK'], ['g', 'I/O OK']] : [['', 'RUN'], ['', 'OK'], ['', 'BAT'], ['', 'I/O']];
+    const L4 = on ? [[run ? 'g' : '', modeText()], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Battery OK'], ctl.ioOk() ? ['g', 'I/O OK'] : ['r blink', 'I/O Not Responding']] : [['', 'RUN'], ['', 'OK'], ['', 'BAT'], ['', 'I/O']];
     return L4.map(([c, t]) => `<div><i class="led ${c}"></i>${t}</div>`).join('');
   }
   const keyHTML = () => `<span class="key" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>`;
@@ -433,7 +440,7 @@
     return `<div class="card"><div class="ch">Status</div><div class="cb"><div class="leds4">${ledsHTML()}</div>
         <div class="muted" style="margin:14px 0 6px">Key switch</div><span class="seg" style="display:flex">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>
         <div style="margin-top:8px"><div class="kv"><span>Mode</span><span class="v">${modeText()}</span></div><div class="kv"><span>Controller holds</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Path</span><span class="v">Local\\Backplane\\0</span></div></div>
-        <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="download">${ic('download')}Download</button></div>
+        <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button><button class="btn" data-cmd="download">${ic('download')}Download</button></div>
         <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
         <div class="brow" style="margin-top:0"><button class="btn" data-cmd="fen"${can('fen') ? '' : ' disabled'}>Enable</button><button class="btn" data-cmd="fdis"${can('fdis') ? '' : ' disabled'}>Disable</button><button class="btn" data-cmd="fall"${can('fall') ? '' : ' disabled'}>Remove All</button></div></div></div>
@@ -456,7 +463,7 @@
     };
     let h = '';
     const add = (key, lvl, txt, icon, o, kids) => { const n = N(key, lvl, txt, icon, { ...o, kids }); h += n.html; if (kids && n.open) kids(); };
-    add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', {}, () => { add('ctags', 1, 'Controller Tags', 'tag'); });
+    add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => { add('ctags', 1, 'Controller Tags', 'tag'); });
     add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => add('prog:' + g.name, 2, g.name, 'prog', {}, () => {
       add('ptags:' + g.name, 3, 'Program Tags', 'tag');
       g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, 3, r.name + (r.name === g.main ? '' : ''), 'ladder', { on: g.name === S.prog && r.name === S.routine,
@@ -470,7 +477,7 @@
     });
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
       add('mod:0', 2, `[0] PLC-CPU ${S.p.controller.name}`, 'chip');
-      [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack'));
+      [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
     }));
     return h;
   }
@@ -521,10 +528,10 @@
     if (ro) ro.disconnect();
     if (!window.ResizeObserver) return;
     lastW = w.clientWidth;
-    ro = new ResizeObserver(() => { const nw = w.clientWidth; if (Math.abs(nw - lastW) > 2) { lastW = nw; renderLadder(); } });
+    ro = new ResizeObserver(() => { const nw = w.clientWidth; if (Math.abs(nw - lastW) > 8) { lastW = nw; if (!zoomRaf) zoomRaf = requestAnimationFrame(() => { zoomRaf = 0; renderLadder(); }); } });
     ro.observe(w);
   }
-  function zoom(f) { S.prefs.zoom = Math.max(0.6, Math.min(2, +(S.prefs.zoom * f).toFixed(2))); savePrefs(); renderLadder(); }
+  function zoom(f) { setZoom(S.prefs.zoom * f); savePrefs(); }
   function select(t) {
     if (!t) { S.sel = null; S.selRung = null; return; }
     if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br }; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
@@ -549,24 +556,35 @@
     else if (t.rn) { if (editable()) rungText(t.ri); }
   }
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom */
+  /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom.
+     The ladder wrapper captures the pointer, so a redraw under the finger (a running timer, the long-press mark)
+     never loses the release; a pointer that was never released is dropped at the next press. */
   function bindLadder() {
     const app = $('#app');
     const pts = new Map();
     let pd = null, pinch = null;
+    const busy = () => { S.touching = !!pd || !!pinch; };
     app.addEventListener('pointerdown', ev => {
       const w = ev.target.closest('#ladwrap');
       if (!w) return;
-      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      // a pointer that was never released (lost by the browser) must not turn the next tap into a pinch
+      for (const [id, p] of pts) if (id !== ev.pointerId && performance.now() - p.t > 1500) pts.delete(id);
+      if (ev.pointerType !== 'touch') pts.clear();
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, t: performance.now() });
+      // only the primary button and touch are captured: a right-click must still reach the instruction under it
+      if (!(ev.pointerType === 'mouse' && ev.button !== 0)) { try { w.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ } }
       if (pts.size === 2) {
-        const [a, b] = [...pts.values()];
-        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: S.prefs.zoom };
+        const [p1, p2] = [...pts.values()];
+        pinch = { d: Math.max(20, Math.hypot(p1.x - p2.x, p1.y - p2.y)), z: S.prefs.zoom };
         if (pd) clearTimeout(pd.timer);
         pd = null;
+        busy();
         return;
       }
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       const t = hit(ev.target);
       pd = { x: ev.clientX, y: ev.clientY, t, moved: false, long: false, mouse: ev.pointerType === 'mouse' };
+      busy();
       if (!pd.mouse) {
         pd.timer = setTimeout(() => {
           if (!pd || pd.moved) return;
@@ -578,39 +596,50 @@
         }, 500);
       }
     });
-    app.addEventListener('pointermove', ev => {
-      if (!pts.has(ev.pointerId)) return;
-      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    const move = ev => {
+      const p = pts.get(ev.pointerId);
+      if (!p) return;
+      p.x = ev.clientX; p.y = ev.clientY; p.t = performance.now();
       if (pinch && pts.size === 2) {
-        const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-        const z = Math.max(0.6, Math.min(2, +(pinch.z * d / pinch.d).toFixed(2)));
-        if (Math.abs(z - S.prefs.zoom) > 0.04) { S.prefs.zoom = z; renderLadder(); }
+        const [p1, p2] = [...pts.values()], d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        setZoom(pinch.z * d / pinch.d);
         return;
       }
       if (pd && Math.hypot(ev.clientX - pd.x, ev.clientY - pd.y) > 10) { pd.moved = true; clearTimeout(pd.timer); }
-    });
+    };
     const up = ev => {
       if (!pts.has(ev.pointerId)) return;
       pts.delete(ev.pointerId);
-      if (pinch) { if (pts.size < 2) { pinch = null; savePrefs(); } return; }
-      if (!pd) return;
+      if (pinch) { if (pts.size < 2) { pinch = null; pts.clear(); savePrefs(); busy(); renderLadder(); } return; }
+      if (!pd) { busy(); return; }
       clearTimeout(pd.timer);
       const p = pd;
       pd = null;
-      if (ev.type === 'pointercancel' || p.moved || p.long) return;
+      busy();
+      if (ev.type === 'pointercancel' || p.moved || p.long) { if (!p.long) live(true); return; }
       onTap(p.t, ev.clientX, ev.clientY);
     };
-    app.addEventListener('pointerup', up);
-    app.addEventListener('pointercancel', up);
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
     app.addEventListener('contextmenu', ev => {
       const w = ev.target.closest('#ladwrap');
       if (!w) { if (ev.target.closest('.nd')) { ev.preventDefault(); orgMenu(ev.target.closest('.nd').dataset.org, ev.clientX, ev.clientY); } return; }
       ev.preventDefault();
-      const t = hit(ev.target);
+      if (pd && !pd.mouse) return;   // a long-press on touch opens the menu itself
+      const t = hit(document.elementFromPoint(ev.clientX, ev.clientY) || ev.target);
       select(t);
       render();
       ctxMenu(t, ev.clientX, ev.clientY);
     });
+  }
+  /* zoom: one redraw per frame however fast the pinch or the buttons go */
+  let zoomRaf = 0;
+  function setZoom(z) {
+    z = Math.max(0.6, Math.min(2, +z.toFixed(2)));
+    if (Math.abs(z - S.prefs.zoom) < 0.02) return;
+    S.prefs.zoom = z;
+    if (!zoomRaf) zoomRaf = requestAnimationFrame(() => { zoomRaf = 0; renderLadder(); });
   }
 
   /* ---------- context menus (right-click / long-press): spec section 4 ---------- */
@@ -1105,23 +1134,96 @@
     const m = S.p.rack.modules.find(x => x.slot === slot);
     confirmDlg('Delete Module', `Delete <b>[${slot}] ${esc(m.type)} ${esc(m.name)}</b>? Rungs and aliases that use Local:${slot} will show errors.`, 'Delete', () => edit(() => { S.p.rack.modules = S.p.rack.modules.filter(x => x.slot !== slot); }), true);
   }
-  function moduleProps(slot) {
-    const m = S.p.rack.modules.find(x => x.slot === slot), d = E.MODULES[m.type] || {};
-    const img = S.online && ctl.M ? ctl.ioImage(slot) : null;
-    dialog({ title: `Module Properties - [${slot}] ${m.type}`,
-      body: `<div class="kv"><span>Type</span><span class="v">${esc(m.type)}</span></div><div class="kv"><span>Description</span><span class="v">${esc(MODNAMES[m.type] || '')}</span></div><div class="kv"><span>Name</span><span class="v">${esc(m.name)}</span></div>
-        <div class="kv"><span>Slot</span><span class="v">${slot}</span></div><div class="kv"><span>Tags</span><span class="v">${['I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>
-        <div class="kv"><span>Status</span><span class="v">${S.online ? (img ? 'Running' : 'Not in the controller') : 'Offline'}</span></div>`,
-      buttons: [{ l: 'Close', pri: true }] });
+  /* tabbed dialogs (Properties): chips on top, one pane each */
+  const tabbed = (tabs, first) => `<div class="fchips dtabs">${tabs.map(([k, t]) => `<span class="fchip${k === first ? ' on' : ''}" data-dt="${k}">${t}</span>`).join('')}</div>` +
+    tabs.map(([k, , body]) => `<div data-pane="${k}"${k === first ? '' : ' hidden'}>${body}</div>`).join('');
+  function bindTabs(el) {
+    el.addEventListener('click', ev => {
+      const c = ev.target.closest('[data-dt]'); if (!c) return;
+      el.querySelectorAll('[data-dt]').forEach(x => x.classList.toggle('on', x === c));
+      el.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== c.dataset.dt; });
+    });
   }
-  function controllerProps() {
-    prompt1('Controller Properties', 'Name', S.p.controller.name, v => {
-      if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
-      if (U(v) !== U(S.p.controller.name) && index().some(x => U(x.name) === U(v))) return 'A project with that name exists.';
-      const old = S.p.controller.name;
-      edit(() => { S.p.controller.name = v; });
-      store.del('p.' + old); store.set('index', index().filter(x => x.name !== old)); saveProject();
-    }, 'PLC-CPU, revision 1.0. The name is also the project name.');
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><span class="v">${v}</span></div>`;
+  const when = t => (t ? new Date(t).toLocaleTimeString() : '');
+  /* Module Properties, as in the reference: General, Connection (Inhibit, Major Fault on Controller), Status */
+  function moduleProps(slot, tab) {
+    const m = S.p.rack.modules.find(x => x.slot === slot);
+    if (!m) return;
+    const d = E.MODULES[m.type] || {};
+    const used = new Set(S.p.rack.modules.filter(x => x !== m).map(x => x.slot)), slots = [];
+    for (let s = 1; s < S.p.rack.size; s++) if (!used.has(s)) slots.push(s);
+    const st = S.online && ctl.M ? ctl.moduleStatus(slot) : null;
+    const io = S.online && ctl.M && ctl.M.mods.get(slot) ? ctl.ioImage(slot) : null;
+    const dis = editable() ? '' : ' disabled';
+    const general = `<div class="frow"><label>Type</label><span>${esc(m.type)} <span class="muted">· ${esc(MODNAMES[m.type] || '')}</span></span></div>
+      <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
+      <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
+      <div class="frow"><label>Slot</label><select class="inp" id="mp-s"${dis}>${slots.map(s => `<option${s === slot ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+      <div class="frow"><label>Tags</label><span class="mono">${['I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
+    const conn = `<div class="frow"><label>RPI (ms)</label><input class="inp" id="mp-r" type="number" min="2" max="750" value="${m.rpi || 20}"${dis}></div>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
+      ${st && st.code ? `<div class="kv" style="color:var(--danger)"><span>Module fault</span><span class="v">(Code ${st.code}) ${esc(st.text)}</span></div>` : ''}
+      <p class="help">${editable() ? 'These settings go to the controller with the next Download.' : 'Go offline to change them.'}</p>`;
+    const bits = v => (typeof v === 'number' ? v.toString(2).padStart(16, '0') : v.map(x => (+x).toFixed(1)).join(', '));
+    const status = !S.online ? '<p class="help">Offline. Go online to see the module status.</p>'
+      : kv('Status', `<b style="color:${st.state === 'Running' ? 'var(--ok)' : st.state === 'Faulted' ? 'var(--danger)' : 'var(--warn-text)'}">${st.state}</b>`) +
+        (st.code ? kv('Fault code', st.code) + kv('Fault', esc(st.text)) : st.text ? kv('Note', esc(st.text)) : '') +
+        (io && io.in != null ? kv('Inputs', bits(io.in)) : '') + (io && io.out != null ? kv('Outputs', bits(io.out)) : '') +
+        `<div class="brow"><button class="btn" id="mp-x">${ctl.pulled.has(slot) ? 'Put the card back' : 'Simulate a module fault'}</button></div>`;
+    dialog({ title: `Module Properties - [${slot}] ${m.type}`, size: 'md',
+      body: tabbed([['gen', 'General', general], ['con', 'Connection', conn], ['st', 'Status' + (st && st.state === 'Faulted' ? ' ⚠' : ''), status]], tab || (st && st.state === 'Faulted' ? 'st' : 'gen')),
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
+        if (!editable()) return;
+        const name = el2.querySelector('#mp-n').value.trim(), ns = +el2.querySelector('#mp-s').value;
+        if (!E.validName(name)) { toast('Module name: letters, digits and _.', 'err'); return false; }
+        const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.max(2, Math.min(750, +el2.querySelector('#mp-r').value || 20)), inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked };
+        if (!nv.desc) delete nv.desc;
+        if (!nv.inhibit) delete nv.inhibit;
+        if (!nv.majorOnFail) delete nv.majorOnFail;
+        if (JSON.stringify(nv) !== JSON.stringify(m)) edit(() => { S.p.rack.modules.splice(S.p.rack.modules.indexOf(m), 1, nv); });
+      } }],
+      mount: e2 => {
+        bindTabs(e2);
+        const x = e2.querySelector('#mp-x');
+        if (x) x.onclick = () => { ctl.setModuleFault(slot, !ctl.pulled.has(slot)); live(true); render(); moduleProps(slot, 'st'); };
+      } });
+  }
+  /* Controller Properties: General, Major Faults, Minor Faults */
+  function controllerProps(tab) {
+    const on = S.online && ctl.M, dis = editable() ? '' : ' disabled';
+    const general = `<div class="frow"><label>Name</label><input class="inp" id="cp-n" value="${esc(S.p.controller.name)}"${dis}></div>
+      <div class="frow"><label>Description</label><input class="inp" id="cp-d" value="${esc(S.p.controller.desc || '')}"${dis}></div>
+      ${kv('Type', 'PLC-CPU (built-in controller)')}${kv('Revision', '1.0')}${kv('Chassis', `PLC-RACK${S.p.rack.size}, slot 0`)}
+      <p class="help">The name is also the project name.</p>`;
+    const offline = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
+    const row = f => `<div class="row"><div class="grow"><div class="sub" style="white-space:normal">${when(f.at)} · Type ${f.type} Code ${f.code}: ${esc(f.text)}${f.count > 1 ? ` (×${f.count})` : ''}</div></div></div>`;
+    const majors = !on ? offline
+      : (ctl.fault ? `<div class="kv" style="color:var(--danger)"><span>Current fault</span><span class="v">Type ${ctl.fault.type}, Code ${ctl.fault.code}</span></div><p>${esc(ctl.fault.text)}</p>` : '<p><b style="color:var(--ok)">No major faults.</b></p>') +
+        (ctl.majors.length ? `<div class="grp">Recent</div>${ctl.majors.map(row).join('')}` : '') +
+        `<div class="brow"><button class="btn danger" id="cp-cm"${ctl.fault ? '' : ' disabled'}>Clear Majors</button></div>`;
+    const minors = !on ? offline
+      : (ctl.minors.length ? ctl.minors.map(row).join('') : '<p><b style="color:var(--ok)">No minor faults.</b></p>') +
+        `<div class="brow"><button class="btn" id="cp-cn"${ctl.minors.length ? '' : ' disabled'}>Clear Minors</button></div>`;
+    dialog({ title: 'Controller Properties - ' + S.p.controller.name, size: 'md',
+      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors]], tab || (on && ctl.fault ? 'maj' : 'gen')),
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        if (!editable()) return;
+        const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim();
+        if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        if (U(v) !== U(S.p.controller.name) && index().some(x => U(x.name) === U(v))) { toast('A project with that name exists.', 'err'); return false; }
+        const old = S.p.controller.name;
+        if (v === old && desc === (S.p.controller.desc || '')) return;
+        edit(() => { S.p.controller.name = v; if (desc) S.p.controller.desc = desc; else delete S.p.controller.desc; });
+        if (v !== old) { store.del('p.' + old); store.set('index', index().filter(x => x.name !== old)); saveProject(); }
+      } }],
+      mount: el => {
+        bindTabs(el);
+        const cm = el.querySelector('#cp-cm'), cn = el.querySelector('#cp-cn');
+        if (cm) cm.onclick = () => { ctl.clearFault(); live(true); render(); controllerProps('maj'); };
+        if (cn) cn.onclick = () => { ctl.clearMinors(); controllerProps('min'); };
+      } });
   }
 
   /* ---------- online ---------- */
@@ -1133,11 +1235,38 @@
     render();
     toast(v.errors.length ? `${v.errors.length} error(s), ${v.warnings.length} warning(s)` : `Verified: no errors, ${v.warnings.length} warning(s)`, v.errors.length ? 'err' : 'ok');
   }
-  function goOnline() {
-    if (ctl.holds(S.p) && ctl.M) { S.online = true; toast(`Online with ${ctl.name}`); render(); live(true); return; }
-    download(true);
+  const MODE = () => ({ prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[ctl.mode]);
+  const PATH = 'Local\\Backplane\\0';
+  function online() {
+    S.online = true;
+    // the I/O panel holds the simulated field devices: show it when going online
+    if (S.layout === 'desktop' && !S.prefs.io) { S.prefs.io = true; savePrefs(); }
+    render(); live(true);
   }
-  function download(thenOnline) {
+  /* Go Online: the same project, online; an empty controller, Download; another project, Upload or Download */
+  function goOnline() {
+    if (ctl.holds(S.p) && ctl.M) { online(); toast(`Online with ${ctl.name}`); return; }
+    if (!ctl.M) { download(); return; }
+    dialog({ title: 'Connected To Go Online',
+      body: `<p>The controller holds another project, or another version of this one.</p>${kv('In the controller', esc(ctl.name))}${kv('On this device', esc(S.p.controller.name))}${kv('Controller mode', MODE())}
+        <p class="help"><b>Upload</b> opens the project of the controller here. <b>Download</b> sends the project of this device to the controller.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Upload…', run: () => { setTimeout(upload, 0); } }, { l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }] });
+  }
+  /* Upload: the project of the controller (with its current tag values) opens on this device */
+  function upload() {
+    if (!ctl.M) { toast('The controller is empty: nothing to upload.', 'err'); return; }
+    const p = ctl.upload();
+    const exists = index().some(x => U(x.name) === U(p.controller.name));
+    confirmDlg('Upload', `Upload <b>${esc(p.controller.name)}</b> from the controller?${exists ? ' The copy on this device with the same name is replaced.' : ''}`, 'Upload', () => {
+      saveProject();
+      openProject(p, true);
+      // the opened copy equals the controller's (values aside), so the controller holds it
+      ctl.copy = JSON.stringify(S.p);
+      online();
+      toast(`Uploaded ${p.controller.name}`, 'ok');
+    });
+  }
+  function download() {
     reverify();
     if (S.verify.errors.length) {
       if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
@@ -1145,34 +1274,43 @@
       toast(`Fix ${S.verify.errors.length} error(s) before downloading.`, 'err');
       return;
     }
-    dialog({ title: 'Download', body: `<p>Download to the controller:</p><div class="kv"><span>Name</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Type</span><span class="v">PLC-CPU 1.0</span></div>
-        <div class="kv"><span>Path</span><span class="v">Local\\Backplane\\0</span></div><div class="kv"><span>Mode</span><span class="v">${{ prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[ctl.mode]}</span></div>
+    dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Path', PATH)}${kv('Mode', MODE())}
         <p>${ctl.name ? `The project in the controller (<b>${esc(ctl.name)}</b>) will be replaced by <b>${esc(S.p.controller.name)}</b>.` : `<b>${esc(S.p.controller.name)}</b> will be downloaded.`} ${RUNM() ? 'The controller goes to Remote Program first.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: 'Download', pri: true, run: () => {
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
         const r = ctl.download(JSON.parse(JSON.stringify(S.p)));
         if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return false; }
-        S.online = true;
-        S.io = {};
-        render();
+        // the field devices of the I/O panel keep their state
+        Object.keys(S.io).forEach(sl => { if (ctl.M.mods.get(+sl)) ctl.setInputs(+sl, S.io[sl]); });
+        Object.keys(S.ana).forEach(sl => { if (ctl.M.mods.get(+sl)) ctl.setInputs(+sl, S.ana[sl]); });
+        online();
         setTimeout(() => {
           if (ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
         }, 0);
-        void thenOnline;
       } }] });
   }
   const RUNM = () => ctl.mode === 'run' || ctl.mode === 'remrun';
   function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   function whoActive() {
-    const el = dialog({ title: 'Who Active', size: 'md',
+    dialog({ title: 'Who Active', size: 'md',
       body: `<div class="tree" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation</div><div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Local backplane (built-in)</div>
-        <div class="nd on" style="padding-left:36px">${ic('chip', 'i ti')}00, PLC-CPU ${esc(ctl.name || '(no project)')} · ${{ prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[ctl.mode]}</div></div>
-        <p class="help">Path: Local\\Backplane\\0. ${ctl.holds(S.p) ? 'The controller holds this project.' : ctl.name ? 'The controller holds another version or another project: going online asks to download.' : 'The controller is empty: going online downloads this project.'}</p>`,
-      buttons: [{ l: 'Close' }, { l: 'Download…', run: () => { setTimeout(() => download(), 0); } }, { l: 'Go Online', pri: true, run: () => { setTimeout(goOnline, 0); } }] });
-    void el;
+        <div class="nd on" style="padding-left:36px">${ic('chip', 'i ti')}00, PLC-CPU ${esc(ctl.name || '(no project)')} · ${MODE()}</div></div>
+        <p class="help">The built-in controller runs inside this app, like an emulator: no cable or driver needed. Path: ${PATH}.
+        ${ctl.holds(S.p) ? 'It holds this project.' : ctl.name ? 'It holds another project or another version: Upload or Download.' : 'It is empty: Download this project.'}</p>`,
+      buttons: [{ l: 'Close' }, { l: 'Upload…', run: () => { setTimeout(upload, 0); } }, { l: 'Download…', run: () => { setTimeout(download, 0); } }, { l: 'Go Online', pri: true, run: () => { setTimeout(goOnline, 0); } }] });
   }
-  function toggleSel() { const e = curEl(); if (!e) return; if (!ctl.toggle(e.a[0], S.prog)) toast(`${e.a[0]} cannot be toggled.`, 'err'); live(true); }
+  /* Toggle Bit: an input bit follows its field device, so on an input the I/O panel point is switched */
+  function toggleSel() {
+    const e = curEl(); if (!e || !e.a[0]) return;
+    const r = ctl.refOf(e.a[0], S.prog);
+    if (r && r.input && r.force) {
+      const [slot, , bit] = r.force.split(':');
+      setPoint(+slot, +bit, !(((S.io[slot] || 0) >> +bit) & 1));
+      toast(`${e.a[0]} is an input: its field point ${slot}/${bit} on the I/O panel was switched.`);
+    } else if (!ctl.toggle(e.a[0], S.prog)) toast(`${e.a[0]} cannot be toggled.`, 'err');
+    live(true);
+  }
   function forceSel(v) { const e = curEl(); if (!e) return; if (!ctl.force(e.a[0], v, S.prog)) toast('Only I/O bits can be forced.', 'err'); else if (v !== null && ctl.forceState() === 'disabled') toast('Force installed. Enable forces (Forces box) to apply it.'); live(true); render(); }
 
   /* ---------- I/O panel ---------- */
@@ -1183,7 +1321,8 @@
     [...S.p.tags, ...allProgs().flatMap(g => g.tags)].forEach(t => { if (t.alias) names[U(t.alias)] = t.name; });
     return mods.map(m => {
       const d = E.MODULES[m.type] || {};
-      const head = `<div class="mh">[${m.slot}] ${esc(m.type)}<small>${esc(m.name)}</small></div>`;
+      const ms = S.online && ctl.M ? ctl.moduleStatus(m.slot) : null;
+      const head = `<div class="mh">[${m.slot}] ${esc(m.type)}<small>${esc(m.name)}</small><span class="grow"></span>${ms && ms.state !== 'Running' ? `<small style="color:${ms.state === 'Faulted' ? 'var(--danger)' : 'var(--warn-text)'};font-weight:700">${ms.state}</small>` : ''}${ms && ms.state !== 'Not in the controller' && !m.inhibit ? `<button class="btn" style="min-height:24px;padding:0 8px" data-pull="${m.slot}" title="Take the card out to see a module fault">${ctl.pulled.has(m.slot) ? 'Put back' : 'Fault'}</button>` : ''}</div>`;
       if (d.kind === 'di' || d.kind === 'do') {
         const img = useCtl && ctl.M.mods.get(m.slot) ? ctl.ioImage(m.slot) : null;
         const bits = d.kind === 'di' ? (S.io[m.slot] || 0) : img ? img.out : 0;
@@ -1211,7 +1350,7 @@
   }
 
   /* ---------- the controller runs on its own clock; the screen follows only what changed ---------- */
-  let lastT = performance.now(), sig = '';
+  let lastT = performance.now(), sig = '', lastLive = 0, lastLay = 0;
   function liveSig() {
     if (!S.online) return 'off';
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
@@ -1219,11 +1358,15 @@
     ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); parts.push(JSON.stringify(im)); });
     return parts.join(',');
   }
+  let lastFault = null;
   function live(force) {
     const s = liveSig();
     if (!force && s === sig) return;
     sig = s;
-    if (S.online) renderLadder();
+    // a new major fault (a module that failed, a watchdog) shows in the organizer and the online bar
+    const fk = S.online && ctl.fault ? ctl.fault.at : null;
+    if (fk !== lastFault) { lastFault = fk; if (!force) { render(); if (fk) toast(`Major fault: ${ctl.fault.text}`, 'err'); return; } }
+    if (S.online && !S.touching) { const now = performance.now(); if (force || now - lastLive > 33) { lastLive = now; renderLadder(); } else { sig = ''; } }
     const ob = $('#olbar');
     if (ob) ob.innerHTML = S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? `${modeBox()}${forcesBox()}${innerWidth >= 1024 && innerWidth > innerHeight ? editsBox() : ''}` : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`;
     const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) iob.innerHTML = ioHTML();
@@ -1234,6 +1377,8 @@
     const dt = Math.min(250, now - lastT);
     lastT = now;
     if (ctl.M) ctl.advance(dt);
+    // a turned tablet or a resized window may skip the resize event: check the layout a few times a second
+    if (now - lastLay > 250) { lastLay = now; if (pickLayout() !== S.layout && !S.touching) render(); }
     live(false);
     requestAnimationFrame(loop);
   }
@@ -1329,7 +1474,7 @@
       if ((el = t.closest('[data-tab]'))) { S.prefs.tab = el.dataset.tab; savePrefs(); render(); return; }
       if ((el = t.closest('[data-key]'))) { ctl.setKey(el.dataset.key); live(true); render(); return; }
       if ((el = t.closest('[data-box]'))) {
-        if (el.dataset.box === 'mode') openMenu(menuItems(['online', 'offline', '-', 'prog', 'runm', 'clear', '-', 'download', 'who']), el, 'Mode · key switch in ' + ctl.key);
+        if (el.dataset.box === 'mode') openMenu(menuItems(['online', 'offline', '-', 'prog', 'runm', 'clear', '-', 'upload', 'download', 'who']), el, 'Mode · key switch in ' + ctl.key);
         else openMenu(menuItems(['fen', 'fdis', 'fall']), el, 'I/O forces');
         return;
       }
@@ -1349,6 +1494,7 @@
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
       if ((el = t.closest('[data-ef]'))) { const f = S.errFilter || { e: true, w: true, m: true }; f[el.dataset.ef] = !f[el.dataset.ef]; S.errFilter = f; render(); return; }
       if ((el = t.closest('[data-errline]'))) { gotoErr(el); return; }
+      if ((el = t.closest('[data-pull]'))) { const sl = +el.dataset.pull; ctl.setModuleFault(sl, !ctl.pulled.has(sl)); toast(ctl.pulled.has(sl) ? `Card in slot ${sl} taken out: see Module Properties for the fault.` : `Card in slot ${sl} put back.`); live(true); render(); return; }
       if ((el = t.closest('[data-push]'))) { S.prefs.push = el.dataset.push === '1'; savePrefs(); render(); return; }
       if ((el = t.closest('[data-ctx]'))) { const r = el.getBoundingClientRect(); ctxMenu(S.sel ? { ri: S.sel.ri, path: S.sel.path, br: S.sel.br } : curSelRung() != null ? { ri: curSelRung() } : null, r.left, r.top); return; }
       if ((el = t.closest('[data-more]'))) { openMenu(menuItems(['rung', 'branch', 'level', '-', 'rtext', 'comment', '-', 'verifyr', 'verifyc', 'xref', 'goto', '-', 'newtag', 'tagsmon', '-', 'options']), el); return; }
@@ -1445,7 +1591,7 @@
     applyTheme();
     const last = store.get('last');
     let p = last ? store.get('p.' + last) : null;
-    if (!validProject(p)) p = example();
+    if (!validProject(p)) p = blank('New_Project');
     S.layout = pickLayout();
     bind();
     openProject(p, true);

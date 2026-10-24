@@ -121,7 +121,7 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .rtabs .t.on { background: var(--lad-bg); color: var(--text); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
 .tab .rtabs { height: 44px; }
 .rtb { height: 30px; display: flex; align-items: center; gap: 1px; padding: 0 4px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
-.ladwrap { flex: 1; overflow: auto; background: var(--lad-bg); position: relative; outline: none; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.ladwrap { flex: 1; overflow: auto; background: var(--lad-bg); position: relative; outline: none; touch-action: pan-x pan-y; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .io { width: 270px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; flex: none; }
 .derr { height: 150px; background: var(--surface); border-top: 1px solid var(--border-strong); display: flex; flex-direction: column; flex: none; min-height: 0; }
 .dstatus { height: 22px; display: flex; background: var(--surface-2); border-top: 1px solid var(--border); flex: none; white-space: nowrap; overflow: hidden; }

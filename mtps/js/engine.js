@@ -554,7 +554,7 @@
       if (!(Number.isInteger(m.slot) && m.slot >= 1 && m.slot < size)) { ctlErr(`Module '${m.name}': slot ${m.slot} is not in the ${size}-slot rack (slots 1 to ${size - 1})`); continue; }
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
-      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind };
+      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
       for (const dir of ['I', 'O']) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
@@ -659,6 +659,8 @@
       this.period = 10; this.acc = 0; this.dt = 10; this.scans = 0; this.first = true;
       this.d = 0; this.ret = false; this.jmp = null; this.tnd = false; this.mcr = false;
       this.ls = []; this.refs = new Map();
+      this.pulled = new Set();     // slots whose card is taken out (a simulated module fault)
+      this.majors = []; this.minors = [];   // fault logs for Controller Properties
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -685,6 +687,19 @@
       else this.go(RUN(this.mode) ? 'remrun' : 'remprog');
       this.emit('key');
     }
+    majorFault(type, code, text) {
+      this.fault = { type, code, text, at: Date.now() };
+      this.majors.unshift(this.fault);
+      this.majors.length = Math.min(this.majors.length, 10);
+      this.emit('fault');
+    }
+    minorFault(type, code, text) {
+      const last = this.minors[0];
+      if (last && last.type === type && last.code === code && last.text === text) { last.count++; last.at = Date.now(); return; }
+      this.minors.unshift({ type, code, text, at: Date.now(), count: 1 });
+      this.minors.length = Math.min(this.minors.length, 10);
+    }
+    clearMinors() { this.minors = []; this.emit('fault'); }
     clearFault() {
       if (!this.fault) return;
       this.fault = null;
@@ -752,8 +767,7 @@
         for (const P of this.M.programs) if (P.main) this.routine(P.main);
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
-        this.fault = { type: e.type, code: e.code, text: e.message };
-        this.emit('fault');
+        this.majorFault(e.type, e.code, e.message);
       }
       this.S.FS = 0;
       this.first = false;
@@ -770,6 +784,15 @@
       const V = this.M.vals;
       for (const m of this.M.mods.values()) {
         const ph = this.phys[m.slot];
+        if (m.inhibit) continue;
+        if (this.pulled.has(m.slot)) {
+          V[m.I].Fault = -1;
+          if (m.kind === 'di') V[m.I].Data = 0;
+          else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = 0;
+          if (m.majorOnFail && this.running) this.majorFault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+          continue;
+        }
+        if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
       }
@@ -929,7 +952,7 @@
       const r = dest.get(), S = this.S;
       S.V = OV || ov ? 1 : 0; S.Z = r === 0 ? 1 : 0; S.N = r < 0 ? 1 : 0;
       if (carry !== undefined) S.C = carry ? 1 : 0;
-      if (S.V) S.MINOR = 1;
+      if (S.V) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
     }
     arith(op, A, B, D) {
       const a = A.get(), b = B.get(), real = A.type === 'REAL' || B.type === 'REAL' || D.type === 'REAL';
@@ -1018,7 +1041,7 @@
     ioImage(slot) {
       const m = this.M && this.M.mods.get(slot);
       if (!m) return null;
-      const V = this.M.vals, on = this.running, ch = o => [0, 1, 2, 3].map(k => o[`Ch${k}Data`]);
+      const V = this.M.vals, on = this.running && !m.inhibit && !this.pulled.has(slot), ch = o => [0, 1, 2, 3].map(k => o[`Ch${k}Data`]);
       switch (m.kind) {
         case 'di': return { in: V[m.I].Data & 0xFFFF, out: null };
         case 'do': return { in: null, out: on ? this.applyForce(slot, 'O', V[m.O].Data & 0xFFFF) & 0xFFFF : 0 };
@@ -1026,6 +1049,31 @@
         case 'ao': return { in: null, out: on ? ch(V[m.O]) : [0, 0, 0, 0] };
       }
       return { in: null, out: null };
+    }
+
+    /* a simulated module fault: the card is taken out of the rack (on = true) or put back */
+    setModuleFault(slot, on) {
+      if (on) this.pulled.add(slot); else this.pulled.delete(slot);
+      this.emit('io');
+    }
+    /* the state of a card, as Module Properties shows it */
+    moduleStatus(slot) {
+      const m = this.M && this.M.mods.get(slot);
+      if (!m) return { state: 'Not in the controller', code: null, text: 'The project in the controller has no module in this slot. Download first.' };
+      if (m.inhibit) return { state: 'Inhibited', code: null, text: 'The module is inhibited: no connection, its inputs hold and its outputs are off.' };
+      if (this.pulled.has(slot)) return { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+      return { state: 'Running', code: null, text: '' };
+    }
+    /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted */
+    ioOk() { return !this.M || ![...this.M.mods.values()].some(m => !m.inhibit && this.pulled.has(m.slot)); }
+    /* Upload: the controller's copy of the project, with the tag values it has now */
+    upload() {
+      if (!this.copy) return null;
+      const p = JSON.parse(this.copy);
+      const take = (list, prog) => (list || []).forEach(t => { if (t.alias) return; const v = this.read(t.name, prog); if (v !== undefined) t.value = v; });
+      take(p.tags, null);
+      (p.tasks || []).forEach(k => (k.programs || []).forEach(g => take(g.tags, g.name)));
+      return p;
     }
 
     /* ---------- forces (I/O bits only) ---------- */
