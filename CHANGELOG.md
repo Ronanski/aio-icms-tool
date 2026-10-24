@@ -5,6 +5,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added (MT PLC Studio 0.3.0-beta.1): the five proposals
+- **Setup wizard** (first start, File > New Project), in the order of a real first project:
+  1. Communications: Configure Drivers, add the Emulate Ethernet driver.
+  2. Emulator: a controller with an IP address.
+  3. New Project: the controller and I/O of the emulator chassis.
+  4. Who Active: Set Project Path.
+  5. Ladder.
+  - Quick setup does it all at once.
+  - **Configure Drivers** is also in the Communications menu. Without a running driver, Who Active finds nothing and
+    Go Online says why.
+- **Emulator beside the ladder:**
+  - Docked under the ladder on Windows and in tablet portrait, at the side in tablet landscape, and as a Ladder /
+    Emulator tab on the phone.
+  - Resized by dragging the bar.
+  - The rack fits the panel without scrolling; a narrow panel shows only the used slots and one empty slot.
+- **The chassis looks like hardware:** a power supply, rails with screws, numbered slots, and a backplane connector in
+  each empty slot. Each module has its front face (display and LEDs, or the I/O LED matrix) and a terminal block with
+  the field switches or lamps. Chassis have 4 to 12 slots.
+- **Tag Browser in the operand box:**
+  - Search as you type, with the match marked.
+  - All / Inputs / Outputs / Tags / System chips and a scope list.
+  - Recent tags.
+  - Groups that fold, and timers and counters folded under their tag.
+  - ↑ ↓ Enter to pick from the keyboard.
+- **Classic look** (the default): light grey, square and compact, like the Windows programming software.
+  - The toolbar has Who Active, the path, Go Online, Download and Upload.
+  - The organizer tree is compact.
+  - Options > Density sets Compact or Touch.
+  - In tablet portrait: one row of instructions with "All…", and the menu folds open one menu at a time. Who Active is
+    on every screen size.
+- **Project files:**
+  - **.mtp** project files with Open File and Save As. Windows uses its own file dialogs; Save keeps writing the same
+    file.
+  - Upload can save to a .mtp file.
+  - **Import and Export L5X** (RSLogix 5000 XML): controller, I/O modules, tags, programs and rungs.
+
 ### Changed (MT PLC Studio 0.2.0-beta.3): Download, Upload, Go Online and online edits work as in RSLogix 5000
 - **Path bar** on the toolbar, with a button that opens Who Active.
 - **Connected To Go Online** now comes up in more cases, and shows the path, the name, the mode and the contents of
