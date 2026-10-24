@@ -646,7 +646,7 @@
 
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

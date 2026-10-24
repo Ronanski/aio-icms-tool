@@ -81,7 +81,8 @@
     const head = e => {
       if (isBox(e) || !e.a || !e.a.length) return { lines: [], h: 4 };
       const a = e.a[0], lines = [], tag = tagOf(a);
-      if (tag && tag.desc) wrapWords(tag.desc, CW - 8, fDesc, descLines).forEach(t => lines.push(['ds', t]));
+      const dsc = o.desc ? o.desc(a) : tag && tag.desc;
+      if (dsc) wrapWords(dsc, CW - 8, fDesc, descLines).forEach(t => lines.push(['ds', t]));
       wrapName(a, CW - 8, fName, 2).forEach(t => lines.push(['nm', t]));
       if (tag && tag.alias && !/[.[]/.test(a)) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
       return { lines, h: lines.length * LH + 6 };
@@ -209,7 +210,6 @@
       });
       const rungBot = Math.max(y, rungTop + 40);
       y = rungBot;
-      out += `<line class="rail" x1="${LM + .5}" y1="${rungTop - 4}" x2="${LM + .5}" y2="${rungBot}"/><line class="rail" x1="${RR + .5}" y1="${rungTop - 4}" x2="${RR + .5}" y2="${rungBot}"/>`;
       const selR = o.selRung === ri;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
       out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
@@ -222,7 +222,8 @@
         + `<rect class="tap" data-ri="${ri}" data-rn="1" x="0" y="${rungTop - 4}" width="${LM}" height="${rungBot - rungTop + 4}"/>` + taps;
       y += 10;
     });
-    out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="${y}" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="${y}" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;
+    // the power rails run unbroken from the first rung down to (End), as in the reference editor
+    out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="4" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="4" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;
     taps += `<rect class="tap" data-end="1" x="0" y="${y - 4}" width="${RR}" height="30"/>`;
     y += 44;
     const W = Math.max(o.W, RR + 8);

@@ -1,6 +1,6 @@
 {
   "name": "mt-plc-studio-mobile",
-  "version": "0.3.0-beta.1",
+  "version": "0.3.0-beta.2",
   "description": "MT PLC Studio for Android",
   "private": true,
   "scripts": {
@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@capacitor/android": "6.2.0",
-    "@capacitor/core": "6.2.0"
+    "@capacitor/core": "6.2.0",
+    "@capacitor/filesystem": "6.0.3"
   },
   "devDependencies": {
     "@capacitor/assets": "3.0.5",

@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.3.0-beta.1';
+  const VERSION = '0.3.0-beta.2';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -141,22 +141,180 @@
     ];
     return p;
   }
-  const index = () => store.get('index', []);
+  /* ---------- project files on the device (spec section 18) ----------
+     Projects live as files the user names and places: .mtp (the project) and .L5X (exchange with the reference
+     software), in folders picked in the app's own file browser. Windows: the computer's folders (desktop-mtps/
+     preload.js). Android: the Documents folder (Capacitor Filesystem). A browser: a folder kept in the browser.
+     Nothing is kept as a list inside the app; only the session (the open project, its file, unsaved changes) is held
+     so a restart comes back to the same place. */
+  const FS = (() => {
+    if (window.mtpsFS) {
+      const b = window.mtpsFS;
+      return { kind: 'device', places: () => b.places(), list: d => b.list(d), read: f => b.read(f), write: (f, t) => b.write(f, t), mkdir: d => b.mkdir(d), remove: f => b.remove(f), exists: f => b.exists(f), join: (d, n) => d.replace(/[\\/]+$/, '') + (d.includes('\\') ? '\\' : '/') + n };
+    }
+    const cap = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (cap) {
+      const D = 'DOCUMENTS', ROOT = 'MT PLC Studio Projects';
+      const norm = p => String(p || '').replace(/^\/+|\/+$/g, '');
+      let asked = false;
+      const perm = async () => { if (asked) return; asked = true; try { await cap.requestPermissions(); } catch (e) { /* not needed on newer Android */ } };
+      return { kind: 'device',
+        places: async () => { await perm(); try { await cap.mkdir({ path: ROOT, directory: D, recursive: true }); } catch (e) { /* exists */ } return [{ label: 'MT PLC Studio Projects', path: ROOT }, { label: 'Documents', path: '' }]; },
+        list: async d => {
+          await perm();
+          const r = await cap.readdir({ path: norm(d), directory: D });
+          const items = (r.files || []).map(x => (typeof x === 'string' ? { name: x, type: /\./.test(x) ? 'file' : 'directory' } : x))
+            .filter(x => !x.name.startsWith('.') && (x.type === 'directory' || /\.(mtp|l5x|json)$/i.test(x.name)))
+            .map(x => ({ name: x.name, path: (norm(d) ? norm(d) + '/' : '') + x.name, dir: x.type === 'directory', size: x.size || 0, mtime: x.mtime || 0 }));
+          const nd = norm(d);
+          return { dir: nd, parent: nd ? nd.split('/').slice(0, -1).join('/') : null, items };
+        },
+        read: async f => (await cap.readFile({ path: norm(f), directory: D, encoding: 'utf8' })).data,
+        write: async (f, t) => { await cap.writeFile({ path: norm(f), directory: D, data: t, encoding: 'utf8', recursive: true }); return f; },
+        mkdir: d => cap.mkdir({ path: norm(d), directory: D, recursive: true }),
+        remove: f => cap.deleteFile({ path: norm(f), directory: D }),
+        exists: async f => { try { await cap.stat({ path: norm(f), directory: D }); return true; } catch (e) { return false; } },
+        join: (d, n) => (norm(d) ? norm(d) + '/' : '') + n };
+    }
+    // a browser: a folder tree kept in the browser's storage
+    const K = 'vfs', get = () => store.get(K, { '/MT PLC Studio Projects': { dir: true, mtime: Date.now() } }), put = v => store.set(K, v);
+    const parentOf = p => { const i = p.lastIndexOf('/'); return i <= 0 ? '/' : p.slice(0, i); };
+    return { kind: 'browser',
+      places: async () => { const v = get(); if (!v['/MT PLC Studio Projects']) { v['/MT PLC Studio Projects'] = { dir: true, mtime: Date.now() }; put(v); } return [{ label: 'MT PLC Studio Projects', path: '/MT PLC Studio Projects' }, { label: 'This browser', path: '/' }]; },
+      list: async d => { const v = get(), dd = d === '/' ? '' : d; return { dir: d, parent: d === '/' ? null : parentOf(d), items: Object.keys(v).filter(p => parentOf(p) === (dd || '/') && p !== d && p !== '/').map(p => ({ name: p.slice(p.lastIndexOf('/') + 1), path: p, dir: !!v[p].dir, size: v[p].text ? v[p].text.length : 0, mtime: v[p].mtime })) }; },
+      read: async f => { const x = get()[f]; if (!x || x.dir) throw new Error('No such file'); return x.text; },
+      write: async (f, t) => { const v = get(); v[f] = { text: t, mtime: Date.now() }; if (!put(v)) throw new Error('The browser storage is full'); return f; },
+      mkdir: async d => { const v = get(); v[d] = { dir: true, mtime: Date.now() }; put(v); },
+      remove: async f => { const v = get(); delete v[f]; put(v); },
+      exists: async f => !!get()[f],
+      join: (d, n) => (d === '/' ? '' : d) + '/' + n };
+  })();
+  E.FS = FS;
+  const index = () => [];
+  /* the session: the open project, its file and whether it has unsaved changes, so a restart comes back to it */
   function saveProject() {
     if (!S.p) return;
-    const name = S.p.controller.name;
-    if (!store.set('p.' + name, S.p)) { toast('Could not save: the device storage is full.', 'err'); return; }
-    const ix = index().filter(x => x.name !== name);
-    ix.unshift({ name, at: Date.now() });
-    store.set('index', ix);
-    store.set('last', name);
-    S.dirty = false;
+    if (!store.set('session', { p: S.p, file: S.file && S.file.path ? { path: S.file.path, name: S.file.name } : null, dirty: !!S.dirty })) toast('Could not keep the session: the device storage is full.', 'err');
     title();
   }
   let saveTimer = 0;
   const scheduleSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveProject, 500); };
+  const baseName = p => String(p).split(/[\\/]/).pop();
+  const fmtSize = n => (n > 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B');
+  /* the app's own file browser: places, the folder path, folders and files, a new folder, the file name and type */
+  async function fileDialog(o) {
+    const types = o.types || ['mtp'];
+    let places = [];
+    try { places = await FS.places(); } catch (e) { toast('The files of this device cannot be reached: ' + (e.message || e), 'err'); return; }
+    const st = { dir: store.get('lastDir', null) || places[0].path, data: null, sel: null, type: types[0] };
+    const el = dialog({ title: o.title, size: 'lg', flush: true, focus: o.mode === 'save',
+      body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div><div class="row" data-fbex="1">${ic('ladder')}<span class="ell">Motor_Demo</span></div>` : ''}</aside>
+        <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
+          <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
+          <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}
+            <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : 'All projects'}</option>`).join('')}</select></div></div></div>
+        <p class="help fbhint">${FS.kind === 'browser' ? 'In a browser, the files are kept by this browser. The Windows and Android apps keep them in the folders of the device.' : ''}</p>`,
+      buttons: [{ l: 'Cancel' }, { l: o.mode === 'save' ? 'Save' : 'Open', pri: true, run: () => { act(); return false; } }] });
+    const q = s => el.querySelector(s);
+    const show = async d => {
+      try { st.data = await FS.list(d); } catch (e) { toast('That folder cannot be opened: ' + (e.message || e), 'err'); return; }
+      st.dir = st.data.dir; st.sel = null; store.set('lastDir', st.dir);
+      q('#fbpath').textContent = st.dir || '/';
+      const want = new RegExp('\\.(' + (st.type === 'mtp' ? 'mtp|json' : st.type) + ')$', 'i');
+      const items = st.data.items.filter(x => x.dir || want.test(x.name)).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
+      q('#fbl').innerHTML = items.map(x => `<div class="row fbi" data-fbi="${esc(x.path)}" data-dir="${x.dir ? 1 : ''}">${ic(x.dir ? 'folder' : /\.l5x$/i.test(x.name) ? 'upload' : 'file')}<span class="grow ell">${esc(x.name)}</span><span class="sub">${x.mtime ? new Date(x.mtime).toLocaleString() : ''}</span><span class="sub fbsz">${x.dir ? '' : fmtSize(x.size)}</span></div>`).join('') || '<div class="empty">This folder has no projects.</div>';
+    };
+    const ext = () => (st.type === 'l5x' ? '.L5X' : '.mtp');
+    const act = async () => {
+      if (o.mode === 'open') {
+        if (!st.sel) { toast('Pick a file.'); return; }
+        closeLayer(); o.onPick(st.sel);
+        return;
+      }
+      let n = q('#fbn').value.trim();
+      if (!n) { toast('Type a file name.', 'err'); return; }
+      if (/[\\/:*?"<>|]/.test(n)) { toast('A file name cannot hold \\ / : * ? " < > |', 'err'); return; }
+      if (!new RegExp(ext().replace('.', '\\.') + '$', 'i').test(n)) n += ext();
+      const f = FS.join(st.dir, n);
+      const go = () => { closeLayer(); o.onPick(f); };
+      if (await FS.exists(f)) confirmDlg('Replace file', `<b>${esc(n)}</b> already exists in this folder. Replace it?`, 'Replace', go, true);
+      else go();
+    };
+    el.addEventListener('click', ev => {
+      const p = ev.target.closest('[data-fbp]'); if (p) { show(p.dataset.fbp); return; }
+      if (ev.target.closest('[data-fbex]')) { closeLayer(); o.onExample && o.onExample(); return; }
+      if (ev.target.closest('[data-fbup]')) { if (st.data && st.data.parent != null) show(st.data.parent); return; }
+      if (ev.target.closest('[data-fbnew]')) {
+        const n = prompt1Inline(el, 'New folder name', 'New Folder', async v => { if (!v || /[\\/:*?"<>|]/.test(v)) return 'Type a folder name.'; await FS.mkdir(FS.join(st.dir, v)); show(st.dir); });
+        void n; return;
+      }
+      const it = ev.target.closest('[data-fbi]'); if (!it) return;
+      el.querySelectorAll('.fbi.on').forEach(x => x.classList.remove('on'));
+      if (it.dataset.dir) { if (it.dataset.clicked) show(it.dataset.fbi); else { it.classList.add('on'); it.dataset.clicked = '1'; setTimeout(() => { delete it.dataset.clicked; }, 450); if (S.layout !== 'desktop') show(it.dataset.fbi); } return; }
+      it.classList.add('on'); st.sel = it.dataset.fbi;
+      if (o.mode === 'save') q('#fbn').value = baseName(it.dataset.fbi);
+      else if (it.dataset.clicked) act(); else { it.dataset.clicked = '1'; setTimeout(() => { delete it.dataset.clicked; }, 450); }
+    });
+    q('#fbt').addEventListener('change', ev => { st.type = ev.target.value; if (o.mode === 'save') { const n = q('#fbn'); n.value = n.value.replace(/\.(mtp|l5x)$/i, '') + ext(); } show(st.dir); });
+    show(st.dir);
+  }
+  /* a one-line question inside a dialog (the dialog stays open under it) */
+  function prompt1Inline(host, label, value, fn) {
+    const bar = document.createElement('div');
+    bar.className = 'fbask';
+    bar.innerHTML = `<label>${esc(label)}</label><input class="inp" value="${esc(value)}"><button class="btn pri">OK</button><button class="btn">Cancel</button>`;
+    host.querySelector('.fbm').prepend(bar);
+    const inp = bar.querySelector('input'); inp.focus(); inp.select();
+    const [ok, no] = bar.querySelectorAll('button');
+    no.onclick = () => bar.remove();
+    ok.onclick = async () => { const err = await fn(inp.value.trim()); if (err) toast(err, 'err'); else bar.remove(); };
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); ok.click(); } });
+    return bar;
+  }
+  const mtpText = () => JSON.stringify(S.p, null, 1);
+  async function writeTo(path) {
+    try { await FS.write(path, mtpText()); } catch (e) { toast('Could not save: ' + (e.message || e), 'err'); return false; }
+    S.file = { path, name: baseName(path) }; S.dirty = false; saveProject(); render();
+    toast(`Saved ${S.file.name}`, 'ok');
+    return true;
+  }
+  function saveFileAs() { fileDialog({ mode: 'save', title: 'Save As', name: (S.file ? S.file.name : S.p.controller.name + '.mtp'), types: ['mtp'], onPick: writeTo }); }
+  async function loadFile(path, then) {
+    let t;
+    try { t = await FS.read(path); } catch (e) { toast('That file could not be read: ' + (e.message || e), 'err'); return; }
+    let p = null;
+    if (/\.l5x$/i.test(path) || /^\s*<\?xml|<RSLogix5000Content/i.test(t)) { p = fromL5X(t); if (!p) return; }
+    else { try { p = JSON.parse(t); } catch (e) { toast('That file is not a project.', 'err'); return; } if (!validProject(p)) { toast('That file is not an MT PLC Studio project.', 'err'); return; } }
+    S.ed = null; openProject(p, true);
+    if (/\.mtp$/i.test(path)) S.file = { path, name: baseName(path) };
+    S.dirty = !/\.mtp$/i.test(path); saveProject(); render();
+    toast(`Opened ${baseName(path)}`);
+    if (then) then();
+  }
+  function cmdOpen() {
+    const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
+    if (S.dirty) confirmDlg('Open Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Open another project anyway? (Save first with Save or Save As.)`, 'Open anyway', go, true);
+    else go();
+  }
+  function exportL5X() { fileDialog({ mode: 'save', title: 'Export L5X', name: S.p.controller.name + '.L5X', types: ['l5x'], onPick: async f => { try { await FS.write(f, toL5X(S.p)); toast(`Exported ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } }); }
+  function importL5X() { fileDialog({ mode: 'open', title: 'Import L5X', types: ['l5x'], onPick: f => loadFile(f) }); }
+  /* the projects of the older versions, kept inside the app, become .mtp files in the projects folder (once) */
+  async function moveOldProjects() {
+    const ix = store.get('index', []);
+    if (!ix.length) return;
+    let moved = 0, dir;
+    try { dir = (await FS.places())[0].path; } catch (e) { return; }
+    for (const x of ix) {
+      const p = store.get('p.' + x.name);
+      if (!validProject(p)) { store.del('p.' + x.name); continue; }
+      const f = FS.join(dir, x.name + '.mtp');
+      try { if (!(await FS.exists(f))) await FS.write(f, JSON.stringify(p, null, 1)); store.del('p.' + x.name); moved++; } catch (e) { /* keep it for the next try */ }
+    }
+    if (!store.get('index', []).some(x => store.get('p.' + x.name))) { store.del('index'); store.del('last'); }
+    if (moved) toast(`${moved} project(s) from this app were saved as .mtp files in ${dir}.`, 'ok');
+  }
   function openProject(p, quiet) {
-    S.p = p; S.file = null;
+    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.view = 'ladder';
     S.prog = allProgs()[0].name;
     S.routine = allProgs()[0].main || allProgs()[0].routines[0].name;
     S.sel = null; S.selRung = rungs().length ? 0 : null; S.undo = []; S.redo = [];
@@ -177,7 +335,7 @@
     p: null, prog: '', routine: '', sel: null, selRung: null, clip: null, undo: [], redo: [], dirty: false, online: false,
     layout: 'desktop', area: 'ladder', drawer: false, ioOpen: false, errOpen: false, tagOpen: new Set(), verify: null, errRungs: new Set(),
     prefs: Object.assign({ layout: 'auto', theme: 'classic', density: 'auto', zoom: 1, org: true, err: true, io: false, emu: true, emuH: 260, emuW: 380, emuHp: 330, tab: 'Favorites', push: false, collapsed: ['dts'] }, store.get('prefs', {})),
-    find: '', ed: null,
+    find: '', ed: null, tabs: [], view: 'ladder',
   };
   const savePrefs = () => store.set('prefs', S.prefs);
   if (!S.prefs.classic) { S.prefs.classic = 1; if (S.prefs.theme === 'auto') S.prefs.theme = 'classic'; savePrefs(); }
@@ -193,7 +351,7 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
   function edPhase() {
     if (!S.online || !ctl.M) return null;
     const dirty = !ctl.holds(S.p);
@@ -390,14 +548,13 @@
   const selForceable = () => { const e = curEl(); return S.online && !!(e && e.a && e.a[0]) && ctl.forced(e.a[0], S.prog) !== undefined && !!ctl.refOf(e.a[0], S.prog).force; };
   const C = {
     new: { l: 'New Project…', k: 'Ctrl+N', i: 'file', run: cmdNew },
-    open: { l: 'Open…', k: 'Ctrl+O', i: 'open', run: cmdOpen },
+    open: { l: 'Open… (.mtp, .L5X)', k: 'Ctrl+O', i: 'open', run: cmdOpen },
     save: { l: 'Save', k: 'Ctrl+S', i: 'save', run: saveCmd },
     uptags: { l: 'Upload Tag Values', i: 'upload', run: () => uploadTags(true), on: () => S.online && !!ctl.M && ctl.holds(S.p) },
     saveas: { l: 'Save As… (.mtp file)', i: 'save', run: saveFileAs },
-    openfile: { l: 'Open File… (.mtp, .L5X)', i: 'open', run: openFile },
     import: { l: 'Import L5X…', i: 'upload', run: importL5X },
     export: { l: 'Export L5X…', i: 'download', run: exportL5X },
-    savecopy: { l: 'Save a Copy on This Device…', i: 'save', run: cmdSaveAs },
+
     exit: { l: 'Exit', i: 'exit', run: () => { saveProject(); window.close(); }, show: () => isElectron },
     undo: { l: 'Undo', k: 'Ctrl+Z', i: 'undo', run: undo, on: () => editable() && S.undo.length > 0 },
     redo: { l: 'Redo', k: 'Ctrl+Y', i: 'redo', run: redo, on: () => editable() && S.redo.length > 0 },
@@ -412,7 +569,7 @@
     edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, 0), on: () => editable() && !!curEl() },
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
     comment: { l: 'Edit Rung Comment', i: 'text', run: () => rungComment(curSelRung()), on: () => editable() && curSelRung() != null },
-    desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => !!curEl() && !!tagFor(curEl().a[0]) },
+    desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => !!curEl() && !!curEl().a[0] && curEl().a[0] !== '?' },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
@@ -454,18 +611,19 @@
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
-    help: { l: 'Instruction Help', k: 'F1', i: 'help', run: instrHelp },
+    help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
+    tips: { l: 'Tips', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'openfile', 'save', 'saveas', 'savecopy', '-', 'import', 'export', '-', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', 'import', 'export', '-', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag']],
     ['Communications', ['drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
-    ['Help', ['help', 'about']],
+    ['Help', ['help', 'tips', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
   const ONLINE_ONLY = ['toggle', 'fon', 'foff', 'frem', 'prog', 'runm', 'clear', 'fen', 'fdis', 'fall'];
@@ -478,8 +636,39 @@
   const menuItems = ids => ids.filter(id => id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' ? '-' : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
+  /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */
+  function syncTabs() {
+    const ok = k => { if (k === 'tags') return true; const [g, r] = k.split('/'); const P = allProgs().find(x => x.name === g); return !!P && P.routines.some(x => x.name === r); };
+    S.tabs = S.tabs.filter(ok);
+    const cur = S.prog + '/' + S.routine;
+    if (S.view === 'ladder' && !S.tabs.includes(cur)) S.tabs.push(cur);
+    if (S.view === 'tags' && !S.tabs.includes('tags')) S.tabs.push('tags');
+  }
+  function tabTitle(k) { if (k === 'tags') return (S.tagScope ? S.tagScope : 'Controller') + ' Tags'; const [g, r] = k.split('/'); return g + ' - ' + r; }
+  function rtabsHTML() {
+    const act = S.view === 'tags' ? 'tags' : S.view === 'ladder' ? S.prog + '/' + S.routine : '';
+    return S.tabs.map(k => `<span class="t${k === act ? ' on' : ''}" data-tabk="${esc(k)}">${ic(k === 'tags' ? 'tags' : 'ladder', 'i ti')}<span class="ell">${esc(tabTitle(k))}</span><button class="tx" data-tabx="${esc(k)}" title="Close" aria-label="Close ${esc(tabTitle(k))}">${ic('close')}</button></span>`).join('');
+  }
+  function openTab(k) {
+    if (k === 'tags') S.view = 'tags';
+    else { const [g, r] = k.split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; S.sel = null; S.selRung = 0; reverify(); }
+    render();
+  }
+  function closeTab(k) {
+    const i = S.tabs.indexOf(k); if (i < 0) return;
+    const act = S.view === 'tags' ? 'tags' : S.prog + '/' + S.routine;
+    S.tabs.splice(i, 1);
+    if (k === act || (S.view === 'none')) {
+      const nx = S.tabs[Math.min(i, S.tabs.length - 1)];
+      if (nx) { openTab(nx); return; }
+      S.view = 'none';
+    }
+    render();
+  }
+  const emptyWs = () => '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>';
   function render() {
     if (!S.p) return;
+    syncTabs();
     const lay = pickLayout();
     if (lay !== S.layout) { S.layout = lay; closeLayer(); }
     const app = $('#app');
@@ -527,31 +716,32 @@
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
-        <section class="ed"><div class="rtabs"><span class="t on">${esc(curProg().name)} - ${esc(curRoutine().name)}</span></div>
-          <div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
-          <div class="ladwrap" id="ladwrap" tabindex="0"></div>${P.emu ? dockHTML('bottom') : ''}</section></div>
+        <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
+          ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
+          <div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu ? dockHTML('bottom') : ''}</section></div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
   }
-  const onlineBarHTML = () => `<div class="leds">${ledsHTML()}</div>${keyHTML()}<div class="boxes">${modeBox()}${forcesBox()}${editsBox()}<span class="sbox plain">Path: ${esc(curPath())}</span></div>`;
-  const pushSeg = () => `<span class="seg" title="How an input point reacts to a press"><span data-push="0" class="${S.prefs.push ? '' : 'on'}">Toggle</span><span data-push="1" class="${S.prefs.push ? 'on' : ''}">Push</span></span>`;
+  const onlineBarHTML = () => `<div class="leds">${ledsHTML()}</div>${keyHTML()}<div class="boxes">${modeBox()}${forcesBox()}${editsBox()}</div>`;
 
   function tablet() {
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org;
     const e = curEl();
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small></span>
-        <span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${land ? editsBox() : ''}</span><span class="grow"></span>
+<span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
         <span class="vsep"></span><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
         ${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
-      <div class="tbody">${pinned || S.drawer ? `<aside class="org${pinned ? '' : ' over'}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>` : ''}
-        <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="t on">${esc(curProg().name)} - ${esc(curRoutine().name)}</span><span class="grow"></span>${tbtn('zout')}${tbtn('zin')}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
-          <div class="ladwrap" id="ladwrap" tabindex="0"></div>
-          ${selbarHTML(e)}
+      <div class="tstat" id="olbar">${tabStatHTML()}</div>
+      <div class="tbody">${pinned || S.drawer ? `<aside class="org${pinned ? '' : ' over'}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>` : ''}
+        <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
+          ${S.view === 'ladder' ? `<div class="ladwrap" id="ladwrap" tabindex="0"></div>
+          ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}
           ${S.prefs.emu && !land ? dockHTML('bottom') : ''}
-          <div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button>${errHandle()}</div>`}</div></section>
+          <div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div></section>
         ${S.prefs.emu && land ? dockHTML('side') : ''}</div>`;
   }
+  const tabStatHTML = () => `${keyHTML()}${modeBox()}${forcesBox()}${editsBox()}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>`;
   const errHandle = () => { const n = S.verify ? S.verify.errors.length : 0; return `<span class="errh${n ? '' : ' ok'}" data-errh="1">${ic(n ? 'warn' : 'check')}<b>${n}</b> Errors${ic('down')}</span>`; };
   function selbarHTML(e) {
     const ri = curSelRung();
@@ -589,14 +779,14 @@
         <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
         <div class="brow" style="margin-top:0"><button class="btn" data-cmd="fen"${can('fen') ? '' : ' disabled'}>Enable</button><button class="btn" data-cmd="fdis"${can('fdis') ? '' : ' disabled'}>Disable</button><button class="btn" data-cmd="fall"${can('fall') ? '' : ' disabled'}>Remove All</button></div></div></div>
-      <div class="card"><div class="ch">I/O panel<span class="grow"></span>${pushSeg()}</div><div class="cb" id="iob" style="padding:0 6px 8px">${ioHTML()}</div></div>`;
+`;
   }
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}</div>
-      <div class="card">${b('options')}${b('updates')}${b('help')}${b('about')}</div>`;
+      <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
   /* ---------- organizer tree ---------- */
@@ -678,7 +868,7 @@
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
       live: S.online && !routineEdited() && !!liveRoutine(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop, press,
+      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop, press,
     });
     w.innerHTML = res.svg;
   }
@@ -830,9 +1020,27 @@
 
   /* ---------- layer: menus, sheets, dialogs, toasts ---------- */
   /* the menus as an accordion: tap a menu name to open its commands, tap again to fold it */
-  function foldMenu(at, open) {
-    openMenu(MENUS.flatMap(([n, ids]) => [{ l: n, i: open === n ? 'down' : 'right', run: () => setTimeout(() => foldMenu(at, open === n ? null : n), 0) }]
-      .concat(open === n ? menuItems(ids).filter(x => x !== '-').map(x => ({ ...x, sub: true })) : [])), at);
+  function foldMenu(at) {
+    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-').map(x => ({ ...x, grp: n })));
+    openMenu(items, at);
+    const menu = $('#layer .menu'); if (!menu) return;
+    // group the commands under their menu's header; a tap on a header folds its group open or shut in place
+    MENUS.forEach(([n]) => {
+      const its = [...menu.querySelectorAll('.it[data-n]')].filter(el => items[+el.dataset.n].grp === n);
+      if (!its.length) return;
+      const h = document.createElement('div');
+      h.className = 'it fold'; h.dataset.fold = n; h.innerHTML = `${ic('right')}<span>${esc(n)}</span>`;
+      its[0].before(h);
+      its.forEach(el => { el.classList.add('sub'); el.hidden = true; el.dataset.grp = n; });
+    });
+    menu.addEventListener('click', ev => {
+      const h = ev.target.closest('[data-fold]'); if (!h) return;
+      ev.stopPropagation();
+      const n = h.dataset.fold, opening = !h.classList.contains('open');
+      menu.querySelectorAll('[data-fold]').forEach(x => { x.classList.remove('open'); x.querySelector('svg').outerHTML = ic('right'); });
+      menu.querySelectorAll('[data-grp]').forEach(el => { el.hidden = !(opening && el.dataset.grp === n); });
+      if (opening) { h.classList.add('open'); h.querySelector('svg').outerHTML = ic('down'); }
+    }, true);
   }
   function closeLayer() { const l = $('#layer'); l.innerHTML = ''; layerKey = null; }
   let layerKey = null, layerAt = 0, lastDown = 0;
@@ -1126,10 +1334,17 @@
       } }],
     });
   }
+  /* the description of an operand: the tag's own description when the operand is the tag; otherwise (an I/O address,
+     a member such as Timer.DN, a bit) an operand description kept with the project, as the reference allows */
+  const opDesc = op => { const k = U(String(op || '')); const c = S.p.comments && S.p.comments[k]; if (c) return c; const t = tagFor(op); return t ? t.desc || '' : ''; };
   function editDesc() {
-    const e = curEl(), t = e && tagFor(e.a[0]);
-    if (!t) return;
-    prompt1('Edit Main Operand Description', t.name, t.desc || '', v => { const P = curProg(); const list = P.tags.includes(t) ? P.tags : S.p.tags; edit(() => { const i = list.indexOf(t); list[i] = { ...list[i], desc: v }; }); });
+    const e = curEl(), op = e && e.a[0];
+    if (!op || op === '?') return;
+    const t = tagFor(op), own = t && U(t.name) === U(op);
+    prompt1('Edit Main Operand Description', op, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
+      if (own) { const P = curProg(); const list = P.tags.includes(t) ? P.tags : S.p.tags; edit(() => { const i = list.indexOf(t); list[i] = { ...list[i], desc: v }; if (!v) delete list[i].desc; }); return; }
+      edit(() => { S.p.comments = S.p.comments || {}; if (v) S.p.comments[U(op)] = v; else delete S.p.comments[U(op)]; });
+    }, own ? 'The description of the tag: it shows wherever the tag is used.' : 'A description of this operand (an I/O point or a member): it shows above it in the ladder.');
   }
   const fmtVal = v => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toPrecision(7))) : v === undefined ? '' : String(v));
   function tagRows(mode, scope, q) {
@@ -1157,7 +1372,8 @@
       return { t: fmtVal(v), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
     }
     if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtVal(t.value), cls: '' };
-    return { t: '', cls: '' };
+    // an atomic tag without a start value starts at 0
+    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
   }
   function tagEditorBody(inline, mode0, scope0) {
     S.tagMode = mode0 || S.tagMode || 'mon';
@@ -1172,9 +1388,42 @@
   }
   function tagEditor(mode, scope) {
     if (S.layout === 'phone') { S.tagMode = mode; if (scope !== undefined) S.tagScope = scope; S.area = 'tags'; render(); return; }
-    dialog({ title: 'Tags · ' + S.p.controller.name, size: 'lg', flush: true, body: `<div id="tagpage" style="display:flex;flex-direction:column;flex:1;min-height:0">${tagEditorBody(false, mode, scope)}</div>`, buttons: [{ l: 'Close', pri: true }] });
+    S.tagMode = mode || 'mon'; if (scope !== undefined) S.tagScope = scope;
+    S.view = 'tags'; S.drawer = false; render();
   }
-  function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
+  function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
+  /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
+     Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
+  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] ? '' : 'Decimal');
+  function tagTableRows() {
+    const scope = S.tagScope || '', mon = S.tagMode === 'mon';
+    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags, qq = U(S.tagQ || '');
+    const rows = [];
+    list.filter(t => !qq || U(t.name).includes(qq) || U(t.desc || '').includes(qq)).forEach(t => {
+      const ty = typeOf(t), isStruct = !!E.PREDEF[ty] || !!t.dim, open = S.tagOpen.has(scope + '|' + t.name), v = rowVal(t.name, ty, scope, t);
+      const fm = S.online && ctl.M && ty === 'BOOL' ? ctl.forced(t.name, scope || undefined) : null;
+      rows.push(`<tr data-tag="${esc(t.name)}" data-ty="${esc(ty)}"><td class="ex" data-texp="${esc(t.name)}">${isStruct ? ic(open ? 'down' : 'right') : ''}</td><td class="nm">${esc(t.name)}</td>`
+        + (mon ? `<td class="val${v.cls}" data-tv="${esc(t.name)}">${isStruct ? '{…}' : esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(ty)}</td>`
+          : `<td class="mono">${esc(t.alias || '')}</td>`)
+        + `<td class="mono">${esc(t.alias ? ty : t.type)}${t.dim ? '[' + t.dim + ']' : ''}</td>${mon ? '' : `<td>${styleOf(ty)}</td>`}<td class="ds">${esc(t.desc || '')}</td></tr>`);
+      if (isStruct && open) {
+        const mem = t.dim ? Array.from({ length: Math.min(t.dim, 64) }, (_, i) => ({ name: `[${i}]`, type: t.type })) : E.PREDEF[ty];
+        mem.forEach(m => {
+          const p = t.dim ? `${t.name}${m.name}` : `${t.name}.${m.name}`, mv = E.PREDEF[m.type] ? { t: '{…}', cls: '' } : rowVal(p, m.type, scope);
+          rows.push(`<tr class="mem" data-tag="${esc(p)}" data-ty="${esc(m.type)}"><td></td><td class="nm">${esc(p)}</td>${mon ? `<td class="val${mv.cls}" data-tv="${esc(p)}">${esc(mv.t)}</td><td></td><td>${styleOf(m.type)}</td>` : '<td></td>'}<td class="mono">${esc(m.type)}</td>${mon ? '' : `<td>${styleOf(m.type)}</td>`}<td></td></tr>`);
+        });
+      }
+    });
+    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td></td><td colspan="5">${ic('plus')} Click to add a new tag</td></tr>`);
+    return rows.join('') || '<tr><td colspan="6" class="empty">No tags.</td></tr>';
+  }
+  function tagWsHTML() {
+    const sc = S.tagScope || '', mon = S.tagMode === 'mon';
+    return `<div class="tagws" id="tagpage"><div class="tagbar"><label for="tscope">Scope:</label><select class="inp" id="tscope"><option value="">${esc(S.p.controller.name)} (controller)</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>${esc(g.name)} (program)</option>`).join('')}</select>
+        <input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
+      <div class="tagtbl"><table><thead><tr><th></th><th>Name</th>${mon ? '<th>Value</th><th>Force Mask</th><th>Style</th>' : '<th>Alias For</th>'}<th>Data Type</th>${mon ? '' : '<th>Style</th>'}<th>Description</th></tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
+      <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it.'}</span></div></div>`;
+  }
   function tagClick(row) {
     const name = row.dataset.tag, ty = row.dataset.ty, scope = S.tagScope || '';
     const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags;
@@ -1249,16 +1498,65 @@
       buttons: [{ l: 'Close', pri: true }],
       mount: el => {
         el.querySelector('#xgo').onclick = () => xref(el.querySelector('#xq').value.trim());
-        el.addEventListener('click', ev => { const r = ev.target.closest('[data-x]'); if (!r) return; const x = rows[+r.dataset.x]; closeLayer(); S.prog = x.g; S.routine = x.r; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); });
+        el.addEventListener('click', ev => { const r = ev.target.closest('[data-x]'); if (!r) return; const x = rows[+r.dataset.x]; closeLayer(); S.prog = x.g; S.routine = x.r; S.view = 'ladder'; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); });
       } });
   }
-  function instrHelp() {
-    const e = curEl(), mn = e ? e.t : 'XIC', d = INSTR[mn];
-    const names = L.OPN[mn] || (d ? d.args.map((_, i) => 'Operand ' + i) : []);
-    dialog({ title: `Instruction Help - ${mn}`, size: 'md',
-      body: d ? `<p><b>${mn}</b> · ${esc(d.name)} · ${esc(d.grp)}</p><div class="frow"><label>Operands</label><div class="mono">${d.args.length ? d.args.map((k, i) => `${esc(names[i] || 'Operand ' + i)} <span class="muted">(${k.replace('?', ', optional')})</span>`).join('<br>') : 'none'}</div></div>
-        <p class="help">Rung text: <span class="mono">${mn}(${names.map(() => '?').join(',')})</span>. Behaviour as in the reference's instruction help (docs/PLC_APP_SPEC.md section 7).</p>` : 'Select an instruction first.',
-      buttons: [{ l: 'Close', pri: true }] });
+  const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } };
+  const HL = {
+    en: { simple: 'Simple', ref: 'Reference', what: 'What it does', how: 'How it works', ex: 'Example', like: 'Think of it like', ops: 'Operands', text: 'Rung text', none: 'none', grp: 'Group', tips: 'Tips', tipsT: 'Tips for using MT PLC Studio', again: 'You can see these again in Help > Tips.' },
+    tl: { simple: 'Simple', ref: 'Reference', what: 'Ano ang ginagawa', how: 'Paano gumagana', ex: 'Halimbawa', like: 'Parang', ops: 'Operands', text: 'Rung text', none: 'wala', grp: 'Grupo', tips: 'Tips', tipsT: 'Tips sa paggamit ng MT PLC Studio', again: 'Makikita ulit ito sa Help > Tips.' },
+  };
+  const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
+  const langSeg = () => `<span class="seg hlang" title="Language"><span data-hl="en" class="${hlang() === 'en' ? 'on' : ''}">English</span><span data-hl="tl" class="${hlang() === 'tl' ? 'on' : ''}">Taglish</span></span>`;
+  function instrHelp(start) {
+    const e = curEl();
+    let mn = typeof start === 'string' && INSTR[start] ? start : e && INSTR[e.t] ? e.t : 'XIC', tab = S.prefs.helpTab === 'ref' ? 'ref' : 'simple';
+    const grps = [...new Set(Object.values(INSTR).map(d => d.grp))];
+    const pick = `<select class="hpick" aria-label="Instruction">${grps.map(g => `<optgroup label="${esc(g)}">${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<option value="${k}">${k} · ${esc(INSTR[k].name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
+    const page = () => {
+      const d = INSTR[mn], t = HL[hlang()], h = (HELP.H[mn] || {})[hlang()];
+      const names = L.OPN[mn] || d.args.map((_, i) => 'Operand ' + i);
+      const ref = `<p><b>${mn}</b> · ${esc(d.name)} · ${t.grp}: ${esc(d.grp)}</p>
+        <div class="frow"><label>${t.ops}</label><div class="mono">${d.args.length ? d.args.map((k, i) => `${esc(names[i] || 'Operand ' + i)} <span class="muted">(${k.replace('?', ', optional')})</span>`).join('<br>') : t.none}</div></div>
+        <div class="frow"><label>${t.text}</label><div class="mono">${mn}(${names.map(() => '?').join(',')})</div></div>
+        ${h ? `<p>${esc(h[1])}</p>` : ''}`;
+      const simple = h ? `<div class="hsec"><h4>${t.what}</h4><p class="hbig">${esc(h[0])}</p></div>
+        <div class="hsec"><h4>${t.how}</h4><p>${esc(h[1])}</p></div>
+        <div class="hsec"><h4>${t.ex}</h4><p class="mono hex">${esc(h[2])}</p></div>
+        <div class="hsec like"><h4>${t.like}</h4><p>${esc(h[3])}</p></div>` : `<p>${esc(d.name)}</p>`;
+      return `<div class="htabs"><span data-ht="simple" class="${tab === 'simple' ? 'on' : ''}">${t.simple}</span><span data-ht="ref" class="${tab === 'ref' ? 'on' : ''}">${t.ref}</span></div>
+        <div class="hbody">${tab === 'ref' ? ref : simple}</div>`;
+    };
+    dialog({ title: 'Instruction Help', size: 'md',
+      body: `<div class="hhead">${pick}${langSeg()}</div><div class="hpage">${page()}</div>`,
+      buttons: [{ l: HL[hlang()].tips, run: () => { setTimeout(tipsDlg, 0); } }, { l: 'Close', pri: true }],
+      mount: el => {
+        const sel = el.querySelector('.hpick'); sel.value = mn;
+        const redraw = () => { el.querySelector('.hpage').innerHTML = page(); el.querySelector('.hlang').outerHTML = langSeg(); el.querySelector('.df [data-b="0"]').textContent = HL[hlang()].tips; };
+        sel.onchange = () => { mn = sel.value; redraw(); };
+        el.addEventListener('click', ev => {
+          const ht = ev.target.closest('[data-ht]'), hl = ev.target.closest('[data-hl]');
+          if (ht) { tab = ht.dataset.ht; S.prefs.helpTab = tab; savePrefs(); redraw(); }
+          if (hl) { S.prefs.helpLang = hl.dataset.hl; savePrefs(); redraw(); }
+        });
+      } });
+  }
+  /* Tips: how to work the app; shown once on the first start (a card that can be closed) and again from Help > Tips */
+  function tipsDlg() {
+    const body = () => { const t = HL[hlang()]; return `<div class="hhead"><span></span>${langSeg()}</div><ul class="tips">${(HELP.TIPS[hlang()] || []).map(([k, v]) => `<li><b>${esc(k)}</b><span>${esc(v)}</span></li>`).join('')}</ul><p class="help">${t.again}</p>`; };
+    dialog({ title: HL[hlang()].tipsT, size: 'md', body: `<div class="tipsb">${body()}</div>`, buttons: [{ l: 'Close', pri: true }],
+      mount: el => el.addEventListener('click', ev => { const hl = ev.target.closest('[data-hl]'); if (hl) { S.prefs.helpLang = hl.dataset.hl; savePrefs(); el.querySelector('.tipsb').innerHTML = body(); el.querySelector('.dh b').textContent = HL[hlang()].tipsT; } }) });
+    S.prefs.tipsSeen = true; savePrefs(); $('#tipcard') && $('#tipcard').remove();
+  }
+  function tipCard() {
+    if (S.prefs.tipsSeen || $('#tipcard')) return;
+    const c = document.createElement('div'); c.id = 'tipcard'; c.className = 'tipcard';
+    c.innerHTML = `<b>New here? / Bago ka lang?</b><span>Tips on how to select, edit and add instructions.</span><div><button class="btn pri" data-tipshow="1">Show tips</button><button class="btn" data-tipx="1">Close</button></div>`;
+    c.onclick = ev => {
+      if (ev.target.closest('[data-tipshow]')) tipsDlg();
+      else if (ev.target.closest('[data-tipx]')) { S.prefs.tipsSeen = true; savePrefs(); c.remove(); toast(HL[hlang()].again); }
+    };
+    document.body.appendChild(c);
   }
   function about() {
     dialog({ title: 'About MT PLC Studio', body: `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
@@ -1409,79 +1707,15 @@
     newProjectFor(n, racks[0].size, true);
     toast('Quick setup done: driver, emulator, project and path are ready.', 'ok');
   }
-  function cmdNew() { setupWizard(0); }
+  function cmdNew() {
+    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(() => setupWizard(0), 0), true);
+    else setupWizard(0);
+  }
 
-  function cmdOpen() {
-    saveProject();
-    const ix = index();
-    const el = dialog({ title: 'Open Project', size: 'md', flush: true,
-      body: `<div class="list" style="flex:1">${ix.map(x => `<div class="row" data-open="${esc(x.name)}">${ic('file')}<div class="grow"><div class="nm">${esc(x.name)}</div><div class="sub">Saved ${new Date(x.at).toLocaleString()}</div></div>${x.name !== S.p.controller.name ? `<button class="ib" data-delp="${esc(x.name)}" title="Delete">${ic('trash')}</button>` : '<span class="ty">open</span>'}</div>`).join('')}
-        <div class="grp">Examples</div><div class="row" data-ex="1">${ic('ladder')}<div class="grow"><div class="nm">Motor_Demo</div><div class="sub">Start / stop with seal-in, run lamp timer, start counter</div></div></div></div>`,
-      buttons: [{ l: 'Open File… (.mtp, .L5X)', run: () => { setTimeout(openFile, 0); } }, { l: 'Close', pri: true }] });
-    el.addEventListener('click', ev => {
-      const d = ev.target.closest('[data-delp]');
-      if (d) { ev.stopPropagation(); const n = d.dataset.delp; confirmDlg('Delete project', `Delete <b>${esc(n)}</b> from this device? This cannot be undone.`, 'Delete', () => { store.del('p.' + n); store.set('index', index().filter(x => x.name !== n)); setTimeout(cmdOpen, 0); }, true); return; }
-      const o = ev.target.closest('[data-open]');
-      if (o) { const p = store.get('p.' + o.dataset.open); closeLayer(); if (validProject(p)) openProject(p); else toast('That project could not be read.', 'err'); return; }
-      if (ev.target.closest('[data-ex]')) { closeLayer(); const p = example(); if (index().some(x => x.name === p.controller.name)) p.controller.name = uniqueName(p.controller.name); openProject(p); }
-    });
-  }
-  const uniqueName = n => { let k = 2; while (index().some(x => U(x.name) === U(`${n}_${k}`))) k++; return `${n}_${k}`; };
-  function cmdSaveAs() {
-    prompt1('Save As', 'New controller name', S.p.controller.name + '_copy', v => {
-      if (!E.validName(v)) return 'Use letters, digits and _, starting with a letter (up to 40).';
-      if (index().some(x => U(x.name) === U(v))) return `A project named ${v} already exists.`;
-      saveProject();
-      S.p = JSON.parse(JSON.stringify(S.p)); S.p.controller.name = v;
-      saveProject(); render(); toast(`Saved as ${v}`);
-    });
-  }
 
   /* ---------- project files (P4): .mtp (the project, like a project file of the reference software) and .L5X ----------
      Open and Save As use the system's file dialogs where there are any (Windows: Open / Save As); elsewhere Open reads
      a picked file and Save As downloads it. Projects are also kept on this device, as before. */
-  const MTP = { description: 'MT PLC Studio project', accept: { 'application/json': ['.mtp'] } };
-  const L5X = { description: 'Logix project export (L5X)', accept: { 'application/xml': ['.L5X', '.l5x'] } };
-  function pickFile(types, accept) {
-    if (window.showOpenFilePicker) return window.showOpenFilePicker({ types, multiple: false }).then(([h]) => h.getFile().then(f => ({ f, h }))).catch(() => null);
-    return new Promise(res => {
-      const inp = document.createElement('input');
-      inp.type = 'file'; inp.accept = accept;
-      inp.onchange = () => res(inp.files[0] ? { f: inp.files[0], h: null } : null);
-      inp.click();
-    });
-  }
-  async function writeFile(name, text, type, handle) {
-    try {
-      if (!handle && window.showSaveFilePicker) handle = await window.showSaveFilePicker({ suggestedName: name, types: [type] });
-      if (handle) { const w = await handle.createWritable(); await w.write(text); await w.close(); return handle; }
-    } catch (e) { if (e && e.name === 'AbortError') return null; }
-    // no file dialog here: the file is downloaded (the Windows app asks where to save it)
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: Object.keys(type.accept)[0] })); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    return null;
-  }
-  const mtpText = () => JSON.stringify(S.p, null, 1);
-  async function saveFileAs() {
-    const h = await writeFile(`${S.p.controller.name}.mtp`, mtpText(), MTP, null);
-    if (h) { S.file = { h, name: h.name }; } else S.file = { h: null, name: `${S.p.controller.name}.mtp` };
-    saveProject(); S.dirty = false; title(); render();
-    toast(`Saved ${S.file.name}`, 'ok');
-  }
-  async function openFile() {
-    const r = await pickFile([MTP, L5X], '.mtp,.json,.L5X,.l5x');
-    if (!r) return;
-    const t = await r.f.text();
-    let p = null;
-    if (/\.l5x$/i.test(r.f.name) || /^\s*<\?xml|<RSLogix5000Content/i.test(t)) { p = fromL5X(t); if (!p) return; }
-    else { try { p = JSON.parse(t); } catch (e) { toast('That file is not a project.', 'err'); return; } if (!validProject(p)) { toast('That file is not an MT PLC Studio project.', 'err'); return; } }
-    if (index().some(x => U(x.name) === U(p.controller.name)) && !(S.p && U(S.p.controller.name) === U(p.controller.name))) p.controller.name = uniqueName(p.controller.name);
-    saveProject(); S.ed = null; openProject(p);
-    S.file = { h: /\.mtp$/i.test(r.f.name) ? r.h : null, name: /\.mtp$/i.test(r.f.name) ? r.f.name : `${p.controller.name}.mtp` };
-    title();
-  }
   /* L5X export: controller, I/O modules, tags (base and alias), programs, routines and rungs in the neutral text */
   function toL5X(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1565,27 +1799,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     setTimeout(() => toast(`Imported ${name}: ${list.length} program(s), ${n} rung(s), ${p.tags.length} controller tag(s). Run Verify to see what this app does not support.`, 'ok'), 50);
     return p;
   }
-  async function exportL5X() {
-    await writeFile(`${S.p.controller.name}.L5X`, toL5X(S.p), L5X, null);
-    toast(`Exported ${S.p.controller.name}.L5X`);
-  }
-  async function importL5X() {
-    const r = await pickFile([L5X], '.L5X,.l5x');
-    if (!r) return;
-    const p = fromL5X(await r.f.text());
-    if (!p) return;
-    if (index().some(x => U(x.name) === U(p.controller.name))) p.controller.name = uniqueName(p.controller.name);
-    saveProject(); S.ed = null; openProject(p);
-  }
 
   /* ---------- organizer actions ---------- */
-  function openRoutine(key) { const [g, r] = key.slice(3).split('/'); S.prog = g; S.routine = r; S.sel = null; S.selRung = 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); }
+  function openRoutine(key) { const [g, r] = key.slice(3).split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; S.sel = null; S.selRung = 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); }
   function newRoutine(gname) {
     const g = allProgs().find(x => x.name === gname);
     prompt1('New Routine', 'Name', 'Routine' + (g.routines.length + 1), v => {
       if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
       if (g.routines.some(r => U(r.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { g.routines.push({ name: v, rungs: [{ t: '' }] }); S.prog = g.name; S.routine = v; S.sel = null; S.selRung = 0; });
+      edit(() => { g.routines.push({ name: v, rungs: [{ t: '' }] }); S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
     }, 'Call it from the main routine with JSR.');
   }
   function renameRoutine(key) {
@@ -1593,7 +1815,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     prompt1('Rename Routine', 'Name', rn, v => {
       if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
       if (U(v) !== U(rn) && g.routines.some(x => U(x.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { r.name = v; if (g.main === rn) g.main = v; if (S.routine === rn) S.routine = v; });
+      edit(() => { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + v : k)); r.name = v; if (g.main === rn) g.main = v; if (S.routine === rn) S.routine = v; });
     });
   }
   function deleteRoutine(key) {
@@ -1700,11 +1922,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!offline()) return;
         const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim();
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
-        if (U(v) !== U(S.p.controller.name) && index().some(x => U(x.name) === U(v))) { toast('A project with that name exists.', 'err'); return false; }
         const old = S.p.controller.name;
         if (v === old && desc === (S.p.controller.desc || '')) return;
         edit(() => { S.p.controller.name = v; if (desc) S.p.controller.desc = desc; else delete S.p.controller.desc; });
-        if (v !== old) { store.del('p.' + old); store.set('index', index().filter(x => x.name !== old)); saveProject(); }
       } }],
       mount: el => {
         bindTabs(el);
@@ -1748,17 +1968,11 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   /* Select File: open a saved project; when it matches the controller, go online with it */
   function selectFile() {
-    const list = index();
-    const el = dialog({ title: 'Select File', size: 'md', flush: true,
-      body: `<div class="list">${list.map(x => `<div class="row" data-sf="${esc(x.name)}"><div class="grow"><div class="nm">${esc(x.name)}</div><div class="sub">${when(x.at)}</div></div>${ctl.M && U(ctl.name) === U(x.name) ? '<span class="ty">same name as the controller</span>' : ''}</div>`).join('') || '<div class="empty">No saved projects.</div>'}</div>`,
-      buttons: [{ l: 'Cancel' }] });
-    el.addEventListener('click', ev => {
-      const r = ev.target.closest('[data-sf]'); if (!r) return;
-      const p = store.get('p.' + r.dataset.sf); if (!validProject(p)) { toast('That project could not be read.', 'err'); return; }
-      const path = curPath();
-      closeLayer(); saveProject(); openProject(p, true); setPath(path);
+    const path = curPath();
+    fileDialog({ mode: 'open', title: 'Select File', types: ['mtp', 'l5x'], onPick: f => loadFile(f, () => {
+      setPath(path);
       if (ctl.M && ctl.holds(S.p)) { online(); toast(`Online with ${ctl.name}`); } else setTimeout(goOnline, 0);
-    });
+    }) });
   }
   /* Upload: the controller's project, with its tag values, goes into a project file on this device (a new one, or
      one that is replaced), then online */
@@ -1766,29 +1980,18 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (!reachable()) return;
     if (!ctl.M) { toast('The controller is empty: nothing to upload.', 'err'); return; }
     const p = ctl.upload();
-    const el = dialog({ title: 'Upload', size: 'md', focus: true,
-      body: `${kv('From', esc(curPath()))}${kv('Controller project', esc(p.controller.name))}
-        <div class="frow"><label>Save as project</label><input class="inp mono" id="up-n" value="${esc(p.controller.name)}" autocomplete="off" spellcheck="false"></div>
-        <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="up-f"${S.layout === 'desktop' ? ' checked' : ''}><span>Also save it as a .mtp file</span></label>
-        <p class="help" id="up-h"></p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Upload', pri: true, run: e2 => {
-        const name = e2.querySelector('#up-n').value.trim(), toFile = e2.querySelector('#up-f').checked;
-        if (!E.validName(name)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
-        setTimeout(() => showProgress('Uploading', `Uploading from ${curPath()}…`, () => {
-          const path = curPath();
-          saveProject();
-          p.controller.name = name;
-          S.ed = null;
-          openProject(p, true);
-          setPath(path);
-          saveProject();
-          online();
-          toast(`Uploaded into project ${name}`, 'ok');
-          if (toFile) setTimeout(saveFileAs, 300);
-        }), 0);
-      } }] });
-    const hint = () => { const n = el.querySelector('#up-n').value.trim(); el.querySelector('#up-h').textContent = index().some(x => U(x.name) === U(n)) ? `The saved project ${n} on this device will be replaced by the controller's project.` : `A new project ${n} will be made on this device.`; };
-    el.querySelector('#up-n').addEventListener('input', hint); hint();
+    confirmDlg('Upload', `Upload <b>${esc(p.controller.name)}</b> from <span class="mono">${esc(curPath())}</span>? It opens here, with the controller's tag values; then pick where to save its file.`, 'Upload', () => {
+      setTimeout(() => showProgress('Uploading', `Uploading from ${curPath()}…`, () => {
+        const path = curPath();
+        S.ed = null;
+        openProject(p, true);
+        setPath(path);
+        S.dirty = true; saveProject();
+        online();
+        toast(`Uploaded ${p.controller.name}`, 'ok');
+        setTimeout(saveFileAs, 300);
+      }), 0);
+    });
   }
   /* the transfer dialog of Download and Upload */
   function showProgress(title, text, done) {
@@ -1810,11 +2013,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function saveCmd() {
     if (S.online && ctl.M && ctl.holds(S.p)) {
       dialog({ title: 'Save', body: '<p>Upload the tag values from the controller into the project before saving?</p>',
-        buttons: [{ l: 'Cancel' }, { l: 'No', run: () => { saveProject(); S.dirty = false; title(); toast('Saved'); } }, { l: 'Yes', pri: true, run: () => { uploadTags(false); S.dirty = false; title(); toast('Tag values uploaded and saved', 'ok'); } }] });
+        buttons: [{ l: 'Cancel' }, { l: 'No', run: () => { setTimeout(() => (S.file && S.file.path ? writeTo(S.file.path) : saveFileAs()), 0); } }, { l: 'Yes', pri: true, run: () => { uploadTags(false); setTimeout(() => (S.file && S.file.path ? writeTo(S.file.path) : saveFileAs()), 0); } }] });
       return;
     }
-    saveProject(); S.dirty = false; title();
-    if (S.file && S.file.h) writeFile(S.file.name, mtpText(), MTP, S.file.h).then(() => toast(`Saved ${S.file.name}`)); else toast('Saved');
+    if (S.file && S.file.path) writeTo(S.file.path); else saveFileAs();
   }
   /* no controller at the path (empty slot, an I/O card, a card removed): like a terminal that finds nothing there */
   function reachable() {
@@ -2025,7 +2227,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const P = S.prefs, size = where === 'bottom' ? `height:${S.layout === 'tablet' ? P.emuHp : P.emuH}px` : where === 'side' ? `width:${P.emuW}px` : '';
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
-      <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span>${pushSeg()}<button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `<button class="ib" data-cmd="vio" title="Hide the emulator panel">${ic('close')}</button>`}</div>
+      <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `<button class="ib" data-cmd="vio" title="Hide the emulator panel">${ic('close')}</button>`}</div>
       <div class="dockb" id="iob">${dockBody()}</div></div>`;
   }
   /* ---------- Emulator dashboard (spec section 15), laid out like a PC emulator's dashboard ----------
@@ -2037,12 +2239,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   const modeName = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   const led = (on, t, cls) => `<div class="cled"><i class="led ${on ? cls || 'g' : ''}"></i>${t}</div>`;
   /* the chassis as hardware: a power supply on the left, rails with screws, a backplane connector in each empty slot,
-     and modules plugged into the slots, each with its front face (status display or LED matrix, labels) and, for I/O,
-     the terminal block where the field devices are wired: switches for inputs, lamps for outputs */
+     and modules plugged into the slots. An I/O module has its status LEDs and a terminal block (screw terminals, where
+     field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
+     as in the reference emulator */
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
-    const tail = `<div class="cbtns">${m.ctl ? '' : `<button class="btn" data-cfault="${id}">${m.fault ? 'Clear' : 'Fault'}</button>`}<button class="btn" data-crem="${id}" title="Pull the module out" aria-label="Remove module">${ic('trash')}</button></div>`;
+    const tail = `<div class="cbtns">${m.ctl ? '' : `<button class="btn" data-cio="${id}" title="Module I/O: the points of this module">I/O</button><button class="btn" data-cfault="${id}">${m.fault ? 'Clear' : 'Fault'}</button>`}<button class="btn" data-crem="${id}" title="Pull the module out" aria-label="Remove module">${ic('trash')}</button></div>`;
     if (m.ctl) {
       const c = m.ctl, run = c.powered && c.running, fs = c.forceState();
       const disp = !c.powered ? '' : c.fault ? 'FLT' : { prog: 'PROG', run: 'RUN', remprog: 'PROG', remrun: 'RUN', remtest: 'TEST' }[c.mode];
@@ -2053,26 +2256,92 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           <div class="mproj">${c.name ? esc(c.name) : 'no project'}</div>
           <span class="seg ckey" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${k === 'PROG' ? 'P' : k === 'REM' ? 'R' : 'RUN'}</span>`).join('')}</span></div>${tail}</div>`;
     }
-    const names = S.p ? aliasNames() : {}, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O', mine = r === chassis, own = r.owner(s);
-    const okc = m.fault ? 'r blink' : own && own.running ? 'g' : 'g blink';
-    let face = '', term = '';
+    const own = r.owner(s), okc = m.fault ? 'r blink' : own && own.running ? 'g' : 'g blink';
+    const n = m.kind === 'di' || m.kind === 'do' ? 16 : 4;
+    const st = m.kind === 'di' ? m.field : m.kind === 'do' ? r.outputs(s) : null;
+    const face = st != null ? `<div class="mmat">${Array.from({ length: 16 }, (_, b) => `<i class="${(st >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}"></i><span>${b}</span>`).join('')}</div>`
+      : `<div class="mana">${(m.kind === 'ai' ? m.field : r.outputs(s)).map((v, c) => `<div><span>Ch${c}</span><b>${(+v).toFixed(1)}</b></div>`).join('')}</div>`;
+    const com = m.kind === 'di' ? ['GND', 'GND'] : m.kind === 'do' ? ['DC+', 'RTN'] : ['RTN', 'RTN'];
+    const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
+    const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
+    const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
+    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${term}${tail}</div>`;
+  }
+  /* the chassis drawn in rows of up to 8 slots (6 on a tablet or phone); a row can be folded away */
+  const rackHTML = (ri, compact) => {
+    const r = racks[ri], all = Array.from({ length: r.size }, (_, s) => s), firstFree = all.find(s => !r.module(s));
+    const slots = compact ? all.filter(s => r.module(s) || s === firstFree) : all;
+    const per = S.layout === 'desktop' ? 8 : 6, rows = [];
+    for (let i = 0; i < slots.length; i += per) rows.push(slots.slice(i, i + per));
+    return rows.map((row, k) => {
+      const key = ri + ':' + k, shut = S.rowHide && S.rowHide.has(key);
+      const head = rows.length > 1 ? `<div class="rkrow" data-rkrow="${key}">${ic(shut ? 'right' : 'down')}Slots ${row[0]}–${row[row.length - 1]}</div>` : '';
+      if (shut) return head;
+      return head + `<div class="chas" style="--n:${row.length}">${k === 0 ? '<div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>' : '<div class="rkps ext" aria-hidden="true"></div>'}
+      <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div>`;
+    }).join('');
+  };
+  /* ---------- Module I/O windows: the points of an I/O module, in a window of their own that stays open (as the
+     reference emulator's module window). Input switches and analog values are set here; outputs are shown. ---------- */
+  const ioWins = new Map();   // "rack:slot" → element
+  function ioWinHTML(id) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m || m.ctl) return '<p class="help">The module is gone.</p>';
+    const names = r === chassis && S.p ? aliasNames() : {}, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O';
+    const nm = b => names[U(`Local:${s}:${dir}.Data.${b}`)] || '';
     if (m.kind === 'di' || m.kind === 'do') {
       const bits = m.kind === 'di' ? m.field : r.outputs(s);
-      const nm = b => esc((mine && names[U(`Local:${s}:${dir}.Data.${b}`)]) || 'Point ' + b);
-      face = `<div class="mmat">${Array.from({ length: 16 }, (_, b) => `<i class="${(bits >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}" title="${nm(b)}"></i><span>${b}</span>`).join('')}</div>`;
-      term = `<div class="mterm ${m.kind}">${Array.from({ length: 16 }, (_, b) => m.kind === 'di'
-        ? `<div class="pt"><b class="${(bits >> b) & 1 ? 'on' : ''}" data-io="${mine ? s : id}:${b}" title="${nm(b)}">${b}</b></div>`
-        : `<div class="pt"><b class="lamp${(bits >> b) & 1 ? ' on' : ''}" title="${nm(b)}">${b}</b></div>`).join('')}</div>`;
-    } else if (m.kind === 'ai' || m.kind === 'ao') {
-      const vals = m.kind === 'ai' ? m.field : r.outputs(s);
-      face = `<div class="mana">${vals.map((v, c) => `<div><span>Ch${c}</span><b>${(+v).toFixed(1)}</b></div>`).join('')}</div>`;
-      term = `<div class="mterm">${vals.map((v, c) => m.kind === 'ai' ? `<input type="range" min="0" max="100" step="0.5" value="${v}" data-ana="${mine ? s : id}:${c}" aria-label="Channel ${c}">` : `<span class="bar"><span style="width:${Math.max(0, Math.min(100, v))}%"></span></span>`).join('')}</div>`;
+      return `<div class="iow">${Array.from({ length: 16 }, (_, b) => m.kind === 'di'
+        ? `<label class="iop"><input type="checkbox" data-iow="${id}:${b}"${(bits >> b) & 1 ? ' checked' : ''}><span class="n">${b}</span><span class="t">${esc(nm(b))}</span></label>`
+        : `<div class="iop"><i class="lamp${(bits >> b) & 1 ? ' on' : ''}"></i><span class="n">${b}</span><span class="t">${esc(nm(b))}</span></div>`).join('')}</div>`;
     }
-    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${term}${tail}</div>`;
+    const vals = m.kind === 'ai' ? m.field : r.outputs(s);
+    return `<div class="iow ana">${vals.map((v, c) => m.kind === 'ai'
+      ? `<label class="iop"><span class="n">Ch${c}</span><input type="range" min="0" max="100" step="0.5" value="${v}" data-ana="${id}:${c}"><input class="inp num" type="number" step="0.5" value="${(+v).toFixed(1)}" data-anan="${id}:${c}" aria-label="Channel ${c} value"></label>`
+      : `<div class="iop"><span class="n">Ch${c}</span><span class="bar"><span style="width:${Math.max(0, Math.min(100, v))}%"></span></span><b class="mono">${(+v).toFixed(1)}</b></div>`).join('')}</div>`;
   }
-  // compact (a narrow dock): only the slots that hold a module, and the first empty one to plug another in
-  const rackHTML = (ri, compact) => { const r = racks[ri], all = Array.from({ length: r.size }, (_, s) => s), firstFree = all.find(s => !r.module(s)), slots = compact ? all.filter(s => r.module(s) || s === firstFree) : all; return `<div class="chas" style="--n:${slots.length}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
-    <div class="rkbay"><div class="rkrail top">${slots.map(() => '<i></i>').join('')}</div><div class="rkslots">${slots.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${slots.map(s => `<span>${s}</span>`).join('')}</div></div></div>`; };
+  function openIoWin(id, doc) {
+    const [ri, s] = ids(id), m = racks[ri] && racks[ri].module(s);
+    if (!m || m.ctl) return;
+    doc = doc || document;
+    let w = ioWins.get(id);
+    if (w && w.ownerDocument !== doc) { w.remove(); w = null; }
+    if (!w) {
+      const vw = doc.defaultView || window;
+      w = doc.createElement('div');
+      w.className = 'iowin'; w.dataset.iowin = id;
+      const k = ioWins.size;
+      w.style.left = Math.max(0, Math.min(vw.innerWidth - 300, 80 + k * 28)) + 'px'; w.style.top = Math.max(0, Math.min(vw.innerHeight - 200, 90 + k * 28)) + 'px';
+      doc.body.appendChild(w);
+      ioWins.set(id, w);
+    }
+    w.innerHTML = `<div class="iowh" data-iodrag="1"><b>[${s}] ${esc(m.type.replace('PLC-', ''))} ${esc(m.name)}</b><span class="grow"></span><button class="ib" data-iox="${id}" aria-label="Close">${ic('close')}</button></div><div class="iowb">${ioWinHTML(id)}</div>`;
+  }
+  function ioWinsLive() { ioWins.forEach((w, id) => { if (!w.isConnected) { ioWins.delete(id); return; } if (!w.contains(w.ownerDocument.activeElement)) w.querySelector('.iowb').innerHTML = ioWinHTML(id); }); }
+  /* the Module I/O windows of one window (the app, or the Emulator window): close, input switches, analog values, dragging by the title */
+  function bindIoWins(doc) {
+    const vw = doc.defaultView;
+    doc.addEventListener('click', ev => { const x = ev.target.closest('[data-iox]'); if (x) { const w = ioWins.get(x.dataset.iox); if (w) w.remove(); ioWins.delete(x.dataset.iox); } });
+    doc.addEventListener('change', ev => {
+      const c = ev.target.closest && ev.target.closest('[data-iow]');
+      if (c) { const p = ids(c.dataset.iow); setPoint(p[1], p[2], c.checked, racks[p[0]]); live(true); }
+      const n = ev.target.closest && ev.target.closest('[data-anan]');
+      if (n) anaSet(n.dataset.anan, +n.value);
+    });
+    doc.addEventListener('pointerdown', ev => {
+      const h = ev.target.closest('[data-iodrag]'); if (!h || ev.target.closest('button')) return;
+      const w = h.parentElement, sx = ev.clientX - w.offsetLeft, sy = ev.clientY - w.offsetTop;
+      ev.preventDefault();
+      const mv = e => { w.style.left = Math.max(0, Math.min(vw.innerWidth - 120, e.clientX - sx)) + 'px'; w.style.top = Math.max(0, Math.min(vw.innerHeight - 40, e.clientY - sy)) + 'px'; };
+      const upf = () => { vw.removeEventListener('pointermove', mv); vw.removeEventListener('pointerup', upf); };
+      vw.addEventListener('pointermove', mv); vw.addEventListener('pointerup', upf);
+    });
+  }
+  function moduleMenu(id, x, y) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m) return;
+    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: () => ({ dataset: { crem: id } }) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
+  }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -2142,6 +2411,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function chassisClick(t) {
     let el;
     const doc = t.ownerDocument;
+    if ((el = t.closest('[data-cio]'))) { openIoWin(el.dataset.cio, el.ownerDocument); return true; }
+    if ((el = t.closest('[data-rkrow]'))) { S.rowHide = S.rowHide || new Set(); const k = el.dataset.rkrow; if (S.rowHide.has(k)) S.rowHide.delete(k); else S.rowHide.add(k); chassisLive(true); refreshIO(); return true; }
     if ((el = t.closest('[data-emu]'))) {
       openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
       if (doc !== document) window.focus();
@@ -2300,6 +2571,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     d.addEventListener('click', ev => { if (!chassisClick(ev.target) && ev.target.closest('[data-wa-open]')) { window.focus(); whoActive(); } });
     d.addEventListener('pointerdown', ev => { const b = ev.target.closest('[data-io]'); if (!b) return; ioPress(b.dataset.io); ev.preventDefault(); });
     d.addEventListener('input', ev => { const a = ev.target.closest('[data-ana]'); if (a) anaSet(a.dataset.ana, +a.value); });
+    bindIoWins(d);
     w.addEventListener('beforeunload', () => { chasWin = null; });
   }
   /* a field switch (data-io "slot:bit" on the I/O panel, "rack:slot:bit" in the emulator) and an analog slider */
@@ -2329,8 +2601,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (fk !== lastFault) { lastFault = fk; if (!force) { render(); if (fk) toast(`Major fault: ${ctl.fault.text}`, 'err'); return; } }
     if (S.online && !S.touching) { const now = performance.now(); if (force || now - lastLive > 33) { lastLive = now; renderLadder(); } else { sig = ''; } }
     const ob = $('#olbar');
-    if (ob) ob.innerHTML = S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? `${modeBox()}${forcesBox()}${innerWidth >= 1024 && innerWidth > innerHeight ? editsBox() : ''}` : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`;
-    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(false);
+    if (ob) ob.innerHTML = S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`;
+    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(false); ioWinsLive();
     if (S.tagMode === 'mon') refreshTags();
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
@@ -2388,10 +2660,14 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     document.addEventListener('pointerdown', ev => {
       const b = ev.target.closest('.gbtn');
       if (!b || b.disabled || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
-      dg = { mn: b.dataset.mn, x: ev.clientX, y: ev.clientY, on: false, id: ev.pointerId, b };
+      dg = { mn: b.dataset.mn, x: ev.clientX, y: ev.clientY, on: false, id: ev.pointerId, b, touch: ev.pointerType !== 'mouse', held: ev.pointerType === 'mouse' };
+      if (dg.touch) { const d = dg; d.timer = setTimeout(() => { if (dg === d) { d.held = true; b.classList.add('lift'); if (navigator.vibrate) navigator.vibrate(10); } }, 350); }
     });
+    // once an instruction is held, the row must not scroll under the finger
+    document.addEventListener('touchmove', ev => { if (dg && dg.held && dg.touch) ev.preventDefault(); }, { passive: false });
     document.addEventListener('pointermove', ev => {
       if (!dg || ev.pointerId !== dg.id) return;
+      if (dg.touch && !dg.held) { if (Math.hypot(ev.clientX - dg.x, ev.clientY - dg.y) > 10) { clearTimeout(dg.timer); dg = null; } return; }
       if (!dg.on && Math.hypot(ev.clientX - dg.x, ev.clientY - dg.y) > 10) {
         dg.on = true;
         dg.g = document.createElement('div');
@@ -2437,7 +2713,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       let el;
       if ((el = t.closest('[data-cmd]')) && !el.disabled) { run(el.dataset.cmd); return; }
       if ((el = t.closest('[data-menu]'))) { const m = MENUS.find(x => x[0] === el.dataset.menu); openMenu(menuItems(m[1]), el); return; }
-      if ((el = t.closest('[data-allmenu]'))) { foldMenu(el, null); return; }
+      if ((el = t.closest('[data-allmenu]'))) { foldMenu(el); return; }
       if ((el = t.closest('[data-tab]'))) { S.prefs.tab = el.dataset.tab; savePrefs(); render(); return; }
       if ((el = t.closest('[data-key]'))) { ctl.setKey(el.dataset.key); live(true); render(); return; }
       if ((el = t.closest('[data-box]'))) {
@@ -2445,6 +2721,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         else openMenu(menuItems(['fen', 'fdis', 'fall']), el, 'I/O forces');
         return;
       }
+      if ((el = t.closest('[data-orgprops]'))) { controllerProps(); return; }
       if ((el = t.closest('[data-tw]'))) { const k = el.dataset.tw, c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); return; }
       if ((el = t.closest('[data-org]'))) {
         const k = el.dataset.org;
@@ -2465,20 +2742,33 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-ptab]'))) { S.phoneEmu = el.dataset.ptab === '1'; render(); return; }
       if ((el = t.closest('[data-dkpop]'))) { popChassis(); return; }
       if (chassisClick(t)) return;
-      if ((el = t.closest('[data-push]'))) { S.prefs.push = el.dataset.push === '1'; savePrefs(); render(); return; }
       if ((el = t.closest('[data-ctx]'))) { const r = el.getBoundingClientRect(); ctxMenu(S.sel ? { ri: S.sel.ri, path: S.sel.path, br: S.sel.br } : curSelRung() != null ? { ri: curSelRung() } : null, r.left, r.top); return; }
       if ((el = t.closest('[data-more]'))) { openMenu(menuItems(['rung', 'branch', 'level', '-', 'rtext', 'comment', '-', 'verifyr', 'verifyc', 'xref', 'goto', '-', 'newtag', 'tagsmon', '-', 'options']), el); return; }
       if ((el = t.closest('[data-routines]'))) { openMenu(curProg().routines.map(r => ({ l: r.name, ck: r.name === S.routine, run: () => openRoutine(`rt:${curProg().name}/${r.name}`) })).concat(['-', { l: 'New Routine…', run: () => newRoutine(curProg().name), dis: !editable() }]), el); return; }
-      if ((el = t.closest('[data-tmode]'))) { S.tagMode = el.dataset.tmode; const p = $('#tagpage'); if (p) p.innerHTML = tagEditorBody(S.layout === 'phone'); return; }
+      if ((el = t.closest('[data-tmode]'))) { S.tagMode = el.dataset.tmode; if (S.view === 'tags' && S.layout !== 'phone') render(); else { const p = $('#tagpage'); if (p) p.innerHTML = tagEditorBody(S.layout === 'phone'); } return; }
+      if ((el = t.closest('[data-tabx]'))) { closeTab(el.dataset.tabx); return; }
+      if ((el = t.closest('[data-tabk]'))) { openTab(el.dataset.tabk); return; }
       if ((el = t.closest('[data-texp]'))) { const k = (S.tagScope || '') + '|' + el.dataset.texp; if (S.tagOpen.has(k)) S.tagOpen.delete(k); else S.tagOpen.add(k); refreshTags(); return; }
-      if ((el = t.closest('#tagrows .row[data-tag]'))) { tagClick(el); return; }
+      if ((el = t.closest('#tagrows [data-newrow]'))) { newTag({}); return; }
+      if ((el = t.closest('#tagrows [data-tag]'))) { tagClick(el); return; }
     });
     // the tag editor (also inside a dialog in #layer)
     document.addEventListener('change', ev => {
-      if (ev.target.id === 'tscope') { S.tagScope = ev.target.value; refreshTags(); }
+      if (ev.target.id === 'tscope') { S.tagScope = ev.target.value; if (S.view === 'tags' && S.layout !== 'phone') render(); else refreshTags(); }
       // the dock shows another chassis (the project path keeps its own)
       if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) b.innerHTML = dockBody(); }
     });
+    bindIoWins(document);
+    // a module: right-click (mouse) or long-press (touch) opens its menu, as in the reference emulator
+    document.addEventListener('contextmenu', ev => { const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY); });
+    let lp = null;
+    document.addEventListener('pointerdown', ev => {
+      const c = ev.target.closest('[data-cmod]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button')) return;
+      const x = ev.clientX, y = ev.clientY;
+      lp = { x, y, t: setTimeout(() => { lp = null; moduleMenu(c.dataset.cmod, x, y); }, 550) };
+    });
+    const lpEnd = ev => { if (lp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - lp.x, ev.clientY - lp.y) > 10)) { clearTimeout(lp.t); lp = null; } };
+    ['pointerup', 'pointercancel', 'pointermove'].forEach(t => document.addEventListener(t, lpEnd));
     // the dock's splitter: drag to size the emulator panel (height at the bottom, width at the side)
     document.addEventListener('pointerdown', ev => {
       const sp = ev.target.closest('[data-split]'); if (!sp) return;
@@ -2502,17 +2792,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       let el;
       if ((el = ev.target.closest('[data-tmode]'))) { S.tagMode = el.dataset.tmode; const p = $('#tagpage'); if (p) p.innerHTML = tagEditorBody(false); return; }
       if ((el = ev.target.closest('[data-texp]'))) { const k = (S.tagScope || '') + '|' + el.dataset.texp; if (S.tagOpen.has(k)) S.tagOpen.delete(k); else S.tagOpen.add(k); refreshTags(); return; }
-      if ((el = ev.target.closest('#tagrows .row[data-tag]'))) { tagClick(el); return; }
+      if ((el = ev.target.closest('#tagrows [data-tag]'))) { tagClick(el); return; }
       if ((el = ev.target.closest('[data-cmd]'))) { run(el.dataset.cmd); return; }
       if ((el = ev.target.closest('[data-errline]'))) { closeLayer(); gotoErr(el); return; }
       chassisClick(ev.target);
     }, true);
-    // I/O points: Toggle latches, Push holds while pressed
+    // I/O points: each press switches the point
     document.addEventListener('pointerdown', ev => {
       const b = ev.target.closest('[data-io]'); if (!b) return;
-      const p = ids(b.dataset.io), r = p.length === 3 ? racks[p[0]] : chassis, s = p[p.length - 2], bit = p[p.length - 1];
-      if (S.prefs.push) { setPoint(s, bit, 1, r); const upf = () => { setPoint(s, bit, 0, r); removeEventListener('pointerup', upf); removeEventListener('pointercancel', upf); }; addEventListener('pointerup', upf); addEventListener('pointercancel', upf); }
-      else ioPress(b.dataset.io);
+      ioPress(b.dataset.io);
       ev.preventDefault();
     });
     document.addEventListener('keydown', onKey);
@@ -2578,13 +2866,16 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* ---------- start ---------- */
   function start() {
     applyTheme();
-    const last = store.get('last');
-    let p = last ? store.get('p.' + last) : null;
+    const ses = store.get('session', null), last = store.get('last');
+    let p = ses && validProject(ses.p) ? ses.p : last ? store.get('p.' + last) : null;
     if (!validProject(p)) p = blank('New_Project');
     S.layout = pickLayout();
     bind();
     openProject(p, true);
+    if (ses && ses.p === p) { S.file = ses.file; S.dirty = !!ses.dirty; saveProject(); render(); }
+    setTimeout(moveOldProjects, 500);
     if (!driverUp() && !drivers.length) setTimeout(() => setupWizard(0), 300);
+    setTimeout(tipCard, 1500);
     setInterval(tick, 20);
     requestAnimationFrame(loop);
     if (window.MTPSUpdater) window.MTPSUpdater.init({ version: VERSION, build: BUILD, onAvailable: info => { upInfo = info; render(); }, toast, dialog, esc });

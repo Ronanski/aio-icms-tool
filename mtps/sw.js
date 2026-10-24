@@ -1,11 +1,11 @@
 /* MT PLC Studio service worker: keeps the app for offline use. Stable (/mtps/) and Beta (/mtps/beta/) each have
    their own worker and cache. VER gets the build id added by scripts/copy-mtps.sh, so every build caches its files.
    Files are fetched network-first, so a restart after an update loads the new files. */
-const VER = 'v0.3.0-beta.1';
+const VER = 'v0.3.0-beta.2';
 const SCOPE = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CH = /\/beta\/$/.test(SCOPE) ? 'beta' : 'stable';
 const CACHE = `mtps-${CH}-${VER}`;
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/engine.js', 'js/ladder.js', 'js/update.js', 'js/app.js',
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/engine.js', 'js/ladder.js', 'js/update.js', 'js/help.js', 'js/app.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

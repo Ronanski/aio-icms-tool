@@ -1,0 +1,126 @@
+/* MT PLC Studio instruction help: for each instruction, what it does and the rules it follows (in our own words,
+   matching the reference's behaviour, docs/PLC_APP_SPEC.md section 7), a small example and an everyday comparison,
+   in English and in Taglish. app.js shows it (Help > Instruction Help, F1). */
+(function () {
+  'use strict';
+  const H = {
+    XIC: {
+      en: ['True when the bit is 1 (ON).', 'Looks at a BOOL. If the bit is 1 the rung stays true past this point; if 0 the rung goes false. A normally open push button wired to an input reads 1 while pressed.', 'XIC(Start_PB)OTE(Lamp); the lamp is on while Start_PB is pressed.', 'A doorbell button: current passes only while you press it.'],
+      tl: ['TRUE kapag 1 (ON) ang bit.', 'Tinitingnan ang BOOL. Kapag 1 ang bit, tuloy ang daloy ng rung; kapag 0, putol. Ang NO na push button sa input ay 1 habang pinipindot.', 'XIC(Start_PB)OTE(Lamp); bukas ang ilaw habang pinipindot ang Start_PB.', 'Parang doorbell: dadaloy lang habang pinipindot mo.'],
+    },
+    XIO: {
+      en: ['True when the bit is 0 (OFF).', 'The opposite of XIC: the rung goes on when the bit is 0. Often used with stop buttons and overloads that are wired normally closed, read as XIC, or for "not running" conditions.', 'XIO(Motor_Run)OTE(Stopped_Lamp); the stopped lamp is on while the motor is not running.', 'A fridge light: on when the door switch is NOT pressed.'],
+      tl: ['TRUE kapag 0 (OFF) ang bit.', 'Kabaligtaran ng XIC: tuloy ang rung kapag 0 ang bit. Ginagamit sa "hindi tumatakbo" na kondisyon.', 'XIO(Motor_Run)OTE(Stopped_Lamp); bukas ang ilaw habang hindi tumatakbo ang motor.', 'Parang ilaw ng ref: bukas kapag HINDI pindot ang switch ng pinto.'],
+    },
+    OTE: {
+      en: ['Sets the bit to the rung condition.', 'True rung: the bit is 1. False rung: the bit is 0. Use only one OTE per bit (two OTEs on one bit fight each other: the last one scanned wins). Switching to Run turns OTE bits off first (prescan).', '[XIC(Start_PB),XIC(Motor_Run)]XIO(Stop_PB)OTE(Motor_Run); a seal-in circuit.', 'A light switch wired to a lamp: the lamp follows the switch.'],
+      tl: ['Sinusunod ng bit ang kondisyon ng rung.', 'TRUE ang rung: 1 ang bit. FALSE: 0. Isang OTE lang dapat bawat bit (kapag dalawa, ang huling na-scan ang masusunod). Pag lipat sa Run, pinapatay muna ang mga OTE (prescan).', '[XIC(Start_PB),XIC(Motor_Run)]XIO(Stop_PB)OTE(Motor_Run); seal-in.', 'Parang switch ng ilaw: sumusunod ang ilaw sa switch.'],
+    },
+    OTL: {
+      en: ['Turns the bit on and leaves it on.', 'A true rung sets the bit to 1. A false rung does nothing: the bit stays 1 until an OTU (or a write) clears it. A latched bit keeps its state through a power cycle and a Program/Run change.', 'XIC(Fault_Input)OTL(Alarm); XIC(Reset_PB)OTU(Alarm); the alarm stays until reset.', 'A light switch you flip on: it stays on after you let go.'],
+      tl: ['Binubuksan ang bit at pinapanatiling bukas.', 'TRUE ang rung: 1 ang bit. FALSE: walang ginagawa, mananatiling 1 hanggang may OTU. Hindi nawawala kahit power cycle o palit ng mode.', 'XIC(Fault_Input)OTL(Alarm); XIC(Reset_PB)OTU(Alarm); naiiwang bukas ang alarm hanggang i-reset.', 'Parang switch ng ilaw na itinaas mo: bukas pa rin kahit bitawan mo.'],
+    },
+    OTU: {
+      en: ['Turns the bit off and leaves it off.', 'A true rung clears the bit to 0. A false rung does nothing. The partner of OTL.', 'XIC(Reset_PB)OTU(Alarm);', 'Flipping the light switch off.'],
+      tl: ['Pinapatay ang bit at pinapanatiling patay.', 'TRUE ang rung: 0 ang bit. FALSE: walang ginagawa. Kapares ng OTL.', 'XIC(Reset_PB)OTU(Alarm);', 'Parang pagbaba ng switch ng ilaw.'],
+    },
+    ONS: {
+      en: ['Lets the rung be true for one scan only.', 'When the rung before it goes from false to true, the rest of the rung is true for one scan; then false until the rung goes false and true again. The storage bit remembers the last state (use a bit for nothing else).', 'XIC(Start_PB)ONS(Start_ONS)CTU(Start_Count,9999,0); counts one per press.', 'A camera flash: one flash per press, however long you hold it.'],
+      tl: ['TRUE ang rung nang isang scan lang.', 'Kapag naging TRUE mula FALSE ang bago nito, TRUE ang natitirang rung nang isang scan; tapos FALSE ulit hanggang muling mag-FALSE at TRUE. Ang storage bit ang nag-aalala ng huling estado (huwag gamitin sa iba).', 'XIC(Start_PB)ONS(Start_ONS)CTU(Start_Count,9999,0); isa ang bilang bawat pindot.', 'Parang flash ng camera: isang kislap bawat pindot kahit matagal mong hawakan.'],
+    },
+    OSR: {
+      en: ['Pulses an output bit for one scan on a rising edge.', 'An output instruction: when the rung goes false → true, the output bit is 1 for one scan. The storage bit keeps the last rung state.', 'XIC(Sensor)OSR(Sensor_SB,Sensor_Pulse);', 'Clapping once when someone enters the room.'],
+      tl: ['Isang scan na pulse sa output bit kapag umakyat (rising).', 'Output na instruction: kapag FALSE → TRUE ang rung, 1 ang output bit nang isang scan.', 'XIC(Sensor)OSR(Sensor_SB,Sensor_Pulse);', 'Parang isang palakpak kapag may pumasok sa kwarto.'],
+    },
+    OSF: {
+      en: ['Pulses an output bit for one scan on a falling edge.', 'When the rung goes true → false, the output bit is 1 for one scan.', 'XIC(Sensor)OSF(Sensor_SB,Sensor_Gone);', 'Waving goodbye once when someone leaves.'],
+      tl: ['Isang scan na pulse kapag bumaba (falling).', 'Kapag TRUE → FALSE ang rung, 1 ang output bit nang isang scan.', 'XIC(Sensor)OSF(Sensor_SB,Sensor_Gone);', 'Parang isang kaway kapag may umalis.'],
+    },
+    TON: {
+      en: ['Waits a time while the rung is true, then sets DN.', 'While the rung is true, ACC counts up in milliseconds; when ACC reaches PRE, DN goes on. EN is on while the rung is true, TT while it is timing. A false rung resets ACC to 0 and clears DN.', 'XIC(Motor_Run)TON(Run_Timer,5000,0); XIC(Run_Timer.DN)OTE(Run_Lamp); the lamp comes on 5 s after the motor.', 'A microwave: it beeps (DN) only after the full time runs with the door closed; open it and it starts over.'],
+      tl: ['Naghihintay habang TRUE ang rung, saka bubuksan ang DN.', 'Habang TRUE, umaakyat ang ACC (ms); kapag umabot sa PRE, bukas ang DN. EN habang TRUE, TT habang nagbibilang. FALSE ang rung: balik sa 0 ang ACC, patay ang DN.', 'XIC(Motor_Run)TON(Run_Timer,5000,0); XIC(Run_Timer.DN)OTE(Run_Lamp); bubukas ang ilaw 5 segundo pagkatapos umandar ang motor.', 'Parang microwave: tutunog lang (DN) kapag natapos ang buong oras; buksan mo ang pinto, uulit sa simula.'],
+    },
+    TOF: {
+      en: ['Keeps DN on for a time after the rung goes false.', 'A true rung sets DN and resets ACC. When the rung goes false, ACC counts up; at PRE, DN goes off.', 'XIC(Motor_Run)TOF(Fan_Timer,10000,0); XIC(Fan_Timer.DN)OTE(Cooling_Fan); the fan runs 10 s after the motor stops.', 'A stairway light that stays on a while after you leave.'],
+      tl: ['Bukas pa ang DN nang ilang oras pagkatapos mag-FALSE ang rung.', 'TRUE: bukas ang DN at 0 ang ACC. Pag naging FALSE, aakyat ang ACC; pag umabot sa PRE, papatay ang DN.', 'XIC(Motor_Run)TOF(Fan_Timer,10000,0); XIC(Fan_Timer.DN)OTE(Cooling_Fan); tuloy ang fan 10 segundo matapos huminto ang motor.', 'Parang ilaw sa hagdan na naiiwang bukas sandali pagkaalis mo.'],
+    },
+    RTO: {
+      en: ['A timer that keeps its time when the rung goes false.', 'Like TON, but a false rung only pauses ACC; it keeps the time. Only RES sets ACC back to 0.', 'XIC(Pump_Run)RTO(Pump_Hours,3600000,0); XIC(Service_Done)RES(Pump_Hours);', 'A stopwatch with pause: stop and start, it keeps adding up until you reset it.'],
+      tl: ['Timer na hindi nawawala ang oras kapag nag-FALSE.', 'Parang TON, pero ang FALSE ay pause lang; naiiwan ang oras. RES lang ang magbabalik sa 0.', 'XIC(Pump_Run)RTO(Pump_Hours,3600000,0); XIC(Service_Done)RES(Pump_Hours);', 'Parang stopwatch na may pause: tuloy ang dagdag hanggang i-reset.'],
+    },
+    CTU: {
+      en: ['Adds 1 to ACC on each false → true rung change.', 'Counts rising edges; DN is on while ACC ≥ PRE. Past 2,147,483,647 it wraps and OV is set. RES clears it.', 'XIC(Box_Sensor)CTU(Box_Count,10,0); XIC(Box_Count.DN)OTE(Full_Lamp);', 'A tally counter clicker at a door.'],
+      tl: ['Dagdag 1 sa ACC bawat FALSE → TRUE ng rung.', 'Bumibilang ng pag-akyat; bukas ang DN habang ACC ≥ PRE. Lampas sa max, babalik at bubukas ang OV. RES para i-clear.', 'XIC(Box_Sensor)CTU(Box_Count,10,0); XIC(Box_Count.DN)OTE(Full_Lamp);', 'Parang tally counter na pinipindot sa pinto.'],
+    },
+    CTD: {
+      en: ['Takes 1 from ACC on each false → true rung change.', 'Counts down; DN is on while ACC ≥ PRE. Below the minimum it wraps and UN is set. Often shares its counter with a CTU.', 'XIC(Box_Out)CTD(Box_Count,10,0);', 'Taking items out of a box and counting down what is left.'],
+      tl: ['Bawas 1 sa ACC bawat FALSE → TRUE.', 'Pababa ang bilang; bukas ang DN habang ACC ≥ PRE. Madalas kapareho ng counter ng CTU.', 'XIC(Box_Out)CTD(Box_Count,10,0);', 'Parang pagbilang pababa ng natitirang laman ng kahon.'],
+    },
+    RES: {
+      en: ['Resets a timer, counter or control structure.', 'A true rung sets ACC to 0 and clears the status bits (DN, EN, TT, OV, UN…).', 'XIC(Reset_PB)RES(Box_Count);', 'The reset button on a stopwatch or tally counter.'],
+      tl: ['Nire-reset ang timer, counter o control.', 'TRUE ang rung: 0 ang ACC at patay ang mga status bit.', 'XIC(Reset_PB)RES(Box_Count);', 'Parang reset ng stopwatch o tally counter.'],
+    },
+    EQU: { en: ['True when A = B.', 'Compares two numbers; with REAL values, exact equality is rare, prefer LIM.', 'EQU(Step,3)OTE(Step3_Lamp);', 'Checking if the scale shows exactly 1 kg.'], tl: ['TRUE kapag A = B.', 'Kinukumpara ang dalawang numero; sa REAL bihira ang eksaktong pantay, mas mabuti ang LIM.', 'EQU(Step,3)OTE(Step3_Lamp);', 'Parang pagtingin kung eksaktong 1 kg ang timbangan.'] },
+    NEQ: { en: ['True when A ≠ B.', 'The opposite of EQU.', 'NEQ(Mode,0)OTE(Not_Idle);', 'Anything but zero.'], tl: ['TRUE kapag A ≠ B.', 'Kabaligtaran ng EQU.', 'NEQ(Mode,0)OTE(Not_Idle);', 'Kahit ano basta hindi zero.'] },
+    LES: { en: ['True when A < B.', 'Compares two numbers.', 'LES(Tank_Level,20.0)OTE(Low_Alarm);', 'Fuel gauge below the red line.'], tl: ['TRUE kapag A < B.', 'Kinukumpara ang dalawang numero.', 'LES(Tank_Level,20.0)OTE(Low_Alarm);', 'Parang gauge ng gas na nasa ilalim ng pula.'] },
+    LEQ: { en: ['True when A ≤ B.', 'Compares two numbers.', 'LEQ(Count,0)OTE(Empty);', 'At or below the limit.'], tl: ['TRUE kapag A ≤ B.', 'Kinukumpara ang dalawang numero.', 'LEQ(Count,0)OTE(Empty);', 'Nasa o lampas pababa sa limit.'] },
+    GRT: { en: ['True when A > B.', 'Compares two numbers.', 'GRT(Temp,80.0)OTE(Overheat);', 'The thermometer over the danger mark.'], tl: ['TRUE kapag A > B.', 'Kinukumpara ang dalawang numero.', 'GRT(Temp,80.0)OTE(Overheat);', 'Parang thermometer na lampas sa danger.'] },
+    GEQ: { en: ['True when A ≥ B.', 'Compares two numbers.', 'GEQ(Count,10)OTE(Batch_Full);', 'Ten or more.'], tl: ['TRUE kapag A ≥ B.', 'Kinukumpara ang dalawang numero.', 'GEQ(Count,10)OTE(Batch_Full);', 'Sampu pataas.'] },
+    LIM: {
+      en: ['True when Test is between Low and High.', 'If Low ≤ High: true while Low ≤ Test ≤ High. If Low > High: true outside that band.', 'LIM(4.0,Pressure,6.0)OTE(Pressure_OK);', 'A thermostat comfort band: not too cold, not too hot.'],
+      tl: ['TRUE kapag nasa pagitan ng Low at High ang Test.', 'Kapag Low ≤ High: TRUE habang Low ≤ Test ≤ High. Kapag Low > High: TRUE sa labas ng saklaw.', 'LIM(4.0,Pressure,6.0)OTE(Pressure_OK);', 'Parang tamang lamig ng aircon: hindi masyadong malamig, hindi mainit.'],
+    },
+    MEQ: { en: ['True when Source and Compare match on the mask bits.', 'Only the bits that are 1 in Mask are compared.', 'MEQ(Inputs,16#000F,16#0005)OTE(Pattern_OK);', 'Checking only some switches on a panel.'], tl: ['TRUE kapag tugma ang Source at Compare sa mga bit ng mask.', 'Ang mga bit lang na 1 sa Mask ang kinukumpara.', 'MEQ(Inputs,16#000F,16#0005)OTE(Pattern_OK);', 'Parang pagtingin sa ilang switch lang ng panel.'] },
+    CMP: { en: ['True when an expression is true.', 'Writes a whole comparison in one box, e.g. (A+B)>C.', 'CMP(Level*2>Max)OTE(High);', 'A calculator test: is the result over the line?'], tl: ['TRUE kapag tama ang expression.', 'Buong comparison sa isang box, hal. (A+B)>C.', 'CMP(Level*2>Max)OTE(High);', 'Parang kalkula: lampas ba sa linya ang sagot?'] },
+    ADD: { en: ['Dest = A + B.', 'On a true rung. Integer overflow wraps and sets the overflow flag (S:V) and a minor fault.', 'XIC(Tick)ADD(Total,Step,Total);', 'Adding to a running total.'], tl: ['Dest = A + B.', 'Kapag TRUE ang rung. Ang integer overflow ay babalik at magse-set ng S:V at minor fault.', 'XIC(Tick)ADD(Total,Step,Total);', 'Parang pagdagdag sa kabuuan.'] },
+    SUB: { en: ['Dest = A − B.', 'On a true rung.', 'SUB(Setpoint,Actual,Error);', 'Finding how much is missing.'], tl: ['Dest = A − B.', 'Kapag TRUE ang rung.', 'SUB(Setpoint,Actual,Error);', 'Parang pagtingin kung gaano pa kulang.'] },
+    MUL: { en: ['Dest = A × B.', 'On a true rung.', 'MUL(Count,Price,Amount);', 'Quantity times price.'], tl: ['Dest = A × B.', 'Kapag TRUE ang rung.', 'MUL(Count,Price,Amount);', 'Dami beses presyo.'] },
+    DIV: { en: ['Dest = A ÷ B.', 'Integer results are rounded. Dividing by zero is a minor fault; an integer destination gets Source A.', 'DIV(Total,Count,Average);', 'Sharing equally.'], tl: ['Dest = A ÷ B.', 'Naka-round ang integer. Ang hati sa zero ay minor fault; ang integer na Dest ay magiging Source A.', 'DIV(Total,Count,Average);', 'Parang paghahati nang pantay.'] },
+    MOD: { en: ['Dest = remainder of A ÷ B.', 'On a true rung.', 'MOD(Count,2,Odd);', 'What is left after sharing equally.'], tl: ['Dest = sukli ng A ÷ B.', 'Kapag TRUE ang rung.', 'MOD(Count,2,Odd);', 'Ang natira matapos maghati.'] },
+    SQR: { en: ['Dest = square root of Source.', 'Uses the absolute value of Source.', 'SQR(Area,Side);', 'The side of a square floor from its area.'], tl: ['Dest = square root ng Source.', 'Absolute value ng Source ang ginagamit.', 'SQR(Area,Side);', 'Haba ng gilid ng sahig mula sa sukat nito.'] },
+    NEG: { en: ['Dest = −Source.', 'Changes the sign.', 'NEG(Speed,Reverse_Speed);', 'Turning forward into reverse.'], tl: ['Dest = −Source.', 'Binabaliktad ang sign.', 'NEG(Speed,Reverse_Speed);', 'Parang pag-atras mula pasulong.'] },
+    ABS: { en: ['Dest = |Source|.', 'Drops the sign.', 'ABS(Error,Error_Size);', 'How far off, not which way.'], tl: ['Dest = |Source|.', 'Tinatanggal ang sign.', 'ABS(Error,Error_Size);', 'Gaano kalayo, hindi kung saan.'] },
+    CPT: { en: ['Dest = an expression.', 'Several operations in one box, e.g. (A+B)*C/2.', 'CPT(Avg,(A+B+C)/3);', 'A calculator with brackets.'], tl: ['Dest = isang expression.', 'Maraming operasyon sa isang box, hal. (A+B)*C/2.', 'CPT(Avg,(A+B+C)/3);', 'Parang kalkulador na may panaklong.'] },
+    MOV: { en: ['Copies Source into Dest.', 'On a true rung. A REAL into an integer rounds to the nearest (half to even).', 'XIC(Recipe_A)MOV(1200,Speed_SP);', 'Writing a number into a box.'], tl: ['Kinokopya ang Source papunta sa Dest.', 'Kapag TRUE ang rung. Ang REAL papunta sa integer ay naka-round.', 'XIC(Recipe_A)MOV(1200,Speed_SP);', 'Parang pagsulat ng numero sa isang kahon.'] },
+    MVM: { en: ['Copies only the mask bits of Source into Dest.', 'Bits that are 0 in Mask keep their value in Dest.', 'MVM(Inputs,16#00FF,Low_Byte);', 'Painting through a stencil.'], tl: ['Kinokopya lang ang mga bit ng mask.', 'Ang mga bit na 0 sa Mask ay hindi nagbabago sa Dest.', 'MVM(Inputs,16#00FF,Low_Byte);', 'Parang pagpinta gamit ang stencil.'] },
+    CLR: { en: ['Sets Dest to 0.', 'On a true rung.', 'XIC(Reset_PB)CLR(Total);', 'Wiping a whiteboard.'], tl: ['Ginagawang 0 ang Dest.', 'Kapag TRUE ang rung.', 'XIC(Reset_PB)CLR(Total);', 'Parang pagbura ng whiteboard.'] },
+    AND: { en: ['Dest = A AND B, bit by bit.', 'A bit is 1 only where both are 1.', 'AND(Inputs,16#000F,Low_Nibble);', 'Both keys needed to open.'], tl: ['Dest = A AND B, bawat bit.', '1 lang kapag parehong 1.', 'AND(Inputs,16#000F,Low_Nibble);', 'Kailangan ang dalawang susi para bumukas.'] },
+    OR: { en: ['Dest = A OR B, bit by bit.', 'A bit is 1 where either is 1.', 'OR(Flags,16#0001,Flags);', 'Either door opens the room.'], tl: ['Dest = A OR B, bawat bit.', '1 kapag alinman ay 1.', 'OR(Flags,16#0001,Flags);', 'Kahit alin sa dalawang pinto, makakapasok.'] },
+    XOR: { en: ['Dest = A XOR B, bit by bit.', 'A bit is 1 where they differ.', 'XOR(Old,New,Changed);', 'Spot the difference.'], tl: ['Dest = A XOR B, bawat bit.', '1 kapag magkaiba.', 'XOR(Old,New,Changed);', 'Hanapin ang pagkakaiba.'] },
+    NOT: { en: ['Dest = every bit of Source inverted.', '1 becomes 0, 0 becomes 1.', 'NOT(Inputs,Inverted);', 'A photo negative.'], tl: ['Dest = baliktad ang bawat bit ng Source.', '1 → 0, 0 → 1.', 'NOT(Inputs,Inverted);', 'Parang negative ng litrato.'] },
+    BTD: { en: ['Copies a group of bits from Source to Dest.', 'Length bits starting at Source bit go to Dest starting at Dest bit.', 'BTD(Raw,4,Value,0,4);', 'Moving a row of seats to another spot.'], tl: ['Kinokopya ang grupo ng bits.', 'Length na bits mula sa Source bit papunta sa Dest bit.', 'BTD(Raw,4,Value,0,4);', 'Parang paglipat ng isang hanay ng upuan.'] },
+    SWPB: { en: ['Swaps the bytes of a value.', 'Orders: REVERSE, WORD, HIGH/LOW.', 'SWPB(Raw,HIGH/LOW,Fixed);', 'Turning a two-digit card around.'], tl: ['Pinagpapalit ang mga byte.', 'Order: REVERSE, WORD, HIGH/LOW.', 'SWPB(Raw,HIGH/LOW,Fixed);', 'Parang pagbaliktad ng card.'] },
+    COP: { en: ['Copies Length elements from one array to another.', 'A block copy; types should match.', 'COP(Recipe_A[0],Active[0],10);', 'Photocopying a page.'], tl: ['Kinokopya ang Length na elemento ng array.', 'Block copy; dapat tugma ang type.', 'COP(Recipe_A[0],Active[0],10);', 'Parang pag-photocopy ng pahina.'] },
+    FLL: { en: ['Fills Length elements of an array with one value.', 'A quick way to clear or preset a table.', 'FLL(0,Buffer[0],50);', 'Filling every cup with the same water.'], tl: ['Pinupuno ang array ng iisang value.', 'Mabilis na pag-clear o pag-preset ng table.', 'FLL(0,Buffer[0],50);', 'Parang pagpuno ng lahat ng baso ng parehong tubig.'] },
+    JSR: { en: ['Runs another routine, then comes back.', 'On a true rung the subroutine is scanned, then the rest of this rung continues.', 'XIC(Auto_Mode)JSR(Auto_Seq,0);', 'Asking a co-worker to do a task, then carrying on.'], tl: ['Pinapatakbo ang ibang routine, saka babalik.', 'Kapag TRUE, i-scan ang subroutine, saka itutuloy ang rung na ito.', 'XIC(Auto_Mode)JSR(Auto_Seq,0);', 'Parang pagpapagawa sa kasama, saka tuloy ka.'] },
+    RET: { en: ['Ends a subroutine early.', 'Returns to the JSR that called it.', 'XIC(Done)RET();', 'Finishing early and reporting back.'], tl: ['Tinatapos nang maaga ang subroutine.', 'Babalik sa JSR na tumawag.', 'XIC(Done)RET();', 'Parang tapos na at nag-report agad.'] },
+    SBR: { en: ['Marks the start of a subroutine.', 'The first instruction of a subroutine that takes parameters.', 'SBR();', 'The first page of a manual.'], tl: ['Simula ng subroutine.', 'Unang instruction ng subroutine na may parameters.', 'SBR();', 'Parang unang pahina ng manual.'] },
+    JMP: { en: ['Jumps to the rung with the same LBL.', 'The rungs between are skipped (their outputs stay as they are).', 'XIC(Skip)JMP(Later); … LBL(Later)…', 'Skipping pages to a bookmark.'], tl: ['Tatalon sa rung na may parehong LBL.', 'Lalaktawan ang mga rung sa pagitan (hindi nagbabago ang outputs nila).', 'XIC(Skip)JMP(Later); … LBL(Later)…', 'Parang paglaktaw sa bookmark.'] },
+    LBL: { en: ['A target for JMP.', 'Must be the first instruction of its rung.', 'LBL(Later)XIC(A)OTE(B);', 'A bookmark.'], tl: ['Pupuntahan ng JMP.', 'Dapat unang instruction ng rung.', 'LBL(Later)XIC(A)OTE(B);', 'Parang bookmark.'] },
+    MCR: { en: ['Turns off the outputs of a zone of rungs.', 'A false MCR starts a zone where non-retentive outputs are off; a second MCR (unconditional) ends it.', 'XIC(Zone_On)MCR(); … MCR();', 'A breaker that cuts a whole section.'], tl: ['Pinapatay ang outputs sa isang zone ng rungs.', 'FALSE na MCR: simula ng zone na patay ang outputs; isa pang MCR ang magsasara.', 'XIC(Zone_On)MCR(); … MCR();', 'Parang breaker na pumapatay sa isang bahagi.'] },
+    AFI: { en: ['Always false.', 'Disables a rung while testing, without deleting it.', 'AFI()XIC(A)OTE(B);', 'Taping a switch off.'], tl: ['Laging FALSE.', 'Pang-disable ng rung habang nagte-test, nang hindi binubura.', 'AFI()XIC(A)OTE(B);', 'Parang pag-tape sa switch na naka-off.'] },
+    NOP: { en: ['Does nothing.', 'A placeholder.', 'NOP();', 'An empty line on a form.'], tl: ['Walang ginagawa.', 'Pansamantalang lagay.', 'NOP();', 'Parang blangkong linya sa form.'] },
+    TND: { en: ['Ends this scan of the routine here.', 'The rungs after it are not scanned this time. For testing.', 'XIC(Test)TND();', 'Stopping reading a book at a page for now.'], tl: ['Dito muna matatapos ang scan ng routine.', 'Hindi i-scan ang mga rung sa ilalim. Pang-test.', 'XIC(Test)TND();', 'Parang pagtigil muna sa pagbasa sa isang pahina.'] },
+  };
+  const TIPS = {
+    en: [
+      ['Select', 'Click (tap) an instruction or a rung number to select it.'],
+      ['Edit', 'Double-click (double-tap) an instruction to change it, or a rung number to edit the rung as text.'],
+      ['Menu', 'Right-click (long-press) an instruction, a rung, a tree item or a module for its commands.'],
+      ['Add', 'Pick an instruction on the toolbar: it goes after the selection. On a touch screen, hold an instruction, then drag it onto a rung.'],
+      ['Type', 'With a rung selected, type a mnemonic (XIC, TON…) to add it.'],
+      ['Online', 'Who Active picks the controller; Go Online, then Download. Work the inputs in a module\'s I/O window (right-click or long-press the module, or its I/O button).'],
+      ['Tags', 'Controller Tags opens the tag table in a tab: Monitor Tags shows live values, Edit Tags changes the tags.'],
+    ],
+    tl: [
+      ['Pumili', 'I-click (i-tap) ang instruction o numero ng rung para mapili.'],
+      ['Mag-edit', 'Double-click (double-tap) ang instruction para palitan, o ang numero ng rung para i-edit ang text.'],
+      ['Menu', 'Right-click (long-press) sa instruction, rung, tree o module para sa mga utos.'],
+      ['Magdagdag', 'Pumili ng instruction sa toolbar: ilalagay ito pagkatapos ng napili. Sa touch screen, i-hold muna ang instruction saka i-drag sa rung.'],
+      ['Mag-type', 'Kapag may napiling rung, i-type ang mnemonic (XIC, TON…) para idagdag.'],
+      ['Online', 'Sa Who Active pipiliin ang controller; Go Online, saka Download. Ang inputs ay nasa I/O window ng module (right-click o long-press sa module, o ang I/O button nito).'],
+      ['Tags', 'Ang Controller Tags ay table sa sariling tab: Monitor Tags para sa live values, Edit Tags para baguhin.'],
+    ],
+  };
+  (window.MTPS || (window.MTPS = {})).HELP = { H, TIPS };
+})();
