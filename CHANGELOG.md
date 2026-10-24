@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added (MT PLC Studio 0.2.0-beta.1)
+- **Emulated chassis.** The controller is now a card in a rack, as in a PC emulator, and the app is the programming
+  terminal that connects to it.
+  - **Chassis Monitor** (Communications menu):
+    - A 10-slot rack: insert or remove controller and I/O cards.
+    - LEDs, and a key switch on the controller.
+    - Field switches on input cards, lamps on output cards.
+    - *Fault* on an I/O card.
+    - *Open in a window* puts it beside the ladder.
+  - **Who Active:** browse the virtual backplane and pick the controller. Its path (`Virtual\Backplane\<slot>`)
+    becomes the project path. Upload, Download and Go Online all go through that path.
+  - **Real I/O behaviour:**
+    - The project's I/O configuration must match the cards in the chassis.
+    - An empty slot or a faulted card gives code 16#0204; the wrong card gives 16#0116.
+    - Removing the controller card while online drops the app offline.
+  - The chassis and the projects in its controllers are kept when the app restarts.
+- The I/O panel now shows the cards of the chassis.
+
 ### MT PLC Studio 0.1.0 (first stable release)
 - The beta 1 to 3 changes below, as the first stable version. Apps on Stable and on Beta both get it as an in-app update.
 

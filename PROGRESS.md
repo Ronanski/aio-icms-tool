@@ -24,7 +24,8 @@
 - [x] Owner feedback on beta.2 fixed in 0.1.0-beta.3: branch levels (select, insert, delete), tablet branch tap crash, operand box closing at once, controller scans when hidden, grouped tag list (Inputs / Outputs / Tags / System), online edits with Accept / Cancel Edits
 - [x] First stable release MT PLC Studio 0.1.0 (2026-10-24, owner: "go stable muna")
 - [ ] Owner test of 0.1.0
-- [ ] Emulated controller as a separate device: chassis with slots, I/O modules to insert, connection (Who Active / path), Download / Upload over the link (owner request 2026-10-24)
+- [x] Emulated chassis 0.2.0-beta.1 (owner request 2026-10-24): `MTPS.Chassis` (slots, CPU and I/O cards, 16#0204 / 16#0116, output owner, kept across restarts), Chassis Monitor (in the app and in its own window), Who Active with the project path, Go Online / Download / Upload through the path; spec section 15
+- [ ] Network link: program an emulator that runs on another device (tablet) from the laptop
 - [ ] Next: online edit test / assemble steps and the r / i rung markers, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look
 
 ## Simpler app and education (2026-10-21, `feature/simplify-learn`)

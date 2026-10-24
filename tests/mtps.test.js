@@ -590,6 +590,38 @@ console.log('Online edits (Accept Edits)');
   check('an empty controller cannot take online edits', !new MTPS.Controller().edit(p).ok);
 }
 
+console.log('Chassis: controller and I/O cards in slots');
+{
+  const ch = new MTPS.Chassis(10);
+  check('a controller and I/O cards go into slots', ch.insert(0, 'PLC-CPU', 'Emu').ok && ch.insert(1, 'PLC-DI16-24V', 'In').ok && ch.insert(2, 'PLC-DO16-24V', 'Out').ok);
+  check('a slot holds one card; a slot outside the chassis is refused', !ch.insert(1, 'PLC-DO16-24V').ok && !ch.insert(10, 'PLC-DI16-24V').ok && !ch.insert(3, 'NOPE').ok);
+  const c = ch.controller(0);
+  check('the controller card holds a controller of its own', c instanceof MTPS.Controller && ch.controller(1) === null);
+  const p = proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }], tags: [{ name: 'S1', alias: 'Local:1:I.Data.0' }, { name: 'K1', alias: 'Local:2:O.Data.3' }], rungs: ['XIC(S1)OTE(K1);'] });
+  check('download through the chassis controller', c.download(p).ok && c.setMode('remrun'));
+  ch.setBit(1, 0, true); ch.advance(30);
+  check('a switch on the input card reaches the controller, its output lights the output card', c.read('S1') === 1 && ch.outputs(2) === 8);
+  ch.setBit(1, 0, false); ch.advance(30);
+  check('switch off: output off', ch.outputs(2) === 0);
+  ch.setFault(1, true); ch.advance(20);
+  check('a faulted card: the controller sees 16#0204', c.moduleStatus(1).state === 'Faulted' && c.moduleStatus(1).code === '16#0204' && !c.ioOk());
+  ch.setFault(1, false); ch.advance(20);
+  check('the card works again', c.moduleStatus(1).state === 'Running' && c.ioOk());
+  ch.remove(1); ch.advance(20);
+  check('an empty slot: 16#0204', c.moduleStatus(1).code === '16#0204');
+  ch.insert(1, 'PLC-DO16-24V', 'Wrong'); ch.advance(20);
+  check('another module in the slot: keying mismatch 16#0116', c.moduleStatus(1).code === '16#0116');
+  ch.remove(1); ch.insert(1, 'PLC-DI16-24V', 'In'); ch.setBit(1, 0, true); ch.advance(30);
+  check('the right card back: running, inputs again', c.moduleStatus(1).state === 'Running' && ch.outputs(2) === 8);
+  ch.insert(5, 'PLC-CPU', 'Emu2');
+  check('two controllers in one chassis; the first one that configures a card owns its outputs', ch.controllers().length === 2 && ch.owner(2) === c);
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch)));
+  back.advance(30);
+  const c2 = back.controller(0);
+  check('the chassis is kept: cards, field switches, the project and the mode of each controller', back.mods.size === 4 && back.module(1).field === 1 && c2.name === 'Test' && c2.mode === 'remrun' && back.outputs(2) === 8);
+  check('a controller that was empty stays empty', back.controller(5).M === null);
+}
+
 console.log('Project copy in the controller');
 {
   const p = proj({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)OTE(A);'] });

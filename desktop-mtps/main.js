@@ -41,7 +41,11 @@ function createWindow() {
     } catch (e) { /* ignore */ }
   };
   win.on('close', save);
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    // the Chassis Monitor opens as a blank window of its own that the app writes and draws
+    if (frameName === 'mtps-chassis' && (url === '' || url === 'about:blank')) {
+      return { action: 'allow', overrideBrowserWindowOptions: { width: 1100, height: 640, minWidth: 480, minHeight: 360, title: 'MT PLC Studio - Chassis Monitor', autoHideMenuBar: true, backgroundColor: '#E9EDF1', icon: path.join(__dirname, 'app', 'icons', 'icon-512.png') } };
+    }
     if (/^https?:/.test(url) && !ours(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
