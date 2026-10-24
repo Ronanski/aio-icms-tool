@@ -571,7 +571,8 @@
       for (const [id, p] of pts) if (id !== ev.pointerId && performance.now() - p.t > 1500) pts.delete(id);
       if (ev.pointerType !== 'touch') pts.clear();
       pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, t: performance.now() });
-      try { w.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+      // only the primary button and touch are captured: a right-click must still reach the instruction under it
+      if (!(ev.pointerType === 'mouse' && ev.button !== 0)) { try { w.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ } }
       if (pts.size === 2) {
         const [p1, p2] = [...pts.values()];
         pinch = { d: Math.max(20, Math.hypot(p1.x - p2.x, p1.y - p2.y)), z: S.prefs.zoom };
@@ -626,7 +627,7 @@
       if (!w) { if (ev.target.closest('.nd')) { ev.preventDefault(); orgMenu(ev.target.closest('.nd').dataset.org, ev.clientX, ev.clientY); } return; }
       ev.preventDefault();
       if (pd && !pd.mouse) return;   // a long-press on touch opens the menu itself
-      const t = hit(ev.target);
+      const t = hit(document.elementFromPoint(ev.clientX, ev.clientY) || ev.target);
       select(t);
       render();
       ctxMenu(t, ev.clientX, ev.clientY);
