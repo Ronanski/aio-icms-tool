@@ -400,3 +400,31 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .ccard .btn svg { stroke: #1b2430; }
 .ccard .btn.danger { background: #e33; color: #fff; border-color: #a01; }
 .tab .ckey span, .phone .ckey span { padding: 0; min-height: 34px; font-size: 10px; }
+
+/* ---------- Emulator dashboard: Devices | details, Device Status below ---------- */
+.emu { flex: 1; height: 100%; min-height: 0; display: grid; grid-template-columns: 230px 1fr; grid-template-rows: minmax(0, 1fr) minmax(92px, auto); background: var(--surface-2); }
+.emu .ph { background: var(--surface-3); }
+.emudev { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.emudev .tree { flex: 1; overflow: auto; }
+.emudev .ph .btn { min-height: 24px; padding: 0 8px; }
+.emudev .ph .btn svg { width: 14px; height: 14px; }
+.emumain { overflow: auto; min-height: 0; padding: 0 0 12px; }
+.emuform { padding: 4px 14px 8px; max-width: 560px; }
+.emurack { padding: 0 12px; overflow-x: auto; }
+.emustat { grid-column: 1 / -1; border-top: 1px solid var(--border); background: var(--surface); max-height: 190px; overflow: auto; }
+.emurow { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.emurow .seg span { padding: 3px 9px; }
+.emurow .sw span { min-width: 34px; }
+.emuleds { display: flex; gap: 10px; font: 600 10px var(--mono); }
+.emuflt { flex-basis: 100%; color: var(--danger); font-size: 11px; padding-left: 52px; }
+.emutag { margin-left: 8px; font: 600 11px var(--mono); color: var(--accent); }
+.ccard.off { opacity: .55; }
+.ccard[data-esel] { cursor: pointer; }
+.phone .emu { display: flex; flex-direction: column; height: auto; overflow: auto; }
+.phone .emu > div { flex: none; }
+.phone .emudev { border-right: 0; border-bottom: 1px solid var(--border); max-height: 200px; }
+.phone .emustat { max-height: none; }
+.tab .emurow .seg span, .phone .emurow .seg span { min-height: 36px; padding: 0 10px; }
+.phone .emumain, .phone .emudev .tree { overflow: visible; }
+.phone .emudev { max-height: none; }
+.phone .emurow .grow { flex: 1 1 calc(100% - 80px); }

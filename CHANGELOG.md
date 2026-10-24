@@ -5,6 +5,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.2.0-beta.2): the emulator works like FactoryTalk Logix Echo
+- **Emulator dashboard** (Communications > Emulator) with the three panes of the reference emulator:
+  - **Devices:** chassis, then cards as "[slot] name".
+  - **Controller:** vendor, type, revision, name, description, **IP address**, chassis, slot, and power **On/Off**.
+  - **Device Status:** every controller with its on/off switch, **Run / Remote / Program**, Run and OK lights and its
+    fault message.
+- **Several chassis:** Add Chassis, Add Controller (with the next free 127.0.0.x address) and Add I/O Card.
+- **Connecting over Ethernet:**
+  - Who Active lists each controller that is on and has an IP address, then the backplane of its chassis.
+  - The project path is `Emulate\<ip>\Backplane\<slot>`.
+  - Turning a controller off drops the app offline; turning it on starts it again with its project.
+- **"[Emulator]"** shows in the title bars while online.
+- **Without I/O cards**, the I/O modules fault and their input tags can be written or toggled, as on Logix Echo. The
+  I/O cards stay as an addition (field switches and lamps).
+
 ### Added (MT PLC Studio 0.2.0-beta.1)
 - **Emulated chassis.** The controller is now a card in a rack, as in a PC emulator, and the app is the programming
   terminal that connects to it.

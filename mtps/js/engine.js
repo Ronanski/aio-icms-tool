@@ -662,6 +662,7 @@
       this.pulled = new Set();     // slots whose card is taken out (a simulated module fault)
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
+      this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -751,6 +752,18 @@
       this.emit('mode');
       return res;
     }
+    /* power: off keeps the project; on starts again like a real controller (RUN key: Run, PROG: Program,
+       REM: the mode it had), with the current fault cleared and a prescan before Run */
+    power(on) {
+      on = !!on;
+      if (on === this.powered) return;
+      if (!on) { this.wasRun = RUN(this.mode) && !this.fault; this.powered = false; this.emit('power'); return; }
+      this.powered = true; this.fault = null; this.acc = 0; this.first = true;
+      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M ? 'remrun' : 'remprog';
+      this.mode = to;
+      if (RUN(to) && this.M) this.prescan();
+      this.emit('power'); this.emit('mode');
+    }
     /* online edit (Accept Edits): the new logic replaces the old without a Download. The mode, the forces and the
        values of the tags that keep their name and type stay; new tags start from their start value. */
     edit(project) {
@@ -802,6 +815,7 @@
     }
     /* the controller's own clock: fixed scans of `period` ms, catching up after a slow frame (at most 1 s) */
     advance(ms) {
+      if (!this.powered) return 0;
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
       while (this.acc >= this.period) { this.acc -= this.period; this.scan(this.period); n++; }
@@ -813,9 +827,8 @@
         const ph = this.phys[m.slot];
         if (m.inhibit) continue;
         if (this.pulled.has(m.slot)) {
+          // no connection: Fault is set, the input data holds and can be overwritten (as on an emulated controller)
           V[m.I].Fault = -1;
-          if (m.kind === 'di') V[m.I].Data = 0;
-          else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = 0;
           if (m.majorOnFail && this.running) this.majorFault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
           continue;
         }
@@ -1043,10 +1056,12 @@
       if (typeof r === 'string') return undefined;
       try { return r.dim || !ATOMIC[r.type] ? clone(r.obj()) : r.get(); } catch (e) { if (e instanceof Fault) return undefined; throw e; }
     }
-    /* writing an input image is refused: the next input update would overwrite it */
+    /* an input image that its card updates (connected, not inhibited); the others can be written */
+    inputLive(r) { const m = r.io && this.M.mods.get(r.io.slot); return !!m && !m.inhibit && !this.pulled.has(m.slot); }
+    /* writing an input image of a working card is refused: the next input update would overwrite it */
     write(path, v, program) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || r.input || r.ro) return false;
+      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro) return false;
       try {
         if (r.dim || !ATOMIC[r.type]) { r.at(); PP[PK] = conform(this.M.types, r.type, r.dim, v); } else r.set(Number(v));
         return true;
@@ -1149,7 +1164,7 @@
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU';
   class Chassis {
-    constructor(size = 10) { this.size = size; this.mods = new Map(); this.ls = []; }
+    constructor(size = 10, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
     static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
@@ -1160,7 +1175,7 @@
       if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
-      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; }
+      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; }
       this.mods.set(slot, m);
       this.emit('insert');
       return { ok: true, module: m };
@@ -1171,6 +1186,16 @@
     controllers() { return [...this.mods.values()].filter(m => m.ctl).sort((a, b) => a.slot - b.slot); }
     setBit(slot, bit, on) { const m = this.mods.get(slot); if (!m || m.kind !== 'di') return false; m.field = on ? m.field | (1 << bit) : m.field & ~(1 << bit); this.emit('field'); return true; }
     setChannel(slot, ch, v) { const m = this.mods.get(slot); if (!m || m.kind !== 'ai') return false; m.field[ch] = Number(v) || 0; this.emit('field'); return true; }
+    /* controller settings of the emulator: IP address (empty: none), description, power */
+    setController(slot, o) {
+      const m = this.mods.get(slot); if (!m || !m.ctl) return false;
+      if (o.name != null) m.name = String(o.name);
+      if (o.desc != null) m.desc = String(o.desc);
+      if (o.ip != null) m.ip = String(o.ip);
+      if (o.on != null) m.ctl.power(o.on);
+      this.emit('controller');
+      return true;
+    }
     setFault(slot, on) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu') return false; m.fault = !!on; this.emit('fault'); return true; }
     /* the code a controller gets for a slot of its I/O configuration */
     codeFor(slot, type) { const m = this.mods.get(slot); return !m || m.fault ? '16#0204' : m.type !== type ? '16#0116' : null; }
@@ -1183,12 +1208,12 @@
     }
     /* time goes by: inputs into every controller, then its scans */
     advance(ms) {
-      for (const m of this.controllers()) { const c = m.ctl; if (c.M) this.exchange(c); c.advance(ms); }
+      for (const m of this.controllers()) { const c = m.ctl; if (!c.powered) continue; if (c.M) this.exchange(c); c.advance(ms); }
     }
     owner(slot) {
       const m = this.mods.get(slot);
       if (!m) return null;
-      const o = this.controllers().find(x => x.ctl.M && x.ctl.M.mods.has(slot) && x.ctl.M.mods.get(slot).type === m.type);
+      const o = this.controllers().find(x => x.ctl.powered && x.ctl.M && x.ctl.M.mods.has(slot) && x.ctl.M.mods.get(slot).type === m.type);
       return o ? o.ctl : null;
     }
     /* what an output card drives: bits of a discrete card, channel values of an analog card (off without an owner) */
@@ -1200,11 +1225,13 @@
     }
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
-      return { size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
+      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
+        ip: m.ctl ? m.ip : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
     }
     static from(o) {
-      const ch = new Chassis(o && o.size > 0 ? Math.min(17, Math.floor(o.size)) : 10);
+      const ch = new Chassis(o && o.size > 0 ? Math.min(17, Math.floor(o.size)) : 10, (o && o.name) || 'Chassis');
+      ch.desc = (o && o.desc) || '';
       ((o && o.mods) || []).forEach(x => {
         const r = ch.insert(x.slot, x.type, x.name);
         if (!r.ok) return;
@@ -1213,11 +1240,13 @@
         if (m.kind === 'di') m.field = Number(x.field) | 0;
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
+          m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || '';
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }
           else if (x.project) { m.ctl.key = 'REM'; m.ctl.download(x.project); m.ctl.key = 'RUN'; m.ctl.go('run'); }
           if (key === 'PROG') m.ctl.go('prog');
+          if (x.on === false) m.ctl.power(false);
         }
       });
       return ch;
