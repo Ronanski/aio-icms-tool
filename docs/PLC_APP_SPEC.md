@@ -704,3 +704,36 @@ The points used here:
   - Firmware revisions.
   - Safety controllers.
   - A real network link to another device.
+
+## 16. RSLogix 5000 flows (0.2.0-beta.3)
+
+- **Path bar:** the project path, with a button to Who Active.
+- **Go Online:** the same logic goes straight online. Tag values and the project name do not count as a difference
+  (`logicKey`).
+  - Anything else opens **Connected To Go Online**. It shows the controller (path, name, mode, routines / rungs / tags)
+    and the offline project, with **Select File**, Upload (when the controller has a project) and Download.
+  - An empty controller says "The controller contains no project".
+- **Download:**
+  1. Confirm.
+  2. A running controller goes to Remote Program.
+  3. A progress dialog.
+  4. Edits are cleared.
+  5. "Return the controller to Remote Run?"
+- **Upload:**
+  1. Pick the project name to save it as. The dialog says whether a saved project will be replaced.
+  2. A progress dialog.
+  3. The project opens with the controller's tag values and the same path, and goes online.
+- **Upload Tag Values:** the controller's current values become the project's tag values. Save while online asks for
+  it.
+- **Remote Test** (`remtest`): the logic executes and the outputs are held off. It is reached from the Mode box.
+- **Online edits** (`S.ed = { ctl, orig, base, tested }`, `edPhase()`):
+  - **Pending (e):** the project differs from the logic before the edits.
+  - **Accept Pending Edits:** in Run, accepted (i); the controller keeps the old logic. In Program, the edits are
+    finalized at once.
+  - **Test Accepted Edits (I):** the controller runs the new logic (`Controller.edit`, values kept).
+  - **Untest** goes back to the old logic. **Assemble** drops the old logic.
+  - **Cancel Pending Edits** goes back to the accepted or controller logic. **Cancel Accepted Edits** goes back to the
+    old logic.
+  - The marks sit beside the rung numbers.
+- **Emulator snapshots:** the whole emulator (`racks`) is saved under a name (`mtps.emu.snaps`, at most 20).
+  Restore replaces it.

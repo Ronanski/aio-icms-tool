@@ -647,6 +647,23 @@ console.log('Emulator: power, IP address, chassis name');
   check('kept: chassis name, IP, description, and the power off', back.name === 'LineA' && back.module(0).ip === '127.0.0.1' && back.module(0).desc === 'Line A' && back.controller(0).powered === false);
 }
 
+console.log('Remote Test, logic comparison');
+{
+  const o = { modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }], tags: [T('N', 'DINT'), { name: 'K1', alias: 'Local:2:O.Data.0' }], rungs: ['ADD(N,1,N);', 'OTE(K1);'] };
+  const c = new MTPS.Controller(); c.download(proj(o));
+  check('Remote Test from Rem Prog', c.setMode('remtest') && c.mode === 'remtest' && c.running);
+  scans(c, 5);
+  check('in Remote Test the logic runs, the outputs stay off', c.read('N') === 5 && c.read('K1') === 1 && c.ioImage(2).out === 0);
+  c.setMode('remrun'); scans(c, 1);
+  check('Remote Run: the outputs come on', c.ioImage(2).out === 1);
+  c.setKey('RUN'); c.setKey('REM');
+  check('key RUN then REM: Remote Run, not Remote Test', c.mode === 'remrun');
+  const p = proj(o); p.tags[0].value = 42; p.controller.name = 'Other_Name';
+  check('another tag value or project name is the same logic (not an edit)', c.holds(p));
+  p.tasks[0].programs[0].routines[0].rungs[0].t = 'ADD(N,2,N);';
+  check('a changed rung is not', !c.holds(p));
+}
+
 console.log('Project copy in the controller');
 {
   const p = proj({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)OTE(A);'] });

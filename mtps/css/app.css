@@ -353,6 +353,7 @@ svg.lad .sel { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.
 svg.lad .rsel { fill: var(--fill-accent); }
 svg.lad .err { fill: var(--danger); font-size: 1.35em; font-weight: 700; }
 svg.lad .errw { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 3 2; fill: none; }
+svg.lad .emk { fill: var(--warn-text); font: 700 1.25em var(--mono); }
 svg.lad .frc { fill: #c76a00; font-size: .9em; font-weight: 700; }
 svg.lad .wrap { fill: var(--lad-wire); }
 svg.lad .tap { fill: transparent; cursor: pointer; }
@@ -428,3 +429,10 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .phone .emumain, .phone .emudev .tree { overflow: visible; }
 .phone .emudev { max-height: none; }
 .phone .emurow .grow { flex: 1 1 calc(100% - 80px); }
+.pathbar { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0 0 0 8px; background: var(--surface); }
+.pathbar .pv { font-size: 11px; white-space: nowrap; }
+.pathbar .ib { width: 26px; height: 24px; }
+.prog { height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; margin: 10px 0 4px; }
+.prog i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .6s linear; }
+.upbar .btn:not(.pri) { background: #fffdf2; color: #2b2400; border: 1px solid #c9b65a; }
+:root[data-theme="dark"] .upbar .btn:not(.pri) { background: #4a3f16; color: #f5e9b8; border-color: #7a6a2a; }

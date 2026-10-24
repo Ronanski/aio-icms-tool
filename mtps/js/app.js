@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.2.0-beta.2';
+  const VERSION = '0.2.0-beta.3';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -33,7 +33,7 @@
   const racks = (() => {
     try { const o = store.get('emu', null); if (o && Array.isArray(o.racks) && o.racks.length) return o.racks.map(r => E.Chassis.from(r)); } catch (e) { /* a broken copy: start again */ }
     try {
-      // the single chassis of 0.2.0-beta.2: its first controller gets the first address
+      // the single chassis of 0.2.0-beta.3: its first controller gets the first address
       const old = store.get('chassis', null);
       if (old && Array.isArray(old.mods)) { const c = E.Chassis.from(old), m = c.controllers()[0]; if (m && !m.ip) m.ip = '127.0.0.1'; return [c]; }
     } catch (e) { /* start again */ }
@@ -177,7 +177,7 @@
     p: null, prog: '', routine: '', sel: null, selRung: null, clip: null, undo: [], redo: [], dirty: false, online: false,
     layout: 'desktop', area: 'ladder', drawer: false, ioOpen: false, errOpen: false, tagOpen: new Set(), verify: null, errRungs: new Set(),
     prefs: Object.assign({ layout: 'auto', theme: 'auto', zoom: 1, org: true, err: true, io: false, tab: 'Favorites', push: false, collapsed: ['dts'] }, store.get('prefs', {})),
-    find: '',
+    find: '', ed: null,
   };
   const savePrefs = () => store.set('prefs', S.prefs);
   const allProgs = () => S.p.tasks.flatMap(t => t.programs);
@@ -188,8 +188,21 @@
   // the ladder and the tags can be edited offline and online (online edits wait for Accept Edits); modules only offline
   const editable = () => true;
   const offline = () => !S.online;
-  /* online edits: the project on this device differs from the copy in the controller */
-  const pending = () => S.online && !!ctl.M && !ctl.holds(S.p);
+  /* online edits, as in the reference software: pending edits (on this device only) are accepted; in Run the
+     controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
+     until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
+     orig = the controller's project before the edits, base = the accepted project (both JSON). */
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  function edPhase() {
+    if (!S.online || !ctl.M) return null;
+    const dirty = !ctl.holds(S.p);
+    if (S.ed && S.ed.ctl === ctl) {
+      if (S.ed.tested) return dirty ? 'pending' : 'tested';
+      return lkey(S.p) === lkey(JSON.parse(S.ed.base)) ? 'accepted' : 'pending';
+    }
+    return dirty ? 'pending' : null;
+  }
+  const pending = () => edPhase() !== null;
   let ctlCopy = { s: null, p: null };
   function ctlRungs() {
     if (ctlCopy.s !== ctl.copy) ctlCopy = { s: ctl.copy, p: ctl.copy ? JSON.parse(ctl.copy) : null };
@@ -377,7 +390,8 @@
   const C = {
     new: { l: 'New…', k: 'Ctrl+N', i: 'file', run: cmdNew },
     open: { l: 'Open…', k: 'Ctrl+O', i: 'open', run: cmdOpen },
-    save: { l: 'Save', k: 'Ctrl+S', i: 'save', run: () => { saveProject(); toast('Saved'); } },
+    save: { l: 'Save', k: 'Ctrl+S', i: 'save', run: saveCmd },
+    uptags: { l: 'Upload Tag Values', i: 'upload', run: () => uploadTags(true), on: () => S.online && !!ctl.M && ctl.holds(S.p) },
     saveas: { l: 'Save As…', i: 'save', run: cmdSaveAs },
     import: { l: 'Import…', i: 'upload', run: cmdImport },
     export: { l: 'Export…', i: 'download', run: cmdExport },
@@ -407,8 +421,12 @@
     xref: { l: 'Cross Reference', k: 'Ctrl+E', i: 'xref', run: () => xref() },
     verifyr: { l: 'Verify Routine', i: 'checkr', run: () => verifyCmd(true) },
     verifyc: { l: 'Verify Controller', i: 'check', run: () => verifyCmd(false) },
-    accept: { l: 'Accept Edits', i: 'check', run: acceptEdits, on: pending },
-    cancele: { l: 'Cancel Edits', i: 'undo', run: cancelEdits, on: pending },
+    accept: { l: 'Accept Pending Edits', i: 'check', run: acceptEdits, on: () => edPhase() === 'pending' },
+    cancele: { l: 'Cancel Pending Edits', i: 'undo', run: cancelEdits, on: () => edPhase() === 'pending' },
+    tested: { l: 'Test Accepted Edits', i: 'play', run: testEdits, on: () => edPhase() === 'accepted' },
+    cancelacc: { l: 'Cancel Accepted Edits', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
+    untest: { l: 'Untest Accepted Edits', i: 'undo', run: untestEdits, on: () => edPhase() === 'tested' },
+    assemble: { l: 'Assemble Accepted Edits', i: 'check', run: assembleEdits, on: () => edPhase() === 'tested' },
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
@@ -419,6 +437,7 @@
     upload: { l: 'Upload…', i: 'upload', run: () => upload(), on: () => !!ctl.M },
     prog: { l: 'Program Mode', i: 'stop', run: () => setMode('remprog'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remprog' && !ctl.fault },
     runm: { l: 'Run Mode', i: 'play', run: () => setMode('remrun'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remrun' && !ctl.fault },
+    testm: { l: 'Test Mode', i: 'play', run: () => setMode('remtest'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remtest' && !ctl.fault },
     clear: { l: 'Clear Faults', i: 'fault', run: () => { ctl.clearFault(); live(true); }, on: () => S.online && !!ctl.fault },
     fen: { l: 'Enable All I/O Forces', i: 'force', run: () => { ctl.enableForces(true); live(true); }, on: () => S.online && ctl.forceState() === 'disabled' },
     fdis: { l: 'Disable All I/O Forces', i: 'force', run: () => { ctl.enableForces(false); live(true); }, on: () => S.online && ctl.forceState() === 'enabled' },
@@ -438,8 +457,8 @@
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
-    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', '-', 'tagsmon', 'tagsedit', 'newtag']],
-    ['Communications', ['who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'clear', '-', 'fen', 'fdis', 'fall']],
+    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag']],
+    ['Communications', ['who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'about']],
   ];
@@ -467,17 +486,20 @@
     if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     title();
   }
-  const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[ctl.mode]);
+  const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
   const modeCls = () => (!S.online ? '' : ctl.fault ? ' fault' : ctl.mode === 'run' || ctl.mode === 'remrun' ? ' run' : '');
   const modeBox = () => `<span class="sbox${modeCls()}" data-box="mode" title="Controller mode">${modeText()}${ic('down')}</span>`;
   function forcesBox() {
     const st = S.online ? ctl.forceState() : 'none';
     return `<span class="sbox" data-box="forces" title="I/O forces" style="font-weight:400"><i class="fi${st === 'enabled' ? ' en' : st === 'disabled' ? ' dis' : ''}"></i>${st === 'none' ? 'No Forces' : 'Forces'}${ic('down')}</span>`;
   }
-  const editsBox = () => `<span class="sbox plain${pending() ? ' edits' : ''}" title="Online edits">${pending() ? 'Edits Present' : 'No Edits'}</span>`;
+  const EDTXT = { pending: 'Edits Present', accepted: 'Accepted Edits', tested: 'Testing Edits' };
+  const editsBox = () => { const ph = edPhase(); return `<span class="sbox plain${ph ? ' edits' : ''}" title="Online edits">${ph ? EDTXT[ph] : 'No Edits'}</span>`; };
   function editbar() {
-    const run = ctl.mode === 'run' || ctl.mode === 'remrun';
-    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Edits are not in the controller yet.</b> ${run ? 'It keeps running the old logic until you accept.' : 'Accept them to send them to the controller.'}</span><button class="btn pri" data-cmd="accept">Accept Edits</button><button class="btn" data-cmd="cancele">Cancel Edits</button></div>`;
+    const ph = edPhase(), b = (id, pri) => `<button class="btn${pri ? ' pri' : ''}" data-cmd="${id}">${C[id].l}</button>`;
+    if (ph === 'accepted') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Accepted edits (i).</b> The controller still runs the old logic. Test them to run the new logic.</span>${b('tested', true)}${b('cancelacc')}</div>`;
+    if (ph === 'tested') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Testing edits (I).</b> The controller runs the new logic. Assemble to keep it, or Untest to go back.</span>${b('assemble', true)}${b('untest')}</div>`;
+    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Pending edits (e).</b> ${ctl.running ? 'The controller keeps the old logic: accept, then test the edits.' : 'Accept them to send them to the controller.'}</span>${b('accept', true)}${b('cancele')}</div>`;
   }
   function ledsHTML() {
     const on = S.online, run = on && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault;
@@ -494,7 +516,7 @@
     return `<div class="dmenu">${MENUS.map(([n]) => `<span data-menu="${n}">${n}</span>`).join('')}</div>
       <div class="dtb">${tbtn('new')}${tbtn('open')}${tbtn('save')}<span class="vsep"></span>${tbtn('cut')}${tbtn('copy')}${tbtn('paste')}<span class="vsep"></span>${tbtn('undo')}${tbtn('redo')}
         <span class="vsep"></span>${tbtn('find')}${tbtn('xref')}<span class="vsep"></span>${tbtn('verifyc')}${tbtn('verifyr')}<span class="vsep"></span>${tbtn('tagsmon')}${tbtn('vio')}
-        <span class="grow"></span><span class="muted" style="margin-right:6px">Path: ${esc(curPath())}</span>${S.online ? tbtn('offline') : tbtn('online')}</div>
+        <span class="grow"></span><span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span><button class="ib" data-cmd="who" title="Who Active: pick the controller">${ic('search')}</button></span>${S.online ? tbtn('offline') : tbtn('online')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
@@ -614,13 +636,27 @@
     const P = ctl.M.programs.find(p => U(p.name) === U(curProg().name));
     return P ? P.routines.get(U(curRoutine().name)) : null;
   }
+  /* the edit mark beside each rung number: e (pending), i (accepted), I (being tested), against the logic before */
+  function rungsOf(json) {
+    if (!json) return [];
+    const p = JSON.parse(json), P = p.tasks.flatMap(t => t.programs).find(g => U(g.name) === U(curProg().name));
+    const r = P && P.routines.find(x => U(x.name) === U(curRoutine().name));
+    return r ? r.rungs.map(x => x.t) : [];
+  }
+  function editMarks() {
+    const ph = edPhase(); if (!ph) return null;
+    const ed = S.ed && S.ed.ctl === ctl ? S.ed : null;
+    const before = rungsOf(ph === 'pending' ? (ed && !ed.tested ? ed.base : ctl.copy) : ed.orig);
+    const ch = ph === 'pending' ? 'e' : ph === 'accepted' ? 'i' : 'I';
+    return rungs().map((r, i) => (r.t !== before[i] ? ch : ''));
+  }
   function ladderRungs() {
-    const R = routineEdited() ? null : liveRoutine();
+    const R = routineEdited() ? null : liveRoutine(), mk = editMarks();
     if (R) {
       const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
-      return R.rungs.map((r, i) => { r.elems.forEach(e => e && tag(e)); return { elems: r.elems.filter(Boolean), c: rungs()[i] && rungs()[i].c }; });
+      return R.rungs.map((r, i) => { r.elems.forEach(e => e && tag(e)); return { elems: r.elems.filter(Boolean), c: rungs()[i] && rungs()[i].c, mk: mk && mk[i] }; });
     }
-    return rungs().map((r, i) => { const pr = E.parseRung(r.t); return { elems: pr.err ? [] : pr.elems, c: r.c, err: S.errRungs.has(i) || !!pr.err }; });
+    return rungs().map((r, i) => { const pr = E.parseRung(r.t); return { elems: pr.err ? [] : pr.elems, c: r.c, err: S.errRungs.has(i) || !!pr.err, mk: mk && mk[i] }; });
   }
   const CELL = { desktop: 104, tablet: 112, phone: 80 };
   function renderLadder(drop, press) {
@@ -1373,40 +1409,95 @@
     render();
     toast(v.errors.length ? `${v.errors.length} error(s), ${v.warnings.length} warning(s)` : `Verified: no errors, ${v.warnings.length} warning(s)`, v.errors.length ? 'err' : 'ok');
   }
-  const MODE = () => ({ prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[ctl.mode]);
+  const MODE = () => ({ prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
   function online() {
     S.online = true;
     // the I/O panel holds the simulated field devices: show it when going online
     if (S.layout === 'desktop' && !S.prefs.io) { S.prefs.io = true; savePrefs(); }
     render(); live(true);
   }
-  /* Go Online: the same project, online; an empty controller, Download; another project, Upload or Download */
+  /* Go Online: the same project goes online; otherwise "Connected To Go Online" (as in the reference): Select File,
+     Upload or Download, with what the controller and this device hold */
   function goOnline() {
     if (!reachable()) return;
     if (ctl.holds(S.p) && ctl.M) { online(); toast(`Online with ${ctl.name}`); return; }
-    if (!ctl.M) { download(); return; }
-    dialog({ title: 'Connected To Go Online',
-      body: `<p>The controller holds another project, or another version of this one.</p>${kv('In the controller', esc(ctl.name))}${kv('On this device', esc(S.p.controller.name))}${kv('Controller mode', MODE())}
-        <p class="help"><b>Upload</b> opens the project of the controller here. <b>Download</b> sends the project of this device to the controller.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Upload…', run: () => { setTimeout(upload, 0); } }, { l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }] });
+    const inCtl = ctl.M ? JSON.parse(ctl.copy) : null;
+    const facts = p => { const progs = p.tasks.flatMap(t => t.programs); return `${progs.reduce((n, g) => n + g.routines.length, 0)} routine(s), ${progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0)} rung(s), ${p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0)} tag(s)`; };
+    const files = index().filter(x => inCtl && U(x.name) === U(inCtl.controller.name) && x.name !== S.p.controller.name);
+    dialog({ title: 'Connected To Go Online', size: 'md',
+      body: `<p>${inCtl ? (U(inCtl.controller.name) === U(S.p.controller.name) ? 'The project in the controller is another version of the open project.' : 'The controller holds another project.') : 'The controller contains no project.'}</p>
+        <div class="grp" style="background:none;padding-left:0">Controller</div>${kv('Path', esc(curPath()))}${kv('Name', inCtl ? esc(inCtl.controller.name) : '(none)')}${kv('Mode', MODE())}${inCtl ? kv('Contents', facts(inCtl)) : ''}
+        <div class="grp" style="background:none;padding-left:0">Offline project</div>${kv('Name', esc(S.p.controller.name))}${kv('Contents', facts(S.p))}
+        <p class="help"><b>Select File</b> opens another project on this device that matches the controller. <b>Upload</b> copies the controller's project to this device. <b>Download</b> replaces the controller's project with the open one.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
+    void files;
   }
-  /* Upload: the project of the controller (with its current tag values) opens on this device */
+  /* Select File: open a saved project; when it matches the controller, go online with it */
+  function selectFile() {
+    const list = index();
+    const el = dialog({ title: 'Select File', size: 'md', flush: true,
+      body: `<div class="list">${list.map(x => `<div class="row" data-sf="${esc(x.name)}"><div class="grow"><div class="nm">${esc(x.name)}</div><div class="sub">${when(x.at)}</div></div>${ctl.M && U(ctl.name) === U(x.name) ? '<span class="ty">same name as the controller</span>' : ''}</div>`).join('') || '<div class="empty">No saved projects.</div>'}</div>`,
+      buttons: [{ l: 'Cancel' }] });
+    el.addEventListener('click', ev => {
+      const r = ev.target.closest('[data-sf]'); if (!r) return;
+      const p = store.get('p.' + r.dataset.sf); if (!validProject(p)) { toast('That project could not be read.', 'err'); return; }
+      const path = curPath();
+      closeLayer(); saveProject(); openProject(p, true); setPath(path);
+      if (ctl.M && ctl.holds(S.p)) { online(); toast(`Online with ${ctl.name}`); } else setTimeout(goOnline, 0);
+    });
+  }
+  /* Upload: the controller's project, with its tag values, goes into a project file on this device (a new one, or
+     one that is replaced), then online */
   function upload() {
     if (!reachable()) return;
     if (!ctl.M) { toast('The controller is empty: nothing to upload.', 'err'); return; }
     const p = ctl.upload();
-    const exists = index().some(x => U(x.name) === U(p.controller.name));
-    confirmDlg('Upload', `Upload <b>${esc(p.controller.name)}</b> from the controller?${exists ? ' The copy on this device with the same name is replaced.' : ''}`, 'Upload', () => {
-      const path = curPath();
-      saveProject();
-      openProject(p, true);
-      // the uploaded project keeps the path it came from
-      setPath(path);
-      // the opened copy equals the controller's (values aside), so the controller holds it
-      ctl.copy = JSON.stringify(S.p);
-      online();
-      toast(`Uploaded ${p.controller.name}`, 'ok');
-    });
+    const el = dialog({ title: 'Upload', size: 'md', focus: true,
+      body: `${kv('From', esc(curPath()))}${kv('Controller project', esc(p.controller.name))}
+        <div class="frow"><label>Save as project</label><input class="inp mono" id="up-n" value="${esc(p.controller.name)}" autocomplete="off" spellcheck="false"></div>
+        <p class="help" id="up-h"></p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Upload', pri: true, run: e2 => {
+        const name = e2.querySelector('#up-n').value.trim();
+        if (!E.validName(name)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        setTimeout(() => showProgress('Uploading', `Uploading from ${curPath()}…`, () => {
+          const path = curPath();
+          saveProject();
+          p.controller.name = name;
+          S.ed = null;
+          openProject(p, true);
+          setPath(path);
+          saveProject();
+          online();
+          toast(`Uploaded into project ${name}`, 'ok');
+        }), 0);
+      } }] });
+    const hint = () => { const n = el.querySelector('#up-n').value.trim(); el.querySelector('#up-h').textContent = index().some(x => U(x.name) === U(n)) ? `The saved project ${n} on this device will be replaced by the controller's project.` : `A new project ${n} will be made on this device.`; };
+    el.querySelector('#up-n').addEventListener('input', hint); hint();
+  }
+  /* the transfer dialog of Download and Upload */
+  function showProgress(title, text, done) {
+    const el = dialog({ title, modal: true, body: `<p>${esc(text)}</p><div class="prog"><i></i></div>` });
+    const bar = el.querySelector('.prog i');
+    requestAnimationFrame(() => { bar.style.width = '100%'; });
+    setTimeout(() => { closeLayer(); done(); }, 650);
+  }
+  /* Upload Tag Values: the controller's current values become the project's values (not an edit) */
+  function uploadTags(say) {
+    const p = ctl.upload(); if (!p) return;
+    const take = (dst, src) => dst.forEach(t => { const x = src.find(y => y.name === t.name); if (x && x.value !== undefined && !t.alias) t.value = x.value; });
+    take(S.p.tags, p.tags);
+    allProgs().forEach(g => { const pg = p.tasks.flatMap(t => t.programs).find(y => y.name === g.name); if (pg) take(g.tags, pg.tags); });
+    saveProject();
+    if (say) toast('Tag values uploaded into the project.', 'ok');
+  }
+  /* Save: online with the same project, the reference asks whether to upload the tag values first */
+  function saveCmd() {
+    if (S.online && ctl.M && ctl.holds(S.p)) {
+      dialog({ title: 'Save', body: '<p>Upload the tag values from the controller into the project before saving?</p>',
+        buttons: [{ l: 'Cancel' }, { l: 'No', run: () => { saveProject(); S.dirty = false; title(); toast('Saved'); } }, { l: 'Yes', pri: true, run: () => { uploadTags(false); S.dirty = false; title(); toast('Tag values uploaded and saved', 'ok'); } }] });
+      return;
+    }
+    saveProject(); S.dirty = false; title(); toast('Saved');
   }
   /* no controller at the path (empty slot, an I/O card, a card removed): like a terminal that finds nothing there */
   function reachable() {
@@ -1435,19 +1526,23 @@
         <p>${ctl.name ? `The project in the controller (<b>${esc(ctl.name)}</b>) will be replaced by <b>${esc(S.p.controller.name)}</b>.` : `<b>${esc(S.p.controller.name)}</b> will be downloaded.`} ${RUNM() ? 'The controller goes to Remote Program first.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: 'Download', pri: true, run: () => {
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
-        const r = ctl.download(JSON.parse(JSON.stringify(S.p)));
-        if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return false; }
-        // the cards of the chassis answer at once
-        chassis.advance(0);
-        saveChassis();
-        online();
-        setTimeout(() => {
+        const wasRun = ctl.running;
+        if (wasRun) ctl.setMode('remprog');
+        setTimeout(() => showProgress('Downloading', `Downloading to ${curPath()}…`, () => {
+          const r = ctl.download(JSON.parse(JSON.stringify(S.p)));
+          if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return; }
+          S.ed = null;
+          // the cards of the chassis answer at once
+          chassis.advance(0);
+          saveChassis();
+          online();
           if (ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
-        }, 0);
+        }), 0);
       } }] });
   }
   const RUNM = () => ctl.mode === 'run' || ctl.mode === 'remrun';
-  /* Accept Edits: the edited logic goes into the controller without a Download (spec section 8, online edits) */
+  /* Accept Pending Edits: in Run the edits go to the controller as accepted (not running yet); in Program they are
+     finalized at once */
   function acceptEdits() {
     reverify();
     if (S.verify.errors.length) {
@@ -1456,22 +1551,51 @@
       toast(`Fix ${S.verify.errors.length} error(s) before accepting the edits.`, 'err');
       return;
     }
-    const go = () => {
+    if (S.ed && S.ed.ctl === ctl && S.ed.tested) { toast('Assemble or untest the edits being tested first.', 'err'); return; }
+    if (ctl.running) {
+      S.ed = { ctl, orig: S.ed && S.ed.ctl === ctl ? S.ed.orig : ctl.copy, base: JSON.stringify(S.p), tested: false };
+      saveProject();
+      toast('Edits accepted. The controller still runs the old logic: Test Accepted Edits to run them.', 'ok');
+    } else {
       const r = ctl.edit(JSON.parse(JSON.stringify(S.p)));
       if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits were not accepted.', 'err'); return; }
-      saveProject();
-      toast('Edits accepted: the controller runs the new logic.', 'ok');
-      live(true); render();
-    };
-    if (ctl.running) confirmDlg('Accept Edits', 'The controller is running. The edited logic starts on the next scan. Accept the edits?', 'Accept', go);
-    else go();
+      S.ed = null; saveProject();
+      toast('Edits accepted and finalized in the controller.', 'ok');
+    }
+    live(true); render();
   }
-  /* Cancel Edits: back to the logic in the controller */
+  /* Test Accepted Edits: the controller runs the new logic; the old one is kept for Untest */
+  function testEdits() {
+    confirmDlg('Test Accepted Edits', 'The controller will run the edited logic from the next scan. Test the accepted edits?', 'Test', () => {
+      const r = ctl.edit(JSON.parse(S.ed.base));
+      if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits could not be tested.', 'err'); return; }
+      S.ed.tested = true; live(true); render();
+      toast('Testing the edits: the controller runs the new logic.', 'ok');
+    });
+  }
+  /* Untest Accepted Edits: back to the old logic; the edits stay accepted */
+  function untestEdits() {
+    const r = ctl.edit(JSON.parse(S.ed.orig));
+    if (!r.ok) { toast('Could not go back to the old logic.', 'err'); return; }
+    S.ed.tested = false; live(true); render();
+    toast('Untested: the controller runs the old logic again.');
+  }
+  /* Assemble Accepted Edits: the new logic stays, the old one is dropped */
+  function assembleEdits() {
+    confirmDlg('Assemble Accepted Edits', 'Keep the edited logic in the controller? The old logic is dropped.', 'Assemble', () => {
+      S.ed = null; saveProject(); live(true); render();
+      toast('Edits assembled.', 'ok');
+    });
+  }
+  /* Cancel Pending Edits: back to the accepted edits, or to the controller's logic */
   function cancelEdits() {
-    confirmDlg('Cancel Edits', 'Throw away the edits that are not in the controller?', 'Cancel Edits', () => edit(() => {
-      const p = JSON.parse(ctl.copy);
-      S.p = p; S.sel = null; S.selRung = 0;
-    }), true);
+    const back = S.ed && S.ed.ctl === ctl && !S.ed.tested ? S.ed.base : ctl.copy;
+    confirmDlg('Cancel Pending Edits', 'Throw away the pending edits?', 'Cancel Edits', () => edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }), true);
+  }
+  /* Cancel Accepted Edits: the accepted edits are removed; the project is the controller's again */
+  function cancelAccepted() {
+    const back = S.ed.orig;
+    confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }); }, true);
   }
   function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
@@ -1479,7 +1603,7 @@
      address, then its chassis backplane; a controller picked there becomes the project path */
   function whoActive() {
     const cur = parsePath(curPath());
-    const modeOf = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[c.mode]);
+    const modeOf = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
     const gates = [];   // [ip, rack] once per address (the first chassis that answers there)
     racks.forEach(r => r.controllers().forEach(m => { if (m.ip && m.ctl.powered && !gates.some(g => g[0] === m.ip)) gates.push([m.ip, r, m]); }));
     let sel = null;
@@ -1572,7 +1696,7 @@
      power switch, mode (Run / Remote / Program), RUN and OK lights and fault message. */
   const CARDNAMES = Object.assign({ 'PLC-CPU': 'Emulated controller' }, MODNAMES);
   let chasWin = null, emuSel = { k: 'r', ri: 0 };
-  const modeName = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run' }[c.mode]);
+  const modeName = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   const led = (on, t, cls) => `<div class="cled"><i class="led ${on ? cls || 'g' : ''}"></i>${t}</div>`;
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s, sl = `<span class="cs">${s}</span>`;
@@ -1675,7 +1799,7 @@
       chassisLive(true); return true;
     }
     if ((el = t.closest('[data-emu]'))) {
-      openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
+      openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
       if (doc !== document) window.focus();
       return true;
     }
@@ -1708,6 +1832,36 @@
       return true;
     }
     return false;
+  }
+  /* Snapshots (as in the reference emulator): save the chassis, controllers, their projects and values; restore
+     replaces the whole emulator with the saved one */
+  function snapshots() {
+    const list = store.get('emu.snaps', []);
+    const el = dialog({ title: 'Snapshots', size: 'md', flush: true,
+      body: `<div class="list">${list.map((x, i) => `<div class="row"><div class="grow"><div class="nm">${esc(x.name)}</div><div class="sub">${new Date(x.at).toLocaleString()} · ${x.emu.racks.length} chassis, ${x.emu.racks.reduce((n, r) => n + r.mods.filter(m => m.type === 'PLC-CPU').length, 0)} controller(s)</div></div><button class="btn" data-snr="${i}">Restore</button><button class="btn" data-snd="${i}">${ic('trash')}</button></div>`).join('') || '<div class="empty">No snapshots yet.</div>'}</div>
+        <div class="frow" style="padding:10px 12px"><label>New snapshot</label><input class="inp" id="sn-n" value="Snapshot${list.length + 1}"></div>`,
+      buttons: [{ l: 'Close' }, { l: 'Add Snapshot', pri: true, run: e2 => {
+        const n = e2.querySelector('#sn-n').value.trim();
+        if (!n) { toast('Type a name.', 'err'); return false; }
+        list.unshift({ name: n, at: Date.now(), emu: { racks: racks.map(r => r.toJSON()) } });
+        if (!store.set('emu.snaps', list.slice(0, 20))) { toast('Could not save: the device storage is full.', 'err'); return false; }
+        toast(`Snapshot ${n} added.`, 'ok');
+        setTimeout(snapshots, 0);
+        return false;
+      } }] });
+    el.addEventListener('click', ev => {
+      const r = ev.target.closest('[data-snr]'), d = ev.target.closest('[data-snd]');
+      if (d) { list.splice(+d.dataset.snd, 1); store.set('emu.snaps', list); snapshots(); return; }
+      if (!r) return;
+      const x = list[+r.dataset.snr];
+      confirmDlg('Restore Snapshot', `Restore <b>${esc(x.name)}</b>? The chassis and controllers now in the emulator are replaced, with the projects they hold.`, 'Restore', () => {
+        racks.splice(0, racks.length, ...x.emu.racks.map(o => E.Chassis.from(o)));
+        racks.forEach(watchRack);
+        emuSel = { k: 'r', ri: 0 };
+        saveChassis(); relink(); render(); refreshIO();
+        toast(`Snapshot ${x.name} restored.`, 'ok');
+      }, true);
+    });
   }
   function newRack() {
     let n = 1; while (racks.some(r => U(r.name) === U('Chassis' + n))) n++;
@@ -1934,7 +2088,7 @@
       if ((el = t.closest('[data-tab]'))) { S.prefs.tab = el.dataset.tab; savePrefs(); render(); return; }
       if ((el = t.closest('[data-key]'))) { ctl.setKey(el.dataset.key); live(true); render(); return; }
       if ((el = t.closest('[data-box]'))) {
-        if (el.dataset.box === 'mode') openMenu(menuItems(['online', 'offline', '-', 'prog', 'runm', 'clear', '-', 'upload', 'download', 'who']), el, 'Mode · key switch in ' + ctl.key);
+        if (el.dataset.box === 'mode') openMenu(menuItems(['online', 'offline', '-', 'prog', 'runm', 'testm', 'clear', '-', 'upload', 'download', 'who']), el, 'Mode · key switch in ' + ctl.key);
         else openMenu(menuItems(['fen', 'fdis', 'fall']), el, 'I/O forces');
         return;
       }

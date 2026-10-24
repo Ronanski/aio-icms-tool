@@ -214,6 +214,8 @@
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
       out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
+      // online edit mark: e pending, i accepted, I being tested
+      if (R.mk) out += `<text class="emk" x="${LM - 8}" y="${rungTop + (R.err ? 3 : 2) * LH + 16}" text-anchor="end">${R.mk}</text>`;
       // the rung itself (empty space) and its number are hit targets too
       // (underneath the instructions and branches, so a branch that starts on the left rail can still be tapped)
       taps = `<rect class="tap rung" data-ri="${ri}" x="${LM}" y="${rungTop - 4}" width="${RR - LM}" height="${rungBot - rungTop + 4}"/>`
