@@ -14,7 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
     - Field switches on input cards, lamps on output cards.
     - *Fault* on an I/O card.
     - *Open in a window* puts it beside the ladder.
-  - **Who Active:** browse the virtual backplane and pick the controller. Its path (`VirtualBackplane<slot>`)
+  - **Who Active:** browse the virtual backplane and pick the controller. Its path (`Virtual\Backplane\<slot>`)
     becomes the project path. Upload, Download and Go Online all go through that path.
   - **Real I/O behaviour:**
     - The project's I/O configuration must match the cards in the chassis.
