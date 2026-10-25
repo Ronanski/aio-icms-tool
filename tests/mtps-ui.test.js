@@ -153,9 +153,10 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(150);
   check('the transfer shows a progress dialog', (await dlgTitle()) === 'Downloading' && (await page.$('#layer .prog')) !== null);
   await page.waitForTimeout(800);
-  check('after the download: "Return the controller to Remote Run?"', (await page.$eval('#layer .dlg', d => d.textContent)).includes('Return the controller to Remote Run?'));
-  await page.click('#layer .btn.pri');
-  await page.waitForTimeout(150);
+  check('after downloading to a controller in Program: no "Return to Remote Run?" (asked only when it was running)', (await page.$('#layer .dlg')) === null && (await page.$eval('[data-box="mode"]', b => b.textContent.trim())) === 'Rem Prog');
+  await ev(() => MTPS.App.run('runm'));
+  await page.waitForTimeout(100);
+  if (await page.$('#layer .dlg')) { await page.click('#layer .btn.pri'); await page.waitForTimeout(150); }
   check('online in Rem Run: mode box and green rails', (await page.$eval('[data-box="mode"]', b => b.textContent.trim())) === 'Rem Run' && (await page.$('#ladwrap svg.lad.run')) !== null);
   check('online, the ladder can still be edited (edits wait for Accept Edits)', (await page.$eval('.gbtn[data-mn="XIC"]', b => b.disabled)) === false);
   check('going online shows the I/O panel', (await page.$('#iob')) !== null);
@@ -330,6 +331,9 @@ function check(name, cond, info = '') {
   await page.evaluate(() => [...document.querySelectorAll('#layer .btn')].find(b => b.textContent.trim() === 'Go Online').click());
   await page.waitForTimeout(120);
   check('Go Online on an empty controller: Connected To Go Online at that path', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('Emulate\\127.0.0.2\\Backplane\\0'));
+  await throughDialogs();
+  // a new controller is in Program: put it in Run (no Return to Remote Run question after the download)
+  await ev(() => MTPS.App.run('runm'));
   await throughDialogs();
   check('downloaded over 127.0.0.2: online, the path shows it, the title says [Emulator]', await ev(() => MTPS.App.ctl === MTPS.App.racks[1].controller(0) && MTPS.App.state.online && MTPS.App.ctl.name === 'Motor_Demo') && (await page.$eval('.pathbar .pv', e => e.textContent)).includes('Emulate\\127.0.0.2\\Backplane\\0') && (await ev(() => document.title)).endsWith('[Emulator]'));
   check('no I/O cards in that chassis: the modules fault (16#0204), as on an emulated controller', await ev(() => MTPS.App.ctl.moduleStatus(1).code === '16#0204'));
@@ -692,6 +696,35 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(120);
   check('tablet portrait: the organizer drawer stops above the emulator panel', await page.evaluate(() => document.querySelector('.org.over').getBoundingClientRect().bottom <= document.querySelector('#dock').getBoundingClientRect().top + 1));
   await page.click('.org [data-drawer="0"]');
+
+  console.log('Motor seal-in run on the Windows app (owner test 3)');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForFunction(() => MTPS.App.state.layout === 'desktop', null, { timeout: 3000 }).catch(() => {});
+  await ev(() => { if (MTPS.App.state.online) MTPS.App.run('offline'); const p = MTPS.App.blank('Seal'); MTPS.App.openProject(p); MTPS.App.state.selRung = 0; });
+  await page.waitForTimeout(150);
+  await ev(() => MTPS.App.insertMn('XIC'));
+  await page.waitForTimeout(150);
+  await page.fill('#layer [data-op="0"]', 'Start_PB');
+  await page.waitForTimeout(80);
+  check('the New tag row shows no Ctrl+W hint in a browser (there Ctrl+W closes the tab)', !(await page.$eval('#layer [data-newtag]', r => r.textContent)).includes('Ctrl+W'));
+  await page.keyboard.press('Control+w');
+  await page.waitForTimeout(120);
+  check('Ctrl+W in the operand box opens New Tag for the typed name', (await dlgTitle()) === 'New Tag' && (await page.$eval('#tn', i => i.value)) === 'Start_PB');
+  check('New Tag: Alias For is hidden while the type is Base', await page.$eval('#ra', r => r.offsetParent === null));
+  await page.selectOption('#tk', 'alias');
+  await page.fill('#ta', 'I.Data.0');
+  await page.waitForTimeout(80);
+  check('Alias For lists the matching points inside the dialog (no list over the Create button)', (await page.$$eval('#asg [data-asg]', r => r.map(x => x.dataset.asg))).includes('Local:1:I.Data.0') && (await page.$('#aliaslist')) === null);
+  await page.dispatchEvent('#asg [data-asg="Local:1:I.Data.0"]', 'mousedown');
+  check('picking a suggestion fills Alias For', (await page.$eval('#ta', i => i.value)) === 'Local:1:I.Data.0');
+  await page.hover('#layer .df .btn.pri');
+  check('the primary button keeps its colour under the mouse', await page.$eval('#layer .df .btn.pri', b => getComputedStyle(b).backgroundColor !== getComputedStyle(document.body).backgroundColor && getComputedStyle(b).backgroundColor !== 'rgb(255, 255, 255)'));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.click('#iob .ccard.io[data-cmod="0:1"] .mf');
+  await page.waitForTimeout(100);
+  check('the Module I/O window opens beside the module, not over the ladder', await page.evaluate(() => { const w = document.querySelector('.iowin').getBoundingClientRect(), l = document.querySelector('#ladwrap').getBoundingClientRect(), c = document.querySelector('#iob .ccard.io[data-cmod="0:1"]').getBoundingClientRect(); return w.top >= c.top - 1 && (w.right <= c.left + 1 || w.left >= c.right - 1) && !(w.left < l.left + 40 && w.top < l.top + 40); }));
+  await page.click('.iowin [data-iox]');
 
   check('no JS errors', errors.length === 0, errors.join(' | '));
 

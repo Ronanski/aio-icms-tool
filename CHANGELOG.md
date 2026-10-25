@@ -5,6 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (MT PLC Studio 0.3.0-beta.4): found by building and running a motor seal-in on the Windows app
+- **Ctrl+W no longer closes the Windows app.** The built-in window menu is gone; in the operand box Ctrl+W creates the
+  typed tag, as the hint says. In a browser, where Ctrl+W closes the tab, the hint is not shown.
+- **Setup wizard:** a step shows ✓ only when the steps before it are done; the Next button no longer turns white under
+  the mouse (all primary buttons keep their colour).
+- **New Tag:** Alias For is hidden for a Base tag, and its suggestions are listed inside the dialog instead of a list
+  that stayed open over the Create button. Rows marked hidden now stay hidden everywhere.
+- **Module I/O window** opens beside the module that was tapped, not over the ladder.
+- **Download:** "Return the controller to Remote Run?" is asked only when the controller was running before the
+  download, as in the reference.
+
 ### Changed (MT PLC Studio 0.3.0-beta.3): operands, organizer, emulator panel and help as in RSLogix 5000
 - **Operands, one by one:** each operand inside an instruction box (Timer, Preset, Source, Dest…) can be selected on its
   own. A double-click opens the operand editor on that operand. A right-click (long-press) gives Edit "operand", New

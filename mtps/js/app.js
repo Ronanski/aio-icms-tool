@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.3.0-beta.3';
+  const VERSION = '0.3.0-beta.4';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -1255,7 +1255,7 @@
       sgbar.innerHTML = tagKind ? `<div class="sgchips">${[['all', 'All'], ['in', 'Inputs'], ['out', 'Outputs'], ['tag', 'Tags'], ['sys', 'System']].map(([v, t]) => `<span class="chip${st.f === v ? ' on' : ''}" data-sgf="${v}">${t}</span>`).join('')}<select class="inp sgscope" data-sgs="1" aria-label="Scope">${scopes.map(v => `<option value="${esc(v)}"${st.scope === v ? ' selected' : ''}>${v === 'all' ? 'All scopes' : esc(v)}</option>`).join('')}</select></div>${rec.length ? `<div class="sgrec"><span class="muted">Recent:</span>${rec.map(n => `<span class="chip" data-pick="${esc(n)}">${esc(n)}</span>`).join('')}</div>` : ''}` : '';
       const known = !text || text === '?' || exact || !E.validName(text) || ['imm', 'routine', 'label', 'order', 'expr'].includes(k) || E.parseNumber(text);
       sgh.textContent = k === 'imm' ? 'A number (e.g. 5000)' : `Tags for ${names()[focus] || 'operand'}${KIND_TYPES[k] ? ' · ' + KIND_TYPES[k].join(', ') : ''}`;
-      sg.innerHTML = (!known ? `<div class="row new" data-newtag="${esc(text)}">${ic('newtag')}<div class="grow"><div class="nm">New "${esc(text)}"</div><div class="sub">Create a ${defaultType(k)} tag · Ctrl+W</div></div></div>` : '') +
+      sg.innerHTML = (!known ? `<div class="row new" data-newtag="${esc(text)}">${ic('newtag')}<div class="grow"><div class="nm">New "${esc(text)}"</div><div class="sub">Create a ${defaultType(k)} tag${window.mtpsFS ? ' · Ctrl+W' : ''}</div></div></div>` : '') +
         groupedRows(list, k, mn, text, st) ||
         (known && k !== 'imm' ? '<div class="empty">No matching tags</div>' : '');
       const on = sg.querySelector('.row.on'); if (on) sg.scrollTop = on.offsetTop - sg.offsetTop - 40;
@@ -1263,6 +1263,8 @@
     }
     // ↑ ↓ move through the tag list from the operand box; Enter picks the highlighted tag
     el.addEventListener('keydown', ev => {
+      // Ctrl+W: New Tag for the name typed in the operand (as in the reference editor)
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'w') { ev.preventDefault(); ev.stopPropagation(); const nt = sg.querySelector('[data-newtag]'); if (nt) nt.click(); return; }
       if (!ev.target.closest('[data-op]') || !['ArrowDown', 'ArrowUp', 'Enter'].includes(ev.key)) return;
       const rows = [...sg.querySelectorAll('.row[data-pick], .row[data-sexp]')];
       if (ev.key === 'Enter') { if (st.act >= 0 && rows[st.act]) { ev.preventDefault(); ev.stopPropagation(); rows[st.act].click(); } return; }
@@ -1323,13 +1325,21 @@
       body: `<div class="frow"><label>Name</label><input class="inp mono" id="tn" value="${esc(t0.name)}" autocomplete="off" spellcheck="false"${edit0 ? ' readonly' : ''}></div>
         <div class="frow"><label>Description</label><input class="inp" id="td" value="${esc(t0.desc || '')}"></div>
         <div class="frow"><label>Type</label><select class="inp" id="tk"><option value="base">Base</option><option value="alias"${t0.alias ? ' selected' : ''}>Alias</option></select></div>
-        <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" list="aliaslist" autocomplete="off"></div>
-        <datalist id="aliaslist">${candidates().filter(c => c.scope !== 'System' && !c.dim).map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
+        <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false"></div>
+        <div class="asg" id="asg" hidden></div>
         <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label>Data Type</label><select class="inp" id="tt">${types.map(t => `<option${t === (t0.type || 'BOOL') ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow" id="rd"${t0.alias ? ' hidden' : ''}><label>Array size</label><input class="inp" id="tdim" type="number" min="0" max="10000" value="${t0.dim || ''}" placeholder="0 = not an array"></div>
         <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
         <div class="errtx" id="te"></div>`,
-      mount: el => { el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; }; },
+      mount: el => {
+        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; };
+        // Alias For: the matching tags and I/O points, listed inside the dialog
+        const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), pool = candidates().filter(c => c.scope !== 'System' && !c.dim).map(c => c.name);
+        const show = () => { const q = U(ta.value.trim()), m = pool.filter(n => !q || U(n).includes(q)).slice(0, 8); asg.innerHTML = m.map(n => `<div class="row" data-asg="${esc(n)}">${esc(n)}</div>`).join(''); asg.hidden = !m.length || (m.length === 1 && U(m[0]) === q); };
+        ta.addEventListener('input', show); ta.addEventListener('focus', show);
+        ta.addEventListener('blur', () => setTimeout(() => { asg.hidden = true; }, 150));
+        asg.addEventListener('mousedown', ev => { const r = ev.target.closest('[data-asg]'); if (r) { ev.preventDefault(); ta.value = r.dataset.asg; asg.hidden = true; } });
+      },
       buttons: [{ l: 'Cancel' }, { l: edit0 ? 'OK' : 'Create', pri: true, run: el => {
         const name = el.querySelector('#tn').value.trim(), scope = el.querySelector('#ts').value, alias = el.querySelector('#tk').value === 'alias';
         const err = m => { el.querySelector('#te').textContent = m; return false; };
@@ -1634,7 +1644,8 @@
     const wz = { step: step0 || 0, name: '', made: false, size: 10 };
     const ctls = () => racks.flatMap((r, ri) => r.controllers().map(m => ({ r, ri, m })));
     const gates = () => ctls().filter(x => x.m.ip && x.m.ctl.powered);
-    const done = i => [driverUp(), gates().length > 0, wz.made, !!(S.p && resolve(curPath()) && resolve(curPath()).ctl), false][i];
+    const done0 = i => [driverUp(), gates().length > 0, wz.made, !!(S.p && resolve(curPath()) && resolve(curPath()).ctl), false][i];
+    const done = i => { for (let j = 0; j <= i; j++) if (!done0(j)) return false; return true; };
     const pad = s => (s < 10 ? '0' + s : s);
     const body = () => {
       const s = wz.step, nav = (next, label) => `<div class="wznav"><button class="btn" data-wz="back"${s ? '' : ' disabled'}>Back</button><span class="grow"></span><button class="btn pri" data-wz="next"${next ? '' : ' disabled'}>${label || 'Next: ' + WZSTEPS[s + 1][0]}</button></div>`;
@@ -2146,7 +2157,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           chassis.advance(0);
           saveChassis();
           online();
-          if (ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
+          if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
         }), 0);
       } }] });
   }
@@ -2401,7 +2412,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return `<div class="iom${s === focus ? ' cur' : ''}" data-iom="${s}">${head}${body}</div>`;
     }).join('');
   }
-  function openIoWin(id, doc) {
+  function openIoWin(id, doc, near) {
     const [ri, s] = ids(id), r = racks[ri];
     if (!r) return;
     doc = doc || document;
@@ -2411,12 +2422,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const vw = doc.defaultView || window;
       w = doc.createElement('div');
       w.className = 'iowin'; w.dataset.iowin = String(ri);
-      w.style.left = Math.max(0, Math.min(vw.innerWidth - 420, 80 + ioWins.size * 28)) + 'px'; w.style.top = Math.max(0, Math.min(vw.innerHeight - 240, 90 + ioWins.size * 28)) + 'px';
       doc.body.appendChild(w);
       ioWins.set(ri, w);
+      w.dataset.place = '1';
     }
     w.dataset.focus = String(s);
     w.innerHTML = `<div class="iowh" data-iodrag="1"><b>Module I/O · ${esc(r.name)}</b><span class="grow"></span><button class="ib" data-iox="${ri}" aria-label="Close">${ic('close')}</button></div><div class="iowb">${ioWinHTML(ri, s)}</div>`;
+    if (w.dataset.place) {
+      // first opening: beside the module (left of it if there is room, else right), inside the window
+      delete w.dataset.place;
+      const vw = doc.defaultView || window, ww = w.offsetWidth || 420, wh = w.offsetHeight || 200;
+      const r = near && near.getBoundingClientRect ? near.getBoundingClientRect() : null;
+      let x = r ? (r.left - ww - 12 >= 0 ? r.left - ww - 12 : r.right + 12) : vw.innerWidth - ww - 24, y = r ? r.top : 120;
+      x = Math.max(4, Math.min(vw.innerWidth - ww - 4, x)); y = Math.max(4, Math.min(vw.innerHeight - wh - 4, y));
+      w.style.left = x + 'px'; w.style.top = y + 'px';
+    }
     const cur = w.querySelector('.iom.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
   }
   function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; b.innerHTML = ioWinHTML(ri, +w.dataset.focus); b.scrollTop = st; } }); }
@@ -2515,7 +2535,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function chassisClick(t) {
     let el;
     const doc = t.ownerDocument;
-    if ((el = t.closest('[data-cio]'))) { openIoWin(el.dataset.cio, el.ownerDocument); return true; }
+    if ((el = t.closest('[data-cio]'))) { openIoWin(el.dataset.cio, el.ownerDocument, el.closest('.ccard') || el); return true; }
     if ((el = t.closest('[data-rkrow]'))) { S.rowHide = S.rowHide || new Set(); const k = el.dataset.rkrow; if (S.rowHide.has(k)) S.rowHide.delete(k); else S.rowHide.add(k); chassisLive(true); refreshIO(); return true; }
     if ((el = t.closest('[data-emu]'))) {
       openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
@@ -2554,7 +2574,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     // a click on a card that hit none of its controls selects it in the dashboard
     // a tap on an I/O module in the chassis opens its Module I/O window
-    if ((el = t.closest('.ccard.io[data-cmod]')) && !t.closest('button')) { openIoWin(el.dataset.cmod, el.ownerDocument); }
+    if ((el = t.closest('.ccard.io[data-cmod]')) && !t.closest('button')) { openIoWin(el.dataset.cmod, el.ownerDocument, el); }
     if ((el = t.closest('[data-esel]'))) {
       const p = el.dataset.esel.split(':');
       emuSel = p[0] === 'r' ? { k: 'r', ri: +p[1] } : { k: 'm', ri: +p[1], slot: +p[2] };
