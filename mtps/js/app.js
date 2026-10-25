@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.4.0-beta.2';
+  const VERSION = '0.4.0-beta.3';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -196,12 +196,9 @@
   })();
   E.FS = FS;
   const index = () => [];
-  /* the session: the open project, its file and whether it has unsaved changes, so a restart comes back to it */
-  function saveProject() {
-    if (!S.p) return;
-    if (!store.set('session', { p: S.p, file: S.file && S.file.path ? { path: S.file.path, name: S.file.name } : null, dirty: !!S.dirty })) toast('Could not keep the session: the device storage is full.', 'err');
-    title();
-  }
+  /* no project is kept inside the app (owner, as the reference): a project lives in its file on the device's storage,
+     made with New Project or opened with Open Project; the app keeps only its settings */
+  function saveProject() { if (S.p) title(); }
   let saveTimer = 0;
   const scheduleSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveProject, 500); };
   const baseName = p => String(p).split(/[\\/]/).pop();
@@ -279,7 +276,7 @@
   const mtpText = () => JSON.stringify(S.p, null, 1);
   async function writeTo(path) {
     try { await FS.write(path, mtpText()); } catch (e) { toast('Could not save: ' + (e.message || e), 'err'); return false; }
-    S.file = { path, name: baseName(path) }; S.dirty = false; saveProject(); render();
+    S.file = { path, name: baseName(path) }; S.dirty = false; rememberFile(path); saveProject(); render();
     toast(`Saved ${S.file.name}`, 'ok');
     return true;
   }
@@ -292,10 +289,11 @@
     else { try { p = JSON.parse(t); } catch (e) { toast('That file is not a project.', 'err'); return; } if (!validProject(p)) { toast('That file is not an MT PLC Studio project.', 'err'); return; } }
     S.ed = null; openProject(p, true);
     if (/\.mtp$/i.test(path)) S.file = { path, name: baseName(path) };
-    S.dirty = !/\.mtp$/i.test(path); saveProject(); render();
+    S.dirty = !/\.mtp$/i.test(path); rememberFile(path); saveProject(); render();
     toast(`Opened ${baseName(path)}`);
     if (then) then();
   }
+  function rememberFile(path) { if (!/\.mtp$/i.test(path)) return; S.prefs.files = [path].concat((S.prefs.files || []).filter(x => x !== path)).slice(0, 8); savePrefs(); }
   function cmdOpen() {
     const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
     if (S.dirty) confirmDlg('Open Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Open another project anyway? (Save first with Save or Save As.)`, 'Open anyway', go, true);
@@ -319,7 +317,7 @@
     if (moved) toast(`${moved} project(s) from this app were saved as .mtp files in ${dir}.`, 'ok');
   }
   function openProject(p, quiet) {
-    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.view = 'ladder';
+    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.view = 'ladder'; S.noProj = false;
     // modules of a type this version does not have (the generic module of 0.4.0-beta.1) leave the I/O configuration
     const gone = (p.rack && p.rack.modules || []).filter(m => !E.MODULES[m.type]);
     if (gone.length) { p.rack.modules = p.rack.modules.filter(m => E.MODULES[m.type]); setTimeout(() => toast(`Removed from the I/O configuration: ${gone.map(m => `[${m.slot}] ${m.name}`).join(', ')} (module type no longer in the app).`), 300); }
@@ -353,7 +351,7 @@
   const rungs = () => curRoutine().rungs;
   const parsed = i => { const r = rungs()[i]; if (!r) return null; const pr = E.parseRung(r.t); return pr.err ? null : pr.elems; };
   // the ladder and the tags can be edited offline and online (online edits wait for Accept Edits); modules only offline
-  const editable = () => true;
+  const editable = () => !S.noProj;
   const offline = () => !S.online;
   /* online edits, as in the reference software: pending edits (on this device only) are accepted; in Run the
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
@@ -381,7 +379,7 @@
 
   /* ---------- verify ---------- */
   function reverify() {
-    S.verify = E.verify(S.p);
+    S.verify = S.noProj ? { errors: [], warnings: [], lines: [] } : E.verify(S.p);
     S.errRungs = new Set(S.verify.errors.filter(e => e.routine === curRoutine().name && e.program === curProg().name).map(e => e.rung));
   }
 
@@ -448,6 +446,40 @@
       S.sel = { ri, path }; S.selRung = null;
     });
     if (ok && openAfter && el.t !== 'BR' && INSTR[el.t] && INSTR[el.t].args.length) setTimeout(() => openEditor(ri, path, 0), 0);
+  }
+  /* move an instruction or a branch to a node (Ctrl copies it), as when dragging it in the reference editor: before or
+     after an instruction, the free end of a branch level, the end of a rung; into the same rung or another one */
+  function locate(arr, obj) {
+    for (let k = 0; k < arr.length; k++) {
+      if (arr[k] === obj) return { arr, idx: k, path: [k] };
+      if (arr[k].t === 'BR') for (let li = 0; li < arr[k].legs.length; li++) { const r = locate(arr[k].legs[li], obj); if (r) return { ...r, path: [k, li].concat(r.path) }; }
+    }
+    return null;
+  }
+  function moveEl(src, drop, copy) {
+    if (!src || !src.path || src.leg || !drop || !editable()) return false;
+    const sameRung = src.ri === drop.ri;
+    if (sameRung && drop.path && drop.path.length >= src.path.length && src.path.every((x, i) => x === drop.path[i])) return false;
+    let ri, path, kind;
+    const ok = edit(() => {
+      const se = parsed(src.ri), de = sameRung ? se : parsed(drop.ri);
+      if (!se || !de) { toast('This rung has a text error: fix it with Edit Rung first.', 'err'); return false; }
+      const moving = getEl(se, src.path);
+      if (!moving) return false;
+      const br = drop.leg ? getEl(de, drop.path.slice(0, -1)) : null, tgt = drop.path && !drop.leg ? getEl(de, drop.path) : null;
+      const item = copy ? JSON.parse(JSON.stringify(moving)) : moving;
+      if (!copy) { const { arr, idx } = seqOf(se, src.path); arr.splice(idx, 1); }
+      if (br) br.legs[drop.path[drop.path.length - 1]].push(item);
+      else if (tgt) { const at = locate(de, tgt); at.arr.splice(at.idx + (drop.after ? 1 : 0), 0, item); }
+      else de.push(item);
+      tidy(se); if (!sameRung) tidy(de);
+      writeRung(src.ri, se); if (!sameRung) writeRung(drop.ri, de);
+      ri = drop.ri; kind = item.t === 'BR' ? 'branch' : item.t;
+      const at = locate(de, item); path = at ? at.path : null;
+      S.sel = path ? { ri, path, br: item.t === 'BR' } : null; S.selRung = path ? null : ri;
+    });
+    if (ok) toast(`${copy ? 'Copied' : 'Moved'} ${kind} to rung ${ri}`);
+    return ok;
   }
   function insertMn(mn, at) {
     if (mn === 'RUNG') return addRung();
@@ -548,6 +580,7 @@
   }
   function title() {
     if (!S.p) return;
+    if (S.noProj) { document.title = 'MT PLC Studio'; return; }
     // connected to an emulated controller, the title bars say so (as the reference software does)
     document.title = `MT PLC Studio - ${S.file && S.file.name ? S.file.name.replace(/\.mtp$/i, '') : S.p.controller.name}${S.dirty ? '*' : ''} [PLC-CPU 1.0]${S.online ? ' [Emulator]' : ''}`;
   }
@@ -657,6 +690,7 @@
   }
   function tabTitle(k) { if (k === 'tags') return (S.tagScope ? S.tagScope : 'Controller') + ' Tags'; const [g, r] = k.split('/'); return g + ' - ' + r; }
   function rtabsHTML() {
+    if (S.noProj) return '';
     const act = S.view === 'tags' ? 'tags' : S.view === 'ladder' ? S.prog + '/' + S.routine : '';
     return S.tabs.map(k => `<span class="t${k === act ? ' on' : ''}" data-tabk="${esc(k)}">${ic(k === 'tags' ? 'tags' : 'ladder', 'i ti')}<span class="ell">${esc(tabTitle(k))}</span><button class="tx" data-tabx="${esc(k)}" title="Close" aria-label="Close ${esc(tabTitle(k))}">${ic('close')}</button></span>`).join('');
   }
@@ -676,7 +710,16 @@
     }
     render();
   }
-  const emptyWs = () => '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>';
+  const emptyWs = () => (S.noProj ? startPage() : '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>');
+  /* the start page while no project is open: New Project, Open Project, the files opened lately (paths only) */
+  function startPage() {
+    const rec = (S.prefs.files || []).slice(0, 8);
+    return `<div class="startpg"><div class="sph"><b>MT PLC Studio</b><span class="muted">v${VERSION}</span></div>
+      <div class="spb"><button class="spc" data-cmd="new">${ic('file')}<span><b>New Project</b><small>Pick the controller, the chassis and the I/O, then save it as a .mtp file</small></span></button>
+      <button class="spc" data-cmd="open">${ic('open')}<span><b>Open Project</b><small>Open a .mtp or .L5X file from this device's storage</small></span></button></div>
+      ${rec.length ? `<div class="grp">Recent projects</div>${rec.map(p => `<div class="row" data-recent="${esc(p)}">${ic('file')}<span class="grow ell"><b>${esc(baseName(p))}</b><small class="muted"> ${esc(p)}</small></span></div>`).join('')}` : ''}
+      <p class="help">Projects are not kept inside the app: save your work with Save or Save As.</p></div>`;
+  }
   function render() {
     if (!S.p) return;
     syncTabs();
@@ -739,7 +782,7 @@
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
     const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>`;
-    return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small></span>
+    return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
         <span class="vsep"></span><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
@@ -747,13 +790,20 @@
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
+          ${port && S.view === 'ladder' ? `<div class="ibar top"><div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div></div>` : ''}
           <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `<div class="ladwrap" id="ladwrap" tabindex="0"></div>
           ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}</div>
           ${S.prefs.emu && dockSide(port) === 'bottom' ? dockHTML('bottom') : ''}
-          <div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div></section>
+          ${port ? msgPane() : `<div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div>`}</section>
         ${S.prefs.emu && dockSide(port) === 'side' ? dockHTML('side') : ''}</div>`;
   }
   const tabStatHTML = () => `${keyHTML()}${modeBox()}${forcesBox()}${editsBox()}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>`;
+  /* the Errors pane of a portrait tablet: errors, warnings and messages at the bottom of the window, as in the reference */
+  function msgPane() {
+    const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] }, n = v.errors.length, w = v.warnings.length;
+    const last = v.lines.length ? v.lines[v.lines.length - 1] : 'Ready';
+    return `<div class="msgp${S.errOpen ? ' open' : ''}"><div class="msgh" data-msgt="1">${ic(S.errOpen ? 'down' : 'up')}<b>Errors</b><span class="cnt${n ? ' e' : ''}">${ic('fault')}${n}</span><span class="cnt${w ? ' w' : ''}">${ic('warn')}${w}</span><span class="ell grow muted">${esc(last)}</span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${S.errOpen ? `<div class="msgb">${errorsHTML()}</div>` : ''}</div>`;
+  }
   const errHandle = () => { const n = S.verify ? S.verify.errors.length : 0; return `<span class="errh${n ? '' : ' ok'}" data-errh="1">${ic(n ? 'warn' : 'check')}<b>${n}</b> Errors${ic('down')}</span>`; };
   function selbarHTML(e) {
     const ri = curSelRung();
@@ -766,7 +816,8 @@
   function phone() {
     const a = S.area, nErr = S.verify ? S.verify.errors.length : 0;
     let body = '';
-    if (a === 'ladder') {
+    if (a === 'ladder' && S.noProj) body = `<div class="page" style="display:flex;flex-direction:column">${startPage()}</div>`;
+    else if (a === 'ladder') {
       const pland = innerWidth > innerHeight, emuTab = !pland && S.phoneEmu;
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
       if (emuTab) { body = tabs + dockHTML('full'); }
@@ -803,6 +854,7 @@
 
   /* ---------- organizer tree ---------- */
   function treeHTML() {
+    if (S.noProj) return '<div class="empty">No project open: New Project or Open Project.</div>';
     const col = new Set(S.prefs.collapsed);
     const N = (key, lvl, txt, icon, o = {}) => {
       const has = o.kids !== undefined, open = has && !col.has(key);
@@ -876,13 +928,14 @@
   }
   const CELL = { desktop: 104, tablet: 112, phone: 80 };
   function renderLadder(drop, press) {
+    if (drop === undefined && S.dragDrop) drop = S.dragDrop;
     const w = $('#ladwrap');
     if (!w) return;
     const z = S.prefs.zoom;
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
       live: S.online && !routineEdited() && !!liveRoutine(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop, press,
+      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodes: !!drop, lifted: S.lifted, press,
     });
     w.innerHTML = res.svg;
   }
@@ -908,9 +961,10 @@
   };
   const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.leg ? 'l' : ''}${t.rn ? 'n' : ''}${t.end ? 'e' : ''}|${t.op != null ? t.op : ''}` : '');
   let lastTap = { k: '', t: 0 };
-  function onTap(t, x, y, isDbl) {
+  function onTap(t, x, y, isDbl, touch) {
     const k = tkey(t), now = Date.now();
-    const dbl = isDbl || (k === lastTap.k && now - lastTap.t < 380);
+    const again = touch && t && t.path && !t.br && !t.leg && S.sel && S.sel.ri === t.ri && S.sel.path && S.sel.path.join('.') === t.path.join('.') && !S.sel.br && !S.sel.leg && (t.op == null || S.sel.op === t.op) && now - lastTap.t > 380;
+    const dbl = isDbl || again || (k === lastTap.k && now - lastTap.t < 380);
     lastTap = dbl ? { k: '', t: 0 } : { k, t: now };
     select(t);
     render();
@@ -946,17 +1000,21 @@
       }
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       const t = hit(ev.target);
-      pd = { x: ev.clientX, y: ev.clientY, t, moved: false, long: false, mouse: ev.pointerType === 'mouse' };
+      const movable = !!(t && t.path && !t.leg && editable());
+      cancelAnimationFrame(fling);
+      pd = { x: ev.clientX, y: ev.clientY, lx: ev.clientX, ly: ev.clientY, lt: performance.now(), vx: 0, vy: 0, t, moved: false, long: false, mouse: ev.pointerType === 'mouse', lift: ev.pointerType === 'mouse' && movable };
       busy();
       if (!pd.mouse) {
         pd.timer = setTimeout(() => {
           if (!pd || pd.moved) return;
           pd.long = true;
           select(pd.t);
-          renderLadder(null, pd.t && pd.t.path ? pd.t : null);
           if (navigator.vibrate) navigator.vibrate(12);
+          // hold on an instruction lifts it: drag it to a node, or let go for its menu
+          if (movable) { pd.lift = true; S.lifted = pd.t; renderLadder(null, pd.t); return; }
+          renderLadder(null, pd.t && pd.t.path ? pd.t : null);
           ctxMenu(pd.t, pd.x, pd.y);
-        }, 500);
+        }, 450);
       }
     });
     const move = ev => {
@@ -968,8 +1026,41 @@
         setZoom(pinch.z * d / pinch.d);
         return;
       }
+      if (pd && pd.lift && (pd.drag || Math.hypot(ev.clientX - pd.x, ev.clientY - pd.y) > (pd.mouse ? 6 : 10))) { dragTo(pd, ev.clientX, ev.clientY); return; }
       if (pd && Math.hypot(ev.clientX - pd.x, ev.clientY - pd.y) > 10) { pd.moved = true; clearTimeout(pd.timer); }
+      // the ladder scrolls under the finger here (the page leaves touches to the app, so a held instruction can be dragged)
+      if (pd && pd.moved && !pd.mouse) {
+        const w = $('#ladwrap'), dx = ev.clientX - pd.lx, dy = ev.clientY - pd.ly, nt = performance.now(), dt = Math.max(1, nt - pd.lt);
+        if (w) { w.scrollLeft -= dx; w.scrollTop -= dy; }
+        pd.vx = .8 * (dx / dt) + .2 * pd.vx; pd.vy = .8 * (dy / dt) + .2 * pd.vy;
+        pd.lx = ev.clientX; pd.ly = ev.clientY; pd.lt = nt;
+      }
     };
+    // a flick keeps the ladder going and slows down
+    let fling = 0;
+    const flick = (vx, vy) => {
+      let last = performance.now();
+      const step = n => { const w = $('#ladwrap'); if (!w) return; const dt = n - last; last = n; w.scrollLeft -= vx * dt; w.scrollTop -= vy * dt; const k = Math.pow(.995, dt); vx *= k; vy *= k; if (Math.hypot(vx, vy) > .02) fling = requestAnimationFrame(step); };
+      fling = requestAnimationFrame(step);
+    };
+    // a lifted instruction follows the finger: a ghost, the nodes of the routine shown, the node under it marked
+    const dragTo = (p, x, y) => {
+      if (!p.drag) {
+        p.drag = true; p.moved = true; clearTimeout(p.timer);
+        if (p.mouse) { select(p.t); S.lifted = p.t; }
+        const e = getEl(parsed(p.t.ri) || [], p.t.path);
+        p.g = document.createElement('div'); p.g.className = 'ghost'; p.g.style.position = 'fixed'; p.g.style.zIndex = 300; p.g.style.transform = 'translate(-50%, -140%)';
+        p.g.innerHTML = e && e.t !== 'BR' ? `${L.icon(e.t)}<span>${e.t}</span>` : '<span>Branch</span>';
+        document.body.appendChild(p.g);
+      }
+      p.g.style.left = x + 'px'; p.g.style.top = y + 'px';
+      const w = $('#ladwrap');
+      if (w) { const r = w.getBoundingClientRect(); if (y < r.top + 30) w.scrollTop -= 12; else if (y > r.bottom - 30) w.scrollTop += 12; }
+      p.drop = dropAt(x, y);
+      const k = JSON.stringify(p.drop);
+      if (k !== p.k) { p.k = k; S.dragDrop = p.drop || 'nodes'; renderLadder(S.dragDrop); }
+    };
+    document.addEventListener('touchmove', ev => { if (pd && pd.lift && !pd.mouse) ev.preventDefault(); }, { passive: false });
     const up = ev => {
       if (!pts.has(ev.pointerId)) return;
       pts.delete(ev.pointerId);
@@ -979,8 +1070,12 @@
       const p = pd;
       pd = null;
       busy();
-      if (ev.type === 'pointercancel' || p.moved || p.long) { if (!p.long) live(true); return; }
-      onTap(p.t, ev.clientX, ev.clientY);
+      S.lifted = null; S.dragDrop = null;
+      if (p.drag) { p.g.remove(); if (ev.type === 'pointerup' && p.drop && moveEl(p.t, p.drop, ev.ctrlKey)) return; render(); return; }
+      if (p.long && p.lift && ev.type === 'pointerup') { render(); ctxMenu(p.t, p.x, p.y); return; }
+      if (p.moved && !p.mouse && !p.long && performance.now() - p.lt < 80 && Math.hypot(p.vx, p.vy) > .3) flick(p.vx, p.vy);
+      if (ev.type === 'pointercancel' || p.moved || p.long) { if (!p.long) live(true); else if (p.lift) render(); return; }
+      onTap(p.t, ev.clientX, ev.clientY, false, !p.mouse);
     };
     window.addEventListener('pointermove', move, true);
     window.addEventListener('pointerup', up, true);
@@ -1155,13 +1250,96 @@
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
   };
-  function aliasType(alias) {
-    if (/\.\d+$/.test(alias)) return 'BOOL';
-    if (/\.(DN|EN|TT|CU|CD|OV|UN|ER)$/i.test(alias)) return 'BOOL';
-    if (/\.(PRE|ACC|LEN|POS|Fault)$/i.test(alias)) return 'DINT';
-    if (/^Local:\d+:I\.Ch\dData$/i.test(alias)) return 'REAL';
-    const t = tagFor(alias);
-    return t ? (t.type || aliasType(t.alias || '')) : 'BOOL';
+  function aliasType(alias) { return addrType(alias) || 'BOOL'; }
+  /* the members of a structured type (predefined, module or user-defined) */
+  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || ((S.p.dataTypes || []).find(d => U(d.name) === U(ty)) || {}).members || null;
+  const NBITS = { SINT: 8, INT: 16, DINT: 32 };
+  /* the data type of a tag address, as the reference reads it: Name[Element].Member.Bit, or Location:Slot:Type.Member.Bit
+     for the I/O tags of a module; null when the address names nothing in the project */
+  function addrType(addr, seen) {
+    const a = String(addr || '').trim();
+    let ty, dim = 0, rest;
+    const io = /^Local:(\d+):([ICO])(.*)$/i.exec(a);
+    if (io) {
+      const m = S.p.rack.modules.find(x => x.slot === +io[1]), d = m && E.MODULES[m.type], k = U(io[2]);
+      if (!d || !d[k]) return null;
+      ty = d[k]; rest = io[3];
+    } else {
+      const b = /^([A-Za-z_]\w*)(.*)$/.exec(a);
+      if (!b) return null;
+      const t = tagFor(b[1]);
+      if (!t || U(t.name) !== U(b[1])) return null;
+      rest = b[2];
+      if (t.alias) { seen = seen || new Set(); if (seen.has(U(t.name))) return null; seen.add(U(t.name)); return addrType(t.alias + rest, seen); }
+      ty = t.type || 'BOOL'; dim = t.dim || 0;
+    }
+    const re = /^(?:\[(\d+)\]|\.([A-Za-z_]\w*)|\.(\d+))/;
+    while (rest) {
+      const m = re.exec(rest);
+      if (!m) return null;
+      rest = rest.slice(m[0].length);
+      if (m[1] != null) { if (!dim || +m[1] >= dim) return null; dim = 0; continue; }
+      if (dim) return null;
+      if (m[2] != null) { const mem = (membersOf(ty) || []).find(x => U(x.name) === U(m[2])); if (!mem) return null; ty = mem.type; dim = mem.dim || 0; continue; }
+      if (!NBITS[ty] || +m[3] >= NBITS[ty]) return null;
+      ty = 'BOOL';
+    }
+    return dim ? ty + '[' + dim + ']' : ty;
+  }
+  /* the tag browser of Alias For (as in the reference): the I/O tags of the modules, the controller tags, the program
+     tags; a structure opens to its members, an integer to its bits (+) */
+  function aliasBrowser(box, inp, o) {
+    const st = { open: new Set(), bits: null };
+    const node = (path, ty, depth, kids) => ({ path, ty, depth, kids });
+    const build = () => {
+      const groups = [];
+      const tree = (path, ty, depth) => {
+        const n = node(path, ty, depth, null), dm = /^(.*)\[(\d+)\]$/.exec(ty);
+        if (dm) n.kids = Array.from({ length: Math.min(+dm[2], 64) }, (_, i) => tree(`${path}[${i}]`, dm[1], depth + 1));
+        else { const mem = membersOf(ty); if (mem) n.kids = mem.map(m => tree(`${path}.${m.name}`, m.type + (m.dim ? '[' + m.dim + ']' : ''), depth + 1)); }
+        return n;
+      };
+      const ioRows = [];
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
+      const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = typeOf(t) + (t.dim ? '[' + t.dim + ']' : ''); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
+      groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
+      const P = o.scope && o.scope() ? allProgs().find(g => g.name === o.scope()) : null;
+      if (P) groups.push({ name: `Program Tags · ${P.name}`, rows: tagRowsOf(P.tags), empty: 'No program tags' });
+      return groups;
+    };
+    const rowH = n => {
+      const bits = NBITS[n.ty], open = st.open.has(n.path), cur = U(inp.value.trim()) === U(n.path);
+      let h = `<div class="row abr${cur ? ' on' : ''}" style="padding-left:${8 + n.depth * 16}px" data-abp="${esc(n.path)}">${n.kids ? `<span class="exp" data-abx="${esc(n.path)}">${ic(open ? 'down' : 'right')}</span>` : '<span class="exp"></span>'}<span class="nm grow">${esc(n.depth ? n.path.slice(n.path.search(/[.[][^.[]*$/)) : n.path)}${n.desc ? `<small> ${esc(n.desc)}</small>` : ''}</span><span class="ty">${esc(n.ty)}</span>${bits ? `<button class="ib bitb${st.bits === n.path ? ' on' : ''}" data-abb="${esc(n.path)}" title="Pick a bit">+</button>` : ''}</div>`;
+      if (bits && st.bits === n.path) h += `<div class="bitgrid" style="margin-left:${24 + n.depth * 16}px">${Array.from({ length: bits }, (_, b) => `<button data-abp="${esc(n.path + '.' + b)}">${b}</button>`).join('')}</div>`;
+      if (n.kids && open) n.kids.forEach(k => { h += rowH(k); });
+      return h;
+    };
+    const flatAll = (rows, out = []) => { rows.forEach(n => { out.push(n); if (n.kids) flatAll(n.kids, out); if (NBITS[n.ty]) for (let b = 0; b < NBITS[n.ty]; b++) out.push(node(n.path + '.' + b, 'BOOL', 0, null)); }); return out; };
+    const draw = () => {
+      const q = U(inp.value.trim()), groups = build();
+      const exact = q && groups.some(g => flatAll(g.rows).some(n => U(n.path) === q));
+      box.innerHTML = groups.map(g => {
+        if (q && !exact) {
+          const hits = flatAll(g.rows).filter(n => U(n.path).includes(q)).slice(0, 60);
+          return hits.length ? `<div class="grp">${esc(g.name)}</div>` + hits.map(n => `<div class="row abr" data-abp="${esc(n.path)}"><span class="nm grow">${esc(n.path)}</span><span class="ty">${esc(n.ty)}</span></div>`).join('') : '';
+        }
+        return `<div class="grp">${esc(g.name)}</div>` + (g.rows.length ? g.rows.map(rowH).join('') : `<div class="empty">${esc(g.empty)}</div>`);
+      }).join('') || '<div class="empty">No tag, member or bit matches</div>';
+      const on = box.querySelector('.row.on'); if (on) box.scrollTop = on.offsetTop - 40;
+    };
+    // the current alias opens its parents, as the reference does
+    const openTo = p => { for (let i = 1; i < p.length; i++) if (p[i] === '.' || p[i] === '[') st.open.add(p.slice(0, i)); const bm = /^(.*)\.(\d+)$/.exec(p); if (bm && NBITS[addrType(bm[1])]) st.bits = bm[1]; };
+    const show = () => { if (inp.value.trim()) openTo(inp.value.trim()); box.hidden = false; draw(); };
+    box.addEventListener('mousedown', ev => { if (ev.target.closest('[data-abp],[data-abx],[data-abb]')) ev.preventDefault(); });
+    box.addEventListener('click', ev => {
+      const x = ev.target.closest('[data-abx]'), b = ev.target.closest('[data-abb]'), p = ev.target.closest('[data-abp]');
+      if (x) { const k = x.dataset.abx; if (st.open.has(k)) st.open.delete(k); else st.open.add(k); draw(); return; }
+      if (b) { st.bits = st.bits === b.dataset.abb ? null : b.dataset.abb; draw(); return; }
+      if (p) { inp.value = p.dataset.abp; inp.dispatchEvent(new Event('input', { bubbles: true })); box.hidden = true; if (o.picked) o.picked(); }
+    });
+    inp.addEventListener('input', () => { if (!box.hidden) draw(); });
+    return { show, hide: () => { box.hidden = true; }, toggle: () => (box.hidden ? show() : (box.hidden = true)) };
   }
   const typeOf = t => (t.alias ? aliasType(t.alias) : U(t.type || 'BOOL') === t.type ? t.type : t.type);
   /* every name an operand can take, with its type */
@@ -1361,29 +1539,35 @@
       body: `<div class="frow"><label>Name</label><input class="inp mono" id="tn" value="${esc(t0.name)}" autocomplete="off" spellcheck="false"${edit0 ? ' readonly' : ''}></div>
         <div class="frow"><label>Description</label><input class="inp" id="td" value="${esc(t0.desc || '')}"></div>
         <div class="frow"><label>Type</label><select class="inp" id="tk"><option value="base">Base</option><option value="alias"${t0.alias ? ' selected' : ''}>Alias</option></select></div>
-        <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false"></div>
-        <div class="asg" id="asg" hidden></div>
+        <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><span class="afor"><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="btn" id="tab" type="button" title="Browse tags">${ic('down')}</button></span></div>
+        <div class="asg abrw" id="asg" hidden></div>
+        <div class="frow" id="rat"${t0.alias ? '' : ' hidden'}><label>Data Type</label><span class="mono" id="tat"></span></div>
         <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label>Data Type</label><select class="inp" id="tt">${types.map(t => `<option${t === (t0.type || 'BOOL') ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow" id="rd"${t0.alias ? ' hidden' : ''}><label>Array size</label><input class="inp" id="tdim" type="number" min="0" max="10000" value="${t0.dim || ''}" placeholder="0 = not an array"></div>
         <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
         <div class="errtx" id="te"></div>`,
       mount: el => {
-        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; };
-        // Alias For: the matching tags and I/O points, listed inside the dialog
-        const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), pool = candidates().filter(c => c.scope !== 'System' && !c.dim).map(c => c.name);
-        const show = () => { const q = U(ta.value.trim()), m = pool.filter(n => !q || U(n).includes(q)).slice(0, 8); asg.innerHTML = m.map(n => `<div class="row" data-asg="${esc(n)}">${esc(n)}</div>`).join(''); asg.hidden = !m.length || (m.length === 1 && U(m[0]) === q); };
-        ta.addEventListener('input', show); ta.addEventListener('focus', show);
-        ta.addEventListener('blur', () => setTimeout(() => { asg.hidden = true; }, 150));
-        asg.addEventListener('mousedown', ev => { const r = ev.target.closest('[data-asg]'); if (r) { ev.preventDefault(); ta.value = r.dataset.asg; asg.hidden = true; } });
+        const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), tat = el.querySelector('#tat');
+        const br = aliasBrowser(asg, ta, { self: edit0 && edit0.name, scope: () => el.querySelector('#ts').value || (edit0 && o.list !== S.p.tags ? (allProgs().find(g => g.tags === o.list) || {}).name : '') });
+        const showType = () => { const v = ta.value.trim(), ty = v ? addrType(v) : null; tat.textContent = !v ? '-' : ty || 'not a tag, member or bit of this project'; tat.classList.toggle('bad', !!v && !ty); };
+        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; if (a) { br.show(); ta.focus(); } else br.hide(); };
+        ta.addEventListener('input', showType); ta.addEventListener('focus', () => br.show());
+        el.querySelector('#tab').onclick = () => br.toggle();
+        showType();
       },
       buttons: [{ l: 'Cancel' }, { l: edit0 ? 'OK' : 'Create', pri: true, run: el => {
         const name = el.querySelector('#tn').value.trim(), scope = el.querySelector('#ts').value, alias = el.querySelector('#tk').value === 'alias';
         const err = m => { el.querySelector('#te').textContent = m; return false; };
-        if (!E.validName(name)) return err('Use letters, digits and _, starting with a letter or _ (up to 40).');
+        if (!E.validName(name)) return err('Tag names: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.');
         const list = edit0 ? o.list : scope ? allProgs().find(g => g.name === scope).tags : S.p.tags;
         if (!edit0 && list.some(t => U(t.name) === U(name))) return err(`A tag named ${name} already exists in this scope.`);
         const t = { name, desc: el.querySelector('#td').value.trim() };
-        if (alias) { t.alias = el.querySelector('#ta').value.trim(); if (!t.alias) return err('Type the tag, member or bit this alias points to.'); }
+        if (alias) {
+          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([ico])/, (m, a, b) => a + b.toUpperCase());
+          if (!t.alias) return err('Alias For: pick the tag, member or bit this alias points to (Browse).');
+          if (U(t.alias.split(/[.[]/)[0]) === U(name)) return err('A tag cannot be an alias for itself.');
+          if (!addrType(t.alias)) return err(/^Local:/i.test(t.alias) ? `Alias For: ${t.alias} is not an I/O point of this project. I/O tags are Local:<slot>:I or O, then .Data.<bit> (digital) or .Ch<n>Data (analog), for a module in the I/O Configuration.` : `Alias For: ${t.alias} is not a tag, member or bit of this project.`);
+        }
         else { t.type = el.querySelector('#tt').value; const d = +el.querySelector('#tdim').value; if (d > 0) t.dim = Math.floor(d); }
         if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type) t.value = edit0.value;
         const ok = edit(() => { if (edit0) list.splice(list.indexOf(edit0), 1, t); else list.push(t); });
@@ -2945,7 +3129,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
+      if ((el = t.closest('[data-recent]'))) { loadFile(el.dataset.recent); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
+      if ((el = t.closest('[data-msgt]')) && !t.closest('[data-cmd]')) { S.errOpen = !S.errOpen; render(); return; }
       if ((el = t.closest('[data-ef]'))) { const f = S.errFilter || { e: true, w: true, m: true }; f[el.dataset.ef] = !f[el.dataset.ef]; S.errFilter = f; render(); return; }
       if ((el = t.closest('[data-errline]'))) { gotoErr(el); return; }
       if ((el = t.closest('[data-pull]'))) { const sl = +el.dataset.pull, on = !chassis.module(sl).fault; chassis.setFault(sl, on); chassis.advance(0); toast(on ? `The card in slot ${sl} faulted: see Module Properties for the code.` : `The card in slot ${sl} works again.`); live(true); render(); return; }
@@ -3017,7 +3203,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     });
     document.addEventListener('keydown', onKey);
     addEventListener('resize', () => { const lay = pickLayout(); if (lay !== S.layout) render(); else if (S.layout === 'tablet') render(); });
-    addEventListener('beforeunload', () => saveProject());
+    addEventListener('beforeunload', ev => { if (S.dirty && !window.mtpsFS && !window.Capacitor) { ev.preventDefault(); ev.returnValue = ''; } });
     document.addEventListener('visibilitychange', () => { if (document.hidden) saveProject(); });
     bindLadder();
     bindDrag();
@@ -3086,13 +3272,12 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* ---------- start ---------- */
   function start() {
     applyTheme();
-    const ses = store.get('session', null), last = store.get('last');
-    let p = ses && validProject(ses.p) ? ses.p : last ? store.get('p.' + last) : null;
-    if (!validProject(p)) p = blank('New_Project');
+    store.del('session');
     S.layout = pickLayout();
     bind();
-    openProject(p, true);
-    if (ses && ses.p === p) { S.file = ses.file; S.dirty = !!ses.dirty; saveProject(); render(); }
+    openProject(blank('New_Project'), true);
+    S.noProj = true; S.view = 'start'; S.selRung = null; reverify();
+    render();
     setTimeout(moveOldProjects, 500);
     if (!driverUp() && !drivers.length) setTimeout(() => setupWizard(0), 300);
     setInterval(tick, 20);

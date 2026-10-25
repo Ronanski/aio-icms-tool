@@ -17,8 +17,8 @@
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
   };
   const MODTYPES = {
-    'PLC:DI16:I': members('Fault:DINT Data:INT'),
-    'PLC:DO16:I': members('Fault:DINT'), 'PLC:DO16:O': members('Data:INT'),
+    'PLC:DI16:I': members('Fault:DINT Data:DINT'),
+    'PLC:DO16:I': members('Fault:DINT'), 'PLC:DO16:O': members('Data:DINT'),
     'PLC:AI4:I': members('Fault:DINT ' + CH4('REAL')),
     'PLC:AO4:I': members('Fault:DINT'), 'PLC:AO4:O': members(CH4('REAL')),
   };
@@ -31,7 +31,8 @@
   };
   const RACKS = [4, 7, 10, 12];   // chassis sizes: 4 to 12 slots
   const SFLAGS = ['FS', 'N', 'Z', 'V', 'C', 'MINOR'];
-  const validName = n => /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(String(n == null ? '' : n));
+  // the reference's name rules: letters, digits and _, starting with a letter or _, up to 40, no __ and no _ at the end
+  const validName = n => { const s = String(n == null ? '' : n); return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(s) && !/__/.test(s) && !/_$/.test(s); };
   const dot = m => (/[.!?]$/.test(m) ? m : m + '.');
   const clone = v => (typeof v === 'object' && v !== null ? JSON.parse(JSON.stringify(v)) : v);
   const i32 = v => Math.trunc(v) | 0;

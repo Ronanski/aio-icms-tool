@@ -810,3 +810,45 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .mmat i { width: 6px; height: 6px; }
 .mdisp { min-height: 14px; padding: 1px 0; font-size: 11px; }
 .rkps { width: 44px; }
+
+/* 0.4.0-beta.3: portrait tablet: instructions above the ladder, the Errors pane at the bottom */
+.ibar.top { border-top: 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+.ibar.top .glyphs.one { padding: 5px 8px; }
+.msgp { flex: none; background: var(--surface); border-top: 1px solid var(--border-strong); display: flex; flex-direction: column; }
+.msgh { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 8px 0 10px; cursor: pointer; }
+.msgh .cnt { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; color: var(--muted); }
+.msgh .cnt svg { width: 15px; height: 15px; }
+.msgh .cnt.e { color: var(--danger); } .msgh .cnt.w { color: var(--warn, #b26a00); }
+.msgh .btn { height: 32px; }
+.msgp.open .msgb { height: 170px; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border); }
+.msgb .log { flex: 1; overflow: auto; }
+/* moving an instruction: the nodes it can go to, the lifted instruction */
+svg.lad .node { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; }
+svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
+/* the app scrolls the ladder itself, so a held instruction can be dragged on a touch screen */
+.ladwrap { touch-action: none; }
+/* New Tag: Alias For and its tag browser */
+.afor { display: flex; gap: 4px; flex: 1; min-width: 0; } .afor .inp { flex: 1; min-width: 0; } .afor .btn { padding: 0 8px; }
+.asg.abrw { max-height: 260px; margin-top: 0; }
+.abrw .grp { position: sticky; top: 0; background: var(--surface-3); font-size: 11px; padding: 3px 8px; z-index: 1; }
+.abrw .row.abr { display: flex; align-items: center; gap: 4px; min-height: 30px; padding-right: 4px; }
+.abrw .row.abr.on { background: var(--accent-soft); }
+.abrw .row.abr small { font: 11px var(--sans, inherit); color: var(--muted); }
+.abrw .exp { width: 18px; flex: none; display: inline-grid; place-items: center; cursor: pointer; } .abrw .exp svg { width: 14px; height: 14px; }
+.abrw .ty { font-size: 11px; color: var(--muted); }
+.abrw .bitb { width: 26px; height: 24px; font-weight: 700; border: 1px solid var(--border); }
+.abrw .bitb.on { background: var(--accent); color: #fff; }
+.bitgrid { display: grid; grid-template-columns: repeat(8, 34px); gap: 3px; padding: 4px 0 6px; }
+.bitgrid button { height: 28px; border: 1px solid var(--border-strong); background: var(--surface-2); border-radius: 4px; font: 12px var(--mono); cursor: pointer; }
+.bitgrid button:hover { background: var(--accent-soft); }
+#tat.bad { color: var(--danger); font-family: inherit; }
+/* the start page: no project open */
+.startpg { flex: 1; overflow: auto; padding: 24px 20px; background: var(--surface); }
+.startpg .sph { display: flex; align-items: baseline; gap: 10px; font-size: 20px; margin-bottom: 16px; } .startpg .sph .muted { font-size: 13px; }
+.startpg .spb { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.startpg .spc { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface-2); cursor: pointer; color: var(--text); font: inherit; }
+.startpg .spc:hover { border-color: var(--accent); background: var(--accent-soft); }
+.startpg .spc svg { width: 28px; height: 28px; flex: none; color: var(--accent); }
+.startpg .spc span { display: flex; flex-direction: column; gap: 3px; } .startpg .spc small { color: var(--muted); }
+.startpg .row { display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.startpg .row:hover { background: var(--accent-soft); }

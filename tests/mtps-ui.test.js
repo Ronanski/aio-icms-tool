@@ -34,7 +34,9 @@ function check(name, cond, info = '') {
   const noHScroll = () => ev(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
   console.log('Start and layouts');
-  check('first start: an empty project with one empty rung', (await ev(() => document.title)) === 'MT PLC Studio - New_Project [PLC-CPU 1.0]' && (await rungTexts()).length === 1 && (await rungTexts())[0] === '');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(100);
+  check('first start: no project open, the start page with New Project and Open Project (no project kept in the app)', (await ev(() => document.title)) === 'MT PLC Studio' && (await page.$('.startpg [data-cmd="new"]')) !== null && (await page.$('.startpg [data-cmd="open"]')) !== null && (await ev(() => MTPS.App.state.noProj)) === true);
+  check('the start page: the instruction buttons are off and no errors are counted', (await page.$$eval('.gbtn[data-mn]', b => b.every(x => x.disabled))) && (await ev(() => MTPS.App.state.verify.errors.length)) === 0);
   await ev(() => MTPS.App.openProject(MTPS.App.example()));
   await page.waitForTimeout(100);
   check('the example opens from File > Open', (await ev(() => document.title)) === 'MT PLC Studio - Motor_Demo [PLC-CPU 1.0]');
@@ -291,7 +293,7 @@ function check(name, cond, info = '') {
   console.log('Projects');
   await page.reload();
   await page.waitForTimeout(300);
-  check('the project is saved and reopens after a restart', (await rungTexts())[1] === 'XIC(Motor_Run)XIC(OL_OK)OTE(Motor_Cmd);');
+  check('a restart does not bring back a project kept inside the app: the start page again (projects live in files)', (await ev(() => MTPS.App.state.noProj)) === true && (await page.$('.startpg')) !== null && (await ev(() => localStorage.getItem('mtps.session'))) === null);
   await ev(() => MTPS.App.openProject(MTPS.App.blank('Test_Line')));
   await page.waitForTimeout(100);
   check('a new project opens with one empty rung and the default rack', (await rungTexts()).length === 1 && (await ev(() => MTPS.App.state.p.rack.modules.length)) === 2);
@@ -714,11 +716,19 @@ function check(name, cond, info = '') {
   check('Ctrl+W in the operand box opens New Tag for the typed name', (await dlgTitle()) === 'New Tag' && (await page.$eval('#tn', i => i.value)) === 'Start_PB');
   check('New Tag: Alias For is hidden while the type is Base', await page.$eval('#ra', r => r.offsetParent === null));
   await page.selectOption('#tk', 'alias');
-  await page.fill('#ta', 'I.Data.0');
   await page.waitForTimeout(80);
-  check('Alias For lists the matching points inside the dialog (no list over the Create button)', (await page.$$eval('#asg [data-asg]', r => r.map(x => x.dataset.asg))).includes('Local:1:I.Data.0') && (await page.$('#aliaslist')) === null);
-  await page.dispatchEvent('#asg [data-asg="Local:1:I.Data.0"]', 'mousedown');
-  check('picking a suggestion fills Alias For', (await page.$eval('#ta', i => i.value)) === 'Local:1:I.Data.0');
+  check('Alias For opens the tag browser inside the dialog: I/O tags (Local), Controller Tags, Program Tags', await page.$eval('#asg', a => !a.hidden && a.textContent.includes('I/O tags (Local)') && a.textContent.includes('Controller Tags') && a.textContent.includes('Program Tags')) && (await page.$('#aliaslist')) === null);
+  await page.click('#asg [data-abx="Local:1:I"]'); await page.waitForTimeout(60);
+  check('a module\'s input tag opens to its members (.Fault, .Data DINT)', await page.$eval('#asg', a => a.textContent.includes('.Fault') && a.textContent.includes('.Data')) && (await page.$eval('#asg [data-abp="Local:1:I.Data"] .ty', t => t.textContent)) === 'DINT');
+  await page.click('#asg [data-abb="Local:1:I.Data"]'); await page.waitForTimeout(60);
+  check('+ beside Data opens the bit picker (0 to 31)', (await page.$$eval('#asg .bitgrid button', b => b.length)) === 32);
+  await page.click('#asg [data-abp="Local:1:I.Data.0"]'); await page.waitForTimeout(60);
+  check('picking bit 0 fills Alias For with Local:1:I.Data.0 and shows its data type BOOL', (await page.$eval('#ta', i => i.value)) === 'Local:1:I.Data.0' && (await page.$eval('#tat', t => t.textContent)) === 'BOOL');
+  await page.fill('#ta', 'I.Data.1'); await page.click('#tab'); await page.waitForTimeout(60);
+  check('typing filters the browser to the matching addresses', (await page.$$eval('#asg [data-abp]', r => r.map(x => x.dataset.abp))).includes('Local:1:I.Data.1'));
+  await page.fill('#ta', 'Local:7:I.Data.0'); await page.waitForTimeout(40);
+  check('an address with no module in that slot is marked as not a tag of the project', (await page.$eval('#tat', t => t.textContent)).includes('not a tag'));
+  await page.fill('#ta', 'Local:1:I.Data.0');
   await page.hover('#layer .df .btn.pri');
   check('the primary button keeps its colour under the mouse', await page.$eval('#layer .df .btn.pri', b => getComputedStyle(b).backgroundColor !== getComputedStyle(document.body).backgroundColor && getComputedStyle(b).backgroundColor !== 'rgb(255, 255, 255)'));
   await page.keyboard.press('Escape');
@@ -796,6 +806,63 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   await ev(() => { MTPS.App.state.p.controller.slot = 2; });
 
+  console.log('Tablet portrait with touch: instructions on top, Errors at the bottom, hold to move an instruction to a node');
+  {
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await tp.waitForTimeout(300);
+    const ib = await tp.$eval('.ibar.top', b => b.getBoundingClientRect().bottom), lw = await tp.$eval('#ladwrap', b => b.getBoundingClientRect().top), mp = await tp.$eval('.msgp', b => b.getBoundingClientRect().bottom);
+    check('portrait tablet: the instruction buttons are above the ladder', ib <= lw + 1);
+    check('portrait tablet: the Errors pane is at the bottom of the window', Math.abs(mp - 1280) < 2);
+    await tp.tap('.msgp [data-msgt]'); await tp.waitForTimeout(100);
+    check('tapping the Errors bar opens the errors, warnings and messages', (await tp.$('.msgp.open .log')) !== null);
+    await tp.tap('.msgp [data-msgt] b'); await tp.waitForTimeout(100);
+    const cdp = await tp.context().newCDPSession(tp);
+    const T = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+    const box = (ri, p) => tp.evaluate(([ri, p]) => { const x = [...document.querySelectorAll('#ladwrap rect.tap')].find(r => r.dataset.ri === ri && r.dataset.p === p && !r.dataset.opi); const b = x.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, l: b.left }; }, [ri, p]);
+    const rung = i => tp.evaluate(i => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[i].t, i);
+    const src = await box('0', '2'), dst = await box('0', '0.1.0');
+    await T('touchStart', src.x, src.y); await tp.waitForTimeout(600);
+    check('hold an instruction: it is lifted (marked) and no menu opens yet', (await tp.$('#ladwrap .lift')) !== null && !(await tp.$('#layer .menu')));
+    for (let i = 1; i <= 8; i++) { await T('touchMove', src.x + (dst.l + 8 - src.x) * i / 8, src.y + (dst.y - src.y) * i / 8); await tp.waitForTimeout(25); }
+    check('dragging it shows the nodes of the ladder it can go to', (await tp.$$eval('#ladwrap .node', n => n.length)) > 10);
+    await T('touchEnd'); await tp.waitForTimeout(200);
+    check('let go on a node in the branch: OL_OK moves into the branch before Motor_Run', (await rung(0)) === '[XIC(Start_PB),XIC(OL_OK)XIC(Motor_Run)]XIC(Stop_PB)OTE(Motor_Run);');
+    const o2 = await box('1', '0'), e1 = await box('2', '0');
+    await T('touchStart', o2.x, o2.y); await tp.waitForTimeout(600);
+    for (let i = 1; i <= 8; i++) { await T('touchMove', o2.x + (e1.l + 6 - o2.x) * i / 8, o2.y + (e1.y - o2.y) * i / 8); await tp.waitForTimeout(25); }
+    await T('touchEnd'); await tp.waitForTimeout(200);
+    check('an instruction moves to another rung too (rung 1 to rung 2)', (await rung(1)) === 'OTE(Motor_Cmd);' && (await rung(2)).startsWith('XIC(Motor_Run)XIC(Motor_Run)'));
+    await tp.evaluate(() => MTPS.App.run('undo')); await tp.waitForTimeout(100);
+    check('Undo puts it back', (await rung(1)) === 'XIC(Motor_Run)OTE(Motor_Cmd);');
+    const c = await box('1', '0');
+    await T('touchStart', c.x, c.y); await tp.waitForTimeout(600); await T('touchEnd'); await tp.waitForTimeout(200);
+    check('hold and let go without moving: the instruction menu', (await tp.$eval('#layer', l => l.textContent)).includes('Edit "Motor_Run" Properties'));
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; }); await tp.waitForTimeout(500);
+    await tp.touchscreen.tap(c.x, c.y); await tp.waitForTimeout(450); await tp.touchscreen.tap(c.x, c.y); await tp.waitForTimeout(250);
+    check('tap selects, tap again on the selected instruction opens its operands', (await tp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '')) === 'Rung 1 · XIC');
+    await tp.keyboard.press('Escape'); await tp.waitForTimeout(100);
+    const y0 = await tp.$eval('#ladwrap', w => w.scrollTop);
+    await T('touchStart', 400, 700); for (let i = 1; i <= 6; i++) { await T('touchMove', 400, 700 - i * 40); await tp.waitForTimeout(16); } await T('touchEnd'); await tp.waitForTimeout(400);
+    check('a quick swipe still scrolls the ladder', (await tp.$eval('#ladwrap', w => w.scrollTop)) > y0 + 100 && (await rung(1)) === 'XIC(Motor_Run)OTE(Motor_Cmd);');
+    await tp.close();
+  }
+  console.log('Mouse: drag an instruction to a node (Ctrl copies)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(200);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await page.waitForTimeout(200);
+    const box = (ri, p) => page.evaluate(([ri, p]) => { const x = [...document.querySelectorAll('#ladwrap rect.tap')].find(r => r.dataset.ri === ri && r.dataset.p === p && !r.dataset.opi); const b = x.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, l: b.left, r: b.right }; }, [ri, p]);
+    await ev(() => { document.querySelector('#ladwrap').scrollTop = 0; }); await page.waitForTimeout(100);
+    const a = await box('1', '0'), b = await box('0', '2');
+    await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(a.x + 20, a.y - 10, { steps: 3 }); await page.mouse.move(b.r - 6, b.y, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(150);
+    check('drag XIC Motor_Run of rung 1 onto rung 0, after OL_OK', (await rungTexts())[0] === '[XIC(Start_PB),XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)XIC(Motor_Run)OTE(Motor_Run);' && (await rungTexts())[1] === 'OTE(Motor_Cmd);', JSON.stringify((await rungTexts()).slice(0, 2)));
+    const c = await box('0', '3'), d = await box('1', '0');
+    await page.keyboard.down('Control'); await page.mouse.move(c.x, c.y); await page.mouse.down(); await page.mouse.move(d.l + 4, d.y, { steps: 8 }); await page.mouse.up(); await page.keyboard.up('Control'); await page.waitForTimeout(150);
+    check('Ctrl+drag copies it back to rung 1, before the OTE', (await rungTexts())[1] === 'XIC(Motor_Run)OTE(Motor_Cmd);' && (await rungTexts())[0].includes('XIC(OL_OK)XIC(Motor_Run)'), JSON.stringify((await rungTexts()).slice(0, 2)));
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
