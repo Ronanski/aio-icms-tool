@@ -776,3 +776,14 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .phone .ihl, .tab .ihl { display: none; }
 .phone .ihpick, .tab .ihpick { display: block; }
 @media (min-width: 1000px) { .tab .ihelp { grid-template-columns: 210px minmax(0, 1fr); height: min(70vh, 640px); } .tab .ihl { display: block; } .tab .ihpick { display: none; } }
+/* hidden means hidden, whatever display a class gives (rows of dialogs, menu groups) */
+[hidden] { display: none !important; }
+/* the primary and danger buttons keep their colour under the mouse */
+.btn.pri:hover:not(:disabled) { background: var(--fill-accent); filter: brightness(1.1); }
+.btn.danger:hover:not(:disabled) { filter: brightness(1.1); }
+/* New Tag: the Alias For suggestions, inside the dialog */
+.asg { border: 1px solid var(--border); border-radius: var(--r); max-height: 168px; overflow: auto; margin: -4px 0 6px; background: var(--surface); }
+.asg .row { padding: 3px 8px; font: 12px var(--mono); cursor: pointer; min-height: 0; }
+.asg .row:hover { background: var(--accent-soft); }
+.asg { margin-left: 128px; }
+.phone .asg { margin-left: 0; }

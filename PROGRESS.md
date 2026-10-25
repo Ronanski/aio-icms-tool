@@ -30,6 +30,7 @@
 - [x] 0.3.0-beta.1, the five proposals (owner, 2026-10-24): setup wizard and Configure Drivers, emulator docked beside the ladder (all screen sizes), hardware-like chassis with 4 to 12 slots, Tag Browser, Classic look with toolbar buttons and a folding menu, .mtp files and L5X import / export
 - [x] 0.3.0-beta.2, the owner's 14 points (2026-10-24): unbroken rails, operand descriptions, routine and tag tabs with ×, Monitor/Edit Tags table, terminal-block modules and Module I/O windows, chassis rows that fold, tablet portrait status row and fixed Errors handle, hold-to-drag, device project files in the app's own file browser, Instruction Help (Simple/Reference, English/Taglish), Tips
 - [x] 0.3.0-beta.3 (2026-10-25): operand selection, editing, menus and descriptions per operand; Task / Program / Routine Properties; emulator panel on the right in landscape, foldable, movable, unstretched; compact Module I/O window; tablet menu folding fixed; Instruction Help in the reference layout; Getting Started
+- [x] 0.3.0-beta.4 (2026-10-25): fixes from a full motor seal-in run on the Windows app (Ctrl+W, wizard, New Tag alias list, I/O window position, Download prompt)
 - [ ] Emulator extras: its own Download pane, virtual time
 - [ ] Network link: program an emulator that runs on another device (tablet) from the laptop
 - [ ] Next: online edit test / assemble steps and the r / i rung markers, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look

@@ -2,7 +2,7 @@
    the hosted copy (GitHub Pages /mtps/, Stable or Beta) when a newer version is there, and that copy is cached for
    offline use. If the hosted copy cannot load and was never cached, the built-in copy is used.
    The window can be resized and maximized (minimum 800 × 600); its size, position and maximized state are kept. */
-const { app, BrowserWindow, shell, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, screen, ipcMain, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -103,6 +103,8 @@ function registerFiles() {
 }
 
 app.whenReady().then(() => {
+  // no built-in menu: its shortcuts (Ctrl+W closes the window, Ctrl+R reloads) would take the app's own keys
+  Menu.setApplicationMenu(null);
   registerFiles();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
