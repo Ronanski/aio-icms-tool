@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.4.0-beta.3): tag addresses, moving instructions, tablet portrait, no project kept in the app (owner)
+- **Projects live in files only.** The app keeps no project inside it any more: it starts on a start page with
+  New Project and Open Project (a .mtp or .L5X file on the device's storage), and the files opened lately. Save with
+  Save or Save As; a browser asks before closing with unsaved changes.
+- **New Tag, Alias For:** a tag browser as in the reference: the I/O tags of the modules (`Local:<slot>:I` and `O`)
+  open to their members (`.Fault`, `.Data`), an integer has a **+** that opens its bits (0 to 31), then the
+  controller and program tags. The alias's data type is shown, and an address that names nothing in the project
+  (for example a slot with no module) is refused with the reason.
+- **I/O data as on the reference's discrete modules:** `Local:<slot>:I.Data` and `Local:<slot>:O.Data` are DINT.
+- **Tag names follow the reference's rules:** no two underscores in a row and no underscore at the end.
+- **Move an instruction to any node:** with the mouse, drag it (Ctrl copies); on a touch screen, hold it until it is
+  lifted, then drag it. The nodes it can go to are shown (before or after an instruction, on a branch level, at the
+  end of a rung, on another rung). Hold and let go without moving gives its menu; tap selects, tap again edits.
+- **Tablet portrait:** the instruction buttons are above the ladder, and the Errors pane (errors, warnings,
+  messages) is at the bottom of the window.
+
 ### Changed (MT PLC Studio 0.4.0-beta.2): the SIM card and generic module removed; smaller modules (owner)
 - **Removed:** the SIM-16 simulator card and the Generic Module of 0.4.0-beta.1. The I/O cards stay as they were:
   inputs `Local:<slot>:I.Data.<bit>`, outputs `Local:<slot>:O.Data.<bit>`, as for the reference's discrete modules.

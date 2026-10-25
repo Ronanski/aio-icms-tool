@@ -173,10 +173,12 @@
             const lx = X(b.ends[k]) + (b.ends[k] === b.col ? 10 : 2), lw = x2 - lx - 2, lp = b.path.concat(k);
             if (lw < 12) return;
             if (o.sel && o.sel.leg && o.sel.ri === ri && same(o.sel.path, lp)) out += `<rect class="sel" x="${lx}" y="${ys[k] - 9}" width="${lw}" height="18" rx="3"/>`;
+            if (o.nodes) out += `<rect class="node" x="${lx - 1}" y="${ys[k] - 4}" width="8" height="8"/>`;
             if (o.drop && o.drop.leg && o.drop.ri === ri && same(o.drop.path, lp)) out += `<line class="drop" x1="${lx + 2}" y1="${ys[k] - 18}" x2="${lx + 2}" y2="${ys[k] + 18}"/>`;
             taps += `<rect class="tap" data-ri="${ri}" data-p="${lp.join('.')}" data-leg="1" x="${lx}" y="${ys[k] - 12}" width="${lw}" height="24"/>`;
           });
         });
+        if (o.nodes && last) out += `<rect class="node" x="${X(startOut) - 6}" y="${wy - 4}" width="8" height="8"/>`;
         if (o.drop && o.drop.ri === ri && o.drop.end && last) {
           const dx = X(startOut) - 2;
           out += `<line class="drop" x1="${dx}" y1="${wy - 18}" x2="${dx}" y2="${wy + 18}"/>`;
@@ -185,6 +187,8 @@
           const e = it.e, x = X(it.col), w = (isBox(e) ? boxCells(e) : 1) * CW, cy = rowY[it.row], cx = x + w / 2, h = head(e);
           const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, it.path);
           if (isSel) out += `<rect class="sel" x="${x + 2.5}" y="${cy - h.h - 6.5}" width="${w - 5}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 26)}" rx="3"/>`;
+          if (o.nodes) out += `<rect class="node" x="${x - 4}" y="${cy - 4}" width="8" height="8"/><rect class="node" x="${x + w - 4}" y="${cy - 4}" width="8" height="8"/>`;
+          if (o.lifted && o.lifted.ri === ri && same(o.lifted.path, it.path)) out += `<rect class="lift" x="${x + 1.5}" y="${cy - h.h - 7.5}" width="${w - 3}" height="${h.h + (isBox(e) ? boxH(e) + 6 : 28)}" rx="4"/>`;
           if (o.press && o.press.ri === ri && same(o.press.path, it.path)) out += `<circle class="press" cx="${cx}" cy="${cy}" r="${CW * .4}"/>`;
           if (o.drop && o.drop.ri === ri && same(o.drop.path, it.path)) {
             const dx = o.drop.after ? x + w - 2 : x + 2;
