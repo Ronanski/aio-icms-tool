@@ -827,3 +827,31 @@ Local:3:O.Data[0].n, ladder, Verify, Who Active (AB_VBP-1\2) > Download > Run, t
   `Chassis.codeFor(slot, type, gen)`: the SIM card answers `GENSIM` only, else 16#0109. `controller.slot` (default 0).
 - App: `DRVTYPES` vbp first, `vbpPath(slot)`, `parsePath` for `<driver>\<slot>` (the first chassis); Who Active rows hold
   the path (`data-wa`); `genFields` / `readGen`; `ctlSlot()`; the Download slot check; wizard `addsim`.
+
+## 21. Addresses, moving instructions, no project in the app (0.4.0-beta.2 / beta.3)
+
+- 0.4.0-beta.2: the SIM-16 card and the Generic Module are removed (owner). The emulator chassis keeps the I/O cards
+  (DI16, DO16, AI4, AO4). The modules are drawn smaller.
+- Addresses as in 1756-PM004:
+  - `addrType(addr)` resolves `Tag[i].Member.Bit` and `Local:<slot>:<I|O>.Member.Bit` to a data type, or null.
+  - The I/O `Data` of DI16 and DO16 is DINT.
+  - `validName` refuses `__` and a trailing `_`.
+- New Tag, Alias For:
+  - `aliasBrowser(box, input, {self, scope})` lists the I/O tags of the modules, the Controller Tags and the Program Tags.
+  - Structures and arrays open to their members. An integer's **+** opens a bit grid.
+  - Typing filters to the matching addresses.
+  - The alias's data type is shown (`#tat`). On Create, an unknown address is refused with the reason.
+- Moving instructions:
+  - `moveEl(src, drop, copy)` moves an instruction or a branch to a drop node: before or after an instruction, the end of a branch level, the end of a rung, in the same rung or another one. Branches are tidied afterwards.
+  - Mouse: drag; Ctrl copies.
+  - Touch:
+    - hold (450 ms) lifts the instruction (`.lift`);
+    - drag it to a node (`.node` marks while dragging);
+    - hold and release without moving opens the menu;
+    - tap selects; tap again on the selection, or double-tap, edits.
+  - The ladder has `touch-action: none` and scrolls itself, with a flick.
+- Tablet portrait: `.ibar.top` (Favorites and All…) is above the ladder; `msgPane()` is the Errors pane at the bottom (`S.errOpen`).
+- No project kept inside the app:
+  - `saveProject()` only sets the title. The old `session` key is removed at start.
+  - The app starts with `S.noProj` and `startPage()`: New Project, Open Project, and recent `.mtp` paths (`S.prefs.files`).
+  - A browser asks before closing with unsaved changes.
