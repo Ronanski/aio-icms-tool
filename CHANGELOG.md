@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (MT PLC Studio 0.3.0-beta.6): a TON left with Accum "?" (owner, Android tablet)
+- **Timers and counters start with Accum 0**, so only the tag and the preset are asked, as in the reference. OK in the
+  operand box with an empty Accum also puts 0.
+- **Error lines show the operand's name** beside the reference's wording ("Operand 2" of a TON: Accum).
+- **A tap on an error line opens the operand box** on the instruction and the operand it names.
+
 ### Changed (MT PLC Studio 0.3.0-beta.5): every instruction checked against the reference
 - **Tag browser in the operand box, as in the reference:** a structure's members (T1.DN, T1.ACC, C1.DN …), the bits of
   a SINT / INT / DINT (D1.0 to D1.31) and the elements of an array (Recipe[0] …) are listed folded under their tag.

@@ -201,6 +201,23 @@
 
   class Fault extends Error { constructor(type, code, text) { super(text); this.type = type; this.code = code; } }
 
+  /* the operand names of each instruction (the ladder boxes and the error lines) */
+  const OPN = {
+    XIC: ['Bit'], XIO: ['Bit'], OTE: ['Bit'], OTL: ['Bit'], OTU: ['Bit'], ONS: ['Storage Bit'], OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
+    RES: ['Structure'], JMP: ['Label Name'], LBL: ['Label Name'], JSR: ['Routine Name', 'Input Par'],
+    TON: ['Timer', 'Preset', 'Accum'], TOF: ['Timer', 'Preset', 'Accum'], RTO: ['Timer', 'Preset', 'Accum'],
+    CTU: ['Counter', 'Preset', 'Accum'], CTD: ['Counter', 'Preset', 'Accum'],
+    EQU: ['Source A', 'Source B'], NEQ: ['Source A', 'Source B'], LES: ['Source A', 'Source B'], LEQ: ['Source A', 'Source B'],
+    GRT: ['Source A', 'Source B'], GEQ: ['Source A', 'Source B'], LIM: ['Low Limit', 'Test', 'High Limit'],
+    MEQ: ['Source', 'Mask', 'Compare'], CMP: ['Expression'],
+    ADD: ['Source A', 'Source B', 'Dest'], SUB: ['Source A', 'Source B', 'Dest'], MUL: ['Source A', 'Source B', 'Dest'],
+    DIV: ['Source A', 'Source B', 'Dest'], MOD: ['Source A', 'Source B', 'Dest'], SQR: ['Source', 'Dest'], NEG: ['Source', 'Dest'],
+    ABS: ['Source', 'Dest'], CPT: ['Dest', 'Expression'], MOV: ['Source', 'Dest'], MVM: ['Source', 'Mask', 'Dest'], CLR: ['Dest'],
+    AND: ['Source A', 'Source B', 'Dest'], OR: ['Source A', 'Source B', 'Dest'], XOR: ['Source A', 'Source B', 'Dest'], NOT: ['Source', 'Dest'],
+    BTD: ['Source', 'Source Bit', 'Dest', 'Dest Bit', 'Length'], SWPB: ['Source', 'Order Mode', 'Dest'],
+    COP: ['Source', 'Dest', 'Length'], FLL: ['Source', 'Dest', 'Length'], JSR: ['Routine Name', 'Input Par'],
+    OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
+  };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
   class Ref {
@@ -1296,7 +1313,7 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

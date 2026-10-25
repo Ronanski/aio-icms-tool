@@ -32,6 +32,7 @@
 - [x] 0.3.0-beta.3 (2026-10-25): operand selection, editing, menus and descriptions per operand; Task / Program / Routine Properties; emulator panel on the right in landscape, foldable, movable, unstretched; compact Module I/O window; tablet menu folding fixed; Instruction Help in the reference layout; Getting Started
 - [x] 0.3.0-beta.4 (2026-10-25): fixes from a full motor seal-in run on the Windows app (Ctrl+W, wizard, New Tag alias list, I/O window position, Download prompt)
 - [x] 0.3.0-beta.5 (2026-10-25): instruction audit on desktop / tablet / phone; tag browser with members, bits and elements; expression helper; JSR / label lists; Android keyboards; wider boxes; engine reference tests (COP bytes, timer faults, BTD)
+- [x] 0.3.0-beta.6 (2026-10-25): timer / counter Accum 0 by default; operand names on error lines; tap an error to open its operand
 - [ ] Emulator extras: its own Download pane, virtual time
 - [ ] Network link: program an emulator that runs on another device (tablet) from the laptop
 - [ ] Next: online edit test / assemble steps and the r / i rung markers, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look

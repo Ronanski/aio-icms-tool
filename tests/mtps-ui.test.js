@@ -726,6 +726,26 @@ function check(name, cond, info = '') {
   check('the Module I/O window opens beside the module, not over the ladder', await page.evaluate(() => { const w = document.querySelector('.iowin').getBoundingClientRect(), l = document.querySelector('#ladwrap').getBoundingClientRect(), c = document.querySelector('#iob .ccard.io[data-cmod="0:1"]').getBoundingClientRect(); return w.top >= c.top - 1 && (w.right <= c.left + 1 || w.left >= c.right - 1) && !(w.left < l.left + 40 && w.top < l.top + 40); }));
   await page.click('.iowin [data-iox]');
 
+  console.log('Timer Accum and error lines (owner tablet report)');
+  await page.setViewportSize({ width: 800, height: 1280 });
+  await page.waitForFunction(() => MTPS.App.state.layout === 'tablet', null, { timeout: 3000 }).catch(() => {});
+  await ev(() => { if (MTPS.App.state.online) MTPS.App.run('offline'); const p = MTPS.App.blank('Acc'); p.tags.push({ name: 'Lamp_delay1', type: 'TIMER' }); MTPS.App.openProject(p); MTPS.App.state.selRung = 0; });
+  await ev(() => MTPS.App.insertMn('TON'));
+  await page.waitForTimeout(200);
+  check('a new TON asks for the timer and the preset; Accum starts at 0', (await page.$eval('#layer [data-op="2"]', i => i.value)) === '0' && (await page.$eval('#layer [data-op="1"]', i => i.value)) === '?');
+  await page.keyboard.press('Escape');
+  await ev(() => { const p = MTPS.App.state.p; p.tasks[0].programs[0].routines[0].rungs = [{ t: 'XIC(Local:1:I.Data.0)TON(Lamp_delay1,5000,?);' }]; MTPS.App.openProject(p, true); MTPS.App.run('verifyc'); });
+  await page.waitForTimeout(200);
+  await page.click('[data-errh]').catch(() => {});
+  await page.waitForTimeout(200);
+  check('the error line shows the name of the operand (Accum)', (await page.$eval('.errop', e => e.textContent).catch(() => '')) === 'Accum');
+  await page.click('.ln.e[data-errline]');
+  await page.waitForTimeout(250);
+  check('a tap on the error line opens the operand box on that operand', (await dlgTitle()) === 'Rung 0 · TON' && (await page.evaluate(() => document.activeElement.dataset.op)) === '2');
+  await page.click('#layer .df .btn.pri');
+  await page.waitForTimeout(150);
+  check('OK with an empty Accum puts 0: no errors', (await rungTexts())[0] === 'XIC(Local:1:I.Data.0)TON(Lamp_delay1,5000,0);' && await ev(() => MTPS.App.state.verify.errors.length === 0));
+
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.3.0-beta.5';
+  const VERSION = '0.3.0-beta.6';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -408,7 +408,8 @@
       else if (e.legs.length === 1) arr.splice(k, 1, ...e.legs[0]);
     }
   }
-  const newEl = (mn, ops) => { const d = INSTR[mn]; const need = d.args.filter(a => !a.endsWith('?')).length; const a = (ops || []).slice(0, d.args.length); while (a.length < need) a.push('?'); return { t: mn, a }; };
+  const TC = ['TON', 'TOF', 'RTO', 'CTU', 'CTD'];
+  const newEl = (mn, ops) => { const d = INSTR[mn]; const need = d.args.filter(a => !a.endsWith('?')).length; const a = (ops || []).slice(0, d.args.length); while (a.length < need) a.push(TC.includes(mn) && a.length === 2 ? '0' : '?'); return { t: mn, a }; };
   function flat(elems, path = [], out = []) {
     elems.forEach((e, k) => { const p = path.concat(k); if (e.t === 'BR') e.legs.forEach((l, li) => flat(l, p.concat(li), out)); else out.push(p); });
     return out;
@@ -820,12 +821,14 @@
   }
 
   /* ---------- errors pane ---------- */
+  // the name of the operand an error line points at ("Operand 2" of a TON is its Accum), shown beside the line
+  const errOp = t => { const m = /Rung \d+, (\w+), Operand (\d+)/.exec(t), n = m && (L.OPN[m[1]] || [])[+m[2]]; return n ? ` <span class="errop">${esc(n)}</span>` : ''; };
   function errorsHTML() {
     const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] };
     const f = S.errFilter || { e: true, w: true, m: true };
     const lines = v.lines.map(t => ({ t, k: /^Error/.test(t) ? 'e' : /^Warning/.test(t) ? 'w' : 'm' })).filter(x => f[x.k]);
     return `<div class="chips"><span class="chip${f.e ? ' on' : ''}" data-ef="e">${ic('fault')}${v.errors.length} Errors</span><span class="chip${f.w ? ' on' : ''}" data-ef="w">${ic('warn')}${v.warnings.length} Warnings</span><span class="chip${f.m ? ' on' : ''}" data-ef="m">${ic('info')}Messages</span></div>
-      <div class="log">${lines.map(x => { const m = /Rung (\d+)/.exec(x.t), rt = /^Verifying routine '([^']+)' of program '([^']+)'/.exec(x.t); return `<div class="ln ${x.k}"${m ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(x.t, v))}"` : ''}>${esc(x.t)}</div>`; void rt; }).join('')}</div>`;
+      <div class="log">${lines.map(x => { const m = /Rung (\d+)/.exec(x.t), rt = /^Verifying routine '([^']+)' of program '([^']+)'/.exec(x.t); return `<div class="ln ${x.k}"${m ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(x.t, v))}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`; void rt; }).join('')}</div>`;
   }
   function lineRoutine(t, v) { const e = v.errors.concat(v.warnings).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
@@ -1300,6 +1303,7 @@
       readOps();
       const m = U(el.querySelector('#mn').value.trim());
       if (!INSTR[m]) { el.querySelector('#ee').textContent = `"${m}" is not an instruction.`; return false; }
+      if (TC.includes(m)) { if (!ops[2] || ops[2] === '?') ops[2] = '0'; }
       const d = INSTR[m], a = d.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(v => v !== null);
       rememberTags(a.filter((v, i) => v && v !== '?' && !E.parseNumber(v) && !['imm', 'routine', 'label', 'order', 'expr'].includes((d.args[i] || '').replace('?', ''))));
       edit(() => {
@@ -2981,6 +2985,14 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     S.sel = null; S.selRung = ri;
     if (S.layout === 'phone') S.area = 'ladder';
     reverify(); render(); scrollToSel();
+    const m = /Rung \d+, (\w+)(?:, Operand (\d+))?/.exec(el.textContent || ''), els = parsed(ri);
+    if (m && els && editable()) {
+      const want = U(m[1]), op = m[2] != null ? +m[2] : 0, hits = [];
+      const walk = (arr, p) => arr.forEach((e, k) => { const q = p.concat(k); if (e.t === 'BR') e.legs.forEach((l, li) => walk(l, q.concat(li))); else if (e.t === want) hits.push({ e, q }); });
+      walk(els, []);
+      const h = hits.find(x => x.e.a[op] === '?' || x.e.a[op] === '') || hits[0];
+      if (h) { S.sel = { ri, path: h.q, op }; S.selRung = null; render(); if (S.layout !== 'desktop') closeLayer(); setTimeout(() => openEditor(ri, h.q, op), 60); }
+    }
   }
   function moveSel(dx, dy) {
     const R = rungs();
