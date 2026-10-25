@@ -461,15 +461,12 @@ function check(name, cond, info = '') {
   check('Add New makes VBP-1, Virtual Backplane, running', (await page.$eval('#layer .drvcol:nth-child(2)', c => c.textContent)).includes('VBP-1, Virtual Backplane'));
   await page.click('#layer [data-wz="next"]');
   await page.waitForTimeout(60);
-  await page.click('#layer [data-wz="addsim"]');
-  await page.waitForTimeout(80);
-  check('Emulator step: Create I/O Simulator puts a SIM-16 card in the chassis', await ev(() => [...MTPS.App.racks[0].mods.values()].some(m => m.type === 'PLC-SIM16')));
   await page.click('#layer [data-wz="next"]');
   await page.waitForTimeout(60);
   await page.fill('#wz-n', 'Wizard_Line');
   await page.click('#layer [data-wz="next"]');
   await page.waitForTimeout(150);
-  check('New Project made from the emulator chassis: the cards copied, the SIM card as a Generic Module (Data - DINT, 1/2, 2/1, 3/0)', await ev(() => { const p = MTPS.App.state.p, g = p.rack.modules.find(m => m.type === 'PLC-GENERIC'); return p.controller.name === 'Wizard_Line' && p.rack.modules.length === 3 && g && g.format === 'Data - DINT' && g.inInst === 1 && g.inSize === 2 && g.outInst === 2 && g.outSize === 1; }));
+  check('New Project made from the emulator chassis (I/O cards copied, controller slot set)', await ev(() => { const p = MTPS.App.state.p; return p.controller.name === 'Wizard_Line' && p.rack.modules.length === 2 && p.controller.slot === 0; }));
   await page.click('#layer [data-wzp]');
   await page.waitForTimeout(60);
   await page.click('#layer [data-wz="next"]');
@@ -751,43 +748,27 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(150);
   check('OK with an empty Accum puts 0: no errors', (await rungTexts())[0] === 'XIC(Local:1:I.Data.0)TON(Lamp_delay1,5000,0);' && await ev(() => MTPS.App.state.verify.errors.length === 0));
 
-  console.log('The reference flow: virtual backplane, emulated controller in slot 2, SIM card, generic module, seal-in');
+  console.log('The reference flow: virtual backplane, controller in slot 2, I/O cards in slots 3 and 4, seal-in');
   await page.setViewportSize({ width: 800, height: 1280 });
   await page.waitForFunction(() => MTPS.App.state.layout === 'tablet', null, { timeout: 3000 }).catch(() => {});
-  await ev(() => { if (MTPS.App.state.online) MTPS.App.run('offline'); const r = MTPS.App.racks[0]; [2, 3].forEach(n => r.remove(n)); MTPS.App.render(); });
-  // the emulator: a controller in slot 2 and a SIM card in slot 3 (Add Module of the emulator)
-  await ev(() => MTPS.App.run('chassis')); await page.waitForTimeout(150);
-  await page.evaluate(() => { const b = [...document.querySelectorAll('#layer .btn, #layer [data-emu]')].find(x => /Add/.test(x.textContent)); b && b.click(); });
-  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
-  await ev(() => { const r = MTPS.App.racks[0]; r.insert(2, 'PLC-CPU', 'Emulate_2'); r.insert(3, 'PLC-SIM16', 'SIM_3'); r.advance(0); MTPS.App.render(); });
-  check('the emulator offers the SIM-16 card in Add Module', await ev(() => MTPS.Chassis.types().includes('PLC-SIM16') && !MTPS.Chassis.types().includes('PLC-GENERIC')));
-  // RSLinx: the Virtual Backplane driver
+  await ev(() => { if (MTPS.App.state.online) MTPS.App.run('offline'); const r = MTPS.App.racks[0]; [2, 3, 4].forEach(n => r.remove(n)); r.insert(2, 'PLC-CPU', 'Emulate_2'); r.insert(3, 'PLC-DI16-24V', 'DI_3'); r.insert(4, 'PLC-DO16-24V', 'DO_4'); r.advance(0); MTPS.App.render(); });
+  check('the emulator has no simulator card any more (only the I/O cards)', await ev(() => !MTPS.Chassis.types().some(t => /SIM|GENERIC/.test(t))));
   await ev(() => MTPS.App.run('drivers')); await page.waitForTimeout(150);
   if (await page.$('#layer [data-drvt="vbp"]')) { await page.click('#layer [data-drvt="vbp"]'); const add = await page.$('#layer [data-drvadd]:not([disabled])'); if (add) await add.click(); await page.waitForTimeout(60); }
   check('Configure Drivers: VBP-1, Virtual Backplane is running', (await page.$eval('#layer', l => l.textContent)).includes('VBP-1, Virtual Backplane'));
   await page.keyboard.press('Escape');
-  // the project: its controller in slot 2, a generic module in slot 3
   await ev(() => { const p = MTPS.App.blank('Motor_SealIn'); p.controller.slot = 2; p.rack.modules = []; MTPS.App.openProject(p); });
   await page.waitForTimeout(150);
-  await ev(() => MTPS.App.run('newmod')).catch(() => {});
-  if (!(await page.$('#layer #mt'))) { await page.click('[data-drawer="1"]').catch(() => {}); await page.waitForTimeout(100); await page.click('.nd[data-org="bp"]'); }
-  await page.waitForTimeout(150);
-  check('New Module offers the Generic Module with comm format and instances (SIM defaults)', (await page.$eval('#layer #mt', s => s.value)) === 'PLC-GENERIC' && (await page.$eval('#g-f', s => s.value)) === 'Data - DINT' && (await page.$eval('#g-is', i => i.value)) === '2' && (await page.$eval('#g-os', i => i.value)) === '1');
-  check('its slots leave out the controller\'s slot 2', !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'));
-  await page.fill('#mn2', 'IO1'); await page.selectOption('#ms', '3');
-  await page.click('#layer .df .btn.pri'); await page.waitForTimeout(120);
-  check('the generic module IO1 is in slot 3', await ev(() => { const m = MTPS.App.state.p.rack.modules[0]; return m && m.type === 'PLC-GENERIC' && m.slot === 3 && m.name === 'IO1'; }));
-  // tags: aliases to the SIM points, from the New Tag box
-  const alias = async (n, a) => { await ev(n => MTPS.App.run('newtag'), n); await page.waitForTimeout(120); await page.fill('#tn', n); await page.selectOption('#tk', 'alias'); await page.fill('#ta', a); await page.waitForTimeout(60); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
-  await alias('STOP_PB', 'Local:3:I.Data[1].0'); await alias('START_PB', 'Local:3:I.Data[1].1'); await alias('MOTOR', 'Local:3:O.Data[0].0');
-  check('alias tags to Local:3:I.Data[1].0 / .1 and Local:3:O.Data[0].0', await ev(() => ['STOP_PB', 'START_PB', 'MOTOR'].every(n => (MTPS.App.state.p.tags.concat(MTPS.App.state.p.tasks[0].programs[0].tags)).some(t => t.name === n && t.alias))));
+  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.selectOption('#layer #mt', type); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
+  await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150);
+  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer #mt option', o => o.map(x => x.value))).some(v => /GENERIC|SIM/.test(v)) && !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'));
+  await page.keyboard.press('Escape');
+  await newMod('PLC-DI16-24V', 3, 'DI_3'); await newMod('PLC-DO16-24V', 4, 'DO_4');
+  check('the I/O configuration: DI16 in slot 3, DO16 in slot 4', await ev(() => MTPS.App.state.p.rack.modules.map(m => m.slot + m.type).join(',') === '3PLC-DI16-24V,4PLC-DO16-24V'));
+  const alias = async (n, a) => { await ev(() => MTPS.App.run('newtag')); await page.waitForTimeout(120); await page.fill('#tn', n); await page.selectOption('#tk', 'alias'); await page.fill('#ta', a); await page.waitForTimeout(60); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
+  await alias('STOP_PB', 'Local:3:I.Data.0'); await alias('START_PB', 'Local:3:I.Data.1'); await alias('MOTOR', 'Local:4:O.Data.0');
   await ev(() => { const p = MTPS.App.state.p; p.tasks[0].programs[0].routines[0].rungs = [{ t: 'XIO(STOP_PB)[XIC(START_PB),XIC(MOTOR)]OTE(MOTOR);' }]; MTPS.App.openProject(p, true); MTPS.App.run('verifyc'); });
   check('Verify: 0 errors', await ev(() => MTPS.App.state.verify.errors.length === 0), JSON.stringify(await ev(() => MTPS.App.state.verify.errors)));
-  await ev(() => MTPS.App.openEditor(0, [0], 0)); await page.waitForTimeout(150);
-  await page.fill('#layer [data-op="0"]', 'Local:3:I'); await page.waitForTimeout(100);
-  check('the operand box lists the SIM points under Inputs (Local:3:I.Data[1].0 …)', (await page.$$eval('#layer #sg [data-pick]', r => r.map(x => x.dataset.pick))).includes('Local:3:I.Data[1].0'));
-  await page.keyboard.press('Escape'); await page.waitForTimeout(80);
-  // Who Active: VBP-1 → Virtual Chassis → slot 2
   await ev(() => MTPS.App.run('who')); await page.waitForTimeout(150);
   check('Who Active: VBP-1, Virtual Backplane → Virtual Chassis → 02, PLC-CPU', (await page.$eval('#wa', e => e.textContent)).includes('VBP-1, Virtual Backplane') && (await page.$$eval('#wa-rows [data-wa]', r => r.map(x => x.dataset.wa))).includes('VBP-1\\2'));
   await page.evaluate(() => [...document.querySelectorAll('#wa-rows [data-wa]')].find(x => x.dataset.wa === 'VBP-1\\2').click());
@@ -797,17 +778,16 @@ function check(name, cond, info = '') {
   check('downloaded to VBP-1\\2 (the controller in slot 2)', await ev(() => MTPS.App.state.online && MTPS.App.ctl === MTPS.App.racks[0].controller(2) && MTPS.App.ctl.name === 'Motor_SealIn'));
   await ev(() => MTPS.App.run('runm')); await page.waitForTimeout(100);
   { const b = await page.$('#layer .dlg .btn.pri'); if (b) { await b.click(); await page.waitForTimeout(150); } }
-  check('Rem Run; the generic module connects to the SIM card', await ev(() => MTPS.App.ctl.mode === 'remrun' && MTPS.App.ctl.moduleStatus(3).state === 'Running'));
-  // the SIM card's I/O Data: toggle input 1 (START), the motor output lights; input 0 (STOP) stops it
-  await page.click('#iob .ccard.sim[data-cmod="0:3"] .mf').catch(async () => { await ev(() => document.querySelector('[data-cio="0:3"]').click()); });
+  check('Rem Run; both modules Running', await ev(() => MTPS.App.ctl.mode === 'remrun' && MTPS.App.ctl.moduleStatus(3).state === 'Running' && MTPS.App.ctl.moduleStatus(4).state === 'Running'));
+  await page.click('#iob .ccard.io[data-cmod="0:3"] .mf').catch(async () => { await ev(() => document.querySelector('[data-cio="0:3"]').click()); });
   await page.waitForTimeout(120);
-  check('a tap on the SIM card opens its I/O window: 16 inputs to toggle and 16 outputs', (await page.$$eval('.iowin .iom.cur [data-iobit]', b => b.length)) === 16 && (await page.$$eval('.iowin .iom.cur .iob.out', b => b.length)) === 16);
+  const rd = n => ev(n => MTPS.App.ctl.read(n, 'MainProgram'), n);
   await page.click('.iowin [data-iobit="0:3:1"]'); await page.waitForTimeout(150);
-  check('input 1 on: START_PB = 1, MOTOR = 1, output 0 lights', await ev(() => MTPS.App.ctl.read('START_PB', 'MainProgram') === 1 && MTPS.App.ctl.read('MOTOR', 'MainProgram') === 1) && (await page.$eval('.iowin .iom.cur .iob.out', b => b.classList.contains('on'))));
+  check('input 1 (START) on: MOTOR on, output 0 of DO_4 lights', (await rd('START_PB')) === 1 && (await rd('MOTOR')) === 1 && (await ev(() => MTPS.App.racks[0].outputs(4) & 1)) === 1);
   await page.click('.iowin [data-iobit="0:3:1"]'); await page.waitForTimeout(150);
-  check('input 1 off: the motor stays on (seal-in)', await ev(() => MTPS.App.ctl.read('MOTOR', 'MainProgram') === 1));
+  check('input 1 off: the motor stays on (seal-in)', (await rd('MOTOR')) === 1);
   await page.click('.iowin [data-iobit="0:3:0"]'); await page.waitForTimeout(150);
-  check('input 0 (STOP) on: the motor stops', await ev(() => MTPS.App.ctl.read('MOTOR', 'MainProgram') === 0));
+  check('input 0 (STOP) on: the motor stops', (await rd('MOTOR')) === 0);
   await page.click('.iowin [data-iobit="0:3:0"]');
   await page.click('.iowin [data-iox]');
   await ev(() => { MTPS.App.state.p.controller.slot = 0; });

@@ -5,6 +5,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.4.0-beta.2): the SIM card and generic module removed; smaller modules (owner)
+- **Removed:** the SIM-16 simulator card and the Generic Module of 0.4.0-beta.1. The I/O cards stay as they were:
+  inputs `Local:<slot>:I.Data.<bit>`, outputs `Local:<slot>:O.Data.<bit>`, as for the reference's discrete modules.
+  A saved project with a generic module opens without it (a message says so); a SIM card in the emulator is dropped.
+- **Kept:** the Virtual Backplane driver (`VBP-1\<slot>`), the controller's slot and the Download slot check, the
+  wizard order, the phone fixes.
+- **Smaller modules:** narrower slots, the terminal block in four columns with small screws, shorter fronts, so the
+  ladder keeps most of the screen.
+
 ### Changed (MT PLC Studio 0.4.0-beta.1): set up and run as with the reference emulator
 The steps are now those of the reference software (owner's walkthrough of Studio 5000, RSLinx Classic and Logix
 Emulate): communications driver, emulated controller and I/O simulator, new project with its controller slot, generic

@@ -244,36 +244,5 @@ console.log('Program control');
   check('an output branch drives both coils', c.read('O1') === 1 && c.read('O2') === 1);
 }
 
-console.log('Generic module and SIM card (as the reference emulator is set up)');
-{
-  const P = o => ({ format: 'mt-plc-studio', version: 1, controller: { name: 'Motor_SealIn', type: 'PLC-CPU', rev: '1.0', slot: 2 },
-    rack: { size: 10, modules: [Object.assign({ slot: 3, type: 'PLC-GENERIC', name: 'IO1', format: 'Data - DINT', inInst: 1, inSize: 2, outInst: 2, outSize: 1, cfgInst: 3, cfgSize: 0 }, o)] },
-    dataTypes: [], tags: [T('STOP_PB', '', { alias: 'Local:3:I.Data[1].0' }), T('START_PB', '', { alias: 'Local:3:I.Data[1].1' }), T('MOTOR', '', { alias: 'Local:3:O.Data[0].0' })],
-    tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [{ t: 'XIO(STOP_PB)[XIC(START_PB),XIC(MOTOR)]OTE(MOTOR);' }] }] }] }] });
-  const ch = new MTPS.Chassis(10, 'Virtual');
-  ch.insert(2, 'PLC-CPU', 'Emulator'); ch.insert(3, 'PLC-SIM16', 'SIM');
-  const c = ch.controller(2);
-  const r = c.download(P({}));
-  check('a project with its controller in slot 2 and a generic module in slot 3 downloads', r.ok, r.lines.join(' | '));
-  c.setMode('remrun'); ch.advance(20);
-  check('the generic module connects to the SIM card (Running)', c.moduleStatus(3).state === 'Running', JSON.stringify(c.moduleStatus(3)));
-  eq('its tags: Local:3:I.Data is DINT[2], Local:3:O.Data is DINT[1]', [c.read('Local:3:I.Data').length, c.read('Local:3:O.Data').length], [2, 1]);
-  ch.setBit(3, 1, true); ch.advance(20);
-  check('input 1 of the SIM card is Local:3:I.Data[1].1 (START_PB): the motor starts', c.read('START_PB') === 1 && c.read('MOTOR') === 1);
-  check('output 0 of the SIM card lights (Local:3:O.Data[0].0)', (ch.outputs(3) & 1) === 1);
-  ch.setBit(3, 1, false); ch.advance(20);
-  check('seal-in: the motor keeps running when START is released', c.read('MOTOR') === 1);
-  ch.setBit(3, 0, true); ch.advance(20);
-  check('STOP (input 0) stops it; the output goes off', c.read('MOTOR') === 0 && (ch.outputs(3) & 1) === 0);
-  const c2 = new MTPS.Chassis(10, 'V2'); c2.insert(2, 'PLC-CPU', 'E'); c2.insert(3, 'PLC-SIM16', 'S');
-  const k = c2.controller(2); k.download(P({ inSize: 4 })); k.setMode('remrun'); c2.advance(20);
-  check('a wrong input size: module fault 16#0109 (invalid connection size)', k.moduleStatus(3).code === '16#0109');
-  const c3 = new MTPS.Chassis(10, 'V3'); c3.insert(2, 'PLC-CPU', 'E'); c3.insert(3, 'PLC-DI16-24V', 'D');
-  const k3 = c3.controller(2); k3.download(P({})); k3.setMode('remrun'); c3.advance(20);
-  check('another card in that slot: 16#0116; an empty slot: 16#0204', k3.moduleStatus(3).code === '16#0116');
-  const bad = MTPS.verify(Object.assign(P({ slot: 2 })));
-  check('a module in the controller\'s slot is an error', bad.errors.length > 0 || bad.lines.some(l => /holds the controller/.test(l)));
-}
-
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
