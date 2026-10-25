@@ -9,22 +9,7 @@
   'use strict';
   const MTPS = root.MTPS;
   const INSTR = MTPS.INSTR;
-  const OPN = {
-    XIC: ['Bit'], XIO: ['Bit'], OTE: ['Bit'], OTL: ['Bit'], OTU: ['Bit'], ONS: ['Storage Bit'], OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
-    RES: ['Structure'], JMP: ['Label Name'], LBL: ['Label Name'], JSR: ['Routine Name', 'Input Par'],
-    TON: ['Timer', 'Preset', 'Accum'], TOF: ['Timer', 'Preset', 'Accum'], RTO: ['Timer', 'Preset', 'Accum'],
-    CTU: ['Counter', 'Preset', 'Accum'], CTD: ['Counter', 'Preset', 'Accum'],
-    EQU: ['Source A', 'Source B'], NEQ: ['Source A', 'Source B'], LES: ['Source A', 'Source B'], LEQ: ['Source A', 'Source B'],
-    GRT: ['Source A', 'Source B'], GEQ: ['Source A', 'Source B'], LIM: ['Low Limit', 'Test', 'High Limit'],
-    MEQ: ['Source', 'Mask', 'Compare'], CMP: ['Expression'],
-    ADD: ['Source A', 'Source B', 'Dest'], SUB: ['Source A', 'Source B', 'Dest'], MUL: ['Source A', 'Source B', 'Dest'],
-    DIV: ['Source A', 'Source B', 'Dest'], MOD: ['Source A', 'Source B', 'Dest'], SQR: ['Source', 'Dest'], NEG: ['Source', 'Dest'],
-    ABS: ['Source', 'Dest'], CPT: ['Dest', 'Expression'], MOV: ['Source', 'Dest'], MVM: ['Source', 'Mask', 'Dest'], CLR: ['Dest'],
-    AND: ['Source A', 'Source B', 'Dest'], OR: ['Source A', 'Source B', 'Dest'], XOR: ['Source A', 'Source B', 'Dest'], NOT: ['Source', 'Dest'],
-    BTD: ['Source', 'Source Bit', 'Dest', 'Dest Bit', 'Length'], SWPB: ['Source', 'Order Mode', 'Dest'],
-    COP: ['Source', 'Dest', 'Length'], FLL: ['Source', 'Dest', 'Length'], JSR: ['Routine Name', 'Input Par'],
-    OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
-  };
+  const OPN = MTPS.OPN;
   const isBox = e => !!(INSTR[e.t] && INSTR[e.t].k === 'box');
   const isOut = e => (e.t === 'BR' ? e.legs.length > 0 && e.legs.every(l => l.length && isOut(l[l.length - 1])) : !!(INSTR[e.t] && INSTR[e.t].out));
   // a box takes two cells, or more when its operands need the room (as the reference editor widens a box); set per render

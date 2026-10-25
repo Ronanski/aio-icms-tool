@@ -788,3 +788,4 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .asg { margin-left: 128px; }
 .phone .asg { margin-left: 0; }
 #sgh { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.errop { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font: 600 11px var(--font, inherit); }
