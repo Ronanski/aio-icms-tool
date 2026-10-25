@@ -28,7 +28,18 @@
     'PLC-DO16-24V': DO, 'PLC-DO16-RLY': DO,
     'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O' },
     'PLC-ENET': { kind: 'enet' },
+    // the emulator's I/O simulator card: inputs switched in its I/O Data, outputs shown; configured as a generic module
+    'PLC-SIM16': { kind: 'sim', emuOnly: true },
+    // the generic module of the I/O configuration: Local:<slot>:I.Data[] and Local:<slot>:O.Data[] of its comm format
+    'PLC-GENERIC': { kind: 'gen' },
   };
+  /* the generic module: comm format (the type of Data[]) and connection instances / sizes; the SIM card answers to
+     Data - DINT with Input 1 (2 words: Data[0] status, Data[1] the 16 inputs), Output 2 (1 word), Configuration 3 (0) */
+  const GENFMT = { 'Data - DINT': 'DINT', 'Data - INT': 'INT', 'Data - SINT': 'SINT' };
+  const GENSIM = { format: 'Data - DINT', inInst: 1, inSize: 2, outInst: 2, outSize: 1, cfgInst: 3, cfgSize: 0 };
+  const genOf = m => ({ format: GENFMT[m.format] ? m.format : GENSIM.format, inInst: m.inInst != null ? +m.inInst : GENSIM.inInst, inSize: m.inSize != null ? +m.inSize : GENSIM.inSize,
+    outInst: m.outInst != null ? +m.outInst : GENSIM.outInst, outSize: m.outSize != null ? +m.outSize : GENSIM.outSize, cfgInst: m.cfgInst != null ? +m.cfgInst : GENSIM.cfgInst, cfgSize: m.cfgSize != null ? +m.cfgSize : GENSIM.cfgSize });
+  const genType = (fmt, dir, n) => `GEN:${GENFMT[fmt]}:${dir}${n}`;
   const RACKS = [4, 7, 10, 12];   // chassis sizes: 4 to 12 slots
   const SFLAGS = ['FS', 'N', 'Z', 'V', 'C', 'MINOR'];
   const validName = n => /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(String(n == null ? '' : n));
@@ -42,6 +53,14 @@
     const add = (name, mem, kind) => t.set(U(name), { name, kind, members: mem.map(m => ({ ...m })), map: new Map() });
     for (const n in PREDEF) add(n, PREDEF[n], 'predefined');
     for (const n in MODTYPES) add(n, MODTYPES[n], 'module');
+    for (const m of (project && project.rack && project.rack.modules) || []) {
+      if (m.type !== 'PLC-GENERIC') continue;
+      const g = genOf(m);
+      for (const [dir, n] of [['I', g.inSize], ['O', g.outSize]]) {
+        const tn = genType(g.format, dir, n);
+        if (n > 0 && n <= 250 && !t.has(U(tn))) add(tn, [{ name: 'Data', type: GENFMT[g.format], dim: n }], 'module');
+      }
+    }
     for (const d of (project && project.dataTypes) || []) {
       if (!validName(d.name)) { e(`Invalid data type name '${d.name}'`); continue; }
       if (t.has(U(d.name)) || ATOMIC[U(d.name)]) { e(`Data type '${d.name}' is defined more than once`); continue; }
@@ -575,13 +594,23 @@
     const rack = pj.rack || {};
     const size = RACKS.includes(rack.size) ? rack.size : 10;
     if (rack.size != null && !RACKS.includes(rack.size)) ctlErr(`Rack size ${rack.size} does not exist (4, 7, 10 or 12 slots)`);
+    const cslot = Number.isInteger(ctl.slot) ? ctl.slot : 0;
+    if (!(cslot >= 0 && cslot < size)) ctlErr(`The controller's slot ${cslot} is not in the ${size}-slot rack`);
+    M.slot = cslot;
     for (const m of rack.modules || []) {
-      const d = MODULES[m.type];
-      if (!d) { ctlErr(`Module in slot ${m.slot}: unknown module type '${m.type}'`); continue; }
-      if (!(Number.isInteger(m.slot) && m.slot >= 1 && m.slot < size)) { ctlErr(`Module '${m.name}': slot ${m.slot} is not in the ${size}-slot rack (slots 1 to ${size - 1})`); continue; }
+      let d = MODULES[m.type];
+      if (!d || d.emuOnly) { ctlErr(`Module in slot ${m.slot}: unknown module type '${m.type}'${d ? ' (configure the SIM card as a generic module)' : ''}`); continue; }
+      if (!(Number.isInteger(m.slot) && m.slot >= 0 && m.slot < size)) { ctlErr(`Module '${m.name}': slot ${m.slot} is not in the ${size}-slot rack (slots 0 to ${size - 1})`); continue; }
+      if (m.slot === cslot) { ctlErr(`Module '${m.name}': slot ${m.slot} holds the controller`); continue; }
+      if (m.type === 'PLC-GENERIC') {
+        const g = genOf(m);
+        if (!(g.inSize >= 0 && g.inSize <= 250 && g.outSize >= 0 && g.outSize <= 250)) { ctlErr(`Module '${m.name}': input and output sizes are 0 to 250`); continue; }
+        d = { kind: 'gen', I: g.inSize > 0 ? genType(g.format, 'I', g.inSize) : null, O: g.outSize > 0 ? genType(g.format, 'O', g.outSize) : null };
+      }
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
       const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
+      if (m.type === 'PLC-GENERIC') mod.gen = genOf(m);
       for (const dir of ['I', 'O']) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
@@ -868,13 +897,14 @@
         if (m.inhibit) continue;
         if (this.pulled.has(m.slot)) {
           // no connection: Fault is set, the input data holds and can be overwritten (as on an emulated controller)
-          V[m.I].Fault = -1;
+          if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = -1;
           if (m.majorOnFail && this.running) this.majorFault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
           continue;
         }
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
+        else if (m.kind === 'gen' && m.I) { const D = V[m.I].Data, t = GENFMT[m.gen.format]; D[0] = 0; if (D.length > 1) D[1] = store(t, (ph | 0) & 0xFFFF); }
       }
     }
     /* a routine: rungs in order; JMP goes to its LBL rung, RET and TND end the routine. The MCR override (every rung
@@ -1138,6 +1168,7 @@
         case 'do': return { in: null, out: on ? this.applyForce(slot, 'O', V[m.O].Data & 0xFFFF) & 0xFFFF : 0 };
         case 'ai': return { in: ch(V[m.I]), out: null };
         case 'ao': return { in: null, out: on ? ch(V[m.O]) : [0, 0, 0, 0] };
+        case 'gen': return { in: m.I && V[m.I].Data.length > 1 ? V[m.I].Data[1] & 0xFFFF : 0, out: on && m.O ? V[m.O].Data[0] & 0xFFFF : 0 };
       }
       return { in: null, out: null };
     }
@@ -1157,9 +1188,12 @@
       const m = this.M && this.M.mods.get(slot);
       if (!m) return { state: 'Not in the controller', code: null, text: 'The project in the controller has no module in this slot. Download first.' };
       if (m.inhibit) return { state: 'Inhibited', code: null, text: 'The module is inhibited: no connection, its inputs hold and its outputs are off.' };
-      if (this.pulled.has(slot)) return this.codes.get(slot) === '16#0116'
-        ? { state: 'Faulted', code: '16#0116', text: 'Electronic keying mismatch: the card in this slot is not the module of the I/O configuration.' }
-        : { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+      if (this.pulled.has(slot)) {
+        const code = this.codes.get(slot);
+        if (code === '16#0116') return { state: 'Faulted', code, text: 'Electronic keying mismatch: the card in this slot is not the module of the I/O configuration.' };
+        if (code === '16#0109') return { state: 'Faulted', code, text: 'Connection request error: invalid connection size. The comm format, instances or sizes of the generic module do not match the module in the slot.' };
+        return { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+      }
       return { state: 'Running', code: null, text: '' };
     }
     /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted */
@@ -1216,14 +1250,14 @@
     constructor(size = 10, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
-    static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
+    static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet' && MODULES[t].kind !== 'gen')); }
     insert(slot, type, name) {
       slot = Math.floor(slot);
       if (!(slot >= 0 && slot < this.size)) return { ok: false, msg: `Slot ${slot} is not in a ${this.size}-slot chassis.` };
       if (this.mods.has(slot)) return { ok: false, msg: `Slot ${slot} already holds a module.` };
       if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
-      const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
+      const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' || kind === 'sim' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
       if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; }
       this.mods.set(slot, m);
       this.emit('insert');
@@ -1242,7 +1276,7 @@
     module(slot) { return this.mods.get(slot) || null; }
     controller(slot) { const m = this.mods.get(slot); return m && m.ctl ? m.ctl : null; }
     controllers() { return [...this.mods.values()].filter(m => m.ctl).sort((a, b) => a.slot - b.slot); }
-    setBit(slot, bit, on) { const m = this.mods.get(slot); if (!m || m.kind !== 'di') return false; m.field = on ? m.field | (1 << bit) : m.field & ~(1 << bit); this.emit('field'); return true; }
+    setBit(slot, bit, on) { const m = this.mods.get(slot); if (!m || (m.kind !== 'di' && m.kind !== 'sim')) return false; m.field = on ? m.field | (1 << bit) : m.field & ~(1 << bit); this.emit('field'); return true; }
     setChannel(slot, ch, v) { const m = this.mods.get(slot); if (!m || m.kind !== 'ai') return false; m.field[ch] = Number(v) || 0; this.emit('field'); return true; }
     /* controller settings of the emulator: IP address (empty: none), description, power */
     setController(slot, o) {
@@ -1256,12 +1290,21 @@
     }
     setFault(slot, on) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu') return false; m.fault = !!on; this.emit('fault'); return true; }
     /* the code a controller gets for a slot of its I/O configuration */
-    codeFor(slot, type) { const m = this.mods.get(slot); return !m || m.fault ? '16#0204' : m.type !== type ? '16#0116' : null; }
+    codeFor(slot, type, gen) {
+      const m = this.mods.get(slot);
+      if (!m || m.fault) return '16#0204';
+      if (type === 'PLC-GENERIC') {
+        if (m.kind !== 'sim') return '16#0116';
+        const g = gen || {};
+        return g.format === GENSIM.format && g.inInst === GENSIM.inInst && g.inSize === GENSIM.inSize && g.outInst === GENSIM.outInst && g.outSize === GENSIM.outSize && g.cfgInst === GENSIM.cfgInst ? null : '16#0109';
+      }
+      return m.type !== type ? '16#0116' : null;
+    }
     exchange(c) {
       for (const m of c.M.mods.values()) {
-        const code = this.codeFor(m.slot, m.type);
+        const code = this.codeFor(m.slot, m.type, m.gen);
         c.linkFault(m.slot, code);
-        if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
+        if (!code && (m.kind === 'di' || m.kind === 'ai' || m.kind === 'gen')) c.setInputs(m.slot, this.mods.get(m.slot).field);
       }
     }
     /* time goes by: inputs into every controller, then its scans */
@@ -1271,15 +1314,15 @@
     owner(slot) {
       const m = this.mods.get(slot);
       if (!m) return null;
-      const o = this.controllers().find(x => x.ctl.powered && x.ctl.M && x.ctl.M.mods.has(slot) && x.ctl.M.mods.get(slot).type === m.type);
+      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm.type, pm.gen); });
       return o ? o.ctl : null;
     }
     /* what an output card drives: bits of a discrete card, channel values of an analog card (off without an owner) */
     outputs(slot) {
       const m = this.mods.get(slot);
-      if (!m || (m.kind !== 'do' && m.kind !== 'ao')) return null;
+      if (!m || (m.kind !== 'do' && m.kind !== 'ao' && m.kind !== 'sim')) return null;
       const o = this.owner(slot), img = o && !m.fault ? o.ioImage(slot) : null;
-      return img && img.out != null ? img.out : m.kind === 'do' ? 0 : [0, 0, 0, 0];
+      return img && img.out != null ? img.out : m.kind === 'ao' ? [0, 0, 0, 0] : 0;
     }
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
@@ -1295,7 +1338,7 @@
         if (!r.ok) return;
         const m = r.module;
         if (x.fault && m.kind !== 'cpu') m.fault = true;
-        if (m.kind === 'di') m.field = Number(x.field) | 0;
+        if (m.kind === 'di' || m.kind === 'sim') m.field = Number(x.field) | 0;
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || '';
@@ -1313,7 +1356,7 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN, GENSIM, GENFMT });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

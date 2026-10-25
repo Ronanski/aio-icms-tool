@@ -33,6 +33,8 @@
 - [x] 0.3.0-beta.4 (2026-10-25): fixes from a full motor seal-in run on the Windows app (Ctrl+W, wizard, New Tag alias list, I/O window position, Download prompt)
 - [x] 0.3.0-beta.5 (2026-10-25): instruction audit on desktop / tablet / phone; tag browser with members, bits and elements; expression helper; JSR / label lists; Android keyboards; wider boxes; engine reference tests (COP bytes, timer faults, BTD)
 - [x] 0.3.0-beta.6 (2026-10-25): timer / counter Accum 0 by default; operand names on error lines; tap an error to open its operand
+- [x] 0.4.0-beta.1 (2026-10-25): the reference flow — SIM-16 card, Generic Module (Data[ ] tags, instances / sizes, 16#0109), Virtual Backplane driver (VBP-1\slot), controller slot with Download check, wizard in that order, phone fit
+- [ ] Walk the whole flow in the owner's VM (Studio 5000, RSLinx Classic, Logix Emulate) and list what still differs
 - [ ] Emulator extras: its own Download pane, virtual time
 - [ ] Network link: program an emulator that runs on another device (tablet) from the laptop
 - [ ] Next: online edit test / assemble steps and the r / i rung markers, data type editor, routine-level JSR parameters, GSV, Android export through the share sheet, desktop mockup to the checked look

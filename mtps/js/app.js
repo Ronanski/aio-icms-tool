@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.3.0-beta.6';
+  const VERSION = '0.4.0-beta.1';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -46,6 +46,8 @@
   function parsePath(p) {
     let m = /^Emulate\\([\d.]+)\\Backplane\\(\d+)$/i.exec(p || '');
     if (m) return { ip: m[1], slot: +m[2] };
+    m = /^([A-Za-z][\w-]*)\\(\d+)$/.exec(p || '');   // the virtual backplane driver: <driver>\<slot>
+    if (m && !/^Emulate$/i.test(m[1])) return { vbp: m[1], ip: null, slot: +m[2] };
     m = /Backplane\\(\d+)$/i.exec(p || '');   // an older path: the first chassis
     return m ? { ip: null, slot: +m[1] } : null;
   }
@@ -55,6 +57,7 @@
   const gatewayIp = r => { const m = r.controllers().find(x => x.ip && x.ctl.powered); return m ? m.ip : null; };
   function resolve(p) {
     const x = parsePath(p); if (!x) return null;
+    if (x.vbp) { const r = racks[0], m = r && r.module(x.slot); return { vbp: x.vbp, ip: null, slot: x.slot, rack: r || null, m: m || null, ctl: m && m.ctl && m.ctl.powered ? m.ctl : null }; }
     const r = rackAt(x.ip); if (!r) return { ip: x.ip, slot: x.slot, rack: null, m: null, ctl: null };
     const m = r.module(x.slot);
     return { ip: x.ip, slot: x.slot, rack: r, m, ctl: m && m.ctl && m.ctl.powered ? m.ctl : null };
@@ -117,9 +120,12 @@
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
-  const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
+  const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet', 'PLC-SIM16': 'I/O simulator, 16 inputs and 16 outputs', 'PLC-GENERIC': 'Generic Module' };
 
   /* ---------- projects ---------- */
+  const ctlSlot = () => (S.p && Number.isInteger(S.p.controller.slot) ? S.p.controller.slot : 0);
+  /* a generic module set up for the emulator's SIM card (Data - DINT, Input 1 / 2, Output 2 / 1, Configuration 3 / 0) */
+  const genFor = (slot, name) => Object.assign({ slot, type: 'PLC-GENERIC', name }, E.GENSIM);
   function blank(name) {
     return {
       format: 'mt-plc-studio', version: 1, controller: { name, type: 'PLC-CPU', rev: '1.0' },
@@ -592,6 +598,8 @@
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
+    newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
+    ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
     drivers: { l: 'Configure Drivers…', i: 'online', run: configureDrivers },
     setup: { l: 'Setup Wizard…', i: 'gear', run: () => setupWizard(0) },
     chassis: { l: 'Emulator', i: 'rack', run: () => chassisMonitor() },
@@ -619,10 +627,10 @@
   };
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', 'import', 'export', '-', 'exit']],
-    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc']],
+    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
-    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag']],
+    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'tips', 'about']],
@@ -814,7 +822,7 @@
       add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
     });
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
-      add('mod:0', 2, `[0] PLC-CPU ${S.p.controller.name}`, 'chip');
+      add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] PLC-CPU ${S.p.controller.name}`, 'chip');
       [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
     }));
     return h;
@@ -1148,6 +1156,7 @@
   };
   function aliasType(alias) {
     if (/\.\d+$/.test(alias)) return 'BOOL';
+    if (/^Local:\d+:[IO]\.Data\[\d+\]$/i.test(alias)) { const m = S.p.rack.modules.find(x => x.slot === +alias.split(':')[1]); return m && m.type === 'PLC-GENERIC' ? E.GENFMT[m.format || 'Data - DINT'] || 'DINT' : 'DINT'; }
     if (/\.(DN|EN|TT|CU|CD|OV|UN|ER)$/i.test(alias)) return 'BOOL';
     if (/\.(PRE|ACC|LEN|POS|Fault)$/i.test(alias)) return 'DINT';
     if (/^Local:\d+:I\.Ch\dData$/i.test(alias)) return 'REAL';
@@ -1174,6 +1183,13 @@
     S.p.rack.modules.forEach(m => {
       const d = E.MODULES[m.type]; if (!d) return;
       const label = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`;
+      if (d.kind === 'gen') {
+        // a generic module: its Data words, and the 16 points of the SIM card (inputs in Data[1], outputs in Data[0])
+        const g = Object.assign({}, E.GENSIM, m), t = E.GENFMT[g.format] || 'DINT';
+        for (let k = 0; k < g.inSize; k++) { add(`Local:${m.slot}:I.Data[${k}]`, t, label, 'Controller', 0, 'in'); if (k >= 1 || g.inSize === 1) for (let b = 0; b < 16; b++) add(`Local:${m.slot}:I.Data[${k}].${b}`, 'BOOL', label, 'Controller', 0, 'in'); }
+        for (let k = 0; k < g.outSize; k++) { add(`Local:${m.slot}:O.Data[${k}]`, t, label, 'Controller', 0, 'out'); for (let b = 0; b < 16; b++) add(`Local:${m.slot}:O.Data[${k}].${b}`, 'BOOL', label, 'Controller', 0, 'out'); }
+        return;
+      }
       if (d.kind === 'di' || d.kind === 'do') for (let b = 0; b < 16; b++) add(`Local:${m.slot}:${d.kind === 'di' ? 'I' : 'O'}.Data.${b}`, 'BOOL', label, 'Controller', 0, d.kind === 'di' ? 'in' : 'out');
       if (d.kind === 'ai' || d.kind === 'ao') for (let c = 0; c < 4; c++) add(`Local:${m.slot}:${d.kind === 'ai' ? 'I' : 'O'}.Ch${c}Data`, 'REAL', label, 'Controller', 0, d.kind === 'ai' ? 'in' : 'out');
     });
@@ -1627,9 +1643,11 @@
   /* ---------- communications drivers (spec section 17), like the communications software's Configure Drivers ----------
      Who Active, Go Online, Download and Upload need a running driver. The emulator is reached with the Emulate
      Ethernet driver; the others are listed for what they are but not available here. */
-  const DRVTYPES = [['emulate', 'Emulate Ethernet', 'Reaches the emulated controllers of this app (127.0.0.x).', true],
-    ['ethip', 'EtherNet/IP', 'Real controllers on a network: not in this version.', false],
-    ['vbp', 'Virtual Backplane', 'The older emulator (Emulate 5000): not in this version.', false]];
+  const DRVTYPES = [['vbp', 'Virtual Backplane', 'Reaches the emulated chassis slot by slot, as the emulator\'s virtual backplane (path VBP-1\\<slot>).', true],
+    ['emulate', 'Emulate Ethernet', 'Reaches emulated controllers by IP address (127.0.0.x).', true],
+    ['ethip', 'EtherNet/IP', 'Real controllers on a network: not in this version.', false]];
+  const DRVNAME = { vbp: 'Virtual Backplane', emulate: 'Ethernet' };
+  let drvSel = 'vbp';
   const drivers = (() => {
     const d = store.get('emu.drivers', null);
     if (Array.isArray(d)) return d;
@@ -1640,27 +1658,31 @@
     return v;
   })();
   const saveDrivers = () => store.set('emu.drivers', drivers);
-  const driverUp = () => drivers.some(d => d.type === 'emulate' && d.run);
+  const driverUp = type => drivers.some(d => d.run && (type ? d.type === type : d.type === 'emulate' || d.type === 'vbp'));
+  const vbpName = () => (drivers.find(d => d.type === 'vbp') || { name: 'VBP-1' }).name;
+  const vbpPath = slot => vbpName() + '\\' + slot;
   function addDriver(type) {
-    let n = 1; while (drivers.some(d => d.name === 'EMULATE-' + n)) n++;
-    drivers.push({ name: 'EMULATE-' + n, type, run: true }); saveDrivers();
+    const base = type === 'vbp' ? 'VBP-' : 'EMULATE-';
+    let n = 1; while (drivers.some(d => d.name === base + n)) n++;
+    drivers.push({ name: base + n, type, run: true }); saveDrivers();
   }
-  function driversHTML(sel) {
+  function driversHTML() {
+    const sel = drvSel;
     return `<div class="drv"><div class="drvcol"><div class="lbl">Available driver types</div>${DRVTYPES.map(([k, n, d, ok]) => `<div class="row${sel === k ? ' on' : ''}${ok ? '' : ' dim'}" data-drvt="${k}"><div class="grow"><div class="nm">${n}</div><div class="sub">${d}</div></div></div>`).join('')}
-        <button class="btn pri" data-drvadd="1"${driverUp() ? ' disabled' : ''}>Add New…</button></div>
-      <div class="drvcol"><div class="lbl">Configured drivers</div>${drivers.map((d, i) => `<div class="row"><div class="grow"><div class="nm mono">${esc(d.name)}, Ethernet</div><div class="sub">${d.run ? '<b style="color:var(--ok)">Running</b>' : 'Stopped'}</div></div><button class="btn" data-drvrun="${i}">${d.run ? 'Stop' : 'Start'}</button><button class="btn" data-drvdel="${i}">${ic('trash')}</button></div>`).join('') || '<div class="empty">No drivers. Add the Emulate Ethernet driver.</div>'}</div></div>`;
+        <button class="btn pri" data-drvadd="1"${drivers.some(d => d.type === sel) ? ' disabled' : ''}>Add New…</button></div>
+      <div class="drvcol"><div class="lbl">Configured drivers</div>${drivers.map((d, i) => `<div class="row"><div class="grow"><div class="nm mono">${esc(d.name)}, ${DRVNAME[d.type] || d.type}</div><div class="sub">${d.run ? '<b style="color:var(--ok)">Running</b>' : 'Stopped'}</div></div><button class="btn" data-drvrun="${i}">${d.run ? 'Stop' : 'Start'}</button><button class="btn" data-drvdel="${i}">${ic('trash')}</button></div>`).join('') || '<div class="empty">No drivers. Pick Virtual Backplane, then Add New.</div>'}</div></div>`;
   }
   function driverClick(t, redraw) {
     let el;
-    if ((el = t.closest('[data-drvadd]'))) { addDriver('emulate'); redraw(); return true; }
+    if ((el = t.closest('[data-drvadd]'))) { addDriver(drvSel); relink(); redraw(); return true; }
     if ((el = t.closest('[data-drvrun]'))) { const d = drivers[+el.dataset.drvrun]; d.run = !d.run; saveDrivers(); relink(); redraw(); return true; }
     if ((el = t.closest('[data-drvdel]'))) { drivers.splice(+el.dataset.drvdel, 1); saveDrivers(); relink(); redraw(); return true; }
-    if ((el = t.closest('[data-drvt]'))) { if (!DRVTYPES.find(x => x[0] === el.dataset.drvt)[3]) toast('That driver is not available in this version.'); return true; }
+    if ((el = t.closest('[data-drvt]'))) { if (!DRVTYPES.find(x => x[0] === el.dataset.drvt)[3]) { toast('That driver is not available in this version.'); return true; } drvSel = el.dataset.drvt; redraw(); return true; }
     return false;
   }
   function configureDrivers() {
-    const el = dialog({ title: 'Configure Drivers', size: 'md', body: `<div id="drvb">${driversHTML('emulate')}</div><p class="help">Without a running driver, Who Active finds nothing and the project cannot go online.</p>`, buttons: [{ l: 'Close', pri: true }] });
-    el.addEventListener('click', ev => driverClick(ev.target, () => { el.querySelector('#drvb').innerHTML = driversHTML('emulate'); render(); }));
+    const el = dialog({ title: 'Configure Drivers', size: 'md', body: `<div id="drvb">${driversHTML()}</div><p class="help">Without a running driver, Who Active finds nothing and the project cannot go online.</p>`, buttons: [{ l: 'Close', pri: true }] });
+    el.addEventListener('click', ev => driverClick(ev.target, () => { el.querySelector('#drvb').innerHTML = driversHTML(); render(); }));
   }
 
   /* ---------- setup wizard: the real order of a first project (spec section 17) ----------
@@ -1670,19 +1692,23 @@
   function setupWizard(step0) {
     const wz = { step: step0 || 0, name: '', made: false, size: 10 };
     const ctls = () => racks.flatMap((r, ri) => r.controllers().map(m => ({ r, ri, m })));
-    const gates = () => ctls().filter(x => x.m.ip && x.m.ctl.powered);
+    // the controllers a running driver reaches: every powered one of the virtual chassis, and those with an IP address
+    const gates = () => ctls().filter(x => x.m.ctl.powered && ((driverUp('vbp') && x.ri === 0) || (driverUp('emulate') && x.m.ip)));
+    const hasSim = () => [...racks[0].mods.values()].some(m => m.kind === 'sim');
     const done0 = i => [driverUp(), gates().length > 0, wz.made, !!(S.p && resolve(curPath()) && resolve(curPath()).ctl), false][i];
     const done = i => { for (let j = 0; j <= i; j++) if (!done0(j)) return false; return true; };
     const pad = s => (s < 10 ? '0' + s : s);
     const body = () => {
       const s = wz.step, nav = (next, label) => `<div class="wznav"><button class="btn" data-wz="back"${s ? '' : ' disabled'}>Back</button><span class="grow"></span><button class="btn pri" data-wz="next"${next ? '' : ' disabled'}>${label || 'Next: ' + WZSTEPS[s + 1][0]}</button></div>`;
       let c = '';
-      if (s === 0) c = `<h3>1. Communications: Configure Drivers</h3><p class="help">As in the communications software: add a driver so the programming software can reach the emulated controller.</p>${driversHTML('emulate')}<p class="tip">This is the first step on a real job too: no driver, no Who Active, no Download.</p>${nav(done(0))}`;
+      if (s === 0) c = `<h3>1. Communications: Configure Drivers</h3><p class="help">As in the communications software: add a driver so the programming software can reach the emulated controller.</p>${driversHTML()}<p class="tip">This is the first step on a real job too: no driver, no Who Active, no Download. Virtual Backplane reaches the emulator's chassis slot by slot.</p>${nav(done(0))}`;
       else if (s === 1) {
         const r = racks[0], free = Array.from({ length: r.size }, (_, i) => i).filter(i => !r.module(i));
-        c = `<h3>2. Emulator: chassis and controller</h3><p class="help">An emulated controller sits in a slot of a chassis and has an IP address. The driver reaches it through that address.</p>
+        c = `<h3>2. Emulator: controller and I/O simulator</h3><p class="help">Create the emulated controller in a slot of the chassis, then an I/O simulator card (SIM-16: 16 inputs and 16 outputs) in another slot.</p>
           <div class="list wzl">${ctls().map(x => `<div class="row"><div class="grow"><div class="nm">[${x.m.slot}] ${esc(x.m.name)}</div><div class="sub">${esc(x.r.name)} · ${x.m.ip || 'no IP address'} · ${x.m.ctl.powered ? 'On' : 'Off'}</div></div>${x.m.ip && x.m.ctl.powered ? ic('check') : ''}</div>`).join('') || '<div class="empty">No emulated controller yet.</div>'}</div>
-          ${gates().length ? '' : `<div class="wzadd"><div class="frow"><label>Chassis</label><span>${esc(r.name)} (${r.size} slots)</span></div><div class="frow"><label>Slot</label><select class="inp" id="wz-s">${free.map(i => `<option>${i}</option>`).join('')}</select></div><div class="frow"><label>Name</label><input class="inp" id="wz-cn" value="Emulator"></div><div class="frow"><label>IP Address</label><span class="mono">127.0.0.1</span></div><button class="btn pri" data-wz="addctl">Add Controller</button></div>`}
+          ${gates().length ? '' : `<div class="wzadd"><div class="frow"><label>Chassis</label><span>${esc(r.name)} (${r.size} slots)</span></div><div class="frow"><label>Slot</label><select class="inp" id="wz-s">${free.map(i => `<option>${i}</option>`).join('')}</select></div><div class="frow"><label>Name</label><input class="inp" id="wz-cn" value="Emulator"></div><button class="btn pri" data-wz="addctl">Create Controller</button></div>`}
+          <div class="list wzl">${[...racks[0].mods.values()].filter(m => m.kind === 'sim').map(m => `<div class="row"><div class="grow"><div class="nm">[${m.slot}] ${esc(m.name)}</div><div class="sub">SIM-16 · 16 inputs, 16 outputs</div></div>${ic('check')}</div>`).join('')}</div>
+          ${hasSim() ? '' : `<button class="btn" data-wz="addsim">${ic('plus')}Create I/O Simulator (SIM-16)</button>`}
           ${nav(done(1))}`;
       } else if (s === 2) {
         const g = gates()[0];
@@ -1691,13 +1717,13 @@
           ${kv('Type', 'PLC-CPU (emulated)')}${kv('Revision', '1.0')}
           <div class="frow"><label>Chassis size</label><select class="inp" id="wz-z"${wz.made ? ' disabled' : ''}>${E.RACKS.map(n => `<option${n === (g ? g.r.size : 10) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
           ${kv('Slot', g ? g.m.slot : 0)}
-          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="wz-io" checked${wz.made ? ' disabled' : ''}><span>Put the I/O cards of the emulator chassis in the I/O Configuration</span></label>
+          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="wz-io" checked${wz.made ? ' disabled' : ''}><span>Put the emulator's I/O cards in the I/O Configuration (the SIM card as a Generic Module, Data - DINT)</span></label>
           ${wz.made ? '<p class="tip">Project made.</p>' : ''}${nav(true, wz.made ? 'Next: Who Active' : 'Create Project')}`;
       } else if (s === 3) {
         const cur = curPath();
         c = `<h3>4. Who Active: Set Project Path</h3><p class="help">Browse the driver and pick the controller. Its path is saved in the project.</p>
-          <div class="tree wzl"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div class="nd" style="padding-left:6px">${ic('online', 'i ti')}EMULATE-1, Ethernet</div>
-          ${gates().map(x => racks[x.ri].controllers().map(m => { const p = pathOf(x.m.ip, m.slot); return `<div class="nd${p === cur ? ' on' : ''}" data-wzp="${esc(p)}" style="padding-left:22px">${ic('chip', 'i ti')}${x.m.ip} · ${pad(m.slot)}, PLC-CPU ${esc(m.name)}</div>`; }).join('')).join('')}</div>
+          <div class="tree wzl"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div>
+          ${gates().map(x => { const p = driverUp('vbp') && x.ri === 0 ? vbpPath(x.m.slot) : pathOf(x.m.ip, x.m.slot); return `<div class="nd${p === cur ? ' on' : ''}" data-wzp="${esc(p)}" style="padding-left:12px">${ic('chip', 'i ti')}${esc(p)} · PLC-CPU ${esc(x.m.name)}</div>`; }).join('')}</div>
           ${kv('Project path', `<span class="mono">${esc(cur)}</span>`)}${nav(done(3))}`;
       } else {
         c = `<h3>5. Ladder</h3><p class="help">Communications, emulator, project and path are ready. Now:</p>
@@ -1721,6 +1747,11 @@
         const used = new Set(racks.flatMap(x => x.controllers().map(m => m.ip)));
         r.setController(s, { ip: EMULATE_IP(used), on: true }); saveChassis(); redraw(); return;
       }
+      if (a === 'addsim') {
+        const r = racks[0], fs = Array.from({ length: r.size }, (_, i) => i).find(i => !r.module(i));
+        if (fs == null) { toast('The chassis is full.', 'err'); return; }
+        r.insert(fs, 'PLC-SIM16', 'SIM_' + fs); r.advance(0); saveChassis(); redraw(); return;
+      }
       if (a === 'quick') { quickSetup(el.querySelector('#wz-n') ? el.querySelector('#wz-n').value.trim() : ''); closeLayer(); return; }
       if (a === 'next') {
         if (wz.step === 2 && !wz.made) {
@@ -1739,19 +1770,23 @@
   const uniqueProj = base => { let n = base, k = 1; while (index().some(x => U(x.name) === U(n))) n = base + '_' + (++k); return n; };
   /* a project whose controller and I/O match the emulator chassis that answers first, with its path set */
   function newProjectFor(name, size, copyIO) {
-    const g = racks.flatMap(r => r.controllers().filter(m => m.ip && m.ctl.powered).map(m => ({ r, m })))[0];
+    const vbp = driverUp('vbp');
+    const g = racks.flatMap((r, ri) => r.controllers().filter(m => m.ctl.powered && ((vbp && ri === 0) || m.ip)).map(m => ({ r, ri, m })))[0];
     const p = blank(name);
     p.rack.size = size;
-    if (g && copyIO) p.rack.modules = [...g.r.mods.values()].filter(m => !m.ctl && m.slot < size).map(m => ({ slot: m.slot, type: m.type, name: m.name.replace(/[^A-Za-z0-9_]/g, '_') }));
+    if (g) p.controller.slot = g.m.slot;
+    if (g && copyIO) p.rack.modules = [...g.r.mods.values()].filter(m => !m.ctl && m.slot < size).map(m => { const n = m.name.replace(/[^A-Za-z0-9_]/g, '_'); return m.kind === 'sim' ? genFor(m.slot, n) : { slot: m.slot, type: m.type, name: n }; });
     else if (!copyIO) p.rack.modules = [];
+    else p.rack.modules = p.rack.modules.filter(m => m.slot !== p.controller.slot);
     saveProject();
     openProject(p, true);
-    if (g) setPath(pathOf(g.m.ip, g.m.slot));
+    if (g) setPath(vbp && g.ri === 0 ? vbpPath(g.m.slot) : pathOf(g.m.ip, g.m.slot));
     render();
   }
   function quickSetup(name) {
-    if (!driverUp()) addDriver('emulate');
-    if (!racks.some(r => r.controllers().some(m => m.ip && m.ctl.powered))) {
+    if (!driverUp()) addDriver('vbp');
+    { const r = racks[0], fs = Array.from({ length: r.size }, (_, i) => i).find(i => !r.module(i)); if (![...r.mods.values()].some(m => m.kind === 'sim') && fs != null) { r.insert(fs, 'PLC-SIM16', 'SIM_' + fs); r.advance(0); saveChassis(); } }
+    if (!racks[0].controllers().some(m => m.ctl.powered) && !racks.some(r => r.controllers().some(m => m.ip && m.ctl.powered))) {
       const r = racks[0], s = Array.from({ length: r.size }, (_, i) => i).find(i => !r.module(i));
       if (s != null) { r.insert(s, 'PLC-CPU', 'Emulator'); r.setController(s, { ip: '127.0.0.1', on: true }); saveChassis(); }
     }
@@ -1877,20 +1912,37 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   function newModule() {
     if (!offline()) { toast('Go offline to add a module.'); return; }
-    const used = new Set(S.p.rack.modules.map(m => m.slot)), free = [];
-    for (let s = 1; s < S.p.rack.size; s++) if (!used.has(s)) free.push(s);
+    const used = new Set(S.p.rack.modules.map(m => m.slot).concat(ctlSlot())), free = [];
+    for (let s = 0; s < S.p.rack.size; s++) if (!used.has(s)) free.push(s);
     if (!free.length) { toast('The rack is full.', 'err'); return; }
-    dialog({ title: 'New Module',
-      body: `<div class="frow"><label>Module</label><select class="inp" id="mt">${Object.keys(E.MODULES).map(t => `<option value="${t}">${t} · ${esc(MODNAMES[t] || '')}</option>`).join('')}</select></div>
+    const types = Object.keys(E.MODULES).filter(t => !E.MODULES[t].emuOnly && E.MODULES[t].kind !== 'enet');
+    const el0 = dialog({ title: 'New Module',
+      body: `<div class="frow"><label>Module</label><select class="inp" id="mt">${types.map(t => `<option value="${t}"${t === 'PLC-GENERIC' ? ' selected' : ''}>${t} · ${esc(MODNAMES[t] || '')}</option>`).join('')}</select></div>
+        <div class="frow"><label>Name</label><input class="inp" id="mn2" value="IO${free[0]}" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label>Slot</label><select class="inp" id="ms">${free.map(s => `<option>${s}</option>`).join('')}</select></div>
-        <div class="frow"><label>Name</label><input class="inp" id="mn2" value="MOD_${free[0]}"></div><div class="errtx" id="me"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Create', pri: true, run: el => {
+        <div id="mgen">${genFields(E.GENSIM, '')}</div><div class="errtx" id="me"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         const type = el.querySelector('#mt').value, slot = +el.querySelector('#ms').value, name = el.querySelector('#mn2').value.trim();
         if (!E.validName(name)) { el.querySelector('#me').textContent = 'Use letters, digits and _.'; return false; }
-        edit(() => { S.p.rack.modules.push({ slot, type, name }); });
-        toast(`Module ${type} added in slot ${slot}: its tags are Local:${slot}:I / O`);
+        const m = type === 'PLC-GENERIC' ? Object.assign({ slot, type, name }, readGen(el)) : { slot, type, name };
+        if (m.inSize != null && !(m.inSize >= 0 && m.inSize <= 250 && m.outSize >= 0 && m.outSize <= 250)) { el.querySelector('#me').textContent = 'Sizes are 0 to 250.'; return false; }
+        edit(() => { S.p.rack.modules.push(m); });
+        toast(`${type === 'PLC-GENERIC' ? 'Generic module' : 'Module ' + type} ${name} in slot ${slot}: its tags are Local:${slot}:I and Local:${slot}:O`);
       } }] });
+    const syncGen = () => { el0.querySelector('#mgen').hidden = el0.querySelector('#mt').value !== 'PLC-GENERIC'; };
+    el0.querySelector('#mt').addEventListener('change', syncGen); syncGen();
   }
+  /* the connection parameters of a generic module, as in the reference's Generic Module dialog */
+  function genFields(g, dis) {
+    const n = (id, v, lbl) => `<label class="gf"><span>${lbl}</span><input class="inp num" type="number" inputmode="numeric" id="${id}" value="${v}" min="0" max="250"${dis}></label>`;
+    return `<div class="frow"><label>Comm Format</label><select class="inp" id="g-f"${dis}>${Object.keys(E.GENFMT).map(f => `<option${f === g.format ? ' selected' : ''}>${f}</option>`).join('')}</select></div>
+      <div class="gtab"><span></span><b>Assembly Instance</b><b>Size</b>
+        <span>Input</span>${n('g-ii', g.inInst, 'Input instance')}${n('g-is', g.inSize, 'Input size')}
+        <span>Output</span>${n('g-oi', g.outInst, 'Output instance')}${n('g-os', g.outSize, 'Output size')}
+        <span>Configuration</span>${n('g-ci', g.cfgInst, 'Configuration instance')}${n('g-cs', g.cfgSize, 'Configuration size')}</div>
+      <p class="help">Size in words of the comm format. For the emulator's SIM card: Data - DINT, Input 1 / 2, Output 2 / 1, Configuration 3 / 0; its 16 inputs are Local:&lt;slot&gt;:I.Data[1].0 to .15 and its 16 outputs Local:&lt;slot&gt;:O.Data[0].0 to .15.</p>`;
+  }
+  const readGen = el => ({ format: el.querySelector('#g-f').value, inInst: +el.querySelector('#g-ii').value, inSize: +el.querySelector('#g-is').value, outInst: +el.querySelector('#g-oi').value, outSize: +el.querySelector('#g-os').value, cfgInst: +el.querySelector('#g-ci').value, cfgSize: +el.querySelector('#g-cs').value });
   function deleteModule(slot) {
     const m = S.p.rack.modules.find(x => x.slot === slot);
     confirmDlg('Delete Module', `Delete <b>[${slot}] ${esc(m.type)} ${esc(m.name)}</b>? Rungs and aliases that use Local:${slot} will show errors.`, 'Delete', () => edit(() => { S.p.rack.modules = S.p.rack.modules.filter(x => x.slot !== slot); }), true);
@@ -1912,8 +1964,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const m = S.p.rack.modules.find(x => x.slot === slot);
     if (!m) return;
     const d = E.MODULES[m.type] || {};
-    const used = new Set(S.p.rack.modules.filter(x => x !== m).map(x => x.slot)), slots = [];
-    for (let s = 1; s < S.p.rack.size; s++) if (!used.has(s)) slots.push(s);
+    const used = new Set(S.p.rack.modules.filter(x => x !== m).map(x => x.slot).concat(ctlSlot())), slots = [];
+    for (let s = 0; s < S.p.rack.size; s++) if (!used.has(s)) slots.push(s);
     const st = S.online && ctl.M ? ctl.moduleStatus(slot) : null;
     const io = S.online && ctl.M && ctl.M.mods.get(slot) ? ctl.ioImage(slot) : null;
     const card = chassis.module(slot);
@@ -1922,7 +1974,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
       <div class="frow"><label>Slot</label><select class="inp" id="mp-s"${dis}>${slots.map(s => `<option${s === slot ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
-      <div class="frow"><label>Tags</label><span class="mono">${['I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
+      <div class="frow"><label>Tags</label><span class="mono">${m.type === 'PLC-GENERIC' ? [m.inSize > 0 ? `Local:${slot}:I.Data[${m.inSize}]` : '', m.outSize > 0 ? `Local:${slot}:O.Data[${m.outSize}]` : ''].filter(Boolean).join(', ') || '-' : ['I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>
+      ${m.type === 'PLC-GENERIC' ? `<div id="mp-gen">${genFields(Object.assign({}, E.GENSIM, m), dis)}</div>` : ''}`;
     const conn = `<div class="frow"><label>RPI (ms)</label><input class="inp" id="mp-r" type="number" min="2" max="750" value="${m.rpi || 20}"${dis}></div>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
@@ -1941,6 +1994,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         const name = el2.querySelector('#mp-n').value.trim(), ns = +el2.querySelector('#mp-s').value;
         if (!E.validName(name)) { toast('Module name: letters, digits and _.', 'err'); return false; }
         const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.max(2, Math.min(750, +el2.querySelector('#mp-r').value || 20)), inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked };
+        if (m.type === 'PLC-GENERIC') { Object.assign(nv, readGen(el2)); if (!(nv.inSize >= 0 && nv.inSize <= 250 && nv.outSize >= 0 && nv.outSize <= 250)) { toast('Sizes are 0 to 250.', 'err'); return false; } }
         if (!nv.desc) delete nv.desc;
         if (!nv.inhibit) delete nv.inhibit;
         if (!nv.majorOnFail) delete nv.majorOnFail;
@@ -2024,7 +2078,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const on = S.online && ctl.M, dis = offline() ? '' : ' disabled';
     const general = `<div class="frow"><label>Name</label><input class="inp" id="cp-n" value="${esc(S.p.controller.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="cp-d" value="${esc(S.p.controller.desc || '')}"${dis}></div>
-      ${kv('Type', 'PLC-CPU (built-in controller)')}${kv('Revision', '1.0')}${kv('Chassis', `PLC-RACK${S.p.rack.size}, slot 0`)}${kv('Path', esc(curPath()))}
+      ${kv('Type', 'PLC-CPU (emulated controller)')}${kv('Revision', '1.0')}${kv('Chassis', `PLC-RACK${S.p.rack.size}`)}
+      <div class="frow"><label>Slot</label><select class="inp" id="cp-s"${dis}>${Array.from({ length: S.p.rack.size }, (_, i) => i).filter(i => i === ctlSlot() || !S.p.rack.modules.some(m => m.slot === i)).map(i => `<option${i === ctlSlot() ? ' selected' : ''}>${i}</option>`).join('')}</select></div>${kv('Path', esc(curPath()))}
       <p class="help">The name is also the project name.</p>`;
     const offMsg = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
     const dateTab = `${kv('Controller time', new Date().toLocaleString())}<p class="help">The emulated controller uses the clock of this device.</p>`;
@@ -2044,7 +2099,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['file', 'File', fileTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!offline()) return;
-        const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim();
+        const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim(), cs = +el.querySelector('#cp-s').value;
+        if (cs !== ctlSlot()) edit(() => { S.p.controller.slot = cs; });
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         const old = S.p.controller.name;
         if (v === old && desc === (S.p.controller.desc || '')) return;
@@ -2145,14 +2201,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* no controller at the path (empty slot, an I/O card, a card removed): like a terminal that finds nothing there */
   function reachable() {
     relink();
-    if (!driverUp()) {
-      dialog({ title: 'Failed to go online', body: '<p>No communications driver is running, so no controller can be reached.</p><p class="help">Add the Emulate Ethernet driver in Communications &gt; Configure Drivers.</p>',
+    const px = parsePath(curPath()), need = px && px.vbp ? 'vbp' : 'emulate';
+    if (!driverUp(need)) {
+      dialog({ title: 'Failed to go online', body: `<p>No ${need === 'vbp' ? 'Virtual Backplane' : 'Emulate Ethernet'} driver is running, so the path <b class="mono">${esc(curPath())}</b> cannot be reached.</p><p class="help">Add or start it in Communications &gt; Configure Drivers, or pick another path in Who Active.</p>`,
         buttons: [{ l: 'Close' }, { l: 'Configure Drivers…', pri: true, run: () => { setTimeout(configureDrivers, 0); } }] });
       return false;
     }
     if (ctl !== NOCTL) return true;
     const x = resolve(curPath()) || {};
-    const why = !x.rack ? `No emulated controller is on at the address ${esc(x.ip || '?')}.`
+    const why = !x.rack ? (x.vbp ? 'The emulator has no chassis.' : `No emulated controller is on at the address ${esc(x.ip || '?')}.`)
       : !x.m ? `Slot ${x.slot} of chassis ${esc(x.rack.name)} is empty.`
         : !x.m.ctl ? `Slot ${x.slot} holds an I/O card (${esc(x.m.type)}), not a controller.`
           : `The controller in slot ${x.slot} (${esc(x.m.name)}) is off.`;
@@ -2170,7 +2227,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       toast(`Fix ${S.verify.errors.length} error(s) before downloading.`, 'err');
       return;
     }
-    dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
+    const tx = resolve(curPath());
+    if (tx && tx.slot !== ctlSlot()) {
+      dialog({ title: 'Download', body: `<p><b>Failed to download.</b> The controller of the project is in slot <b>${ctlSlot()}</b>, but the controller at the path <b class="mono">${esc(curPath())}</b> is in slot <b>${tx.slot}</b>.</p><p class="help">Change the slot in Controller Properties, or pick the controller in slot ${ctlSlot()} in Who Active.</p>`,
+        buttons: [{ l: 'Close' }, { l: 'Controller Properties…', run: () => { setTimeout(() => controllerProps(), 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
+      return;
+    }
+    dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Slot', ctlSlot())}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
         <p>${ctl.name ? `The project in the controller (<b>${esc(ctl.name)}</b>) will be replaced by <b>${esc(S.p.controller.name)}</b>.` : `<b>${esc(S.p.controller.name)}</b> will be downloaded.`} ${RUNM() ? 'The controller goes to Remote Program first.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: 'Download', pri: true, run: () => {
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
@@ -2250,44 +2313,61 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */
   function whoActive() {
-    const cur = parsePath(curPath());
     const modeOf = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
-    const gates = [];   // [ip, rack] once per address (the first chassis that answers there)
-    if (driverUp()) racks.forEach(r => r.controllers().forEach(m => { if (m.ip && m.ctl.powered && !gates.some(g => g[0] === m.ip)) gates.push([m.ip, r, m]); }));
-    let sel = null;
-    if (cur) { const x = resolve(curPath()); if (x && x.ctl) sel = { ip: x.ip || gatewayIp(x.rack), slot: x.slot }; }
-    if (!sel && gates.length) sel = { ip: gates[0][0], slot: gates[0][2].slot };
-    const pad = s => (s < 10 ? '0' + s : s);
-    const rows = () => gates.map(([ip, r, gm]) => `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${ip}, PLC-CPU ${esc(gm.name)}</div>
-      <div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` + Array.from({ length: r.size }, (_, s) => {
-      const m = r.module(s);
+    const pad = n => (n < 10 ? '0' + n : n);
+    const cur = curPath();
+    let sel = resolve(cur) && resolve(cur).ctl ? cur : null;
+    const slotRows = (r, pathFn, ind) => Array.from({ length: r.size }, (_, n) => {
+      const m = r.module(n);
       if (!m) return '';
-      if (!m.ctl) return `<div class="nd dim" style="padding-left:52px">${ic('io', 'i ti')}${pad(s)}, ${esc(m.type)} ${esc(m.name)}</div>`;
-      const c = m.ctl, on = sel && sel.ip === ip && sel.slot === s;
-      if (!c.powered) return `<div class="nd dim" style="padding-left:52px">${ic('chip', 'i ti')}${pad(s)}, PLC-CPU ${esc(m.name)} · off</div>`;
-      return `<div class="nd${on ? ' on' : ''}" data-wa="${ip}|${s}" style="padding-left:52px">${ic('chip', 'i ti')}${pad(s)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${cur && pathOf(ip, s) === curPath() ? ' <span class="muted">(project path)</span>' : ''}</div>`;
-    }).join('')).join('') || (driverUp() ? '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>' : '');
-    const pick = () => (sel ? resolve(pathOf(sel.ip, sel.slot)) : null);
+      if (!m.ctl) return `<div class="nd dim" style="padding-left:${ind}px">${ic('io', 'i ti')}${pad(n)}, ${esc(m.type)} ${esc(m.name)}</div>`;
+      const c = m.ctl, p = pathFn(n);
+      if (!c.powered) return `<div class="nd dim" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · off</div>`;
+      if (!sel) sel = p;
+      return `<div class="nd${p === sel ? ' on' : ''}" data-wa="${esc(p)}" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${p === cur ? ' <span class="muted">(project path)</span>' : ''}</div>`;
+    }).join('');
+    const rows = () => {
+      let h = '';
+      drivers.filter(d => d.run).forEach(d => {
+        if (d.type === 'vbp') {
+          h += `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Virtual Backplane</div>`;
+          const r = racks[0];
+          h += r ? `<div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Virtual Chassis, ${esc(r.name)}</div>` + slotRows(r, n => d.name + '\\' + n, 36) : '<div class="nd dim" style="padding-left:20px">No chassis in the emulator.</div>';
+        } else if (d.type === 'emulate') {
+          h += `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Ethernet</div>`;
+          const seen = new Set();
+          racks.forEach(r => r.controllers().forEach(gm => {
+            if (!gm.ip || !gm.ctl.powered || seen.has(gm.ip)) return;
+            seen.add(gm.ip);
+            h += `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${gm.ip}, PLC-CPU ${esc(gm.name)}</div><div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` + slotRows(r, n => pathOf(gm.ip, n), 52);
+          }));
+          if (!seen.size) h += '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>';
+        }
+      });
+      return h || '<div class="nd dim" style="padding-left:6px">No communications driver: Communications &gt; Configure Drivers</div>';
+    };
+    const pick = () => (sel ? resolve(sel) : null);
     const info = () => {
       const x = pick();
-      if (!x || !x.ctl) return 'Pick a controller. An emulated controller answers only when it is on, and a chassis only through a controller with an IP address.';
+      if (!x || !x.ctl) return 'Pick a controller. An emulated controller answers only when it is on.';
       const c = x.ctl;
-      return `Path: <b class="mono">${esc(pathOf(sel.ip, sel.slot))}</b>. ${c.holds(S.p) ? 'It holds this project.' : c.name ? `It holds <b>${esc(c.name)}</b>${U(c.name) === U(S.p.controller.name) ? ' (another version)' : ''}: Upload or Download.` : 'It is empty: Download this project.'}`;
+      return `Path: <b class="mono">${esc(sel)}</b>. ${c.holds(S.p) ? 'It holds this project.' : c.name ? `It holds <b>${esc(c.name)}</b>${U(c.name) === U(S.p.controller.name) ? ' (another version)' : ''}: Upload or Download.` : 'It is empty: Download this project.'}${x.slot !== ctlSlot() ? ` <span style="color:var(--danger)">The project's controller is in slot ${ctlSlot()}; this one is in slot ${x.slot}.</span>` : ''}`;
     };
     // the picked controller becomes the project path, then the action runs against it
-    const via = fn => () => { const x = pick(); if (!x || !x.ctl) { toast('Pick a controller first.', 'err'); return false; } setPath(pathOf(sel.ip, sel.slot)); setTimeout(fn, 0); };
+    const via = fn => () => { const x = pick(); if (!x || !x.ctl) { toast('Pick a controller first.', 'err'); return false; } setPath(sel); setTimeout(fn, 0); };
+    const rowsH = rows();
     const el = dialog({ title: 'Who Active', size: 'md',
-      body: `<div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div>${driverUp() ? `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(drivers.find(d => d.run).name)}, Ethernet</div>` : '<div class="nd dim" style="padding-left:6px">No communications driver: Communications &gt; Configure Drivers</div>'}<div id="wa-rows">${rows()}</div></div>
+      body: `<div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div id="wa-rows">${rowsH}</div></div>
         <p class="help" id="wa-i">${info()}</p>`,
-      buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(pathOf(sel.ip, sel.slot)); render(); toast(`Project path: ${pathOf(sel.ip, sel.slot)}`); return false; } },
+      buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
         { l: 'Upload…', run: via(upload) }, { l: 'Download…', run: via(download) }, { l: 'Go Online', pri: true, run: via(goOnline) }] });
     el.querySelector('#wa').addEventListener('click', ev => {
       const r = ev.target.closest('[data-wa]'); if (!r) return;
-      const [ip, s] = r.dataset.wa.split('|');
-      sel = { ip, slot: +s };
+      sel = r.dataset.wa;
       el.querySelector('#wa-rows').innerHTML = rows(); el.querySelector('#wa-i').innerHTML = info();
     });
   }
+
   /* Toggle Bit: an input of a working card follows its field switch, so that switch is flipped; the input of a faulted
      card (no card in the chassis) holds and is written directly, as on an emulated controller */
   function toggleSel() {
@@ -2387,6 +2467,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           <span class="seg ckey" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${k === 'PROG' ? 'P' : k === 'REM' ? 'R' : 'RUN'}</span>`).join('')}</span></div>${tail}</div>`;
     }
     const own = r.owner(s), okc = m.fault ? 'r blink' : own && own.running ? 'g' : 'g blink';
+    if (m.kind === 'sim') {
+      const out = r.outputs(s), mat = (bits, c) => `<div class="mmat">${Array.from({ length: 16 }, (_, b) => `<i class="${(bits >> b) & 1 ? c : ''}"></i><span>${b}</span>`).join('')}</div>`;
+      return `<div class="ccard io sim${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">SIM-16</div><div class="mleds one">${led(true, 'OK', okc)}</div><div class="msub">IN</div>${mat(m.field, 'g')}<div class="msub">OUT</div>${mat(out, 'y')}<div class="mname">${esc(m.name)}</div></div>${tail}</div>`;
+    }
     const n = m.kind === 'di' || m.kind === 'do' ? 16 : 4;
     const st = m.kind === 'di' ? m.field : m.kind === 'do' ? r.outputs(s) : null;
     const face = st != null ? `<div class="mmat">${Array.from({ length: 16 }, (_, b) => `<i class="${(st >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}"></i><span>${b}</span>`).join('')}</div>`
@@ -2397,11 +2481,12 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
     return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${term}${tail}</div>`;
   }
-  /* the chassis drawn in rows of up to 8 slots (6 on a tablet or phone); a row can be folded away */
+  /* the chassis drawn in rows of up to 8 slots (6 on a tablet, 3 on a phone); a row can be folded away */
   const rackHTML = (ri, compact) => {
     const r = racks[ri], all = Array.from({ length: r.size }, (_, s) => s), firstFree = all.find(s => !r.module(s));
     const slots = compact ? all.filter(s => r.module(s) || s === firstFree) : all;
-    const per = S.layout === 'desktop' ? 8 : 6, rows = [];
+    // rows of 8 slots on Windows, 6 on a tablet, 3 on a phone, so every card stays on the screen
+    const per = S.layout === 'desktop' ? 8 : S.layout === 'phone' ? 3 : 6, rows = [];
     for (let i = 0; i < slots.length; i += per) rows.push(slots.slice(i, i + per));
     return rows.map((row, k) => {
       const key = ri + ':' + k, shut = S.rowHide && S.rowHide.has(key);
@@ -2423,6 +2508,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const names = r === chassis && S.p ? aliasNames() : {};
     return mods.map(m => {
       const s = m.slot, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O', inp = dir === 'I';
+      if (m.kind === 'sim') {
+        const outs = r.outputs(s), row = (bits, isIn) => `<div class="iobits">${Array.from({ length: 16 }, (_, b) => { const on = (bits >> b) & 1, t = `${isIn ? 'Input' : 'Output'} ${b}: ${on ? 'ON' : 'OFF'}`; return isIn ? `<button class="iob${on ? ' on' : ''}" data-iobit="${ri}:${s}:${b}" title="${t}" aria-pressed="${on ? 'true' : 'false'}">${b}</button>` : `<span class="iob out${on ? ' on' : ''}" title="${t}">${b}</span>`; }).join('')}</div>`;
+        return `<div class="iom${s === focus ? ' cur' : ''}" data-iom="${s}"><div class="iomh"><b>[${s}] ${esc(m.name)}</b><span class="muted">SIM-16 · I/O Data</span>${m.fault ? '<span class="iofl">Faulted</span>' : ''}</div><div class="iolbl">Inputs (click to toggle on / off)</div>${row(m.field, true)}<div class="iolbl">Outputs</div>${row(outs, false)}</div>`;
+      }
       const nm = b => names[U(`Local:${s}:${dir}.Data.${b}`)] || '';
       const head = `<div class="iomh"><b>[${s}] ${esc(m.name)}</b><span class="muted">${esc(m.type.replace('PLC-', ''))} · ${inp ? 'Inputs' : 'Outputs'}</span>${m.fault ? '<span class="iofl">Faulted</span>' : ''}</div>`;
       let body;

@@ -5,6 +5,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.4.0-beta.1): set up and run as with the reference emulator
+The steps are now those of the reference software (owner's walkthrough of Studio 5000, RSLinx Classic and Logix
+Emulate): communications driver, emulated controller and I/O simulator, new project with its controller slot, generic
+module in the I/O configuration, alias tags, ladder, Who Active, Download, Run, and the simulator's I/O Data.
+- **SIM-16 I/O simulator card** in the emulator: 16 inputs and 16 outputs in one module. A tap on the card (or its I/O
+  button) opens its I/O Data: inputs toggled with a tap, outputs lit. Its front shows the IN and OUT points.
+- **Generic Module** in the I/O Configuration (Logic > New Module, or the backplane in the organizer): comm format
+  (Data - DINT / INT / SINT) and the input, output and configuration assembly instances and sizes. Its tags are
+  `Local:<slot>:I.Data[]` and `Local:<slot>:O.Data[]`. With the SIM card (Data - DINT, Input 1 / 2, Output 2 / 1,
+  Configuration 3 / 0) the inputs are `Local:3:I.Data[1].0` to `.15` and the outputs `Local:3:O.Data[0].0` to `.15`.
+  A wrong size gives module fault 16#0109; another card 16#0116; an empty slot 16#0204. The tag lists offer these points.
+- **Virtual Backplane driver** (Communications > Configure Drivers, listed first): reaches the emulator's chassis slot
+  by slot; the path is `VBP-1\<slot>`. Who Active shows VBP-1 → Virtual Chassis → the slots. Emulate Ethernet stays.
+- **The controller's slot** in the project (Controller Properties > General, Edit > Controller Properties): modules
+  can use any other slot; Download refuses when the controller at the path is in another slot, and says why.
+- **Setup wizard** in the reference's order: Virtual Backplane driver; controller and SIM-16 card; New Project (the SIM
+  card becomes a Generic Module); Who Active; ladder. Quick setup does the same.
+- **Phone:** the setup wizard fits the screen (its buttons were off to the side); the chassis wraps 3 slots per row so
+  every card is on screen.
+
 ### Fixed (MT PLC Studio 0.3.0-beta.6): a TON left with Accum "?" (owner, Android tablet)
 - **Timers and counters start with Accum 0**, so only the tag and the preset are asked, as in the reference. OK in the
   operand box with an empty Accum also puts 0.
