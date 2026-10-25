@@ -36,6 +36,9 @@
 - [x] 0.4.0-beta.1 (2026-10-25): the reference flow — SIM-16 card, Generic Module (Data[ ] tags, instances / sizes, 16#0109), Virtual Backplane driver (VBP-1\slot), controller slot with Download check, wizard in that order, phone fit
 - [x] 0.4.0-beta.2 (2026-10-25): SIM card and generic module removed (owner); smaller modules
 - [x] 0.4.0-beta.3 (2026-10-25): Alias For tag browser, I/O Data DINT, name rules, move instructions to nodes (hold to drag), tablet portrait toolbar/Errors, no project kept in the app; Allen-Bradley skill (.claude/skills/allen-bradley)
+- [ ] Owner feedback on 0.4.0-beta.3 (tablet): tag browser, hold-to-drag, tap-again edit, portrait toolbar / Errors, start page
+- [ ] New Tag: External Access, Style, Constant, Produced / Consumed; Select Data Type with 2- and 3-dimension arrays
+- [ ] Tag Editor as a spreadsheet (editable Alias For cell with the tag browser); drag branch ends; C / S I/O tags; phone instruction row
 - [ ] Walk the whole flow in the owner's VM (Studio 5000, RSLinx Classic, Logix Emulate) and list what still differs
 - [ ] Emulator extras: its own Download pane, virtual time
 - [ ] Network link: program an emulator that runs on another device (tablet) from the laptop
