@@ -813,3 +813,17 @@ them.
 - **Module I/O window:** one per chassis (`ioWins` keyed by rack), inputs as `data-iobit` buttons.
 - **Help:** `js/help-ref.js` (`MTPS.HELPREF`) holds the reference page of each instruction; `js/help.js` keeps the
   plain-language summary and Getting Started.
+
+## 20. The reference flow (0.4.0-beta.1)
+
+From the owner's use of Studio 5000, RSLinx Classic and Logix Emulate in a VM (the principles; the app keeps its own
+names): Emulate: create the controller in a slot and a 1789-SIM-like card; RSLinx: add the Virtual Backplane driver,
+RSWho shows the virtual chassis; Studio 5000: New Project (controller type, revision, slot), I/O Configuration > New
+Module > Generic (Data - DINT, Input 1 / 2, Output 2 / 1, Configuration 3 / 0), alias tags to Local:3:I.Data[1].n and
+Local:3:O.Data[0].n, ladder, Verify, Who Active (AB_VBP-1\2) > Download > Run, toggle the card's inputs in its I/O Data.
+
+- Engine: `PLC-SIM16` (kind `sim`, emulator only) and `PLC-GENERIC` (kind `gen`, project only; `format`, `inInst`,
+  `inSize`, `outInst`, `outSize`, `cfgInst`, `cfgSize`; data types `GEN:<type>:I<n>` / `O<n>` made per project).
+  `Chassis.codeFor(slot, type, gen)`: the SIM card answers `GENSIM` only, else 16#0109. `controller.slot` (default 0).
+- App: `DRVTYPES` vbp first, `vbpPath(slot)`, `parsePath` for `<driver>\<slot>` (the first chassis); Who Active rows hold
+  the path (`data-wa`); `genFields` / `readGen`; `ctlSlot()`; the Download slot check; wizard `addsim`.
