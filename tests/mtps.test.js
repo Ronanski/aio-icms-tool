@@ -447,7 +447,8 @@ console.log('Move and logical');
   eq('FLL fills', one('FLL(7,D[1],3);', {}, arr).read('D'), [0, 7, 7, 7, 0]);
   const st = one('COP(P[0],Q[0],2);', { 'P[1].PRE': 50 }, arr);
   eq('COP of structures', st.read('Q[1].PRE'), 50);
-  check('COP of different types is an error', MTPS.verify(proj({ tags: [T('S', 'DINT', { dim: 2 }), T('R', 'REAL', { dim: 2 })], rungs: ['COP(S[0],R[0],2);'] })).errors.length === 1);
+  check('COP between number types is allowed (it copies bytes, as in the reference)', MTPS.verify(proj({ tags: [T('S', 'DINT', { dim: 2 }), T('R', 'REAL', { dim: 2 })], rungs: ['COP(S[0],R[0],2);'] })).errors.length === 0);
+  check('COP of a TIMER into a DINT is an error', MTPS.verify(proj({ tags: [T('S', 'TIMER', { dim: 2 }), T('R', 'DINT', { dim: 2 })], rungs: ['COP(S[0],R[0],2);'] })).errors.length === 1);
   const ix = one('MOV(5,Tank[Idx]);', { Idx: 2 }, [T('Tank', 'DINT', { dim: 4 }), T('Idx', 'DINT')]);
   eq('subscript from a tag', ix.read('Tank[2]'), 5);
 }

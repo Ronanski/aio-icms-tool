@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.3.0-beta.4';
+  const VERSION = '0.3.0-beta.5';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -1161,8 +1161,10 @@
     const tags = (list, scope) => list.forEach(t => {
       const ty = typeOf(t);
       add(t.name, ty, (t.alias ? `<${t.alias}> ` : '') + (t.desc || ''), scope, t.dim, t.alias ? io(t.alias) : 'tag');
-      const M = E.PREDEF[ty];
-      if (M && !t.dim) M.forEach(m => add(`${t.name}.${m.name}`, m.type, '', scope));
+      const M = E.PREDEF[ty], g = t.alias ? io(t.alias) : 'tag', nb = { SINT: 8, INT: 16, DINT: 32 }[ty];
+      if (M && !t.dim) M.forEach(m => add(`${t.name}.${m.name}`, m.type, '', scope, 0, g));
+      if (nb && !t.dim) for (let b = 0; b < nb; b++) add(`${t.name}.${b}`, 'BOOL', '', scope, 0, g);
+      if (t.dim && E.ATOMIC.includes(ty)) for (let i = 0; i < Math.min(t.dim, 64); i++) add(`${t.name}[${i}]`, ty, '', scope, 0, g);
     });
     tags(P.tags, P.name);
     tags(S.p.tags, 'Controller');
@@ -1177,12 +1179,12 @@
   }
   function suggest(kind, text) {
     const q = U(text || '').replace(/^\?$/, '');
-    if (kind === 'routine') return curProg().routines.map(r => ({ name: r.name, type: 'ROUTINE', desc: '' })).filter(r => U(r.name).includes(q));
-    if (kind === 'label') { const s = new Set(); rungs().forEach(r => { const m = /^LBL\((\w+)\)/i.exec(r.t); if (m) s.add(m[1]); }); return [...s].map(n => ({ name: n, type: 'LABEL', desc: '' })).filter(r => U(r.name).includes(q)); }
+    if (kind === 'routine') return curProg().routines.filter(r => r.name !== S.routine).map(r => ({ name: r.name, type: 'ROUTINE', desc: r.desc || (r.name === curProg().main ? 'Main routine' : '') })).filter(r => U(r.name).includes(q));
+    if (kind === 'label') { const s = new Map(); rungs().forEach(r => { let m; const re = /\b(LBL|JMP)\((\w+)\)/gi; while ((m = re.exec(r.t))) { const k = U(m[2]); const o = s.get(k) || { name: m[2], lbl: false, jmp: false }; if (U(m[1]) === 'LBL') o.lbl = true; else o.jmp = true; s.set(k, o); } }); return [...s.values()].map(o => ({ name: o.name, type: 'LABEL', desc: o.lbl ? (o.jmp ? 'Label, jumped to' : 'Label') : 'Jump target, no LBL yet' })).filter(r => U(r.name).includes(q)); }
     if (kind === 'imm' || kind === 'order') return kind === 'order' ? ['REVERSE', 'WORD', 'HIGH/LOW'].map(n => ({ name: n, type: '', desc: '' })) : [];
     const types = KIND_TYPES[kind];
     let list = candidates();
-    if (kind === 'elem' || kind === 'elemw') list = list.filter(c => c.dim).map(c => ({ ...c, name: c.name + '[0]' }));
+    if (kind === 'elem' || kind === 'elemw') list = list.filter(c => /\[\d+\]$/.test(c.name));
     else if (types) list = list.filter(c => types.includes(c.type) && !c.dim);
     if (q) list = list.filter(c => U(c.name).includes(q)).sort((a, b) => (U(a.name).startsWith(q) ? 0 : 1) - (U(b.name).startsWith(q) ? 0 : 1));
     return list.slice(0, 120);
@@ -1192,10 +1194,10 @@
   /* the tag list of the operand editor, like a tag browser (P5): groups that fold, a structure's members folded under
      it (opened by its arrow, or by typing a "."), the current tag marked */
   function groupedRows(list, kind, mn, cur, st) {
-    const order = kind === 'bitw' || (INSTR[mn] && INSTR[mn].out) ? ['out', 'tag', 'in', 'sys'] : ['in', 'tag', 'out', 'sys'];
+    const order = kind === 'expr' ? ['tag', 'in', 'out', 'sys'] : kind === 'bitw' || (INSTR[mn] && INSTR[mn].out) ? ['out', 'tag', 'in', 'sys'] : ['in', 'tag', 'out', 'sys'];
     const q = st.q || '';
     const hl = n => { const i = q ? U(n).indexOf(U(q)) : -1; return i < 0 ? esc(n) : esc(n.slice(0, i)) + '<mark>' + esc(n.slice(i, i + q.length)) + '</mark>' + esc(n.slice(i + q.length)); };
-    const row = (c, sub) => `<div class="row${sub ? ' mem' : ''}${cur && U(c.name) === U(cur) ? ' on' : ''}" data-pick="${esc(c.name)}"><div class="grow"><div class="nm">${hl(sub ? c.name.slice(c.name.indexOf('.')) : c.name)}</div>${c.desc && !sub ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div><span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span></div>`;
+    const row = (c, sub) => `<div class="row${sub ? ' mem' : ''}${cur && U(c.name) === U(cur) ? ' on' : ''}" data-pick="${esc(c.name)}"><div class="grow"><div class="nm">${hl(sub ? c.name.slice(c.name.search(/[.[]/)) : c.name)}</div>${c.desc && !sub ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div><span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span></div>`;
     return order.filter(g => st.f === 'all' || st.f === g).map(g => {
       const its = list.filter(c => (c.grp || 'tag') === g);
       if (!its.length) return '';
@@ -1204,11 +1206,11 @@
       if (shut) return h;
       const done = new Set();
       its.forEach(c => {
-        const dot = c.name.indexOf('.'), base = dot > 0 && !/^Local:/i.test(c.name) ? c.name.slice(0, dot) : null;
+        const cut = c.name.search(/[.[]/), base = cut > 0 && !/^(Local|S):/i.test(c.name) ? c.name.slice(0, cut) : null;
         if (!base) { h += row(c); return; }
         if (done.has(base)) return;
         done.add(base);
-        const kids = its.filter(x => x.name.startsWith(base + '.')), open = st.open.has(base) || q.includes('.') || (cur && U(cur).startsWith(U(base) + '.'));
+        const kids = its.filter(x => U(x.name).startsWith(U(base) + '.') || U(x.name).startsWith(U(base) + '[')), open = st.open.has(base) || /[.[]/.test(q) || (cur && /^[.[]/.test(U(cur).slice(U(base).length)) && U(cur).startsWith(U(base)));
         const parent = candidates().find(x => U(x.name) === U(base));
         h += `<div class="row par" data-sexp="${esc(base)}"><div class="grow"><div class="nm">${ic(open ? 'down' : 'right')}${hl(base)}</div>${parent && parent.desc ? `<div class="sub">${esc(parent.desc)}</div>` : ''}</div><span class="ty">${esc(parent ? parent.type : '')} · ${kids.length}</span></div>`;
         if (open) kids.forEach(x => { h += row(x, true); });
@@ -1227,7 +1229,7 @@
     if (!e || e.t === 'BR') return;
     let mn = e.t, ops = e.a.slice(), focus = focusIdx || 0;
     const names = () => L.OPN[mn] || (INSTR[mn] ? INSTR[mn].args.map((_, i) => 'Operand ' + i) : []);
-    const fields = () => (INSTR[mn] ? INSTR[mn].args : []).map((k, i) => `<div class="frow"><label>${esc(names()[i] || 'Operand ' + i)}${k.endsWith('?') ? ' (optional)' : ''}</label><input class="inp mono" data-op="${i}"${i === focus ? ' autofocus' : ''} value="${esc(ops[i] == null ? (k.endsWith('?') ? '' : '?') : ops[i])}" autocomplete="off" spellcheck="false"></div>`).join('');
+    const fields = () => (INSTR[mn] ? INSTR[mn].args : []).map((k, i) => `<div class="frow"><label>${esc(names()[i] || 'Operand ' + i)}${k.endsWith('?') ? ' (optional)' : ''}</label><input class="inp mono" data-op="${i}"${i === focus ? ' autofocus' : ''} value="${esc(ops[i] == null ? (k.endsWith('?') ? '' : '?') : ops[i])}" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off"${k.replace('?', '') === 'imm' ? ' inputmode="decimal"' : ''} enterkeyhint="next"></div>`).join('');
     const el = dialog({
       title: `Rung ${ri} · ${mn}`, size: 'md', focus: true,
       body: `<div class="frow"><label>Instruction</label><input class="inp mono" id="mn" value="${esc(mn)}" list="mnlist" autocomplete="off" spellcheck="false"></div>
@@ -1243,6 +1245,24 @@
       const inp = el.querySelector(`[data-op="${focus}"]`);
       const text = inp ? inp.value.trim() : '';
       // an operand that already names a tag shows the whole list with it marked, like the tag browser
+      const word = k === 'expr' ? (/[A-Za-z_][\w.:\[\]]*$/.exec(text) || [''])[0] : null;
+      if (k === 'expr') {
+        const lst = suggest('expr', word || '').filter(c => U(c.name) !== U(word));
+        st.q = word;
+        sgbar.innerHTML = `<div class="sgchips">${['+', '-', '*', '/', 'MOD', '(', ')', '=', '<>', '<', '<=', '>', '>=', 'AND', 'OR', 'NOT', 'ABS(', 'SQR('].map(o => `<span class="chip" data-sgop="${esc(o)}">${esc(o)}</span>`).join('')}</div>`;
+        sgh.textContent = word ? `Tags matching "${word}"` : 'Tags and operators: tap to add';
+        sg.innerHTML = groupedRows(lst, 'expr', mn, '', st) || `<div class="empty">${word ? 'No matching tags' : 'Example: (Level * 2) + Offset'}</div>`;
+        st.act = -1;
+        return;
+      }
+      if (k === 'routine' || k === 'label' || k === 'order') {
+        const lst = suggest(k, text === '?' ? '' : text), all = lst.length ? lst : suggest(k, '');
+        sgbar.innerHTML = '';
+        sgh.textContent = k === 'routine' ? 'Routines of this program' : k === 'label' ? 'Labels in this routine' : 'Order modes';
+        sg.innerHTML = all.map(c => `<div class="row${U(c.name) === U(text) ? ' on' : ''}" data-pick="${esc(c.name)}"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div></div>`).join('') || `<div class="empty">${k === 'routine' ? 'No other routine: add one in the Controller Organizer (right-click the program, New Routine).' : k === 'label' ? 'No labels yet: type a name, then put LBL with the same name at the start of a rung.' : ''}</div>`;
+        st.act = -1;
+        return;
+      }
       let list = suggest(k, text);
       const exact = list.some(c => U(c.name) === U(text));
       if (exact) list = suggest(k, '');
@@ -1301,6 +1321,9 @@
       const gg = ev.target.closest('[data-sgg]'); if (gg) { const g = gg.dataset.sgg; if (st.shut.has(g)) st.shut.delete(g); else st.shut.add(g); showSug(); return; }
       const sx = ev.target.closest('[data-sexp]'); if (sx) { const b = sx.dataset.sexp; if (st.open.has(b)) st.open.delete(b); else st.open.add(b); showSug(); return; }
       const p = ev.target.closest('[data-pick]');
+      const opc = ev.target.closest('[data-sgop]');
+      if (opc) { const inp = el.querySelector(`[data-op="${focus}"]`); if (inp) { const v = inp.value === '?' ? '' : inp.value, o = opc.dataset.sgop, sp = /[\w)]$/.test(v) && !/^[)]/.test(o) ? ' ' : ''; inp.value = v + sp + o + (/\($/.test(o) ? '' : ' '); inp.focus(); showSug(); } return; }
+      if (p && INSTR[mn] && (INSTR[mn].args[focus] || '').replace('?', '') === 'expr') { const inp = el.querySelector(`[data-op="${focus}"]`); if (inp) { const v = inp.value === '?' ? '' : inp.value, w = (/[A-Za-z_][\w.:\[\]]*$/.exec(v) || [''])[0]; inp.value = v.slice(0, v.length - w.length) + p.dataset.pick + ' '; inp.focus(); showSug(); } return; }
       if (p) { const inp = el.querySelector(`[data-op="${focus}"]`); if (inp) { inp.value = p.dataset.pick; const nx = el.querySelector(`[data-op="${focus + 1}"]`); if (nx) { nx.focus(); nx.select(); } else showSug(); } return; }
       const nt = ev.target.closest('[data-newtag]');
       if (nt) {
