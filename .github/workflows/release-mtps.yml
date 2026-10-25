@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
@@ -42,7 +42,7 @@ jobs:
             echo "::error::Stable releases are published from main only (this is $REF)"; exit 1; fi
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -54,7 +54,7 @@ jobs:
 
   web:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Zip the web app
@@ -92,7 +92,7 @@ jobs:
 
   android:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: mobile-mtps
@@ -149,7 +149,7 @@ jobs:
   publish:
     needs: [version, test, web, windows, android]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: write
