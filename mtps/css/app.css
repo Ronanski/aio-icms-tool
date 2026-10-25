@@ -789,13 +789,6 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .phone .asg { margin-left: 0; }
 #sgh { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .errop { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font: 600 11px var(--font, inherit); }
-/* the SIM card's front (IN / OUT LED rows) and the generic module's connection table */
-.ccard.sim .msub { font: 700 8px var(--mono); color: #4a525d; padding: 1px 4px 0; }
-.iolbl { font-size: 11px; color: var(--muted); margin: 4px 0 2px; }
-.gtab { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px 8px; align-items: center; margin: 4px 0 6px; }
-.gtab b { font-size: 11px; color: var(--muted); }
-.gtab .gf span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.gtab .num { width: 100%; }
 /* the setup wizard fits a phone: the step rail scrolls sideways inside the screen, the step and its buttons fit */
 #wzb > .wz { min-width: 0; width: 100%; }
 .phone .wzrail { min-width: 0; max-width: 100%; flex: none; align-items: center; }
@@ -804,3 +797,16 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .phone .wznav { position: sticky; bottom: 0; background: var(--surface); padding: 8px 0 4px; }
 .phone .wzrail [data-wz="quick"] { position: sticky; right: 0; background: var(--surface); box-shadow: -8px 0 8px var(--surface); }
 .phone .wzrail .grow { display: none; }
+/* smaller modules: narrower slots, the terminal block in four columns with small screws, shorter fronts */
+.chas { --slotw: 76px; }
+.tab .chas, .phone .chas { --slotw: 82px; }
+.mterm { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; padding: 2px; }
+.mterm .scr { padding: 0 1px; gap: 1px; justify-content: center; }
+.mterm .scr i, .tab .mterm .scr i, .phone .mterm .scr i { width: 6px; height: 6px; }
+.mterm .scr i::after { top: 2px; }
+.mterm .scr b { font-size: 7px; }
+.mf { gap: 2px; padding: 3px 3px; }
+.mmat { gap: 1px; padding: 2px; font-size: 7px; }
+.mmat i { width: 6px; height: 6px; }
+.mdisp { min-height: 14px; padding: 1px 0; font-size: 11px; }
+.rkps { width: 44px; }
