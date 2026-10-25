@@ -787,3 +787,4 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .asg .row:hover { background: var(--accent-soft); }
 .asg { margin-left: 128px; }
 .phone .asg { margin-left: 0; }
+#sgh { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

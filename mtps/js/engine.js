@@ -227,6 +227,14 @@
     }
     obj() { this.at(); return PP[PK]; }
   }
+  /* an array element or a single tag seen as a "file": element k from the operand on */
+  function file(r) {
+    r.at(); const a = PP, k0 = PK;
+    return Array.isArray(a) ? { n: a.length - k0, g: k => a[k0 + k], s: (k, v) => { a[k0 + k] = v; } } : { n: 1, g: () => a[k0], s: (k, v) => { a[k0] = v; } };
+  }
+  const BYTES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
+  const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else dv.setFloat32(o, v, true); };
+  const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : dv.getFloat32(o, true));
   class Const { constructor(v, real) { this.c = v; this.type = real ? 'REAL' : 'DINT'; this.bit = -1; } get() { return this.c; } }
 
   /* text → Ref, or the reason it is not one (program tags hide controller tags; aliases are followed) */
@@ -471,7 +479,7 @@
       case 'idest': return isInt(r.type) && one ? writable() : BAD_TYPE;
       case 'elem': case 'elemw': {
         const last = r.steps[r.steps.length - 1];
-        if (!one || r.bit >= 0 || !last || !last.len) return 'Operand must be an array element, e.g. Tank[0]';
+        if (!one || r.bit >= 0) return 'Operand must be a tag or an array element, e.g. Tank[0]';
         return kind === 'elemw' ? writable() : r;
       }
     }
@@ -501,13 +509,15 @@
       case 'CTU': case 'CTD':
         if (x[1].type === 'REAL' || x[2].type === 'REAL') bad('Preset and Accum are whole numbers', x[1].type === 'REAL' ? 1 : 2);
         break;
-      case 'COP': if (x[0].type !== x[1].type) bad(BAD_TYPE, 1); break;
+      // COP copies bytes: the same type, or two of SINT, INT, DINT and REAL
+      case 'COP': if (x[0].type !== x[1].type && !(isNum(x[0].type) && isNum(x[1].type))) bad(BAD_TYPE, 1); break;
       case 'FLL': if (!isNum(x[1].type)) bad(BAD_TYPE, 1); break;
       case 'BTD': {
         const len = x[4].c;
         if (len < 1) bad('Length must be 1 or more', 4);
-        if (x[1].c < 0 || x[1].c + len > BITS(x[0].type)) bad('Source bit and length run past the end of the source', 1);
-        if (x[3].c < 0 || x[3].c + len > BITS(x[2].type)) bad('Dest bit and length run past the end of the dest', 3);
+        if (len > 32) bad('Length must be 32 or less', 4);
+        if (x[1].c < 0 || x[1].c >= BITS(x[0].type)) bad('Source bit must be a bit of the source', 1);
+        if (x[3].c < 0 || x[3].c >= BITS(x[2].type)) bad('Dest bit must be a bit of the dest', 3);
         break;
       }
       case 'SWPB': if (x[0].type === 'SINT' || x[2].type === 'SINT') bad(BAD_TYPE, x[0].type === 'SINT' ? 0 : 2); break;
@@ -942,7 +952,8 @@
           if (p) {
             const s = i32(x[0].get()), sb = x[1].c, db = x[3].c, n = x[4].c;
             let d = i32(x[2].get());
-            for (let k = 0; k < n; k++) { const m = 1 << (db + k); d = (s >> (sb + k)) & 1 ? d | m : d & ~m; }
+            const sbits = BITS(x[0].type), dbits = BITS(x[2].type);
+            for (let k = 0; k < n && sb + k < sbits && db + k < dbits; k++) { const m = 1 << (db + k); d = (s >> (sb + k)) & 1 ? d | m : d & ~m; }
             x[2].set(d);
           }
           e.v = p; return p;
@@ -962,21 +973,27 @@
           e.v = p; return p;
         }
         case 'COP': {
+          // Length counts Dest elements; the copy stops at the end of either array. Between different types the
+          // bytes are copied (low byte first), as the reference controller does
           if (p) {
-            x[0].at(); const sa = PP, si = PK;
-            x[1].at(); const da = PP, di = PK;
-            const n = Math.min(x[2].c, sa.length - si, da.length - di), tmp = [];
-            for (let k = 0; k < n; k++) tmp.push(clone(sa[si + k]));
-            for (let k = 0; k < n; k++) da[di + k] = tmp[k];
+            const S = file(x[0]), D = file(x[1]), len = Math.min(x[2].c, D.n);
+            if (x[0].type === x[1].type) {
+              const n = Math.min(len, S.n), tmp = [];
+              for (let k = 0; k < n; k++) tmp.push(clone(S.g(k)));
+              for (let k = 0; k < n; k++) D.s(k, tmp[k]);
+            } else {
+              const ss = BYTES[x[0].type], ds = BYTES[x[1].type], nb = Math.min(len * ds, S.n * ss);
+              const dv = new DataView(new ArrayBuffer(Math.ceil(nb / ss) * ss + 8));
+              for (let k = 0; k * ss < nb; k++) putBytes(dv, k * ss, x[0].type, S.g(k));
+              for (let k = 0; (k + 1) * ds <= nb; k++) D.s(k, getBytes(dv, k * ds, x[1].type));
+            }
           }
           e.v = p; return p;
         }
         case 'FLL': {
           if (p) {
-            const v = store(x[1].type, x[0].get());
-            x[1].at();
-            const da = PP, di = PK, n = Math.min(x[2].c, da.length - di);
-            for (let k = 0; k < n; k++) da[di + k] = v;
+            const v = store(x[1].type, x[0].get()), D = file(x[1]), n = Math.min(x[2].c, D.n);
+            for (let k = 0; k < n; k++) D.s(k, v);
           }
           e.v = p; return p;
         }
@@ -1024,6 +1041,7 @@
        it pauses a TOF (reference help). */
     timer(t, s, p) {
       const dt = this.dt;
+      if (p && (s.PRE < 0 || s.ACC < 0)) throw new Fault(4, 34, `Timer ${t}: a negative .PRE or .ACC`);
       if (t === 'TOF') {
         if (p) { s.EN = 1; s.DN = 1; s.TT = 0; s.ACC = 0; return; }
         if (s.EN) { s.EN = 0; s.TT = s.DN; return; }

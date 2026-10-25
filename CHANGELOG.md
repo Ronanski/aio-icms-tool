@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.3.0-beta.5): every instruction checked against the reference
+- **Tag browser in the operand box, as in the reference:** a structure's members (T1.DN, T1.ACC, C1.DN …), the bits of
+  a SINT / INT / DINT (D1.0 to D1.31) and the elements of an array (Recipe[0] …) are listed folded under their tag.
+- **Expressions (CMP, CPT):** the tags that match the word being typed are listed and tapping one puts it in the
+  expression; operator buttons (+ − * / MOD ( ) = <> < <= > >= AND OR NOT ABS SQR). The list heading keeps one line so
+  the buttons do not move while typing.
+- **JSR** lists the other routines of the program (not the routine itself); **JMP / LBL** list the labels and jump
+  targets of the routine; **SWPB** lists its order modes.
+- **Phone and tablet keyboards:** number operands open the number pad; tag names are not capitalized or autocorrected.
+- **Box instructions widen** to show long operands in full (they were cut off on a phone).
+- **Engine, as in the reference:** a negative timer .PRE or .ACC is a major fault (type 4, code 34); COP copies bytes
+  between SINT, INT, DINT and REAL and takes a single tag as well as an array element; BTD drops the bits that run past
+  bit 31 instead of refusing the rung.
+- **Tests:** `tests/mtps-ref.test.js` checks every instruction against the reference (67 checks, part of `npm test`);
+  `npm run audit` adds every instruction through the screens on a desktop, an Android tablet and an Android phone
+  (touch) and runs a program with all of them.
+
 ### Fixed (MT PLC Studio 0.3.0-beta.4): found by building and running a motor seal-in on the Windows app
 - **Ctrl+W no longer closes the Windows app.** The built-in window menu is gone; in the operand box Ctrl+W creates the
   typed tag, as the hint says. In a browser, where Ctrl+W closes the tab, the hint is not shown.

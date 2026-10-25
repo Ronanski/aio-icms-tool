@@ -27,7 +27,9 @@
   };
   const isBox = e => !!(INSTR[e.t] && INSTR[e.t].k === 'box');
   const isOut = e => (e.t === 'BR' ? e.legs.length > 0 && e.legs.every(l => l.length && isOut(l[l.length - 1])) : !!(INSTR[e.t] && INSTR[e.t].out));
-  const widthOf = e => (e.t === 'BR' ? Math.max(1, ...e.legs.map(l => l.reduce((s, x) => s + widthOf(x), 0))) : isBox(e) ? 2 : 1);
+  // a box takes two cells, or more when its operands need the room (as the reference editor widens a box); set per render
+  let boxCells = () => 2;
+  const widthOf = e => (e.t === 'BR' ? Math.max(1, ...e.legs.map(l => l.reduce((s, x) => s + widthOf(x), 0))) : isBox(e) ? boxCells(e) : 1);
   const same = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -74,6 +76,8 @@
           drop {ri, path, after}, press {ri, path}, font (px) } */
   function render(rungs, o) {
     const S = o.font || 11, LH = Math.round(S * 1.2), CW = o.cell;
+    const fB = (S) + 'px Arial';
+    boxCells = e => { const names = OPN[e.t] || [], bits = (INSTR[e.t] || {}).bits || []; let need = 0; (e.a || []).forEach((v, i) => { need = Math.max(need, tw(names[i] || '', fB) + tw(String(v), fB) + 30); }); need = Math.max(need, tw(e.t, fB) + 24) + 16 + (bits.length ? 30 : 8); return Math.max(2, Math.ceil(need / CW)); };
     const LM = Math.round(Math.max(30, CW * 0.36)), cols = Math.max(3, Math.floor((o.W - LM - 8) / CW)), RR = LM + cols * CW;
     const fName = `${S + 1}px Arial`, fDesc = `${S}px Arial`, descLines = o.descLines || 2;
     let y = 8, out = '', taps = '';
@@ -116,7 +120,7 @@
           brs.push({ col: c, w, rows: legRows, ends, path: p });
           rows = Math.max(rows, r - row);
           c += w;
-        } else { items.push({ e, col: c, row, path: p }); c += isBox(e) ? 2 : 1; }
+        } else { items.push({ e, col: c, row, path: p }); c += isBox(e) ? boxCells(e) : 1; }
       });
       return { end: c, rows };
     }
@@ -193,7 +197,7 @@
           out += `<line class="drop" x1="${dx}" y1="${wy - 18}" x2="${dx}" y2="${wy + 18}"/>`;
         }
         all.forEach(it => {
-          const e = it.e, x = X(it.col), w = (isBox(e) ? 2 : 1) * CW, cy = rowY[it.row], cx = x + w / 2, h = head(e);
+          const e = it.e, x = X(it.col), w = (isBox(e) ? boxCells(e) : 1) * CW, cy = rowY[it.row], cx = x + w / 2, h = head(e);
           const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, it.path);
           if (isSel) out += `<rect class="sel" x="${x + 2.5}" y="${cy - h.h - 6.5}" width="${w - 5}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 26)}" rx="3"/>`;
           if (o.press && o.press.ri === ri && same(o.press.path, it.path)) out += `<circle class="press" cx="${cx}" cy="${cy}" r="${CW * .4}"/>`;
