@@ -860,3 +860,28 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .tab .chas, .phone .chas { --sloth: 262px; }
 .rkslots { grid-auto-rows: minmax(var(--sloth), auto); align-items: stretch; }
 .chas .ccard, .chas .ccard.empty { width: var(--slotw); min-height: var(--sloth); box-sizing: border-box; }
+
+/* 0.4.0-beta.4: the RTB housing door of an I/O module (1756-IN062: "The RTB housing door is closed"). Closed, it
+   covers the terminal block; a click opens it on its left hinge, so the terminals show; another click closes it. */
+.mrtb { position: relative; perspective: 320px; perspective-origin: 0 50%; cursor: pointer; }
+.mrtb > .mterm { transition: filter .2s; }
+.mrtb:not(.open) > .mterm { filter: brightness(.6); }
+.rtbdoor { position: absolute; inset: 0; z-index: 2; margin: 0; padding: 4px 4px 4px 9px; border: 1px solid #0d1014; border-radius: 2px 3px 3px 2px; cursor: pointer;
+  background: repeating-linear-gradient(180deg, transparent 0 5px, rgba(255, 255, 255, .05) 5px 6px), linear-gradient(90deg, #3a4049, #2c3138 60%, #23272d);
+  box-shadow: inset 2px 0 0 #4b525c, inset -1px 0 0 #161a1f, 0 1px 2px rgba(0, 0, 0, .5);
+  color: #c8ced6; font: 700 8px var(--mono); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  transform-origin: left center; transform: rotateY(0deg); transition: transform .32s cubic-bezier(.3, .7, .3, 1), box-shadow .32s; backface-visibility: visible; }
+.rtbdoor b { font: inherit; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rtbdoor small { font: 600 7px var(--mono); color: #8d97a4; }
+/* the hinge on the left edge and the locking tab at the top, as on the real housing */
+.rtbdoor::before { content: ""; position: absolute; left: 2px; top: 10%; bottom: 10%; width: 3px; border-radius: 2px; background: repeating-linear-gradient(180deg, #8b939e 0 4px, #4a525d 4px 6px); }
+.rtblock { position: absolute; top: 3px; right: 4px; width: 8px; height: 5px; border-radius: 1px; background: #8b939e; box-shadow: inset 0 -1px 0 #4a525d; }
+.rtbrib { width: 60%; height: 3px; border-radius: 2px; background: #1a1e23; box-shadow: 0 1px 0 #4b525c; }
+.rtbdoor:hover { box-shadow: inset 2px 0 0 #4b525c, inset 0 0 0 1px var(--accent), 0 1px 2px rgba(0, 0, 0, .5); }
+.rtbdoor:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mrtb.open > .rtbdoor { transform: rotateY(-96deg); box-shadow: inset 2px 0 0 #4b525c, -3px 0 6px rgba(0, 0, 0, .55); }
+.mrtb.open > .rtbdoor > * { opacity: 0; transition: opacity .12s; }
+/* touch layouts: the door (and the open terminal block) is at least 44 px tall to tap */
+.tab .mrtb, .phone .mrtb { min-height: 44px; }
+.tab .mrtb > .mterm, .phone .mrtb > .mterm { min-height: 44px; box-sizing: border-box; }
+@media (prefers-reduced-motion: reduce) { .rtbdoor, .mrtb > .mterm { transition: none; } }

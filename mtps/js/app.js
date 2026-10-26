@@ -2605,6 +2605,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      and modules plugged into the slots. An I/O module has its status LEDs and a terminal block (screw terminals, where
      field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
      as in the reference emulator */
+  const rtbOpen = new Set();   // the I/O cards ('rack:slot') whose RTB door is open: UI state only
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
@@ -2628,7 +2629,11 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
     const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
     const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
-    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${term}${tail}</div>`;
+    /* the RTB (removable terminal block) housing: its door is closed over the terminals, as on a 1756 module; a click
+       or tap opens it on its side hinge and shows the terminals, another one closes it (kept per card, not in the project) */
+    const open = rtbOpen.has(id);
+    const rtb = `<div class="mrtb${open ? ' open' : ''}" data-rtb="${id}">${term}<button type="button" class="rtbdoor" data-rtb="${id}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the terminal block door of slot ${s}" title="${open ? 'Close' : 'Open'} the RTB door"><span class="rtblock" aria-hidden="true"></span><span class="rtbrib" aria-hidden="true"></span><b>${esc(m.type.replace('PLC-', ''))}</b><small>RTB</small></button></div>`;
+    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${rtb}${tail}</div>`;
   }
   /* the chassis drawn as one row of slots, as in the Logix Emulate Chassis Monitor: a power supply, then every slot
      (4 or 8) side by side, each empty slot as big as a module. On a narrow screen the row scrolls sideways; it never
@@ -2718,7 +2723,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function moduleMenu(id, x, y) {
     const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
     if (!m) return;
-    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: () => ({ dataset: { crem: id } }) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
+    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
   }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
@@ -2790,6 +2795,19 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     let el;
     const doc = t.ownerDocument;
     if ((el = t.closest('[data-cio]'))) { openIoWin(el.dataset.cio, el.ownerDocument, el.closest('.ccard') || el); return true; }
+    if ((el = t.closest('[data-rtb]'))) {
+      // the RTB door: swing it open or shut in place (every view of that card), so the hinge animates
+      const k = el.dataset.rtb, open = !rtbOpen.has(k);
+      if (open) rtbOpen.add(k); else rtbOpen.delete(k);
+      const docs = [document].concat(chasWin && !chasWin.closed ? [chasWin.document] : []);
+      docs.forEach(d => d.querySelectorAll(`.mrtb[data-rtb="${k}"]`).forEach(x => {
+        x.classList.toggle('open', open);
+        const b = x.querySelector('.rtbdoor'); if (!b) return;
+        b.setAttribute('aria-expanded', String(open));
+        b.setAttribute('aria-label', `${open ? 'Close' : 'Open'} the terminal block door of slot ${k.split(':')[1]}`); b.title = `${open ? 'Close' : 'Open'} the RTB door`;
+      }));
+      return true;
+    }
     if ((el = t.closest('[data-emu]'))) {
       openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
       if (doc !== document) window.focus();

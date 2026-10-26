@@ -472,6 +472,25 @@ function check(name, cond, info = '') {
   check('an old project of 10 slots opens as 8; one with a module in slot 9 keeps its size and verifies', mig.join() === '8,12,0', mig.join());
   await ev(() => MTPS.App.openProject(MTPS.App.example(), true));
   await page.waitForTimeout(150);
+  // the RTB door of an I/O module: closed by default over the terminals; a click opens it (the terminals show), another closes it
+  const door = (pg, id) => pg.evaluate(id => {
+    const c = document.querySelector(`#iob .ccard.io[data-cmod="${id}"]`), r = c.querySelector('.mrtb'), d = r.querySelector('.rtbdoor'), t = r.querySelector('.mterm .scr').getBoundingClientRect();
+    const hit = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2), b = d.getBoundingClientRect(), rb = r.getBoundingClientRect();
+    return { open: r.classList.contains('open'), aria: d.getAttribute('aria-expanded'), covered: !!(hit && hit.closest('.rtbdoor')), terminal: !!(hit && hit.closest('.scr')), screws: r.querySelectorAll('.mterm .scr').length, doorH: Math.round(b.height), rtbH: Math.round(rb.height), cpuDoor: !!document.querySelector('#iob .ccard.cpu .rtbdoor'), iowin: !!document.querySelector('.iowin') };
+  }, id);
+  let dr = await door(page, '0:1');
+  check('RTB door: every I/O module has one, closed by default over its terminals (the CPU has none)', !dr.open && dr.aria === 'false' && dr.covered && !dr.terminal && dr.screws === 18 && !dr.cpuDoor && (await page.$$eval('#iob .ccard.io .mrtb:not(.open)', x => x.length)) === 2, JSON.stringify(dr));
+  await page.click('#iob .ccard.io[data-cmod="0:1"] .rtbdoor');
+  await page.waitForTimeout(450);
+  dr = await door(page, '0:1');
+  check('RTB door: a click opens it on its hinge and shows the 20 terminals; no Module I/O window opens', dr.open && dr.aria === 'true' && dr.terminal && !dr.covered && !dr.iowin, JSON.stringify(dr));
+  check('RTB door: only that module\'s door opens; the LEDs and the name stay as they are', (await page.$$eval('#iob .mrtb.open', x => x.length)) === 1 && (await page.$$eval('#iob [data-cmod="0:1"] .mmat i', c => c.length)) === 16);
+  await ev(() => MTPS.App.render()); await page.waitForTimeout(100);
+  check('RTB door: it stays open when the panel is drawn again (kept per card, not in the project)', (await door(page, '0:1')).open && await ev(() => !JSON.stringify(MTPS.App.state.p).includes('rtb')));
+  await page.click('#iob .ccard.io[data-cmod="0:1"] .mterm .scr');
+  await page.waitForTimeout(450);
+  dr = await door(page, '0:1');
+  check('RTB door: a click again closes it', !dr.open && dr.aria === 'false' && dr.covered && !dr.iowin, JSON.stringify(dr));
   await ev(() => MTPS.App.run('vio'));
   check('View > Emulator Panel hides the dock', (await page.$('#dock')) === null);
   await ev(() => MTPS.App.run('vio'));
@@ -866,6 +885,30 @@ function check(name, cond, info = '') {
     const y0 = await tp.$eval('#ladwrap', w => w.scrollTop);
     await T('touchStart', 400, 700); for (let i = 1; i <= 6; i++) { await T('touchMove', 400, 700 - i * 40); await tp.waitForTimeout(16); } await T('touchEnd'); await tp.waitForTimeout(400);
     check('a quick swipe still scrolls the ladder', (await tp.$eval('#ladwrap', w => w.scrollTop)) > y0 + 100 && (await rung(1)) === 'XIC(Motor_Run)OTE(Motor_Cmd);');
+    await tp.close();
+  }
+  console.log('Tablet with touch: the RTB door of an I/O module');
+  {
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await tp.waitForTimeout(300);
+    let td = await door(tp, '0:2');
+    check('tablet (touch): the RTB door is closed and at least 44 px tall to tap', !td.open && td.covered && td.doorH >= 44, JSON.stringify(td));
+    await tp.tap('#iob .ccard.io[data-cmod="0:2"] .rtbdoor'); await tp.waitForTimeout(450);
+    td = await door(tp, '0:2');
+    check('tablet (touch): a tap opens the RTB door and shows the terminals', td.open && td.terminal && !td.iowin, JSON.stringify(td));
+    await tp.tap('#iob .ccard.io[data-cmod="0:2"] .mrtb'); await tp.waitForTimeout(450);
+    check('tablet (touch): a tap again closes it', !(await door(tp, '0:2')).open);
+    await tp.setViewportSize({ width: 390, height: 844 });
+    await tp.waitForFunction(() => MTPS.App.state.layout === 'phone', null, { timeout: 3000 }).catch(() => {});
+    await tp.waitForTimeout(300);
+    await tp.tap('[data-ptab="1"]'); await tp.waitForTimeout(200);
+    td = await door(tp, '0:1');
+    check('phone (touch): the chassis is one row of 8 slots and the door is at least 44 px tall', (await tp.$$eval('#iob .rkslots > .ccard', c => new Set(c.map(x => Math.round(x.getBoundingClientRect().top))).size === 1 && c.length === 8)) && !td.open && td.doorH >= 44, JSON.stringify(td));
+    await tp.tap('#iob .ccard.io[data-cmod="0:1"] .rtbdoor'); await tp.waitForTimeout(450);
+    check('phone (touch): a tap opens the RTB door', (await door(tp, '0:1')).open);
     await tp.close();
   }
   console.log('Mouse: drag an instruction to a node (Ctrl copies)');
