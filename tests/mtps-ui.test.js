@@ -179,7 +179,15 @@ function check(name, cond, info = '') {
   check('the output lamp of KM1 is on (the yellow point 0 on the DO card)', (await page.$eval('#iob [data-cmod="0:2"] .mmat i', i => i.classList.contains('y'))) === true);
   check('true instructions get green bars', (await page.$$eval('#ladwrap rect.bar', r => r.length)) > 4);
   // clicking instructions while the ladder is redrawn by the running timer
-  const pick = async (ri, p) => { for (let k = 0; k < 5; k++) { try { const r = await page.$(`#ladwrap rect.tap[data-ri="${ri}"][data-p="${p}"]`); await r.scrollIntoViewIfNeeded(); const bb = await r.boundingBox(); await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); return; } catch (e) { await page.waitForTimeout(30); } } };
+  // the redraw can detach the element between the lookup and the click: find and measure it in one step, and retry
+  // only a click that never reached the ladder (on a slow CI runner the old 5 × 30 ms could run out)
+  const pick = async (ri, p) => {
+    for (let k = 0; k < 20; k++) {
+      const bb = await page.evaluate(([ri, p]) => { const r = document.querySelector(`#ladwrap rect.tap[data-ri="${ri}"][data-p="${p}"]`); if (!r) return null; r.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }, [ri, p]);
+      if (bb) { await page.mouse.click(bb.x, bb.y); const s = await S(); if (s.sel && s.sel.ri === ri) return; }
+      await page.waitForTimeout(50);
+    }
+  };
   await pick(2, '0');
   await page.waitForTimeout(80);
   await pick(3, '0');
