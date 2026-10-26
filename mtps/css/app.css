@@ -1038,3 +1038,31 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .tab .otab, .phone .otab { min-height: 44px; }
 .mvr { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .mvr b { width: 80px; }
+
+/* communications: the COMM activity LED, browsing rows, the transfer dialog (Go Online, Download, Upload) */
+.comm { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 10px; color: var(--muted); flex: none; }
+.comm b { font-weight: 600; letter-spacing: .02em; }
+.commled { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #7d8794; background: #c4cad2; flex: none; }
+.commled.on, .commled.busy { background: #2ecc40; border-color: #1e7f3f; }
+.commled.on { animation: commslow 1.6s steps(1, end) infinite; }
+.commled.busy { animation: commfast .18s steps(1, end) infinite; }
+@keyframes commslow { 0%, 88% { background: #2ecc40; } 89%, 100% { background: #c4cad2; } }
+@keyframes commfast { 0% { background: #2ecc40; } 50% { background: #c4cad2; } }
+.tab .comm, .phone .comm { padding: 0 6px; }
+.tab .commled, .phone .commled { width: 11px; height: 11px; }
+.browsing { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--muted); font-size: .92em; }
+.spin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.wabar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.wabar .ell { min-width: 0; }
+.dlg.xfer { width: min(440px, calc(100% - 24px)); }
+.phone .dlg.xfer { left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(100% - 32px); height: auto; border-radius: var(--r); border: 1px solid var(--border); }
+.xfer-t { margin: 0 0 4px; min-height: 2.6em; overflow-wrap: anywhere; }
+.xfer-s { display: flex; gap: 8px; font-size: 12px; align-items: baseline; }
+.xfer-s .grow { min-width: 0; }
+.prog.det i { transition-property: width; transition-timing-function: linear; }
+@media (prefers-reduced-motion: reduce) {
+  .commled.on, .commled.busy { animation: none; }
+  .spin { animation: none; border-top-color: var(--border-strong); }
+  .prog.det i { transition: none; }
+}

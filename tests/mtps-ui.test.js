@@ -4,7 +4,8 @@
 const path = require('path');
 const { chromium } = require('playwright');
 
-const URL = 'file://' + path.resolve(__dirname, '..', 'mtps', 'index.html');
+// fastcomm=1: no connect, browse or transfer delays (the comm feel has its own tests, with the delays on)
+const URL = 'file://' + path.resolve(__dirname, '..', 'mtps', 'index.html') + '?fastcomm=1';
 let failed = 0, passed = 0;
 function check(name, cond, info = '') {
   if (cond) { passed++; console.log(`  ✓ ${name}`); }
@@ -1029,6 +1030,110 @@ function check(name, cond, info = '') {
     await T('touchStart', 400, 700); for (let i = 1; i <= 6; i++) { await T('touchMove', 400, 700 - i * 40); await tp.waitForTimeout(16); } await T('touchEnd'); await tp.waitForTimeout(400);
     check('a quick swipe still scrolls the ladder', (await tp.$eval('#ladwrap', w => w.scrollTop)) > y0 + 100 && (await rung(1)) === 'XIC(Motor_Run)OTE(Motor_Cmd);');
     await tp.close();
+  }
+  console.log('Communications with the delays on: browse, connect, download, cancel (RSLinx / Studio 5000 feel)');
+  {
+    const cctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await cctx.route('https://ronanski.github.io/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{"version":"0.0.1"}' }));
+    const cp = await cctx.newPage();
+    cp.on('pageerror', e => errors.push(e.message));
+    const SLOW = URL.replace('?fastcomm=1', '');
+    await cp.goto(SLOW); await cp.evaluate(() => localStorage.clear()); await cp.reload(); await cp.waitForTimeout(400);
+    await cp.keyboard.press('Escape');
+    await cp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await cp.waitForTimeout(150);
+    const cTitle = () => cp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '');
+    const led = () => cp.$eval('.commled', e => e.className);
+    // the main thread stays free: a timer set now fires at once
+    const lag = () => cp.evaluate(() => new Promise(r => { const t = performance.now(); setTimeout(() => r(performance.now() - t), 0); }));
+    // RSLinx Classic: RSWho browses node by node
+    await cp.evaluate(() => MTPS.App.run('rswho')); await cp.waitForTimeout(60);
+    check('RSWho opens browsing: "Browsing - node found", a Browsing… mark on the driver, the COMM LED busy', (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - node found' && (await cp.$$('#rltree .browsing')).length > 0 && (await led()).includes('busy'));
+    const n0 = await cp.$$eval('#rltree .nd', n => n.length);
+    await cp.waitForTimeout(700);
+    const n1 = await cp.$$eval('#rltree .nd', n => n.length);
+    await cp.waitForFunction(() => document.querySelector('#rlbst').textContent === 'Browsing - done', null, { timeout: 8000 }).catch(() => {});
+    const n2 = await cp.$$eval('#rltree .nd', n => n.length);
+    check('RSWho: the nodes come in one by one, then "Browsing - done" with no Browsing… mark', n0 < n1 && n1 <= n2 && n2 >= 6 && (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - done' && (await cp.$$('#rltree .browsing')).length === 0, `${n0} ${n1} ${n2}`);
+    const h0 = await cp.$eval('#rltree', e => e.innerHTML);
+    await cp.waitForTimeout(1300);
+    check('Autobrowse checks again quietly: the tree is not browsed again when nothing changed', (await cp.$eval('#rltree', e => e.innerHTML)) === h0 && (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - done');
+    await cp.click('#layer [data-rlref]'); await cp.waitForTimeout(60);
+    check('Refresh browses again', (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - node found' && (await cp.$$eval('#rltree .nd', n => n.length)) < n2);
+    await cp.keyboard.press('Escape'); await cp.waitForTimeout(80);
+    check('closing RSLinx mid-browse leaves the COMM LED dark (offline)', (await led()) === 'commled');
+    // Who Active: browses the same way
+    await cp.evaluate(() => MTPS.App.run('who')); await cp.waitForTimeout(60);
+    check('Who Active opens browsing, with Autobrowse and Refresh', (await cp.$eval('#wa-st', e => e.textContent)) === 'Browsing - node found' && (await cp.$$('#wa-rows .browsing')).length === 1 && (await cp.$eval('#wa-auto', c => c.checked)) && (await cp.$('#wa-ref')) !== null && (await cp.$$('#wa-rows [data-wa]')).length === 0);
+    await cp.waitForFunction(() => document.querySelector('#wa-st').textContent === 'Browsing - done', null, { timeout: 8000 }).catch(() => {});
+    check('Who Active: the controller is found, "Browsing - done"', (await cp.$$eval('#wa-rows [data-wa]', r => r.map(x => x.dataset.wa))).includes('Emulate\\127.0.0.1\\Backplane\\0') && (await cp.$$('#wa-rows .browsing')).length === 0);
+    // Go Online from Who Active: Connecting, then the checks, then Connected To Go Online
+    let t0 = Date.now();
+    await cp.evaluate(() => [...document.querySelectorAll('#layer .btn')].find(b => b.textContent.trim() === 'Go Online').click());
+    await cp.waitForTimeout(120);
+    check('Go Online: a "Connecting to the controller at <path>…" step with a progress bar and Cancel', (await cTitle()) === 'Go Online' && (await cp.$eval('#xft', e => e.textContent)).startsWith('Connecting to the controller at Emulate\\127.0.0.1\\Backplane\\0') && (await cp.$('#layer .prog[role="progressbar"]')) !== null && (await cp.$$eval('#layer .df .btn', b => b.map(x => x.textContent).join())) === 'Cancel' && (await led()).includes('busy'));
+    check('the screen keeps working while it connects (a timer fires within 50 ms)', (await lag()) < 50);
+    await cp.waitForFunction(() => { const b = document.querySelector('#layer .dlg .dh b'); return b && b.textContent === 'Connected To Go Online'; }, null, { timeout: 4000 }).catch(() => {});
+    const tc = Date.now() - t0;
+    check('then the project / controller check: Connected To Go Online (the controller is empty), after about 0.5-1 s', (await cTitle()) === 'Connected To Go Online' && tc >= 450 && tc < 2500, `${tc} ms`);
+    // Download: asks first, then the staged transfer
+    await cp.click('#layer .btn.pri'); await cp.waitForTimeout(100);
+    check('Download still asks first (no second connect: the path was just reached)', (await cTitle()) === 'Download');
+    await cp.click('#layer .btn.pri');
+    await cp.waitForSelector('#xft', { timeout: 2000 }).catch(() => {});
+    t0 = Date.now();
+    const seen = [], pcs = [];
+    let lagMax = 0;
+    for (let k = 0; k < 150; k++) {
+      const s = await cp.evaluate(() => { const t = document.querySelector('#xft'), p = document.querySelector('#layer .prog[aria-valuenow]'); return t ? [t.textContent, +p.getAttribute('aria-valuenow'), document.querySelector('#layer .dh b').textContent] : null; });
+      if (!s) break;
+      if (seen[seen.length - 1] !== s[0]) seen.push(s[0]);
+      pcs.push(s[1]);
+      if (k % 5 === 0) lagMax = Math.max(lagMax, await lag());
+      await cp.waitForTimeout(30);
+    }
+    const td = Date.now() - t0, st = seen.join(' | ');
+    check('Downloading: the stages Downloading…, tags, program, routine, Verifying…, Download complete', seen[0] === 'Downloading…' && /Downloading tags \(9\)…/.test(st) && st.includes('Downloading program MainProgram…') && st.includes('Downloading routine MainProgram - MainRoutine (5 rungs)…') && st.includes('Verifying…') && seen[seen.length - 1] === 'Download complete', st);
+    check('a determinate bar that only goes up, to 100 %', pcs.every((v, i) => !i || v >= pcs[i - 1]) && pcs[pcs.length - 1] === 100 && pcs.some(v => v > 0 && v < 100), pcs.join());
+    check('the transfer takes about 1.5-3 s and never blocks the screen', td >= 1300 && td < 3800 && lagMax < 60, `${td} ms, lag ${lagMax.toFixed(1)} ms`);
+    await cp.waitForTimeout(150);
+    check('after the download: online, the controller holds the project, the COMM LED blinks slowly', await cp.evaluate(() => MTPS.App.state.online && MTPS.App.ctl.holds(MTPS.App.state.p)) && (await led()) === 'commled on');
+    // Cancel during the transfer
+    await cp.evaluate(() => MTPS.App.run('offline'));
+    await cp.evaluate(() => { const p = MTPS.App.state.p; p.tasks[0].programs[0].routines[0].rungs.push({ t: 'NOP();' }); MTPS.App.openProject(p, true); });
+    await cp.waitForTimeout(80);
+    await cp.evaluate(() => MTPS.App.run('download')); await cp.waitForTimeout(100);
+    check('Download from offline connects first', (await cTitle()) === 'Download' && (await cp.$eval('#xft', e => e.textContent).catch(() => '')).startsWith('Connecting to the controller'));
+    await cp.waitForFunction(() => !document.querySelector('#xft'), null, { timeout: 4000 }).catch(() => {});
+    await cp.click('#layer .btn.pri');
+    await cp.waitForFunction(() => { const t = document.querySelector('#xft'); return t && /tags|program|routine/.test(t.textContent); }, null, { timeout: 3000 }).catch(() => {});
+    await cp.click('#layer .df .btn'); await cp.waitForTimeout(100);
+    check('Cancel stops the download: the dialog closes, "Download cancelled", the controller keeps its project', (await cp.$('#layer .dlg')) === null && (await cp.$eval('#stmsg', e => e.textContent)).startsWith('Download cancelled') && await cp.evaluate(() => !MTPS.App.state.online && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5));
+    await cp.waitForTimeout(2500);
+    check('nothing runs on after Cancel (no late download, the COMM LED is dark)', await cp.evaluate(() => !MTPS.App.state.online && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5 && !document.querySelector('#layer .dlg')) && (await led()) === 'commled');
+    // Esc cancels the connect step too
+    await cp.evaluate(() => MTPS.App.run('online')); await cp.waitForTimeout(150);
+    await cp.keyboard.press('Escape'); await cp.waitForTimeout(1500);
+    check('Esc while connecting cancels it: no Connected To Go Online comes later', (await cp.$('#layer .dlg')) === null && !(await cp.evaluate(() => MTPS.App.state.online)));
+    // Upload: staged too, then Save As
+    await cp.evaluate(() => MTPS.App.run('upload'));
+    await cp.waitForFunction(() => { const b = document.querySelector('#layer .dlg .dh b'); return b && b.textContent === 'Upload' && !document.querySelector('#xft'); }, null, { timeout: 4000 }).catch(() => {});
+    await cp.click('#layer .btn.pri');
+    const useen = [];
+    for (let k = 0; k < 150; k++) { const t = await cp.$eval('#xft', e => e.textContent).catch(() => null); if (t == null && useen.length) break; if (t && useen[useen.length - 1] !== t) useen.push(t); await cp.waitForTimeout(30); }
+    check('Uploading: the stages, then Upload complete, then online with the controller copy', useen.some(t => t.startsWith('Uploading tags')) && useen.some(t => t.startsWith('Uploading routine')) && useen[useen.length - 1] === 'Upload complete' && await cp.evaluate(() => MTPS.App.state.online && MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.length === 5), useen.join(' | '));
+    await cp.waitForTimeout(400); await cp.keyboard.press('Escape');
+    // Options: Fast communications skips the waits
+    await cp.evaluate(() => { MTPS.App.run('offline'); MTPS.App.state.prefs.fastComm = true; MTPS.App.run('online'); });
+    check('Options > Fast communications: Go Online at once', await cp.evaluate(() => MTPS.App.state.online));
+    await cctx.close();
+    // reduced motion: the spinner and the LED do not animate
+    const rctx = await browser.newContext({ viewport: { width: 1024, height: 768 }, reducedMotion: 'reduce' });
+    await rctx.route('https://ronanski.github.io/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{"version":"0.0.1"}' }));
+    const rp = await rctx.newPage();
+    await rp.goto(SLOW); await rp.waitForTimeout(300); await rp.keyboard.press('Escape');
+    await rp.evaluate(() => { MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('who'); }); await rp.waitForTimeout(60);
+    check('prefers-reduced-motion: the browse still steps, but the spinner and the COMM LED do not animate', (await rp.$$('#wa-rows .browsing')).length === 1 && (await rp.$eval('.spin', e => getComputedStyle(e).animationName)) === 'none' && (await rp.$eval('.commled', e => getComputedStyle(e).animationName)) === 'none');
+    await rctx.close();
   }
   console.log('Tablet with touch: the RTB door of an I/O module');
   {
