@@ -106,7 +106,7 @@
     task: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2', rack: 'M3 5h18v14H3zM7 5v14M11 5v14M15 5v14', type: 'M5 5h14M12 5v14', prog: 'M4 5h16v14H4zM4 9h16',
     tag: 'M3 12V4h8l10 10-8 8L3 12zM7.5 8.5h.01', io: 'M4 6h16v12H4zM8 10v4M12 10v4M16 10v4', zin: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6M11 8v6',
     zout: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2-1-1-3-2 .2-1.3-1.5.3-2-3-1-1 1.8h-2l-1-1.8-3 1 .3 2L5.9 8.2 4 8l-1 3 2 1v0l-2 1 1 3 2-.2 1.3 1.5-.3 2 3 1 1-1.8h2l1 1.8 3-1-.3-2 1.3-1.5 2 .2 1-3z',
-    fault: 'M12 3l9 16H3zM9 12l6 6M15 12l-6 6', exit: 'M10 4H5v16h5M14 8l4 4-4 4M18 12H9', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.5v.01',
+    net: 'M9 3h6v5H9zM12 8v4M5 12h14M5 12v4M19 12v4M2 16h6v5H2zM16 16h6v5h-6z', fault: 'M12 3l9 16H3zM9 12l6 6M15 12l-6 6', exit: 'M10 4H5v16h5M14 8l4 4-4 4M18 12H9', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.5v.01',
   };
   const ic = (n, c = 'i') => `<svg class="${c}" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[n] || ''}"/></svg>`;
   const TABS = {
@@ -645,7 +645,8 @@
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
     ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
-    drivers: { l: 'Configure Drivers…', i: 'online', run: configureDrivers },
+    drivers: { l: 'Configure Drivers…', i: 'online', run: () => rslinx('drivers') },
+    rswho: { l: 'RSWho (RSLinx Classic)', i: 'net', run: () => rslinx('rswho') },
     setup: { l: 'Setup Wizard…', i: 'gear', run: () => setupWizard(0) },
     chassis: { l: 'Emulator', i: 'rack', run: () => chassisMonitor() },
     online: { l: 'Go Online', i: 'online', run: goOnline, on: () => !S.online },
@@ -676,7 +677,7 @@
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
-    ['Communications', ['drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
+    ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'tips', 'about']],
   ];
@@ -780,7 +781,7 @@
     return `<div class="dmenu">${MENUS.map(([n]) => `<span data-menu="${n}">${n}</span>`).join('')}</div>
       <div class="dtb">${tbtn('new')}${tbtn('open')}${tbtn('save')}<span class="vsep"></span>${tbtn('cut')}${tbtn('copy')}${tbtn('paste')}<span class="vsep"></span>${tbtn('undo')}${tbtn('redo')}
         <span class="vsep"></span>${tbtn('find')}${tbtn('xref')}<span class="vsep"></span>${tbtn('verifyc')}${tbtn('verifyr')}<span class="vsep"></span>${tbtn('tagsmon')}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
-        <span class="grow"></span>${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
+        <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
@@ -799,7 +800,7 @@
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
-        <span class="vsep"></span><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
+        <span class="vsep"></span><button class="btn" data-cmd="rswho" title="RSLinx Classic: RSWho and Configure Drivers">${ic('net')}RSLinx</button><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
         ${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
       <div class="tbody">${pinned ? orgAside('') : ''}
@@ -851,7 +852,7 @@
     return `<div class="card"><div class="ch">Status</div><div class="cb"><div class="leds4">${ledsHTML()}</div>
         <div class="muted" style="margin:14px 0 6px">Key switch</div><span class="seg" style="display:flex">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>
         <div style="margin-top:8px"><div class="kv"><span>Mode</span><span class="v">${modeText()}</span></div><div class="kv"><span>Controller holds</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Path</span><span class="v">${esc(curPath())}</span></div></div>
-        <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
+        <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="rswho">${ic('net')}RSLinx</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
         <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button><button class="btn" data-cmd="download">${ic('download')}Download</button></div>
         <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
@@ -2007,9 +2008,171 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if ((el = t.closest('[data-drvt]'))) { if (!DRVTYPES.find(x => x[0] === el.dataset.drvt)[3]) { toast('That driver is not available in this version.'); return true; } drvSel = el.dataset.drvt; redraw(); return true; }
     return false;
   }
-  function configureDrivers() {
-    const el = dialog({ title: 'Configure Drivers', size: 'md', body: `<div id="drvb">${driversHTML()}</div><p class="help">Without a running driver, Who Active finds nothing and the project cannot go online.</p>`, buttons: [{ l: 'Close', pri: true }] });
-    el.addEventListener('click', ev => driverClick(ev.target, () => { el.querySelector('#drvb').innerHTML = driversHTML(); render(); }));
+  const configureDrivers = () => rslinx('drivers');
+
+  /* ---------- RSLinx Classic: one window with the menu bar, RSWho and Configure Drivers (RSLinx Classic 4.40) ----------
+     It works on the same drivers list as Who Active, Go Online and Download (drivers, saveDrivers, relink): a driver
+     added, stopped or deleted here is what they see. Only Communications > RSWho and Configure Drivers work; the other
+     menus list their items greyed out. */
+  const RLTYPES = [['vbp', 'Virtual Backplane (SoftLogix58xx, USB)', 'AB_VBP-', 'A-B Virtual Chassis'],
+    ['emulate', 'Emulate Ethernet (emulated controllers by IP)', 'EMU500-', 'A-B Ethernet, emulated controllers'],
+    ['ethip', 'EtherNet/IP Driver', 'AB_ETHIP-', 'A-B Ethernet'], ['eth', 'Ethernet devices', 'AB_ETH-', 'A-B Ethernet'], ['df1', 'RS-232 DF1 devices', 'AB_DF1-', 'DF1']];
+  const RLAVAIL = ['vbp', 'emulate'];
+  const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
+    ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
+    ['View', [['Toolbar'], ['Status Bar'], '-', ['Options…']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
+    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode'], ['Set Time']]],
+    ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
+    ['Security', [['Network Security…'], ['Change Password…']]],
+    ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
+    ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null };
+  const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
+  /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
+  function rlTree() {
+    const pad = n => (n < 10 ? '0' + n : n);
+    const slots = (r, k, pathFn) => Array.from({ length: r.size }, (_, n) => {
+      const m = r.module(n); if (!m) return null;
+      const c = m.ctl;
+      return { k: k + '/s' + n, l: `${pad(n)}, ${c ? 'PLC-CPU' : m.type} ${m.name}`, i: c ? 'chip' : 'io', dim: c && !c.powered, path: c ? pathFn(n) : null, m, kids: [] };
+    }).filter(Boolean);
+    const kids = drivers.filter(d => d.run && RLAVAIL.includes(d.type)).map(d => {
+      const k = 'd:' + d.name;
+      if (d.type === 'vbp') {
+        const r = racks[0];
+        return { k, l: `${d.name}, Virtual Backplane`, i: 'online', kids: r ? [{ k: k + '/r', l: `Virtual Chassis, ${r.name}`, i: 'rack', kids: slots(r, k + '/r', n => d.name + '\\' + n) }] : [] };
+      }
+      const seen = new Set(), ips = [];
+      racks.forEach(r => r.controllers().forEach(gm => {
+        if (!gm.ip || !gm.ctl.powered || seen.has(gm.ip)) return;
+        seen.add(gm.ip);
+        const ik = k + '/ip:' + gm.ip;
+        ips.push({ k: ik, l: `${gm.ip}, PLC-CPU ${gm.name}`, i: 'chip', kids: [{ k: ik + '/bp', l: `Backplane, ${r.name}`, i: 'rack', kids: slots(r, ik + '/bp', n => pathOf(gm.ip, n)) }] });
+      }));
+      return { k, l: `${d.name}, Ethernet`, i: 'online', kids: ips };
+    });
+    return { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
+  }
+  const rlFind = (n, k) => { if (n.k === k) return n; for (const c of n.kids) { const f = rlFind(c, k); if (f) return f; } return null; };
+  function rlTreeHTML(root) {
+    const row = (n, d) => {
+      const open = !rlS.shut.has(n.k), has = n.kids.length > 0;
+      return `<div class="nd${n.k === rlS.sel ? ' on' : ''}${n.dim ? ' dim' : ''}" data-rln="${esc(n.k)}" style="padding-left:${6 + d * 16}px"><span class="tw"${has ? ` data-rltw="${esc(n.k)}"` : ''}>${has ? ic(open ? 'down' : 'right') : ''}</span>${ic(n.i, 'i ti')}<span class="ell">${esc(n.l)}${n.dim ? ' · off' : ''}</span></div>${has && open ? n.kids.map(c => row(c, d + 1)).join('') : ''}`;
+    };
+    return row(root, 0) + (root.kids.length ? '' : '<div class="nd dim" style="padding-left:38px">No driver is running: Communications &gt; Configure Drivers…</div>');
+  }
+  function rlPaneHTML(root) {
+    const n = rlFind(root, rlS.sel) || root;
+    if (n.kids.length) return `<div class="rltiles">${n.kids.map(c => `<button class="rltile${c.dim ? ' dim' : ''}" data-rlk="${esc(c.k)}">${ic(c.i)}<span>${esc(c.l)}${c.dim ? ' · off' : ''}</span></button>`).join('')}</div>`;
+    if (!n.m) return `<p class="help" style="padding:12px">${n.k === 'ws' ? 'No driver is running. Add one in Communications &gt; Configure Drivers…' : 'Nothing found on this node.'}</p>`;
+    const m = n.m, c = m.ctl, kv = (a, b) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`;
+    return `<div class="rlprops"><div class="rlph">${ic(n.i)}<b>${esc(n.l)}</b></div>${kv('Slot', String(m.slot != null ? m.slot : n.k.split('/s').pop()))}${kv('Module', c ? 'PLC-CPU (emulated controller)' : m.type)}${kv('Name', m.name)}
+      ${c ? kv('Path', n.path) + kv('Status', c.powered ? ctlMode(c) : 'Off') + kv('Holds', c.name || '(empty)') + (m.ip ? kv('IP Address', m.ip) : '') : ''}</div>${c && c.powered ? '<p class="help" style="padding:0 12px">Pick this controller in Who Active to set the project path, go online or download.</p>' : ''}`;
+  }
+  function rlDrvHTML() {
+    const t = RLTYPES.find(x => x[0] === rlS.dtype), d = drivers[rlS.dsel];
+    return `<div class="rlbox rlcdbox" role="dialog" aria-label="Configure Drivers"><div class="bh">Configure Drivers</div><div class="bb rlcd">
+      <div class="rlcdl"><fieldset><legend>Available Driver Types:</legend><div class="rlts"><select class="inp" id="rldt">${RLTYPES.map(([k, n]) => `<option value="${k}"${k === rlS.dtype ? ' selected' : ''}>${esc(n)}${RLAVAIL.includes(k) ? '' : ' (not in this version)'}</option>`).join('')}</select><button class="btn" data-rladd="1">Add New…</button></div></fieldset>
+        <fieldset class="rlcfg"><legend>Configured Drivers:</legend><div class="rltabw"><table class="rltab"><thead><tr><th>Name and Description</th><th>Status</th></tr></thead><tbody>${drivers.map((x, i) => `<tr class="${i === rlS.dsel ? 'on' : ''}" data-rlrow="${i}"><td><span class="mono">${esc(x.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === x.type) || [, , , x.type])[3])}</span></td><td class="${x.run ? 'run' : ''}">${x.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers. Pick a type, then Add New…</td></tr>'}</tbody></table></div></fieldset>
+        <p class="help">${t && RLAVAIL.includes(t[0]) ? '' : 'That driver type reaches real hardware: it is not in this version. '}Without a running driver, Who Active finds nothing and the project cannot go online.</p></div>
+      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" disabled>Configure…</button><button class="btn" disabled>Startup…</button>
+        <button class="btn" data-rlstart="1"${d && !d.run ? '' : ' disabled'}>Start</button><button class="btn" data-rlstop="1"${d && d.run ? '' : ' disabled'}>Stop</button><button class="btn" data-rldel="1"${d ? '' : ' disabled'}>Delete</button></div></div></div>`;
+  }
+  function rlModalHTML() {
+    const md = rlS.modal;
+    if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
+      <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="RSLinx Classic"><div class="bh">RSLinx Classic</div><div class="bb"><p style="margin:0">Delete the driver <b class="mono">${esc(md.name)}</b>? Who Active, Go Online and Download can no longer use it.</p></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn danger" data-rlpx="ok">Delete</button></div></div></div>`;
+  }
+  function rslinx(view) {
+    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null;
+    if (!drivers[rlS.dsel]) rlS.dsel = 0;
+    let treeKey = '';
+    const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => clearInterval(timer) });
+    const box = el.querySelector('#rl');
+    const draw = () => {
+      const root = rlTree();
+      if (!rlFind(root, rlS.sel)) rlS.sel = 'ws';
+      const sel = rlFind(root, rlS.sel);
+      treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
+      box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
+        <div class="rltb"><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
+        <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell">${rlS.auto ? 'Browsing - node found' : 'Not browsing'}</span></div>
+          <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
+        <div class="rlst"><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
+        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}><span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+      if (rlS.menu) {
+        const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
+        p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
+        p.style.left = Math.max(4, Math.min(b.offsetLeft - box.querySelector('.rlmb').scrollLeft, box.clientWidth - p.offsetWidth - 4)) + 'px';
+      }
+      if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    };
+    // Autobrowse: the tree follows the emulator (controllers turned on or off, cards added) while the box is ticked
+    const timer = setInterval(() => {
+      if (!el.isConnected) { clearInterval(timer); return; }
+      if (!rlS.auto || rlS.menu || rlS.modal) return;
+      if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) draw();
+    }, 1000);
+    const changed = () => { saveDrivers(); relink(); render(); };
+    const addOk = () => {
+      const v = box.querySelector('#rlname').value.trim(), md = rlS.modal;
+      const err = !v ? 'Enter a name for the driver.' : v.length > 15 ? `The name has ${v.length} characters: 15 characters maximum.` : !/^[A-Za-z][A-Za-z0-9_-]*$/.test(v) ? 'Use letters, digits, - and _, starting with a letter.'
+        : /^emulate$/i.test(v) ? 'That name is kept for the Emulate path.' : drivers.some(d => d.name.toUpperCase() === v.toUpperCase()) ? `A driver named ${v} already exists.` : '';
+      if (err) { md.v = v; md.err = err; draw(); return; }
+      drivers.push({ name: v, type: md.type, run: true }); rlS.dsel = drivers.length - 1; rlS.modal = null;
+      changed(); draw();
+    };
+    const modalAct = ok => {
+      const md = rlS.modal;
+      if (!ok) { rlS.modal = null; draw(); return; }
+      if (md.k === 'add') { addOk(); return; }
+      const i = drivers.findIndex(d => d.name === md.name);
+      if (i >= 0) drivers.splice(i, 1);
+      rlS.dsel = Math.min(rlS.dsel, drivers.length - 1); if (rlS.dsel < 0) rlS.dsel = 0;
+      rlS.modal = null; changed(); draw();
+    };
+    box.addEventListener('click', ev => {
+      const t = ev.target;
+      let x;
+      if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
+      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { clearInterval(timer); closeLayer(); return; } rlS.view = a; draw(); return; }
+      if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
+      if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
+      if (rlS.modal) return;
+      if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
+      if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
+      if ((x = t.closest('[data-rln]'))) { rlS.sel = x.dataset.rln; rlS.shut.delete(rlS.sel); draw(); return; }
+      if ((x = t.closest('[data-rlk]'))) { rlS.sel = x.dataset.rlk; rlS.shut.delete(rlS.sel); draw(); return; }
+      if (t.closest('[data-rlref]')) { draw(); toast('RSWho refreshed.'); return; }
+      if (t.closest('[data-rlclose]')) { rlS.view = 'rswho'; draw(); return; }
+      if ((x = t.closest('[data-rlrow]'))) { rlS.dsel = +x.dataset.rlrow; draw(); return; }
+      if (t.closest('[data-rladd]')) {
+        const ty = RLTYPES.find(y => y[0] === rlS.dtype);
+        if (!RLAVAIL.includes(ty[0])) { toast('That driver is not available in this version.', 'err'); return; }
+        if (drivers.some(d => d.type === ty[0])) { toast(`Only one ${ty[1].replace(/ \(.*/, '')} driver can be configured.`, 'err'); return; }
+        let n = 1; while (drivers.some(d => d.name.toUpperCase() === ty[2] + n)) n++;
+        rlS.modal = { k: 'add', type: ty[0], v: ty[2] + n, err: '' }; draw(); return;
+      }
+      const d = drivers[rlS.dsel];
+      if (t.closest('[data-rlstart]') && d) { d.run = true; changed(); draw(); return; }
+      if (t.closest('[data-rlstop]') && d) { d.run = false; changed(); draw(); return; }
+      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); }
+    });
+    box.addEventListener('change', ev => {
+      if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
+      if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
+    });
+    layerKey = ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { clearInterval(timer); closeLayer(); } }
+      if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
+    };
+    draw();
+    return el;
   }
 
   /* ---------- setup wizard: the real order of a first project (spec section 17) ----------
@@ -2615,7 +2778,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */
   function whoActive() {
-    const modeOf = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
+    const modeOf = ctlMode;
     const pad = n => (n < 10 ? '0' + n : n);
     const cur = curPath();
     let sel = resolve(cur) && resolve(cur).ctl ? cur : null;

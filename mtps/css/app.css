@@ -884,3 +884,84 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .phone .aleh { display: none; }
 .ictbl { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .ictbl th, .ictbl td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; }
+/* ---------- RSLinx Classic window: menu bar, RSWho (tree + node contents), Configure Drivers ---------- */
+.dlg.rlw { width: min(1040px, calc(100% - 24px)); height: min(700px, calc(100% - 24px)); }
+.rl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface-2); }
+.rlmb { display: flex; gap: 2px; padding: 2px 6px; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; flex: none; scrollbar-width: none; }
+.rlmb button { height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; white-space: nowrap; flex: none; }
+.rlmb button:hover, .rlmb button.on { background: var(--accent-soft); color: var(--accent-text); }
+.rltb { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; }
+.rl .rltb .btn, .rl .rlch .btn { min-height: 28px; padding: 0 10px; }
+.rl .btn svg.i { width: 16px; height: 16px; }
+.rltb .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.rlchild { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 8px; border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.rlch { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface-3); flex: none; min-width: 0; }
+.rlck { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 28px; white-space: nowrap; }
+.rlck input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.rlwho { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(240px, 40%) 1fr; }
+.rltree { border-right: 1px solid var(--border); padding: 4px 0; }
+.rlpane { overflow: auto; min-width: 0; }
+.rltiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px; align-content: start; }
+.rltile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px; min-height: 96px; border: 1px solid transparent; border-radius: var(--r);
+          background: transparent; cursor: pointer; text-align: center; line-height: 1.35; }
+.rltile:hover { background: var(--surface-2); border-color: var(--border); }
+.rltile svg.i { width: 32px; height: 32px; color: var(--muted); stroke-width: 1.5; }
+.rltile span { overflow-wrap: anywhere; }
+.rltile.dim { color: var(--muted); }
+.rlprops { padding: 4px 16px 8px; max-width: 520px; }
+.rlph { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 14px; border-bottom: 1px solid var(--border); }
+.rlph svg.i { width: 28px; height: 28px; color: var(--muted); }
+.rlst { flex: none; display: flex; gap: 16px; padding: 4px 10px; background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.rlpop { position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow); max-height: calc(100% - 40px); overflow: auto; }
+.rlov { position: absolute; inset: 0; z-index: 3; background: var(--scrim); display: grid; place-items: center; padding: 16px; }
+.rlov2 { z-index: 4; }
+.rlbox { width: min(720px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+.rlbox.rlsm { width: min(420px, 100%); }
+.rlbox .bh { padding: 10px 14px; font-size: 14px; font-weight: 600; border-bottom: 1px solid var(--border); flex: none; }
+.rlbox .bb { padding: 12px 14px; overflow: auto; min-height: 0; }
+.rlbox .bf { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); flex: none; }
+.rlbox .bf .btn { min-width: 88px; }
+.rlcd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; }
+.rlcdl { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.rlcd fieldset { margin: 0; padding: 6px 10px 10px; border: 1px solid var(--border); border-radius: var(--r); min-width: 0; }
+.rlcd legend { padding: 0 4px; font-weight: 600; }
+.rlcd .help { margin: 0; }
+.rlts { display: flex; gap: 8px; align-items: center; }
+.rlts select { flex: 1; }
+.rltabw { border: 1px solid var(--border); border-radius: var(--r-sm); overflow: auto; max-height: 240px; min-height: 120px; }
+.rltab { width: 100%; border-collapse: collapse; }
+.rltab th { position: sticky; top: 0; text-align: left; font-weight: 600; padding: 5px 10px; background: var(--surface-3); border-bottom: 1px solid var(--border); }
+.rltab th:last-child, .rltab td:last-child { width: 96px; border-left: 1px solid var(--border); }
+.rltab td { padding: 5px 10px; height: 28px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.rltab td.run { color: var(--ok); font-weight: 600; }
+.rltab tr:hover td { background: var(--surface-2); }
+.rltab tr.on td { background: var(--accent-soft); }
+.rlbtns { display: flex; flex-direction: column; gap: 8px; }
+.rlbtns .btn { min-width: 112px; }
+.rlgap { height: 18px; }
+/* touch layouts: 44 / 48 px targets; on the phone the window, Configure Drivers and Add New fill the screen */
+.tab .rl .btn, .tab .rl .rltb .btn, .tab .rl .rlch .btn { min-height: 44px; }
+.tab .rlmb button { height: 44px; padding: 0 14px; }
+.phone .rlmb button { height: 48px; padding: 0 14px; }
+.phone .rl .rltb .btn, .phone .rl .rlch .btn { min-height: 48px; }
+.tab .rl .nd { height: 44px; }
+.tab .rlck, .phone .rlck { min-height: 44px; }
+.tab .rlck input, .phone .rlck input { width: 22px; height: 22px; }
+.tab .rltab td { height: 48px; } .phone .rltab td { height: 52px; }
+.tab .rlst, .phone .rlst { padding: 8px 12px; }
+.phone .rlchild { margin: 0; border: 0; border-radius: 0; }
+.phone .rlch { flex-wrap: wrap; gap: 4px 12px; }
+.phone .rlwho { display: flex; flex-direction: column; overflow: auto; }
+.phone .rltree { flex: none; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }
+.phone .rlpane { flex: none; overflow: visible; }
+.phone .rltiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.phone .rlov { padding: 0; place-items: stretch; }
+.phone .rlbox, .phone .rlbox.rlsm { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
+.phone .rlbox .bb { flex: 1; }
+.phone .rlbox .bf .btn { flex: 1; }
+.phone .rlcd { grid-template-columns: 1fr; align-content: start; }
+.phone .rlbtns { flex-direction: row; flex-wrap: wrap; }
+.phone .rlbtns .btn { flex: 1 1 calc(33% - 8px); min-width: 0; }
+.phone .rlgap { display: none; }
+.phone .rlts { flex-wrap: wrap; } .phone .rlts .btn { flex: 1 1 100%; }
+.phone .rlst span:last-child { display: none; }
