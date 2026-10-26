@@ -2637,7 +2637,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
     ['View', [['Toolbar'], ['Status Bar'], '-', ['Options…']]],
     ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
-    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode'], ['Set Time']]],
+    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode…', 'chmode'], ['Set Time']]],
     ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
     ['Security', [['Network Security…'], ['Change Password…']]],
     ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
@@ -2740,6 +2740,13 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'mode') {
+      const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, cur = c && { prog: 'remprog', run: 'remrun' }[c.mode] || (c && c.mode);
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Change Mode"><div class="bh">Change Mode</div><div class="bb">${c ? `<p style="margin-top:0"><b>${esc(n.l)}</b><br>Current mode: ${esc(ctlMode(c))} · key switch ${esc(c.key)}</p>
+        ${[['remrun', 'Run'], ['remprog', 'Program'], ['remtest', 'Test']].map(([m, l]) => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="rlmd" value="${m}"${m === (md.v || cur) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+        <p class="help">Software changes the mode only while the key switch is in REM (Remote).</p>` : '<p class="help">Select a controller in RSWho.</p>'}<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok"${c ? '' : ' disabled'}>OK</button></div></div></div>`;
+    }
     if (md.k === 'props') {
       const n = rlFind(rlTree(), md.key);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
@@ -2828,6 +2835,14 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const md = rlS.modal;
       if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
+      if (md.k === 'mode') {
+        // the same controller code as Studio's Run / Program / Test Mode (Controller.setMode, REM key only)
+        const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, b = box.querySelector('[name="rlmd"]:checked');
+        if (!c || !b) { rlS.modal = null; draw(); return; }
+        if (!c.powered) { md.err = 'The device does not answer.'; draw(); return; }
+        if (!c.setMode(b.value)) { md.v = b.value; md.err = c.key !== 'REM' ? 'The key switch does not allow that mode.' : 'The controller holds no project: download first.'; draw(); return; }
+        saveChassis(); rlS.modal = null; live(true); render(); draw(); return;
+      }
       if (md.k === 'cfg') {
         const d = drivers.find(x => x.name === md.name), i = box.querySelector('#rlslot');
         if (d && i) {
@@ -2873,7 +2888,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         return;
       }
       if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
-      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { quit(); closeLayer(); return; } rlS.view = a; draw(); return; }
+      if ((x = t.closest('[data-rlmi]'))) {
+        const a = x.dataset.rlmi; rlS.menu = '';
+        if (a === 'exit') { quit(); closeLayer(); return; }
+        if (a === 'chmode') { const n = rlFind(rlTree(), rlS.sel); if (n && n.m && n.m.ctl) { rlS.view = 'rswho'; rlS.modal = { k: 'mode', key: rlS.sel }; } else toast('Select a controller in RSWho first.', 'err'); draw(); return; }
+        rlS.view = a; draw(); return;
+      }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if (rlS.modal) return;

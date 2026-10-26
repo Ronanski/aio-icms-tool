@@ -460,7 +460,7 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(80);
   check('RSWho: the right pane shows the picked node\'s children (the slots of the chassis)', (await page.$$eval('#rlpane .rltile', t => t.map(x => x.textContent))).join('|').startsWith('00, PLC-CPU'));
   check('RSWho: Autobrowse is ticked, Refresh is there', (await page.$eval('#rlauto', c => c.checked)) && (await page.$('#layer [data-rlref]')) !== null);
-  await page.click('#layer [data-rlm="Station"]');
+  await page.click('#layer [data-rlm="Security"]');
   await page.waitForTimeout(60);
   check('RSLinx: the other menus list greyed-out items', await page.$$eval('#layer .rlpop .it', i => i.length > 0 && i.every(x => x.classList.contains('dis'))));
   await page.click('#layer [data-rlm="Communications"]');
@@ -1896,6 +1896,32 @@ function check(name, cond, info = '') {
     check('a slot outside the chassis is refused', (await page.$eval('#rlerr', e => e.textContent)).includes('from 0 to 7'));
     await page.fill('#rlslot', '5'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
     check('OK keeps the slot number with the driver', (await page.$('#layer .rlov2')) === null && (await ev(() => JSON.parse(localStorage.getItem('mtps.emu.drivers')).find(d => d.type === 'vbp').slot)) === 5);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+  }
+  console.log('RSLinx Classic: Station > Change Mode for the selected controller');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.download(MTPS.App.state.p); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
+    const mode = () => ev(() => MTPS.App.racks[0].controller(0).mode);
+    await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
+    check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Data Monitor|+Change Mode…|-Set Time');
+    await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
+    check('Change Mode with no controller selected: a message, no dialog', (await page.$('#layer .rlov2')) === null);
+    await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('00, PLC-CPU')).click()); await page.waitForTimeout(80);
+    await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
+    await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
+    check('Change Mode: Run, Program, Test with the current mode picked', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)) === 'Change Mode' && (await page.$eval('[name="rlmd"]:checked', i => i.value)) === 'remprog');
+    await page.check('[name="rlmd"][value="remrun"]'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(120);
+    check('Run: the controller goes to Remote Run (the same code as Studio\'s Run Mode)', (await mode()) === 'remrun' && (await page.$('#layer .rlov2')) === null);
+    await ev(() => MTPS.App.racks[0].controller(0).setKey('PROG'));
+    await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
+    await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
+    await page.check('[name="rlmd"][value="remrun"]'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(100);
+    check('key switch in PROG: refused with the key switch message', (await page.$eval('#rlerr', e => e.textContent)) === 'The key switch does not allow that mode.' && (await mode()) === 'prog');
+    await page.click('#layer .rlov2 [data-rlpx="cancel"]'); await page.waitForTimeout(60);
+    await ev(() => MTPS.App.racks[0].controller(0).setKey('REM'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
   }
   check('no JS errors', errors.length === 0, errors.join(' | '));
