@@ -1013,3 +1013,28 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .tab .mrtb, .phone .mrtb { min-height: 44px; }
 .tab .mrtb > .mterm, .phone .mrtb > .mterm { min-height: 44px; box-sizing: border-box; }
 @media (prefers-reduced-motion: reduce) { .rtbdoor, .mrtb > .mterm { transition: none; } }
+
+/* ---------- Cross Reference window ---------- */
+.xr { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.xrh { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.xrh label { display: flex; flex-direction: column; gap: 4px; }
+.xrh label.grow { flex: 1; min-width: 160px; }
+.xrh .inp { width: auto; }
+.xrtabs { display: flex; align-items: center; gap: 4px; padding: 4px 12px 0; border-bottom: 1px solid var(--border); }
+.xtab { border: 1px solid transparent; border-bottom: 0; background: transparent; padding: 6px 14px; border-radius: var(--r-sm) var(--r-sm) 0 0; cursor: pointer; color: inherit; }
+.xtab.on { border-color: var(--border); background: var(--surface); font-weight: 600; margin-bottom: -1px; }
+.xrb { flex: 1; overflow: auto; min-height: 160px; max-height: 60vh; }
+.xrt { width: 100%; border-collapse: collapse; }
+.xrt th { position: sticky; top: 0; background: var(--surface-2); text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border-strong); cursor: pointer; white-space: nowrap; }
+.xrt td { padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.xrt tbody tr { cursor: pointer; }
+.xrt tbody tr:hover { background: var(--surface-2); }
+.xrt tbody tr.on { background: var(--accent-soft); color: var(--accent-text); }
+.tab .xrt td, .phone .xrt td { padding: 12px 8px; }
+.tab .xtab, .phone .xtab { min-height: 44px; }
+.otabs { display: flex; gap: 2px; padding: 0 0 4px; }
+.otab { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 4px 10px; cursor: pointer; color: var(--muted); }
+.otab.on { color: inherit; border-bottom-color: var(--accent); font-weight: 600; }
+.tab .otab, .phone .otab { min-height: 44px; }
+.mvr { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mvr b { width: 80px; }

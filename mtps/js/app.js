@@ -487,7 +487,7 @@
   function insertMn(mn, at) {
     if (mn === 'RUNG') return addRung();
     if (mn === 'BR') return addBranch(at);
-    if (mn === 'BRL') return addLevel();
+    if (mn === 'BRL') return addLevel(true);
     insert(newEl(mn), at, true);
   }
   function addRung() {
@@ -510,17 +510,50 @@
     }
     insert({ t: 'BR', legs: [[], []] }, at, false);
   }
-  function addLevel() {
+  /* Add Branch Level: a level after the one the caret is on; Append New Level: a level at the end of the branch
+     (Rockwell Ladder Editor command reference) */
+  function addLevel(append) {
     if (!S.sel || !S.sel.path) { toast('Select a branch or an instruction in a branch first.'); return; }
     edit(() => {
       const elems = parsed(S.sel.ri); if (!elems) return false;
       const bp = S.sel.br ? S.sel.path : S.sel.leg ? S.sel.path.slice(0, -1) : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
       if (!bp) { toast('Select a branch or an instruction in a branch first.'); return false; }
       const b = getEl(elems, bp);
-      b.legs.push([]);
+      const cur = S.sel.br ? b.legs.length - 1 : S.sel.leg ? S.sel.path[S.sel.path.length - 1] : S.sel.path[S.sel.path.length - 2];
+      const at = append ? b.legs.length : cur + 1;
+      b.legs.splice(at, 0, []);
       writeRung(S.sel.ri, elems);
-      S.sel = { ri: S.sel.ri, path: bp.concat(b.legs.length - 1), leg: true };
+      S.sel = { ri: S.sel.ri, path: bp.concat(at), leg: true };
     });
+  }
+  const branchPath = () => !S.sel || !S.sel.path ? null : S.sel.br ? S.sel.path : S.sel.leg ? S.sel.path.slice(0, -1) : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
+  /* Move Branch Rail: the start or end rail of the branch moves one element left or right; the element it passes
+     goes into or out of the top level of the branch, as when the rail is dragged in the reference */
+  function moveRail(which, dir) {
+    const bp0 = branchPath(); if (!bp0) return false;
+    let ok = false;
+    edit(() => {
+      const elems = parsed(S.sel.ri); if (!elems) return false;
+      const { arr, idx } = seqOf(elems, bp0), b = arr[idx], top = b.legs[0];
+      let ni = idx;
+      if (which === 'end' && dir > 0) { if (idx + 1 >= arr.length) return false; top.push(arr.splice(idx + 1, 1)[0]); }
+      else if (which === 'end' && dir < 0) { if (!top.length) return false; arr.splice(idx + 1, 0, top.pop()); }
+      else if (which === 'start' && dir < 0) { if (idx === 0) return false; top.unshift(arr.splice(idx - 1, 1)[0]); ni = idx - 1; }
+      else { if (!top.length) return false; arr.splice(idx, 0, top.shift()); ni = idx + 1; }
+      writeRung(S.sel.ri, elems);
+      S.sel = { ri: S.sel.ri, path: bp0.slice(0, -1).concat(ni), br: true };
+      ok = true;
+    });
+    return ok;
+  }
+  function moveRailDialog() {
+    if (!branchPath()) { toast('Select a branch first.'); return; }
+    dialog({ title: 'Move Branch Rail', size: 'sm',
+      body: `<p>Move a rail of the branch one element. The element it passes goes into or out of the top level of the branch.</p>
+        <div class="mvr"><b>Start rail</b><button class="btn" data-mvr="start,-1">◀ Left</button><button class="btn" data-mvr="start,1">Right ▶</button></div>
+        <div class="mvr"><b>End rail</b><button class="btn" data-mvr="end,-1">◀ Left</button><button class="btn" data-mvr="end,1">Right ▶</button></div>`,
+      buttons: [{ l: 'Close', pri: true }],
+      mount: el => el.addEventListener('click', ev => { const t = ev.target.closest('[data-mvr]'); if (!t) return; const [w, d] = t.dataset.mvr.split(','); if (!moveRail(w, +d)) toast('The rail cannot move that way.'); }) });
   }
   function delSel() {
     if (S.sel && S.sel.leg) {
@@ -609,7 +642,9 @@
     del: { l: 'Delete', k: 'Del', i: 'trash', run: delSel, on: () => editable() && (!!S.sel || S.selRung != null) },
     rung: { l: 'Add Rung', k: 'Ctrl+R', i: 'ladder', run: addRung, on: editable },
     branch: { l: 'Add Branch', i: 'tree', run: () => addBranch(), on: editable },
-    level: { l: 'Add Branch Level', i: 'tree', run: addLevel, on: () => editable() && !!S.sel },
+    level: { l: 'Add Branch Level', i: 'tree', run: () => addLevel(false), on: () => editable() && !!S.sel },
+    applevel: { l: 'Append New Level', i: 'tree', run: () => addLevel(true), on: () => editable() && !!branchPath() },
+    mvrail: { l: 'Move Branch Rail…', i: 'tree', run: moveRailDialog, on: () => editable() && !!branchPath() },
     ins: { l: 'Add Ladder Element…', k: 'Alt+Ins', i: 'plus', run: () => picker(''), on: editable },
     edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, selOpIdx()), on: () => editable() && !!curEl() },
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
@@ -902,6 +937,14 @@
   // the name of the operand an error line points at ("Operand 2" of a TON is its Accum), shown beside the line
   const errOp = t => { const m = /Rung \d+, (\w+), Operand (\d+)/.exec(t), n = m && (L.OPN[m[1]] || [])[+m[2]]; return n ? ` <span class="errop">${esc(n)}</span>` : ''; };
   function errorsHTML() {
+    const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
+    if (S.outTab === 'search') {
+      const sv = S.search || { lines: [], found: [] };
+      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
+    }
+    return tabs + errorsBody();
+  }
+  function errorsBody() {
     const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] };
     const f = S.errFilter || { e: true, w: true, m: true };
     const lines = v.lines.map(t => ({ t, k: /^Error/.test(t) ? 'e' : /^Warning/.test(t) ? 'w' : 'm' })).filter(x => f[x.k]);
@@ -1137,8 +1180,8 @@
   }
   function ctxMenu(t, x, y) {
     if (!t || t.end) return;
-    if (t.leg) { openMenu(renamed(menuItems(['paste', 'del', '-', 'level']), { del: 'Delete Branch Level' }), { x, y }, `Rung ${t.ri} · Branch Level`); return; }
-    if (t.br) { openMenu(renamed(menuItems(['cut', 'copy', 'paste', 'del', '-', 'level']), { cut: 'Cut Branch', copy: 'Copy Branch', del: 'Delete Branch' }), { x, y }, `Rung ${t.ri} · Branch`); return; }
+    if (t.leg) { openMenu(renamed(menuItems(['paste', 'del', '-', 'level', 'applevel']), { del: 'Delete Branch Level' }), { x, y }, `Rung ${t.ri} · Branch Level`); return; }
+    if (t.br) { openMenu(renamed(menuItems(['cut', 'copy', 'paste', 'del', '-', 'level', 'applevel', 'mvrail']), { cut: 'Cut Branch', copy: 'Copy Branch', del: 'Delete Branch' }), { x, y }, `Rung ${t.ri} · Branch`); return; }
     if (t.path) {
       const e = curEl();
       if (!e) return;
@@ -1867,7 +1910,7 @@
   /* the Errors pane as the reference's output window: Verify Rung and Find All write their results there */
   function showOutput(v) {
     if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
-    S.verifyShown = v;
+    S.verifyShown = v; S.outTab = 'err';
     render();
   }
   function verifyRung(ri) {
@@ -1890,7 +1933,11 @@
       });
       walk(pr.elems);
     })));
-    showOutput({ errors: [], warnings: [], found, lines: [`Searching for "${what}" in ${S.p.controller.name}...`, ...found.map(x => x.text), `Complete - ${found.length} occurrence(s) found.`] });
+    // the reference puts the result in the Search Results tab of the Output window (Errors, Search Results, Watch)
+    S.search = { errors: [], warnings: [], found, lines: [`Searching for "${what}" in ${S.p.controller.name}...`, ...found.map(x => x.text), `Complete - ${found.length} occurrence(s) found.`] };
+    S.outTab = 'search';
+    if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
+    render();
   }
   /* Export Rungs / Import Rungs: the rungs as a Logix .L5X file (TargetType Rung), with the tags they use */
   function rungsL5X(list, desc) {
@@ -1946,27 +1993,89 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
   const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct'];
-  function xref(name0) {
+  /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
+     wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
+     Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a
+     double-click goes to the location) and a Tag tab with the tags that alias it (Scope, Tag, Alias For, Base Tag). */
+  function xref(name0, o = {}) {
     const e = curEl();
-    const name = name0 || (e && e.a[0] && e.a[0] !== '?' ? String(e.a[0]).split(/[.[]/)[0] : '');
-    const rows = [];
-    if (name) allProgs().forEach(g => g.routines.forEach(r => r.rungs.forEach((rg, ri) => {
-      const pr = E.parseRung(rg.t); if (pr.err) return;
-      flat(pr.elems).forEach(p => {
-        const x = getEl(pr.elems, p), d = INSTR[x.t]; if (!d) return;
-        x.a.forEach((a, k) => {
-          const hitIt = U(String(a).split(/[.[]/)[0]) === U(name) || (d.args[k] === 'expr' && new RegExp(`\\b${name}\\b`, 'i').test(a));
-          if (hitIt) rows.push({ g: g.name, r: r.name, ri, p, mn: x.t, a, dest: DESTR.includes((d.args[k] || '').replace('?', '')) ? 'Y' : 'N' });
+    const st = {
+      type: o.type || 'Tag', scope: o.scope || '', show: o.show || 'all', tab: o.tab || 'logic', sort: o.sort || null, sel: 0,
+      name: name0 != null ? name0 : e && e.a[0] && e.a[0] !== '?' ? String(e.a[0]).split(/[.[]/)[0] : '',
+    };
+    const progs = allProgs();
+    const allTags = () => [...S.p.tags.map(t => ({ t, scope: S.p.controller.name })), ...progs.flatMap(g => g.tags.map(t => ({ t, scope: g.name })))];
+    const baseOf = n => { let t = allTags().find(x => U(x.t.name) === U(n)), k = 0; while (t && t.t.alias && k++ < 8) { const b = U(String(t.t.alias).split(/[.[]/)[0]); const nx = allTags().find(x => U(x.t.name) === b); if (!nx) return String(t.t.alias); t = nx; } return t ? t.t.name : n; };
+    const match = n => { const q = U(st.name.trim()); if (!q) return false; const u = U(n); return q.endsWith('*') ? u.startsWith(q.slice(0, -1)) : u === q; };
+    const rowsOf = () => {
+      const rows = [];
+      if (!st.name.trim()) return rows;
+      progs.filter(g => !st.scope || g.name === st.scope).forEach(g => g.routines.forEach(r => r.rungs.forEach((rg, ri) => {
+        const pr = E.parseRung(rg.t); if (pr.err) return;
+        flat(pr.elems).forEach(p => {
+          const x = getEl(pr.elems, p), d = INSTR[x.t]; if (!d) return;
+          if (st.type === 'Routine') { if (x.t === 'JSR' && match(String(x.a[0]))) rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref: String(x.a[0]), base: '', dest: 'N', desc: '' }); return; }
+          if (st.type === 'Label') { if ((x.t === 'JMP' || x.t === 'LBL') && match(String(x.a[0]))) rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref: String(x.a[0]), base: '', dest: 'N', desc: '' }); return; }
+          x.a.forEach((a, k) => {
+            const kind = (d.args[k] || '').replace('?', ''); if (['routine', 'label', 'imm', 'order'].includes(kind)) return;
+            const names = kind === 'expr' ? (String(a).match(/[A-Za-z_][\w:]*(?:\[[^\]]*\])?(?:\.\w+)*/g) || []) : [String(a)];
+            names.forEach(ref => {
+              const b = ref.split(/[.[]/)[0]; if (!match(b)) return;
+              const tg = tagFor(b);
+              rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref, base: tg && tg.alias ? baseOf(b) + String(ref).slice(b.length) : '', dest: DESTR.includes(kind) ? 'Y' : 'N', desc: tg ? tg.desc || '' : '' });
+            });
+          });
         });
-      });
-    })));
-    dialog({ title: 'Cross Reference', size: 'lg', flush: true,
-      body: `<div style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border)"><label>Tag</label><input class="inp mono" id="xq" value="${esc(name)}" style="max-width:280px"><button class="btn" id="xgo">Find</button></div>
-        <div class="list" style="flex:1">${rows.length ? rows.map((x, n) => `<div class="row" data-x="${n}"><div class="grow"><div class="nm">${esc(x.a)}</div><div class="sub">${esc(x.g)} · ${esc(x.r)} · Rung ${x.ri}</div></div><span class="ty">${x.mn}</span><span class="ty" title="Destructive">${x.dest === 'Y' ? 'writes' : 'reads'}</span></div>`).join('') : `<div class="empty">${name ? 'No references to ' + esc(name) : 'Type a tag name'}</div>`}</div>`,
-      buttons: [{ l: 'Close', pri: true }],
+      })));
+      return rows.filter(x => st.show === 'all' || (st.show === 'dest' ? x.dest === 'Y' : x.dest === 'N'));
+    };
+    const COLS = [['el', 'Element'], ['g', 'Container'], ['r', 'Routine'], ['ri', 'Location'], ['ref', 'Reference'], ['base', 'BaseTag'], ['dest', 'Destructive'], ['desc', 'Description']];
+    let rows = [];
+    const sorted = () => { const r = rowsOf(); if (st.sort) { const [k, dir] = st.sort; r.sort((a, b) => (k === 'ri' ? a.ri - b.ri : String(a[k]).localeCompare(String(b[k]))) * dir); } return r; };
+    const aliasRows = () => { if (st.type !== 'Tag' || !st.name.trim()) return []; return allTags().filter(x => match(x.t.name) || (x.t.alias && match(String(x.t.alias).split(/[.[]/)[0]))).map(x => ({ scope: x.scope, tag: x.t.name, alias: x.t.alias || '', base: x.t.alias ? baseOf(x.t.name) : '' })); };
+    const body = () => {
+      rows = sorted();
+      const head = COLS.map(([k, l]) => `<th data-xs="${k}">${l}${st.sort && st.sort[0] === k ? (st.sort[1] > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
+      const logic = rows.length ? `<table class="xrt"><thead><tr>${head}</tr></thead><tbody>${rows.map((x, n) => `<tr data-x="${n}"${n === st.sel ? ' class="on"' : ''}><td class="mono">${x.el}</td><td>${esc(x.g)}</td><td>${esc(x.r)}</td><td>Rung ${x.ri}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.base)}</td><td>${x.dest}</td><td>${esc(x.desc)}</td></tr>`).join('')}</tbody></table>`
+        : `<div class="empty">${st.name.trim() ? `No references to ${esc(st.name)}` : 'Type a name, or a few letters and *'}</div>`;
+      const ar = aliasRows();
+      const tagT = st.type !== 'Tag' ? '<div class="empty">This information is available only for tags.</div>' : ar.length ? `<table class="xrt"><thead><tr><th>Scope</th><th>Tag</th><th>Alias For</th><th>Base Tag</th></tr></thead><tbody>${ar.map(x => `<tr><td>${esc(x.scope)}</td><td class="mono">${esc(x.tag)}</td><td class="mono">${esc(x.alias)}</td><td class="mono">${esc(x.base)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No tags.</div>';
+      return `<div class="xrh">
+          <label>Type <select class="inp" id="xty">${['Tag', 'Routine', 'Label'].map(t => `<option${t === st.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>Scope <select class="inp" id="xsc"><option value="">${esc(S.p.controller.name)}</option>${progs.map(g => `<option${g.name === st.scope ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
+          <label class="grow">Name <input class="inp mono" id="xq" list="xql" value="${esc(st.name)}" autocomplete="off"><datalist id="xql">${(st.type === 'Tag' ? allTags().map(x => x.t.name) : st.type === 'Routine' ? progs.flatMap(g => g.routines.map(r => r.name)) : []).map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label>Show <select class="inp" id="xsh"><option value="all"${st.show === 'all' ? ' selected' : ''}>Show All</option><option value="dest"${st.show === 'dest' ? ' selected' : ''}>Destructive</option><option value="non"${st.show === 'non' ? ' selected' : ''}>Non-Destructive</option></select></label>
+          <button class="btn" id="xgo">Refresh</button></div>
+        <div class="xrtabs"><button class="xtab${st.tab === 'logic' ? ' on' : ''}" data-xt="logic">Logic</button><button class="xtab${st.tab === 'tag' ? ' on' : ''}" data-xt="tag">Tag</button><span class="grow"></span><span class="muted">${st.tab === 'logic' ? `${rows.length} reference(s)` : ''}</span></div>
+        <div class="xrb">${st.tab === 'logic' ? logic : tagT}</div>`;
+    };
+    const goTo = x => { if (!x) return; closeLayer(); S.prog = x.g; S.routine = x.r; S.view = 'ladder'; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); };
+    dialog({ title: 'Cross Reference - ' + st.type + ': ' + (st.name || ''), size: 'lg', flush: true, body: `<div class="xr" id="xr">${body()}</div>`,
+      buttons: [{ l: 'Go To Location', run: () => { goTo(rows[st.sel]); return false; } }, { l: 'Close', pri: true }],
       mount: el => {
-        el.querySelector('#xgo').onclick = () => xref(el.querySelector('#xq').value.trim());
-        el.addEventListener('click', ev => { const r = ev.target.closest('[data-x]'); if (!r) return; const x = rows[+r.dataset.x]; closeLayer(); S.prog = x.g; S.routine = x.r; S.view = 'ladder'; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); });
+        const box = el.querySelector('#xr');
+        const redraw = () => { const f = document.activeElement && document.activeElement.id; box.innerHTML = body(); const h = el.querySelector('.dh b'); if (h) h.textContent = 'Cross Reference - ' + st.type + ': ' + st.name; if (f === 'xq') { const q = box.querySelector('#xq'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); } };
+        box.addEventListener('change', ev => { const id = ev.target.id; if (id === 'xty') { st.type = ev.target.value; st.sel = 0; } else if (id === 'xsc') st.scope = ev.target.value; else if (id === 'xsh') st.show = ev.target.value; else if (id === 'xq') st.name = ev.target.value; else return; redraw(); });
+        box.addEventListener('keydown', ev => { if (ev.target.id === 'xq' && ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); st.name = ev.target.value; st.sel = 0; redraw(); } });
+        box.addEventListener('click', ev => {
+          let t;
+          box.querySelectorAll('.xrm').forEach(m => m.remove());
+          if (ev.target.id === 'xgo') { const q = box.querySelector('#xq'); st.name = q.value; redraw(); return; }
+          if ((t = ev.target.closest('[data-xt]'))) { st.tab = t.dataset.xt; redraw(); return; }
+          if ((t = ev.target.closest('[data-xs]'))) { const k = t.dataset.xs; st.sort = st.sort && st.sort[0] === k ? [k, -st.sort[1]] : [k, 1]; redraw(); return; }
+          if ((t = ev.target.closest('[data-x]'))) { const n = +t.dataset.x; if (n === st.sel && (S.layout !== 'desktop')) { goTo(rows[n]); return; } st.sel = n; box.querySelectorAll('[data-x]').forEach(r => r.classList.toggle('on', +r.dataset.x === n)); }
+        });
+        box.addEventListener('dblclick', ev => { const t = ev.target.closest('[data-x]'); if (t) goTo(rows[+t.dataset.x]); });
+        box.addEventListener('contextmenu', ev => {
+          const t = ev.target.closest('[data-x]'); if (!t) return; ev.preventDefault(); ev.stopPropagation();
+          const x = rows[+t.dataset.x], b = x.ref.split(/[.[]/)[0], tg = tagFor(b); st.sel = +t.dataset.x;
+          const items = [['go', 'Go To Location', !1], ['edit', `Edit Tag "${b}"`, !tg], ['mon', `Monitor Tag "${b}"`, !tg], ['trend', `Trend Tag "${b}"`, !0]];
+          box.querySelectorAll('.xrm').forEach(m => m.remove());
+          const m = document.createElement('div'); m.className = 'menu xrm'; m.style.cssText = 'position:fixed;z-index:400';
+          m.innerHTML = items.map(([k, l, dis]) => `<div class="it${dis ? ' dis' : ''}" data-xm="${k}"><span>${esc(l)}</span></div>`).join('');
+          box.appendChild(m); m.style.left = Math.min(ev.clientX, innerWidth - m.offsetWidth - 6) + 'px'; m.style.top = Math.min(ev.clientY, innerHeight - m.offsetHeight - 6) + 'px';
+          m.onclick = me => { const it = me.target.closest('[data-xm]'); me.stopPropagation(); m.remove(); if (!it || it.classList.contains('dis')) return; const k = it.dataset.xm; if (k === 'go') goTo(x); else if (k === 'edit') { closeLayer(); newTag({ tag: tg }); } else if (k === 'mon') { closeLayer(); monitorTag(b); } };
+        });
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
@@ -2655,7 +2764,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     reverify();
     const v = routineOnly ? E.verify(S.p, { program: curProg().name, routine: curRoutine().name }) : S.verify;
     if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
-    S.verifyShown = v;
+    S.verifyShown = v; S.outTab = 'err';
     render();
     toast(v.errors.length ? `${v.errors.length} error(s), ${v.warnings.length} warning(s)` : `Verified: no errors, ${v.warnings.length} warning(s)`, v.errors.length ? 'err' : 'ok');
   }
@@ -3510,6 +3619,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const t = ev.target;
       let el;
       if ((el = t.closest('[data-desc]'))) { closeDescBar(el.dataset.desc === 'ok'); return; }
+      if ((el = t.closest('[data-otab]'))) { S.outTab = el.dataset.otab; render(); return; }
       if ((el = t.closest('[data-cmd]')) && !el.disabled) { run(el.dataset.cmd); return; }
       if ((el = t.closest('[data-menu]'))) { const m = MENUS.find(x => x[0] === el.dataset.menu); openMenu(menuItems(m[1]), el); return; }
       if ((el = t.closest('[data-allmenu]'))) { foldMenu(el); return; }
@@ -3709,7 +3819,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (window.MTPSUpdater) window.MTPSUpdater.init({ version: VERSION, build: BUILD, onAvailable: info => { upInfo = info; render(); }, toast, dialog, esc });
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast };
+  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   start();
 })();

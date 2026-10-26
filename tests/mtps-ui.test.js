@@ -1069,6 +1069,56 @@ function check(name, cond, info = '') {
     await page.keyboard.down('Control'); await page.mouse.move(c.x, c.y); await page.mouse.down(); await page.mouse.move(d.l + 4, d.y, { steps: 8 }); await page.mouse.up(); await page.keyboard.up('Control'); await page.waitForTimeout(150);
     check('Ctrl+drag copies it back to rung 1, before the OTE', (await rungTexts())[1] === 'XIC(Motor_Run)OTE(Motor_Cmd);' && (await rungTexts())[0].includes('XIC(OL_OK)XIC(Motor_Run)'), JSON.stringify((await rungTexts()).slice(0, 2)));
   }
+  console.log('Cross Reference window, Find All, branch menu (Rockwell help v37)');
+  {
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('offline'); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.xref('Motor_Run')); await page.waitForTimeout(150);
+    const hd = await page.$$eval('#layer .xrt th', t => t.map(x => x.textContent.replace(/ [▲▼]$/, '')));
+    check('Cross Reference: Logic tab columns Element, Container, Routine, Location, Reference, BaseTag, Destructive, Description', hd.join('|') === 'Element|Container|Routine|Location|Reference|BaseTag|Destructive|Description', hd.join('|'));
+    check('Cross Reference: title, Type / Scope / Name / Show / Refresh', (await dlgTitle()) === 'Cross Reference - Tag: Motor_Run' && !!(await page.$('#xty')) && !!(await page.$('#xsc')) && !!(await page.$('#xq')) && !!(await page.$('#xsh')) && (await page.$eval('#xgo', b => b.textContent)) === 'Refresh');
+    const rowsN = () => page.$$eval('#layer .xrt tbody tr', r => r.length);
+    check('every reference of Motor_Run is listed (5), the OTE as Destructive Y', (await rowsN()) === 5 && (await page.$$eval('#layer .xrt tbody tr', r => r.filter(x => x.children[0].textContent === 'OTE' && x.children[6].textContent === 'Y').length)) === 1);
+    await page.selectOption('#xsh', 'dest'); await page.waitForTimeout(80);
+    check('Show: Destructive leaves only the OTE', (await rowsN()) === 1);
+    await page.selectOption('#xsh', 'all'); await page.fill('#xq', 'Start*'); await page.click('#xgo'); await page.waitForTimeout(80);
+    check('a name ending in * finds every tag that starts with it (Start_PB, Start_ONS, Start_Count)', (await page.$$eval('#layer .xrt tbody tr td:nth-child(5)', t => [...new Set(t.map(x => x.textContent.split('.')[0]))].sort().join(','))) === 'Start_Count,Start_ONS,Start_PB');
+    check('BaseTag shows the base of an alias (Start_PB is Local:1:I.Data.0)', (await page.$$eval('#layer .xrt tbody tr', r => r.some(x => x.children[4].textContent === 'Start_PB' && x.children[5].textContent === 'Local:1:I.Data.0'))));
+    await page.click('#layer .xrt th[data-xs="ref"]'); await page.waitForTimeout(60);
+    const refs = await page.$$eval('#layer .xrt tbody tr td:nth-child(5)', t => t.map(x => x.textContent));
+    check('a click on a column header sorts it', refs.join() === [...refs].sort((a, b) => a.localeCompare(b)).join() && (await page.$eval('#layer .xrt th[data-xs="ref"]', t => t.textContent)).endsWith('▲'));
+    await page.click('#layer [data-xt="tag"]'); await page.waitForTimeout(60);
+    check('Tag tab: Scope, Tag, Alias For, Base Tag', (await page.$$eval('#layer .xrt th', t => t.map(x => x.textContent).join('|'))) === 'Scope|Tag|Alias For|Base Tag');
+    await page.click('#layer [data-xt="logic"]'); await page.fill('#xq', 'Motor_Run'); await page.click('#xgo'); await page.waitForTimeout(60);
+    await page.click('#layer .xrt tbody tr:nth-child(3)', { button: 'right' }); await page.waitForTimeout(60);
+    check('right-click on a row: Go To Location, Edit Tag, Monitor Tag, Trend Tag (grey), window stays open', (await page.$$eval('#layer .xrm .it', t => t.map(x => x.textContent).join('|'))) === 'Go To Location|Edit Tag "Motor_Run"|Monitor Tag "Motor_Run"|Trend Tag "Motor_Run"' && (await dlgTitle()).startsWith('Cross Reference'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+    await ev(() => MTPS.App.xref('Motor_Run')); await page.waitForTimeout(100);
+    const r2 = await page.$eval('#layer .xrt tbody tr:nth-child(2)', r => [r.children[3].textContent, r.children[0].textContent]);
+    await page.dblclick('#layer .xrt tbody tr:nth-child(2)'); await page.waitForTimeout(150);
+    check('double-click a row goes to that rung and instruction', !(await page.$('#layer .dlg')) && (await ev(() => MTPS.App.state.sel && MTPS.App.state.sel.ri)) === +r2[0].replace('Rung ', ''), JSON.stringify(r2));
+    await ev(() => MTPS.App.findAll('Motor_Run')); await page.waitForTimeout(120);
+    const sr = await page.$$eval('.otab', t => t.map(x => x.textContent + (x.classList.contains('on') ? '*' : '')).join('|'));
+    check('Find All: the result goes to the Search Results tab of the Output window', sr.includes('Errors|Search Results*') && (await page.$$eval('.log .ln', l => l.filter(x => x.textContent.startsWith('Found:')).length)) === 5, sr);
+    await page.click('.otab[data-otab="err"]'); await page.waitForTimeout(80);
+    check('the Errors tab is still there', (await page.$$eval('.otab.on', t => t.map(x => x.textContent).join())) === 'Errors');
+    // branch menu: Add Branch Level, Append New Level, Move Branch Rail
+    await ev(() => { const s = MTPS.App.state; s.sel = { ri: 0, path: [0], br: true }; MTPS.App.render(); });
+    const bm = await ev(() => { const r = document.querySelector('#ladwrap rect.tap[data-ri="0"][data-br][data-p="0"]'); const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+    await page.mouse.click(bm.x, bm.y, { button: 'right' }); await page.waitForTimeout(80);
+    check('branch menu: Cut/Copy/Paste/Delete Branch, Add Branch Level, Append New Level, Move Branch Rail', (await page.$$eval('#layer .it', t => t.map(x => x.textContent.replace(/Ctrl.*$/, '').trim()).join('|'))).includes('Add Branch Level|Append New Level|Move Branch Rail…'));
+    await page.keyboard.press('Escape');
+    await ev(() => { MTPS.App.state.sel = { ri: 0, path: [0], br: true }; MTPS.App.run('mvrail'); }); await page.waitForTimeout(80);
+    await page.click('#layer [data-mvr="end,1"]'); await page.waitForTimeout(80);
+    check('Move Branch Rail: the end rail moves right over XIC Stop_PB', (await rungTexts())[0] === '[XIC(Start_PB)XIC(Stop_PB),XIC(Motor_Run)]XIC(OL_OK)OTE(Motor_Run);', (await rungTexts())[0]);
+    await page.click('#layer [data-mvr="end,-1"]'); await page.waitForTimeout(80);
+    check('and back left', (await rungTexts())[0] === '[XIC(Start_PB),XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);', (await rungTexts())[0]);
+    await page.keyboard.press('Escape');
+    await ev(() => { MTPS.App.state.sel = { ri: 0, path: [0, 0, 0] }; MTPS.App.run('level'); });
+    check('Add Branch Level puts the level after the one at the caret', (await rungTexts())[0] === '[XIC(Start_PB),,XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);', (await rungTexts())[0]);
+    await ev(() => { MTPS.App.run('undo'); MTPS.App.state.sel = { ri: 0, path: [0, 0, 0] }; MTPS.App.run('applevel'); });
+    check('Append New Level puts it at the end of the branch', (await rungTexts())[0] === '[XIC(Start_PB),XIC(Motor_Run),]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);', (await rungTexts())[0]);
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
