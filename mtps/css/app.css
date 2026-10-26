@@ -1123,3 +1123,6 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .emu.compact { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
 .emu.compact .emudev, .emu.compact .emustat { display: none; }
 .rlctx { min-width: 220px; }
+/* RSLinx menu bar on the phone: the menus wrap onto a second row instead of scrolling sideways */
+.phone .rlmb { flex-wrap: wrap; overflow-x: visible; padding: 2px 4px; }
+.phone .rlmb button { height: 32px; padding: 0 8px; }

@@ -1924,6 +1924,35 @@ function check(name, cond, info = '') {
     await ev(() => MTPS.App.racks[0].controller(0).setKey('REM'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
   }
+  console.log('RSLinx Classic: View > Toolbar and Status Bar, the menu bar on the phone');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+    await page.waitForTimeout(200);
+    const vis = s => page.$eval(s, e => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
+    check('View: Toolbar and Status Bar are on and ticked', (await page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|'))) === '✓Toolbar|✓Status Bar' && await vis('#layer .rltb') && await vis('#layer .rlst'));
+    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
+    check('View > Toolbar hides the toolbar', !(await vis('#layer .rltb')) && await vis('#layer .rlst'));
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
+    await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
+    check('View > Status Bar hides the status bar; the View menu shows them unticked', !(await vis('#layer .rlst')) && (await (async () => { await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); return page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|')); })()) === 'Toolbar|Status Bar');
+    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
+    check('ticked again: both show', await vis('#layer .rltb') && await vis('#layer .rlst'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+    for (const w of [360, 390, 414]) {
+      const tp = await browser.newPage({ viewport: { width: w, height: 800 }, hasTouch: true, isMobile: true });
+      tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+      await tp.waitForTimeout(300);
+      const fit = await tp.$eval('#layer .rlmb', m => ({ sw: m.scrollWidth, cw: m.clientWidth, all: [...m.children].every(b => b.getBoundingClientRect().right <= innerWidth && b.getBoundingClientRect().height >= 32) }));
+      await tp.tap('#layer [data-rlm="Help"]'); await tp.waitForTimeout(100);
+      check(`phone ${w} px (touch): every RSLinx menu shows without sideways scrolling, and Help opens`, fit.sw <= fit.cw + 1 && fit.all && (await tp.$('#layer .rlpop')) !== null, JSON.stringify(fit));
+      await tp.close();
+    }
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
