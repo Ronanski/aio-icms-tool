@@ -21,12 +21,19 @@
     'PLC:DO16:I': members('Fault:DINT'), 'PLC:DO16:O': members('Data:DINT'),
     'PLC:AI4:I': members('Fault:DINT ' + CH4('REAL')),
     'PLC:AO4:I': members('Fault:DINT'), 'PLC:AO4:O': members(CH4('REAL')),
+    // the configuration tags (Local:<slot>:C), laid out like those of the 1756 I/O modules: input filters and
+    // change of state (digital in), the fault and program mode states (digital out), scaling and states (analog)
+    'PLC:DI16:C': members('FilterOffOn_0_7:SINT FilterOnOff_0_7:SINT FilterOffOn_8_15:SINT FilterOnOff_8_15:SINT COSOnOffEn:DINT COSOffOnEn:DINT'),
+    'PLC:DO16:C': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
+    'PLC:AI4:C': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}LowEngineering:REAL Ch${k}HighEngineering:REAL`).join(' ')),
+    'PLC:AO4:C': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}FaultValue:REAL Ch${k}ProgValue:REAL`).join(' ')),
   };
-  const DO = { kind: 'do', I: 'PLC:DO16:I', O: 'PLC:DO16:O' };
+  const DO = { kind: 'do', I: 'PLC:DO16:I', O: 'PLC:DO16:O', C: 'PLC:DO16:C' };
+  const DI = { kind: 'di', I: 'PLC:DI16:I', C: 'PLC:DI16:C' };
   const MODULES = {
-    'PLC-DI16-24V': { kind: 'di', I: 'PLC:DI16:I' }, 'PLC-DI16-120V': { kind: 'di', I: 'PLC:DI16:I' },
+    'PLC-DI16-24V': DI, 'PLC-DI16-120V': DI,
     'PLC-DO16-24V': DO, 'PLC-DO16-RLY': DO,
-    'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O' },
+    'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I', C: 'PLC:AI4:C' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O', C: 'PLC:AO4:C' },
     'PLC-ENET': { kind: 'enet' },
   };
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
@@ -598,7 +605,7 @@
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
       const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
-      for (const dir of ['I', 'O']) {
+      for (const dir of ['I', 'O', 'C']) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
         mod[dir] = name;
