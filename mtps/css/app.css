@@ -468,8 +468,11 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .mproj { font-size: 10px; color: #4d5866; }
 .ccard .ckey { margin-top: auto; display: flex; }
 .ccard .ckey span { flex: 1; padding: 3px 0; font-size: 9px; min-height: 0; }
-.mmat { display: grid; grid-template-columns: repeat(4, auto minmax(0, 1fr)); gap: 2px; align-items: center; background: #1b2430; padding: 4px; border-radius: 2px; font: 8px var(--mono); color: #9aa4b1; }
+.mmat { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px 1px; align-items: center; background: #1b2430; padding: 4px; border-radius: 2px; font: 8px var(--mono); color: #9aa4b1; }
 .mmat i { width: 7px; height: 7px; border-radius: 1px; background: #3a434e; }
+/* 1756 discrete module: two rows of point indicators, 0-7 and 8-15, each number above its LED */
+.mmat > div { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+.mmat span { line-height: 1; letter-spacing: -.5px; }
 .mmat i.g { background: #2ecc40; box-shadow: 0 0 4px #2ecc40; }
 .mmat i.y { background: #ffd23f; box-shadow: 0 0 4px #ffd23f; }
 .mana { display: grid; gap: 2px; background: #1b2430; padding: 4px; border-radius: 2px; font: 9px var(--mono); color: #cfd6df; }

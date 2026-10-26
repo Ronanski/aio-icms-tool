@@ -3298,7 +3298,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const own = r.owner(s), okc = m.fault ? 'r blink' : own && own.running ? 'g' : 'g blink';
     const n = m.kind === 'di' || m.kind === 'do' ? 16 : 4;
     const st = m.kind === 'di' ? m.field : m.kind === 'do' ? r.outputs(s) : null;
-    const face = st != null ? `<div class="mmat">${Array.from({ length: 16 }, (_, b) => `<i class="${(st >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}"></i><span>${b}</span>`).join('')}</div>`
+    const face = st != null ? `<div class="mmat" title="Status indicators: points 0-7 and 8-15">${Array.from({ length: 16 }, (_, b) => `<div><span>${b}</span><i class="${(st >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}"></i></div>`).join('')}</div>`
       : `<div class="mana">${(m.kind === 'ai' ? m.field : r.outputs(s)).map((v, c) => `<div><span>Ch${c}</span><b>${(+v).toFixed(1)}</b></div>`).join('')}</div>`;
     const com = m.kind === 'di' ? ['GND', 'GND'] : m.kind === 'do' ? ['DC+', 'RTN'] : ['RTN', 'RTN'];
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
