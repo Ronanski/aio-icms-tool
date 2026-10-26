@@ -526,7 +526,9 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .dock.bottom { border-top: 1px solid var(--border); }
 .dock.side { border-left: 1px solid var(--border); }
 .dock.full { flex: 1; }
-.dock .ph { display: flex; align-items: center; gap: 8px; }
+.dock .ph { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dock .ph > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock .ph .ib { flex: none; }
 .dock .ph .seg span { padding: 2px 8px; }
 .dksel { height: 24px; padding: 0 6px; width: auto; }
 .dockb { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
