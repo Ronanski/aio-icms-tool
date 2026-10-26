@@ -188,6 +188,30 @@ console.log('Verify');
     const sc = new MTPS.Controller(); sc.download(sp); sp.tags[3].style = 'Hex';
     check('a changed Style is not a logic change (no new download needed); a changed External Access is', sc.holds(sp) && (() => { sp.tags[3].access = 'Read Only'; return !sc.holds(sp); })());
   }
+  {
+    // arrays of 2 and 3 dimensions (1756-PM004: Data_type[x,y,z], one subscript per dimension, the rightmost varies fastest)
+    const G = [T('Grid', 'DINT', { dim: [3, 4] }), T('Cube', 'INT', { dim: [2, 3, 4] }), T('I', 'DINT', { value: 2 }), T('J', 'DINT', { value: 3 }), T('D', 'DINT'),
+      T('North_Tank', 'DINT', { alias: 'Grid[0,1]' })];
+    const ge = r => v({ tags: G, rungs: [r] }).errors.map(e => e.text).join(' | ');
+    check('Grid[2,3] and Cube[1,2,3] verify', ge('MOV(5,Grid[2,3])MOV(6,Cube[1,2,3]);') === '');
+    check('a subscript past its own dimension is an error (Grid[3,0], Grid[0,4])', /out of range.*0 to 2/.test(ge('MOV(1,Grid[3,0]);')) && /out of range.*0 to 3/.test(ge('MOV(1,Grid[0,4]);')));
+    check('the wrong number of subscripts is an error (Grid[1], Cube[1,2])', /Wrong number of subscripts.*2 dimensions/.test(ge('MOV(1,Grid[1]);')) && /3 dimensions/.test(ge('MOV(1,Cube[1,2]);')));
+    check('a member or bit of a 2-dimension array needs its subscripts first, e.g. Grid[0,0]', /Grid\[0,0\]/.test(ge('XIC(Grid.0)NOP();')));
+    const gc = run({ tags: G, rungs: ['MOV(7,Grid[I,J])MOV(9,Cube[1,2,3])MOV(4,North_Tank);', 'MOV(Grid[2,3],D);'] });
+    gc.scan(10);
+    check('indirect subscripts Grid[I,J]; the element is stored row by row (Grid[2,3] is element 11)', gc.read('Grid[2,3]') === 7 && gc.read('D') === 7 && gc.read('Grid')[11] === 7);
+    check('Cube[1,2,3] is element 23 of 24; an alias of Grid[0,1] (as "north_tank" of 1756-PM004) shares its value', gc.read('Cube')[23] === 9 && gc.read('Cube').length === 24 && gc.read('Grid[0,1]') === 4 && gc.read('North_Tank') === 4);
+    check('Monitor Tags can write Grid[1,2]', gc.write('Grid[1,2]', 3) && gc.read('Grid')[6] === 3);
+    const gf = run({ tags: G.concat([T('Ix', 'DINT', { value: 5 })]), rungs: ['MOV(1,Grid[Ix,0]);'] });
+    gf.scan(10);
+    check('an indirect subscript out of range at run time is major fault 4/20', gf.fault && gf.fault.type === 4 && gf.fault.code === 20);
+    const gp = proj({ tags: G, rungs: ['MOV(7,Grid[I,J]);'] }), gx = new MTPS.Controller(); gx.download(gp); gx.setMode('remrun'); gx.scan(10);
+    gp.tasks[0].programs[0].routines[0].rungs.push({ t: 'NOP();' });
+    check('an online edit keeps the values of a 2-dimension array', gx.edit(gp).ok && gx.read('Grid[2,3]') === 7);
+    check('COP across rows of a 2-dimension array (the elements are contiguous)', (() => { const c = run({ tags: G, rungs: ['FLL(8,Grid[0,2],4);'] }); c.scan(10); return c.read('Grid').slice(0, 7).join() === '0,0,8,8,8,8,0'; })());
+    check('more than 3 dimensions, or a dimension of 0, is refused', /invalid array dimensions/.test(MTPS.verify(proj({ tags: [T('Q', 'DINT', { dim: [2, 2, 2, 2] })] })).errors.map(e => e.text).join()) && /invalid array dimensions/.test(MTPS.verify(proj({ tags: [T('Q', 'DINT', { dim: [2, 0] })] })).errors.map(e => e.text).join()));
+    eq('dimText / dimN', [MTPS.dimText([2, 3, 4]), MTPS.dimN([2, 3, 4]), MTPS.dimText(10), MTPS.dimN(0)], ['2,3,4', 24, '10', 0]);
+  }
   check('constant subscript out of range', /out of range/.test(v({ tags: [T('A', 'DINT', { dim: 3 })], rungs: ['MOV(1,A[3]);'] }).errors[0].text));
   check('writing a REAL to an AND dest is a type error', /Invalid data type/.test(v({ tags: [T('R', 'REAL')], rungs: ['AND(1,2,R);'] }).errors[0].text));
   check('a negative timer preset is an error', /Preset/.test(v({ tags: [T('T1', 'TIMER')], rungs: ['TON(T1,-5,0);'] }).errors[0].text));

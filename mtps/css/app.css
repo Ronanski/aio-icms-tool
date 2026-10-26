@@ -312,6 +312,18 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .frow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
 .phone .frow { grid-template-columns: 1fr; gap: 4px; margin-bottom: 12px; }
 .frow.ckrow input[type=checkbox] { justify-self: start; width: 18px; height: 18px; margin: 0; }
+/* Select Data Type: over the dialog that opened it */
+.dlg.sdt { width: min(400px, calc(100% - 24px)); z-index: 2; }
+.scrim.sdtscrim { z-index: 1; }
+.sdt .sdlab { display: block; margin-bottom: 4px; }
+.sdt .sdtl { height: 180px; border: 1px solid var(--border); border-radius: var(--r-sm); margin: 6px 0; }
+.sdt .sdtl .row { min-height: 26px; padding: 2px 8px; }
+.tab .sdt .sdtl .row, .phone .sdt .sdtl .row { min-height: 44px; }
+.sdt .grp { font-size: 11px; font-weight: 700; color: var(--muted); padding: 6px 8px 2px; }
+.sdt .sdd { display: flex; gap: 8px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 8px 8px; margin: 6px 0 0; min-width: 0; }
+.sdt .sdim { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.sdt .sdim .inp { width: 100%; min-width: 0; }
+.phone .sdt .sdtl { height: auto; flex: 1; min-height: 160px; }
 .phone .frow.ckrow { grid-template-columns: 1fr auto; }
 .inp { height: 28px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); padding: 0 8px; min-width: 0; width: 100%; }
 .inp:focus { border-color: var(--accent); outline: 2px solid var(--accent-soft); }
@@ -659,6 +671,11 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl .nrin:focus { border-color: var(--accent); background: var(--surface); }
 .tagtbl .lnk { font: inherit; color: var(--accent-text); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 .tab .tagtbl .nrin, .tab .tagtbl .cin { height: 30px; }
+/* Edit Tags: the Data Type cell with its … (Select Data Type) */
+.tagtbl .cdt { display: flex; gap: 2px; align-items: center; }
+.tagtbl .cdt .cin { flex: 1; }
+.tagtbl .cdtb { flex: none; height: 20px; min-width: 22px; padding: 0 4px; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; }
+.tab .tagtbl .cdtb, .phone .tagtbl .cdtb { height: 30px; min-width: 36px; }
 .tab .tagtbl td, .phone .tagtbl td { height: 36px; }
 .tagtabs { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface-2); flex: none; }
 .tagtabs > span[data-tmode] { white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }

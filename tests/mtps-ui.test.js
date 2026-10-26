@@ -741,7 +741,7 @@ function check(name, cond, info = '') {
   await page.click('#tnew'); await page.keyboard.type('Start_PB'); await page.keyboard.press('Enter'); await page.waitForTimeout(150);
   check('a name that is already used is refused', (await ev(() => MTPS.App.state.p.tags.filter(t => t.name === 'Start_PB').length)) === 1 && (await page.$eval('.toast', t => t.textContent)).includes('already exists'));
   await page.fill('#tnew', ''); await page.click('#tagrows tr[data-tag="Belt_Speed"] [data-tcell="type"]'); await page.waitForTimeout(80);
-  await page.selectOption('#tagrows tr[data-tag="Belt_Speed"] select.cin', 'REAL'); await page.waitForTimeout(150);
+  await page.fill('#tagrows tr[data-tag="Belt_Speed"] [data-tcell="type"] input', 'REAL'); await page.keyboard.press('Enter'); await page.waitForTimeout(150);
   await page.click('#tagrows tr[data-tag="Belt_Speed"] [data-tcell="desc"]'); await page.waitForTimeout(80);
   await page.keyboard.type('Belt speed'); await page.keyboard.press('Enter'); await page.waitForTimeout(150);
   const bs2 = await ev(() => MTPS.App.state.p.tags.find(t => t.name === 'Belt_Speed'));
@@ -1741,13 +1741,13 @@ function check(name, cond, info = '') {
     check('B1: External Access offers Read/Write, Read Only, None (Read/Write first)', (await bp.$$eval('#tea option', o => o.map(x => x.textContent).join('|'))) === 'Read/Write|Read Only|None' && (await bp.$eval('#tea', s => s.value)) === 'Read/Write');
     check('B1: Open Configuration is there but greyed (no data type of the app has a configuration)', await bp.$eval('#tocf', c => c.disabled));
     await bp.fill('#tn', 'Fill_Level');
-    await bp.selectOption('#tt', 'DINT'); await bp.waitForTimeout(40);
+    await bp.fill('#tt', 'DINT'); await bp.waitForTimeout(40);
     check('B1: Style of a DINT: Binary, Octal, Decimal, Hex, ASCII (Decimal first chosen)', (await bp.$$eval('#tsty option', o => o.map(x => x.textContent).join('|'))) === 'Binary|Octal|Decimal|Hex|ASCII' && (await bp.$eval('#tsty', s => s.value)) === 'Decimal');
-    await bp.selectOption('#tt', 'REAL'); await bp.waitForTimeout(40);
+    await bp.fill('#tt', 'REAL'); await bp.waitForTimeout(40);
     check('B1: Style of a REAL: Float, Exponential', (await bp.$$eval('#tsty option', o => o.map(x => x.textContent).join('|'))) === 'Float|Exponential');
-    await bp.selectOption('#tt', 'TIMER'); await bp.waitForTimeout(40);
+    await bp.fill('#tt', 'TIMER'); await bp.waitForTimeout(40);
     check('B1: a structure (TIMER) has no style: the box is greyed', await bp.$eval('#tsty', s => s.disabled && !s.options.length));
-    await bp.selectOption('#tt', 'DINT'); await bp.selectOption('#tsty', 'Hex'); await bp.selectOption('#tea', 'Read Only'); await bp.selectOption('#ts', '');
+    await bp.fill('#tt', 'DINT'); await bp.selectOption('#tsty', 'Hex'); await bp.selectOption('#tea', 'Read Only'); await bp.selectOption('#ts', '');
     await bp.click('#tcon');
     await bp.click('#layer .dlg .btn.pri'); await bp.waitForTimeout(150);
     const fl = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Level') || null);
@@ -1775,6 +1775,75 @@ function check(name, cond, info = '') {
       const okb = await tp.$eval('#layer .dlg .btn.pri', c => { c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
       await tp.touchscreen.tap(okb.x, okb.y); await tp.waitForTimeout(150);
       check('B1: phone (touch): External Access, Style and Constant show; tapping Constant and Create makes a constant tag', await tp.evaluate(() => { const t = MTPS.App.state.p.tags.find(x => x.name === 'Phone_Tag'); return !!t && t.constant === true; }) || await tp.evaluate(() => { const t = MTPS.App.state.p.tasks[0].programs[0].tags.find(x => x.name === 'Phone_Tag'); return !!t && t.constant === true; }));
+      await tctx.close();
+    }
+    // B2: Select Data Type (the … beside Data Type), and arrays of 2 and 3 dimensions
+    await bev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.run('newtag'); }); await bp.waitForTimeout(150);
+    await bp.click('#ttb'); await bp.waitForTimeout(80);
+    const sdt = () => bp.$eval('#layer .dlg.sdt', d => ({ t: d.querySelector('.dh b').textContent, d1: d.querySelector('#sdd1').disabled, d2: d.querySelector('#sdd2').disabled, rows: [...d.querySelectorAll('[data-sdt]')].map(r => r.dataset.sdt), on: (d.querySelector('[data-sdt].on') || {}).textContent || '' })).catch(() => null);
+    const s0 = await sdt();
+    check('B2: … opens Select Data Type over New Tag, at the current type (BOOL), Dim 1 and Dim 2 greyed', !!s0 && s0.t === 'Select Data Type' && s0.d1 && s0.d2 && s0.on === 'BOOL' && s0.rows.includes('TIMER') && !!(await bp.$('#layer .dlg #tn')), JSON.stringify(s0));
+    await bp.fill('#sdq', 'IN'); await bp.waitForTimeout(40);
+    const s1 = await sdt();
+    check('B2: the box above the list filters it (IN: DINT, INT, SINT, … but not REAL)', ['DINT', 'INT', 'SINT'].every(x => s1.rows.includes(x)) && !s1.rows.includes('REAL'), s1.rows.join(','));
+    await bp.click('#layer [data-sdt="DINT"]'); await bp.fill('#sdd0', '5'); await bp.waitForTimeout(30);
+    const s2 = await sdt();
+    await bp.fill('#sdd1', '4'); await bp.waitForTimeout(30);
+    const s3 = await sdt();
+    check('B2: Dim 1 opens when Dim 0 is more than 0, Dim 2 when Dim 1 is', !s2.d1 && s2.d2 && !s3.d1 && !s3.d2);
+    await bp.click('#layer [data-sdo]'); await bp.waitForTimeout(60);
+    check('B2: OK writes DINT[4,5] (Dim 1, Dim 0) in Data Type and closes only Select Data Type', (await bp.$eval('#tt', i => i.value)) === 'DINT[4,5]' && !(await bp.$('#layer .dlg.sdt')) && !!(await bp.$('#layer .dlg #tn')));
+    await bp.fill('#tn', 'Grid_A'); await bp.selectOption('#ts', '');
+    await bp.click('#layer .dlg .btn.pri'); await bp.waitForTimeout(150);
+    const ga = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Grid_A') || null);
+    check('B2: Create makes a DINT array of 4 × 5', !!ga && ga.type === 'DINT' && JSON.stringify(ga.dim) === '[4,5]', JSON.stringify(ga));
+    await bev(() => MTPS.App.run('newtag')); await bp.waitForTimeout(120);
+    await bp.fill('#tn', 'Cube_A'); await bp.selectOption('#ts', ''); await bp.fill('#tt', 'DINT[0]');
+    await bp.click('#layer .dlg .btn.pri'); await bp.waitForTimeout(100);
+    check('B2: a Data Type of DINT[0] is not accepted (the dialog stays)', !!(await bp.$('#layer .dlg #tn')) && !(await bev(() => MTPS.App.state.p.tags.some(t => t.name === 'Cube_A'))));
+    await bp.fill('#tt', 'int[2,3,4]'); await bp.click('#layer .dlg .btn.pri'); await bp.waitForTimeout(150);
+    const ca = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Cube_A') || null);
+    check('B2: Data Type typed as int[2,3,4] makes an INT array of 3 dimensions', !!ca && ca.type === 'INT' && JSON.stringify(ca.dim) === '[2,3,4]', JSON.stringify(ca));
+    await bev(() => MTPS.App.run('tagsmon')); await bp.waitForTimeout(150);
+    await bp.click('#tagrows [data-texp="Grid_A"]'); await bp.waitForTimeout(80);
+    const gn = await bp.$$eval('#tagrows tr[data-tag^="Grid_A"]', r => r.map(x => x.dataset.tag));
+    check('B2: Monitor Tags: Grid_A is DINT[4,5] and opens to Grid_A[0,0] … Grid_A[3,4] (20 elements, row by row)', (await bty('Grid_A')).includes('DINT[4,5]') && gn.length === 21 && gn[1] === 'Grid_A[0,0]' && gn[2] === 'Grid_A[0,1]' && gn[6] === 'Grid_A[1,0]' && gn[20] === 'Grid_A[3,4]', gn.slice(0, 7).join(','));
+    const l5d = await bev(() => { const x = MTPS.App.toL5X(MTPS.App.state.p), q = MTPS.App.fromL5X(x); return { g: /<Tag Name="Grid_A" TagType="Base" DataType="DINT" Dimensions="4 5"/.test(x), c: /<Tag Name="Cube_A" TagType="Base" DataType="INT" Dimensions="2 3 4"/.test(x), bg: (q.tags.find(t => t.name === 'Grid_A') || {}).dim, bc: (q.tags.find(t => t.name === 'Cube_A') || {}).dim }; });
+    check('B2: L5X writes Dimensions="4 5" and "2 3 4" and reads them back', l5d.g && l5d.c && JSON.stringify(l5d.bg) === '[4,5]' && JSON.stringify(l5d.bc) === '[2,3,4]', JSON.stringify(l5d));
+    // a rung with Grid_A[1,2] verifies; Grid_A[1] does not
+    await bev(() => { MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.push({ t: 'MOV(5,Grid_A[1,2]);' }, { t: 'MOV(5,Grid_A[1]);' }); MTPS.App.run('verifyc'); }); await bp.waitForTimeout(150);
+    const ve = await bev(() => MTPS.App.state.verify.errors.map(e => e.text).join(' | '));
+    check('B2: Verify: Grid_A[1,2] is good, Grid_A[1] is the wrong number of subscripts', !/Grid_A\[1,2\]/.test(ve) && /Wrong number of subscripts in 'Grid_A\[1\]'/.test(ve), ve);
+    // the Edit Tags grid: the Data Type cell takes a typed type, or … (Select Data Type)
+    await bp.click('.tagtabs [data-tmode="edit"]'); await bp.waitForTimeout(100);
+    await bp.click('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"]'); await bp.waitForTimeout(60);
+    check('B2: Edit Tags: the Data Type cell opens with DINT[4,5] and a … button', (await bp.$eval('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"] input', i => i.value).catch(() => '')) === 'DINT[4,5]' && !!(await bp.$('#tagrows [data-cdtb]')));
+    await bp.click('#tagrows [data-cdtb]'); await bp.waitForTimeout(80);
+    const s4 = await sdt();
+    check('B2: Edit Tags: … opens Select Data Type at DINT with Dim 1 = 4 and Dim 0 = 5', !!s4 && s4.on === 'DINT' && (await bp.$eval('#sdd1', i => i.value)) === '4' && (await bp.$eval('#sdd0', i => i.value)) === '5' && !!(await bp.$('#tagrows [data-cdtb]')), JSON.stringify(s4));
+    await bp.fill('#sdd1', '0'); await bp.fill('#sdd0', '8'); await bp.click('#layer [data-sdo]'); await bp.waitForTimeout(150);
+    const g2 = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Grid_A'));
+    check('B2: Edit Tags: OK makes Grid_A a DINT[8]', g2.type === 'DINT' && g2.dim === 8 && (await bty('Grid_A')).includes('DINT[8]'), JSON.stringify(g2));
+    await bp.click('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"]'); await bp.waitForTimeout(60);
+    await bp.click('#tagrows [data-cdtb]'); await bp.waitForTimeout(80); await bp.keyboard.press('Escape'); await bp.waitForTimeout(60);
+    check('B2: Edit Tags: Esc in Select Data Type goes back to the cell, unchanged', !(await bp.$('#layer .dlg.sdt')) && !!(await bp.$('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"] input')) && (await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Grid_A').dim)) === 8);
+    await bp.fill('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"] input', 'REAL[2,2]'); await bp.keyboard.press('Enter'); await bp.waitForTimeout(150);
+    const g3 = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Grid_A'));
+    check('B2: Edit Tags: typing REAL[2,2] and Enter makes a REAL array of 2 × 2', g3.type === 'REAL' && JSON.stringify(g3.dim) === '[2,2]', JSON.stringify(g3));
+    await bp.click('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"]'); await bp.waitForTimeout(60);
+    await bp.fill('#tagrows tr[data-tag="Grid_A"] [data-tcell="type"] input', 'NOPE'); await bp.keyboard.press('Enter'); await bp.waitForTimeout(150);
+    check('B2: Edit Tags: an unknown data type is refused with a message and the tag is unchanged', (await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Grid_A').type)) === 'REAL' && /not a data type/.test(await bp.$eval('body', b => b.textContent)));
+    // tablet and phone (touch): … , a tap on a type, Dim 0 and OK
+    for (const vp of [{ width: 800, height: 1280, n: 'tablet' }, { width: 390, height: 844, n: 'phone' }]) {
+      const tctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+      const tp = await tctx.newPage(); tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.run('newtag'); }); await tp.waitForTimeout(200);
+      await tp.tap('#ttb'); await tp.waitForTimeout(100);
+      await tp.tap('#layer [data-sdt="REAL"]'); await tp.fill('#sdd0', '6'); await tp.waitForTimeout(30);
+      const rh = await tp.$eval('#layer [data-sdt="REAL"]', r => r.getBoundingClientRect().height);
+      await tp.tap('#layer [data-sdo]'); await tp.waitForTimeout(80);
+      check(`B2: ${vp.n} (touch): tap …, tap REAL, Dim 0 = 6, tap OK: REAL[6] (rows of 44 px)`, (await tp.$eval('#tt', i => i.value)) === 'REAL[6]' && rh >= 44, String(rh));
       await tctx.close();
     }
     /*B-NEXT*/
