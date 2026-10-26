@@ -3963,6 +3963,20 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
      as in the reference emulator */
   const rtbOpen = new Set();   // the I/O cards ('rack:slot') whose RTB door is open: UI state only
+  /* the 20-pin RTB of a 1756 digital module, as its wiring diagram has it (1756-UM058): pin 1 at the top right, the
+     even pins in the left column and the odd ones in the right. On the card the two halves (pins 1-10 and 11-20) stand
+     side by side, each as on the RTB (even left, odd right), so the card keeps its size. A screw shows its pin
+     number; its signal (IN-0, GND-0, …) is in its title. 1756-OW16I has a 36-pin RTB and is not one of these. */
+  const rtbPins = (a, g) => { const p = {}; for (let i = 0; i < 8; i++) { p[i + 1] = a + '-' + i; p[i + 11] = a + '-' + (i + 8); } return Object.assign(p, g); };
+  const RTBPINS = {
+    'PLC-DI16-24V': rtbPins('IN', { 9: 'GND-0', 10: 'GND-0', 19: 'GND-1', 20: 'GND-1' }),             // 1756-IB16
+    'PLC-DI16-120V': rtbPins('IN', { 9: 'L2-0', 10: 'L2-0', 19: 'L2-1', 20: 'L2-1' }),                // 1756-IA16
+    'PLC-DO16-24V': rtbPins('OUT', { 9: 'RTN OUT-0', 10: 'DC-0(+)', 19: 'RTN OUT-1', 20: 'DC-1(+)' }), // 1756-OB16E
+  };
+  const rtb20 = pins => `<div class="mterm rtb20" aria-label="Terminal block, 20 pins">${[0, 1, 2, 3, 4].map(r => [2 * r + 2, 2 * r + 1, 2 * r + 12, 2 * r + 11].map(n => {
+    const l = pins[n], com = !/^(IN|OUT)-/.test(l);
+    return `<span class="scr${com ? ' com' : ''}" data-pin="${n}" title="Pin ${n}: ${esc(l)}" aria-label="Pin ${n}, ${esc(l)}"><i></i><b>${n}</b></span>`;
+  }).join('')).join('')}</div>`;
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
@@ -3985,7 +3999,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const com = m.kind === 'di' ? ['GND', 'GND'] : m.kind === 'do' ? ['DC+', 'RTN'] : ['RTN', 'RTN'];
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
     const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
-    const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
+    const term = RTBPINS[m.type] ? rtb20(RTBPINS[m.type]) : `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
     /* the RTB (removable terminal block) housing: its door is closed over the terminals, as on a 1756 module; a click
        or tap opens it on its side hinge and shows the terminals, another one closes it (kept per card, not in the project) */
     const open = rtbOpen.has(id);

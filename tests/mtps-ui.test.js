@@ -578,7 +578,7 @@ function check(name, cond, info = '') {
     return { open: r.classList.contains('open'), aria: d.getAttribute('aria-expanded'), covered: !!(hit && hit.closest('.rtbdoor')), terminal: !!(hit && hit.closest('.scr')), screws: r.querySelectorAll('.mterm .scr').length, doorH: Math.round(b.height), rtbH: Math.round(rb.height), cpuDoor: !!document.querySelector('#iob .ccard.cpu .rtbdoor'), iowin: !!document.querySelector('.iowin') };
   }, id);
   let dr = await door(page, '0:1');
-  check('RTB door: every I/O module has one, closed by default over its terminals (the CPU has none)', !dr.open && dr.aria === 'false' && dr.covered && !dr.terminal && dr.screws === 18 && !dr.cpuDoor && (await page.$$eval('#iob .ccard.io .mrtb:not(.open)', x => x.length)) === 2, JSON.stringify(dr));
+  check('RTB door: every I/O module has one, closed by default over its terminals (the CPU has none)', !dr.open && dr.aria === 'false' && dr.covered && !dr.terminal && dr.screws === 20 && !dr.cpuDoor && (await page.$$eval('#iob .ccard.io .mrtb:not(.open)', x => x.length)) === 2, JSON.stringify(dr));
   await page.click('#iob .ccard.io[data-cmod="0:1"] .rtbdoor');
   await page.waitForTimeout(450);
   dr = await door(page, '0:1');
@@ -1903,6 +1903,37 @@ function check(name, cond, info = '') {
       await tp.tap('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"]'); await tp.waitForTimeout(80);
       await tp.selectOption('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"] select', 'Octal'); await tp.waitForTimeout(150);
       check('B3: tablet (touch): the Style cell takes Octal', (await tp.evaluate(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_X').style)) === 'Octal');
+      await tctx.close();
+    }
+    // B6: the 20-pin RTB of the 1756 digital modules (1756-UM058 wiring diagrams): pin numbers on the screws, signals in
+    // the titles, even pins left and odd pins right in each half; the card keeps its size
+    await bev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example(), true); const r = MTPS.App.racks[0]; [3, 4].forEach(n => r.remove(n)); r.insert(3, 'PLC-DI16-120V', 'DI_AC'); r.insert(4, 'PLC-DO16-RLY', 'DO_RLY'); MTPS.App.render(); }); await bp.waitForTimeout(200);
+    const pinsOf = id => bp.$$eval(`#iob .ccard.io[data-cmod="${id}"] .mterm .scr`, x => x.map(e => [e.dataset.pin || '', e.title, e.textContent]));
+    const ib = await pinsOf('0:1');
+    check('B6: IB16 (DC in): 20 screws numbered 1-20, rows 2 1 | 12 11, 4 3 | 14 13, …', ib.length === 20 && ib.map(x => x[0]).join(',') === '2,1,12,11,4,3,14,13,6,5,16,15,8,7,18,17,10,9,20,19' && ib.every(x => x[2] === x[0]), ib.map(x => x[0]).join(','));
+    const tt = (l, n) => (l.find(x => x[0] === String(n)) || [])[1];
+    check('B6: IB16 pins as in its wiring diagram: 1 IN-0, 2 IN-1, 8 IN-7, 9 and 10 GND-0, 11 IN-8, 18 IN-15, 19 and 20 GND-1', tt(ib, 1) === 'Pin 1: IN-0' && tt(ib, 2) === 'Pin 2: IN-1' && tt(ib, 8) === 'Pin 8: IN-7' && tt(ib, 9) === 'Pin 9: GND-0' && tt(ib, 10) === 'Pin 10: GND-0' && tt(ib, 11) === 'Pin 11: IN-8' && tt(ib, 18) === 'Pin 18: IN-15' && tt(ib, 19) === 'Pin 19: GND-1' && tt(ib, 20) === 'Pin 20: GND-1');
+    const ob = await pinsOf('0:2'), ia = await pinsOf('0:3'), ow = await pinsOf('0:4');
+    check('B6: OB16E (DC out): 1 OUT-0, 9 RTN OUT-0, 10 DC-0(+), 11 OUT-8, 19 RTN OUT-1, 20 DC-1(+)', tt(ob, 1) === 'Pin 1: OUT-0' && tt(ob, 9) === 'Pin 9: RTN OUT-0' && tt(ob, 10) === 'Pin 10: DC-0(+)' && tt(ob, 11) === 'Pin 11: OUT-8' && tt(ob, 19) === 'Pin 19: RTN OUT-1' && tt(ob, 20) === 'Pin 20: DC-1(+)');
+    check('B6: IA16 (AC in): 9 and 10 L2-0, 19 and 20 L2-1', tt(ia, 9) === 'Pin 9: L2-0' && tt(ia, 10) === 'Pin 10: L2-0' && tt(ia, 19) === 'Pin 19: L2-1' && tt(ia, 20) === 'Pin 20: L2-1' && tt(ia, 3) === 'Pin 3: IN-2');
+    check('B6: the relay card (OW16I, a 36-pin RTB) keeps its own terminal block', ow.length === 18 && ow.every(x => !x[0]));
+    const hs = await bev(() => ['0:0', '0:1', '0:2', '0:4'].map(id => Math.round(document.querySelector(`#iob [data-esel="m:${id}"]`).getBoundingClientRect().height)));
+    check('B6: the cards keep their size (CPU, IB16, OB16E and the relay card are as tall)', new Set(hs).size === 1, hs.join(','));
+    await bp.click('#iob .ccard.io[data-cmod="0:1"] .rtbdoor'); await bp.waitForTimeout(450);
+    const pin = await bp.evaluate(() => { const t = document.querySelector('#iob .ccard.io[data-cmod="0:1"] .scr[data-pin="10"]').getBoundingClientRect(), h = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2), b = document.querySelector('#iob .ccard.io[data-cmod="0:1"] .scr[data-pin="10"] b'); return { hit: !!(h && h.closest('.scr')), fits: b.scrollWidth <= b.clientWidth + 1 && b.getBoundingClientRect().right <= document.querySelector('#iob .ccard.io[data-cmod="0:1"] .scr[data-pin="10"]').getBoundingClientRect().right + 0.5 }; });
+    check('B6: the door opens on the 20 pins; a two-digit pin number fits beside its screw', pin.hit && pin.fits, JSON.stringify(pin));
+    await bp.click('#iob .ccard.io[data-cmod="0:1"] .rtbdoor'); await bp.waitForTimeout(300);
+    await bev(() => { const r = MTPS.App.racks[0]; [3, 4].forEach(n => r.remove(n)); MTPS.App.render(); });
+    // phone (touch): tap the door, the pins show
+    {
+      const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+      const tp = await tctx.newPage(); tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { MTPS.App.openProject(MTPS.App.example(), true); }); await tp.waitForTimeout(250);
+      await tp.tap('[data-ptab="1"]'); await tp.waitForTimeout(200);
+      const dsel = '#iob .ccard.io[data-cmod="0:1"] .rtbdoor';
+      if (await tp.$(dsel)) { await tp.$eval(dsel, d => d.scrollIntoView({ block: 'center' })); await tp.tap(dsel); await tp.waitForTimeout(450); }
+      check('B6: phone (touch): tap the RTB door: the 20 numbered pins show', await tp.evaluate(() => { const r = document.querySelector('#iob .ccard.io[data-cmod="0:1"] .mrtb'); return !!r && r.classList.contains('open') && r.querySelectorAll('.scr[data-pin]').length === 20; }));
       await tctx.close();
     }
     /*B-NEXT*/

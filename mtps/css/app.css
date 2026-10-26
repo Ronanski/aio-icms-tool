@@ -854,6 +854,9 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .mterm .scr i, .tab .mterm .scr i, .phone .mterm .scr i { width: 6px; height: 6px; }
 .mterm .scr i::after { top: 2px; }
 .mterm .scr b { font-size: 7px; }
+/* a 20-pin RTB: two digits beside the screw */
+.mterm.rtb20 .scr { padding: 0; gap: 1px; }
+.mterm.rtb20 .scr b { font-size: 6.5px; letter-spacing: -.4px; overflow: visible; text-overflow: clip; }
 .mf { gap: 2px; padding: 3px 3px; }
 .mmat { gap: 1px; padding: 2px; font-size: 7px; }
 .mmat i { width: 6px; height: 6px; }
