@@ -297,8 +297,16 @@
   function rememberFile(path) { if (!/\.mtp$/i.test(path)) return; S.prefs.files = [path].concat((S.prefs.files || []).filter(x => x !== path)).slice(0, 8); savePrefs(); }
   function cmdOpen() {
     const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
-    if (S.dirty) confirmDlg('Open Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Open another project anyway? (Save first with Save or Save As.)`, 'Open anyway', go, true);
-    else go();
+    saveChanges(go);
+  }
+  /* the reference's prompt before the project closes (Close, New, Open, Exit): "Save changes to <name>?" Yes saves
+     first (Save As when it has no file yet) and then goes on, No goes on without saving, Cancel stays */
+  function saveChanges(fn) {
+    if (!S.dirty || S.noProj) { fn(); return; }
+    const then = ok => { if (ok) setTimeout(fn, 0); };
+    dialog({ title: 'MT PLC Studio', body: `<p>Save changes to <b>${esc(S.file ? S.file.name : S.p.controller.name)}</b>?</p>`, size: 'sm',
+      buttons: [{ l: 'Yes', pri: true, run: () => { setTimeout(() => (S.file && S.file.path ? writeTo(S.file.path).then(then) : fileDialog({ mode: 'save', title: 'Save As', name: S.p.controller.name + '.mtp', types: ['mtp'], onPick: f => writeTo(f).then(then) })), 0); } },
+        { l: 'No', run: () => { setTimeout(fn, 0); } }, { l: 'Cancel' }] });
   }
   function exportL5X() { fileDialog({ mode: 'save', title: 'Export L5X', name: S.p.controller.name + '.L5X', types: ['l5x'], onPick: async f => { try { await FS.write(f, toL5X(S.p)); toast(`Exported ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } }); }
   function importL5X() { fileDialog({ mode: 'open', title: 'Import L5X', types: ['l5x'], onPick: f => loadFile(f) }); }
@@ -741,7 +749,7 @@
     import: { l: 'Import L5X…', i: 'upload', run: importL5X },
     export: { l: 'Export L5X…', i: 'download', run: exportL5X },
 
-    exit: { l: 'Exit', i: 'exit', run: () => { saveProject(); window.close(); }, show: () => isElectron },
+    exit: { l: 'Exit', i: 'exit', run: () => saveChanges(() => { saveProject(); S.dirty = false; window.close(); }), show: () => isElectron },
     undo: { l: 'Undo', k: 'Ctrl+Z', i: 'undo', run: undo, on: () => editable() && S.undo.length > 0 },
     redo: { l: 'Redo', k: 'Ctrl+Y', i: 'redo', run: redo, on: () => editable() && S.redo.length > 0 },
     cut: { l: 'Cut', k: 'Ctrl+X', i: 'cut', run: () => copySel(true), on: () => editable() && (!!S.sel || S.selRung != null) },
@@ -2934,8 +2942,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     toast('Quick setup done: driver, emulator, project and path are ready.', 'ok');
   }
   function cmdNew() {
-    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(newProjectDlg, 0), true);
-    else newProjectDlg();
+    saveChanges(newProjectDlg);
   }
   /* New Project, as in the reference: it only declares the controller (type, name, revision, chassis, slot,
      description). Drivers, the emulated controller and I/O modules are set up any time after (Setup Wizard,
@@ -4353,7 +4360,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
-      if ((el = t.closest('[data-recent]'))) { loadFile(el.dataset.recent); return; }
+      if ((el = t.closest('[data-recent]'))) { const f = el.dataset.recent; saveChanges(() => loadFile(f)); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
       if ((el = t.closest('[data-msgt]')) && !t.closest('[data-cmd]')) { S.errOpen = !S.errOpen; render(); return; }
       if ((el = t.closest('[data-ef]'))) { const f = S.errFilter || { e: true, w: true, m: true }; f[el.dataset.ef] = !f[el.dataset.ef]; S.errFilter = f; render(); return; }

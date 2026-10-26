@@ -1701,6 +1701,7 @@ function check(name, cond, info = '') {
     check('an old Dark setting becomes Classic, Dark', JSON.stringify(await old.evaluate(() => [document.documentElement.dataset.theme, document.documentElement.dataset.mode])) === '["classic","dark"]');
     await old.close();
   }
+  await require('./mtps-ui-menus')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
