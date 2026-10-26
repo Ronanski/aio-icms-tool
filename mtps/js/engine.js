@@ -809,7 +809,7 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
-      this.copy = JSON.stringify(project);
+      this.copy = JSON.stringify(project); this.dlAt = Date.now();
       this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
@@ -1255,7 +1255,7 @@
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU';
   class Chassis {
-    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
+    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; this.kept = new Map(); }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
     static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
@@ -1271,7 +1271,25 @@
       this.emit('insert');
       return { ok: true, module: m };
     }
-    remove(slot) { const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok; }
+    /* Remove Module (cannot be undone). A controller's configuration stays in place unless it is cleared (Clear module
+       configuration): a controller created later in that slot can use it, and load the saved controller image. */
+    remove(slot, keep) {
+      const m = this.mods.get(slot);
+      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
+      const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok;
+    }
+    /* a controller created in a slot whose configuration was kept: use it (else defaults, the name stays), and load
+       the saved controller image when asked */
+    useKept(slot, useConfig, loadImage) {
+      const k = this.kept.get(slot), m = this.mods.get(slot);
+      if (!k || !m || !m.ctl) return false;
+      this.kept.delete(slot);
+      m.name = k.name;
+      if (useConfig) this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot });
+      if (loadImage && k.project) { const key = m.ctl.key; m.ctl.key = 'REM'; m.ctl.download(k.project); if (k.at) m.ctl.dlAt = k.at; m.ctl.key = key; if (key === 'PROG') m.ctl.go('prog'); }
+      this.emit('controller');
+      return true;
+    }
     /* another chassis size (4 or 8 slots); refused while a module sits in a slot that would go */
     resize(n) {
       n = Math.floor(n);
@@ -1329,12 +1347,14 @@
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
         ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
-        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
+        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })),
+        kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
     }
     static from(o) {
       // an old chassis (7, 10 or 12 slots) becomes 8 slots when its modules fit, else it keeps its size
       const ch = new Chassis(o && o.size > 0 ? fitRack(Math.min(12, Math.max(4, Math.floor(o.size))), ((o && o.mods) || []).map(x => x.slot)) : 8, (o && o.name) || 'Chassis');
       ch.desc = (o && o.desc) || '';
+      ((o && o.kept) || []).forEach(k => { if (k && k.slot >= 0) { const { slot, ...rest } = k; ch.kept.set(slot, rest); } });
       ((o && o.mods) || []).forEach(x => {
         const r = ch.insert(x.slot, x.type, x.name);
         if (!r.ok) return;

@@ -3919,6 +3919,19 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return;
     }
   }
+  /* Remove (an emulated controller): cannot be undone; the controller's configuration stays in place unless Clear
+     module configuration is ticked (ticked at first with Options > Clear Configuration on Remove) */
+  function removeCpu(ri, s, was) {
+    const r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    dialog({ title: 'Remove Module', size: '',
+      body: `<p style="margin-top:0">Remove <b>[${s}] PLC-CPU ${esc(m.name)}</b> from the virtual chassis ${esc(r.name)}? This cannot be undone.</p>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="rm-clr"${S.prefs.clearOnRemove ? ' checked' : ''}><span>Clear module configuration</span></label>
+        <p class="help">Not ticked: the configuration${m.ctl.name ? ` and the controller image (${esc(m.ctl.name)})` : ''} stay in place, and a controller created later in slot ${s} can use them. Ticked: both are deleted.</p>`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', danger: true, run: e2 => {
+        r.remove(s, !e2.querySelector('#rm-clr').checked); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); backToEmu(was);
+      } }] });
+  }
   /* Configure Emulation: the Speed of Time area (slider in 1 % steps or the % box, Confirm Time % Change, 100% NOW,
      0% NOW; the last value set shows on the left). A change takes effect at once; 0 % stops execution. */
   function configEmulation(id, was) {
@@ -4036,6 +4049,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if ((el = t.closest('[data-cins]'))) { const [ri, s] = ids(el.dataset.cins); insertCard(ri, s); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-crem]'))) {
       const [ri, s] = ids(el.dataset.crem), r = racks[ri], m = r.module(s);
+      if (m && m.ctl) { removeCpu(ri, s, emuOpen()); if (doc !== document) window.focus(); return true; }
       confirmDlg('Delete', `Delete <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from chassis ${esc(r.name)}?${m.ctl && m.ctl.name ? ` The project <b>${esc(m.ctl.name)}</b> in it is lost.` : ''}`, 'Delete', () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); }, true);
       if (doc !== document) window.focus();
       return true;
@@ -4132,7 +4146,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           <div class="frow"><label>Revision</label><select class="inp" id="ci-rev"><option>1.0</option></select></div>
           <div class="frow"><label>Memory Size (KB)</label><input class="inp" id="ci-mem" type="number" min="64" step="64" value="3072"></div>
           <div class="frow"><label>IP Address</label><select class="inp" id="ci-ip"><option value="">(none)</option>${EMUIPS.map(a => `<option>${a}</option>`).join('')}</select></div>
-          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label></div>
+          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label>
+          <div id="ci-prev" class="ciprev" hidden></div></div>
         <p class="help" id="ci-h"></p>`,
       buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
         const r = racks[+e2.querySelector('#ci-r').value], s = +e2.querySelector('#ci-s').value, t = e2.querySelector('#ci-t').value;
@@ -4141,7 +4156,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
         const res = r.insert(s, t, n);
         if (!res.ok) { toast(res.msg, 'err'); return false; }
-        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
+        const pv = t === 'PLC-CPU' && e2.querySelector('#ci-prev:not([hidden])');
+        if (pv) r.useKept(s, pv.querySelector('#cp-use').checked, !!(pv.querySelector('#cp-img') && pv.querySelector('#cp-img').checked));
+        if (t === 'PLC-CPU') r.setController(s, { name: n, desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
         r.advance(0); saveChassis();
         emuSel = { k: 'm', ri: racks.indexOf(r), slot: s };
         setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0);
@@ -4153,13 +4170,32 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const cpu = q('#ci-t').value === 'PLC-CPU';
       q('#ci-cpu').hidden = !cpu;
       if (cpu && !q('#ci-ip').dataset.touched) { const used = new Set(racks.flatMap(x => x.controllers().map(m => m.ip))); q('#ci-ip').value = gatewayIp(r) ? '' : EMUIPS.find(a => !used.has(a)) || ''; }
+      prevCfg(cpu && r.kept.get(+q('#ci-s').value));
       q('#ci-h').textContent = cpu ? 'An emulated controller holds a project (Download through Who Active). Give one controller in each chassis an IP address.' : 'An I/O card brings field switches (inputs) or lamps (outputs); the project must configure the same module in the same slot.';
+    };
+    /* a controller removed from this slot left its configuration: use it, or reset it to default values (the name
+       stays); Load Saved Controller Image from Previous Instance (LGEM5K-GR016M, Create a controller, step 5) */
+    let pvAt = null;
+    const prevCfg = k => {
+      const b = q('#ci-prev');
+      if (!k) { b.hidden = true; b.innerHTML = ''; pvAt = null; return; }
+      if (pvAt === k) return;
+      pvAt = k; b.hidden = false;
+      b.innerHTML = `<p><b>Previous configuration information exists for this slot.</b></p>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="cp" id="cp-use" checked><span>Use the Configuration from the Previous Controller</span></label>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="cp" id="cp-def"><span>Reset the Configuration to Default Values</span></label>
+        ${k.project ? `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="cp-img"><span>Load Saved Controller Image from Previous Instance: <b>${esc(k.project.controller ? k.project.controller.name : k.name)}</b>${k.at ? ', last downloaded ' + esc(new Date(k.at).toLocaleString()) : ''}</span></label>
+        <p class="help">Using a previously loaded controller image may result in unexpected operation. Make sure the program is correct before running emulations.</p>` : ''}`;
+      const fill = use => { q('#ci-n').value = k.name; q('#ci-d').value = use ? k.desc || '' : ''; q('#ci-mem').value = use ? k.mem || 3072 : 3072; q('#ci-ip').value = use ? k.ip || '' : ''; q('#ci-ip').dataset.touched = '1'; };
+      b.querySelector('#cp-use').onchange = () => fill(true); b.querySelector('#cp-def').onchange = () => fill(false);
+      fill(true);
     };
     q('#ci-t').value = type0 || 'PLC-DI16-24V';
     const cfg = slot != null && S.p && S.p.rack.modules.find(x => x.slot === slot);
     if (cfg && !type0) q('#ci-t').value = cfg.type;
     q('#ci-r').onchange = () => { slot = null; sync(); };
     q('#ci-t').onchange = sync;
+    q('#ci-s').onchange = sync;
     q('#ci-ip').onchange = () => { q('#ci-ip').dataset.touched = '1'; };
     sync();
   }

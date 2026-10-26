@@ -1112,3 +1112,5 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .sotf input[type=range] { width: 100%; }
 .sotrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .sotrow .num { width: 72px; }
+.ciprev { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+.ciprev p { margin: 4px 0; }

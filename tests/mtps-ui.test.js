@@ -1751,6 +1751,34 @@ function check(name, cond, info = '') {
     check('Run Continuously: the controller scans on', !c.single && c.scans > 5 && (await dlgTitle()) === '', JSON.stringify(c));
     await ev(() => { const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.setMode('remprog'); });
   }
+  console.log('Logix Emulate: Remove a controller, keep or clear its configuration');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); const r = MTPS.App.racks[0]; r.insert(3, 'PLC-CPU', 'Spare'); r.setController(3, { ip: '127.0.0.9', desc: 'spare' }); r.controller(3).download(MTPS.App.state.p); MTPS.App.render(); });
+    await page.waitForTimeout(250);
+    await page.click('#iob [data-ccpu="0:3"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Remove")'); await page.waitForTimeout(100);
+    check('Remove on a controller: Remove Module, cannot be undone, with Clear module configuration (not ticked)', (await dlgTitle()) === 'Remove Module' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('cannot be undone') && !(await page.$eval('#rm-clr', i => i.checked)));
+    await page.click('#layer .df .btn.danger'); await page.waitForTimeout(150);
+    check('OK removes the controller and keeps its configuration in place', await ev(() => !MTPS.App.racks[0].module(3) && MTPS.App.racks[0].kept.get(3).name === 'Spare'));
+    await page.click('#iob [data-cins="0:3"]'); await page.waitForTimeout(120);
+    await page.selectOption('#ci-t', 'PLC-CPU'); await page.waitForTimeout(80);
+    check('a new controller in that slot: use the previous configuration or reset it, and load the saved image', !(await page.$eval('#ci-prev', b => b.hidden)) && (await page.$eval('#ci-n', i => i.value)) === 'Spare' && (await page.$eval('#ci-ip', i => i.value)) === '127.0.0.9' && (await page.$('#cp-img')) !== null);
+    await page.check('#cp-def'); await page.waitForTimeout(50);
+    check('Reset the Configuration to Default Values: the name stays, the rest is default', (await page.$eval('#ci-n', i => i.value)) === 'Spare' && (await page.$eval('#ci-ip', i => i.value)) === '' && (await page.$eval('#ci-d', i => i.value)) === '');
+    await page.check('#cp-use'); await page.check('#cp-img'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(250);
+    check('Use the previous configuration + Load Saved Controller Image: the controller holds the project again', await ev(() => { const m = MTPS.App.racks[0].module(3); return m && m.ip === '127.0.0.9' && m.desc === 'spare' && m.ctl.name === 'Motor_Demo' && !MTPS.App.racks[0].kept.has(3); }));
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.render(); });
+    await page.waitForTimeout(100);
+    await page.click('#iob [data-ccpu="0:3"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Remove")'); await page.waitForTimeout(100);
+    await page.check('#rm-clr'); await page.click('#layer .df .btn.danger'); await page.waitForTimeout(150);
+    check('Clear module configuration ticked: the controller and its configuration are gone', await ev(() => !MTPS.App.racks[0].module(3) && !MTPS.App.racks[0].kept.has(3)));
+    await page.click('#iob [data-cins="0:3"]'); await page.waitForTimeout(120);
+    await page.selectOption('#ci-t', 'PLC-CPU'); await page.waitForTimeout(80);
+    check('then a new controller there starts from defaults (no prompt)', await page.$eval('#ci-prev', b => b.hidden));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

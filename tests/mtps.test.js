@@ -733,5 +733,21 @@ console.log('Logix Emulate: Single Scan mode (LGEM5K-GR016, chapter 5)');
   check('Single Scan again does nothing outside Single Scan mode', !c.scanAgain());
 }
 
+console.log('Logix Emulate: Remove Module keeps or clears a controller configuration (LGEM5K-GR016, chapter 4)');
+{
+  const p = proj({ tags: [T('N', 'DINT', { value: 7 })], rungs: ['NOP();'] });
+  const ch = new MTPS.Chassis(8); ch.insert(2, 'PLC-CPU', 'Line1'); ch.setController(2, { ip: '127.0.0.2', mem: 2048, sot: 40, desc: 'd' });
+  ch.controller(2).download(p);
+  check('remove, keeping the configuration: the slot is empty, its configuration stays', ch.remove(2, true) && !ch.module(2) && ch.kept.get(2).name === 'Line1' && ch.kept.get(2).project.tags[0].value === 7 && ch.kept.get(2).at > 0);
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch)));
+  check('the kept configuration is saved with the chassis', back.kept.get(2) && back.kept.get(2).sot === 40);
+  ch.insert(2, 'PLC-CPU', 'Other');
+  check('a new controller there uses the previous configuration and loads the saved image', ch.useKept(2, true, true) && ch.module(2).name === 'Line1' && ch.module(2).ip === '127.0.0.2' && ch.module(2).mem === 2048 && ch.controller(2).sot === 40 && ch.controller(2).name === 'Test' && ch.controller(2).read('N') === 7 && !ch.kept.has(2));
+  ch.remove(2, true); ch.insert(2, 'PLC-CPU', 'Other');
+  check('reset to default values: the name stays, the rest is default and the controller is empty', ch.useKept(2, false, false) && ch.module(2).name === 'Line1' && ch.module(2).ip === '' && ch.controller(2).sot === 100 && !ch.controller(2).copy);
+  ch.remove(2, false);
+  check('remove with Clear module configuration: nothing is kept', !ch.kept.has(2) && !ch.module(2));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
