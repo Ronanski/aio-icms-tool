@@ -1294,9 +1294,16 @@ function check(name, cond, info = '') {
     await cp.click('#layer .btn.pri');
     await cp.waitForFunction(() => { const t = document.querySelector('#xft'); return t && /tags|program|routine/.test(t.textContent); }, null, { timeout: 3000 }).catch(() => {});
     await cp.click('#layer .df .btn'); await cp.waitForTimeout(100);
-    check('Cancel stops the download: the dialog closes, "Download cancelled", the controller keeps its project', (await cp.$('#layer .dlg')) === null && (await cp.$eval('#stmsg', e => e.textContent)).startsWith('Download cancelled') && await cp.evaluate(() => !MTPS.App.state.online && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5));
+    // v37 help, Download dialog box: "Before a project is downloaded, the memory of the controller is cleared"
+    check('Cancel during the transfer: the dialog closes, "Download cancelled", the controller memory was cleared (no project)', (await cp.$('#layer .dlg')) === null && (await cp.$eval('#stmsg', e => e.textContent)).startsWith('Download cancelled. The controller memory was cleared') && await cp.evaluate(() => !MTPS.App.state.online && MTPS.App.ctl.copy === null && MTPS.App.ctl.name === ''));
     await cp.waitForTimeout(2500);
-    check('nothing runs on after Cancel (no late download, the COMM LED is dark)', await cp.evaluate(() => !MTPS.App.state.online && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5 && !document.querySelector('#layer .dlg')) && (await led()) === 'commled');
+    check('nothing runs on after Cancel (no late download, the COMM LED is dark)', await cp.evaluate(() => !MTPS.App.state.online && MTPS.App.ctl.copy === null && !document.querySelector('#layer .dlg')) && (await led()) === 'commled');
+    // Cancel in the Download dialog itself (before the transfer): the controller keeps what it has
+    await cp.evaluate(() => { const p = JSON.parse(JSON.stringify(MTPS.App.state.p)); p.tasks[0].programs[0].routines[0].rungs.pop(); MTPS.App.ctl.download(p); });
+    await cp.evaluate(() => MTPS.App.run('download'));
+    await cp.waitForFunction(() => { const b = document.querySelector('#layer .dlg .dh b'); return b && b.textContent === 'Download' && !document.querySelector('#xft'); }, null, { timeout: 4000 }).catch(() => {});
+    await cp.click('#layer .df .btn:not(.pri)'); await cp.waitForTimeout(100);
+    check('Cancel in the Download dialog: nothing is transferred, the controller keeps its project', await cp.evaluate(() => MTPS.App.ctl.copy && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5));
     // Esc cancels the connect step too
     await cp.evaluate(() => MTPS.App.run('online')); await cp.waitForTimeout(150);
     await cp.keyboard.press('Escape'); await cp.waitForTimeout(1500);

@@ -3577,7 +3577,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         const wasRun = ctl.running;
         if (wasRun) ctl.setMode('remprog');
         const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p));
-        let r = null;
+        let r = null, cleared = false;
+        // "Before a project is downloaded, the memory of the controller is cleared" (v37 help, Download dialog box)
+        x.st[0].run = () => { if (ctl === to) { to.clearMemory(); cleared = true; saveChassis(); } };
         // the controller takes the project at Verifying: from there the transfer cannot be cancelled
         x.st.push({ t: 'Verifying…', w: 2, fixed: true, run: () => {
           if (ctl !== to) { toast('The controller stopped answering: the download failed.', 'err'); return false; }
@@ -3589,7 +3591,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           saveChassis();
         } });
         setTimeout(() => transfer({ title: 'Downloading', kind: 'download', ms: x.ms, sub: `To ${curPath()}`, steps: x.st, doneText: 'Download complete',
-          cancelled: () => { linked = null; toast('Download cancelled. The project in the controller was not changed.'); },
+          cancelled: () => {
+            linked = null;
+            if (!cleared) { toast('Download cancelled. The project in the controller was not changed.'); return; }
+            if (S.online) { S.online = false; commLed(); }
+            render(); live(true);
+            toast('Download cancelled. The controller memory was cleared before the download: the controller holds no project now.', 'err');
+          },
           done: () => {
             online();
             if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });

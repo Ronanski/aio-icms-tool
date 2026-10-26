@@ -817,6 +817,15 @@
       this.emit('mode');
       return res;
     }
+    /* a download clears the controller memory before the project goes in (v37 help, Download dialog box): a download
+       cancelled after that leaves the controller empty (no name, no project) */
+    clearMemory() {
+      this.M = null; this.copy = null; this.name = ''; this.dlAt = null;
+      this.S = { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 };
+      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
+      this.mode = this.key === 'PROG' ? 'prog' : this.key === 'RUN' ? 'run' : 'remprog';
+      this.emit('download'); this.emit('mode');
+    }
     /* power: off keeps the project; on starts again like a real controller (RUN key: Run, PROG: Program,
        REM: the mode it had), with the current fault cleared and a prescan before Run */
     power(on) {

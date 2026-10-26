@@ -749,5 +749,14 @@ console.log('Logix Emulate: Remove Module keeps or clears a controller configura
   check('remove with Clear module configuration: nothing is kept', !ch.kept.has(2) && !ch.module(2));
 }
 
+console.log('Download clears the controller memory first (v37 help, Download dialog box)');
+{
+  const p = proj({ tags: [T('N', 'DINT', { value: 3 })], rungs: ['NOP();'] });
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun');
+  c.clearMemory();
+  check('cleared memory: no name, no project, Remote Program, nothing to upload', !c.M && c.copy === null && c.name === '' && c.mode === 'remprog' && c.upload() === null && !c.holds(p));
+  check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
