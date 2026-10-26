@@ -131,4 +131,17 @@ module.exports = async function menus({ browser, page, URL, check }) {
   await tq.tap('[data-allmenu]'); await tq.waitForTimeout(150); await tq.tap('[data-fold="File"]'); await tq.waitForTimeout(150);
   check('tablet (touch): the folding File menu lists the recent project', (await items(tq)).some(x => x[0] === '1 Tab_Proj.mtp'));
   await t2.close();
+
+  console.log('File > New Component (help v37: Routine opens New Routine for the program picked in the organizer)');
+  await fresh(); await example();
+  f = await menu('File');
+  const nc = f.findIndex(x => x[0] === '#New Component'), ncs = f.slice(nc + 1, nc + 8);
+  check('New Component: Data Type, Module, Program, Routine, Tag, Task, Trend in the reference order', ncs.map(x => x[0]).join('|') === 'New Data Type…|New Module…|New Program…|New Routine…|New Tag…|New Task…|New Trend…', ncs.map(x => x[0]).join('|'));
+  check('Routine, Tag and Module work; Program, Task, Data Type and Trend are listed but off', ncs.filter(x => x[1]).map(x => x[0]).join('|') === 'New Data Type…|New Program…|New Task…|New Trend…');
+  await page.keyboard.press('Escape');
+  await page.click('.org [data-org="prog:MainProgram"]'); await wait(450);
+  await menu('File', 'New Routine…');
+  check('New Routine… opens the New Routine dialog', (await dlgTitle()) === 'New Routine');
+  await page.fill('#layer #p1', 'WA_Sub'); await clickBtn('OK'); await wait(150);
+  check('OK: the routine is made in that program and opens', (await st()).routine === 'WA_Sub' && (await ev(() => MTPS.App.state.p.tasks[0].programs[0].routines.some(r => r.name === 'WA_Sub'))));
 };
