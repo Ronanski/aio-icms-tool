@@ -1135,6 +1135,45 @@ function check(name, cond, info = '') {
     check('prefers-reduced-motion: the browse still steps, but the spinner and the COMM LED do not animate', (await rp.$$('#wa-rows .browsing')).length === 1 && (await rp.$eval('.spin', e => getComputedStyle(e).animationName)) === 'none' && (await rp.$eval('.commled', e => getComputedStyle(e).animationName)) === 'none');
     await rctx.close();
   }
+  console.log('Live updates: only what changed is redrawn (low-end devices)');
+  {
+    const pctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await pctx.route('https://ronanski.github.io/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{"version":"0.0.1"}' }));
+    const pp = await pctx.newPage();
+    pp.on('pageerror', e => errors.push(e.message));
+    await pp.goto(URL); await pp.evaluate(() => localStorage.clear()); await pp.reload(); await pp.waitForTimeout(300);
+    await pp.keyboard.press('Escape');
+    await pp.evaluate(() => { MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('online'); });
+    for (let k = 0; k < 4; k++) { await pp.waitForTimeout(150); const b = await pp.$('#layer .dlg .btn.pri'); if (b) await b.click(); else if (await pp.$('#layer .dlg .prog')) await pp.waitForTimeout(800); }
+    await pp.evaluate(() => MTPS.App.run('runm')); await pp.waitForTimeout(150);
+    const rb = await pp.$('#layer .dlg .btn.pri'); if (rb) { await rb.click(); await pp.waitForTimeout(150); }
+    // the motor runs, so the TON accumulates: the ladder changes every scan
+    await pp.evaluate(() => { const c = MTPS.App.chassis; c.setBit(1, 1, true); c.setBit(1, 2, true); c.setBit(1, 0, true); });
+    await pp.waitForTimeout(150);
+    await pp.evaluate(() => MTPS.App.chassis.setBit(1, 0, false));
+    await pp.waitForTimeout(150);
+    const cnt = await pp.evaluate(() => new Promise(r => {
+      const c = { lad: 0, dock: 0, olbar: 0 };
+      const watch = (sel, k) => { const e = document.querySelector(sel); if (!e) return null; const mo = new MutationObserver(ms => { if (ms.some(m => m.type === 'childList' && m.target === e)) c[k]++; }); mo.observe(e, { childList: true }); return mo; };
+      const mos = [watch('#ladwrap', 'lad'), watch('#iob', 'dock'), watch('#olbar', 'olbar')];
+      const acc0 = MTPS.App.ctl.read('Run_Timer.ACC');
+      setTimeout(() => { mos.forEach(m => m && m.disconnect()); c.acc = MTPS.App.ctl.read('Run_Timer.ACC') - acc0; r(c); }, 1000);
+    }));
+    check('online in Run with a running timer: the ladder follows it (5-20 redraws a second)', cnt.acc > 500 && cnt.lad >= 5 && cnt.lad <= 21, JSON.stringify(cnt));
+    check('the emulator dock and the online bar are not rewritten while they show the same thing', cnt.dock === 0 && cnt.olbar === 0, JSON.stringify(cnt));
+    await pp.evaluate(() => MTPS.App.run('tagsmon')); await pp.waitForTimeout(300);
+    const tm = await pp.evaluate(() => new Promise(r => {
+      const rows = document.querySelector('#tagrows'), first = rows.firstElementChild, acc = () => { const x = [...rows.querySelectorAll('[data-tv]')].find(e => e.dataset.tv === 'Run_Timer.ACC'); return x ? x.textContent : null; };
+      let rewrites = 0; const mo = new MutationObserver(ms => { if (ms.some(m => m.target === rows)) rewrites++; }); mo.observe(rows, { childList: true });
+      const a0 = acc();
+      setTimeout(() => { mo.disconnect(); r({ rewrites, same: rows.firstElementChild === first, a0, a1: acc() }); }, 800);
+    }));
+    check('Monitor Tags: the values change in place, the rows are not rebuilt', tm.rewrites === 0 && tm.same, JSON.stringify(tm));
+    await pp.evaluate(() => { MTPS.App.state.tagOpen.add('|Run_Timer'); MTPS.App.render(); }); await pp.waitForTimeout(400);
+    const acc2 = await pp.evaluate(() => [[...document.querySelectorAll('#tagrows [data-tv]')].find(e => e.dataset.tv === 'Run_Timer.ACC'), MTPS.App.ctl.read('Run_Timer.ACC')].map((x, i) => (i ? x : x && +x.textContent)));
+    check('the timer accumulator shown in Monitor Tags follows the controller', acc2[0] > 0 && Math.abs(acc2[1] - acc2[0]) < 600, JSON.stringify(acc2));
+    await pctx.close();
+  }
   console.log('Tablet with touch: the RTB door of an I/O module');
   {
     const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });

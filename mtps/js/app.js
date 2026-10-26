@@ -1750,6 +1750,20 @@
     S.tagMode = mode || 'mon'; if (scope !== undefined) S.tagScope = scope;
     S.view = 'tags'; S.drawer = false; render();
   }
+  /* Monitor Tags while values change: only the Value (and Force Mask) cells are written, the rows stay */
+  function liveTagValues() {
+    const r = $('#tagrows'); if (!r) return;
+    const scope = S.tagScope || '', byName = new Map(scopeTags(scope).map(t => [t.name, t]));
+    r.querySelectorAll('[data-tv]').forEach(c => {
+      if (c.children.length) return; // a value being typed
+      const row = c.closest('[data-tag]'), path = c.dataset.tv, ty = row ? row.dataset.ty : '';
+      const v = rowVal(path, ty, scope, row && !row.classList.contains('mem') ? byName.get(path) : null), cls = 'val' + v.cls;
+      if (c.className !== cls) c.className = cls;
+      if (c.textContent !== v.t) c.textContent = v.t;
+      const fc = c.tagName === 'TD' ? c.nextElementSibling : null;
+      if (fc) { const fm = S.online && ctl.M && ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null, ft = fm === 1 ? '1' : fm === 0 ? '0' : ''; if (fc.textContent !== ft) fc.textContent = ft; }
+    });
+  }
   function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
   /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
      Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
@@ -3243,7 +3257,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     r.advance(0);
     refreshIO();
   }
-  const refreshIO = () => { const iob = $('#iob'); if (iob) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(true); };
+  const refreshIO = () => { const iob = $('#iob'); if (iob) { iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); iob._mh = null; } chassisLive(true); };
 
   /* ---------- the emulator dock (P1): the chassis of the project path beside the ladder, sized by a splitter ----------
      bottom (desktop, tablet portrait), side (tablet landscape, phone landscape), full (the phone's Emulator tab).
@@ -3371,7 +3385,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     const cur = w.querySelector('.iom.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
   }
-  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; b.innerHTML = ioWinHTML(ri, +w.dataset.focus); b.scrollTop = st; } }); }
+  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; setHTML(b, ioWinHTML(ri, +w.dataset.focus)); b.scrollTop = st; } }); }
   /* the Module I/O windows of one window (the app, or the Emulator window): close, input switches, analog values, dragging by the title */
   function bindIoWins(doc) {
     const vw = doc.defaultView;
@@ -3654,12 +3668,20 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- the controller runs on its own clock; the screen follows only what changed ---------- */
   let lastT = performance.now(), sig = '', lastLive = 0, lastLay = 0;
+  // the ladder part of the signature (what the rungs show), kept apart so a change elsewhere does not redraw them
+  let ladPart = '', ladSig = '', ladCost = 0, lastTags = 0, tagCost = 0, scrollAt = 0;
+  // a redraw of the ladder waits while it is being scrolled (passive: the scroll itself is never held up)
+  document.addEventListener('scroll', ev => { if (ev.target && ev.target.id === 'ladwrap') scrollAt = performance.now(); }, { capture: true, passive: true });
+  // write HTML only when it changed: no new DOM, style and layout for the same content
+  const setHTML = (el, h) => { if (el._mh !== h) { el.innerHTML = h; el._mh = h; } };
   function liveSig() {
-    if (!S.online) return 'off|' + chassisSig();
+    if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
     if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
-    ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); parts.push(JSON.stringify(im)); });
-    return parts.join(',') + '|' + chassisSig();
+    ladPart = parts.join(',');
+    const io = [];
+    ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
+    return ladPart + ',' + io.join(',') + '|' + chassisSig();
   }
   let lastFault = null;
   function live(force) {
@@ -3669,11 +3691,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     // a new major fault (a module that failed, a watchdog) shows in the organizer and the online bar
     const fk = S.online && ctl.fault ? ctl.fault.at : null;
     if (fk !== lastFault) { lastFault = fk; if (!force) { render(); if (fk) toast(`Major fault: ${ctl.fault.text}`, 'err'); return; } }
-    if (S.online && !S.touching) { const now = performance.now(); if (force || now - lastLive > 33) { lastLive = now; renderLadder(); } else { sig = ''; } }
+    // the ladder: only when what it shows changed, at most 20 times a second, and less often when one redraw costs
+    // more (a big routine on a slow device: the gap is 4 times the last redraw), never during a scroll
+    if (S.online && !S.touching && (force || ladPart !== ladSig)) {
+      const now = performance.now();
+      if (force || (now - lastLive > Math.max(50, ladCost * 4) && now - scrollAt > 150)) { lastLive = now; ladSig = ladPart; renderLadder(); const c = performance.now() - now; ladCost = ladCost ? ladCost * 0.7 + c * 0.3 : c; } else { sig = ''; }
+    }
     const ob = $('#olbar');
-    if (ob) ob.innerHTML = S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`;
-    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(false); ioWinsLive();
-    if (S.tagMode === 'mon') refreshTags();
+    if (ob) setHTML(ob, S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`);
+    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) setHTML(iob, iob.classList.contains('dockb') ? dockBody() : ioHTML()); chassisLive(false); ioWinsLive();
+    // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
+    if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
   /* the controller scans on a timer of its own, so it keeps running when the screen does not redraw
@@ -3860,7 +3888,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     document.addEventListener('change', ev => {
       if (ev.target.id === 'tscope') { S.tagScope = ev.target.value; if (S.view === 'tags' && S.layout !== 'phone') render(); else refreshTags(); }
       // the dock shows another chassis (the project path keeps its own)
-      if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) b.innerHTML = dockBody(); }
+      if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) { b.innerHTML = dockBody(); b._mh = null; } }
     });
     bindIoWins(document);
     // a module: right-click (mouse) or long-press (touch) opens its menu, as in the reference emulator
