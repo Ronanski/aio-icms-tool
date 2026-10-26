@@ -860,6 +860,35 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .descbar .dok { color: var(--ok); }
 .descbar .dno { color: var(--danger); }
 .descbar textarea { width: 100%; resize: vertical; font-family: var(--ui); min-height: 52px; }
+.descbar.rungbar textarea { font-family: var(--mono); min-height: 40px; }
+.descbar .errtx { margin: 0; }
+/* inline operand / mnemonic edit on the rung: a small combo box with its tag drop-down */
+.inled { position: absolute; display: flex; flex-direction: column; z-index: 2; }
+.inled .inrow { display: flex; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-sm); box-shadow: var(--shadow); }
+.inled .inrow .inp { flex: 1; height: 24px; border: 0; outline: 0; font-family: var(--mono); font-weight: 600; padding: 0 6px; }
+.inled .inrow .ib { min-width: 24px; height: 24px; flex: none; border-left: 1px solid var(--border); border-radius: 0; }
+.inled .inlist { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); box-shadow: var(--shadow); max-height: 216px; overflow: auto; margin-top: 2px; }
+.inled.up { flex-direction: column-reverse; }
+.inled.up .inlist { margin: 0 0 2px; }
+.inled .inlist .row { min-height: 26px; padding: 2px 8px; gap: 8px; }
+.inled .inlist .row.act, .inled .inlist .row:hover { background: var(--accent-soft); }
+.inled .inlist .row.on .nm { color: var(--accent-text); }
+.inled .inlist .empty { padding: 10px; }
+.inled .inerr { background: var(--surface); color: var(--danger); border: 1px solid var(--danger); border-radius: var(--r-sm); padding: 4px 8px; margin-top: 2px; }
+.inled.up .inerr { margin: 0 0 2px; }
+.tab .inled .inrow .inp, .phone .inled .inrow .inp { height: 44px; font-size: 16px; }
+.tab .inled .inrow .ib, .phone .inled .inrow .ib { min-width: 44px; height: 44px; }
+.tab .inled .inlist, .phone .inled .inlist { max-height: 264px; }
+.tab .inled .inlist .row, .phone .inled .inlist .row { min-height: 44px; padding: 4px 12px; }
+.ln.cur { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.errsr { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: 0; }
+.errsr .i { color: var(--muted); flex: none; }
+.errsr .inp { width: 180px; height: 24px; }
+.tab .errsr .inp, .phone .errsr .inp { height: 44px; width: 200px; }
+.phone .errsr { margin-left: 0; flex: 1; } .phone .errsr .inp { width: 100%; }
+.ockb { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; }
+.tab .ockb, .phone .ockb { min-height: 44px; }
+.ockb input { width: 18px; height: 18px; }
 .gotod { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .gotod label { display: block; margin-bottom: 4px; }
 .gwl { border: 1px solid var(--border-strong); background: var(--surface); min-height: 120px; }
