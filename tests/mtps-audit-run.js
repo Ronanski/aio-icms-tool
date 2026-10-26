@@ -16,6 +16,7 @@ const RUNGS = [
   'CPT(R_CPT,D1*2+D2);', 'MOV(D1,R_MOV);', 'MVM(D1,16#03,R_MVM);', 'CLR(R_CLR);', 'AND(D1,D2,R_AND);', 'OR(D1,D2,R_OR);', 'XOR(D1,D2,R_XOR);', 'NOT(D1,R_NOT);',
   'BTD(D1,0,R_BTD,4,3);', 'SWPB(D_SW,HIGH/LOW,R_SWP);', 'FLL(5,ARR[0],3);', 'COP(ARR[0],ARR2[1],3);', 'JSR(Sub);',
   'BSL(BARR[0],CB1,ONE,8);', 'BSR(BARR[1],CB2,ONE,8);',
+  'XIC(B1)FFL(D1,FARR[0],CB3,4,0);', 'XIC(B1)FFU(FARR[0],R_FFU,CB3,4,0);',
   'XIC(B1)JMP(Skip);', 'OTE(Q_SKIPPED);', 'LBL(Skip)OTE(Q_AFTER);', 'AFI()OTE(Q_AFI);', 'NOP()OTE(Q_NOP);',
 ];
 const EXPECT = {
@@ -39,11 +40,11 @@ const EXPECT = {
     const A = MTPS.App, p = A.blank('RunAudit');
     const T = (n, type, dim) => p.tags.push(dim ? { name: n, type, dim } : { name: n, type });
     const txt = rungs.join(' ');
-    const names = new Set((txt.match(/\b[A-Z][A-Za-z_0-9]*\b/g) || []).filter(n => !/^(XIC|XIO|OTE|OTL|OTU|ONS|OSR|OSF|TON|TOF|RTO|CTU|CTD|RES|EQU|NEQ|LES|LEQ|GRT|GEQ|LIM|MEQ|CMP|ADD|SUB|MUL|DIV|MOD|SQR|NEG|ABS|CPT|MOV|MVM|CLR|AND|OR|XOR|NOT|BTD|SWPB|FLL|COP|JSR|JMP|LBL|AFI|NOP|HIGH|LOW|DN|Skip|Sub|ARR|ARR2|BSL|BSR|BARR|CB\d|ONE)$/.test(n)));
+    const names = new Set((txt.match(/\b[A-Z][A-Za-z_0-9]*\b/g) || []).filter(n => !/^(XIC|XIO|OTE|OTL|OTU|ONS|OSR|OSF|TON|TOF|RTO|CTU|CTD|RES|EQU|NEQ|LES|LEQ|GRT|GEQ|LIM|MEQ|CMP|ADD|SUB|MUL|DIV|MOD|SQR|NEG|ABS|CPT|MOV|MVM|CLR|AND|OR|XOR|NOT|BTD|SWPB|FLL|COP|JSR|JMP|LBL|AFI|NOP|HIGH|LOW|DN|Skip|Sub|ARR|ARR2|BSL|BSR|BARR|CB\d|ONE|FFL|FFU|FARR)$/.test(n)));
     names.forEach(n => T(n, /^T\d/.test(n) ? 'TIMER' : /^C\d/.test(n) ? 'COUNTER' : /^(D|R)_?\w*$/.test(n) && !/^(SB|P_|Q_)/.test(n) ? 'DINT' : /^F_/.test(n) ? 'REAL' : 'BOOL'));
     T('ARR', 'DINT', 10); T('ARR2', 'DINT', 10);
     T('Q_SUB', 'BOOL');
-    T('BARR', 'DINT', 2); T('CB1', 'CONTROL'); T('CB2', 'CONTROL'); p.tags.push({ name: 'ONE', type: 'BOOL', value: 1 });
+    T('BARR', 'DINT', 2); T('CB1', 'CONTROL'); T('CB2', 'CONTROL'); T('CB3', 'CONTROL'); T('CB4', 'CONTROL'); T('FARR', 'DINT', 4); p.tags.push({ name: 'ONE', type: 'BOOL', value: 1 });
     p.tags.find(t => t.name === 'D_SW').value = 0x1234;
     p.tasks[0].programs[0].routines[0].rungs = rungs.map(t => ({ t }));
     p.tasks[0].programs[0].routines.push({ name: 'Sub', rungs: [{ t: 'OTE(Q_SUB);' }] });
@@ -82,6 +83,8 @@ const EXPECT = {
   const t1 = await ev(() => MTPS.App.ctl.read('T1.ACC'));
   note(t1 >= 600 && t1 <= 1300, `TON timing: T1.ACC = ${t1} after ~0.8 s (plus the time of the tap)`);
   note(await ev(() => MTPS.App.ctl.read('C1.ACC') === 1 && MTPS.App.ctl.read('C2.ACC') === 4), 'CTU +1 and CTD −1 on the rising edge');
+  const fifo = await ev(() => ['R_FFU', 'CB3.POS', 'CB3.EM', 'CB3.EN', 'CB3.EU'].map(k => MTPS.App.ctl.read(k)));
+  note(JSON.stringify(fifo) === '[7,0,1,1,1]', `FFL then FFU on one rising edge (one CONTROL): D1 = 7 loaded and unloaded, the FIFO empty again (${fifo})`);
   await ev(() => MTPS.App.ctl.write('Q_SKIPPED', 0)); await page.waitForTimeout(100);
   note(await ev(() => MTPS.App.ctl.read('Q_SKIPPED') === 0), 'JMP skips the rung in between when B1 = 1 (its output is not written)');
   await page.waitForTimeout(1600);

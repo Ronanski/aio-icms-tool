@@ -246,6 +246,58 @@ console.log('Array (File)/Shift: BSL, BSR (1756-RM003 chapter 9)');
   eq('BSL / BSR operands: Array is a DINT array element, Control a CONTROL', v.errors.map(e => e.rung + ':' + e.op), ['0:0', '1:0', '2:0', '2:1']);
 }
 
+console.log('Array (File)/Shift: FFL, FFU (1756-RM003 chapter 9)');
+{
+  // RM003 FFL example 1: Length 10, Position 5: value_1 goes into array_dint[5], the next free place
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 10, value: [0, 11111, 22222, 33333, 44444] }), T('Ctl', 'CONTROL'), T('V', 'DINT', { value: 55555 }), T('Out', 'DINT'), ...bools('Ld', 'Ul')],
+    rungs: ['XIC(Ld)FFL(V,Ad[0],Ctl,10,5);', 'XIC(Ul)FFU(Ad[0],Out,Ctl,10,5);'] });
+  scans(c, 1);
+  eq('FFL / FFU: Length and Position are the .LEN / .POS of the CONTROL; .EM and .DN follow them', [c.read('Ctl.LEN'), c.read('Ctl.POS'), c.read('Ctl.EM'), c.read('Ctl.DN')], [10, 5, 0, 0]);
+  c.write('Ld', 1); scans(c, 1);
+  eq('FFL example 1: Source into Ad[5], .POS 5 → 6, .EN set', [c.read('Ad[5]'), c.read('Ctl.POS'), c.read('Ctl.EN')], [55555, 6, 1]);
+  scans(c, 3);
+  eq('FFL is transitional: one value per false-to-true rung', c.read('Ctl.POS'), 6);
+  c.write('Ul', 1); scans(c, 1);
+  eq('FFU example 1: element 0 to Dest, the rest move down one place, .POS - 1', [c.read('Out'), c.read('Ad[0]'), c.read('Ad[4]'), c.read('Ctl.POS'), c.read('Ctl.EU')], [0, 11111, 55555, 5, 1]);
+  c.write('Ld', 0); c.write('Ul', 0); scans(c, 1);
+  eq('FFL / FFU false: .EN and .EU cleared', [c.read('Ctl.EN'), c.read('Ctl.EU')], [0, 0]);
+  for (let k = 0; k < 7; k++) { c.write('Ld', 1); scans(c, 1); c.write('Ld', 0); scans(c, 1); }
+  eq('FFL fills up to .LEN: .DN (full) set at .POS = .LEN; a load on a full FIFO is ignored', [c.read('Ctl.POS'), c.read('Ctl.DN'), c.read('Ad[9]')], [10, 1, 55555]);
+  for (let k = 0; k < 11; k++) { c.write('Ul', 1); scans(c, 1); c.write('Ul', 0); scans(c, 1); }
+  eq('FFU empties to .POS = 0 with .EM set; an empty FIFO puts 0 in Dest', [c.read('Ctl.POS'), c.read('Ctl.EM'), c.read('Ctl.DN'), c.read('Out')], [0, 1, 0, 0]);
+}
+{
+  // prescan sets .EN / .EU: a rung that is true when the controller goes to Run does not load or unload
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 4 }), T('Ctl', 'CONTROL'), T('V', 'REAL', { value: 2.5 }), T('O', 'SINT'), T('Go', 'BOOL')], rungs: ['FFL(V,Ad[0],Ctl,4,0);', 'XIC(Go)FFU(Ad[0],O,Ctl,4,0);'] });
+  scans(c, 2);
+  eq('FFL: no load on the first scan of a rung that is already true (prescan sets .EN)', [c.read('Ctl.POS'), c.read('Ctl.EM')], [0, 1]);
+  c.setMode('remprog'); c.write('Ctl.EN', 0); c.setMode('remrun'); scans(c, 1);
+  eq('FFL: prescan sets .EN again on the next change to Run', [c.read('Ctl.POS'), c.read('Ctl.EN')], [0, 1]);
+  c.write('Ctl.EN', 0); scans(c, 1);
+  eq('FFL converts the Source to the FIFO type (REAL 2.5 → DINT 2, rounded to even)', [c.read('Ad[0]'), c.read('Ctl.POS')], [2, 1]);
+  c.write('Go', 1); scans(c, 1);
+  eq('FFU converts the value to the Dest type (DINT 2 → SINT)', [c.read('O'), c.read('Ctl.POS'), c.read('Ctl.EM')], [2, 0, 1]);
+}
+{
+  // a FIFO of structures: the whole TIMER moves
+  const c = run({ tags: [T('Q', 'TIMER', { dim: 3 }), T('Src', 'TIMER', { value: { PRE: 700 } }), T('Dst', 'TIMER'), T('Ctl', 'CONTROL'), ...bools('Ld', 'Ul')], rungs: ['XIC(Ld)FFL(Src,Q[0],Ctl,3,0);', 'XIC(Ul)FFU(Q[0],Dst,Ctl,3,0);'] });
+  scans(c, 1); c.write('Ld', 1); scans(c, 1); c.write('Ul', 1); scans(c, 1);
+  eq('FFL / FFU with a structure FIFO (TIMER[3]): the whole structure is loaded and unloaded', [c.read('Q[0].PRE'), c.read('Dst.PRE'), c.read('Ctl.POS')], [0, 700, 0]);
+  const v = MTPS.verify(proj({ tags: [T('Q', 'TIMER', { dim: 3 }), T('Ad', 'DINT', { dim: 3 }), T('B', 'BOOL', { dim: 32 }), T('D', 'DINT'), T('Ctl', 'CONTROL')], rungs: ['FFL(5,Q[0],Ctl,3,0);', 'FFU(Ad[0],Ctl,Ctl,3,0);', 'FFL(D,B[0],Ctl,3,0);', 'FFL(D,Ad[0],Ctl,2.5,0);'] }));
+  eq('FFL / FFU operand types: a number into a structure FIFO, a structure Dest from a DINT FIFO, a BOOL array and a REAL Length are errors', v.errors.map(e => e.rung + ':' + e.op), ['0:0', '1:1', '2:1', '3:3']);
+}
+{
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 4 }), T('Ctl', 'CONTROL'), T('C2', 'CONTROL'), T('O', 'DINT'), ...bools('Ld')], rungs: ['XIC(Ld)FFL(1,Ad[2],Ctl,5,2);'] });
+  scans(c, 1); c.write('Ld', 1); scans(c, 1);
+  check('FFL: the start element + .POS past the end of the array: major fault, type 4 code 20', !!c.fault && c.fault.type === 4 && c.fault.code === 20, JSON.stringify(c.fault));
+  const d = run({ tags: [T('Ad', 'DINT', { dim: 4 }), T('Ctl', 'CONTROL'), T('O', 'DINT'), ...bools('Ul')], rungs: ['XIC(Ul)FFU(Ad[1],O,Ctl,4,2);'] });
+  scans(d, 1); d.write('Ul', 1); scans(d, 1);
+  check('FFU: .LEN past the end of the array: major fault, type 4 code 20', !!d.fault && d.fault.type === 4 && d.fault.code === 20, JSON.stringify(d.fault));
+  const e = run({ tags: [T('Ad', 'DINT', { dim: 4 }), T('Ctl', 'CONTROL'), ...bools('Ld')], rungs: ['XIC(Ld)FFL(1,Ad[0],Ctl,0,0);'] });
+  scans(e, 1); e.write('Ld', 1); scans(e, 1);
+  eq('FFL with .LEN = 0: .EM and .DN set, nothing loaded', [e.read('Ctl.EM'), e.read('Ctl.DN'), e.read('Ad[0]'), e.read('Ctl.POS')], [1, 1, 0, 0]);
+}
+
 console.log('Program control');
 {
   const c = run({ tags: [...bools('Q', 'R', 'Go'), T('N', 'DINT')], rungs: ['XIC(Go)JSR(Sub);', 'OTE(R);'], routines: [{ name: 'Sub', rungs: ['ADD(N,1,N);', 'RET();', 'OTE(Q);'] }] });

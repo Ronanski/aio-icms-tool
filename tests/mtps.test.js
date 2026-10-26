@@ -719,6 +719,19 @@ console.log('File/Shift and Sequencer instructions');
   ix.write('In', 1); ix.write('G', 1); ix.scan(10);
   eq('BSL with an indirect Array element (Ad[K])', [ix.read('Ad[0]'), ix.read('Ad[1]')], [0, 1]);
 }
+{
+  const INS = MTPS.INSTR;
+  check('FFL shows EN, DN, EM and FFU EU, DN, EM on the box', INS.FFL.bits.join() === 'EN,DN,EM' && INS.FFU.bits.join() === 'EU,DN,EM' && INS.FFL.grp === 'File/Shift');
+  eq('FFL / FFU operand names', [MTPS.OPN.FFL, MTPS.OPN.FFU], [['Source', 'FIFO', 'Control', 'Length', 'Position'], ['FIFO', 'Dest', 'Control', 'Length', 'Position']]);
+  const tags = [T('Q', 'DINT', { dim: 5 }), T('Ctl', 'CONTROL'), T('Ld', 'BOOL'), T('V', 'DINT', { value: 9 })];
+  const p = proj({ tags, rungs: ['XIC(Ld)FFL(V,Q[0],Ctl,5,0);'] });
+  const c = run({ tags, rungs: ['XIC(Ld)FFL(V,Q[0],Ctl,5,0);'] });
+  c.scan(10); c.write('Ld', 1); c.scan(10); c.write('Ld', 0); c.scan(10); c.write('Ld', 1); c.scan(10);
+  const p2 = JSON.parse(JSON.stringify(p)); p2.tasks[0].programs[0].routines[0].rungs[0].t = 'XIC(Ld)FFL(V,Q[0],Ctl,4,0);';
+  c.edit(p2);
+  eq('online edit of an FFL keeps the queue and .POS (not the Position of the rung), .LEN from the rung', [c.read('Ctl.POS'), c.read('Ctl.LEN'), c.read('Q[1]'), c.read('Ctl.EN')], [2, 4, 9, 1]);
+  check('FFL accepts an immediate Source', MTPS.verify(proj({ tags, rungs: ['FFL(16#7F,Q[0],Ctl,5,0);'] })).errors.length === 0);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
