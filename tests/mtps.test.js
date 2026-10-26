@@ -718,5 +718,20 @@ console.log('Logix Emulate: speed of time (LGEM5K-GR016, Configure Emulation)');
   check('the speed of time is kept with the chassis', back.controller(0).sot === 60 && MTPS.Chassis.from(JSON.parse(JSON.stringify(new MTPS.Chassis(4)))).size === 4);
 }
 
+console.log('Logix Emulate: Single Scan mode (LGEM5K-GR016, chapter 5)');
+{
+  const p = proj({ tags: [T('N', 'DINT')], rungs: ['ADD(N,1,N);'] });
+  const c = new MTPS.Controller(); c.download(p);
+  c.singleScan(true); c.setMode('remrun');
+  for (let k = 0; k < 20; k++) c.advance(20);
+  check('Single Scan: placed in Run, the logic runs through exactly once, then waits', c.read('N') === 1 && c.scans === 1 && c.held && c.running);
+  check('Single Scan again: one more scan per request', c.scanAgain() && (c.advance(50), c.advance(50), c.read('N') === 2) && c.held);
+  c.setMode('remprog'); c.setMode('remrun'); c.advance(100);
+  check('Program then Run again: a new single scan', c.read('N') === 3 && c.held);
+  c.runContinuous(); for (let k = 0; k < 5; k++) c.advance(20);
+  check('Run continuously: back to normal scans', !c.single && !c.held && c.read('N') === 13, c.read('N'));
+  check('Single Scan again does nothing outside Single Scan mode', !c.scanAgain());
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

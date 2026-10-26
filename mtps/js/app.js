@@ -3743,7 +3743,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function dockBody() {
     const ri = Math.max(0, racks.indexOf(chassis));
     const cs = chassis.controllers();
-    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
+    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}${c.single ? ' · Single Scan' : ''}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
   }
   /* the emulator panel: on the right in landscape and at the bottom in portrait, unless it was moved; it can be
      folded to a thin bar (like the organizer) and opened again from there */
@@ -3898,9 +3898,26 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s), was = emuOpen();
     if (!m || !m.ctl) return;
     const c = m.ctl, key = k => () => { c.setKey(k); saveChassis(); chassisLive(true); live(true); render(); backToEmu(was); };
-    openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') }, '-',
+    openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') },
+      { l: 'Single Scan', ck: c.single, run: () => { c.singleScan(!c.single); asked.delete(c); chassisLive(true); live(true); render(); backToEmu(was); } }, '-',
       { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, '-',
       { l: 'Remove', i: 'trash', run: () => { chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })); } }], { x, y }, `[${s}] PLC-CPU ${m.name}`);
+  }
+  /* Single Scan: when the one scan is done, a prompt asks to run the controller continuously or to scan once more */
+  const asked = new WeakSet();
+  function singleAsk() {
+    for (const r of racks) for (const m of r.controllers()) {
+      const c = m.ctl;
+      if (!c.held) { asked.delete(c); continue; }
+      if (asked.has(c)) continue;
+      asked.add(c);
+      const was = emuOpen();
+      dialog({ title: 'Single Scan', size: '', modal: true,
+        body: `<p>The single scan of <b>[${m.slot}] ${esc(m.name)}</b> is complete. Run the emulated controller continuously, or perform a single scan again?</p>`,
+        buttons: [{ l: 'Run Continuously', run: () => { c.runContinuous(); asked.delete(c); chassisLive(true); live(true); backToEmu(was); } },
+          { l: 'Single Scan', pri: true, run: () => { c.scanAgain(); asked.delete(c); live(true); backToEmu(was); } }] });
+      return;
+    }
   }
   /* Configure Emulation: the Speed of Time area (slider in 1 % steps or the % box, Confirm Time % Change, 100% NOW,
      0% NOW; the last value set shows on the left). A change takes effect at once; 0 % stops execution. */
@@ -4229,6 +4246,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
     racks.forEach(r => r.advance(dt));
+    singleAsk();
   }
   function loop(now) {
     tick();

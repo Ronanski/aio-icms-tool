@@ -722,6 +722,7 @@
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
       this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
+      this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -735,6 +736,11 @@
       if (!was && RUN(m) && this.M) this.prescan();
       this.emit('mode');
     }
+    /* Single Scan (Logix Emulate only, not on a physical controller): in Run the logic runs through once, then waits
+       until it is asked to scan again or to run continuously */
+    singleScan(on) { this.single = !!on; this.held = false; this.emit('mode'); }
+    scanAgain() { if (!this.single) return false; this.held = false; this.emit('mode'); return true; }
+    runContinuous() { this.single = false; this.held = false; this.emit('mode'); }
     setMode(m) {
       if (this.key !== 'REM' || !['remprog', 'remrun', 'remtest'].includes(m) || (m !== 'remprog' && !this.M)) return false;
       this.go(m);
@@ -772,7 +778,7 @@
     }
     /* Program → Run: OTE bits off, TON reset, one-shot storage set so a true input does not fire at start */
     prescan() {
-      this.first = true;
+      this.first = true; this.held = false;
       const walk = arr => {
         for (const e of arr) {
           if (!e) continue;
@@ -888,7 +894,11 @@
       ms *= this.sot / 100;
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
-      while (this.acc >= this.period) { this.acc -= this.period; this.scan(this.period); n++; }
+      while (this.acc >= this.period) {
+        if (this.single && this.held) { this.acc = 0; break; }
+        this.acc -= this.period; this.scan(this.period); n++;
+        if (this.single && this.running) { this.held = true; this.acc = 0; this.emit('single'); }
+      }
       return n;
     }
     inputs() {

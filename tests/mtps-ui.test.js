@@ -1731,6 +1731,26 @@ function check(name, cond, info = '') {
     check('tablet (touch): a long-press on the controller opens its menu with Configure Emulation…', (await tp.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))).includes('Configure Emulation…'));
     await tp.close();
   }
+  console.log('Logix Emulate: Single Scan (right-click the controller)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); MTPS.App.racks[0].controller(0).setKey('REM'); MTPS.App.racks[0].controller(0).download(MTPS.App.state.p); });
+    await page.waitForTimeout(200);
+    const C = () => ev(() => { const c = MTPS.App.racks[0].controller(0); return { single: c.single, held: c.held, scans: c.scans, mode: c.mode }; });
+    await page.click('#iob [data-ccpu="0:0"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Single Scan")'); await page.waitForTimeout(80);
+    check('right-click > Single Scan sets the controller to Single Scan mode (shown in the panel)', (await C()).single && (await page.$eval('#iob .dockst', e => e.textContent)).includes('Single Scan'));
+    await page.click('#iob [data-emode="0:0:RUN"]'); await page.waitForTimeout(300);
+    let c = await C();
+    check('placed in Run: exactly one scan, then the prompt to run continuously or scan again', c.scans === 1 && c.held && (await dlgTitle()) === 'Single Scan', JSON.stringify(c));
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(300);
+    c = await C();
+    check('Single Scan again: one more scan, and the prompt again', c.scans === 2 && c.held && (await dlgTitle()) === 'Single Scan', JSON.stringify(c));
+    await page.click('#layer .df .btn:has-text("Run Continuously")'); await page.waitForTimeout(300);
+    c = await C();
+    check('Run Continuously: the controller scans on', !c.single && c.scans > 5 && (await dlgTitle()) === '', JSON.stringify(c));
+    await ev(() => { const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.setMode('remprog'); });
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
