@@ -448,7 +448,7 @@
       writeRung(ri, elems);
       S.sel = { ri, path }; S.selRung = null;
     });
-    if (ok && openAfter && el.t !== 'BR' && INSTR[el.t] && INSTR[el.t].args.length) setTimeout(() => openEditor(ri, path, 0), 0);
+    if (ok && openAfter && el.t !== 'BR' && INSTR[el.t] && INSTR[el.t].args.length) setTimeout(() => (openAfter === 'inline' ? inlineEdit(ri, path, 0) : openEditor(ri, path, 0)), 0);
   }
   /* move an instruction or a branch to a node (Ctrl copies it), as when dragging it in the reference editor: before or
      after an instruction, the free end of a branch level, the end of a rung; into the same rung or another one */
@@ -936,6 +936,14 @@
   /* ---------- errors pane ---------- */
   // the name of the operand an error line points at ("Operand 2" of a TON is its Accum), shown beside the line
   const errOp = t => { const m = /Rung \d+, (\w+), Operand (\d+)/.exec(t), n = m && (L.OPN[m[1]] || [])[+m[2]]; return n ? ` <span class="errop">${esc(n)}</span>` : ''; };
+  /* the lines the Errors pane shows: the Errors / Warnings / Messages filters, then the Search box */
+  function errLines() {
+    const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] };
+    const f = S.errFilter || { e: true, w: true, m: true }, q = U((S.errQ || '').trim());
+    return v.lines.map(t => ({ t, k: /^Error/.test(t) ? 'e' : /^Warning/.test(t) ? 'w' : 'm' })).filter(x => f[x.k] && (!q || U(x.t).includes(q)))
+      .map(x => { const m = /Rung (\d+)/.exec(x.t); return { ...x, ri: m ? +m[1] : null, rt: m ? lineRoutine(x.t, v) : '' }; });
+  }
+  const errLogHTML = () => errLines().map(x => `<div class="ln ${x.k}${S.errCur && S.errCur === x.t ? ' cur' : ''}"${x.ri != null ? ` data-errline="${x.ri}" data-errrt="${esc(x.rt)}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`).join('') || (S.errQ ? `<div class="ln m muted">No line contains "${esc(S.errQ)}".</div>` : '');
   function errorsHTML() {
     const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
     if (S.outTab === 'search') {
@@ -946,10 +954,23 @@
   }
   function errorsBody() {
     const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] };
-    const f = S.errFilter || { e: true, w: true, m: true };
-    const lines = v.lines.map(t => ({ t, k: /^Error/.test(t) ? 'e' : /^Warning/.test(t) ? 'w' : 'm' })).filter(x => f[x.k]);
-    return `<div class="chips"><span class="chip${f.e ? ' on' : ''}" data-ef="e">${ic('fault')}${v.errors.length} Errors</span><span class="chip${f.w ? ' on' : ''}" data-ef="w">${ic('warn')}${v.warnings.length} Warnings</span><span class="chip${f.m ? ' on' : ''}" data-ef="m">${ic('info')}Messages</span></div>
-      <div class="log">${lines.map(x => { const m = /Rung (\d+)/.exec(x.t), rt = /^Verifying routine '([^']+)' of program '([^']+)'/.exec(x.t); return `<div class="ln ${x.k}"${m ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(x.t, v))}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`; void rt; }).join('')}</div>`;
+    const f = S.errFilter || { e: true, w: true, m: true }, hist = S.prefs.errHist || [];
+    return `<div class="chips"><span class="chip${f.e ? ' on' : ''}" data-ef="e">${ic('fault')}${v.errors.length} Errors</span><span class="chip${f.w ? ' on' : ''}" data-ef="w">${ic('warn')}${v.warnings.length} Warnings</span><span class="chip${f.m ? ' on' : ''}" data-ef="m">${ic('info')}Messages</span>
+      <span class="errsr">${ic('search')}<input class="inp" data-errq="1" type="search" placeholder="Search" value="${esc(S.errQ || '')}" list="errqh" autocomplete="off" spellcheck="false" aria-label="Search the Errors pane" title="Shows the lines that contain the text. F4 / Shift+F4: next / previous line"></span><datalist id="errqh">${hist.map(h => `<option value="${esc(h)}">`).join('')}</datalist></div>
+      <div class="log" data-errlog="1">${errLogHTML()}</div>`;
+  }
+  const refreshErrLog = () => document.querySelectorAll('[data-errlog]').forEach(l => { l.innerHTML = errLogHTML(); const c = l.querySelector('.ln.cur'); if (c) c.scrollIntoView({ block: 'nearest' }); });
+  // the last 10 searches, newest first
+  function rememberErrQ(q) { q = String(q || '').trim(); if (!q) return; S.prefs.errHist = [q].concat((S.prefs.errHist || []).filter(x => x !== q)).slice(0, 10); savePrefs(); document.querySelectorAll('#errqh').forEach(d => { d.innerHTML = S.prefs.errHist.map(h => `<option value="${esc(h)}">`).join(''); }); }
+  /* F4 / Shift+F4 (reference: next / previous error line): the next line of the Errors pane that names a rung, and that rung */
+  function nextErrLine(dir) {
+    const ls = errLines().filter(x => x.ri != null);
+    if (!ls.length) { toast(S.errQ ? `No line with a rung contains "${S.errQ}".` : 'The Errors pane has no line with a rung: Verify first.'); return; }
+    const i = ls.findIndex(x => x.t === S.errCur);
+    const x = ls[i < 0 ? (dir > 0 ? 0 : ls.length - 1) : (i + dir + ls.length) % ls.length];
+    S.errCur = x.t;
+    gotoLine(x.ri, x.rt, x.t, false);
+    refreshErrLog();
   }
   function lineRoutine(t, v) { const e = v.errors.concat(v.warnings, v.found || []).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
@@ -1023,13 +1044,14 @@
   let lastTap = { k: '', t: 0 };
   function onTap(t, x, y, isDbl, touch) {
     const k = tkey(t), now = Date.now();
-    const again = touch && t && t.path && !t.br && !t.leg && S.sel && S.sel.ri === t.ri && S.sel.path && S.sel.path.join('.') === t.path.join('.') && !S.sel.br && !S.sel.leg && (t.op == null || S.sel.op === t.op) && now - lastTap.t > 380;
+    const again = touch && t && t.path && !t.br && !t.leg && S.sel && S.sel.ri === t.ri && S.sel.path && S.sel.path.join('.') === t.path.join('.') && !S.sel.br && !S.sel.leg && (t.op == null ? S.sel.op == null : S.sel.op === t.op) && now - lastTap.t > 380;
     const dbl = isDbl || again || (k === lastTap.k && now - lastTap.t < 380);
     lastTap = dbl ? { k: '', t: 0 } : { k, t: now };
     select(t);
     render();
     if (!dbl || !t) return;
-    if (t.path && !t.br && !t.leg) { if (editable()) openEditor(t.ri, t.path, t.op || 0); }
+    // as in the reference: a double-click on an operand edits it in place, on the instruction itself its mnemonic
+    if (t.path && !t.br && !t.leg) { if (editable()) inlineEdit(t.ri, t.path, t.op != null ? t.op : 'mn'); }
     else if (t.rn) { if (editable()) rungText(t.ri); }
   }
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom */
@@ -1600,6 +1622,129 @@
     setTimeout(() => { first.focus(); if (first.select) first.select(); showSug(); }, 30);
   }
 
+  /* ---------- inline edit on the rung (reference: "Modify an Instruction") ----------
+     A small combo box over the operand (or the mnemonic) with a tag drop-down (Alt+Down, or the arrow button).
+     Enter accepts and goes on to the next operand, Tab accepts, Esc, scrolling or a click elsewhere drops the edit.
+     A new mnemonic (morph) keeps the operands that fit it: TON(Tmr1,5000,0) to XIC keeps Tmr1. */
+  const SEL_KIND = /^(routine|label|order)$/;
+  function fitsKind(v, k, was) {
+    if (v == null || v === '' || v === '?') return true;
+    if (k === 'expr' || k === 'num') return true;
+    if (k === 'imm') return !!E.parseNumber(v);
+    if (SEL_KIND.test(k)) return k === was;
+    return isTagText(v) || /^Local:/i.test(v) || /^S:/i.test(v);
+  }
+  function morphOps(old, m) {
+    const was = INSTR[old.t] ? INSTR[old.t].args : [];
+    const blank = (k, i) => (k.endsWith('?') ? null : TC.includes(m) && i === 2 ? '0' : '?');
+    return INSTR[m].args.map((k, i) => { const v = old.a[i]; if (v == null) return blank(k, i); return fitsKind(v, k.replace('?', ''), (was[i] || '').replace('?', '')) ? v : blank(k, i); }).filter(v => v !== null);
+  }
+  const inlRect = (ri, path, op) => {
+    const w = $('#ladwrap'); if (!w) return null;
+    const q = `rect.tap[data-ri="${ri}"][data-p="${path.join('.')}"]`;
+    return (op === 'mn' ? null : w.querySelector(`${q}[data-opi="${op}"]`)) || [...w.querySelectorAll(q)].find(r => !r.dataset.opi && !r.dataset.br && !r.dataset.leg) || null;
+  };
+  function inlineEdit(ri, path, op, typed) {
+    if (!editable()) return false;
+    const els = parsed(ri), e = els && getEl(els, path);
+    if (!e || e.t === 'BR') return false;
+    const mn = op === 'mn', d = INSTR[e.t];
+    if (!mn && (!d || op >= d.args.length)) return false;
+    S.sel = mn ? { ri, path } : { ri, path, op }; S.selRung = null;
+    if (S.layout === 'phone') S.area = 'ladder';
+    render();
+    let r = inlRect(ri, path, op);
+    if (!r) return false;
+    r.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    r = inlRect(ri, path, op);
+    const b = r.getBoundingClientRect(), touch = S.layout !== 'desktop';
+    const H = touch ? 44 : 24, W = Math.min(innerWidth - 12, Math.max(b.width + (touch ? 24 : 12), touch ? 220 : 160));
+    const x = Math.max(6, Math.min(innerWidth - W - 6, b.left + b.width / 2 - W / 2));
+    const y = Math.max(6, Math.min(innerHeight - H - 6, b.top + b.height / 2 - H / 2));
+    const kind = mn ? 'mn' : (d.args[op] || '').replace('?', '');
+    const cur = mn ? e.t : e.a[op] == null ? '' : String(e.a[op]);
+    const start = typed != null ? typed : cur === '?' ? '' : cur;
+    const up = y + H + (touch ? 5 * 44 : 8 * 26) > innerHeight - 6;
+    const l = $('#layer');
+    l.innerHTML = `<div class="scrim clear" data-iscrim="1"></div><div class="inled${up ? ' up' : ''}" id="inled" style="left:${x}px;top:${y}px;width:${W}px" role="combobox" aria-expanded="false">
+      <div class="inrow"><input class="inp mono" id="inl" value="${esc(start)}" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next" aria-label="${esc(mn ? 'Instruction' : (L.OPN[e.t] || [])[op] || 'Operand')}"${kind === 'imm' ? ' inputmode="decimal"' : ''}><button class="ib" id="inldd" type="button" title="Browse (Alt+Down)" aria-label="Browse">${ic('down')}</button></div>
+      <div class="inlist" id="inlist" role="listbox" hidden></div><div class="inerr" id="inerr" hidden></div></div>`;
+    layerAt = performance.now();
+    const box = $('#inled'), inp = $('#inl'), list = $('#inlist'), er = $('#inerr');
+    let act = -1;
+    const rowsOf = () => [...list.querySelectorAll('[data-ipk]')];
+    const items = () => {
+      const t = inp.value.trim(), q = U(t);
+      if (mn) return Object.keys(INSTR).filter(k => !q || k.startsWith(q) || U(NAME(k)).includes(q)).sort((a, c) => (a.startsWith(q) ? 0 : 1) - (c.startsWith(q) ? 0 : 1) || a.localeCompare(c)).map(k => ({ name: k, type: '', desc: NAME(k) }));
+      // the whole list for the operand's type while the text is the current operand, the matches while typing
+      const all = suggest(kind, ''), m = !q || all.some(c => U(c.name) === q) && q === U(cur) ? all : suggest(kind, t);
+      return m;
+    };
+    const draw = () => {
+      const its = items().slice(0, 150);
+      list.innerHTML = its.length ? its.map((c, i) => `<div class="row${i === act ? ' act' : ''}${U(c.name) === U(inp.value.trim()) ? ' on' : ''}" data-ipk="${esc(c.name)}" role="option"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div>${c.type ? `<span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span>` : ''}</div>`).join('')
+        : `<div class="empty">${kind === 'imm' ? 'Type a number, e.g. 5000' : mn ? 'No instruction starts with that' : 'No matching tags: type a new name, then New Tag (Ctrl+W)'}</div>`;
+    };
+    const openList = on => { list.hidden = !on; box.setAttribute('aria-expanded', on ? 'true' : 'false'); if (on) { act = -1; draw(); const o = list.querySelector('.row.on'); if (o) o.scrollIntoView({ block: 'nearest' }); } };
+    const fail = m => { er.textContent = m; er.hidden = false; inp.classList.add('bad'); inp.focus(); return false; };
+    const accept = next => {
+      const v = inp.value.trim();
+      const els2 = parsed(ri), x2 = els2 && getEl(els2, path);
+      if (!x2 || x2.t === 'BR') { closeLayer(); return true; }
+      if (mn) {
+        const m = U(v);
+        if (!INSTR[m]) return fail(`"${v}" is not an instruction.`);
+        closeLayer();
+        if (m !== x2.t) edit(() => { const a = parsed(ri), x = getEl(a, path); x.a = morphOps(x, m); x.t = m; writeRung(ri, a); S.sel = { ri, path }; S.selRung = null; });
+        return true;
+      }
+      const dd = INSTR[x2.t], ops = x2.a.slice();
+      ops[op] = v;
+      const a2 = dd.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(z => z !== null);
+      closeLayer();
+      if (a2.join('\u0001') !== x2.a.join('\u0001')) {
+        if (v && v !== '?' && isTagText(v) && !SEL_KIND.test(kind) && kind !== 'imm' && kind !== 'expr') rememberTags([v]);
+        edit(() => { const a = parsed(ri), x = getEl(a, path); x.a = a2; writeRung(ri, a); S.sel = { ri, path, op }; S.selRung = null; });
+      } else { S.sel = { ri, path, op }; render(); }
+      if (next && op + 1 < dd.args.length) setTimeout(() => inlineEdit(ri, path, op + 1), 0);
+      return true;
+    };
+    const cancel = () => { closeLayer(); render(); };
+    const pick = name => { inp.value = name; openList(false); accept(true); };
+    inp.addEventListener('input', () => { er.hidden = true; inp.classList.remove('bad'); openList(true); });
+    $('#inldd').addEventListener('click', () => { openList(list.hidden); inp.focus(); });
+    list.addEventListener('click', ev => { const rw = ev.target.closest('[data-ipk]'); if (rw) pick(rw.dataset.ipk); });
+    // a click (a press) anywhere else, or scrolling, drops the edit
+    const sc = l.querySelector('[data-iscrim]');
+    sc.addEventListener('pointerdown', ev => { if (!freshLayer()) { ev.preventDefault(); cancel(); } });
+    sc.addEventListener('wheel', () => cancel(), { passive: true });
+    // the wheel over the combo itself scrolls the ladder under it too: only the tag list scrolls in place
+    box.addEventListener('wheel', ev => { if (!ev.target.closest('#inlist')) cancel(); }, { passive: true });
+    l.onclick = null;
+    layerKey = ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); cancel(); return; }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'w' && !mn) { ev.preventDefault(); const n = inp.value.trim(); closeLayer(); newTag({ name: E.validName(n) ? n : '', kind, after: () => render() }); return; }
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        if (list.hidden) { if (ev.key === 'ArrowDown') openList(true); return; }
+        if (ev.altKey) { openList(false); return; }
+        const rows = rowsOf(); if (!rows.length) return;
+        act = Math.max(0, Math.min(rows.length - 1, act + (ev.key === 'ArrowDown' ? 1 : -1)));
+        rows.forEach((rw, i) => rw.classList.toggle('act', i === act));
+        rows[act].scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if (ev.key === 'Enter') { ev.preventDefault(); const rows = rowsOf(); if (!list.hidden && act >= 0 && rows[act]) pick(rows[act].dataset.ipk); else accept(!(ev.ctrlKey || ev.metaKey)); return; }
+      if (ev.key === 'Tab') { ev.preventDefault(); accept(false); }
+    };
+    if (touch) openList(true);
+    inp.focus();
+    if (typed != null) inp.setSelectionRange(inp.value.length, inp.value.length); else inp.select();
+    if (typed != null && !touch) openList(true);
+    return true;
+  }
+  const inlineOpen = () => !!$('#inled');
+
   /* ---------- tags ---------- */
   function newTag(o) {
     const P = curProg();
@@ -1669,19 +1814,27 @@
   function descBarHTML() {
     const d = S.descEd;
     if (!d) return '';
-    return `<div class="descbar" id="descbar"><div class="dbh"><span class="ell">${esc(d.title)}</span><button class="ib dok" data-desc="ok" title="Accept (Ctrl+Enter)">${ic('check')}</button><button class="ib dno" data-desc="x" title="Cancel (Esc)">${ic('close')}</button></div><textarea class="inp" id="desctx" rows="3" spellcheck="false">${esc(d.value)}</textarea></div>`;
+    return `<div class="descbar${d.rung ? ' rungbar' : ''}" id="descbar"><div class="dbh"><span class="ell">${esc(d.title)}</span><button class="ib dok" data-desc="ok" title="Accept (Ctrl+Enter)" aria-label="Accept">${ic('check')}</button><button class="ib dno" data-desc="x" title="Cancel (Esc)" aria-label="Cancel">${ic('close')}</button></div><textarea class="inp${d.rung ? ' mono' : ''}" id="desctx" rows="${d.rung ? 2 : 3}" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="${esc(d.title)}">${esc(d.value)}</textarea>${d.err ? `<div class="errtx" id="descerr">${esc(d.err)}</div>` : ''}</div>`;
   }
-  function openDescBar(title, value, save) {
+  /* o.rung: the Rung Text Edit Bar (the rung's ASCII text, monospaced, Enter accepts too); save may return an error
+     text, which keeps the bar open with the text the user typed */
+  function openDescBar(title, value, save, o) {
     if (S.layout === 'phone') S.area = 'ladder';
-    S.descEd = { title, value, save };
+    S.descEd = { title, value, save, rung: !!(o && o.rung) };
     render();
-    const tx = $('#desctx'); if (tx) { tx.focus(); tx.select(); }
+    const tx = $('#desctx'); if (tx) { tx.focus(); if (o && o.rung) tx.setSelectionRange(tx.value.length, tx.value.length); else tx.select(); }
   }
   function closeDescBar(ok) {
     const d = S.descEd; if (!d) return;
     const tx = $('#desctx'), v = (tx ? tx.value : d.value).trim();
     S.descEd = null;
-    if (ok) d.save(v);
+    const err = ok ? d.save(v) : null;
+    if (typeof err === 'string' && err) {
+      S.descEd = { ...d, value: v, err };
+      render();
+      const nt = $('#desctx'); if (nt) nt.focus();
+      return;
+    }
     render();
   }
   const fmtVal = v => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toPrecision(7))) : v === undefined ? '' : String(v));
@@ -1850,13 +2003,16 @@
   /* ---------- dialogs: rung text, comment, find, go to, cross reference, help ---------- */
   function rungText(ri) {
     if (ri == null || !rungs()[ri]) return;
-    dialog({ title: `Edit Rung ${ri}`, size: 'md', focus: true,
-      body: `<textarea class="inp" id="rtx" rows="5" spellcheck="false">${esc(rungs()[ri].t)}</textarea><p class="help">Rung text, as in the reference: <span class="mono">[XIC(a),XIC(b)]XIC(c)OTE(d);</span></p><div class="errtx" id="rte"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        const t = el.querySelector('#rtx').value.trim(), pr = E.parseRung(t);
-        if (pr.err) { el.querySelector('#rte').textContent = pr.err; return false; }
-        edit(() => { rungs()[ri].t = pr.elems.length ? E.serializeRung(pr.elems) : ''; S.sel = null; S.selRung = ri; });
-      } }] });
+    // the Rung Text Edit Bar of the reference, above the routine: the rung's ASCII text, ✓ accepts, ✕ cancels
+    S.sel = null; S.selRung = ri;
+    openDescBar(`Rung ${ri}`, rungs()[ri].t, v => {
+      const pr = E.parseRung(v);
+      if (pr.err) return pr.err;
+      if (!rungs()[ri]) return '';
+      const t = pr.elems.length ? E.serializeRung(pr.elems) : '';
+      if (t !== rungs()[ri].t) edit(() => { rungs()[ri].t = t; S.sel = null; S.selRung = ri; });
+      return '';
+    }, { rung: true });
   }
   function rungComment(ri) {
     if (ri == null || !rungs()[ri]) return;
@@ -2143,8 +2299,11 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       body: `<div class="frow"><label>Layout</label><select class="inp" id="ol">${[['auto', 'Automatic (follows the window)'], ['desktop', 'Desktop'], ['tablet', 'Tablet'], ['phone', 'Phone']].map(([v, t]) => `<option value="${v}"${P.layout === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow"><label>Theme</label><select class="inp" id="ot">${[['classic', 'Classic (like the Windows software)'], ['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, t]) => `<option value="${v}"${P.theme === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow"><label>Density</label><select class="inp" id="od">${[['auto', 'Automatic (compact with a mouse, larger on touch)'], ['compact', 'Compact'], ['touch', 'Touch (larger)']].map(([v, t]) => `<option value="${v}"${P.density === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { P.layout = el.querySelector('#ol').value; P.theme = el.querySelector('#ot').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
+        <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>
+        <div class="grp">Ladder Editor</div>
+        <label class="ockb"><input type="checkbox" id="oqk"${P.quickKeys ? ' checked' : ''}> Enable Quick Keys</label>
+        <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.layout = el.querySelector('#ol').value; P.theme = el.querySelector('#ot').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
   }
 
   /* ---------- projects: new, open, save as, import, export ---------- */
@@ -3737,8 +3896,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); savePrefs(); renderLadder(); };
       addEventListener('pointermove', move); addEventListener('pointerup', up);
     });
+    document.addEventListener('change', ev => { if (ev.target.dataset && ev.target.dataset.errq) rememberErrQ(ev.target.value); });
     document.addEventListener('input', ev => {
       if (ev.target.id === 'tq') { S.tagQ = ev.target.value; refreshTags(); }
+      if (ev.target.dataset && ev.target.dataset.errq) { S.errQ = ev.target.value; S.errCur = null; refreshErrLog(); }
       const a = ev.target.closest && ev.target.closest('[data-ana]');
       if (a) anaSet(a.dataset.ana, +a.value);
     });
@@ -3771,21 +3932,23 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const l = $('#layer');
     l.innerHTML = `<div class="scrim" data-close="1"></div><div class="sheet" style="height:46%"><div class="grab"></div><div class="ph" style="background:none;border:0">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button><button class="ib" data-close="1">${ic('close')}</button></div><div class="sb" style="display:flex;flex-direction:column">${errorsHTML()}</div></div>`;
     l.onclick = ev => { if (ev.target.closest('[data-close]')) closeLayer(); };
-    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); };
+    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextErrLine(ev.shiftKey ? -1 : 1); } };
   }
-  function gotoErr(el) {
-    const ri = +el.dataset.errline, rt = el.dataset.errrt;
-    if (rt) { const [g, r] = rt.split('/'); S.prog = g; S.routine = r; }
+  function gotoErr(el) { S.errCur = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.nodeValue : el.textContent) || null; gotoLine(+el.dataset.errline, el.dataset.errrt, el.textContent, true); }
+  /* go to the rung of an Errors line (double-click, or F4): the instruction it names is selected; a double-click also
+     opens its operand editor */
+  function gotoLine(ri, rt, text, openEd) {
+    if (rt) { const [g, r] = rt.split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; }
     S.sel = null; S.selRung = ri;
     if (S.layout === 'phone') S.area = 'ladder';
     reverify(); render(); scrollToSel();
-    const m = /Rung \d+, (\w+)(?:, Operand (\d+))?/.exec(el.textContent || ''), els = parsed(ri);
+    const m = /Rung \d+, (\w+)(?:, Operand (\d+))?/.exec(text || ''), els = parsed(ri);
     if (m && els && editable()) {
       const want = U(m[1]), op = m[2] != null ? +m[2] : 0, hits = [];
       const walk = (arr, p) => arr.forEach((e, k) => { const q = p.concat(k); if (e.t === 'BR') e.legs.forEach((l, li) => walk(l, q.concat(li))); else if (e.t === want) hits.push({ e, q }); });
       walk(els, []);
       const h = hits.find(x => x.e.a[op] === '?' || x.e.a[op] === '') || hits[0];
-      if (h) { S.sel = { ri, path: h.q, op }; S.selRung = null; render(); if (S.layout !== 'desktop') closeLayer(); setTimeout(() => openEditor(ri, h.q, op), 60); }
+      if (h) { S.sel = { ri, path: h.q, op }; S.selRung = null; render(); scrollToSel(); if (openEd) { if (S.layout !== 'desktop') closeLayer(); setTimeout(() => openEditor(ri, h.q, op), 60); } }
     }
   }
   function moveSel(dx, dy) {
@@ -3801,29 +3964,65 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     else if (j < 0) { S.sel = null; S.selRung = ri; }
     render();
   }
+  /* Quick Keys (reference: Tools > Options > Ladder Editor, "Assign Quick Keys"; off by default): one key inserts */
+  const QUICK = { x: 'XIC', f: 'XIO', o: 'OTE', l: 'OTL', u: 'OTU', t: 'TON', c: 'CTU', d: 'GEQ', b: 'BR' };
+  function quickKey(mn) { if (mn === 'BR') addBranch(); else insert(newEl(mn), null, 'inline'); }
+  // the selected instruction (not a branch or a level), and the operand a key edits: the selected one, else the main one
+  const selInstr = () => (S.sel && S.sel.path && !S.sel.br && !S.sel.leg && curEl() ? S.sel : null);
+  const editSelOperand = typed => { const s = selInstr(); return !!s && inlineEdit(s.ri, s.path, s.op != null ? s.op : 0, typed); };
+  /* where the selection is on the screen (for Shift+F10, the context menu of the selection) */
+  function selPoint() {
+    const w = $('#ladwrap'); if (!w) return null;
+    let r = null;
+    if (S.sel && S.sel.path) r = [...w.querySelectorAll(`rect.tap[data-ri="${S.sel.ri}"][data-p="${S.sel.path.join('.')}"]`)].find(x => (S.sel.op != null ? x.dataset.opi === String(S.sel.op) : !x.dataset.opi) && !!x.dataset.br === !!S.sel.br && !!x.dataset.leg === !!S.sel.leg);
+    else if (curSelRung() != null) r = w.querySelector(`rect.tap[data-rn][data-ri="${curSelRung()}"]`);
+    if (!r) return null;
+    const b = r.getBoundingClientRect();
+    return { x: b.left + Math.min(b.width / 2, 40), y: b.top + Math.min(b.height / 2, 30) };
+  }
+  // Alt+0 / Alt+1: show the Controller Organizer / the Errors pane (each layout has its own place for them)
+  function showOrg() { if (S.layout === 'phone') S.area = 'project'; else if (S.layout === 'tablet') { S.prefs.org = true; S.drawer = true; } else S.prefs.org = true; savePrefs(); render(); }
+  function showErrors() { if (S.layout === 'desktop') { S.prefs.err = true; savePrefs(); } else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more'; render(); const q = $('[data-errq]'); if (q && S.layout === 'desktop') q.focus(); }
   function onKey(ev) {
     if ($('#layer').children.length) { if (layerKey) layerKey(ev); return; }
     if (ev.target.id === 'desctx') {
-      if (ev.key === 'Escape') { ev.preventDefault(); closeDescBar(false); } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); closeDescBar(true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); closeDescBar(false); } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey || (S.descEd && S.descEd.rung && !ev.shiftKey))) { ev.preventDefault(); closeDescBar(true); }
       return;
     }
+    const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
+    if (k === 'F4') { ev.preventDefault(); nextErrLine(ev.shiftKey ? -1 : 1); return; }
+    if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
     if (ev.key === 'Escape' && S.descEd) { ev.preventDefault(); closeDescBar(false); return; }
-    const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
-    const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find' };
+    if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
+    if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
+    if (ev.altKey && !ctrl && (ev.code === 'Digit1' || ev.code === 'Numpad1')) { ev.preventDefault(); showErrors(); return; }
+    const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
+    if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
     if (k === 'Delete') { run('del'); return; }
     if (k === 'Insert') { ev.preventDefault(); run('ins'); return; }
-    if (k === 'Enter') { if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
+    if (k === 'F10' && ev.shiftKey || k === 'ContextMenu') { ev.preventDefault(); const p = selPoint(); if (p) ctxMenu(S.sel ? { ri: S.sel.ri, path: S.sel.path, br: S.sel.br, leg: S.sel.leg, op: S.sel.op } : { ri: curSelRung() }, p.x, p.y); return; }
+    if (k === 'F2') { ev.preventDefault(); editSelOperand(); return; }
+    if (k === 'Enter') { if (selInstr() && S.sel.op != null) editSelOperand(); else if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
     if (k === 'F1') { ev.preventDefault(); run('help'); return; }
     if (k === 'F3') { ev.preventDefault(); run('findnext'); return; }
+    if (k === 'Home' || k === 'End') {
+      ev.preventDefault();
+      const ri = curSelRung(), fl = ri == null ? [] : flat(parsed(ri) || []);
+      if (fl.length) { S.sel = { ri, path: fl[k === 'Home' ? 0 : fl.length - 1] }; S.selRung = null; render(); scrollToSel(); }
+      return;
+    }
     if (k === 'ArrowLeft' || k === 'ArrowRight') { ev.preventDefault(); moveSel(k === 'ArrowLeft' ? -1 : 1, 0); return; }
     if (k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); moveSel(0, k === 'ArrowUp' ? -1 : 1); return; }
     if (k === 'Escape') { S.sel = null; render(); return; }
-    // quick key entry: typing a mnemonic with a rung or an instruction selected
-    if (!ctrl && !ev.altKey && /^[a-zA-Z]$/.test(k) && editable() && (S.sel || curSelRung() != null)) { ev.preventDefault(); picker(k.toUpperCase()); }
+    if (ctrl || ev.altKey || k.length !== 1 || !editable()) return;
+    // Quick Keys on: one key inserts its instruction after the selection (or at the end of the selected rung)
+    if (S.prefs.quickKeys && QUICK[k.toLowerCase()] && (S.sel || curSelRung() != null)) { ev.preventDefault(); quickKey(QUICK[k.toLowerCase()]); return; }
+    // otherwise typing starts the edit of the selected operand, the typed key replacing its text
+    if (/^[\w:.[\]#+-]$/.test(k) && selInstr()) { ev.preventDefault(); editSelOperand(k); }
   }
 
   /* ---------- updates ---------- */
