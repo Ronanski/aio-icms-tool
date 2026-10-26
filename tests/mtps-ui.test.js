@@ -1833,6 +1833,43 @@ function check(name, cond, info = '') {
       await tp.close();
     }
   }
+  console.log('RSLinx Classic: RSWho right-click a device, Device Properties');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
+    const node = async (pg, s) => pg.evaluate(s => { const n = [...document.querySelectorAll('#rltree [data-rln]')].find(x => x.textContent.startsWith(s)); const r = n.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }; }, s);
+    let p = await node(page, '01, PLC-DI16-24V');
+    await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
+    const its = await page.$$eval('#layer .rlctx .it', t => t.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent));
+    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|-Station Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
+    await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
+    const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
+    let k = await kv();
+    check('Device Properties: vendor, product type, product code, revision, serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.0' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
+    await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(80);
+    p = await node(page, '00, PLC-CPU');
+    await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
+    check('a controller also lists Data Monitor and Configure New DDE/OPC Topic (greyed)', (await page.$$eval('#layer .rlctx .it.dis', t => t.map(x => x.textContent).join('|'))).includes('Data Monitor|Configure New DDE/OPC Topic'));
+    await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
+    k = await kv();
+    check('Device Properties of the controller: Programmable Logic Controller, its name and mode', k['Product Type'] === 'Programmable Logic Controller (14)' && k['Product Name'] === 'PLC-CPU Emulator' && !!k.Status, JSON.stringify(k));
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.waitForTimeout(80);
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+    await tp.waitForTimeout(300);
+    p = await node(tp, '01, PLC-DI16-24V');
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] }); await tp.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await tp.waitForTimeout(150);
+    check('tablet (touch): a long-press on a device opens its menu', (await tp.$('#layer .rlctx [data-rlci="props"]')) !== null);
+    await tp.tap('#layer .rlctx [data-rlci="props"]'); await tp.waitForTimeout(150);
+    check('tablet (touch): Device Properties opens', (await tp.$$eval('#layer .rlov2 .kv', r => r.length)) >= 6);
+    await tp.close();
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

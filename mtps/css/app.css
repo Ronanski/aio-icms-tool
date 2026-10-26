@@ -1122,3 +1122,4 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .emu { grid-template-rows: auto minmax(0, 1fr) minmax(92px, auto); }
 .emu.compact { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
 .emu.compact .emudev, .emu.compact .emustat { display: none; }
+.rlctx { min-width: 220px; }

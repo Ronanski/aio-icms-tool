@@ -2704,8 +2704,30 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" disabled>Configure…</button><button class="btn" disabled>Startup…</button>
         <button class="btn" data-rlstart="1"${d && !d.run ? '' : ' disabled'}>Start</button><button class="btn" data-rlstop="1"${d && d.run ? '' : ' disabled'}>Stop</button><button class="btn" data-rldel="1"${d ? '' : ' disabled'}>Delete</button></div></div></div>`;
   }
+  /* RSWho: right-click a device (RSLinx Classic GR001: Station Diagnostics, Configure DDE Topic and the other services
+     of that device; Upload EDS file from device; Remove for a device with a red X). Device Properties shows what the
+     emulated module reports: vendor, product type and code, revision, serial number, product name. */
+  const RLPTYPE = { cpu: ['Programmable Logic Controller', 14], di: ['General Purpose Discrete I/O', 7], do: ['General Purpose Discrete I/O', 7], ai: ['Analog I/O', 10], ao: ['Analog I/O', 10] };
+  const rlSerial = (r, m) => { let h = 2166136261; for (const ch of r.name + ':' + m.slot + ':' + m.type) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return (h >>> 0).toString(16).toUpperCase().padStart(8, '0'); };
+  function rlDevice(m) {
+    const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
+    return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
+      ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
+      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']]);
+  }
+  function rlCtxHTML(root) {
+    const c = rlS.ctx, n = rlFind(root, c.k);
+    if (!n || !n.m) return '';
+    const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+  }
   function rlModalHTML() {
     const md = rlS.modal;
+    if (md.k === 'props') {
+      const n = rlFind(rlTree(), md.key);
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
+    }
     if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
       <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
@@ -2713,7 +2735,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn danger" data-rlpx="ok">Delete</button></div></div></div>`;
   }
   function rslinx(view) {
-    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null;
+    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null; rlS.ctx = null;
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
     let treeKey = '', lim = Infinity, btimer = 0;
     const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
@@ -2731,7 +2753,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
           <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
         <div class="rlst"><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
-        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}
+        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}${rlS.ctx ? rlCtxHTML(root) : ''}
         ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}><span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
       if (rlS.menu) {
         const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
@@ -2773,7 +2795,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     // quietly: only a change redraws it, and it is not browsed again
     const timer = setInterval(() => {
       if (!el.isConnected) { quit(); return; }
-      if (!rlS.auto || rlS.menu || rlS.modal || lim !== Infinity) return;
+      if (!rlS.auto || rlS.menu || rlS.modal || rlS.ctx || lim !== Infinity) return;
       if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
     }, 1000);
     const changed = () => { saveDrivers(); relink(); render(); };
@@ -2787,16 +2809,42 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     };
     const modalAct = ok => {
       const md = rlS.modal;
-      if (!ok) { rlS.modal = null; draw(); return; }
+      if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
       const i = drivers.findIndex(d => d.name === md.name);
       if (i >= 0) drivers.splice(i, 1);
       rlS.dsel = Math.min(rlS.dsel, drivers.length - 1); if (rlS.dsel < 0) rlS.dsel = 0;
       rlS.modal = null; changed(); draw();
     };
+    // right-click (long-press on touch) a device in the tree or the right pane: its menu
+    const ctxAt = (k, cx, cy) => {
+      const b = box.getBoundingClientRect();
+      rlS.ctx = { k, x: Math.max(4, Math.min(cx - b.left, b.width - 230)), y: Math.max(4, Math.min(cy - b.top, b.height - 220)) };
+      rlS.sel = k; draw();
+    };
+    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && n.m ? k : null; };
+    box.addEventListener('contextmenu', ev => { const k = devAt(ev.target); if (!k || rlS.modal || rlS.view !== 'rswho') return; ev.preventDefault(); rlS.menu = ''; ctxAt(k, ev.clientX, ev.clientY); });
+    let rlLp = null;
+    box.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'mouse') return;
+      const k = devAt(ev.target); if (!k || rlS.modal) return;
+      const cx = ev.clientX, cy = ev.clientY;
+      rlLp = { cx, cy, t: setTimeout(() => { rlLp = null; ctxAt(k, cx, cy); box.dataset.lp = String(performance.now()); }, 550) };
+    });
+    ['pointerup', 'pointercancel', 'pointermove'].forEach(n => box.addEventListener(n, ev => { if (rlLp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - rlLp.cx, ev.clientY - rlLp.cy) > 10)) { clearTimeout(rlLp.t); rlLp = null; } }));
     box.addEventListener('click', ev => {
       const t = ev.target;
       let x;
+      if (rlS.ctx) {
+        // the click that ends a long-press leaves the menu open
+        if (box.dataset.lp && performance.now() - +box.dataset.lp < 400) return;
+        const it = t.closest('[data-rlci]'), k = rlS.ctx.k;
+        if (!it && t.closest('.rlctx')) return;
+        rlS.ctx = null;
+        if (it) rlS.modal = { k: 'props', key: k };
+        draw();
+        return;
+      }
       if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
       if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { quit(); closeLayer(); return; } rlS.view = a; draw(); return; }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
@@ -2826,6 +2874,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
     layerKey = ev => {
+      if (ev.key === 'Escape' && rlS.ctx) { ev.preventDefault(); rlS.ctx = null; draw(); return; }
       if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
       if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
     };
