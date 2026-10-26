@@ -1234,7 +1234,7 @@ function check(name, cond, info = '') {
     const lag = () => cp.evaluate(() => new Promise(r => { const t = performance.now(); setTimeout(() => r(performance.now() - t), 0); }));
     // RSLinx Classic: RSWho browses node by node
     await cp.evaluate(() => MTPS.App.run('rswho')); await cp.waitForTimeout(60);
-    check('RSWho opens browsing: "Browsing - node found", a Browsing… mark on the driver, the COMM LED busy', (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - node found' && (await cp.$$('#rltree .browsing')).length > 0 && (await led()).includes('busy'));
+    check('RSWho opens browsing: "Browsing - node <address> found", a Browsing… mark on the driver, the COMM LED busy', /^Browsing - node \S+ found$/.test(await cp.$eval('#rlbst', e => e.textContent)) && (await cp.$$('#rltree .browsing')).length > 0 && (await led()).includes('busy'));
     const n0 = await cp.$$eval('#rltree .nd', n => n.length);
     await cp.waitForTimeout(700);
     const n1 = await cp.$$eval('#rltree .nd', n => n.length);
@@ -1245,12 +1245,12 @@ function check(name, cond, info = '') {
     await cp.waitForTimeout(1300);
     check('Autobrowse checks again quietly: the tree is not browsed again when nothing changed', (await cp.$eval('#rltree', e => e.innerHTML)) === h0 && (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - done');
     await cp.click('#layer [data-rlref]'); await cp.waitForTimeout(60);
-    check('Refresh browses again', (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - node found' && (await cp.$$eval('#rltree .nd', n => n.length)) < n2);
+    check('Refresh browses again', /^Browsing - node \S+ found$/.test(await cp.$eval('#rlbst', e => e.textContent)) && (await cp.$$eval('#rltree .nd', n => n.length)) < n2);
     await cp.keyboard.press('Escape'); await cp.waitForTimeout(80);
     check('closing RSLinx mid-browse leaves the COMM LED dark (offline)', (await led()) === 'commled');
     // Who Active: browses the same way
     await cp.evaluate(() => MTPS.App.run('who')); await cp.waitForTimeout(60);
-    check('Who Active opens browsing, with Autobrowse and Refresh', (await cp.$eval('#wa-st', e => e.textContent)) === 'Browsing - node found' && (await cp.$$('#wa-rows .browsing')).length === 1 && (await cp.$eval('#wa-auto', c => c.checked)) && (await cp.$('#wa-ref')) !== null && (await cp.$$('#wa-rows [data-wa]')).length === 0);
+    check('Who Active opens browsing, with Autobrowse and Refresh', /^Browsing - node \S+ found$/.test(await cp.$eval('#wa-st', e => e.textContent)) && (await cp.$$('#wa-rows .browsing')).length === 1 && (await cp.$eval('#wa-auto', c => c.checked)) && (await cp.$('#wa-ref')) !== null && (await cp.$$('#wa-rows [data-wa]')).length === 0);
     await cp.waitForFunction(() => document.querySelector('#wa-st').textContent === 'Browsing - done', null, { timeout: 8000 }).catch(() => {});
     check('Who Active: the controller is found, "Browsing - done"', (await cp.$$eval('#wa-rows [data-wa]', r => r.map(x => x.dataset.wa))).includes('Emulate\\127.0.0.1\\Backplane\\0') && (await cp.$$('#wa-rows .browsing')).length === 0);
     // Go Online from Who Active: Connecting, then the checks, then Connected To Go Online

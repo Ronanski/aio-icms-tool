@@ -2758,6 +2758,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="RSLinx Classic"><div class="bh">RSLinx Classic</div><div class="bb"><p style="margin:0">Delete the driver <b class="mono">${esc(md.name)}</b>? Who Active, Go Online and Download can no longer use it.</p></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn danger" data-rlpx="ok">Delete</button></div></div></div>`;
   }
+  /* the RSWho status while it browses, as in the RSLinx Classic figure (LINX-GR001, RSWho): "Browsing - node
+     10.224.69.105 found", the address of the node found last (its label up to the comma) */
+  const browseSt = label => { const a = label ? String(label).split(',')[0].trim() : ''; return a ? `Browsing - node ${a} found` : 'Browsing - node found'; };
   function rslinx(view) {
     rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null; rlS.ctx = null;
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
@@ -2765,7 +2768,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
     const quit = () => { clearInterval(timer); stopBrowse(); };
     const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
-    const bstat = root => (lim < rlCount(root) ? 'Browsing - node found' : rlS.auto ? 'Browsing - done' : 'Not browsing');
+    const bstat = root => (lim < rlCount(root) ? browseSt(order(root)[lim - 1].l) : rlS.auto ? 'Browsing - done' : 'Not browsing');
     const box = el.querySelector('#rl');
     const draw = () => {
       const root = rlTree();
@@ -3762,7 +3765,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       buttons: [{ l: 'Close', run: stopAll }, { l: 'Emulator…', run: () => { stopAll(); setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
         { l: 'Upload…', run: () => { stopAll(); return via(upload)(); } }, { l: 'Download…', run: () => { stopAll(); return via(download)(); } }, { l: 'Go Online', pri: true, run: () => { stopAll(); return via(goOnline)(); } }] });
     const draw = () => {
-      const all = list(), h = rows(all), st = shown < all.length ? 'Browsing - node found' : auto ? 'Browsing - done' : 'Not browsing';
+      const all = list(), h = rows(all), st = shown < all.length ? browseSt(shown > 0 && all[shown - 1].h.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/g, '')) : auto ? 'Browsing - done' : 'Not browsing';
       if (h !== last) { el.querySelector('#wa-rows').innerHTML = h; last = h; }
       if (st !== lastSt) { el.querySelector('#wa-st').textContent = st; lastSt = st; }
     };
