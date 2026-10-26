@@ -311,6 +311,8 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .tab .dlg .dh b { font-size: 16px; }
 .frow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
 .phone .frow { grid-template-columns: 1fr; gap: 4px; margin-bottom: 12px; }
+.frow.ckrow input[type=checkbox] { justify-self: start; width: 18px; height: 18px; margin: 0; }
+.phone .frow.ckrow { grid-template-columns: 1fr auto; }
 .inp { height: 28px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); padding: 0 8px; min-width: 0; width: 100%; }
 .inp:focus { border-color: var(--accent); outline: 2px solid var(--accent-soft); }
 .inp.bad { border-color: var(--danger); }

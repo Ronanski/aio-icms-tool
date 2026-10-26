@@ -342,7 +342,8 @@
     }
     const io = rec.io || null;
     const force = io && steps.length === 1 && steps[0].m === 'Data' && bit >= 0 ? `${io.slot}:${io.dir}:${bit}` : null;
-    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, bit, ptype, ro: !!rec.constant,
+    // a constant tag (and its members, elements, bits and aliases) cannot be written by logic (help: Constant)
+    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
   }
 
@@ -517,7 +518,8 @@
     const r = ref(M, P, s);
     if (typeof r === 'string') return r;
     const one = !r.dim;
-    const writable = () => (r.ro ? 'Tag is read-only' : r);
+    // "If a logic routine tries to write to a constant tag, the routine does not verify" (help: Tag Editor columns)
+    const writable = () => (r.ro ? 'Tag is read-only' : r.konst ? `Tag '${r.konst}' is a constant: logic cannot write to it` : r);
     switch (kind) {
       case 'bit': return r.type === 'BOOL' && one ? r : BAD_TYPE;
       case 'bitw': return r.type === 'BOOL' && one ? writable() : BAD_TYPE;
@@ -713,9 +715,10 @@
     return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
   }
 
-  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits */
+  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
+     nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
@@ -1155,17 +1158,18 @@
     /* an input image that its card updates (connected, not inhibited); the others can be written */
     inputLive(r) { const m = r.io && this.M.mods.get(r.io.slot); return !!m && !m.inhibit && !this.pulled.has(m.slot); }
     /* writing an input image of a working card is refused: the next input update would overwrite it */
-    write(path, v, program) {
+    /* monitor: written from Monitor Tags (the Data Monitor), which may change a constant tag; other editors may not */
+    write(path, v, program, monitor) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro) return false;
+      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro || (r.konst && !monitor)) return false;
       try {
         if (r.dim || !ATOMIC[r.type]) { r.at(); PP[PK] = conform(this.M.types, r.type, r.dim, v); } else r.set(Number(v));
         return true;
       } catch (e) { if (e instanceof Fault) return false; throw e; }
     }
-    toggle(path, program) {
+    toggle(path, program, monitor) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || r.type !== 'BOOL' || r.dim || r.ro) return false;
+      if (typeof r === 'string' || r.type !== 'BOOL' || r.dim || r.ro || (r.konst && !monitor)) return false;
       try { r.set(r.get() ? 0 : 1); return true; } catch (e) { if (e instanceof Fault) return false; throw e; }
     }
 

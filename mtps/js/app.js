@@ -1997,6 +1997,26 @@
   const inlineOpen = () => !!$('#inled');
 
   /* ---------- tags ---------- */
+  /* External Access and Style (radix), as in the New Tag dialog and the Tag Editor of the reference (help: New Parameter
+     or Tag dialog box, Tag Editor columns; L5X attributes ExternalAccess and Radix, 1756-RM014). A structure has no
+     style; a REAL shows Float or Exponential; an integer or BOOL Binary, Octal, Decimal, Hex (integers also ASCII). */
+  const ACCESS = ['Read/Write', 'Read Only', 'None'];
+  const baseTy = ty => String(ty || 'BOOL').replace(/\[.*$/, '');
+  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : []; };
+  const defStyle = ty => (U(baseTy(ty)) === 'REAL' ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
+  const styleOfTag = (t, ty) => { const l = stylesOf(ty || (t && t.type)); return t && l.includes(t.style) ? t.style : defStyle(ty || (t && t.type)); };
+  const accessOf = t => (t && ACCESS.includes(t.access) ? t.access : 'Read/Write');
+  // the base tag of an alias (the last link of the chain), whose External Access and Constant the alias shows
+  const aliasBase = a => { const x = baseTagOf(a) || '', b = /^([A-Za-z_]\w*)/.exec(x), t = b && !/^Local:/i.test(x) ? tagFor(b[1]) : null; return t && !t.alias ? t : null; };
+  /* the L5X attributes of a base tag, and back */
+  const l5xAttrs = (t, x) => { const st = styleOfTag(t); return `${st ? ` Radix="${st}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="${x(accessOf(t))}"`; };
+  function l5xTagIn(g, o) {
+    const ra = g.getAttribute('Radix'), ea = g.getAttribute('ExternalAccess');
+    if (ra && stylesOf(o.type).includes(ra) && ra !== defStyle(o.type)) o.style = ra;
+    if (ea && ACCESS.includes(ea) && ea !== 'Read/Write') o.access = ea;
+    if (g.getAttribute('Constant') === 'true' && !o.alias) o.constant = true;
+    return o;
+  }
   function newTag(o) {
     const P = curProg();
     const types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
@@ -2013,15 +2033,31 @@
         <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label>Data Type</label><select class="inp" id="tt">${types.map(t => `<option${t === (t0.type || 'BOOL') ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow" id="rd"${t0.alias ? ' hidden' : ''}><label>Array size</label><input class="inp" id="tdim" type="number" min="0" max="10000" value="${t0.dim || ''}" placeholder="0 = not an array"></div>
         <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
+        <div class="frow"><label>External Access</label><select class="inp" id="tea">${ACCESS.map(a => `<option${a === accessOf(t0) ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+        <div class="frow"><label>Style</label><select class="inp" id="tsty"></select></div>
+        <div class="frow ckrow"><label for="tcon">Constant</label><input type="checkbox" id="tcon"${t0.constant ? ' checked' : ''}></div>
+        ${edit0 ? '' : '<div class="frow ckrow"><label for="tocf">Open Configuration</label><input type="checkbox" id="tocf" disabled title="Opens the configuration of a data type that has one (MESSAGE, PID, AXIS…) after Create. No data type of this app has one."></div>'}
         <div class="errtx" id="te"></div>`,
       mount: el => {
         const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), tat = el.querySelector('#tat');
         const br = aliasBrowser(asg, ta, { self: edit0 && edit0.name, scope: () => el.querySelector('#ts').value || (edit0 && o.list !== S.p.tags ? (allProgs().find(g => g.tags === o.list) || {}).name : '') });
         const showType = () => { const v = ta.value.trim(), ty = v ? addrType(v) : null; tat.textContent = !v ? '-' : ty || 'not a tag, member or bit of this project'; tat.classList.toggle('bad', !!v && !ty); };
-        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; if (a) { br.show(); ta.focus(); } else br.hide(); };
-        ta.addEventListener('input', showType); ta.addEventListener('focus', () => br.show());
+        // Style lists the display formats of the data type; an alias takes External Access, Constant and its data type
+        // from its base tag, so those boxes are greyed (help: Tag Editor columns, Alias For)
+        const sty = el.querySelector('#tsty'), ea = el.querySelector('#tea'), con = el.querySelector('#tcon');
+        let styWant = t0.alias ? '' : styleOfTag(t0);
+        const sync = () => {
+          const a = el.querySelector('#tk').value === 'alias', ty = a ? addrType(ta.value.trim()) || '' : el.querySelector('#tt').value, l = stylesOf(ty), b = a ? aliasBase(ta.value.trim()) : null;
+          if (sty.value) styWant = sty.value;
+          sty.innerHTML = l.map(x => `<option${x === (l.includes(styWant) ? styWant : defStyle(ty)) ? ' selected' : ''}>${x}</option>`).join('');
+          sty.disabled = a || !l.length; ea.disabled = a; con.disabled = a;
+          if (a) { ea.value = accessOf(b); con.checked = !!(b && b.constant); }
+        };
+        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; if (a) { br.show(); ta.focus(); } else { br.hide(); ea.value = accessOf(t0.alias ? null : t0); con.checked = !t0.alias && !!t0.constant; } sync(); };
+        ta.addEventListener('input', () => { showType(); sync(); }); ta.addEventListener('focus', () => br.show());
+        el.querySelector('#tt').addEventListener('change', sync);
         el.querySelector('#tab').onclick = () => br.toggle();
-        showType();
+        showType(); sync();
       },
       buttons: [{ l: 'Cancel' }, { l: edit0 ? 'OK' : 'Create', pri: true, run: el => {
         const name = el.querySelector('#tn').value.trim(), scope = el.querySelector('#ts').value, alias = el.querySelector('#tk').value === 'alias';
@@ -2036,7 +2072,14 @@
           if (U(t.alias.split(/[.[]/)[0]) === U(name)) return err('A tag cannot be an alias for itself.');
           if (!addrType(t.alias)) return err(/^Local:/i.test(t.alias) ? `Alias For: ${t.alias} is not an I/O point of this project. I/O tags are Local:<slot>:I or O, then .Data.<bit> (digital) or .Ch<n>Data (analog), for a module in the I/O Configuration.` : `Alias For: ${t.alias} is not a tag, member or bit of this project.`);
         }
-        else { t.type = el.querySelector('#tt').value; const d = +el.querySelector('#tdim').value; if (d > 0) t.dim = Math.floor(d); }
+        else {
+          t.type = el.querySelector('#tt').value; const d = +el.querySelector('#tdim').value; if (d > 0) t.dim = Math.floor(d);
+          const acc = el.querySelector('#tea').value, st = el.querySelector('#tsty').value;
+          if (acc !== 'Read/Write') t.access = acc;
+          if (st && st !== defStyle(t.type)) t.style = st;
+          if (el.querySelector('#tcon').checked) t.constant = true;
+        }
+        if (!t.desc) delete t.desc;
         if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type) t.value = edit0.value;
         const ok = edit(() => { if (edit0) list.splice(list.indexOf(edit0), 1, t); else list.push(t); });
         if (!ok) return false;
@@ -2220,8 +2263,8 @@
     }
     if (membersOf(ty) || /\[\d+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
-      if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
-      prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined)) return 'This tag cannot be written (an input or read-only).'; live(true); });
+      if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined, true)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
+      prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined, true)) return 'This tag cannot be written (an input or read-only).'; live(true); });
       return;
     }
     if (slot != null) { toast('A module-defined tag has no start value: its values come from the module when online.'); return; }
@@ -2366,7 +2409,7 @@
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`, P = curProg(), names = new Set();
     list.forEach(r => { const pr = E.parseRung(r.t); if (pr.err) return; const walk = arr => arr.forEach(e => { if (e.t === 'BR') e.legs.forEach(walk); else (e.a || []).forEach(x => { if (isTagText(x)) names.add(U(String(x).split(/[.[]/)[0])); }); }); walk(pr.elems); });
     const tags = [...P.tags, ...S.p.tags].filter(tg => names.has(U(tg.name)));
-    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${tg.dim ? ` Dimensions="${tg.dim}"` : ''}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
+    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${tg.dim ? ` Dimensions="${tg.dim}"` : ''}${l5xAttrs(tg, esc)}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.00" TargetType="Rung" TargetCount="${list.length}" ContainsContext="true" ExportDate="${new Date().toUTCString()}" ExportOptions="References NoRawData L5KData DecoratedData Context RoutineLabels AliasExtras IOTags NoStringData ForceProtectedEncoding AllProjDocTrans">
 <Controller Use="Context" Name="${esc(S.p.controller.name)}">${desc ? `<Description>${cd(desc)}</Description>` : ''}
@@ -2392,7 +2435,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const bad = rs.map(r => E.parseRung(r.t.trim())).findIndex(pr => pr.err);
       if (bad >= 0) { toast(`Rung ${bad} of the file cannot be read.`, 'err'); return; }
       const have = n => !!tagFor(n);
-      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: +(tg.getAttribute('Dimensions') || 0), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
+      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ el: tg, name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: +(tg.getAttribute('Dimensions') || 0), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
       // Import Configuration, as in the reference: each tag of the file is created, or the project's tag of that name is used
       dialog({ title: 'Import Configuration', size: 'md',
         body: `<p>${rs.length} rung(s) from <b class="mono">${esc(baseName(f))}</b> go after ${curSelRung() == null ? 'the last rung' : `rung ${curSelRung()}`} of ${esc(curRoutine().name)}.</p>
@@ -2401,7 +2444,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
           edit(() => {
             const at = curSelRung() == null ? rungs().length : curSelRung() + 1;
             rungs().splice(at, 0, ...rs.map(r => (r.c ? { t: r.t.trim(), c: r.c } : { t: r.t.trim() })));
-            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; (tg.prog ? curProg().tags : S.p.tags).push(o); });
+            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; else l5xTagIn(tg.el, o); (tg.prog ? curProg().tags : S.p.tags).push(o); });
             S.sel = null; S.selRung = at;
           });
           toast(`Imported ${rs.length} rung(s).`, 'ok');
@@ -2973,7 +3016,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
     const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF8', 'PLC-AO4': '1756-OF4' };
     const tag = t => t.alias ? `<Tag Name="${x(t.name)}" TagType="Alias" AliasFor="${x(t.alias)}">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`
-      : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${t.dim ? ` Dimensions="${t.dim}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="Read/Write">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
+      : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${t.dim ? ` Dimensions="${t.dim}"` : ''}${l5xAttrs(t, x)}>${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
     const progs = p.tasks.flatMap(t => t.programs);
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
@@ -3020,7 +3063,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if (g.getAttribute('TagType') === 'Alias') return { name: n, alias: g.getAttribute('AliasFor'), desc };
       const o = { name: n, type: g.getAttribute('DataType') || 'BOOL', desc };
       const dim = parseInt(g.getAttribute('Dimensions') || '', 10); if (dim > 0) o.dim = dim;
-      if (g.getAttribute('Constant') === 'true') o.constant = true;
+      l5xTagIn(g, o);
       if (!o.desc) delete o.desc;
       return o;
     });

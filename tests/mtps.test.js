@@ -170,6 +170,24 @@ console.log('Verify');
   check('JMP to a label that does not exist',/Undefined label 'L9'/.test(v({ rungs: ['JMP(L9);'] }).errors[0].text));
   check('LBL that is not the first instruction', /LBL must be the first instruction/.test(v({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)LBL(L1)NOP();', 'JMP(L1);'] }).errors[0].text));
   check('label used twice', /Label 'L1' is defined more than once/.test(v({ rungs: ['LBL(L1)NOP();', 'LBL(L1)NOP();'] }).errors.map(e => e.text).join()));
+  {
+    // Constant (help: New Parameter or Tag dialog box, Tag Editor columns): logic that writes it does not verify;
+    // the Data Monitor (Monitor Tags) can still write it
+    const K = [T('Limit', 'DINT', { constant: true, value: 7 }), T('Arr', 'DINT', { dim: 3, constant: true }), T('K_Alias', 'BOOL', { alias: 'Limit.2' }), T('D', 'DINT')];
+    const ke = (r) => v({ tags: K, rungs: [r] }).errors.map(e => e.text).join(' | ');
+    check('Constant: MOV into a constant tag does not verify', /Tag 'Limit' is a constant: logic cannot write to it/.test(ke('MOV(1,Limit);')));
+    check('Constant: an element of a constant array, a bit, and an alias of a constant are refused too', /constant/.test(ke('MOV(1,Arr[1]);')) && /constant/.test(ke('OTE(Limit.0);')) && /constant/.test(ke('OTL(K_Alias);')));
+    check('Constant: reading it is fine (source operand, XIC)', ke('XIC(Limit.1)MOV(Limit,D);') === '');
+    const kc = run({ tags: K, rungs: ['MOV(Limit,D);'] });
+    kc.scan(10);
+    check('Constant: the logic reads its value', kc.read('D') === 7);
+    check('Constant: Toggle Bit / a write from the ladder is refused, Monitor Tags may write it', kc.write('Limit', 9) === false && kc.toggle('Limit.0') === false && kc.write('Limit', 9, undefined, true) === true && kc.read('Limit') === 9);
+    const kp = proj({ tags: K, rungs: ['MOV(Limit,D);'] }); kp.tasks[0].programs[0].routines[0].rungs = [{ t: 'MOV(D,Limit);' }];
+    check('Constant: an online edit that writes a constant is not accepted', kc.edit(kp).ok === false);
+    const sp = proj({ tags: K, rungs: ['MOV(Limit,D);'] });
+    const sc = new MTPS.Controller(); sc.download(sp); sp.tags[3].style = 'Hex';
+    check('a changed Style is not a logic change (no new download needed); a changed External Access is', sc.holds(sp) && (() => { sp.tags[3].access = 'Read Only'; return !sc.holds(sp); })());
+  }
   check('constant subscript out of range', /out of range/.test(v({ tags: [T('A', 'DINT', { dim: 3 })], rungs: ['MOV(1,A[3]);'] }).errors[0].text));
   check('writing a REAL to an AND dest is a type error', /Invalid data type/.test(v({ tags: [T('R', 'REAL')], rungs: ['AND(1,2,R);'] }).errors[0].text));
   check('a negative timer preset is an error', /Preset/.test(v({ tags: [T('T1', 'TIMER')], rungs: ['TON(T1,-5,0);'] }).errors[0].text));

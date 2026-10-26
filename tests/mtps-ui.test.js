@@ -1733,6 +1733,50 @@ function check(name, cond, info = '') {
     await bp.click('#tagrows [data-texp="Local:3:C"]'); await bp.waitForTimeout(80);
     await bp.click('#tagrows [data-texp="Local:3:C.Ch0Config"]'); await bp.waitForTimeout(80);
     check('B7: Local:3:C (analog in) opens to Ch0Config, a structure with LowEngineering and HighEngineering (REAL)', (await bty('Local:3:C.Ch0Config')).includes('AB:1756_NII_Struct:C:0') && (await bty('Local:3:C.Ch0Config.LowEngineering')).includes('REAL') && (await bty('Local:3:C.Ch0Config.HighEngineering')).includes('REAL'));
+    // B1: New Tag has External Access, Style, Constant and Open Configuration, in the Studio 5000 order
+    await bev(() => MTPS.App.openProject(MTPS.App.example(), true)); await bp.waitForTimeout(100);
+    await bev(() => MTPS.App.run('newtag')); await bp.waitForTimeout(120);
+    const labs = await bp.$$eval('#layer .dlg .frow:not([hidden]) > label', l => l.map(x => x.textContent.trim()));
+    check('B1: New Tag fields in order: Name, Description, Type, Data Type, …, Scope, External Access, Style, Constant, Open Configuration', ['Name', 'Description', 'Type', 'Scope', 'External Access', 'Style', 'Constant', 'Open Configuration'].every((x, i, a) => labs.indexOf(x) >= 0 && (i === 0 || labs.indexOf(x) > labs.indexOf(a[i - 1]))) && labs.indexOf('Data Type') > labs.indexOf('Type') && labs.indexOf('Data Type') < labs.indexOf('Scope'), labs.join(','));
+    check('B1: External Access offers Read/Write, Read Only, None (Read/Write first)', (await bp.$$eval('#tea option', o => o.map(x => x.textContent).join('|'))) === 'Read/Write|Read Only|None' && (await bp.$eval('#tea', s => s.value)) === 'Read/Write');
+    check('B1: Open Configuration is there but greyed (no data type of the app has a configuration)', await bp.$eval('#tocf', c => c.disabled));
+    await bp.fill('#tn', 'Fill_Level');
+    await bp.selectOption('#tt', 'DINT'); await bp.waitForTimeout(40);
+    check('B1: Style of a DINT: Binary, Octal, Decimal, Hex, ASCII (Decimal first chosen)', (await bp.$$eval('#tsty option', o => o.map(x => x.textContent).join('|'))) === 'Binary|Octal|Decimal|Hex|ASCII' && (await bp.$eval('#tsty', s => s.value)) === 'Decimal');
+    await bp.selectOption('#tt', 'REAL'); await bp.waitForTimeout(40);
+    check('B1: Style of a REAL: Float, Exponential', (await bp.$$eval('#tsty option', o => o.map(x => x.textContent).join('|'))) === 'Float|Exponential');
+    await bp.selectOption('#tt', 'TIMER'); await bp.waitForTimeout(40);
+    check('B1: a structure (TIMER) has no style: the box is greyed', await bp.$eval('#tsty', s => s.disabled && !s.options.length));
+    await bp.selectOption('#tt', 'DINT'); await bp.selectOption('#tsty', 'Hex'); await bp.selectOption('#tea', 'Read Only'); await bp.selectOption('#ts', '');
+    await bp.click('#tcon');
+    await bp.click('#layer .dlg .btn.pri'); await bp.waitForTimeout(150);
+    const fl = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Level') || null);
+    check('B1: Create keeps External Access, Style and Constant on the tag', !!fl && fl.type === 'DINT' && fl.access === 'Read Only' && fl.style === 'Hex' && fl.constant === true, JSON.stringify(fl));
+    const l5 = await bev(() => { const x = MTPS.App.toL5X(MTPS.App.state.p), q = MTPS.App.fromL5X(x); return { x: /<Tag Name="Fill_Level" TagType="Base" DataType="DINT" Radix="Hex" Constant="true" ExternalAccess="Read Only">/.test(x), run: /<Tag Name="Run_Timer" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read\/Write">/.test(x), back: q.tags.find(t => t.name === 'Fill_Level') }; });
+    check('B1: L5X export writes Radix, Constant and ExternalAccess (no Radix for a TIMER)', l5.x && l5.run);
+    check('B1: L5X import reads them back', l5.back && l5.back.access === 'Read Only' && l5.back.style === 'Hex' && l5.back.constant === true, JSON.stringify(l5.back));
+    // an alias shows its base tag's External Access and Constant, greyed
+    await bev(() => MTPS.App.run('newtag')); await bp.waitForTimeout(120);
+    await bp.fill('#tn', 'Level_Alias'); await bp.selectOption('#tk', 'alias'); await bp.fill('#ta', 'Fill_Level'); await bp.waitForTimeout(60);
+    check('B1: an alias greys External Access, Style and Constant and shows those of its base tag', await bp.$eval('#layer .dlg', d => { const ea = d.querySelector('#tea'), c = d.querySelector('#tcon'), st = d.querySelector('#tsty'); return ea.disabled && ea.value === 'Read Only' && c.disabled && c.checked && st.disabled; }));
+    await bp.click('#layer .dlg .btn:not(.pri)'); await bp.waitForTimeout(80);
+    // Constant in the logic: a destructive instruction on it does not verify
+    await bev(() => { MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.push({ t: 'MOV(5,Fill_Level);' }); MTPS.App.run('verifyc'); }); await bp.waitForTimeout(150);
+    check('B1: Verify: MOV into the constant Fill_Level is an error', (await bev(() => MTPS.App.state.verify.errors.map(e => e.text).join(' | '))).includes("Tag 'Fill_Level' is a constant"));
+    // touch on a phone: the New Tag boxes are there and the Constant box can be tapped
+    {
+      const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+      const tp = await tctx.newPage(); tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.run('newtag'); }); await tp.waitForTimeout(200);
+      await tp.fill('#tn', 'Phone_Tag');
+      const cb = await tp.$eval('#tcon', c => { c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+      await tp.touchscreen.tap(cb.x, cb.y); await tp.waitForTimeout(60);
+      const okb = await tp.$eval('#layer .dlg .btn.pri', c => { c.scrollIntoView({ block: 'center' }); const b = c.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+      await tp.touchscreen.tap(okb.x, okb.y); await tp.waitForTimeout(150);
+      check('B1: phone (touch): External Access, Style and Constant show; tapping Constant and Create makes a constant tag', await tp.evaluate(() => { const t = MTPS.App.state.p.tags.find(x => x.name === 'Phone_Tag'); return !!t && t.constant === true; }) || await tp.evaluate(() => { const t = MTPS.App.state.p.tasks[0].programs[0].tags.find(x => x.name === 'Phone_Tag'); return !!t && t.constant === true; }));
+      await tctx.close();
+    }
     /*B-NEXT*/
     await bctx.close();
   }
