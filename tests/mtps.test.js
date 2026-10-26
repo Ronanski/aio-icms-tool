@@ -731,6 +731,10 @@ console.log('File/Shift and Sequencer instructions');
   c.edit(p2);
   eq('online edit of an FFL keeps the queue and .POS (not the Position of the rung), .LEN from the rung', [c.read('Ctl.POS'), c.read('Ctl.LEN'), c.read('Q[1]'), c.read('Ctl.EN')], [2, 4, 9, 1]);
   check('FFL accepts an immediate Source', MTPS.verify(proj({ tags, rungs: ['FFL(16#7F,Q[0],Ctl,5,0);'] })).errors.length === 0);
+  check('LFL / LFU: File/Shift, EN DN EM / EU DN EM, LIFO operand names', INS.LFL.bits.join() === 'EN,DN,EM' && INS.LFU.bits.join() === 'EU,DN,EM' && INS.LFU.grp === 'File/Shift' && MTPS.OPN.LFU.join() === 'LIFO,Dest,Control,Length,Position');
+  const l = run({ tags: [...tags, T('O', 'DINT')], rungs: ['XIC(Ld)LFL(V,Q[0],Ctl,5,0);', 'XIC(Ld)LFU(Q[0],O,Ctl,5,0);'] });
+  l.scan(10); l.write('Ld', 1); l.scan(10);
+  eq('LFL then LFU on the same rising edge (one CONTROL): the value goes in and comes back out', [l.read('O'), l.read('Q[0]'), l.read('Ctl.POS'), l.read('Ctl.EM')], [9, 0, 0, 1]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

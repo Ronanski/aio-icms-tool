@@ -25,6 +25,7 @@ const PLAN = {
   BTD: ['D1', '0', 'D3', '4', '4'], SWPB: ['D1', 'HIGH/LOW', 'D3'], COP: ['ARR[0]', 'ARR2[0]', '5'], FLL: ['7', 'ARR[0]', '10'],
   BSL: ['ARR[0]', 'CT1', 'B1', '16'], BSR: ['ARR2[0]', 'CT2', 'B1', '16'],
   FFL: ['D1', 'ARR[0]', 'CT3', '10', '0'], FFU: ['ARR[0]', 'D3', 'CT3', '10', '0'],
+  LFL: ['D1', 'ARR2[0]', 'CT4', '10', '0'], LFU: ['ARR2[0]', 'D3', 'CT4', '10', '0'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
 };
 const MNS = Object.keys(PLAN);

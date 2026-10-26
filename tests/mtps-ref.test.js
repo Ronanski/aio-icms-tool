@@ -298,6 +298,36 @@ console.log('Array (File)/Shift: FFL, FFU (1756-RM003 chapter 9)');
   eq('FFL with .LEN = 0: .EM and .DN set, nothing loaded', [e.read('Ctl.EM'), e.read('Ctl.DN'), e.read('Ad[0]'), e.read('Ctl.POS')], [1, 1, 0, 0]);
 }
 
+console.log('Array (File)/Shift: LFL, LFU (1756-RM003 chapter 9)');
+{
+  const c = run({ tags: [T('St', 'DINT', { dim: 5 }), T('Ctl', 'CONTROL'), T('V', 'DINT'), T('Out', 'INT', { value: 99 }), ...bools('Ld', 'Ul')],
+    rungs: ['XIC(Ld)LFL(V,St[0],Ctl,3,0);', 'XIC(Ul)LFU(St[0],Out,Ctl,3,0);'] });
+  scans(c, 1);
+  eq('LFL / LFU: .EM set at .POS = 0 after prescan and the first scan', [c.read('Ctl.EM'), c.read('Ctl.DN'), c.read('Ctl.EN'), c.read('Ctl.EU')], [1, 0, 0, 0]);
+  const load = v => { c.write('V', v); c.write('Ld', 1); scans(c, 1); c.write('Ld', 0); scans(c, 1); };
+  const unload = () => { c.write('Ul', 1); scans(c, 1); c.write('Ul', 0); scans(c, 1); return c.read('Out'); };
+  load(10); load(20); load(30); load(40);
+  eq('LFL loads at .POS until .LEN: .DN (full) set, the 4th load is ignored', [c.read('St[0]'), c.read('St[1]'), c.read('St[2]'), c.read('St[3]'), c.read('Ctl.POS'), c.read('Ctl.DN')], [10, 20, 30, 0, 3, 1]);
+  eq('LFU unloads the last value in first (30, then 20) and stores 0 in its place', [unload(), c.read('St[2]'), c.read('Ctl.POS'), unload(), c.read('Ctl.POS')], [30, 0, 2, 20, 1]);
+  eq('LFU of the last value: .EM set; then an empty LIFO puts 0 in Dest', [unload(), c.read('Ctl.EM'), unload(), c.read('Ctl.POS'), c.read('St[0]')], [10, 1, 0, 0, 0]);
+  c.write('Ul', 1); scans(c, 1); c.write('V', 5); c.write('Ld', 1); scans(c, 1); scans(c, 1);
+  eq('LFU / LFL are transitional: a held rung acts once', [c.read('Ctl.POS'), c.read('St[0]')], [1, 5]);
+}
+{
+  const c = run({ tags: [T('St', 'SINT', { dim: 3, value: [-3, 0, 0] }), T('Ctl', 'CONTROL', { value: { POS: 7 } }), T('O', 'INT'), T('Ul', 'BOOL')], rungs: ['XIC(Ul)LFU(St[0],O,Ctl,2,7);'] });
+  scans(c, 1); c.write('Ctl.POS', 7); c.write('Ul', 1); scans(c, 1);
+  eq('LFU with .POS past .LEN: .POS is limited to .LEN first, then the element at .LEN - 1 is unloaded', [c.read('Ctl.POS'), c.read('O'), c.read('St[1]')], [1, 0, 0]);
+  const d = run({ tags: [T('St', 'SINT', { dim: 3, value: [-3, 0, 0] }), T('Ctl', 'CONTROL'), T('O', 'INT'), T('Ul', 'BOOL')], rungs: ['XIC(Ul)LFU(St[0],O,Ctl,2,1);'] });
+  scans(d, 1); d.write('Ul', 1); scans(d, 1);
+  eq('LFU: a SINT LIFO into an INT Dest (RM003 example 3): -3 stays -3 (sign extension)', [d.read('O'), d.read('St[0]'), d.read('Ctl.EM')], [-3, 0, 1]);
+  const e = run({ tags: [T('St', 'DINT', { dim: 3 }), T('Ctl', 'CONTROL'), T('O', 'DINT'), T('Ul', 'BOOL')], rungs: ['XIC(Ul)LFU(St[1],O,Ctl,3,2);'] });
+  scans(e, 1); e.write('Ul', 1); scans(e, 1);
+  check('LFU: .LEN past the end of the array: major fault, type 4 code 20', !!e.fault && e.fault.type === 4 && e.fault.code === 20, JSON.stringify(e.fault));
+  const f = run({ tags: [T('St', 'COUNTER', { dim: 2 }), T('Src', 'COUNTER', { value: { ACC: 4 } }), T('Dst', 'COUNTER'), T('Ctl', 'CONTROL'), ...bools('Ld', 'Ul')], rungs: ['XIC(Ld)LFL(Src,St[0],Ctl,2,0);', 'XIC(Ul)LFU(St[0],Dst,Ctl,2,0);'] });
+  scans(f, 1); f.write('Ld', 1); scans(f, 1); f.write('Ul', 1); scans(f, 1);
+  eq('LFL / LFU with a structure LIFO (COUNTER[2]): the whole structure moves, its place is zeroed', [f.read('Dst.ACC'), f.read('St[0].ACC'), f.read('Ctl.POS')], [4, 0, 0]);
+}
+
 console.log('Program control');
 {
   const c = run({ tags: [...bools('Q', 'R', 'Go'), T('N', 'DINT')], rungs: ['XIC(Go)JSR(Sub);', 'OTE(R);'], routines: [{ name: 'Sub', rungs: ['ADD(N,1,N);', 'RET();', 'OTE(Q);'] }] });

@@ -237,6 +237,7 @@
     OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
     BSL: ['Array', 'Control', 'Source Bit', 'Length'], BSR: ['Array', 'Control', 'Source Bit', 'Length'],
     FFL: ['Source', 'FIFO', 'Control', 'Length', 'Position'], FFU: ['FIFO', 'Dest', 'Control', 'Length', 'Position'],
+    LFL: ['Source', 'LIFO', 'Control', 'Length', 'Position'], LFU: ['LIFO', 'Dest', 'Control', 'Length', 'Position'],
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -485,6 +486,8 @@
     BSR: I('box', 'File/Shift', 'Bit Shift Right', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
     FFL: I('box', 'File/Shift', 'FIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     FFU: I('box', 'File/Shift', 'FIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    LFL: I('box', 'File/Shift', 'LIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    LFU: I('box', 'File/Shift', 'LIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     JSR: I('box', 'Program Control', 'Jump to Subroutine', 'routine imm?', { out: true }),
     RET: I('box', 'Program Control', 'Return from Subroutine', '', { out: true }),
     SBR: I('box', 'Program Control', 'Subroutine', ''),
@@ -577,7 +580,7 @@
       }
       case 'SWPB': if (x[0].type === 'SINT' || x[2].type === 'SINT') bad(BAD_TYPE, x[0].type === 'SINT' ? 0 : 2); break;
       // a number Source / Dest is converted to the type of the array; a structure must be the array's own type
-      case 'FFL': case 'FFU': {
+      case 'FFL': case 'FFU': case 'LFL': case 'LFU': {
         const ld = e.t.endsWith('L'), arr = ld ? x[1] : x[0], o = ld ? x[0] : x[1];
         if (isNum(arr.type) ? !isNum(o.type) : o.type !== arr.type) bad(BAD_TYPE, ld ? 0 : 1);
         break;
@@ -828,8 +831,8 @@
               case 'CTD': x[0].obj().CD = 1; break;
               case 'BSL': case 'BSR': { const c = x[1].obj(); c.EN = c.DN = c.ER = 0; c.POS = 0; break; }
               // .EN (load) / .EU (unload) set, so a true rung does not load or unload on the first scan
-              case 'FFL': { const c = x[2].obj(); c.EN = 1; fstat(c); break; }
-              case 'FFU': { const c = x[2].obj(); c.EU = 1; fstat(c); break; }
+              case 'FFL': case 'LFL': { const c = x[2].obj(); c.EN = 1; fstat(c); break; }
+              case 'FFU': case 'LFU': { const c = x[2].obj(); c.EU = 1; fstat(c); break; }
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -1084,8 +1087,8 @@
           e.v = p; return p;
         }
         case 'BSL': case 'BSR': this.bitShift(e.t, x, p); e.v = p; return p;
-        case 'FFL': this.load(e.t, x, p); e.v = p; return p;
-        case 'FFU': this.unload(e.t, x, p); e.v = p; return p;
+        case 'FFL': case 'LFL': this.load(e.t, x, p); e.v = p; return p;
+        case 'FFU': case 'LFU': this.unload(e.t, x, p); e.v = p; return p;
         case 'JSR': {
           if (p) {
             if (this.d >= 32) throw new Fault(4, 31, 'JSR nesting too deep');
@@ -1146,7 +1149,7 @@
       else { c.UL = get(0); for (let i = 0; i < len - 1; i++) put(i, get(i + 1)); put(len - 1, src); }
       c.DN = 1; c.POS = len;
     }
-    /* FFL (1756-RM003, FIFO Load flow charts): on a false-to-true rung .EN is set and .POS + 1; while .POS <= .LEN the
+    /* FFL and LFL (1756-RM003, FIFO / LIFO Load flow charts: the same steps): on a false-to-true rung .EN is set and .POS + 1; while .POS <= .LEN the
        Source goes into the element .POS - 1 (the next free one), converted to the array's type; past .LEN the FIFO is
        full and .POS goes back. A false rung clears .EN. .EM and .DN follow .POS and .LEN on every scan (fstat). */
     load(t, x, p) {
@@ -1165,8 +1168,9 @@
       OV = false;
     }
     /* FFU (FIFO Unload flow charts): on a false-to-true rung .EU is set; with data (.POS >= 1) element 0 goes to Dest,
-       the others move down one place and .POS - 1; an empty FIFO puts 0 in Dest. .LEN past the end of the array is a
-       major fault 4/20. A false rung clears .EU. */
+       the others move down one place and .POS - 1; an empty FIFO puts 0 in Dest. LFU (LIFO Unload): the last loaded
+       element (.POS - 1, .POS limited to .LEN) goes to Dest and 0 is stored in its place. .LEN past the end of the
+       array is a major fault 4/20. A false rung clears .EU. */
     unload(t, x, p) {
       const c = x[2].obj();
       if (!p) { c.EU = 0; fstat(c); return; }
@@ -1174,11 +1178,19 @@
       c.EM = c.DN = 0;
       if (c.EU) { fstat(c); return; }
       c.EU = 1;
-      const F = file(x[0]), D = x[1];
-      if (c.LEN > F.n) throw new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN is past the end of the array)`);
+      const F = file(x[0]), D = x[1], lifo = t === 'LFU', past = () => new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN is past the end of the array)`);
+      if (!lifo && c.LEN > F.n) throw past();
       if (c.POS <= 1) c.EM = 1;
       const put = v => { if (ATOMIC[D.type]) D.set(v); else { D.at(); PP[PK] = clone(v); } OV = false; };
       if (c.POS < 1) { put(ATOMIC[D.type] ? 0 : zero(D.obj())); return; }
+      if (lifo) {
+        if (c.POS > c.LEN) c.POS = c.LEN;
+        c.POS--;
+        if (c.LEN > F.n) throw past();
+        const v = F.g(c.POS);
+        put(v); F.s(c.POS, zero(v));
+        return;
+      }
       c.POS--;
       put(F.g(0));
       for (let i = 1; i < c.LEN; i++) F.s(i - 1, clone(F.g(i)));

@@ -1707,6 +1707,7 @@ function check(name, cond, info = '') {
     const ADD = [
       ['File/Shift', 'BSL', ['Bits[0]', 'Ctl', 'In1', '40']], ['File/Shift', 'BSR', ['Bits[1]', 'Ctl2', 'In1', '8']],
       ['File/Shift', 'FFL', ['Val', 'Fifo[0]', 'Ctl3', '10', '0']], ['File/Shift', 'FFU', ['Fifo[0]', 'Out', 'Ctl3', '10', '0']],
+      ['File/Shift', 'LFL', ['Val', 'Lifo[0]', 'Ctl4', '10', '0']], ['File/Shift', 'LFU', ['Lifo[0]', 'Out2', 'Ctl4', '10', '0']],
     ];
     const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 1024, height: 768 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
     for (const lay of LAYS) {

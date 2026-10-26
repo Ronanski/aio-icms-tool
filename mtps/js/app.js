@@ -117,7 +117,7 @@
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
     'File/Misc': ['COP', 'FLL'],
-    'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU'],
+    'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
