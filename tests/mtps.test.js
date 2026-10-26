@@ -736,6 +736,20 @@ console.log('File/Shift and Sequencer instructions');
   l.scan(10); l.write('Ld', 1); l.scan(10);
   eq('LFL then LFU on the same rising edge (one CONTROL): the value goes in and comes back out', [l.read('O'), l.read('Q[0]'), l.read('Ctl.POS'), l.read('Ctl.EM')], [9, 0, 0, 1]);
 }
+{
+  const INS = MTPS.INSTR;
+  check('SQI, SQO, SQL are in the Sequencer group; SQI is an input (no output bits), SQO / SQL show EN and DN', ['SQI', 'SQO', 'SQL'].every(m => INS[m].grp === 'Sequencer') && !INS.SQI.out && !INS.SQI.bits && INS.SQO.bits.join() === 'EN,DN' && INS.SQL.bits.join() === 'EN,DN');
+  eq('sequencer operand names', [MTPS.OPN.SQI.length, MTPS.OPN.SQO[2], MTPS.OPN.SQL[1]], [6, 'Dest', 'Source']);
+  // SQI and SQO on one CONTROL: the sequence waits at a step until its inputs match, then the SQO rung rises and steps
+  const c = run({ tags: [T('Out', 'DINT', { dim: 3, value: [0, 1, 2] }), T('Inp', 'DINT', { dim: 3, value: [0, 1, 2] }), T('In', 'DINT', { value: 5 }), T('Do', 'DINT'), T('Ctl', 'CONTROL')],
+    rungs: ['SQI(Inp[0],16#FF,In,Ctl,2,0)SQO(Out[0],16#FF,Do,Ctl,2,0);'] });
+  c.scan(10);
+  eq('SQI / SQO pair: step 0 waits while the input does not match', [c.read('Ctl.POS'), c.read('Ctl.EN')], [0, 0]);
+  c.write('In', 0); c.scan(10); c.scan(10);
+  eq('SQI / SQO pair: the input of step 0 matches, the SQO steps to 1 and outputs it', [c.read('Ctl.POS'), c.read('Do')], [1, 1]);
+  c.write('In', 1); c.scan(10); c.scan(10);
+  eq('SQI / SQO pair: step 1 mismatched (rung false), then input 1 matches: the sequence steps to 2 (.DN at .LEN)', [c.read('Ctl.POS'), c.read('Do'), c.read('Ctl.DN')], [2, 2, 1]);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

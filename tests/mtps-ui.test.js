@@ -1708,6 +1708,7 @@ function check(name, cond, info = '') {
       ['File/Shift', 'BSL', ['Bits[0]', 'Ctl', 'In1', '40']], ['File/Shift', 'BSR', ['Bits[1]', 'Ctl2', 'In1', '8']],
       ['File/Shift', 'FFL', ['Val', 'Fifo[0]', 'Ctl3', '10', '0']], ['File/Shift', 'FFU', ['Fifo[0]', 'Out', 'Ctl3', '10', '0']],
       ['File/Shift', 'LFL', ['Val', 'Lifo[0]', 'Ctl4', '10', '0']], ['File/Shift', 'LFU', ['Lifo[0]', 'Out2', 'Ctl4', '10', '0']],
+      ['Sequencer', 'SQI', ['Seq[0]', '16#000F', 'Val', 'SCtl', '4', '0']], ['Sequencer', 'SQO', ['Seq[0]', 'Mask', 'Out', 'SCtl', '4', '0']], ['Sequencer', 'SQL', ['Seq[0]', 'Val', 'SCtl', '4', '0']],
     ];
     const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 1024, height: 768 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
     for (const lay of LAYS) {
@@ -1750,7 +1751,7 @@ function check(name, cond, info = '') {
       check(`${lay.n}: the rungs verify without errors`, !ver.length, ver.join(' | '));
       if (lay.n === 'desktop') {
         const tabs = await pg.$$eval('.itabs [data-tab]', x => x.map(y => y.dataset.tab).join(','));
-        check('the toolbar tabs: File/Misc, then File/Shift and Sequencer, then Program Control', /File\/Misc,File\/Shift,(Sequencer,)?Program Control/.test(tabs), tabs);
+        check('the toolbar tabs: File/Misc, then File/Shift and Sequencer, then Program Control', /File\/Misc,File\/Shift,Sequencer,Program Control/.test(tabs), tabs);
         const l5 = await pg.evaluate(() => { const A = MTPS.App, x = A.toL5X(A.state.p), q = A.fromL5X(x); return [x, q.tasks[0].programs[0].routines[0].rungs.map(r => r.t), MTPS.verify(q).errors.length]; });
         check('L5X: the rung text is written as in the reference (BSL(Bits[0],Ctl,In1,40);) and reads back', l5[0].includes('<![CDATA[BSL(Bits[0],Ctl,In1,40);]]>') && JSON.stringify(l5[1].filter(Boolean)) === JSON.stringify(ADD.map(([, mn, ops]) => `${mn}(${ops.join(',')});`)) && l5[2] === 0, JSON.stringify(l5[1]));
         await pg.evaluate(() => MTPS.App.select({ ri: 0, path: [0] })); await pg.keyboard.press('F1'); await pg.waitForTimeout(150);
@@ -1758,6 +1759,9 @@ function check(name, cond, info = '') {
         check('Instruction Help for BSL: Array (File)/Shift group, CONTROL operand, .UL member, the execution rows and a Taglish summary', ih.includes('Bit Shift Left (BSL)') && ih.includes('Array (File)/Shift Instructions') && ih.includes('CONTROL') && ih.includes('.UL unload') && ih.includes('Rung-condition-in is false'));
         await pg.click('.ihc details.ipl summary').catch(() => {}); await pg.selectOption('#layer [data-hlsel]', 'tl').catch(() => {}); await pg.waitForTimeout(80);
         check('Instruction Help for BSL in Taglish', (await pg.$eval('.ihc details.ipl', d => d.textContent).catch(() => '')).includes('Inuusog'));
+        await pg.click('#layer [data-ih="SQO"]'); await pg.waitForTimeout(80);
+        const sq = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+        check('Instruction Help for SQO: Sequencer Instructions group, Dest = (Dest AND NOT Mask) OR (Array[.POS] AND Mask), the first-scan rule', sq.includes('Sequencer Output (SQO)') && sq.includes('Sequencer Instructions') && sq.includes('(Dest AND NOT Mask) OR (Array[.POS] AND Mask)') && sq.includes('does not step on the first scan'));
         await pg.keyboard.press('Escape');
       }
       check(`${lay.n}: no JS errors`, !errs.length, errs.join(' | '));

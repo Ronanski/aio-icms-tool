@@ -328,6 +328,67 @@ console.log('Array (File)/Shift: LFL, LFU (1756-RM003 chapter 9)');
   eq('LFL / LFU with a structure LIFO (COUNTER[2]): the whole structure moves, its place is zeroed', [f.read('Dst.ACC'), f.read('St[0].ACC'), f.read('Ctl.POS')], [4, 0, 0]);
 }
 
+console.log('Sequencer: SQO, SQI, SQL (1756-RM003 chapter 10)');
+{
+  const steps = [0x11, 0x22, 0x33, 0x44, 0x55];
+  const c = run({ tags: [T('Ar', 'DINT', { dim: 5, value: steps }), T('Dst', 'DINT', { value: 0x7F00 }), T('Ctl', 'CONTROL'), ...bools('Go', 'Rs')],
+    rungs: ['XIC(Go)SQO(Ar[0],16#00FF,Dst,Ctl,4,0);', 'XIC(Rs)RES(Ctl);'] });
+  c.write('Go', 1); scans(c, 1);
+  eq('SQO first scan with a true rung: prescan set .EN, so no step; step 0 is output through the Mask', [c.read('Ctl.POS'), c.read('Dst'), c.read('Ctl.EN'), c.read('Ctl.DN')], [0, 0x7F11, 1, 0]);
+  const step = () => { c.write('Go', 0); scans(c, 1); c.write('Go', 1); scans(c, 1); return [c.read('Ctl.POS'), c.read('Dst'), c.read('Ctl.DN')]; };
+  eq('SQO: each false-to-true rung steps .POS by 1; Dest = (Dest AND NOT Mask) OR (Array[.POS] AND Mask)', step(), [1, 0x7F22, 0]);
+  step(); step(); step();
+  eq('SQO: .DN is set at .POS = .LEN', [c.read('Ctl.POS'), c.read('Dst'), c.read('Ctl.DN')], [4, 0x7F55, 1]);
+  eq('SQO: after .LEN, .POS goes back to 1 (not 0)', step(), [1, 0x7F22, 0]);
+  scans(c, 3);
+  eq('SQO is transitional: a held rung does not step', c.read('Ctl.POS'), 1);
+  c.write('Go', 0); c.write('Rs', 1); scans(c, 1); c.write('Rs', 0); c.write('Go', 1); scans(c, 1);
+  eq('RES on the CONTROL sets .POS to 0 (RM003 SQO example with S:FS); the next rising rung goes to step 1', [c.read('Ctl.POS'), c.read('Dst')], [1, 0x7F22]);
+}
+{
+  const c = run({ tags: [T('Ar', 'DINT', { dim: 3, value: [1, 2, 3] }), T('Dst', 'DINT'), T('C1', 'CONTROL'), T('C2', 'CONTROL'), T('C3', 'CONTROL'), T('Go', 'BOOL')],
+    rungs: ['XIC(Go)SQO(Ar[0],-1,Dst,C1,0,0);', 'XIC(Go)SQO(Ar[0],-1,Dst,C2,2,5);', 'XIC(Go)SQO(Ar[1],-1,Dst,C3,4,1);'] });
+  scans(c, 1); c.write('Go', 1); scans(c, 1);
+  eq('SQO with .LEN = 0: .EN and .ER set, .POS not stepped', [c.read('C1.ER'), c.read('C1.EN'), c.read('C1.POS')], [1, 1, 0]);
+  eq('SQO with .POS > .LEN: .POS goes back to 1 on the step', [c.read('C2.POS'), c.read('C2.ER')], [1, 0]);
+  eq('SQO with .POS past the end of the array: .ER set, no fault', [c.read('C3.POS'), c.read('C3.ER'), !!c.fault], [2, 1, false]);
+  c.write('C2.POS', 3); c.write('Go', 0); scans(c, 1);
+  c.write('C2.POS', 3); scans(c, 1);
+  check('SQO: .EN cleared on a false rung', c.read('C2.EN') === 0);
+  c.write('Go', 1); scans(c, 1);
+  eq('SQO stepping from .POS >= .LEN goes back to 1', c.read('C2.POS'), 1);
+}
+{
+  // RM003 SQL example: Length 10, the load goes into the next position (array_dint[5] after .POS 4 → 5)
+  const c = run({ tags: [T('Ar', 'DINT', { dim: 10 }), T('V', 'INT', { value: -2 }), T('Ctl', 'CONTROL'), T('Go', 'BOOL')], rungs: ['XIC(Go)SQL(Ar[0],V,Ctl,10,4);'] });
+  scans(c, 1); c.write('Go', 1); scans(c, 1);
+  eq('SQL example: .POS 4 → 5, Source into Ar[5] (an INT is sign extended)', [c.read('Ctl.POS'), c.read('Ar[5]'), c.read('Ctl.EN'), c.read('Ctl.DN')], [5, -2, 1, 0]);
+  c.write('V', 7); scans(c, 1);
+  eq('SQL: while the rung stays true, Source is loaded into the current step', [c.read('Ctl.POS'), c.read('Ar[5]')], [5, 7]);
+  const d = run({ tags: [T('Ar', 'DINT', { dim: 3 }), T('Ctl', 'CONTROL'), T('Go', 'BOOL')], rungs: ['XIC(Go)SQL(Ar[0],1,Ctl,5,2);'] });
+  scans(d, 1); d.write('Go', 1); scans(d, 1);
+  check('SQL: .POS past the end of the array: major fault, type 4 code 20', !!d.fault && d.fault.type === 4 && d.fault.code === 20, JSON.stringify(d.fault));
+}
+{
+  // RM003 "Using SQI without SQO": the ADD steps .POS when the step is complete, GRT / MOV wrap it to 1
+  const c = run({ tags: [T('A1', 'DINT', { dim: 11, value: [0, 0x10F01, 0x2F02, 0xF03] }), T('V', 'DINT'), T('Ctl', 'CONTROL'), T('Q', 'BOOL')],
+    rungs: ['SQI(A1[0],16#0000F0FF,V,Ctl,10,0)OTE(Q);', 'XIC(Q)ADD(Ctl.POS,1,Ctl.POS);', 'GRT(Ctl.POS,Ctl.LEN)MOV(1,Ctl.POS);'] });
+  scans(c, 1);
+  eq('SQI at step 0: Source 0 matches Array[0] through the Mask, the ADD steps to 1', [c.read('Ctl.POS'), c.read('Q')], [1, 1]);
+  scans(c, 1);
+  eq('SQI at step 1: no match (Array[1] AND Mask = 16#0F01), .POS stays', [c.read('Ctl.POS'), c.read('Q'), c.read('Ctl.ER')], [1, 0, 0]);
+  c.write('V', 0x0E01); scans(c, 1);
+  eq('SQI: bits outside the Mask are not compared (16#0E01 matches 16#10F01 through 16#F0FF)', [c.read('Ctl.POS'), c.read('Q')], [2, 1]);
+  c.write('Ctl.POS', 11); scans(c, 1);
+  eq('SQI with .POS > .LEN: .ER set and the rung-condition-out false', [c.read('Ctl.ER'), c.read('Q')], [1, 0]);
+  const d = run({ tags: [T('A1', 'DINT', { dim: 2, value: [0x10FF, 0] }), T('M', 'INT', { value: -1 }), T('V', 'DINT', { value: 0xFF }), T('Ctl', 'CONTROL'), ...bools('Q', 'Q2')], rungs: ['SQI(A1[0],M,V,Ctl,1,0)OTE(Q);', 'SQI(A1[1],16#FF,V,Ctl,1,1)OTE(Q2);'] });
+  scans(d, 1);
+  check('SQI: an INT Mask of -1 is zero extended (16#FFFF): 16#10FF and 16#00FF do not match', d.read('Q') === 0);
+  check('SQI: .POS past the end of the array sets .ER (no fault)', d.read('Q2') === 0 && d.read('Ctl.ER') === 1 && !d.fault);
+  const v = MTPS.verify(proj({ tags: [T('Ar', 'INT', { dim: 3 }), T('Ad', 'DINT', { dim: 3 }), T('Ri', 'INT'), T('Ctl', 'CONTROL'), T('Rr', 'REAL')], rungs: ['SQO(Ar[0],1,Ad[0],Ctl,2,0);', 'SQO(Ad[0],1,Ri,Ctl,2,0);', 'SQI(Ad[0],Rr,1,Ctl,2,0);', 'SQL(Ad[0],2.5,Ctl,2,0);'] }));
+  eq('sequencer operand types: Array a DINT array element, SQO Dest a DINT, Mask / Source an integer', v.errors.map(e => e.rung + ':' + e.op), ['0:0', '1:2', '2:1', '3:1']);
+}
+
 console.log('Program control');
 {
   const c = run({ tags: [...bools('Q', 'R', 'Go'), T('N', 'DINT')], rungs: ['XIC(Go)JSR(Sub);', 'OTE(R);'], routines: [{ name: 'Sub', rungs: ['ADD(N,1,N);', 'RET();', 'OTE(Q);'] }] });

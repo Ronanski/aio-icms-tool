@@ -26,6 +26,7 @@ const PLAN = {
   BSL: ['ARR[0]', 'CT1', 'B1', '16'], BSR: ['ARR2[0]', 'CT2', 'B1', '16'],
   FFL: ['D1', 'ARR[0]', 'CT3', '10', '0'], FFU: ['ARR[0]', 'D3', 'CT3', '10', '0'],
   LFL: ['D1', 'ARR2[0]', 'CT4', '10', '0'], LFU: ['ARR2[0]', 'D3', 'CT4', '10', '0'],
+  SQI: ['ARR[0]', '16#00FF', 'D1', 'CT5', '4', '0'], SQO: ['ARR[0]', '16#00FF', 'D3', 'CT5', '4', '0'], SQL: ['ARR2[0]', 'D1', 'CT5', '4', '0'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
 };
 const MNS = Object.keys(PLAN);

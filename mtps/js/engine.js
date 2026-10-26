@@ -238,6 +238,8 @@
     BSL: ['Array', 'Control', 'Source Bit', 'Length'], BSR: ['Array', 'Control', 'Source Bit', 'Length'],
     FFL: ['Source', 'FIFO', 'Control', 'Length', 'Position'], FFU: ['FIFO', 'Dest', 'Control', 'Length', 'Position'],
     LFL: ['Source', 'LIFO', 'Control', 'Length', 'Position'], LFU: ['LIFO', 'Dest', 'Control', 'Length', 'Position'],
+    SQI: ['Array', 'Mask', 'Source', 'Control', 'Length', 'Position'], SQO: ['Array', 'Mask', 'Dest', 'Control', 'Length', 'Position'],
+    SQL: ['Array', 'Source', 'Control', 'Length', 'Position'],
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -433,8 +435,8 @@
   /* operand kinds: bit / bitw (BOOL to read / to write), timer, counter, struct (any of the three), imm (a number),
      num / int (a number or a tag), dest / idest (a tag to write), expr, elem / elemw (an array element), routine,
      label, order (SWPB), control (a CONTROL tag), darr (an element of a DINT array, to write), fsrc / farr / fdst
-     (the Source, the array element and the Dest of a FIFO or LIFO: SINT, INT, DINT, REAL or a structure); a ? at the
-     end makes the operand optional. ctl is the index of the CONTROL operand; live maps the Length / Position operands to the
+     (the Source, the array element and the Dest of a FIFO or LIFO: SINT, INT, DINT, REAL or a structure), ddest (a
+     DINT tag to write); a ? at the end makes the operand optional. ctl is the index of the CONTROL operand; live maps the Length / Position operands to the
      .LEN / .POS they show (written into the tag on download, as the reference does) */
   const I = (k, grp, name, args, more) => ({ k, grp, name, args: args ? args.split(' ') : [], ...more });
   const INSTR = {
@@ -488,6 +490,10 @@
     FFU: I('box', 'File/Shift', 'FIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     LFL: I('box', 'File/Shift', 'LIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     LFU: I('box', 'File/Shift', 'LIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    // Sequencer (1756-RM003 chapter 10): normally one CONTROL for the SQO, SQI and SQL of a sequence
+    SQI: I('box', 'Sequencer', 'Sequencer Input', 'darr int int control imm imm', { ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SQO: I('box', 'Sequencer', 'Sequencer Output', 'darr int ddest control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SQL: I('box', 'Sequencer', 'Sequencer Load', 'darr int control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     JSR: I('box', 'Program Control', 'Jump to Subroutine', 'routine imm?', { out: true }),
     RET: I('box', 'Program Control', 'Return from Subroutine', '', { out: true }),
     SBR: I('box', 'Program Control', 'Subroutine', ''),
@@ -531,6 +537,7 @@
       case 'farr': if (!arrEl(r)) return 'Operand must be an array element, e.g. Fifo[0]'; return r.type !== 'BOOL' ? writable() : BAD_TYPE;
       case 'fsrc': return one && r.bit < 0 && r.type !== 'BOOL' ? r : BAD_TYPE;
       case 'fdst': return one && r.bit < 0 && r.type !== 'BOOL' ? writable() : BAD_TYPE;
+      case 'ddest': return r.type === 'DINT' && one ? writable() : BAD_TYPE;
       case 'num': return isNum(r.type) && one ? r : BAD_TYPE;
       case 'int': return isInt(r.type) && one ? r : BAD_TYPE;
       case 'dest': return isNum(r.type) && one ? writable() : BAD_TYPE;
@@ -742,6 +749,9 @@
     c.EM = c.POS === 0 ? 1 : 0; c.DN = c.POS >= c.LEN ? 1 : 0;
   }
 
+  // a sequencer Mask: a SINT or INT is zero extended to a DINT (RM003, SQI Mask)
+  const maskOf = r => { const v = i32(r.get()); return r.type === 'SINT' ? v & 0xFF : r.type === 'INT' ? v & 0xFFFF : v; };
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -833,6 +843,9 @@
               // .EN (load) / .EU (unload) set, so a true rung does not load or unload on the first scan
               case 'FFL': case 'LFL': { const c = x[2].obj(); c.EN = 1; fstat(c); break; }
               case 'FFU': case 'LFU': { const c = x[2].obj(); c.EU = 1; fstat(c); break; }
+              // .EN set: a rung that is true at the change to Run does not step on the first scan (it stays at .POS)
+              case 'SQO': x[3].obj().EN = 1; break;
+              case 'SQL': x[2].obj().EN = 1; break;
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -1089,6 +1102,8 @@
         case 'BSL': case 'BSR': this.bitShift(e.t, x, p); e.v = p; return p;
         case 'FFL': case 'LFL': this.load(e.t, x, p); e.v = p; return p;
         case 'FFU': case 'LFU': this.unload(e.t, x, p); e.v = p; return p;
+        case 'SQO': case 'SQL': this.sequencer(e.t, x, p); e.v = p; return p;
+        case 'SQI': { if (!p) { e.v = false; return false; } e.v = this.seqIn(x); return e.v; }
         case 'JSR': {
           if (p) {
             if (this.d >= 32) throw new Fault(4, 31, 'JSR nesting too deep');
@@ -1194,6 +1209,37 @@
       c.POS--;
       put(F.g(0));
       for (let i = 1; i < c.LEN; i++) F.s(i - 1, clone(F.g(i)));
+    }
+    /* SQO / SQL (1756-RM003, Sequencer Output / Load flow charts): on a false-to-true rung .EN is set, .ER and .DN
+       cleared and .POS steps (+1, or back to 1 at .LEN); .DN is set at .POS = .LEN, .ER past .LEN. While the rung is
+       true, SQO writes Dest = (Dest AND NOT Mask) OR (Array[.POS] AND Mask) and SQL writes Array[.POS] = Source.
+       .LEN <= 0 or .POS < 0: .ER set. .POS past the end of the array: SQO sets .ER, SQL is a major fault 4/20. */
+    sequencer(t, x, p) {
+      const c = x[t === 'SQL' ? 2 : 3].obj();
+      if (!p) { c.EN = 0; return; }
+      if (!(c.LEN > 0 && c.POS >= 0)) { c.EN = 1; c.ER = 1; c.DN = c.POS === c.LEN ? 1 : 0; return; }
+      if (!c.EN) { c.EN = 1; c.ER = 0; c.DN = 0; c.POS = c.POS < c.LEN ? c.POS + 1 : 1; } else c.DN = 0;
+      if (c.POS === c.LEN) c.DN = 1;
+      else if (c.POS > c.LEN) { c.ER = 1; return; }
+      const A = file(x[0]);
+      if (c.POS >= A.n) {
+        if (t === 'SQL') throw new Fault(4, 20, 'Array subscript too large, or less than 0 (SQL: .POS is past the end of the array)');
+        c.ER = 1; return;
+      }
+      if (t === 'SQL') A.s(c.POS, store('DINT', x[1].get()));
+      else { const m = maskOf(x[1]); x[2].set((i32(x[2].get()) & ~m) | (A.g(c.POS) & m)); }
+      OV = false;
+    }
+    /* SQI (Sequencer Input flow chart): .ER cleared; with .LEN > 0 and 0 <= .POS <= .LEN the rung-condition-out is
+       (Source AND Mask) = (Array[.POS] AND Mask); otherwise, or past the end of the array, .ER is set and it is false */
+    seqIn(x) {
+      const c = x[3].obj();
+      c.ER = 0;
+      if (!(c.LEN > 0 && c.POS >= 0 && c.POS <= c.LEN)) { c.ER = 1; return false; }
+      const A = file(x[0]);
+      if (c.POS >= A.n) { c.ER = 1; return false; }
+      const m = maskOf(x[1]);
+      return (i32(x[2].get()) & m) === (A.g(c.POS) & m);
     }
     /* ACC = ACC + (now - last scan), from the scan after the timer is enabled. Setting DN pauses a TON / RTO, clearing
        it pauses a TOF (reference help). */

@@ -18,6 +18,7 @@ const RUNGS = [
   'BSL(BARR[0],CB1,ONE,8);', 'BSR(BARR[1],CB2,ONE,8);',
   'XIC(B1)FFL(D1,FARR[0],CB3,4,0);', 'XIC(B1)FFU(FARR[0],R_FFU,CB3,4,0);',
   'XIC(B1)LFL(D1,LARR[0],CB4,4,1);', 'XIC(B1)LFU(LARR[0],R_LFU,CB4,4,1);',
+  'XIC(B1)SQO(SARR[0],16#00FF,R_SQO,CB5,3,0);', 'SQI(SARR[0],16#00FF,D2,CB5,3,0)OTE(Q_SQI);', 'XIC(B1)SQL(SARR2[0],D1,CB6,3,0);',
   'XIC(B1)JMP(Skip);', 'OTE(Q_SKIPPED);', 'LBL(Skip)OTE(Q_AFTER);', 'AFI()OTE(Q_AFI);', 'NOP()OTE(Q_NOP);',
 ];
 const EXPECT = {
@@ -41,11 +42,12 @@ const EXPECT = {
     const A = MTPS.App, p = A.blank('RunAudit');
     const T = (n, type, dim) => p.tags.push(dim ? { name: n, type, dim } : { name: n, type });
     const txt = rungs.join(' ');
-    const names = new Set((txt.match(/\b[A-Z][A-Za-z_0-9]*\b/g) || []).filter(n => !/^(XIC|XIO|OTE|OTL|OTU|ONS|OSR|OSF|TON|TOF|RTO|CTU|CTD|RES|EQU|NEQ|LES|LEQ|GRT|GEQ|LIM|MEQ|CMP|ADD|SUB|MUL|DIV|MOD|SQR|NEG|ABS|CPT|MOV|MVM|CLR|AND|OR|XOR|NOT|BTD|SWPB|FLL|COP|JSR|JMP|LBL|AFI|NOP|HIGH|LOW|DN|Skip|Sub|ARR|ARR2|BSL|BSR|BARR|CB\d|ONE|FFL|FFU|FARR|LFL|LFU|LARR)$/.test(n)));
+    const names = new Set((txt.match(/\b[A-Z][A-Za-z_0-9]*\b/g) || []).filter(n => !/^(XIC|XIO|OTE|OTL|OTU|ONS|OSR|OSF|TON|TOF|RTO|CTU|CTD|RES|EQU|NEQ|LES|LEQ|GRT|GEQ|LIM|MEQ|CMP|ADD|SUB|MUL|DIV|MOD|SQR|NEG|ABS|CPT|MOV|MVM|CLR|AND|OR|XOR|NOT|BTD|SWPB|FLL|COP|JSR|JMP|LBL|AFI|NOP|HIGH|LOW|DN|Skip|Sub|ARR|ARR2|BSL|BSR|BARR|CB\d|ONE|FFL|FFU|FARR|LFL|LFU|LARR|SQO|SQI|SQL|SARR|SARR2)$/.test(n)));
     names.forEach(n => T(n, /^T\d/.test(n) ? 'TIMER' : /^C\d/.test(n) ? 'COUNTER' : /^(D|R)_?\w*$/.test(n) && !/^(SB|P_|Q_)/.test(n) ? 'DINT' : /^F_/.test(n) ? 'REAL' : 'BOOL'));
     T('ARR', 'DINT', 10); T('ARR2', 'DINT', 10);
     T('Q_SUB', 'BOOL');
-    T('BARR', 'DINT', 2); T('CB1', 'CONTROL'); T('CB2', 'CONTROL'); T('CB3', 'CONTROL'); T('CB4', 'CONTROL'); T('FARR', 'DINT', 4); p.tags.push({ name: 'LARR', type: 'DINT', dim: 4, value: [5, 0, 0, 0] }); p.tags.push({ name: 'ONE', type: 'BOOL', value: 1 });
+    T('BARR', 'DINT', 2); T('CB1', 'CONTROL'); T('CB2', 'CONTROL'); T('CB3', 'CONTROL'); T('CB4', 'CONTROL'); T('FARR', 'DINT', 4); p.tags.push({ name: 'LARR', type: 'DINT', dim: 4, value: [5, 0, 0, 0] });
+    p.tags.push({ name: 'SARR', type: 'DINT', dim: 4, value: [0, 0x103, 0x5, 0] }); T('SARR2', 'DINT', 4); T('CB5', 'CONTROL'); T('CB6', 'CONTROL'); p.tags.push({ name: 'ONE', type: 'BOOL', value: 1 });
     p.tags.find(t => t.name === 'D_SW').value = 0x1234;
     p.tasks[0].programs[0].routines[0].rungs = rungs.map(t => ({ t }));
     p.tasks[0].programs[0].routines.push({ name: 'Sub', rungs: [{ t: 'OTE(Q_SUB);' }] });
@@ -87,6 +89,8 @@ const EXPECT = {
   const fifo = await ev(() => ['R_FFU', 'CB3.POS', 'CB3.EM', 'CB3.EN', 'CB3.EU'].map(k => MTPS.App.ctl.read(k)));
   const lifo = await ev(() => ['R_LFU', 'CB4.POS', 'LARR[0]', 'LARR[1]'].map(k => MTPS.App.ctl.read(k)));
   note(JSON.stringify(lifo) === '[7,1,5,0]', `LIFO holding 5 (Position 1): LFL 7 then LFU on one rising edge: the last in (7) comes out, 5 stays (${lifo})`);
+  const sq = await ev(() => ['CB5.POS', 'R_SQO', 'Q_SQI', 'CB6.POS', 'SARR2[1]'].map(k => MTPS.App.ctl.read(k)));
+  note(JSON.stringify(sq) === '[1,3,1,1,7]', `SQO steps to 1 (Dest = step 1 through the Mask 16#00FF = 3), SQI then matches D2 = 3, SQL stores D1 = 7 in step 1 (${sq})`);
   note(JSON.stringify(fifo) === '[7,0,1,1,1]', `FFL then FFU on one rising edge (one CONTROL): D1 = 7 loaded and unloaded, the FIFO empty again (${fifo})`);
   await ev(() => MTPS.App.ctl.write('Q_SKIPPED', 0)); await page.waitForTimeout(100);
   note(await ev(() => MTPS.App.ctl.read('Q_SKIPPED') === 0), 'JMP skips the rung in between when B1 = 1 (its output is not written)');
