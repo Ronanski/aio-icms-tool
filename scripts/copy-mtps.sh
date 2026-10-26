@@ -10,6 +10,8 @@ notes="${3:-}"
 root="${SRC:-$(cd "$(dirname "$0")/.." && pwd)}"
 mkdir -p "$dest"
 cp -r "$root/mtps/index.html" "$root/mtps/manifest.webmanifest" "$root/mtps/sw.js" "$root/mtps/css" "$root/mtps/js" "$root/mtps/icons" "$dest/"
+# the theme fonts (older tags, such as an earlier Stable that Pages still serves, have none)
+if [ -d "$root/mtps/fonts" ]; then cp -r "$root/mtps/fonts" "$dest/"; fi
 if [ -n "$build" ]; then
   case "$build" in *[!A-Za-z0-9._+-]*) echo "bad build id: $build" >&2; exit 1;; esac
   sed -i "s/^  const BUILD = 'dev';/  const BUILD = '$build';/" "$dest/js/app.js"

@@ -18,6 +18,8 @@ Where each reference concept lives in the app (`mtps/`), and what still differs.
 | Instruction toolbar | `.dinstr` on desktop. `.ibar` on tablet (above the ladder in portrait). Phone: the + button | `desktop()`, `tablet()`, `phone()` |
 | Errors window (bottom) | `.derr` on desktop. `.msgp` (bottom pane) on a portrait tablet. Sheet in tablet landscape. More > Errors on phone | `errorsHTML`, `msgPane` |
 | Drag an instruction to a node, Ctrl copies | Mouse: drag. Touch: **hold to lift, drag to a node, let go**; hold and let go without moving opens the menu | `bindLadder`, `dragTo`, `moveEl`, `dropAt`; nodes drawn in `ladder.js` (`o.nodes`) |
+| Cross Reference (Search > Cross Reference) | Logic and Tag tabs, Type/Scope/Name/Show; Find All goes to Output > Search Results | `xref`, `findAll`, `errorsHTML` |
+| Right-click menus per target | `ctxMenu` ("?", undefined name, tag name, bit/box instruction, branch, level, rung) | `app.js` |
 | Click / double-click / right-click | Tap selects. Tap again on the selection (or double-tap) edits. Right-click or hold opens the menu | `onTap`, `ctxMenu` |
 | RSLinx drivers, RSWho | Configure Drivers (Virtual Backplane `VBP-1` first), Who Active, path `VBP-1\2` | `DRVTYPES`, `parsePath` |
 | Logix Emulate chassis | The Emulator panel (dock) with I/O cards. **No 1789-SIM** (the owner removed it in 0.4.0-beta.2) | `dockHTML`, `E.Chassis` |
@@ -28,9 +30,9 @@ Where each reference concept lives in the app (`mtps/`), and what still differs.
 
 - New Tag lacks External Access, Style, Constant, Usage and Produced/Consumed.
 - There is no Select Data Type dialog with 2- or 3-dimension arrays (the engine supports one dimension in the dialog).
-- The Tag Editor is not a full spreadsheet with an editable Alias For cell. Editing a row opens Tag Properties instead.
-- Branch ends cannot be dragged to widen a branch.
-- No `C` (configuration) or `S` (status) I/O tags.
+- Edit Tags is a grid with a blank new-tag row, Data Type and Description cells (0.4.0); Alias For is not editable in the cell yet.
+- Branch rails move with Move Branch Rail (0.4.0).
+- `C` (configuration) tags exist (0.4.0, members from the 1756 modules); no `S` (status) I/O tags. Module tag types use the app's names (`PLC:DI16:I`), not `AB:1756_DI:I:0`.
 - No remote I/O locations (only `Local`).
 - No rack-optimized connections.
 - Electronic keying and RPI exist in Module Properties, but the connection codes are simplified.

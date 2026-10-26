@@ -5,8 +5,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added (MT PLC Studio 0.4.0, Stable): four themes (owner)
+- **Four themes, each Light and Dark**, in Tools > Options > Theme: CLASSIC (the look so far), CONTROL ROOM (ISA-101
+  grey, flat and dense), WORKBENCH (IBM Carbon: dark menu bar and toolbar, square corners, IBM Plex fonts) and
+  TONAL TOUCH (Material 3: rounded panels, pill buttons, Roboto fonts). A theme changes colours, corners, fonts,
+  density, the menu bar and toolbar, and shadows; behaviour and layout stay as in the reference.
+- Mode: Light, Dark or Follow the device. A theme shows at once in Options; Cancel puts the one before back. The
+  choice is kept on the device, not in the project. The old Theme setting moves over (Dark becomes Classic Dark).
+- The PLC state colours mean the same in every theme (green energized, red forced, red with an icon fault, amber
+  pending, blue online), and every theme passes WCAG 2.2 AA contrast. Forced bits are now red in Classic too.
+- The chassis, the modules and their LEDs keep their hardware colours in every theme.
+- The theme fonts are part of the app (offline, SIL Open Font License, in `mtps/fonts/`).
+
 ### Changed
 - Docs: `HANDOFF.md` trimmed to current status; old history moved verbatim to `docs/HANDOFF-ARCHIVE.md`.
+
+### Changed (MT PLC Studio 0.4.0, Stable): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+- **Right-click menus in the Studio 5000 order**, one for each target: "?" (New Tag…), an undefined name
+  (New "name"), a tag name (Edit Properties, Find All, Go To Cross Reference For, Monitor, Trend), a bit or a box
+  instruction, a branch, a branch level, and a rung (Import/Export Rungs, Start/Accept/Cancel Pending Rung Edits,
+  Assemble, Verify Rung). Edit "Bit" is gone.
+- **Edit bar above the routine** for the main operand description, the rung comment and the rung text
+  (✓ accepts, ✕ cancels, Ctrl+Enter). **Go To** dialog. **Add Ladder Element** is a grouped list with a help pane.
+- **Operands are edited on the rung** in a small combo box with the tags of the operand's type (Enter goes to the
+  next operand, Esc cancels); a double-click on an instruction changes its mnemonic and keeps the operands that fit.
+- **Quick Keys are off** by default (Tools > Options > Ladder Editor); a letter starts an operand edit and
+  Alt+Insert opens Add Ladder Element. New shortcuts: Ctrl+I, F2, F4 / Shift+F4, Alt+0, Alt+1, Shift+F10,
+  Home/End, Ctrl+Home/End, Ctrl+Enter. The Errors pane has a Search box with history.
+- **Cross Reference window** as in the Rockwell help: Type, Scope, Name (* wildcard), Show (All, Destructive,
+  Non-Destructive), Refresh; the Logic tab (Element, Container, Routine, Location, Reference, BaseTag,
+  Destructive, Description, sorted by a click on a header, double-click goes there) and the Tag tab (aliases).
+  **Find All** lists its results in a Search Results tab of the Output window.
+- **Branch menu:** Add Branch Level (after the level at the caret), Append New Level, Move Branch Rail.
+- **New Project only declares the controller** (Controller, Name, Revision, Chassis, Slot, Description).
+  Drivers, the emulated controller and I/O modules are set up any time after. File > New Component holds Tag
+  and Module.
+- **Chassis:** one row of 4 or 8 slots, an empty slot as big as a module; an old 7/10/12-slot chassis becomes 8
+  when its modules fit. Each I/O card has an **RTB door** over its terminals that opens on its hinge. Discrete
+  cards show their status indicators in two rows, 0-7 and 8-15.
+- **Logix Emulate:** right-click an empty slot, then Create. The emulated controller has a Revision and a Memory
+  Size (3072 KB by default).
+- **Module tags:** each module makes its `Local:<slot>:C`, `:I` and `:O` tags in Controller Tags (read-only,
+  live online). **Edit Tags** is a grid (Name, Alias For, Base Tag, Data Type, Style, Description, Usage,
+  Constant) with a blank last row for a new tag.
+- **RSLinx Classic window:** menu bar, RSWho (tree, Autobrowse, Refresh) and Configure Drivers (Available Driver
+  Types, Add New with a 15-character name, Configured Drivers with Status, Start, Stop, Delete).
+- **Drag and drop as in the reference:** white squares mark where an element can go, one green circle where it
+  will. Ctrl copies, and so does a drop on another routine. The tag name alone copies the operand; the rung number
+  moves the rung; the left rail of a branch moves that level, the right rail its end.
+- **Online edits with edit zones:** Start Pending Rung Edits copies the rung: the copy is `i` (dashed rail) with the
+  original `r` below, read-only. Accept makes them `I` and `R`; a rung deleted in Run is `D`; Test runs the `I`
+  rungs, Assemble removes `R` and `D`, Cancel restores. A changed instruction shows `*` until Verify.
+- **Run look:** thick green rails, long green bars on both sides of a true instruction, red ▸ON / ▸OFF for a forced
+  bit, a triangle in the Forces box; the online bar LEDs read Run Mode, Controller OK, Energy Storage OK, I/O OK.
+  Pasting an instruction on a selected rung puts it at the start of the rung.
+- **Communications feel real:** RSWho and Who Active browse node by node; Go Online connects first; Download and
+  Upload show their stages with a progress bar and Cancel; a COMM LED blinks while data moves. Options > Fast
+  communications skips the delays.
+- **Smoother on slow devices:** live values redraw only what changed (the ladder up to 20 times a second, Monitor
+  Tags cell by cell); scrolling a 200-rung ladder on a slow CPU went from about 3 to over 40 frames a second.
+- Fixed: "Remove module" in a module's menu opened the Module I/O window; the Emulator panel's header buttons
+  were cut off in a narrow side panel.
 
 ### Changed (MT PLC Studio 0.4.0-beta.3): tag addresses, moving instructions, tablet portrait, no project kept in the app (owner)
 - **Projects live in files only.** The app keeps no project inside it any more: it starts on a start page with

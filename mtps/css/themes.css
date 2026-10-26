@@ -1,0 +1,157 @@
+/* MT PLC Studio themes (Tools > Options > Theme). Loaded after app.css. <html> carries data-theme (classic, controlroom,
+   workbench, tonal) and data-mode (light, dark; "Follow the device" resolves to one of them in js/app.js).
+   A theme changes the look only: colours, corners, fonts, density, shell and shadows. Behaviour and layout stay the same.
+   The meaning of the PLC state colours is the same in every theme: green energized, red forced, red with an icon fault,
+   amber pending, blue online. The chassis, the modules and their LEDs are hardware and do not follow the theme.
+   Contrast: every theme and mode passes WCAG 2.2 AA (text 4.5:1, lines and icons 3:1); state colours stay apart for
+   protan and deutan vision (Machado 2009, OKLab dE >= 8). */
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url(../fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url(../fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 700; font-display: swap; src: url(../fonts/ibm-plex-sans-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(../fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 600 700; font-display: swap; src: url(../fonts/ibm-plex-mono-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: Roboto; font-weight: 400; font-display: swap; src: url(../fonts/roboto-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: Roboto; font-weight: 500 600; font-display: swap; src: url(../fonts/roboto-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: Roboto; font-weight: 700; font-display: swap; src: url(../fonts/roboto-latin-700-normal.woff2) format("woff2"); }
+@font-face { font-family: "Roboto Mono"; font-weight: 400; font-display: swap; src: url(../fonts/roboto-mono-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Roboto Mono"; font-weight: 600 700; font-display: swap; src: url(../fonts/roboto-mono-latin-600-normal.woff2) format("woff2"); }
+
+/* ---------- tokens: 4 themes x light / dark ---------- */
+:root[data-theme="classic"][data-mode="light"] {
+  --bg: #F0F0F0; --surface: #FFFFFF; --surface-2: #F7F7F7; --surface-3: #E4E4E4; --border: #D0D0D0; --border-strong: #8A8A8A; --text: #1B1B1B;
+  --muted: #555D66; --accent: #0B5CAD; --accent-soft: #CDE8FF; --accent-text: #0B4A8A; --fill-accent: #0B5CAD; --on-accent: #FFFFFF; --ok: #1E7F3F;
+  --fill-ok: #1E7F3F; --on-ok: #FFFFFF; --warn: #9A6A00; --warn-text: #7A5200; --amber: #F2B200; --on-warn: #1A1300; --danger: #C0392B;
+  --fill-danger: #C0392B; --force: #A8141C; --lad-bg: #FFFFFF; --lad-wire: #1B1B1B; --lad-on: #22A84C; --lad-online: #1F5FD0; --lad-desc: #555D66;
+  --lad-alias: #0B4A8A; --shell: #FFFFFF; --shell-text: #1B1B1B; --scrim: rgba(15, 20, 25, .42); --shadow: 0 8px 28px rgba(15, 20, 25, .22);
+  --r-sm: 2px; --r: 3px; --r-lg: 4px; --ui: "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+  --mono: "JetBrains Mono", Consolas, "Roboto Mono", monospace; --fs: 12px; color-scheme: light;
+}
+:root[data-theme="classic"][data-mode="dark"] {
+  --bg: #0F1419; --surface: #171D24; --surface-2: #1D242C; --surface-3: #262E38; --border: #2A333E; --border-strong: #6A7686; --text: #E4E9EF;
+  --muted: #93A0AE; --accent: #4C8DFF; --accent-soft: #1A2E4D; --accent-text: #8DB6FF; --fill-accent: #4C8DFF; --on-accent: #0B1220; --ok: #4BE385;
+  --fill-ok: #4BE385; --on-ok: #0B1A10; --warn: #E0A12A; --warn-text: #E0A12A; --amber: #E0A12A; --on-warn: #1A1300; --danger: #F0594C;
+  --fill-danger: #C62F26; --force: #D93A40; --lad-bg: #12171D; --lad-wire: #AEB8C4; --lad-on: #4BE385; --lad-online: #6FA3FF; --lad-desc: #93A0AE;
+  --lad-alias: #6FA3FF; --shell: #171D24; --shell-text: #E4E9EF; --scrim: rgba(0, 0, 0, .55); --shadow: 0 8px 28px rgba(0, 0, 0, .5); --r-sm: 2px;
+  --r: 3px; --r-lg: 4px; --ui: "Segoe UI", Inter, Roboto, system-ui, sans-serif; --mono: "JetBrains Mono", Consolas, "Roboto Mono", monospace;
+  --fs: 12px; color-scheme: dark;
+}
+:root[data-theme="controlroom"][data-mode="light"] {
+  --bg: #D3D7DC; --surface: #E4E7EA; --surface-2: #ECEEF0; --surface-3: #C8CDD3; --border: #B1B8C0; --border-strong: #737C86; --text: #1D2228;
+  --muted: #4C555F; --accent: #2B4C6F; --accent-soft: #C2CEDB; --accent-text: #1F3A57; --fill-accent: #2B4C6F; --on-accent: #FFFFFF; --ok: #14804A;
+  --fill-ok: #14804A; --on-ok: #FFFFFF; --warn: #9A6A00; --warn-text: #7A5200; --amber: #F2B200; --on-warn: #1A1300; --danger: #B3261E;
+  --fill-danger: #B3261E; --force: #CB3D23; --lad-bg: #F2F3F4; --lad-wire: #2E343B; --lad-on: #14804A; --lad-online: #2D64A8; --lad-desc: #4C555F;
+  --lad-alias: #1F3A57; --shell: #E4E7EA; --shell-text: #1D2228; --scrim: rgba(15, 20, 25, .42); --shadow: none; --r-sm: 2px; --r: 3px; --r-lg: 4px;
+  --ui: "Segoe UI", Roboto, system-ui, sans-serif; --mono: Consolas, "Roboto Mono", monospace; --fs: 12px; color-scheme: light;
+}
+:root[data-theme="controlroom"][data-mode="dark"] {
+  --bg: #1B1F24; --surface: #23282E; --surface-2: #2A3037; --surface-3: #343B43; --border: #3A424B; --border-strong: #6E7884; --text: #DADFE4;
+  --muted: #A0AAB4; --accent: #8FB0D2; --accent-soft: #2F4054; --accent-text: #B7CDE4; --fill-accent: #8FB0D2; --on-accent: #0F1720; --ok: #55D191;
+  --fill-ok: #55D191; --on-ok: #0B1A10; --warn: #E9B53F; --warn-text: #E9B53F; --amber: #E9B53F; --on-warn: #1A1300; --danger: #FF6B5F;
+  --fill-danger: #C62F26; --force: #F87453; --lad-bg: #1F2328; --lad-wire: #B9C1CA; --lad-on: #55D191; --lad-online: #7CB0EC; --lad-desc: #A0AAB4;
+  --lad-alias: #7CB0EC; --shell: #23282E; --shell-text: #DADFE4; --scrim: rgba(0, 0, 0, .55); --shadow: none; --r-sm: 2px; --r: 3px; --r-lg: 4px;
+  --ui: "Segoe UI", Roboto, system-ui, sans-serif; --mono: Consolas, "Roboto Mono", monospace; --fs: 12px; color-scheme: dark;
+}
+:root[data-theme="workbench"][data-mode="light"] {
+  --bg: #F4F4F4; --surface: #FFFFFF; --surface-2: #F4F4F4; --surface-3: #E8E8E8; --border: #E0E0E0; --border-strong: #8D8D8D; --text: #161616;
+  --muted: #525252; --accent: #0F62FE; --accent-soft: #D0E2FF; --accent-text: #0043CE; --fill-accent: #0F62FE; --on-accent: #FFFFFF; --ok: #198038;
+  --fill-ok: #198038; --on-ok: #FFFFFF; --warn: #9A6A00; --warn-text: #7A5200; --amber: #F1C21B; --on-warn: #1A1300; --danger: #DA1E28;
+  --fill-danger: #DA1E28; --force: #E1292F; --lad-bg: #FFFFFF; --lad-wire: #161616; --lad-on: #198038; --lad-online: #0043CE; --lad-desc: #525252;
+  --lad-alias: #0043CE; --shell: #161616; --shell-text: #F4F4F4; --scrim: rgba(15, 20, 25, .42); --shadow: 0 8px 28px rgba(15, 20, 25, .22);
+  --r-sm: 0px; --r: 0px; --r-lg: 0px; --ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, monospace;
+  --fs: 13px; color-scheme: light;
+}
+:root[data-theme="workbench"][data-mode="dark"] {
+  --bg: #161616; --surface: #262626; --surface-2: #393939; --surface-3: #525252; --border: #393939; --border-strong: #6F6F6F; --text: #F4F4F4;
+  --muted: #C6C6C6; --accent: #0F62FE; --accent-soft: #002D9C; --accent-text: #A6C8FF; --fill-accent: #0F62FE; --on-accent: #FFFFFF; --ok: #32B159;
+  --fill-ok: #32B159; --on-ok: #0B1A10; --warn: #F1C21B; --warn-text: #F1C21B; --amber: #F1C21B; --on-warn: #1A1300; --danger: #FA4D56;
+  --fill-danger: #C62F26; --force: #FF8389; --lad-bg: #1C1C1C; --lad-wire: #C6C6C6; --lad-on: #32B159; --lad-online: #78A9FF; --lad-desc: #C6C6C6;
+  --lad-alias: #78A9FF; --shell: #000000; --shell-text: #F4F4F4; --scrim: rgba(0, 0, 0, .55); --shadow: 0 8px 28px rgba(0, 0, 0, .5); --r-sm: 0px;
+  --r: 0px; --r-lg: 0px; --ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, monospace; --fs: 13px;
+  color-scheme: dark;
+}
+:root[data-theme="tonal"][data-mode="light"] {
+  --bg: #FBF8FF; --surface: #F5F2FA; --surface-2: #EFEDF4; --surface-3: #E3E1E9; --border: #C6C5D0; --border-strong: #767680; --text: #1B1B21;
+  --muted: #46464F; --accent: #4355B9; --accent-soft: #DEE0FF; --accent-text: #293CA0; --fill-accent: #4355B9; --on-accent: #FFFFFF; --ok: #2E7D3F;
+  --fill-ok: #2E7D3F; --on-ok: #FFFFFF; --warn: #9A6A00; --warn-text: #7A5200; --amber: #FFB945; --on-warn: #1A1300; --danger: #BA1A1A;
+  --fill-danger: #BA1A1A; --force: #A50B10; --lad-bg: #FFFFFF; --lad-wire: #46464F; --lad-on: #398A4A; --lad-online: #00639B; --lad-desc: #46464F;
+  --lad-alias: #293CA0; --shell: #F5F2FA; --shell-text: #1B1B21; --scrim: rgba(15, 20, 25, .42); --shadow: none; --r-sm: 8px; --r: 12px; --r-lg: 16px;
+  --ui: Roboto, "Segoe UI", system-ui, sans-serif; --mono: "Roboto Mono", Consolas, monospace; --fs: 13px; color-scheme: light;
+}
+:root[data-theme="tonal"][data-mode="dark"] {
+  --bg: #121318; --surface: #1B1B21; --surface-2: #1F1F25; --surface-3: #35343A; --border: #46464F; --border-strong: #90909A; --text: #E4E1E9;
+  --muted: #C6C5D0; --accent: #BAC3FF; --accent-soft: #293CA0; --accent-text: #DEE0FF; --fill-accent: #BAC3FF; --on-accent: #08218A; --ok: #4BB56E;
+  --fill-ok: #4BB56E; --on-ok: #0B1A10; --warn: #F5BD5C; --warn-text: #F5BD5C; --amber: #F5BD5C; --on-warn: #1A1300; --danger: #FF897D;
+  --fill-danger: #C62F26; --force: #FFB4AB; --lad-bg: #0D0E13; --lad-wire: #C6C5D0; --lad-on: #4BB56E; --lad-online: #96CCFF; --lad-desc: #C6C5D0;
+  --lad-alias: #96CCFF; --shell: #1B1B21; --shell-text: #E4E1E9; --scrim: rgba(0, 0, 0, .55); --shadow: none; --r-sm: 8px; --r: 12px; --r-lg: 16px;
+  --ui: Roboto, "Segoe UI", system-ui, sans-serif; --mono: "Roboto Mono", Consolas, monospace; --fs: 13px; color-scheme: dark;
+}
+
+/* ---------- shared: the tokens added by the themes ---------- */
+:root[data-mode] #app.desk { font-size: var(--fs); }
+:root[data-mode] .btn.pri { color: var(--on-accent); }
+:root[data-mode] .btn.ok, :root[data-mode] .sbox.run { color: var(--on-ok); }
+:root[data-mode] svg.lad .rn.on { fill: var(--on-accent); }
+:root[data-mode] svg.lad .frc { fill: var(--force); }
+:root[data-mode] .dmenu, :root[data-mode] .dtb { background: var(--shell); color: var(--shell-text); }
+:root[data-mode] .dtb .ib, :root[data-mode] .dtb .gbtn { color: var(--shell-text); }
+:root[data-mode="dark"] .strip .warn { background: #3b1d1a; color: #ff8a80; }
+:root[data-mode="dark"] .upbar { background: #3a3110; color: #f5e9b8; border-color: #5c4f1d; }
+:root[data-mode="dark"] .upbar .btn:not(.pri) { background: #4a3f16; color: #f5e9b8; border-color: #7a6a2a; }
+/* module LEDs keep the hardware colours in every theme (owner decision) */
+:root[data-mode] .led.y, :root[data-mode] .led.a { background: #F2B200; border-color: #9a7200; }
+
+/* ---------- CONTROL ROOM (ISA-101): grey, flat, dense, colour only for PLC state ---------- */
+:root[data-theme="controlroom"] .dlg, :root[data-theme="controlroom"] .menu { box-shadow: none; border: 1px solid var(--border-strong); }
+:root[data-theme="controlroom"] .ph { text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+
+/* ---------- WORKBENCH (IBM Carbon): dark shell, square corners, layers ---------- */
+:root[data-theme="workbench"] .dmenu { border-bottom-color: #393939; }
+:root[data-theme="workbench"] .dmenu > span:hover, :root[data-theme="workbench"] .dmenu > span.on { background: #393939; }
+:root[data-theme="workbench"] .desk .dtb { height: 40px; }
+:root[data-theme="workbench"] .dtb { border-bottom: 0; }
+:root[data-theme="workbench"] .dtb .tbt { background: transparent; border-color: #6f6f6f; color: var(--shell-text); }
+:root[data-theme="workbench"] .dtb .tbt:hover { background: #393939; }
+:root[data-theme="workbench"] .dtb .tbt[data-cmd="who"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="workbench"] .dtb .sbox:not(.run):not(.fault):not(.edits), :root[data-theme="workbench"] .dtb .pathbar { background: #262626; border-color: #525252; color: #f4f4f4; }
+:root[data-theme="workbench"] .desk .ph { height: 32px; }
+:root[data-theme="workbench"] .desk .nd { height: 24px; }
+:root[data-theme="workbench"] .nd.on { box-shadow: inset 3px 0 0 var(--accent); }
+:root[data-theme="workbench"] .desk .btn { min-height: 32px; }
+:root[data-theme="workbench"] .dlg { box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
+
+/* ---------- TONAL TOUCH (Material 3): tonal surfaces, rounded cards, pill buttons ---------- */
+:root[data-theme="tonal"] .btn, :root[data-theme="tonal"] .tbt, :root[data-theme="tonal"] .sbox { border-radius: 999px; }
+:root[data-theme="tonal"] .desk .btn { min-height: 36px; }
+:root[data-theme="tonal"] .btn { padding: 0 18px; }
+:root[data-theme="tonal"] .btn:not(.pri):not(.ok):not(.danger) { background: transparent; color: var(--accent-text); }
+:root[data-theme="tonal"] .dmenu, :root[data-theme="tonal"] .dtb { border-bottom: 0; }
+:root[data-theme="tonal"] .desk .dtb { height: 40px; }
+:root[data-theme="tonal"] .org { margin: 6px 0 6px 6px; border: 0; border-radius: 16px; overflow: hidden; }
+:root[data-theme="tonal"] .ph { background: transparent; border-bottom: 0; font-weight: 500; }
+:root[data-theme="tonal"] .desk .ph { height: 32px; }
+:root[data-theme="tonal"] .nd { margin: 0 6px; border-radius: 14px; }
+:root[data-theme="tonal"] .desk .nd { height: 28px; }
+:root[data-theme="tonal"] .dlg { border-radius: 28px; border: 0; }
+:root[data-theme="tonal"] .dlg .dh { border-bottom: 0; padding: 16px 12px 6px 22px; }
+:root[data-theme="tonal"] .dlg .dh b { font-size: 20px; font-weight: 400; }
+:root[data-theme="tonal"] .menu { border-radius: 12px; }
+:root[data-theme="tonal"] .menu .it { margin: 0 4px; border-radius: 8px; }
+:root[data-theme="tonal"] .inp { border-radius: 8px; }
+
+/* ---------- the theme picker in Tools > Options ---------- */
+.thpick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.phone .thpick { grid-template-columns: 1fr 1fr; }
+.thc { border: 2px solid var(--border); border-radius: var(--r-lg); background: var(--surface); padding: 6px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; min-width: 0; }
+.thc[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.thc b { font-size: 12px; letter-spacing: .03em; }
+.thc small { color: var(--muted); font-size: 11px; line-height: 1.3; }
+.thc .tmini { height: 40px; border-radius: 3px; border: 1px solid var(--border-strong); display: grid; grid-template-rows: 9px 1fr; overflow: hidden; }
+.thc .tmini i { display: block; }
+.thc .tmini span { display: grid; grid-template-columns: 30% 1fr; gap: 2px; padding: 2px; }
+.thc .tmini span u { display: block; position: relative; }
+.thc .tmini span u + u::after { content: ""; position: absolute; left: 8%; right: 8%; top: 50%; height: 2px; background: var(--mon); }
+.thmode { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r); overflow: hidden; }
+.thmode button { border: 0; background: var(--surface); padding: 0 12px; min-height: 28px; cursor: pointer; }
+.tab .thmode button { min-height: 44px; }
+.phone .thmode button { min-height: 48px; }
+.thmode button[aria-pressed="true"] { background: var(--fill-accent); color: var(--on-accent); font-weight: 600; }

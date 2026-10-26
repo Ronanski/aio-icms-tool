@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.4.0-beta.3';
+  const VERSION = '0.4.0';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -25,7 +25,7 @@
   const DEFPATH = 'Emulate\\127.0.0.1\\Backplane\\0';
   const pathOf = (ip, slot) => 'Emulate\\' + ip + '\\Backplane\\' + slot;
   function defaultRacks() {
-    const c = new E.Chassis(10, 'Chassis');
+    const c = new E.Chassis(8, 'Chassis');
     c.insert(0, 'PLC-CPU', 'Emulator'); c.setController(0, { ip: '127.0.0.1' });
     c.insert(1, 'PLC-DI16-24V', 'DI_1'); c.insert(2, 'PLC-DO16-24V', 'DO_1');
     return [c];
@@ -83,7 +83,7 @@
   }
   racks.forEach(watchRack);
   function addRack(name, desc, size) {
-    const r = new E.Chassis(size || 10, name); r.desc = desc || '';
+    const r = new E.Chassis(size || 8, name); r.desc = desc || '';
     racks.push(r); watchRack(r); saveChassis();
     return r;
   }
@@ -106,7 +106,7 @@
     task: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2', rack: 'M3 5h18v14H3zM7 5v14M11 5v14M15 5v14', type: 'M5 5h14M12 5v14', prog: 'M4 5h16v14H4zM4 9h16',
     tag: 'M3 12V4h8l10 10-8 8L3 12zM7.5 8.5h.01', io: 'M4 6h16v12H4zM8 10v4M12 10v4M16 10v4', zin: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6M11 8v6',
     zout: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2-1-1-3-2 .2-1.3-1.5.3-2-3-1-1 1.8h-2l-1-1.8-3 1 .3 2L5.9 8.2 4 8l-1 3 2 1v0l-2 1 1 3 2-.2 1.3 1.5-.3 2 3 1 1-1.8h2l1 1.8 3-1-.3-2 1.3-1.5 2 .2 1-3z',
-    fault: 'M12 3l9 16H3zM9 12l6 6M15 12l-6 6', exit: 'M10 4H5v16h5M14 8l4 4-4 4M18 12H9', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.5v.01',
+    net: 'M9 3h6v5H9zM12 8v4M5 12h14M5 12v4M19 12v4M2 16h6v5H2zM16 16h6v5h-6z', fault: 'M12 3l9 16H3zM9 12l6 6M15 12l-6 6', exit: 'M10 4H5v16h5M14 8l4 4-4 4M18 12H9', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.5v.01',
   };
   const ic = (n, c = 'i') => `<svg class="${c}" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[n] || ''}"/></svg>`;
   const TABS = {
@@ -127,7 +127,7 @@
   function blank(name) {
     return {
       format: 'mt-plc-studio', version: 1, controller: { name, type: 'PLC-CPU', rev: '1.0' },
-      rack: { size: 10, modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
+      rack: { size: 8, modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
       dataTypes: [], tags: [],
       tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [{ t: '' }] }] }] }],
     };
@@ -213,7 +213,7 @@
       body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div><div class="row" data-fbex="1">${ic('ladder')}<span class="ell">Motor_Demo</span></div>` : ''}</aside>
         <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
           <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
-          <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}
+          <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}${o.descField ? '<label for="fbd">File description</label><input class="inp" id="fbd" autocomplete="off">' : ''}
             <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : 'All projects'}</option>`).join('')}</select></div></div></div>
         <p class="help fbhint">${FS.kind === 'browser' ? 'In a browser, the files are kept by this browser. The Windows and Android apps keep them in the folders of the device.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: o.mode === 'save' ? 'Save' : 'Open', pri: true, run: () => { act(); return false; } }] });
@@ -238,7 +238,8 @@
       if (/[\\/:*?"<>|]/.test(n)) { toast('A file name cannot hold \\ / : * ? " < > |', 'err'); return; }
       if (!new RegExp(ext().replace('.', '\\.') + '$', 'i').test(n)) n += ext();
       const f = FS.join(st.dir, n);
-      const go = () => { closeLayer(); o.onPick(f); };
+      const dsc = o.descField ? q('#fbd').value.trim() : '';
+      const go = () => { closeLayer(); o.onPick(f, dsc); };
       if (await FS.exists(f)) confirmDlg('Replace file', `<b>${esc(n)}</b> already exists in this folder. Replace it?`, 'Replace', go, true);
       else go();
     };
@@ -317,8 +318,10 @@
     if (moved) toast(`${moved} project(s) from this app were saved as .mtp files in ${dir}.`, 'ok');
   }
   function openProject(p, quiet) {
-    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.view = 'ladder'; S.noProj = false;
+    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.descEd = null; S.view = 'ladder'; S.noProj = false;
     // modules of a type this version does not have (the generic module of 0.4.0-beta.1) leave the I/O configuration
+    // a project of 0.4.0-beta.3 or older (7, 10 or 12 slots) gets an 8-slot chassis when its modules fit
+    if (p.rack && p.rack.size != null && !E.RACKS.includes(p.rack.size)) p.rack.size = E.fitRack(p.rack.size, (p.rack.modules || []).map(m => m.slot).concat(p.controller && Number.isInteger(p.controller.slot) ? p.controller.slot : 0));
     const gone = (p.rack && p.rack.modules || []).filter(m => !E.MODULES[m.type]);
     if (gone.length) { p.rack.modules = p.rack.modules.filter(m => E.MODULES[m.type]); setTimeout(() => toast(`Removed from the I/O configuration: ${gone.map(m => `[${m.slot}] ${m.name}`).join(', ')} (module type no longer in the app).`), 300); }
     S.prog = allProgs()[0].name;
@@ -337,6 +340,11 @@
   }
 
   /* ---------- state ---------- */
+  // [id, name, idea, mini preview: shell, background, canvas, energized]
+  const THEMES = [['classic', 'CLASSIC', 'Like the Windows software', '#FFFFFF', '#F0F0F0', '#FFFFFF', '#22A84C'],
+    ['controlroom', 'CONTROL ROOM', 'ISA-101 grey, colour only for PLC state', '#E4E7EA', '#D3D7DC', '#F2F3F4', '#14804A'],
+    ['workbench', 'WORKBENCH', 'Dark shell, square, IBM Carbon', '#161616', '#F4F4F4', '#FFFFFF', '#198038'],
+    ['tonal', 'TONAL TOUCH', 'Soft, rounded, Material 3', '#F5F2FA', '#FBF8FF', '#FFFFFF', '#398A4A']];
   const S = {
     p: null, prog: '', routine: '', sel: null, selRung: null, clip: null, undo: [], redo: [], dirty: false, online: false,
     layout: 'desktop', area: 'ladder', drawer: false, ioOpen: false, errOpen: false, tagOpen: new Set(), verify: null, errRungs: new Set(),
@@ -344,7 +352,15 @@
     find: '', ed: null, tabs: [], view: 'ladder',
   };
   const savePrefs = () => store.set('prefs', S.prefs);
+  const hadTheme = 'theme' in store.get('prefs', {});
   if (!S.prefs.classic) { S.prefs.classic = 1; if (S.prefs.theme === 'auto') S.prefs.theme = 'classic'; savePrefs(); }
+  // themes (Tools > Options > Theme): the old Theme setting becomes Classic in Light, Dark or Follow the device
+  if (!S.prefs.themes) {
+    const t = S.prefs.theme;
+    S.prefs.mode = !hadTheme ? 'auto' : t === 'dark' ? 'dark' : t === 'auto' ? 'auto' : 'light';
+    if (!THEMES.some(x => x[0] === t)) S.prefs.theme = 'classic';
+    S.prefs.themes = 1; savePrefs();
+  }
   const allProgs = () => S.p.tasks.flatMap(t => t.programs);
   const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
@@ -357,15 +373,32 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  /* edit zones on the rungs (Studio 5000 "Edit ladder logic in run mode"): rung.z is
+     i: the editable copy made by Start Pending Rung Edits, or a new rung (shown e while it has errors);
+     r: the original below it, read-only; after Accept they become I (insert zone) and R (replace zone);
+     D: a rung deleted online in Run (delete zone). Old logic = no i/I rungs, new logic = no r/R/D rungs. */
+  const eachRoutine = (p, fn) => p.tasks.forEach(t => t.programs.forEach(g => g.routines.forEach(fn)));
+  function logicOf(p, which) {
+    const q = JSON.parse(JSON.stringify(p)), drop = which === 'old' ? /^[iI]$/ : /^[rRD]$/;
+    eachRoutine(q, r => { r.rungs = r.rungs.filter(x => !drop.test(x.z || '')); r.rungs.forEach(x => { delete x.z; delete x.dx; }); });
+    return q;
+  }
+  const newLogic = p => logicOf(p, 'new');
+  function zonesIn(p) { let z = ''; eachRoutine(p, r => r.rungs.forEach(x => { if (x.z && !z.includes(x.z)) z += x.z; })); return z; }
+  const RO_Z = /^[rRDI]$/;
+  // online, a rung that is an original (r/R), deleted (D) or accepted (I) cannot be changed
+  const roRung = r => !!(S.online && r && RO_Z.test(r.z || ''));
   function edPhase() {
     if (!S.online || !ctl.M) return null;
-    const dirty = !ctl.holds(S.p);
+    const zs = zonesIn(S.p);
+    if (/[ir]/.test(zs)) return 'pending';
+    const dirty = !ctl.holds(zs ? newLogic(S.p) : S.p);
     if (S.ed && S.ed.ctl === ctl) {
       if (S.ed.tested) return dirty ? 'pending' : 'tested';
       return lkey(S.p) === lkey(JSON.parse(S.ed.base)) ? 'accepted' : 'pending';
     }
-    return dirty ? 'pending' : null;
+    return dirty || zs ? 'pending' : null;
   }
   const pending = () => edPhase() !== null;
   let ctlCopy = { s: null, p: null };
@@ -375,7 +408,6 @@
     const r = P && P.routines.find(x => U(x.name) === U(curRoutine().name));
     return r ? r.rungs : null;
   }
-  const routineEdited = () => pending() && JSON.stringify(ctlRungs()) !== JSON.stringify(rungs());
 
   /* ---------- verify ---------- */
   function reverify() {
@@ -386,14 +418,83 @@
   /* ---------- undo / redo and edits ---------- */
   const snap = () => JSON.stringify({ p: S.p, prog: S.prog, routine: S.routine, sel: S.sel, selRung: S.selRung });
   function restore(s) { const o = JSON.parse(s); Object.assign(S, { p: o.p, prog: o.prog, routine: o.routine, sel: o.sel, selRung: o.selRung }); changed(); }
-  function edit(fn) {
-    const before = snap();
+  function edit(fn, raw) {
+    const before = snap(), post = raw ? null : rungHook();
     if (fn() === false) return false;
+    if (post && post() === false) { restore(before); return false; }
     S.undo.push(before);
     if (S.undo.length > 100) S.undo.shift();
     S.redo = [];
     changed();
     return true;
+  }
+  /* what an edit did to the rungs of the routine (found by object, as writeRung changes a rung in place):
+     - the instructions it added or changed are marked dirty (rung.dx, '*' beside the mnemonic until Verify);
+     - online, it goes through edit zones as in the reference: a changed rung gets its copy (i) with the original
+       below it (r), a new rung is i, a rung deleted in Run stays as D (still executed until the edits are tested);
+       an r/R/D/I rung is read-only, so an edit that changes one is undone. */
+  const ikeys = t => { const pr = E.parseRung(t || ''), out = []; const w = a => a.forEach(e => (e.t === 'BR' ? e.legs.forEach(w) : out.push(L.ikey(e)))); if (!pr.err) w(pr.elems); return out; };
+  // the instructions in rung order as "key#n" (the n-th one with that key), as the ladder draws them
+  const occ = keys => { const c = {}; return keys.map(k => { c[k] = (c[k] || 0) + 1; return k + '#' + (c[k] - 1); }); };
+  // which new instructions are the old ones (longest common subsequence): new index → old index
+  function lcsMap(a, b) {
+    const n = a.length, m = b.length, T = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0)), map = new Map();
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) T[i][j] = a[i] === b[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+    for (let i = 0, j = 0; i < n && j < m;) { if (a[i] === b[j]) { map.set(j, i); i++; j++; } else if (T[i + 1][j] >= T[i][j + 1]) i++; else j++; }
+    return map;
+  }
+  function rungHook() {
+    if (S.noProj) return null;
+    const R = curRoutine(), pre = R.rungs.map(r => ({ r, t: r.t, z: r.z }));
+    return () => {
+      if (curRoutine() !== R) return true;
+      const now = R.rungs, has = new Set(now), at = new Map(pre.map(x => [x.r, x]));
+      // the dirty instructions: what is in the rung now and was not before
+      now.forEach(r => {
+        const x = at.get(r);
+        if (x && x.t === r.t) return;
+        const ok = x ? ikeys(x.t) : [], nk = ikeys(r.t), oo = occ(ok), no = occ(nk), was = new Set(r.dx || []), map = lcsMap(ok, nk);
+        const d = no.filter((k, j) => !map.has(j) || was.has(oo[map.get(j)]));
+        if (d.length) r.dx = d; else delete r.dx;
+      });
+      if (!S.online || !ctl.M) return true;
+      const ro = pre.find(x => RO_Z.test(x.z || '') && (!has.has(x.r) || x.r.t !== x.t));
+      if (ro) { toast(`Rung ${pre.indexOf(ro)} is read-only (${ro.z}): ${ro.z === 'I' || ro.z === 'R' || ro.z === 'D' ? 'test and assemble, or cancel, the accepted edits first' : 'edit the copy (i) above it'}.`, 'err'); return false; }
+      const testing = S.ed && S.ed.ctl === ctl && S.ed.tested, selObj = now[curSelRung()];
+      let dels = 0;
+      pre.forEach((x, k) => {
+        if (has.has(x.r) || x.z) return;
+        // a rung deleted in Run is a delete zone (D) until the edits are assembled; in Program it just goes
+        if (!ctl.running) return;
+        if (testing) { dels = -1; return; }
+        let j = -1;
+        for (let q = k - 1; q >= 0 && j < 0; q--) j = now.indexOf(pre[q].r);
+        x.r.z = 'D'; delete x.r.dx; now.splice(j + 1, 0, x.r); has.add(x.r); dels++;
+      });
+      if (dels < 0) { toast('Assemble or untest the edits being tested first.', 'err'); return false; }
+      now.slice().forEach(r => {
+        const x = at.get(r);
+        if (!x) { if (!/^[i]$/.test(r.z || '')) { r.z = 'i'; } return; }
+        if (x.z || x.t === r.t) return;
+        // the first change to a rung starts its pending edit: the copy (i) above, the original (r) below
+        r.z = 'i';
+        const o = { t: x.t, z: 'r' }; if (r.c) o.c = r.c;
+        now.splice(now.indexOf(r) + 1, 0, o);
+      });
+      // the zones moved rungs down: the selection follows its rung
+      const si = selObj ? now.indexOf(selObj) : -1;
+      if (si >= 0) { if (S.sel) S.sel.ri = si; else S.selRung = si; }
+      if (dels > 0) acceptZones();
+      return true;
+    };
+  }
+  /* the D zones go to the controller as accepted edits at once (it keeps running the old logic) */
+  function acceptZones() {
+    if (!S.ed || S.ed.ctl !== ctl) S.ed = { ctl, orig: ctl.copy, base: null, tested: false };
+    // the accepted state: without the pending edits (i copies dropped, r originals back to normal rungs)
+    const q = JSON.parse(JSON.stringify(S.p));
+    eachRoutine(q, r => { r.rungs = r.rungs.filter(x => x.z !== 'i'); r.rungs.forEach(x => { if (x.z === 'r') delete x.z; }); });
+    S.ed.base = JSON.stringify(q);
   }
   function changed() { S.dirty = true; S.verifyShown = null; reverify(); scheduleSave(); render(); }
   function undo() { if (!editable() || !S.undo.length) return; S.redo.push(snap()); restore(S.undo.pop()); }
@@ -445,7 +546,7 @@
       writeRung(ri, elems);
       S.sel = { ri, path }; S.selRung = null;
     });
-    if (ok && openAfter && el.t !== 'BR' && INSTR[el.t] && INSTR[el.t].args.length) setTimeout(() => openEditor(ri, path, 0), 0);
+    if (ok && openAfter && el.t !== 'BR' && INSTR[el.t] && INSTR[el.t].args.length) setTimeout(() => (openAfter === 'inline' ? inlineEdit(ri, path, 0) : openEditor(ri, path, 0)), 0);
   }
   /* move an instruction or a branch to a node (Ctrl copies it), as when dragging it in the reference editor: before or
      after an instruction, the free end of a branch level, the end of a rung; into the same rung or another one */
@@ -484,7 +585,7 @@
   function insertMn(mn, at) {
     if (mn === 'RUNG') return addRung();
     if (mn === 'BR') return addBranch(at);
-    if (mn === 'BRL') return addLevel();
+    if (mn === 'BRL') return addLevel(true);
     insert(newEl(mn), at, true);
   }
   function addRung() {
@@ -507,17 +608,50 @@
     }
     insert({ t: 'BR', legs: [[], []] }, at, false);
   }
-  function addLevel() {
+  /* Add Branch Level: a level after the one the caret is on; Append New Level: a level at the end of the branch
+     (Rockwell Ladder Editor command reference) */
+  function addLevel(append) {
     if (!S.sel || !S.sel.path) { toast('Select a branch or an instruction in a branch first.'); return; }
     edit(() => {
       const elems = parsed(S.sel.ri); if (!elems) return false;
       const bp = S.sel.br ? S.sel.path : S.sel.leg ? S.sel.path.slice(0, -1) : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
       if (!bp) { toast('Select a branch or an instruction in a branch first.'); return false; }
       const b = getEl(elems, bp);
-      b.legs.push([]);
+      const cur = S.sel.br ? b.legs.length - 1 : S.sel.leg ? S.sel.path[S.sel.path.length - 1] : S.sel.path[S.sel.path.length - 2];
+      const at = append ? b.legs.length : cur + 1;
+      b.legs.splice(at, 0, []);
       writeRung(S.sel.ri, elems);
-      S.sel = { ri: S.sel.ri, path: bp.concat(b.legs.length - 1), leg: true };
+      S.sel = { ri: S.sel.ri, path: bp.concat(at), leg: true };
     });
+  }
+  const branchPath = () => !S.sel || !S.sel.path ? null : S.sel.br ? S.sel.path : S.sel.leg ? S.sel.path.slice(0, -1) : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
+  /* Move Branch Rail: the start or end rail of the branch moves one element left or right; the element it passes
+     goes into or out of the top level of the branch, as when the rail is dragged in the reference */
+  function stepRail(which, dir) {
+    const bp0 = branchPath(); if (!bp0) return false;
+    let ok = false;
+    edit(() => {
+      const elems = parsed(S.sel.ri); if (!elems) return false;
+      const { arr, idx } = seqOf(elems, bp0), b = arr[idx], top = b.legs[0];
+      let ni = idx;
+      if (which === 'end' && dir > 0) { if (idx + 1 >= arr.length) return false; top.push(arr.splice(idx + 1, 1)[0]); }
+      else if (which === 'end' && dir < 0) { if (!top.length) return false; arr.splice(idx + 1, 0, top.pop()); }
+      else if (which === 'start' && dir < 0) { if (idx === 0) return false; top.unshift(arr.splice(idx - 1, 1)[0]); ni = idx - 1; }
+      else { if (!top.length) return false; arr.splice(idx, 0, top.shift()); ni = idx + 1; }
+      writeRung(S.sel.ri, elems);
+      S.sel = { ri: S.sel.ri, path: bp0.slice(0, -1).concat(ni), br: true };
+      ok = true;
+    });
+    return ok;
+  }
+  function moveRailDialog() {
+    if (!branchPath()) { toast('Select a branch first.'); return; }
+    dialog({ title: 'Move Branch Rail', size: 'sm',
+      body: `<p>Move a rail of the branch one element. The element it passes goes into or out of the top level of the branch.</p>
+        <div class="mvr"><b>Start rail</b><button class="btn" data-mvr="start,-1">◀ Left</button><button class="btn" data-mvr="start,1">Right ▶</button></div>
+        <div class="mvr"><b>End rail</b><button class="btn" data-mvr="end,-1">◀ Left</button><button class="btn" data-mvr="end,1">Right ▶</button></div>`,
+      buttons: [{ l: 'Close', pri: true }],
+      mount: el => el.addEventListener('click', ev => { const t = ev.target.closest('[data-mvr]'); if (!t) return; const [w, d] = t.dataset.mvr.split(','); if (!stepRail(w, +d)) toast('The rail cannot move that way.'); }) });
   }
   function delSel() {
     if (S.sel && S.sel.leg) {
@@ -554,17 +688,23 @@
     if (S.sel && S.sel.path) {
       const el = curEl(); if (!el) return;
       S.clip = { kind: 'el', el: JSON.parse(JSON.stringify(el)) };
-      try { navigator.clipboard && navigator.clipboard.writeText(E.serializeRung([el]).replace(/;$/, '')); } catch (e) { /* ignore */ }
+      try { navigator.clipboard && navigator.clipboard.writeText(E.serializeRung([el]).replace(/;$/, '')).catch(() => {}); } catch (e) { /* ignore */ }
     } else if (S.selRung != null) {
-      S.clip = { kind: 'rung', rung: { ...rungs()[S.selRung] } };
-      try { navigator.clipboard && navigator.clipboard.writeText(rungs()[S.selRung].t); } catch (e) { /* ignore */ }
+      S.clip = { kind: 'rung', rung: { ...rungs()[S.selRung] } }; delete S.clip.rung.z;
+      try { navigator.clipboard && navigator.clipboard.writeText(rungs()[S.selRung].t).catch(() => {}); } catch (e) { /* ignore */ }
     } else return;
     if (cut) delSel(); else toast('Copied');
   }
   function paste() {
     if (!S.clip) { toast('Nothing to paste yet.'); return; }
-    if (S.clip.kind === 'el') insert(JSON.parse(JSON.stringify(S.clip.el)), null, false);
-    else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; rungs().splice(at, 0, { ...S.clip.rung }); S.sel = null; S.selRung = at; });
+    if (S.clip.kind === 'el') {
+      // the paste matrix of the reference: an instruction pasted on a selected rung (its rung selection region) goes
+      // at the start of the rung, on a selected branch level at the start of that level; else after the selection
+      const el = JSON.parse(JSON.stringify(S.clip.el)), ri = S.sel ? S.sel.ri : S.selRung, els = ri != null ? parsed(ri) : null;
+      if (!S.sel && ri != null && els && els.length) insert(el, { ri, path: [0], after: false }, false);
+      else if (S.sel && S.sel.leg && els && (getEl(els, S.sel.path.slice(0, -1)).legs[S.sel.path[S.sel.path.length - 1]] || []).length) insert(el, { ri, path: S.sel.path.concat(0), after: false }, false);
+      else insert(el, null, false);
+    } else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
   }
 
   /* ---------- layout ---------- */
@@ -574,10 +714,14 @@
     const w = innerWidth, coarse = matchMedia('(pointer: coarse)').matches;
     return w < 768 ? 'phone' : w < 1200 || (coarse && w < 1600) ? 'tablet' : 'desktop';
   }
+  /* the theme changes the look only; data-mode is the resolved Light or Dark (Follow the device asks the system) */
+  const darkMq = matchMedia('(prefers-color-scheme: dark)');
+  const themeMode = () => S.prefs.mode === 'dark' || (S.prefs.mode === 'auto' && darkMq.matches) ? 'dark' : 'light';
   function applyTheme() {
-    const t = S.prefs.theme;
-    if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = t;
+    const docs = [document].concat(chasWin && !chasWin.closed ? [chasWin.document] : []);
+    docs.forEach(d => { d.documentElement.dataset.theme = S.prefs.theme; d.documentElement.dataset.mode = themeMode(); });
   }
+  if (darkMq.addEventListener) darkMq.addEventListener('change', () => { if (S.prefs.mode === 'auto') applyTheme(); });
   function title() {
     if (!S.p) return;
     if (S.noProj) { document.title = 'MT PLC Studio'; return; }
@@ -606,12 +750,24 @@
     del: { l: 'Delete', k: 'Del', i: 'trash', run: delSel, on: () => editable() && (!!S.sel || S.selRung != null) },
     rung: { l: 'Add Rung', k: 'Ctrl+R', i: 'ladder', run: addRung, on: editable },
     branch: { l: 'Add Branch', i: 'tree', run: () => addBranch(), on: editable },
-    level: { l: 'Add Branch Level', i: 'tree', run: addLevel, on: () => editable() && !!S.sel },
+    level: { l: 'Add Branch Level', i: 'tree', run: () => addLevel(false), on: () => editable() && !!S.sel },
+    applevel: { l: 'Append New Level', i: 'tree', run: () => addLevel(true), on: () => editable() && !!branchPath() },
+    mvrail: { l: 'Move Branch Rail…', i: 'tree', run: moveRailDialog, on: () => editable() && !!branchPath() },
     ins: { l: 'Add Ladder Element…', k: 'Alt+Ins', i: 'plus', run: () => picker(''), on: editable },
     edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, selOpIdx()), on: () => editable() && !!curEl() },
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
     comment: { l: 'Edit Rung Comment', i: 'text', run: () => rungComment(curSelRung()), on: () => editable() && curSelRung() != null },
     desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => isTagText(selOperand()) },
+    sdef: { l: 'Save Instruction Defaults', i: 'save', run: () => {}, on: () => false },
+    cdef: { l: 'Clear Instruction Defaults', i: 'close', run: () => {}, on: () => false },
+    rimp: { l: 'Import Rungs…', i: 'upload', run: () => importRungs(), on: editable },
+    rexp: { l: 'Export Rungs…', i: 'download', run: () => exportRungs(curSelRung()), on: () => curSelRung() != null },
+    rstart: { l: 'Start Pending Rung Edits', k: 'Ctrl+Shift+S', i: 'edit', run: () => startRungEdit(curSelRung()), on: () => S.online && !!ctl.M && editable() && curSelRung() != null && !!rungs()[curSelRung()] && !rungs()[curSelRung()].z },
+    raccept: { l: 'Accept Pending Rung Edits', i: 'check', run: acceptEdits, on: () => edPhase() === 'pending' },
+    rcancel: { l: 'Cancel Pending Rung Edits', i: 'undo', run: () => cancelRungEdit(curSelRung()), on: () => edPhase() === 'pending' },
+    rasm: { l: 'Assemble Rung Edit', i: 'check', run: assembleEdits, on: () => edPhase() === 'tested' },
+    rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
+    verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
@@ -634,7 +790,8 @@
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
     ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
-    drivers: { l: 'Configure Drivers…', i: 'online', run: configureDrivers },
+    drivers: { l: 'Configure Drivers…', i: 'online', run: () => rslinx('drivers') },
+    rswho: { l: 'RSWho (RSLinx Classic)', i: 'net', run: () => rslinx('rswho') },
     setup: { l: 'Setup Wizard…', i: 'gear', run: () => setupWizard(0) },
     chassis: { l: 'Emulator', i: 'rack', run: () => chassisMonitor() },
     online: { l: 'Go Online', i: 'online', run: goOnline, on: () => !S.online },
@@ -660,12 +817,12 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', 'import', 'export', '-', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
-    ['Communications', ['drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
+    ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'tips', 'about']],
   ];
@@ -677,7 +834,7 @@
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
-  const menuItems = ids => ids.filter(id => id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' ? '-' : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
+  const menuItems = ids => ids.filter(id => id === '-' || id.hd || !C[id].show || C[id].show()).map(id => (id === '-' || id.hd ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
   /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */
@@ -727,12 +884,15 @@
     if (lay !== S.layout) { S.layout = lay; closeLayer(); }
     const app = $('#app');
     const lw = $('#ladwrap'), st = lw ? [lw.scrollTop, lw.scrollLeft] : null;
+    const dt = document.activeElement && document.activeElement.id === 'desctx' ? document.activeElement : null, dsel = dt && [dt.selectionStart, dt.selectionEnd];
+    if (dt && S.descEd) S.descEd.value = dt.value;
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
     app.className = document.body.className = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
     app.innerHTML = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
     const nl = $('#ladwrap');
     if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
+    if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
   }
   const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
@@ -740,19 +900,22 @@
   const modeBox = () => `<span class="sbox${modeCls()}" data-box="mode" title="Controller mode">${modeText()}${ic('down')}</span>`;
   function forcesBox() {
     const st = S.online ? ctl.forceState() : 'none';
-    return `<span class="sbox" data-box="forces" title="I/O forces" style="font-weight:400"><i class="fi${st === 'enabled' ? ' en' : st === 'disabled' ? ' dis' : ''}"></i>${st === 'none' ? 'No Forces' : 'Forces'}${ic('down')}</span>`;
+    // installed and enabled: the yellow triangle with a red border (as the reference's online bar); the text stays
+    const tri = '<svg class="ftri" viewBox="0 0 15 14" aria-hidden="true"><path d="M7.5 1 14 13H1z" fill="#F2C400" stroke="#D0271D" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.5 5v4M7.5 10.6v.9" stroke="#1A1300" stroke-width="1.5"/></svg>';
+    return `<span class="sbox" data-box="forces" title="${st === 'enabled' ? 'I/O forces installed and enabled' : st === 'disabled' ? 'I/O forces installed, disabled' : 'I/O forces'}" style="font-weight:400">${st === 'enabled' ? tri : `<i class="fi${st === 'disabled' ? ' dis' : ''}"></i>`}${st === 'none' ? 'No Forces' : st === 'enabled' ? 'Forces' : 'Forces Disabled'}${ic('down')}</span>`;
   }
   const EDTXT = { pending: 'Edits Present', accepted: 'Accepted Edits', tested: 'Testing Edits' };
   const editsBox = () => { const ph = edPhase(); return `<span class="sbox plain${ph ? ' edits' : ''}" title="Online edits">${ph ? EDTXT[ph] : 'No Edits'}</span>`; };
   function editbar() {
     const ph = edPhase(), b = (id, pri) => `<button class="btn${pri ? ' pri' : ''}" data-cmd="${id}">${C[id].l}</button>`;
-    if (ph === 'accepted') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Accepted edits (i).</b> The controller still runs the old logic. Test them to run the new logic.</span>${b('tested', true)}${b('cancelacc')}</div>`;
-    if (ph === 'tested') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Testing edits (I).</b> The controller runs the new logic. Assemble to keep it, or Untest to go back.</span>${b('assemble', true)}${b('untest')}</div>`;
-    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Pending edits (e).</b> ${ctl.running ? 'The controller keeps the old logic: accept, then test the edits.' : 'Accept them to send them to the controller.'}</span>${b('accept', true)}${b('cancele')}</div>`;
+    if (ph === 'accepted') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Accepted edits (I, R, D).</b> The controller still runs the old logic (R, D). Test them to run the new logic (I).</span>${b('tested', true)}${b('cancelacc')}</div>`;
+    if (ph === 'tested') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Testing edits (I).</b> The controller runs the new logic (I), not R or D. Assemble to keep it, or Untest to go back.</span>${b('assemble', true)}${b('untest')}</div>`;
+    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Pending edits (i, e).</b> ${ctl.running ? 'The controller keeps the old logic: accept, then test the edits.' : 'Accept them to send them to the controller.'}</span>${b('accept', true)}${b('cancele')}</div>`;
   }
   function ledsHTML() {
     const on = S.online, run = on && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault;
-    const L4 = on ? [[run ? 'g' : '', modeText()], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Battery OK'], ctl.ioOk() ? ['g', 'I/O OK'] : ['r blink', 'I/O Not Responding']] : [['', 'RUN'], ['', 'OK'], ['', 'BAT'], ['', 'I/O']];
+    // the four indicators of the reference's online bar: Run Mode, Controller OK, Energy Storage OK, I/O OK
+    const L4 = on ? [[run ? 'g' : '', 'Run Mode'], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Energy Storage OK'], ctl.ioOk() ? ['g', 'I/O OK'] : ['r blink', 'I/O Not Responding']] : [['', 'Run Mode'], ['', 'Controller OK'], ['', 'Energy Storage OK'], ['', 'I/O OK']];
     return L4.map(([c, t]) => `<div><i class="led ${c}"></i>${t}</div>`).join('');
   }
   const keyHTML = () => `<span class="key" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>`;
@@ -766,13 +929,13 @@
     return `<div class="dmenu">${MENUS.map(([n]) => `<span data-menu="${n}">${n}</span>`).join('')}</div>
       <div class="dtb">${tbtn('new')}${tbtn('open')}${tbtn('save')}<span class="vsep"></span>${tbtn('cut')}${tbtn('copy')}${tbtn('paste')}<span class="vsep"></span>${tbtn('undo')}${tbtn('redo')}
         <span class="vsep"></span>${tbtn('find')}${tbtn('xref')}<span class="vsep"></span>${tbtn('verifyc')}${tbtn('verifyr')}<span class="vsep"></span>${tbtn('tagsmon')}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
-        <span class="grow"></span>${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
+        <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span>${commHTML(true)}</span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
-          <div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
+          ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
   }
@@ -785,13 +948,13 @@
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
-        <span class="vsep"></span><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
-        ${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
+        <span class="vsep"></span><button class="btn" data-cmd="rswho" title="RSLinx Classic: RSWho and Configure Drivers">${ic('net')}RSLinx</button><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
+        ${commHTML(land)}${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
           ${port && S.view === 'ladder' ? `<div class="ibar top"><div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div></div>` : ''}
-          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `<div class="ladwrap" id="ladwrap" tabindex="0"></div>
+          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>
           ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}</div>
           ${S.prefs.emu && dockSide(port) === 'bottom' ? dockHTML('bottom') : ''}
           ${port ? msgPane() : `<div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div>`}</section>
@@ -822,7 +985,7 @@
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
       if (emuTab) { body = tabs + dockHTML('full'); }
       else body = tabs + `<div class="pbar"><span class="rt grow" data-routines="1"><span class="tt">${esc(curRoutine().name)}<small>${esc(curProg().name)}</small></span>${ic('down')}</span>${tbtn('undo')}${tbtn('find')}<button class="ib" data-more="ladder">${ic('more')}</button></div>
-        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0"><div class="ladwrap" id="ladwrap" tabindex="0"></div><button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button></div>${selbarHTML(curEl())}`;
+        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div><button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button></div>${selbarHTML(curEl())}`;
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
@@ -830,14 +993,14 @@
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
-    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span><button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
+    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
   }
   function controllerPage() {
     const on = S.online;
     return `<div class="card"><div class="ch">Status</div><div class="cb"><div class="leds4">${ledsHTML()}</div>
         <div class="muted" style="margin:14px 0 6px">Key switch</div><span class="seg" style="display:flex">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>
         <div style="margin-top:8px"><div class="kv"><span>Mode</span><span class="v">${modeText()}</span></div><div class="kv"><span>Controller holds</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Path</span><span class="v">${esc(curPath())}</span></div></div>
-        <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
+        <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="rswho">${ic('net')}RSLinx</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
         <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button><button class="btn" data-cmd="download">${ic('download')}Download</button></div>
         <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
@@ -884,14 +1047,43 @@
   /* ---------- errors pane ---------- */
   // the name of the operand an error line points at ("Operand 2" of a TON is its Accum), shown beside the line
   const errOp = t => { const m = /Rung \d+, (\w+), Operand (\d+)/.exec(t), n = m && (L.OPN[m[1]] || [])[+m[2]]; return n ? ` <span class="errop">${esc(n)}</span>` : ''; };
-  function errorsHTML() {
+  /* the lines the Errors pane shows: the Errors / Warnings / Messages filters, then the Search box */
+  function errLines() {
     const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] };
-    const f = S.errFilter || { e: true, w: true, m: true };
-    const lines = v.lines.map(t => ({ t, k: /^Error/.test(t) ? 'e' : /^Warning/.test(t) ? 'w' : 'm' })).filter(x => f[x.k]);
-    return `<div class="chips"><span class="chip${f.e ? ' on' : ''}" data-ef="e">${ic('fault')}${v.errors.length} Errors</span><span class="chip${f.w ? ' on' : ''}" data-ef="w">${ic('warn')}${v.warnings.length} Warnings</span><span class="chip${f.m ? ' on' : ''}" data-ef="m">${ic('info')}Messages</span></div>
-      <div class="log">${lines.map(x => { const m = /Rung (\d+)/.exec(x.t), rt = /^Verifying routine '([^']+)' of program '([^']+)'/.exec(x.t); return `<div class="ln ${x.k}"${m ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(x.t, v))}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`; void rt; }).join('')}</div>`;
+    const f = S.errFilter || { e: true, w: true, m: true }, q = U((S.errQ || '').trim());
+    return v.lines.map(t => ({ t, k: /^Error/.test(t) ? 'e' : /^Warning/.test(t) ? 'w' : 'm' })).filter(x => f[x.k] && (!q || U(x.t).includes(q)))
+      .map(x => { const m = /Rung (\d+)/.exec(x.t); return { ...x, ri: m ? +m[1] : null, rt: m ? lineRoutine(x.t, v) : '' }; });
   }
-  function lineRoutine(t, v) { const e = v.errors.concat(v.warnings).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
+  const errLogHTML = () => errLines().map(x => `<div class="ln ${x.k}${S.errCur && S.errCur === x.t ? ' cur' : ''}"${x.ri != null ? ` data-errline="${x.ri}" data-errrt="${esc(x.rt)}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`).join('') || (S.errQ ? `<div class="ln m muted">No line contains "${esc(S.errQ)}".</div>` : '');
+  function errorsHTML() {
+    const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
+    if (S.outTab === 'search') {
+      const sv = S.search || { lines: [], found: [] };
+      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
+    }
+    return tabs + errorsBody();
+  }
+  function errorsBody() {
+    const v = S.verifyShown || S.verify || { errors: [], warnings: [], lines: [] };
+    const f = S.errFilter || { e: true, w: true, m: true }, hist = S.prefs.errHist || [];
+    return `<div class="chips"><span class="chip${f.e ? ' on' : ''}" data-ef="e">${ic('fault')}${v.errors.length} Errors</span><span class="chip${f.w ? ' on' : ''}" data-ef="w">${ic('warn')}${v.warnings.length} Warnings</span><span class="chip${f.m ? ' on' : ''}" data-ef="m">${ic('info')}Messages</span>
+      <span class="errsr">${ic('search')}<input class="inp" data-errq="1" type="search" placeholder="Search" value="${esc(S.errQ || '')}" list="errqh" autocomplete="off" spellcheck="false" aria-label="Search the Errors pane" title="Shows the lines that contain the text. F4 / Shift+F4: next / previous line"></span><datalist id="errqh">${hist.map(h => `<option value="${esc(h)}">`).join('')}</datalist></div>
+      <div class="log" data-errlog="1">${errLogHTML()}</div>`;
+  }
+  const refreshErrLog = () => document.querySelectorAll('[data-errlog]').forEach(l => { l.innerHTML = errLogHTML(); const c = l.querySelector('.ln.cur'); if (c) c.scrollIntoView({ block: 'nearest' }); });
+  // the last 10 searches, newest first
+  function rememberErrQ(q) { q = String(q || '').trim(); if (!q) return; S.prefs.errHist = [q].concat((S.prefs.errHist || []).filter(x => x !== q)).slice(0, 10); savePrefs(); document.querySelectorAll('#errqh').forEach(d => { d.innerHTML = S.prefs.errHist.map(h => `<option value="${esc(h)}">`).join(''); }); }
+  /* F4 / Shift+F4 (reference: next / previous error line): the next line of the Errors pane that names a rung, and that rung */
+  function nextErrLine(dir) {
+    const ls = errLines().filter(x => x.ri != null);
+    if (!ls.length) { toast(S.errQ ? `No line with a rung contains "${S.errQ}".` : 'The Errors pane has no line with a rung: Verify first.'); return; }
+    const i = ls.findIndex(x => x.t === S.errCur);
+    const x = ls[i < 0 ? (dir > 0 ? 0 : ls.length - 1) : (i + dir + ls.length) % ls.length];
+    S.errCur = x.t;
+    gotoLine(x.ri, x.rt, x.t, false);
+    refreshErrLog();
+  }
+  function lineRoutine(t, v) { const e = v.errors.concat(v.warnings, v.found || []).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
   /* ---------- ladder ---------- */
   function tagFor(op) {
@@ -904,27 +1096,29 @@
     const P = ctl.M.programs.find(p => U(p.name) === U(curProg().name));
     return P ? P.routines.get(U(curRoutine().name)) : null;
   }
-  /* the edit mark beside each rung number: e (pending), i (accepted), I (being tested), against the logic before */
-  function rungsOf(json) {
-    if (!json) return [];
-    const p = JSON.parse(json), P = p.tasks.flatMap(t => t.programs).find(g => U(g.name) === U(curProg().name));
-    const r = P && P.routines.find(x => U(x.name) === U(curRoutine().name));
-    return r ? r.rungs.map(x => x.t) : [];
+  /* which shown rung the controller executes (index into its routine), or null when it runs other logic:
+     before the edits are tested it runs the normal rungs and the r/R/D zones, while testing the normal rungs,
+     the I zones and the r originals of newer pending edits; i copies are never executed */
+  function liveIdx() {
+    const R = liveRoutine(), cr = ctlRungs();
+    if (!R || !cr) return null;
+    const tested = !!(S.ed && S.ed.ctl === ctl && S.ed.tested);
+    const runs = r => (!r.z ? true : tested ? r.z === 'I' || r.z === 'r' : r.z === 'r' || r.z === 'R' || r.z === 'D');
+    const map = [], txt = [];
+    rungs().forEach(r => { if (runs(r)) { map.push(txt.length); txt.push(r.t); } else map.push(-1); });
+    return txt.length === cr.length && txt.every((t, i) => t === cr[i].t) && R.rungs.length === cr.length ? map : null;
   }
-  function editMarks() {
-    const ph = edPhase(); if (!ph) return null;
-    const ed = S.ed && S.ed.ctl === ctl ? S.ed : null;
-    const before = rungsOf(ph === 'pending' ? (ed && !ed.tested ? ed.base : ctl.copy) : ed.orig);
-    const ch = ph === 'pending' ? 'e' : ph === 'accepted' ? 'i' : 'I';
-    return rungs().map((r, i) => (r.t !== before[i] ? ch : ''));
-  }
+  // the mark left of the rung number: i (e while it has errors), r, I, R, D
+  const markOf = (r, err) => (!r.z ? '' : r.z === 'i' && err ? 'e' : r.z);
   function ladderRungs() {
-    const R = routineEdited() ? null : liveRoutine(), mk = editMarks();
-    if (R) {
-      const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
-      return R.rungs.map((r, i) => { r.elems.forEach(e => e && tag(e)); return { elems: r.elems.filter(Boolean), c: rungs()[i] && rungs()[i].c, mk: mk && mk[i] }; });
-    }
-    return rungs().map((r, i) => { const pr = E.parseRung(r.t); return { elems: pr.err ? [] : pr.elems, c: r.c, err: S.errRungs.has(i) || !!pr.err, mk: mk && mk[i] }; });
+    const R = liveRoutine(), map = R ? liveIdx() : null;
+    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
+    return rungs().map((r, i) => {
+      const pr = E.parseRung(r.t), err = S.errRungs.has(i) || !!pr.err;
+      const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx };
+      if (map && map[i] >= 0) { const lr = R.rungs[map[i]]; lr.elems.forEach(e => e && tag(e)); return { ...base, elems: lr.elems.filter(Boolean) }; }
+      return { ...base, elems: pr.err ? [] : pr.elems, still: !!map };
+    });
   }
   const CELL = { desktop: 104, tablet: 112, phone: 80 };
   function renderLadder(drop, press) {
@@ -934,10 +1128,11 @@
     const z = S.prefs.zoom;
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
-      live: S.online && !routineEdited() && !!liveRoutine(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodes: !!drop, lifted: S.lifted, press,
+      live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
+      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
     w.innerHTML = res.svg;
+    S.ladNodes = res.nodes || null;
   }
   let ro = null, lastW = 0;
   function watchLadder(w) {
@@ -957,20 +1152,147 @@
     if (!r) return null;
     const d = r.dataset;
     if (d.end) return { end: true };
-    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, leg: !!d.leg, rn: !!d.rn, op: d.opi != null ? +d.opi : undefined };
+    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, rr: !!d.rr, leg: !!d.leg, rn: !!d.rn, op: d.opi != null ? +d.opi : undefined, ly: d.ly ? d.ly.split(',').map(Number) : null };
   };
   const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.leg ? 'l' : ''}${t.rn ? 'n' : ''}${t.end ? 'e' : ''}|${t.op != null ? t.op : ''}` : '');
   let lastTap = { k: '', t: 0 };
   function onTap(t, x, y, isDbl, touch) {
     const k = tkey(t), now = Date.now();
-    const again = touch && t && t.path && !t.br && !t.leg && S.sel && S.sel.ri === t.ri && S.sel.path && S.sel.path.join('.') === t.path.join('.') && !S.sel.br && !S.sel.leg && (t.op == null || S.sel.op === t.op) && now - lastTap.t > 380;
+    const again = touch && t && t.path && !t.br && !t.leg && S.sel && S.sel.ri === t.ri && S.sel.path && S.sel.path.join('.') === t.path.join('.') && !S.sel.br && !S.sel.leg && (t.op == null ? S.sel.op == null : S.sel.op === t.op) && now - lastTap.t > 380;
     const dbl = isDbl || again || (k === lastTap.k && now - lastTap.t < 380);
     lastTap = dbl ? { k: '', t: 0 } : { k, t: now };
     select(t);
     render();
     if (!dbl || !t) return;
-    if (t.path && !t.br && !t.leg) { if (editable()) openEditor(t.ri, t.path, t.op || 0); }
+    // as in the reference: a double-click on an operand edits it in place, on the instruction itself its mnemonic
+    if (t.path && !t.br && !t.leg) { if (editable()) inlineEdit(t.ri, t.path, t.op != null ? t.op : 'mn'); }
     else if (t.rn) { if (editable()) rungText(t.ri); }
+  }
+  /* ---------- drag and drop (Studio 5000 "Edit Ladder Elements", Dragging and Dropping) ----------
+     the part grabbed decides what moves: an instruction (Ctrl copies), only its operand (a tag name: always a copy,
+     onto another operand), the rung number (the rung), the left branch rail (one branch level), the right branch rail
+     (the end of the branch; with Ctrl or Alt the whole branch). Dropped in another routine, an instruction is copied. */
+  function dragKind(t, ev) {
+    if (!t || t.end || t.ri == null) return null;
+    if (t.rn) return 'rung';
+    if (t.br) return t.rr ? (ev.ctrlKey || ev.altKey ? 'el' : 'rr') : 'lvl';
+    if (!t.path || t.leg) return null;
+    if (t.op != null) { const e = getEl(parsed(t.ri) || [], t.path); return e && e.a && isTagText(e.a[t.op]) ? 'op' : 'el'; }
+    return 'el';
+  }
+  const pfx = (p, q, strict) => !!p && p.length >= q.length + (strict ? 1 : 0) && q.every((v, i) => p[i] === v);
+  const sameP = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+  const NOTAG = /^(routine|label|imm|expr|order)$/;
+  /* is a node a valid drop point for what is dragged (white square)? */
+  function nodeOk(n) {
+    const d = S.drag; if (!d) return false;
+    const src = d.src || {};
+    if (d.kind === 'rung') return n.rung != null && !(d.rt === curProg().name + '/' + curRoutine().name && (n.rung === src.ri || n.rung === src.ri + 1));
+    if (n.rung != null) return false;
+    if (d.kind === 'op') {
+      if (n.op == null || (n.ri === src.ri && sameP(n.path, src.path) && n.op === src.op)) return false;
+      const e = getEl(parsed(n.ri) || [], n.path), kind = e && INSTR[e.t] ? (INSTR[e.t].args[n.op] || '').replace('?', '') : '';
+      return !!kind && !NOTAG.test(kind);
+    }
+    if (n.op != null) return false;
+    if (n.lvl != null) return d.kind === 'lvl' && !(n.ri === src.ri && sameP(n.path, src.path) && (n.lvl === d.lvl || n.lvl === d.lvl + 1)) && !(n.ri === src.ri && pfx(n.path, src.path.concat(d.lvl)));
+    if (d.kind === 'rr') return railOk(n, src);
+    if (d.kind === 'el' && d.rt === curProg().name + '/' + curRoutine().name && n.ri === src.ri && src.path && pfx(n.path, src.path, true)) return false;
+    if (d.kind === 'lvl' && n.ri === src.ri && n.path && pfx(n.path, src.path.concat(d.lvl))) return false;
+    return true;
+  }
+  /* the right rail of a branch moves along its own sequence: after the branch (the instructions passed go into the
+     first level) or back into the first level (the instructions passed come out after the branch) */
+  function railOk(n, src) {
+    if (n.ri !== src.ri || n.leg) return false;
+    const bp = src.path, bi = bp[bp.length - 1], els = parsed(src.ri), b = els && getEl(els, bp);
+    if (!b || b.t !== 'BR') return false;
+    if (n.end) return bp.length === 1 && bi < els.length - 1;
+    if (!n.path) return false;
+    const at = n.path[n.path.length - 1] + (n.after ? 1 : 0);
+    if (n.path.length === bp.length && pfx(n.path, bp.slice(0, -1))) return at > bi + 1;
+    if (n.path.length === bp.length + 2 && pfx(n.path, bp.concat(0))) return at < b.legs[0].length;
+    return false;
+  }
+  function moveRail(src, drop) {
+    return edit(() => {
+      const els = parsed(src.ri); if (!els) return false;
+      const bp = src.path, b = getEl(els, bp), { arr, idx: bi } = seqOf(els, bp);
+      if (drop.end) b.legs[0].push(...arr.splice(bi + 1));
+      else {
+        const at = drop.path[drop.path.length - 1] + (drop.after ? 1 : 0);
+        if (drop.path.length === bp.length) b.legs[0].push(...arr.splice(bi + 1, at - bi - 1));
+        else arr.splice(bi + 1, 0, ...b.legs[0].splice(at));
+      }
+      tidy(els); writeRung(src.ri, els);
+      const l = locate(els, b); S.sel = l ? { ri: src.ri, path: l.path, br: true } : null; if (!l) S.selRung = src.ri;
+    });
+  }
+  /* a branch level moves to a level slot of a branch, or its instructions onto a rung at a node */
+  function moveLevel(src, k, drop, copy) {
+    const same = src.ri === drop.ri;
+    return edit(() => {
+      const se = parsed(src.ri), de = same ? se : parsed(drop.ri);
+      if (!se || !de) return false;
+      const b = getEl(se, src.path); if (!b || b.t !== 'BR' || !b.legs[k]) return false;
+      const lvl = copy ? JSON.parse(JSON.stringify(b.legs[k])) : b.legs[k];
+      const tb = drop.lvl != null ? getEl(de, drop.path) : null, before = tb ? tb.legs[drop.lvl] : null;
+      const lb = drop.leg ? getEl(de, drop.path.slice(0, -1)).legs[drop.path[drop.path.length - 1]] : null;
+      const tgt = drop.path && !drop.leg && drop.lvl == null ? getEl(de, drop.path) : null;
+      if (!copy) b.legs.splice(b.legs.indexOf(lvl), 1);
+      if (tb) tb.legs.splice(before ? tb.legs.indexOf(before) : tb.legs.length, 0, lvl);
+      else if (lb) lb.push(...lvl);
+      else if (tgt) { const at = locate(de, tgt); at.arr.splice(at.idx + (drop.after ? 1 : 0), 0, ...lvl); }
+      else de.push(...lvl);
+      tidy(se); if (!same) tidy(de);
+      writeRung(src.ri, se); if (!same) writeRung(drop.ri, de);
+      S.sel = null; S.selRung = drop.ri;
+    });
+  }
+  /* the rung number moves the rung (Ctrl copies). Online a moved rung is a new rung (i) and, in Run, a deleted one (D) */
+  function moveRung(from, to, copy) {
+    return edit(() => {
+      const R = rungs(), r = R[from]; if (!r || to < 0 || to > R.length) return false;
+      const c = { t: r.t }; if (r.c) c.c = r.c;
+      if (copy || (S.online && ctl.M)) { R.splice(to, 0, c); if (!copy) R.splice(R.indexOf(r), 1); S.selRung = R.indexOf(c); }
+      else { R.splice(from, 1); const k = to > from ? to - 1 : to; R.splice(k, 0, r); S.selRung = k; }
+      S.sel = null;
+    });
+  }
+  /* dragging a tag name copies only the operand onto another instruction's operand */
+  function copyOperand(src, drop) {
+    const se = parsed(src.ri), e0 = se && getEl(se, src.path), v = e0 && e0.a[src.op];
+    if (v == null) return false;
+    return edit(() => {
+      const de = parsed(drop.ri), e = de && getEl(de, drop.path);
+      if (!e || !e.a || drop.op >= e.a.length) return false;
+      e.a[drop.op] = v; writeRung(drop.ri, de);
+      S.sel = { ri: drop.ri, path: drop.path, op: drop.op }; S.selRung = null;
+    });
+  }
+  function dropDone(p, copy) {
+    const k = p.kind, here = curProg().name + '/' + curRoutine().name;
+    if (k === 'op') return copyOperand(p.t, p.drop);
+    if (k === 'rung') return p.rt === here ? moveRung(p.t.ri, p.drop.rung, copy) : false;
+    if (k === 'lvl') return moveLevel(p.t, p.lvl, p.drop, copy);
+    if (k === 'rr') return moveRail(p.t, p.drop);
+    if (p.rt !== here) { if (!p.el) return false; insert(JSON.parse(JSON.stringify(p.el)), p.drop.end ? { ri: p.drop.ri } : p.drop, false); toast(`Copied ${p.el.t === 'BR' ? 'branch' : p.el.t} to ${curRoutine().name}, rung ${p.drop.ri}`); return true; }
+    return moveEl(p.t, p.drop, copy);
+  }
+  // a drag held over a routine tab or an organizer routine row opens that routine
+  const rtHover = { k: '', timer: 0 };
+  function hoverRoutine(p, x, y) {
+    const el = document.elementFromPoint(x, y), tb = el && el.closest && (el.closest('[data-tabk]') || el.closest('[data-org^="rt:"]'));
+    const k = tb ? (tb.dataset.tabk || tb.dataset.org.slice(3)) : '';
+    if (k === rtHover.k) return;
+    clearTimeout(rtHover.timer); rtHover.k = k;
+    if (!k || k === 'tags' || k === curProg().name + '/' + curRoutine().name) return;
+    rtHover.timer = setTimeout(() => {
+      const [g, r] = k.split('/'), P = allProgs().find(x => x.name === g);
+      if (!S.drag || !P || !P.routines.some(x => x.name === r)) return;
+      S.prog = g; S.routine = r; S.view = 'ladder'; if (!S.tabs.includes(k)) S.tabs.push(k);
+      S.sel = null; S.selRung = null; S.lifted = null; reverify(); render(); renderLadder('nodes');
+    }, 600);
   }
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom */
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom.
@@ -1000,9 +1322,11 @@
       }
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       const t = hit(ev.target);
-      const movable = !!(t && t.path && !t.leg && editable());
+      const kind = editable() ? dragKind(t, ev) : null, movable = !!kind;
       cancelAnimationFrame(fling);
-      pd = { x: ev.clientX, y: ev.clientY, lx: ev.clientX, ly: ev.clientY, lt: performance.now(), vx: 0, vy: 0, t, moved: false, long: false, mouse: ev.pointerType === 'mouse', lift: ev.pointerType === 'mouse' && movable };
+      pd = { x: ev.clientX, y: ev.clientY, lx: ev.clientX, ly: ev.clientY, lt: performance.now(), vx: 0, vy: 0, t, moved: false, long: false, mouse: ev.pointerType === 'mouse', lift: ev.pointerType === 'mouse' && movable, kind, ctrl: ev.ctrlKey || ev.altKey };
+      // a left branch rail moves one level: the one nearest the pointer
+      if (kind === 'lvl' && t.ly) { const sv = w.querySelector('svg'), top = sv ? sv.getBoundingClientRect().top : 0; let k = 0; t.ly.forEach((yy, i) => { if (Math.abs(top + yy - ev.clientY) < Math.abs(top + t.ly[k] - ev.clientY)) k = i; }); pd.lvl = k; }
       busy();
       if (!pd.mouse) {
         pd.timer = setTimeout(() => {
@@ -1047,20 +1371,29 @@
     const dragTo = (p, x, y) => {
       if (!p.drag) {
         p.drag = true; p.moved = true; clearTimeout(p.timer);
-        if (p.mouse) { select(p.t); S.lifted = p.t; }
-        const e = getEl(parsed(p.t.ri) || [], p.t.path);
-        p.g = document.createElement('div'); p.g.className = 'ghost'; p.g.style.position = 'fixed'; p.g.style.zIndex = 300; p.g.style.transform = 'translate(-50%, -140%)';
-        p.g.innerHTML = e && e.t !== 'BR' ? `${L.icon(e.t)}<span>${e.t}</span>` : '<span>Branch</span>';
+        if (p.mouse) { select(p.t); S.lifted = p.kind === 'el' ? p.t : null; }
+        const e = p.t.path ? getEl(parsed(p.t.ri) || [], p.t.path) : null;
+        p.el = e ? JSON.parse(JSON.stringify(e)) : null; p.rt = curProg().name + '/' + curRoutine().name;
+        p.g = document.createElement('div'); p.g.className = 'ghost'; p.g.style.position = 'fixed'; p.g.style.zIndex = 300; p.g.style.transform = p.mouse ? 'translate(16px, 12px)' : 'translate(-50%, -140%)'; // never over the green circle
+        p.g.innerHTML = p.kind === 'op' ? `<span>${esc(e.a[p.t.op])}</span>` : p.kind === 'rung' ? `<span>Rung ${p.t.ri}</span>` : p.kind === 'lvl' ? '<span>Branch Level</span>' : p.kind === 'rr' ? '<span>Branch End</span>' : e && e.t !== 'BR' ? `${L.icon(e.t)}<span>${e.t}</span>` : '<span>Branch</span>';
         document.body.appendChild(p.g);
+        S.drag = { kind: p.kind, src: p.t, lvl: p.lvl, rt: p.rt };
+        renderLadder('nodes');
       }
       p.g.style.left = x + 'px'; p.g.style.top = y + 'px';
       const w = $('#ladwrap');
       if (w) { const r = w.getBoundingClientRect(); if (y < r.top + 30) w.scrollTop -= 12; else if (y > r.bottom - 30) w.scrollTop += 12; }
-      p.drop = dropAt(x, y);
+      // held over another routine (its tab or its organizer row): that routine opens, and the drop there copies
+      if (p.kind === 'el') hoverRoutine(p, x, y);
+      p.drop = dropAt(x, y, p.kind);
       const k = JSON.stringify(p.drop);
       if (k !== p.k) { p.k = k; S.dragDrop = p.drop || 'nodes'; renderLadder(S.dragDrop); }
     };
     document.addEventListener('touchmove', ev => { if (pd && pd.lift && !pd.mouse) ev.preventDefault(); }, { passive: false });
+    // the menu that opens when a held finger lets go must not get that finger's click (a phone sheet is under it)
+    let menuUp = 0;
+    document.addEventListener('click', ev => { if (menuUp && performance.now() - menuUp < 400) { menuUp = 0; ev.preventDefault(); ev.stopPropagation(); } }, true);
+    document.addEventListener('pointerdown', () => { menuUp = 0; }, true);
     const up = ev => {
       if (!pts.has(ev.pointerId)) return;
       pts.delete(ev.pointerId);
@@ -1070,9 +1403,9 @@
       const p = pd;
       pd = null;
       busy();
-      S.lifted = null; S.dragDrop = null;
-      if (p.drag) { p.g.remove(); if (ev.type === 'pointerup' && p.drop && moveEl(p.t, p.drop, ev.ctrlKey)) return; render(); return; }
-      if (p.long && p.lift && ev.type === 'pointerup') { render(); ctxMenu(p.t, p.x, p.y); return; }
+      S.lifted = null; S.dragDrop = null; S.drag = null; clearTimeout(rtHover.timer); rtHover.k = '';
+      if (p.drag) { p.g.remove(); if (ev.type === 'pointerup' && p.drop && dropDone(p, !(p.t && p.t.rr) && (ev.ctrlKey || p.ctrl))) return; render(); return; }
+      if (p.long && p.lift && ev.type === 'pointerup') { render(); ctxMenu(p.t, p.x, p.y); menuUp = performance.now(); return; }
       if (p.moved && !p.mouse && !p.long && performance.now() - p.lt < 80 && Math.hypot(p.vx, p.vy) > .3) flick(p.vx, p.vy);
       if (ev.type === 'pointercancel' || p.moved || p.long) { if (!p.long) live(true); else if (p.lift) render(); return; }
       onTap(p.t, ev.clientX, ev.clientY, false, !p.mouse);
@@ -1101,29 +1434,41 @@
   }
 
   /* ---------- context menus (right-click / long-press): spec section 4 ---------- */
+  /* the ladder's right-click menus, as in the reference (Studio 5000): the rung number, a branch rail, an instruction
+     and the tag name of an instruction each have their own menu. The instruction items are the same for every
+     instruction; a Bit instruction (BOOL operand) adds Toggle Bit, Force On and Force Off */
+  const renamed = (items, names) => items.map(it => (it === '-' || !names[it.id] ? it : { ...it, l: names[it.id] }));
+  const kb = k => (S.layout === 'desktop' ? k : '');
+  function tagItems(e, oi, onName) {
+    const kind = (((INSTR[e.t] || {}).args || [])[oi] || '').replace('?', ''), a = e.a[oi];
+    if (!kind || /^(routine|label|imm|expr|order)$/.test(kind)) return [];
+    if (a === '?' || a === '') return [{ l: 'New Tag…', k: kb('Ctrl+W'), i: 'newtag', run: () => newTag({ kind }), dis: !editable() }, '-'];
+    if (!isTagText(a)) return [];
+    const base = String(a).split(/[.[]/)[0], tg = tagFor(base);
+    if (!tg) return [{ l: `New "${base}"`, k: kb('Ctrl+W'), i: 'newtag', run: () => newTag({ name: base, kind }), dis: !editable() }, '-'];
+    if (!onName) return [];
+    return [{ l: `Edit "${tg.name}" Properties`, i: 'tag', run: () => newTag({ tag: tg }) }, { l: `Find All "${a}"`, i: 'search', run: () => findAll(a) },
+      { l: `Go To Cross Reference For "${base}"`, i: 'xref', run: () => xref(base) }, { l: `Monitor "${a}"`, i: 'tags', run: () => monitorTag(base) },
+      { l: `Trend "${a}"`, dis: true }, '-'];
+  }
   function ctxMenu(t, x, y) {
     if (!t || t.end) return;
-    let ids, head;
-    if (t.leg) { head = `Rung ${t.ri} · Branch Level`; ids = ['paste', 'del', '-', 'level']; }
-    else if (t.path && !t.br) {
-      const e = curEl(), oi = selOpIdx(), a = e && e.a ? e.a[oi] : undefined, onm = e ? (L.OPN[e.t] || [])[oi] || 'Operand' : '';
-      head = `Rung ${t.ri} · ${e ? e.t + ' ' + e.a.join(', ') : ''}`;
-      const pre = [];
-      if (e && e.a && e.a.length) {
-        pre.push({ l: `Edit "${onm}"…`, i: 'edit', run: () => openEditor(t.ri, t.path, oi), dis: !editable() });
-        const base = isTagText(a) ? String(a).split(/[.[]/)[0] : null, tg = base && tagFor(base);
-        if (base && !tg) pre.push({ l: `New "${base}"…`, i: 'newtag', run: () => newTag({ name: base, kind: (INSTR[e.t].args[oi] || '').replace('?', '') }), dis: !editable() });
-        if (tg) pre.push({ l: `Edit "${tg.name}" Properties…`, i: 'tag', run: () => newTag({ tag: tg }) });
-        if (base) pre.push({ l: oi ? `Edit "${a}" Description…` : 'Edit Main Operand Description…', i: 'tag', run: editDesc, k: 'Ctrl+D' });
-        pre.push('-');
-      }
-      ids = ['cut', 'copy', 'paste', 'del', '-', 'ins', 'edit', '-', 'toggle', 'fon', 'foff', 'frem', '-', 'goto', 'xref', 'help'];
-      openMenu(pre.concat(menuItems(ids)), { x, y }, head);
+    if (t.leg) { openMenu(renamed(menuItems(['paste', 'del', '-', 'level', 'applevel']), { del: 'Delete Branch Level' }), { x, y }, `Rung ${t.ri} · Branch Level`); return; }
+    if (t.br) { openMenu(renamed(menuItems(['cut', 'copy', 'paste', 'del', '-', 'level', 'applevel', 'mvrail']), { cut: 'Cut Branch', copy: 'Copy Branch', del: 'Delete Branch' }), { x, y }, `Rung ${t.ri} · Branch`); return; }
+    if (t.path) {
+      const e = curEl();
+      if (!e) return;
+      const d = INSTR[e.t] || {}, bit = d.grp === 'Bit', oi = selOpIdx(), a = e.a[oi];
+      const ids = ['cut', 'copy', 'paste', '-', 'del', 'ins', 'desc', '-', 'sdef', 'cdef', '-'].concat(bit ? ['toggle', '-', 'fon', '-', 'foff', '-'] : [], ['frem', '-', 'goto', 'help']);
+      let items = renamed(menuItems(ids), { cut: 'Cut Instruction', copy: 'Copy Instruction', del: 'Delete Instruction' });
+      items = items.map(it => (it === '-' ? it : it.id === 'help' ? { ...it, id: null, run: () => instrHelp(e.t) } : it.id === 'desc' && oi ? { ...it, l: `Edit "${a}" Description` } : it));
+      // a box operand holding a tag: its forced value is monitored and edited there (the app forces I/O bits only)
+      if (!bit && t.op != null && isTagText(a)) items.splice(items.findIndex(it => it.id === 'frem'), 0, { l: `Monitor/Edit Force Value Of "${a}"`, i: 'force', run: () => monitorTag(String(a).split(/[.[]/)[0]) }, '-');
+      openMenu(tagItems(e, oi, t.op != null).concat(items), { x, y }, `Rung ${t.ri} · ${e.t} ${e.a.join(', ')}`);
       return;
-    } else if (t.br) { head = `Rung ${t.ri} · Branch`; ids = ['cut', 'copy', 'paste', 'del', '-', 'level']; }
-    else { head = `Rung ${t.ri}`; ids = ['cut', 'copy', 'paste', 'del', '-', 'rung', 'rtext', 'comment', 'verifyr', '-', 'goto']; }
-    const items = menuItems(ids).map(it => (it === '-' ? it : { ...it, l: it.id === 'newtag' ? `New "${curEl().a[0]}"` : t.br && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Branch' : t.leg && it.id === 'del' ? 'Delete Branch Level' : !t.path && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Rung' : it.id === 'del' ? 'Delete Instruction' : it.l }));
-    openMenu(items, { x, y }, head);
+    }
+    const ids = ['cut', 'copy', 'paste', '-', 'del', 'rung', 'rtext', 'comment', 'rimp', 'rexp', '-', 'rstart', 'raccept', 'rcancel', '-', 'rasm', 'rcanc', '-', 'verifyrung', '-', 'goto', '-', 'ins'];
+    openMenu(renamed(menuItems(ids), { cut: 'Cut Rung', copy: 'Copy Rung', del: 'Delete Rung' }), { x, y }, `Rung ${t.ri}`);
   }
   function orgMenu(key, x, y) {
     const items = [];
@@ -1141,7 +1486,7 @@
   /* ---------- layer: menus, sheets, dialogs, toasts ---------- */
   /* the menus as an accordion: tap a menu name to open its commands, tap again to fold it */
   function foldMenu(at) {
-    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-').map(x => ({ ...x, grp: n })));
+    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-' && !x.hd).map(x => ({ ...x, grp: n })));
     openMenu(items, at);
     const menu = $('#layer .menu'); if (!menu) return;
     // group the commands under their menu's header; a tap on a header folds its group open or shut in place
@@ -1300,7 +1645,7 @@
         return n;
       };
       const ioRows = [];
-      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
       groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
       const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = typeOf(t) + (t.dim ? '[' + t.dim + ']' : ''); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
       groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
@@ -1528,6 +1873,129 @@
     setTimeout(() => { first.focus(); if (first.select) first.select(); showSug(); }, 30);
   }
 
+  /* ---------- inline edit on the rung (reference: "Modify an Instruction") ----------
+     A small combo box over the operand (or the mnemonic) with a tag drop-down (Alt+Down, or the arrow button).
+     Enter accepts and goes on to the next operand, Tab accepts, Esc, scrolling or a click elsewhere drops the edit.
+     A new mnemonic (morph) keeps the operands that fit it: TON(Tmr1,5000,0) to XIC keeps Tmr1. */
+  const SEL_KIND = /^(routine|label|order)$/;
+  function fitsKind(v, k, was) {
+    if (v == null || v === '' || v === '?') return true;
+    if (k === 'expr' || k === 'num') return true;
+    if (k === 'imm') return !!E.parseNumber(v);
+    if (SEL_KIND.test(k)) return k === was;
+    return isTagText(v) || /^Local:/i.test(v) || /^S:/i.test(v);
+  }
+  function morphOps(old, m) {
+    const was = INSTR[old.t] ? INSTR[old.t].args : [];
+    const blank = (k, i) => (k.endsWith('?') ? null : TC.includes(m) && i === 2 ? '0' : '?');
+    return INSTR[m].args.map((k, i) => { const v = old.a[i]; if (v == null) return blank(k, i); return fitsKind(v, k.replace('?', ''), (was[i] || '').replace('?', '')) ? v : blank(k, i); }).filter(v => v !== null);
+  }
+  const inlRect = (ri, path, op) => {
+    const w = $('#ladwrap'); if (!w) return null;
+    const q = `rect.tap[data-ri="${ri}"][data-p="${path.join('.')}"]`;
+    return (op === 'mn' ? null : w.querySelector(`${q}[data-opi="${op}"]`)) || [...w.querySelectorAll(q)].find(r => !r.dataset.opi && !r.dataset.br && !r.dataset.leg) || null;
+  };
+  function inlineEdit(ri, path, op, typed) {
+    if (!editable()) return false;
+    const els = parsed(ri), e = els && getEl(els, path);
+    if (!e || e.t === 'BR') return false;
+    const mn = op === 'mn', d = INSTR[e.t];
+    if (!mn && (!d || op >= d.args.length)) return false;
+    S.sel = mn ? { ri, path } : { ri, path, op }; S.selRung = null;
+    if (S.layout === 'phone') S.area = 'ladder';
+    render();
+    let r = inlRect(ri, path, op);
+    if (!r) return false;
+    r.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    r = inlRect(ri, path, op);
+    const b = r.getBoundingClientRect(), touch = S.layout !== 'desktop';
+    const H = touch ? 44 : 24, W = Math.min(innerWidth - 12, Math.max(b.width + (touch ? 24 : 12), touch ? 220 : 160));
+    const x = Math.max(6, Math.min(innerWidth - W - 6, b.left + b.width / 2 - W / 2));
+    const y = Math.max(6, Math.min(innerHeight - H - 6, b.top + b.height / 2 - H / 2));
+    const kind = mn ? 'mn' : (d.args[op] || '').replace('?', '');
+    const cur = mn ? e.t : e.a[op] == null ? '' : String(e.a[op]);
+    const start = typed != null ? typed : cur === '?' ? '' : cur;
+    const up = y + H + (touch ? 5 * 44 : 8 * 26) > innerHeight - 6;
+    const l = $('#layer');
+    l.innerHTML = `<div class="scrim clear" data-iscrim="1"></div><div class="inled${up ? ' up' : ''}" id="inled" style="left:${x}px;top:${y}px;width:${W}px" role="combobox" aria-expanded="false">
+      <div class="inrow"><input class="inp mono" id="inl" value="${esc(start)}" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="next" aria-label="${esc(mn ? 'Instruction' : (L.OPN[e.t] || [])[op] || 'Operand')}"${kind === 'imm' ? ' inputmode="decimal"' : ''}><button class="ib" id="inldd" type="button" title="Browse (Alt+Down)" aria-label="Browse">${ic('down')}</button></div>
+      <div class="inlist" id="inlist" role="listbox" hidden></div><div class="inerr" id="inerr" hidden></div></div>`;
+    layerAt = performance.now();
+    const box = $('#inled'), inp = $('#inl'), list = $('#inlist'), er = $('#inerr');
+    let act = -1;
+    const rowsOf = () => [...list.querySelectorAll('[data-ipk]')];
+    const items = () => {
+      const t = inp.value.trim(), q = U(t);
+      if (mn) return Object.keys(INSTR).filter(k => !q || k.startsWith(q) || U(NAME(k)).includes(q)).sort((a, c) => (a.startsWith(q) ? 0 : 1) - (c.startsWith(q) ? 0 : 1) || a.localeCompare(c)).map(k => ({ name: k, type: '', desc: NAME(k) }));
+      // the whole list for the operand's type while the text is the current operand, the matches while typing
+      const all = suggest(kind, ''), m = !q || all.some(c => U(c.name) === q) && q === U(cur) ? all : suggest(kind, t);
+      return m;
+    };
+    const draw = () => {
+      const its = items().slice(0, 150);
+      list.innerHTML = its.length ? its.map((c, i) => `<div class="row${i === act ? ' act' : ''}${U(c.name) === U(inp.value.trim()) ? ' on' : ''}" data-ipk="${esc(c.name)}" role="option"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div>${c.type ? `<span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span>` : ''}</div>`).join('')
+        : `<div class="empty">${kind === 'imm' ? 'Type a number, e.g. 5000' : mn ? 'No instruction starts with that' : 'No matching tags: type a new name, then New Tag (Ctrl+W)'}</div>`;
+    };
+    const openList = on => { list.hidden = !on; box.setAttribute('aria-expanded', on ? 'true' : 'false'); if (on) { act = -1; draw(); const o = list.querySelector('.row.on'); if (o) o.scrollIntoView({ block: 'nearest' }); } };
+    const fail = m => { er.textContent = m; er.hidden = false; inp.classList.add('bad'); inp.focus(); return false; };
+    const accept = next => {
+      const v = inp.value.trim();
+      const els2 = parsed(ri), x2 = els2 && getEl(els2, path);
+      if (!x2 || x2.t === 'BR') { closeLayer(); return true; }
+      if (mn) {
+        const m = U(v);
+        if (!INSTR[m]) return fail(`"${v}" is not an instruction.`);
+        closeLayer();
+        if (m !== x2.t) edit(() => { const a = parsed(ri), x = getEl(a, path); x.a = morphOps(x, m); x.t = m; writeRung(ri, a); S.sel = { ri, path }; S.selRung = null; });
+        return true;
+      }
+      const dd = INSTR[x2.t], ops = x2.a.slice();
+      ops[op] = v;
+      const a2 = dd.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(z => z !== null);
+      closeLayer();
+      if (a2.join('\u0001') !== x2.a.join('\u0001')) {
+        if (v && v !== '?' && isTagText(v) && !SEL_KIND.test(kind) && kind !== 'imm' && kind !== 'expr') rememberTags([v]);
+        edit(() => { const a = parsed(ri), x = getEl(a, path); x.a = a2; writeRung(ri, a); S.sel = { ri, path, op }; S.selRung = null; });
+      } else { S.sel = { ri, path, op }; render(); }
+      if (next && op + 1 < dd.args.length) setTimeout(() => inlineEdit(ri, path, op + 1), 0);
+      return true;
+    };
+    const cancel = () => { closeLayer(); render(); };
+    const pick = name => { inp.value = name; openList(false); accept(true); };
+    inp.addEventListener('input', () => { er.hidden = true; inp.classList.remove('bad'); openList(true); });
+    $('#inldd').addEventListener('click', () => { openList(list.hidden); inp.focus(); });
+    list.addEventListener('click', ev => { const rw = ev.target.closest('[data-ipk]'); if (rw) pick(rw.dataset.ipk); });
+    // a click (a press) anywhere else, or scrolling, drops the edit
+    const sc = l.querySelector('[data-iscrim]');
+    sc.addEventListener('pointerdown', ev => { if (!freshLayer()) { ev.preventDefault(); cancel(); } });
+    sc.addEventListener('wheel', () => cancel(), { passive: true });
+    // the wheel over the combo itself scrolls the ladder under it too: only the tag list scrolls in place
+    box.addEventListener('wheel', ev => { if (!ev.target.closest('#inlist')) cancel(); }, { passive: true });
+    l.onclick = null;
+    layerKey = ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); cancel(); return; }
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'w' && !mn) { ev.preventDefault(); const n = inp.value.trim(); closeLayer(); newTag({ name: E.validName(n) ? n : '', kind, after: () => render() }); return; }
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        if (list.hidden) { if (ev.key === 'ArrowDown') openList(true); return; }
+        if (ev.altKey) { openList(false); return; }
+        const rows = rowsOf(); if (!rows.length) return;
+        act = Math.max(0, Math.min(rows.length - 1, act + (ev.key === 'ArrowDown' ? 1 : -1)));
+        rows.forEach((rw, i) => rw.classList.toggle('act', i === act));
+        rows[act].scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if (ev.key === 'Enter') { ev.preventDefault(); const rows = rowsOf(); if (!list.hidden && act >= 0 && rows[act]) pick(rows[act].dataset.ipk); else accept(!(ev.ctrlKey || ev.metaKey)); return; }
+      if (ev.key === 'Tab') { ev.preventDefault(); accept(false); }
+    };
+    if (touch) openList(true);
+    inp.focus();
+    if (typed != null) inp.setSelectionRange(inp.value.length, inp.value.length); else inp.select();
+    if (typed != null && !touch) openList(true);
+    return true;
+  }
+  const inlineOpen = () => !!$('#inled');
+
   /* ---------- tags ---------- */
   function newTag(o) {
     const P = curProg();
@@ -1584,31 +2052,80 @@
   const selOperand = () => { const e = curEl(); return e && e.a ? e.a[selOpIdx()] : undefined; };
   const isTagText = a => !!a && a !== '?' && /^[A-Za-z_]\w*$/.test(String(a).split(/[.[]/)[0]) && !E.parseNumber(a);
   function editDesc() {
-    const e = curEl(), op = selOperand();
+    const op = selOperand();
     if (!op || op === '?') return;
     const t = tagFor(op), own = t && U(t.name) === U(op);
-    prompt1(selOpIdx() ? `Edit "${op}" Description` : 'Edit Main Operand Description', op, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
+    openDescBar(`Description For: ${op}`, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
       if (own) { const P = curProg(); const list = P.tags.includes(t) ? P.tags : S.p.tags; edit(() => { const i = list.indexOf(t); list[i] = { ...list[i], desc: v }; if (!v) delete list[i].desc; }); return; }
       edit(() => { S.p.comments = S.p.comments || {}; if (v) S.p.comments[U(op)] = v; else delete S.p.comments[U(op)]; });
-    }, own ? 'The description of the tag: it shows wherever the tag is used.' : 'A description of this operand (an I/O point or a member): it shows above it in the ladder.');
+    });
+  }
+  /* the description and rung comment editors, as in the reference: a bar above the ladder ("Description For: tag",
+     "Rung Comment For Rung: n") with a check mark to keep the text and a cross to drop it */
+  function descBarHTML() {
+    const d = S.descEd;
+    if (!d) return '';
+    return `<div class="descbar${d.rung ? ' rungbar' : ''}" id="descbar"><div class="dbh"><span class="ell">${esc(d.title)}</span><button class="ib dok" data-desc="ok" title="Accept (Ctrl+Enter)" aria-label="Accept">${ic('check')}</button><button class="ib dno" data-desc="x" title="Cancel (Esc)" aria-label="Cancel">${ic('close')}</button></div><textarea class="inp${d.rung ? ' mono' : ''}" id="desctx" rows="${d.rung ? 2 : 3}" spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="${esc(d.title)}">${esc(d.value)}</textarea>${d.err ? `<div class="errtx" id="descerr">${esc(d.err)}</div>` : ''}</div>`;
+  }
+  /* o.rung: the Rung Text Edit Bar (the rung's ASCII text, monospaced, Enter accepts too); save may return an error
+     text, which keeps the bar open with the text the user typed */
+  function openDescBar(title, value, save, o) {
+    if (S.layout === 'phone') S.area = 'ladder';
+    S.descEd = { title, value, save, rung: !!(o && o.rung) };
+    render();
+    const tx = $('#desctx'); if (tx) { tx.focus(); if (o && o.rung) tx.setSelectionRange(tx.value.length, tx.value.length); else tx.select(); }
+  }
+  function closeDescBar(ok) {
+    const d = S.descEd; if (!d) return;
+    const tx = $('#desctx'), v = (tx ? tx.value : d.value).trim();
+    S.descEd = null;
+    const err = ok ? d.save(v) : null;
+    if (typeof err === 'string' && err) {
+      S.descEd = { ...d, value: v, err };
+      render();
+      const nt = $('#desctx'); if (nt) nt.focus();
+      return;
+    }
+    render();
   }
   const fmtVal = v => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toPrecision(7))) : v === undefined ? '' : String(v));
+  /* the rows of the tag editor, as in the reference: at controller scope the module-defined tags of each module in
+     the I/O Configuration come first (Local:<slot>:C, :I and :O, made with the module, read-only, gone with it), then
+     the project's tags. A structure opens to its members, an array to its elements, an integer to its bits. */
+  function tagKids(path, ty, dim) {
+    if (dim) return Array.from({ length: Math.min(dim, 64) }, (_, i) => ({ path: `${path}[${i}]`, ty, dim: 0 }));
+    const mem = membersOf(ty);
+    if (mem) return mem.map(m => ({ path: `${path}.${m.name}`, ty: m.type, dim: m.dim || 0 }));
+    if (NBITS[ty]) return Array.from({ length: NBITS[ty] }, (_, b) => ({ path: `${path}.${b}`, ty: 'BOOL', dim: 0 }));
+    return null;
+  }
+  function moduleTags() {
+    const out = [];
+    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
+    return out;
+  }
+  const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
+  // calls fn(entry, depth, kids, open) for each row shown: the tags, then the members of the open ones
+  function tagWalk(scope, q, fn) {
+    const qq = U(q || ''), hit = (n, d) => !qq || U(n).includes(qq) || U(d || '').includes(qq);
+    const top = (scope ? [] : moduleTags().filter(x => hit(x.path)))
+      .concat(scopeTags(scope).filter(t => hit(t.name, t.desc)).map(t => ({ path: t.name, ty: typeOf(t), dim: t.dim || 0, t })));
+    const go = (e, depth) => {
+      const kids = tagKids(e.path, e.ty, e.dim), open = !!kids && S.tagOpen.has(scope + '|' + e.path);
+      fn(e, depth, kids, open);
+      if (open) kids.forEach(k => go({ ...k, mod: e.mod, member: true }, depth + 1));
+    };
+    top.forEach(e => go(e, 0));
+  }
+  const tyText = e => (e.t ? (e.t.alias || !e.t.type ? e.ty : e.t.type) + (e.t.dim ? '[' + e.t.dim + ']' : '') : e.ty + (e.dim ? '[' + e.dim + ']' : ''));
+  const aggr = e => !!e.dim || !!membersOf(e.ty) || /\[\d+\]$/.test(e.ty);
   function tagRows(mode, scope, q) {
-    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags;
     const rows = [];
-    const qq = U(q || '');
-    list.filter(t => !qq || U(t.name).includes(qq) || U(t.desc || '').includes(qq)).forEach(t => {
-      const ty = typeOf(t), path = t.name, isStruct = !!E.PREDEF[ty] || !!t.dim, open = S.tagOpen.has((scope || '') + '|' + t.name);
-      const val = rowVal(path, ty, scope, t);
-      rows.push(`<div class="row" data-tag="${esc(t.name)}" data-ty="${esc(ty)}"><span class="exp" data-texp="${esc(t.name)}">${isStruct ? ic(open ? 'down' : 'right') : ''}</span><div class="grow"><div class="nm">${esc(t.name)}</div><div class="sub">${esc(t.alias ? '<' + t.alias + '>  ' : '')}${esc(t.desc || '')}</div></div>
-        ${mode === 'mon' && !isStruct ? `<span class="val${val.cls}" data-tv="${esc(path)}">${esc(val.t)}</span>` : ''}<span class="ty">${esc(t.alias ? ty : t.type)}${t.dim ? '[' + t.dim + ']' : ''}</span></div>`);
-      if (isStruct && open) {
-        const mem = t.dim ? Array.from({ length: Math.min(t.dim, 64) }, (_, i) => ({ name: `[${i}]`, type: t.type })) : E.PREDEF[ty];
-        mem.forEach(m => {
-          const p = t.dim ? `${t.name}${m.name}` : `${t.name}.${m.name}`, v = E.PREDEF[m.type] ? { t: '{…}', cls: '' } : rowVal(p, m.type, scope);
-          rows.push(`<div class="row mem" data-tag="${esc(p)}" data-ty="${esc(m.type)}"><div class="grow"><div class="nm">${esc(p)}</div></div>${mode === 'mon' ? `<span class="val${v.cls}" data-tv="${esc(p)}">${esc(v.t)}</span>` : ''}<span class="ty">${esc(m.type)}</span></div>`);
-        });
-      }
+    tagWalk(scope || '', q, (e, depth, kids, open) => {
+      const v = aggr(e) ? null : rowVal(e.path, e.ty, scope, e.t);
+      const sub = e.t ? (e.t.alias ? '<' + e.t.alias + '>  ' : '') + (e.t.desc || '') : !e.member && e.mod ? `[${e.mod.slot}] ${e.mod.name} (module-defined)` : '';
+      rows.push(`<div class="row${depth ? ' mem' : ''}${e.mod ? ' modtag' : ''}" data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}${depth ? ` style="padding-left:${20 + depth * 18}px"` : ''}><span class="exp"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span><div class="grow"><div class="nm">${esc(e.path)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
+        ${mode === 'mon' && v ? `<span class="val${v.cls}" data-tv="${esc(e.path)}">${esc(v.t)}</span>` : ''}<span class="ty">${esc(tyText(e))}</span></div>`);
     });
     return rows.join('') || '<div class="empty">No tags yet. Use + to add one.</div>';
   }
@@ -1637,70 +2154,134 @@
     S.tagMode = mode || 'mon'; if (scope !== undefined) S.tagScope = scope;
     S.view = 'tags'; S.drawer = false; render();
   }
+  /* Monitor Tags while values change: only the Value (and Force Mask) cells are written, the rows stay */
+  function liveTagValues() {
+    const r = $('#tagrows'); if (!r) return;
+    const scope = S.tagScope || '', byName = new Map(scopeTags(scope).map(t => [t.name, t]));
+    r.querySelectorAll('[data-tv]').forEach(c => {
+      if (c.children.length) return; // a value being typed
+      const row = c.closest('[data-tag]'), path = c.dataset.tv, ty = row ? row.dataset.ty : '';
+      const v = rowVal(path, ty, scope, row && !row.classList.contains('mem') ? byName.get(path) : null), cls = 'val' + v.cls;
+      if (c.className !== cls) c.className = cls;
+      if (c.textContent !== v.t) c.textContent = v.t;
+      const fc = c.tagName === 'TD' ? c.nextElementSibling : null;
+      if (fc) { const fm = S.online && ctl.M && ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null, ft = fm === 1 ? '1' : fm === 0 ? '0' : ''; if (fc.textContent !== ft) fc.textContent = ft; }
+    });
+  }
   function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
   /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
      Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
-  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] ? '' : 'Decimal');
+  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
+  // the tag an alias ends at (an alias of an alias goes on to the base tag)
+  const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
+  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'Usage', 'Constant'] };
   function tagTableRows() {
-    const scope = S.tagScope || '', mon = S.tagMode === 'mon';
-    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags, qq = U(S.tagQ || '');
-    const rows = [];
-    list.filter(t => !qq || U(t.name).includes(qq) || U(t.desc || '').includes(qq)).forEach(t => {
-      const ty = typeOf(t), isStruct = !!E.PREDEF[ty] || !!t.dim, open = S.tagOpen.has(scope + '|' + t.name), v = rowVal(t.name, ty, scope, t);
-      const fm = S.online && ctl.M && ty === 'BOOL' ? ctl.forced(t.name, scope || undefined) : null;
-      rows.push(`<tr data-tag="${esc(t.name)}" data-ty="${esc(ty)}"><td class="ex" data-texp="${esc(t.name)}">${isStruct ? ic(open ? 'down' : 'right') : ''}</td><td class="nm">${esc(t.name)}</td>`
-        + (mon ? `<td class="val${v.cls}" data-tv="${esc(t.name)}">${isStruct ? '{…}' : esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(ty)}</td>`
-          : `<td class="mono">${esc(t.alias || '')}</td>`)
-        + `<td class="mono">${esc(t.alias ? ty : t.type)}${t.dim ? '[' + t.dim + ']' : ''}</td>${mon ? '' : `<td>${styleOf(ty)}</td>`}<td class="ds">${esc(t.desc || '')}</td></tr>`);
-      if (isStruct && open) {
-        const mem = t.dim ? Array.from({ length: Math.min(t.dim, 64) }, (_, i) => ({ name: `[${i}]`, type: t.type })) : E.PREDEF[ty];
-        mem.forEach(m => {
-          const p = t.dim ? `${t.name}${m.name}` : `${t.name}.${m.name}`, mv = E.PREDEF[m.type] ? { t: '{…}', cls: '' } : rowVal(p, m.type, scope);
-          rows.push(`<tr class="mem" data-tag="${esc(p)}" data-ty="${esc(m.type)}"><td></td><td class="nm">${esc(p)}</td>${mon ? `<td class="val${mv.cls}" data-tv="${esc(p)}">${esc(mv.t)}</td><td></td><td>${styleOf(m.type)}</td>` : '<td></td>'}<td class="mono">${esc(m.type)}</td>${mon ? '' : `<td>${styleOf(m.type)}</td>`}<td></td></tr>`);
-        });
+    const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
+    tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
+      const t = e.t && !e.member ? e.t : null, ag = aggr(e);
+      const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : ''].filter(Boolean).join(' ');
+      const head = `<tr${cls ? ` class="${cls}"` : ''} data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}><td class="ex"></td>`
+        + `<td class="nm" style="padding-left:${4 + depth * 16}px"><span class="tx"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span>${esc(e.path)}</td>`;
+      if (mon) {
+        const v = ag ? { t: '{…}', cls: '' } : rowVal(e.path, e.ty, scope, t);
+        const fm = S.online && ctl.M && e.ty === 'BOOL' ? ctl.forced(e.path, scope || undefined) : null;
+        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
+        return;
       }
+      const base = !!t && !t.alias;
+      rows.push(head + `<td class="mono">${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
+        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td>${styleOf(e.ty)}</td>`
+        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
+        + `<td class="ck">${depth ? '' : `<input type="checkbox" data-tconst="${esc(e.path)}"${t && t.constant ? ' checked' : ''}${base ? '' : ' disabled'} aria-label="Constant">`}</td></tr>`);
     });
-    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td></td><td colspan="5">${ic('plus')} Click to add a new tag</td></tr>`);
-    return rows.join('') || '<tr><td colspan="6" class="empty">No tags.</td></tr>';
+    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="7" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
+    return rows.join('') || `<tr><td colspan="${TCOLS.mon.length + 1}" class="empty">No tags.</td></tr>`;
   }
   function tagWsHTML() {
     const sc = S.tagScope || '', mon = S.tagMode === 'mon';
     return `<div class="tagws" id="tagpage"><div class="tagbar"><label for="tscope">Scope:</label><select class="inp" id="tscope"><option value="">${esc(S.p.controller.name)} (controller)</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>${esc(g.name)} (program)</option>`).join('')}</select>
         <input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
-      <div class="tagtbl"><table><thead><tr><th></th><th>Name</th>${mon ? '<th>Value</th><th>Force Mask</th><th>Style</th>' : '<th>Alias For</th>'}<th>Data Type</th>${mon ? '' : '<th>Style</th>'}<th>Description</th></tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
-      <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it.'}</span></div></div>`;
+      <div class="tagtbl"><table><thead><tr><th></th>${TCOLS[mon ? 'mon' : 'edit'].map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
+      <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it. Type a name in the last row to add one.'}</span></div></div>`;
   }
-  function tagClick(row) {
+  /* a click on a row of the tag editor: Edit Tags opens Tag Properties (or edits the Data Type / Description cell
+     in place); Monitor Tags toggles or writes the value online, or the start value offline. The module-defined
+     tags cannot be edited or deleted: they come and go with their module. */
+  function tagClick(row, cell) {
     const name = row.dataset.tag, ty = row.dataset.ty, scope = S.tagScope || '';
-    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags;
+    const list = scopeTags(scope);
     const t = list.find(x => x.name === name);
-    if (S.tagMode === 'edit') { if (t) newTag({ tag: t, list }); return; }
-    if (E.PREDEF[ty] || (t && t.dim)) return;
+    const slot = row.dataset.mod ? (/^Local:(\d+)/.exec(name) || [])[1] : null;
+    if (S.tagMode === 'edit') {
+      if (t && cell) { tagCellEdit(cell, t, list); return; }
+      if (t) { newTag({ tag: t, list }); return; }
+      if (slot != null) toast(`${name.split(/[.[]/)[0]} is a module-defined tag: it comes with the module in slot ${slot}. Change the module in the I/O Configuration.`);
+      return;
+    }
+    if (membersOf(ty) || /\[\d+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
       if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
       prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined)) return 'This tag cannot be written (an input or read-only).'; live(true); });
       return;
     }
+    if (slot != null) { toast('A module-defined tag has no start value: its values come from the module when online.'); return; }
     if (!t || t.alias) { toast('Start values can be set for base tags only.'); return; }
     if (ty === 'BOOL') { edit(() => { t.value = t.value ? 0 : 1; }); refreshTags(); return; }
     prompt1('Start value', name, fmtVal(t.value || 0), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; edit(() => { t.value = n.v; }); });
+  }
+  // Edit Tags: the Data Type or Description cell of a tag, edited in place (Enter or another cell keeps it, Esc does not)
+  function tagCellEdit(td, t, list) {
+    if (td.querySelector('input, select')) return;
+    const k = td.dataset.tcell, types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
+    td.innerHTML = k === 'type' ? `<select class="cin" aria-label="Data Type">${types.map(x => `<option${x === (t.type || 'BOOL') ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
+    const f = td.firstChild;
+    let done = false;
+    const commit = keep => {
+      if (done) return; done = true;
+      const v = f.value.trim(), was = k === 'type' ? t.type || 'BOOL' : t.desc || '';
+      if (!keep || v === was) { refreshTags(); return; }
+      edit(() => { const n = { ...t }; if (k === 'type') { n.type = v; delete n.value; } else if (v) n.desc = v; else delete n.desc; list[list.indexOf(t)] = n; });
+    };
+    f.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(true); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commit(false); } });
+    f.addEventListener('blur', () => commit(true));
+    if (k === 'type') f.addEventListener('change', () => commit(true));
+    f.focus(); if (f.select) f.select();
+  }
+  // Edit Tags: the blank row at the end (the pencil): a name typed there makes a DINT tag in this scope
+  function newTagInline(inp) {
+    const name = inp.value.trim(), list = scopeTags(S.tagScope || '');
+    if (!name) return;
+    if (!E.validName(name)) { toast('Tag names: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.', 'err'); return; }
+    if (list.some(t => U(t.name) === U(name))) { toast(`A tag named ${name} already exists in this scope.`, 'err'); return; }
+    inp.value = '';
+    if (!edit(() => { list.push({ name, type: 'DINT' }); })) return;
+    S.tagJust = name;
+    toast(`Tag ${name} created (DINT)`);
+    setTimeout(() => { const i = $('#tnew'); if (i) i.focus(); }, 0);
+  }
+  function toggleConst(box) {
+    const list = scopeTags(S.tagScope || ''), t = list.find(x => x.name === box.dataset.tconst);
+    if (!t || t.alias) return;
+    edit(() => { const n = { ...t }; if (box.checked) n.constant = true; else delete n.constant; list[list.indexOf(t)] = n; });
   }
 
   /* ---------- dialogs: rung text, comment, find, go to, cross reference, help ---------- */
   function rungText(ri) {
     if (ri == null || !rungs()[ri]) return;
-    dialog({ title: `Edit Rung ${ri}`, size: 'md', focus: true,
-      body: `<textarea class="inp" id="rtx" rows="5" spellcheck="false">${esc(rungs()[ri].t)}</textarea><p class="help">Rung text, as in the reference: <span class="mono">[XIC(a),XIC(b)]XIC(c)OTE(d);</span></p><div class="errtx" id="rte"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        const t = el.querySelector('#rtx').value.trim(), pr = E.parseRung(t);
-        if (pr.err) { el.querySelector('#rte').textContent = pr.err; return false; }
-        edit(() => { rungs()[ri].t = pr.elems.length ? E.serializeRung(pr.elems) : ''; S.sel = null; S.selRung = ri; });
-      } }] });
+    // the Rung Text Edit Bar of the reference, above the routine: the rung's ASCII text, ✓ accepts, ✕ cancels
+    S.sel = null; S.selRung = ri;
+    openDescBar(`Rung ${ri}`, rungs()[ri].t, v => {
+      const pr = E.parseRung(v);
+      if (pr.err) return pr.err;
+      if (!rungs()[ri]) return '';
+      const t = pr.elems.length ? E.serializeRung(pr.elems) : '';
+      if (t !== rungs()[ri].t) edit(() => { rungs()[ri].t = t; S.sel = null; S.selRung = ri; });
+      return '';
+    }, { rung: true });
   }
   function rungComment(ri) {
-    if (ri == null) return;
-    dialog({ title: `Rung ${ri} Comment`, size: 'md', focus: true, body: `<textarea class="inp" id="rc" rows="4" style="font-family:var(--ui)">${esc(rungs()[ri].c || '')}</textarea>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { const v = el.querySelector('#rc').value.trim(); edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); } }] });
+    if (ri == null || !rungs()[ri]) return;
+    openDescBar(`Rung Comment For Rung: ${ri}`, rungs()[ri].c || '', v => { edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); });
   }
   function cmdFind() { prompt1('Find', 'Find what', S.find, v => { if (!v) return 'Type a tag or an instruction.'; S.find = v; if (!findNext(false)) return `"${v}" was not found in ${curRoutine().name}.`; }, 'Looks for a tag, an operand or a mnemonic in this routine. F3 finds the next one.'); }
   function findNext(wrapMsg) {
@@ -1716,7 +2297,117 @@
     if (wrapMsg) toast(`"${S.find}" was not found.`);
     return false;
   }
-  function cmdGoto() { prompt1('Go To', 'Rung number', curSelRung() == null ? '0' : String(curSelRung()), v => { const n = parseInt(v, 10); if (!(n >= 0 && n < rungs().length)) return `Type a rung from 0 to ${rungs().length - 1}.`; S.sel = null; S.selRung = n; render(); scrollToSel(); }); }
+  /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
+     in the tag editor) and the rung or the tag to go to */
+  function cmdGoto() {
+    const a = selOperand(), tag0 = isTagText(a) ? String(a).split(/[.[]/)[0] : '';
+    const WHAT = [['rung', 'Rung', 'Place caret on rung:'], ['xref', 'Cross Reference', 'Tag:'], ['edit', 'Edit', 'Tag:'], ['mon', 'Monitor', 'Tag:'], ['props', 'Properties', 'Tag:'], ['tag', 'Tag', 'Set row selection on tag:']];
+    let what = 'rung';
+    const val = w => (w === 'rung' ? (curSelRung() == null ? '0' : String(curSelRung())) : tag0);
+    const el = dialog({ title: 'Go To', focus: true,
+      body: `<div class="gotod"><div><label>Go to what:</label><div class="gwl" id="gwl">${WHAT.map(([k, l]) => `<div class="row${k === what ? ' on' : ''}" data-gw="${k}">${l}</div>`).join('')}</div></div>
+        <div><label for="gv" id="gl">${WHAT[0][2]}</label><input class="inp mono" id="gv" value="${esc(val(what))}" autocomplete="off" spellcheck="false" autofocus><div class="errtx" id="ge"></div></div></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Go To', pri: true, run: el2 => {
+        const v = el2.querySelector('#gv').value.trim(), err = m => { el2.querySelector('#ge').textContent = m; return false; };
+        if (what === 'rung') { const n = parseInt(v, 10); if (!(n >= 0 && n < rungs().length)) return err(`Type a rung from 0 to ${rungs().length - 1}.`); setTimeout(() => { S.sel = null; S.selRung = n; render(); scrollToSel(); }, 0); return; }
+        const tg = tagFor(v);
+        if (!tg) return err(`"${v}" is not a tag of ${curProg().name} or of the controller.`);
+        const scope = curProg().tags.includes(tg) ? curProg().name : '';
+        setTimeout(() => { if (what === 'xref') xref(tg.name); else if (what === 'props') newTag({ tag: tg }); else if (what === 'mon') monitorTag(tg.name); else { S.tagQ = tg.name; tagEditor('edit', scope); } }, 0);
+      } }] });
+    el.querySelector('#gwl').addEventListener('click', ev => {
+      const r = ev.target.closest('[data-gw]'); if (!r) return;
+      what = r.dataset.gw;
+      el.querySelectorAll('[data-gw]').forEach(x => x.classList.toggle('on', x === r));
+      el.querySelector('#gl').textContent = WHAT.find(x => x[0] === what)[2];
+      const inp = el.querySelector('#gv'); inp.value = val(what); inp.focus(); inp.select();
+    });
+  }
+  /* Monitor "tag": the tag editor in Monitor Tags, filtered to the tag */
+  function monitorTag(name) {
+    const tg = tagFor(name), scope = tg && curProg().tags.includes(tg) ? curProg().name : '';
+    S.tagQ = name; tagEditor('mon', scope);
+  }
+  /* the Errors pane as the reference's output window: Verify Rung and Find All write their results there */
+  function showOutput(v) {
+    if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
+    S.verifyShown = v; S.outTab = 'err';
+    render();
+  }
+  function verifyRung(ri) {
+    if (ri == null || !rungs()[ri]) return;
+    reverify();
+    const g = curProg().name, r = curRoutine().name, mine = x => x.program === g && x.routine === r && x.rung === ri;
+    const errors = S.verify.errors.filter(mine), warnings = S.verify.warnings.filter(mine);
+    if (!errors.length && rungs()[ri].dx) { delete rungs()[ri].dx; renderLadder(); }
+    showOutput({ errors, warnings, lines: [`Verifying rung ${ri} of routine '${r}' of program '${g}'...`, ...errors.map(x => x.text), ...warnings.map(x => x.text), `Complete - ${errors.length} error(s), ${warnings.length} warning(s)`] });
+    toast(errors.length ? `Rung ${ri}: ${errors.length} error(s)` : `Rung ${ri} verified: no errors`, errors.length ? 'err' : 'ok');
+  }
+  /* Find All "tag": every instruction of the project that uses the tag (or one of its members), as Found lines */
+  function findAll(what) {
+    const w = U(String(what || '')), whole = !/[.[]/.test(w), found = [];
+    const hitOp = x => { const u = U(String(x)); return u === w || (whole && u.split(/[.[]/)[0] === w); };
+    allProgs().forEach(g => g.routines.forEach(r => r.rungs.forEach((rg, ri) => {
+      const pr = E.parseRung(rg.t); if (pr.err) return;
+      const walk = arr => arr.forEach(e => {
+        if (e.t === 'BR') { e.legs.forEach(walk); return; }
+        (e.a || []).forEach((x, oi) => { if (hitOp(x)) { const text = `Found: ${g.name} - ${r.name}, Rung ${ri}, ${e.t}, Operand ${oi}: ${e.t}(${e.a.join(',')})`; found.push({ text, program: g.name, routine: r.name, rung: ri }); } });
+      });
+      walk(pr.elems);
+    })));
+    // the reference puts the result in the Search Results tab of the Output window (Errors, Search Results, Watch)
+    S.search = { errors: [], warnings: [], found, lines: [`Searching for "${what}" in ${S.p.controller.name}...`, ...found.map(x => x.text), `Complete - ${found.length} occurrence(s) found.`] };
+    S.outTab = 'search';
+    if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
+    render();
+  }
+  /* Export Rungs / Import Rungs: the rungs as a Logix .L5X file (TargetType Rung), with the tags they use */
+  function rungsL5X(list, desc) {
+    const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`, P = curProg(), names = new Set();
+    list.forEach(r => { const pr = E.parseRung(r.t); if (pr.err) return; const walk = arr => arr.forEach(e => { if (e.t === 'BR') e.legs.forEach(walk); else (e.a || []).forEach(x => { if (isTagText(x)) names.add(U(String(x).split(/[.[]/)[0])); }); }); walk(pr.elems); });
+    const tags = [...P.tags, ...S.p.tags].filter(tg => names.has(U(tg.name)));
+    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${tg.dim ? ` Dimensions="${tg.dim}"` : ''}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.00" TargetType="Rung" TargetCount="${list.length}" ContainsContext="true" ExportDate="${new Date().toUTCString()}" ExportOptions="References NoRawData L5KData DecoratedData Context RoutineLabels AliasExtras IOTags NoStringData ForceProtectedEncoding AllProjDocTrans">
+<Controller Use="Context" Name="${esc(S.p.controller.name)}">${desc ? `<Description>${cd(desc)}</Description>` : ''}
+<Tags Use="Context">${tags.filter(tg => S.p.tags.includes(tg)).map(tagX).join('')}</Tags>
+<Programs Use="Context"><Program Use="Context" Name="${esc(P.name)}"><Tags Use="Context">${tags.filter(tg => P.tags.includes(tg)).map(tagX).join('')}</Tags>
+<Routines Use="Context"><Routine Use="Context" Name="${esc(curRoutine().name)}" Type="RLL"><RLLContent Use="Context">
+${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+</RLLContent></Routine></Routines></Program></Programs></Controller></RSLogix5000Content>
+`;
+  }
+  function exportRungs(ri) {
+    if (ri == null || !rungs()[ri]) return;
+    fileDialog({ mode: 'save', title: 'Export Rungs', name: `${curRoutine().name}_Rung${ri}.L5X`, types: ['l5x'], descField: true,
+      onPick: async (f, desc) => { try { await FS.write(f, rungsL5X([rungs()[ri]], desc)); toast(`Exported rung ${ri} to ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } });
+  }
+  function importRungs() {
+    fileDialog({ mode: 'open', title: 'Import Rungs', types: ['l5x'], onPick: async f => {
+      let x;
+      try { x = await FS.read(f); } catch (e) { toast('That file could not be read: ' + (e.message || e), 'err'); return; }
+      const doc = new DOMParser().parseFromString(x, 'application/xml'), root = doc.querySelector('RSLogix5000Content');
+      const rs = root ? [...doc.querySelectorAll('Rung')].map(r => ({ t: (r.querySelector('Text') || {}).textContent || '', c: ((r.querySelector('Comment') || {}).textContent || '').trim() })) : [];
+      if (!rs.length) { toast('That file holds no rungs to import.', 'err'); return; }
+      const bad = rs.map(r => E.parseRung(r.t.trim())).findIndex(pr => pr.err);
+      if (bad >= 0) { toast(`Rung ${bad} of the file cannot be read.`, 'err'); return; }
+      const have = n => !!tagFor(n);
+      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: +(tg.getAttribute('Dimensions') || 0), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
+      // Import Configuration, as in the reference: each tag of the file is created, or the project's tag of that name is used
+      dialog({ title: 'Import Configuration', size: 'md',
+        body: `<p>${rs.length} rung(s) from <b class="mono">${esc(baseName(f))}</b> go after ${curSelRung() == null ? 'the last rung' : `rung ${curSelRung()}`} of ${esc(curRoutine().name)}.</p>
+          <table class="ictbl"><tr><th>Tag</th><th>Operation</th><th>Final Name</th></tr>${tags.map(tg => `<tr><td class="mono">${esc(tg.name)}</td><td>${have(tg.name) ? 'Use Existing' : 'Create'}</td><td class="mono">${esc(tg.name)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No tags in the file.</td></tr>'}</table>`,
+        buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: () => {
+          edit(() => {
+            const at = curSelRung() == null ? rungs().length : curSelRung() + 1;
+            rungs().splice(at, 0, ...rs.map(r => (r.c ? { t: r.t.trim(), c: r.c } : { t: r.t.trim() })));
+            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; (tg.prog ? curProg().tags : S.p.tags).push(o); });
+            S.sel = null; S.selRung = at;
+          });
+          toast(`Imported ${rs.length} rung(s).`, 'ok');
+        } }] });
+    } });
+  }
   function scrollToSel() {
     const w = $('#ladwrap'); if (!w) return;
     const ri = curSelRung();
@@ -1724,27 +2415,89 @@
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
   const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct'];
-  function xref(name0) {
+  /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
+     wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
+     Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a
+     double-click goes to the location) and a Tag tab with the tags that alias it (Scope, Tag, Alias For, Base Tag). */
+  function xref(name0, o = {}) {
     const e = curEl();
-    const name = name0 || (e && e.a[0] && e.a[0] !== '?' ? String(e.a[0]).split(/[.[]/)[0] : '');
-    const rows = [];
-    if (name) allProgs().forEach(g => g.routines.forEach(r => r.rungs.forEach((rg, ri) => {
-      const pr = E.parseRung(rg.t); if (pr.err) return;
-      flat(pr.elems).forEach(p => {
-        const x = getEl(pr.elems, p), d = INSTR[x.t]; if (!d) return;
-        x.a.forEach((a, k) => {
-          const hitIt = U(String(a).split(/[.[]/)[0]) === U(name) || (d.args[k] === 'expr' && new RegExp(`\\b${name}\\b`, 'i').test(a));
-          if (hitIt) rows.push({ g: g.name, r: r.name, ri, p, mn: x.t, a, dest: DESTR.includes((d.args[k] || '').replace('?', '')) ? 'Y' : 'N' });
+    const st = {
+      type: o.type || 'Tag', scope: o.scope || '', show: o.show || 'all', tab: o.tab || 'logic', sort: o.sort || null, sel: 0,
+      name: name0 != null ? name0 : e && e.a[0] && e.a[0] !== '?' ? String(e.a[0]).split(/[.[]/)[0] : '',
+    };
+    const progs = allProgs();
+    const allTags = () => [...S.p.tags.map(t => ({ t, scope: S.p.controller.name })), ...progs.flatMap(g => g.tags.map(t => ({ t, scope: g.name })))];
+    const baseOf = n => { let t = allTags().find(x => U(x.t.name) === U(n)), k = 0; while (t && t.t.alias && k++ < 8) { const b = U(String(t.t.alias).split(/[.[]/)[0]); const nx = allTags().find(x => U(x.t.name) === b); if (!nx) return String(t.t.alias); t = nx; } return t ? t.t.name : n; };
+    const match = n => { const q = U(st.name.trim()); if (!q) return false; const u = U(n); return q.endsWith('*') ? u.startsWith(q.slice(0, -1)) : u === q; };
+    const rowsOf = () => {
+      const rows = [];
+      if (!st.name.trim()) return rows;
+      progs.filter(g => !st.scope || g.name === st.scope).forEach(g => g.routines.forEach(r => r.rungs.forEach((rg, ri) => {
+        const pr = E.parseRung(rg.t); if (pr.err) return;
+        flat(pr.elems).forEach(p => {
+          const x = getEl(pr.elems, p), d = INSTR[x.t]; if (!d) return;
+          if (st.type === 'Routine') { if (x.t === 'JSR' && match(String(x.a[0]))) rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref: String(x.a[0]), base: '', dest: 'N', desc: '' }); return; }
+          if (st.type === 'Label') { if ((x.t === 'JMP' || x.t === 'LBL') && match(String(x.a[0]))) rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref: String(x.a[0]), base: '', dest: 'N', desc: '' }); return; }
+          x.a.forEach((a, k) => {
+            const kind = (d.args[k] || '').replace('?', ''); if (['routine', 'label', 'imm', 'order'].includes(kind)) return;
+            const names = kind === 'expr' ? (String(a).match(/[A-Za-z_][\w:]*(?:\[[^\]]*\])?(?:\.\w+)*/g) || []) : [String(a)];
+            names.forEach(ref => {
+              const b = ref.split(/[.[]/)[0]; if (!match(b)) return;
+              const tg = tagFor(b);
+              rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref, base: tg && tg.alias ? baseOf(b) + String(ref).slice(b.length) : '', dest: DESTR.includes(kind) ? 'Y' : 'N', desc: tg ? tg.desc || '' : '' });
+            });
+          });
         });
-      });
-    })));
-    dialog({ title: 'Cross Reference', size: 'lg', flush: true,
-      body: `<div style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border)"><label>Tag</label><input class="inp mono" id="xq" value="${esc(name)}" style="max-width:280px"><button class="btn" id="xgo">Find</button></div>
-        <div class="list" style="flex:1">${rows.length ? rows.map((x, n) => `<div class="row" data-x="${n}"><div class="grow"><div class="nm">${esc(x.a)}</div><div class="sub">${esc(x.g)} · ${esc(x.r)} · Rung ${x.ri}</div></div><span class="ty">${x.mn}</span><span class="ty" title="Destructive">${x.dest === 'Y' ? 'writes' : 'reads'}</span></div>`).join('') : `<div class="empty">${name ? 'No references to ' + esc(name) : 'Type a tag name'}</div>`}</div>`,
-      buttons: [{ l: 'Close', pri: true }],
+      })));
+      return rows.filter(x => st.show === 'all' || (st.show === 'dest' ? x.dest === 'Y' : x.dest === 'N'));
+    };
+    const COLS = [['el', 'Element'], ['g', 'Container'], ['r', 'Routine'], ['ri', 'Location'], ['ref', 'Reference'], ['base', 'BaseTag'], ['dest', 'Destructive'], ['desc', 'Description']];
+    let rows = [];
+    const sorted = () => { const r = rowsOf(); if (st.sort) { const [k, dir] = st.sort; r.sort((a, b) => (k === 'ri' ? a.ri - b.ri : String(a[k]).localeCompare(String(b[k]))) * dir); } return r; };
+    const aliasRows = () => { if (st.type !== 'Tag' || !st.name.trim()) return []; return allTags().filter(x => match(x.t.name) || (x.t.alias && match(String(x.t.alias).split(/[.[]/)[0]))).map(x => ({ scope: x.scope, tag: x.t.name, alias: x.t.alias || '', base: x.t.alias ? baseOf(x.t.name) : '' })); };
+    const body = () => {
+      rows = sorted();
+      const head = COLS.map(([k, l]) => `<th data-xs="${k}">${l}${st.sort && st.sort[0] === k ? (st.sort[1] > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
+      const logic = rows.length ? `<table class="xrt"><thead><tr>${head}</tr></thead><tbody>${rows.map((x, n) => `<tr data-x="${n}"${n === st.sel ? ' class="on"' : ''}><td class="mono">${x.el}</td><td>${esc(x.g)}</td><td>${esc(x.r)}</td><td>Rung ${x.ri}</td><td class="mono">${esc(x.ref)}</td><td class="mono">${esc(x.base)}</td><td>${x.dest}</td><td>${esc(x.desc)}</td></tr>`).join('')}</tbody></table>`
+        : `<div class="empty">${st.name.trim() ? `No references to ${esc(st.name)}` : 'Type a name, or a few letters and *'}</div>`;
+      const ar = aliasRows();
+      const tagT = st.type !== 'Tag' ? '<div class="empty">This information is available only for tags.</div>' : ar.length ? `<table class="xrt"><thead><tr><th>Scope</th><th>Tag</th><th>Alias For</th><th>Base Tag</th></tr></thead><tbody>${ar.map(x => `<tr><td>${esc(x.scope)}</td><td class="mono">${esc(x.tag)}</td><td class="mono">${esc(x.alias)}</td><td class="mono">${esc(x.base)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No tags.</div>';
+      return `<div class="xrh">
+          <label>Type <select class="inp" id="xty">${['Tag', 'Routine', 'Label'].map(t => `<option${t === st.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>Scope <select class="inp" id="xsc"><option value="">${esc(S.p.controller.name)}</option>${progs.map(g => `<option${g.name === st.scope ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
+          <label class="grow">Name <input class="inp mono" id="xq" list="xql" value="${esc(st.name)}" autocomplete="off"><datalist id="xql">${(st.type === 'Tag' ? allTags().map(x => x.t.name) : st.type === 'Routine' ? progs.flatMap(g => g.routines.map(r => r.name)) : []).map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+          <label>Show <select class="inp" id="xsh"><option value="all"${st.show === 'all' ? ' selected' : ''}>Show All</option><option value="dest"${st.show === 'dest' ? ' selected' : ''}>Destructive</option><option value="non"${st.show === 'non' ? ' selected' : ''}>Non-Destructive</option></select></label>
+          <button class="btn" id="xgo">Refresh</button></div>
+        <div class="xrtabs"><button class="xtab${st.tab === 'logic' ? ' on' : ''}" data-xt="logic">Logic</button><button class="xtab${st.tab === 'tag' ? ' on' : ''}" data-xt="tag">Tag</button><span class="grow"></span><span class="muted">${st.tab === 'logic' ? `${rows.length} reference(s)` : ''}</span></div>
+        <div class="xrb">${st.tab === 'logic' ? logic : tagT}</div>`;
+    };
+    const goTo = x => { if (!x) return; closeLayer(); S.prog = x.g; S.routine = x.r; S.view = 'ladder'; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); };
+    dialog({ title: 'Cross Reference - ' + st.type + ': ' + (st.name || ''), size: 'lg', flush: true, body: `<div class="xr" id="xr">${body()}</div>`,
+      buttons: [{ l: 'Go To Location', run: () => { goTo(rows[st.sel]); return false; } }, { l: 'Close', pri: true }],
       mount: el => {
-        el.querySelector('#xgo').onclick = () => xref(el.querySelector('#xq').value.trim());
-        el.addEventListener('click', ev => { const r = ev.target.closest('[data-x]'); if (!r) return; const x = rows[+r.dataset.x]; closeLayer(); S.prog = x.g; S.routine = x.r; S.view = 'ladder'; S.sel = { ri: x.ri, path: x.p }; S.selRung = null; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); });
+        const box = el.querySelector('#xr');
+        const redraw = () => { const f = document.activeElement && document.activeElement.id; box.innerHTML = body(); const h = el.querySelector('.dh b'); if (h) h.textContent = 'Cross Reference - ' + st.type + ': ' + st.name; if (f === 'xq') { const q = box.querySelector('#xq'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); } };
+        box.addEventListener('change', ev => { const id = ev.target.id; if (id === 'xty') { st.type = ev.target.value; st.sel = 0; } else if (id === 'xsc') st.scope = ev.target.value; else if (id === 'xsh') st.show = ev.target.value; else if (id === 'xq') st.name = ev.target.value; else return; redraw(); });
+        box.addEventListener('keydown', ev => { if (ev.target.id === 'xq' && ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); st.name = ev.target.value; st.sel = 0; redraw(); } });
+        box.addEventListener('click', ev => {
+          let t;
+          box.querySelectorAll('.xrm').forEach(m => m.remove());
+          if (ev.target.id === 'xgo') { const q = box.querySelector('#xq'); st.name = q.value; redraw(); return; }
+          if ((t = ev.target.closest('[data-xt]'))) { st.tab = t.dataset.xt; redraw(); return; }
+          if ((t = ev.target.closest('[data-xs]'))) { const k = t.dataset.xs; st.sort = st.sort && st.sort[0] === k ? [k, -st.sort[1]] : [k, 1]; redraw(); return; }
+          if ((t = ev.target.closest('[data-x]'))) { const n = +t.dataset.x; if (n === st.sel && (S.layout !== 'desktop')) { goTo(rows[n]); return; } st.sel = n; box.querySelectorAll('[data-x]').forEach(r => r.classList.toggle('on', +r.dataset.x === n)); }
+        });
+        box.addEventListener('dblclick', ev => { const t = ev.target.closest('[data-x]'); if (t) goTo(rows[+t.dataset.x]); });
+        box.addEventListener('contextmenu', ev => {
+          const t = ev.target.closest('[data-x]'); if (!t) return; ev.preventDefault(); ev.stopPropagation();
+          const x = rows[+t.dataset.x], b = x.ref.split(/[.[]/)[0], tg = tagFor(b); st.sel = +t.dataset.x;
+          const items = [['go', 'Go To Location', !1], ['edit', `Edit Tag "${b}"`, !tg], ['mon', `Monitor Tag "${b}"`, !tg], ['trend', `Trend Tag "${b}"`, !0]];
+          box.querySelectorAll('.xrm').forEach(m => m.remove());
+          const m = document.createElement('div'); m.className = 'menu xrm'; m.style.cssText = 'position:fixed;z-index:400';
+          m.innerHTML = items.map(([k, l, dis]) => `<div class="it${dis ? ' dis' : ''}" data-xm="${k}"><span>${esc(l)}</span></div>`).join('');
+          box.appendChild(m); m.style.left = Math.min(ev.clientX, innerWidth - m.offsetWidth - 6) + 'px'; m.style.top = Math.min(ev.clientY, innerHeight - m.offsetHeight - 6) + 'px';
+          m.onclick = me => { const it = me.target.closest('[data-xm]'); me.stopPropagation(); m.remove(); if (!it || it.classList.contains('dis')) return; const k = it.dataset.xm; if (k === 'go') goTo(x); else if (k === 'edit') { closeLayer(); newTag({ tag: tg }); } else if (k === 'mon') { closeLayer(); monitorTag(b); } };
+        });
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
@@ -1807,13 +2560,26 @@
       <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`, buttons: [{ l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
   }
   function options() {
-    const P = S.prefs;
-    dialog({ title: 'Options',
+    const P = S.prefs, was = [P.theme, P.mode], back = () => { [P.theme, P.mode] = was; applyTheme(); };
+    dialog({ title: 'Options', size: 'md',
       body: `<div class="frow"><label>Layout</label><select class="inp" id="ol">${[['auto', 'Automatic (follows the window)'], ['desktop', 'Desktop'], ['tablet', 'Tablet'], ['phone', 'Phone']].map(([v, t]) => `<option value="${v}"${P.layout === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow"><label>Theme</label><select class="inp" id="ot">${[['classic', 'Classic (like the Windows software)'], ['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, t]) => `<option value="${v}"${P.theme === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="frow"><label>Theme</label><div class="thpick" role="radiogroup" aria-label="Theme">${THEMES.map(([v, n, d, sh, bg, cv, on]) => `<button type="button" class="thc" role="radio" data-th="${v}" aria-checked="${P.theme === v}"><span class="tmini" style="background:${bg};--mon:${on}"><i style="background:${sh}"></i><span><u style="background:${sh}"></u><u style="background:${cv}"></u></span></span><b>${n}</b><small>${d}</small></button>`).join('')}</div></div>
+        <div class="frow"><label>Mode</label><div class="thmode" role="group" aria-label="Mode">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Follow the device']].map(([v, t]) => `<button type="button" data-thm="${v}" aria-pressed="${P.mode === v}">${t}</button>`).join('')}</div></div>
         <div class="frow"><label>Density</label><select class="inp" id="od">${[['auto', 'Automatic (compact with a mouse, larger on touch)'], ['compact', 'Compact'], ['touch', 'Touch (larger)']].map(([v, t]) => `<option value="${v}"${P.density === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { P.layout = el.querySelector('#ol').value; P.theme = el.querySelector('#ot').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
+        <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>
+        <div class="grp">Ladder Editor</div>
+        <label class="ockb"><input type="checkbox" id="oqk"${P.quickKeys ? ' checked' : ''}> Enable Quick Keys</label>
+        <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>
+        <div class="frow"><label>Communications</label><label class="rlck"><input type="checkbox" id="ofc"${P.fastComm ? ' checked' : ''}>Fast communications (no connect, browse or transfer delays)</label></div>`,
+      // a theme shows at once; Cancel or Close puts the one before back
+      mount: el => el.addEventListener('click', ev => {
+        const c = ev.target.closest('[data-th]'), m = ev.target.closest('[data-thm]');
+        if (c) { P.theme = c.dataset.th; el.querySelectorAll('[data-th]').forEach(b => b.setAttribute('aria-checked', b === c)); }
+        if (m) { P.mode = m.dataset.thm; el.querySelectorAll('[data-thm]').forEach(b => b.setAttribute('aria-pressed', b === m)); }
+        if (c || m) applyTheme();
+      }),
+      onClose: back,
+      buttons: [{ l: 'Cancel', run: back }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.fastComm = el.querySelector('#ofc').checked; P.layout = el.querySelector('#ol').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
   }
 
   /* ---------- projects: new, open, save as, import, export ---------- */
@@ -1857,9 +2623,214 @@
     if ((el = t.closest('[data-drvt]'))) { if (!DRVTYPES.find(x => x[0] === el.dataset.drvt)[3]) { toast('That driver is not available in this version.'); return true; } drvSel = el.dataset.drvt; redraw(); return true; }
     return false;
   }
-  function configureDrivers() {
-    const el = dialog({ title: 'Configure Drivers', size: 'md', body: `<div id="drvb">${driversHTML()}</div><p class="help">Without a running driver, Who Active finds nothing and the project cannot go online.</p>`, buttons: [{ l: 'Close', pri: true }] });
-    el.addEventListener('click', ev => driverClick(ev.target, () => { el.querySelector('#drvb').innerHTML = driversHTML(); render(); }));
+  const configureDrivers = () => rslinx('drivers');
+
+  /* ---------- RSLinx Classic: one window with the menu bar, RSWho and Configure Drivers (RSLinx Classic 4.40) ----------
+     It works on the same drivers list as Who Active, Go Online and Download (drivers, saveDrivers, relink): a driver
+     added, stopped or deleted here is what they see. Only Communications > RSWho and Configure Drivers work; the other
+     menus list their items greyed out. */
+  const RLTYPES = [['vbp', 'Virtual Backplane (SoftLogix58xx, USB)', 'AB_VBP-', 'A-B Virtual Chassis'],
+    ['emulate', 'Emulate Ethernet (emulated controllers by IP)', 'EMU500-', 'A-B Ethernet, emulated controllers'],
+    ['ethip', 'EtherNet/IP Driver', 'AB_ETHIP-', 'A-B Ethernet'], ['eth', 'Ethernet devices', 'AB_ETH-', 'A-B Ethernet'], ['df1', 'RS-232 DF1 devices', 'AB_DF1-', 'DF1']];
+  const RLAVAIL = ['vbp', 'emulate'];
+  const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
+    ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
+    ['View', [['Toolbar'], ['Status Bar'], '-', ['Options…']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
+    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode'], ['Set Time']]],
+    ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
+    ['Security', [['Network Security…'], ['Change Password…']]],
+    ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
+    ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null };
+  const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
+  /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
+  function rlTree() {
+    const pad = n => (n < 10 ? '0' + n : n);
+    const slots = (r, k, pathFn) => Array.from({ length: r.size }, (_, n) => {
+      const m = r.module(n); if (!m) return null;
+      const c = m.ctl;
+      return { k: k + '/s' + n, l: `${pad(n)}, ${c ? 'PLC-CPU' : m.type} ${m.name}`, i: c ? 'chip' : 'io', dim: c && !c.powered, path: c ? pathFn(n) : null, m, kids: [] };
+    }).filter(Boolean);
+    const kids = drivers.filter(d => d.run && RLAVAIL.includes(d.type)).map(d => {
+      const k = 'd:' + d.name;
+      if (d.type === 'vbp') {
+        const r = racks[0];
+        return { k, l: `${d.name}, Virtual Backplane`, i: 'online', kids: r ? [{ k: k + '/r', l: `Virtual Chassis, ${r.name}`, i: 'rack', kids: slots(r, k + '/r', n => d.name + '\\' + n) }] : [] };
+      }
+      const seen = new Set(), ips = [];
+      racks.forEach(r => r.controllers().forEach(gm => {
+        if (!gm.ip || !gm.ctl.powered || seen.has(gm.ip)) return;
+        seen.add(gm.ip);
+        const ik = k + '/ip:' + gm.ip;
+        ips.push({ k: ik, l: `${gm.ip}, PLC-CPU ${gm.name}`, i: 'chip', kids: [{ k: ik + '/bp', l: `Backplane, ${r.name}`, i: 'rack', kids: slots(r, ik + '/bp', n => pathOf(gm.ip, n)) }] });
+      }));
+      return { k, l: `${d.name}, Ethernet`, i: 'online', kids: ips };
+    });
+    return { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
+  }
+  const rlFind = (n, k) => { if (n.k === k) return n; for (const c of n.kids) { const f = rlFind(c, k); if (f) return f; } return null; };
+  const rlCount = n => 1 + n.kids.reduce((s, c) => s + rlCount(c), 0);
+  /* lim: how many nodes the browse has found so far (in tree order); a node whose nodes are not all found yet shows
+     that it is still browsing */
+  function rlTreeHTML(root, lim = Infinity) {
+    let left = lim;
+    const row = (n, d) => {
+      if (left <= 0) return '';
+      left--;
+      const open = !rlS.shut.has(n.k), has = n.kids.length > 0, before = left;
+      let kids = '';
+      if (has && open) kids = n.kids.map(c => row(c, d + 1)).join('');
+      else if (has) left -= Math.min(left, rlCount(n) - 1);
+      const busy = d > 0 && has && before - left < rlCount(n) - 1;
+      return `<div class="nd${n.k === rlS.sel ? ' on' : ''}${n.dim ? ' dim' : ''}" data-rln="${esc(n.k)}" style="padding-left:${6 + d * 16}px"><span class="tw"${has ? ` data-rltw="${esc(n.k)}"` : ''}>${has ? ic(open ? 'down' : 'right') : ''}</span>${ic(n.i, 'i ti')}<span class="ell">${esc(n.l)}${n.dim ? ' · off' : ''}</span>${busy ? '<span class="browsing"><i class="spin"></i>Browsing…</span>' : ''}</div>${kids}`;
+    };
+    return row(root, 0) + (root.kids.length ? '' : '<div class="nd dim" style="padding-left:38px">No driver is running: Communications &gt; Configure Drivers…</div>');
+  }
+  function rlPaneHTML(root) {
+    const n = rlFind(root, rlS.sel) || root;
+    if (n.kids.length) return `<div class="rltiles">${n.kids.map(c => `<button class="rltile${c.dim ? ' dim' : ''}" data-rlk="${esc(c.k)}">${ic(c.i)}<span>${esc(c.l)}${c.dim ? ' · off' : ''}</span></button>`).join('')}</div>`;
+    if (!n.m) return `<p class="help" style="padding:12px">${n.k === 'ws' ? 'No driver is running. Add one in Communications &gt; Configure Drivers…' : 'Nothing found on this node.'}</p>`;
+    const m = n.m, c = m.ctl, kv = (a, b) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`;
+    return `<div class="rlprops"><div class="rlph">${ic(n.i)}<b>${esc(n.l)}</b></div>${kv('Slot', String(m.slot != null ? m.slot : n.k.split('/s').pop()))}${kv('Module', c ? 'PLC-CPU (emulated controller)' : m.type)}${kv('Name', m.name)}
+      ${c ? kv('Path', n.path) + kv('Status', c.powered ? ctlMode(c) : 'Off') + kv('Holds', c.name || '(empty)') + (m.ip ? kv('IP Address', m.ip) : '') : ''}</div>${c && c.powered ? '<p class="help" style="padding:0 12px">Pick this controller in Who Active to set the project path, go online or download.</p>' : ''}`;
+  }
+  function rlDrvHTML() {
+    const t = RLTYPES.find(x => x[0] === rlS.dtype), d = drivers[rlS.dsel];
+    return `<div class="rlbox rlcdbox" role="dialog" aria-label="Configure Drivers"><div class="bh">Configure Drivers</div><div class="bb rlcd">
+      <div class="rlcdl"><fieldset><legend>Available Driver Types:</legend><div class="rlts"><select class="inp" id="rldt">${RLTYPES.map(([k, n]) => `<option value="${k}"${k === rlS.dtype ? ' selected' : ''}>${esc(n)}${RLAVAIL.includes(k) ? '' : ' (not in this version)'}</option>`).join('')}</select><button class="btn" data-rladd="1">Add New…</button></div></fieldset>
+        <fieldset class="rlcfg"><legend>Configured Drivers:</legend><div class="rltabw"><table class="rltab"><thead><tr><th>Name and Description</th><th>Status</th></tr></thead><tbody>${drivers.map((x, i) => `<tr class="${i === rlS.dsel ? 'on' : ''}" data-rlrow="${i}"><td><span class="mono">${esc(x.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === x.type) || [, , , x.type])[3])}</span></td><td class="${x.run ? 'run' : ''}">${x.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers. Pick a type, then Add New…</td></tr>'}</tbody></table></div></fieldset>
+        <p class="help">${t && RLAVAIL.includes(t[0]) ? '' : 'That driver type reaches real hardware: it is not in this version. '}Without a running driver, Who Active finds nothing and the project cannot go online.</p></div>
+      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" disabled>Configure…</button><button class="btn" disabled>Startup…</button>
+        <button class="btn" data-rlstart="1"${d && !d.run ? '' : ' disabled'}>Start</button><button class="btn" data-rlstop="1"${d && d.run ? '' : ' disabled'}>Stop</button><button class="btn" data-rldel="1"${d ? '' : ' disabled'}>Delete</button></div></div></div>`;
+  }
+  function rlModalHTML() {
+    const md = rlS.modal;
+    if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
+      <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="RSLinx Classic"><div class="bh">RSLinx Classic</div><div class="bb"><p style="margin:0">Delete the driver <b class="mono">${esc(md.name)}</b>? Who Active, Go Online and Download can no longer use it.</p></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn danger" data-rlpx="ok">Delete</button></div></div></div>`;
+  }
+  function rslinx(view) {
+    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null;
+    if (!drivers[rlS.dsel]) rlS.dsel = 0;
+    let treeKey = '', lim = Infinity, btimer = 0;
+    const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
+    const quit = () => { clearInterval(timer); stopBrowse(); };
+    const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
+    const bstat = root => (lim < rlCount(root) ? 'Browsing - node found' : rlS.auto ? 'Browsing - done' : 'Not browsing');
+    const box = el.querySelector('#rl');
+    const draw = () => {
+      const root = rlTree();
+      if (!rlFind(root, rlS.sel)) rlS.sel = 'ws';
+      const sel = rlFind(root, rlS.sel);
+      treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
+      box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
+        <div class="rltb"><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
+        <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
+          <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
+        <div class="rlst"><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
+        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}><span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+      if (rlS.menu) {
+        const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
+        p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
+        p.style.left = Math.max(4, Math.min(b.offsetLeft - box.querySelector('.rlmb').scrollLeft, box.clientWidth - p.offsetWidth - 4)) + 'px';
+      }
+      if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+    };
+    // a browse step redraws only the tree, its pane and the status (the scroll position and the menus stay)
+    const drawTree = () => {
+      const t = box.querySelector('#rltree'), pn = box.querySelector('#rlpane'), bs = box.querySelector('#rlbst');
+      if (!t || rlS.menu || rlS.modal) { draw(); return; }
+      const root = rlTree();
+      if (!rlFind(root, rlS.sel)) rlS.sel = 'ws';
+      treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
+      const h = rlTreeHTML(root, lim), ph = rlPaneHTML(root), st = bstat(root);
+      if (t.innerHTML !== h) t.innerHTML = h;
+      if (pn.dataset.h !== ph) { pn.innerHTML = ph; pn.dataset.h = ph; }
+      if (bs.textContent !== st) bs.textContent = st;
+    };
+    // Browse: the nodes come in one by one in tree order; a device (a controller or a card) takes 150-400 ms to answer
+    const order = n => [n].concat(...n.kids.map(order));
+    const step = () => {
+      btimer = 0;
+      if (!el.isConnected) { busyComm(-1); return; }
+      const all = order(rlTree());
+      lim++;
+      if (lim >= all.length) { lim = Infinity; busyComm(-1); drawTree(); return; }
+      drawTree();
+      btimer = setTimeout(step, all[lim] && all[lim].m ? jitter(150, 400) : jitter(80, 160));
+    };
+    const browse = () => {
+      stopBrowse();
+      if (fastComm()) { lim = Infinity; drawTree(); return; }
+      lim = 2; busyComm(1); drawTree();
+      btimer = setTimeout(step, jitter(150, 300));
+    };
+    // Autobrowse: the tree follows the emulator (controllers turned on or off, cards added) while the box is ticked,
+    // quietly: only a change redraws it, and it is not browsed again
+    const timer = setInterval(() => {
+      if (!el.isConnected) { quit(); return; }
+      if (!rlS.auto || rlS.menu || rlS.modal || lim !== Infinity) return;
+      if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
+    }, 1000);
+    const changed = () => { saveDrivers(); relink(); render(); };
+    const addOk = () => {
+      const v = box.querySelector('#rlname').value.trim(), md = rlS.modal;
+      const err = !v ? 'Enter a name for the driver.' : v.length > 15 ? `The name has ${v.length} characters: 15 characters maximum.` : !/^[A-Za-z][A-Za-z0-9_-]*$/.test(v) ? 'Use letters, digits, - and _, starting with a letter.'
+        : /^emulate$/i.test(v) ? 'That name is kept for the Emulate path.' : drivers.some(d => d.name.toUpperCase() === v.toUpperCase()) ? `A driver named ${v} already exists.` : '';
+      if (err) { md.v = v; md.err = err; draw(); return; }
+      drivers.push({ name: v, type: md.type, run: true }); rlS.dsel = drivers.length - 1; rlS.modal = null;
+      changed(); draw();
+    };
+    const modalAct = ok => {
+      const md = rlS.modal;
+      if (!ok) { rlS.modal = null; draw(); return; }
+      if (md.k === 'add') { addOk(); return; }
+      const i = drivers.findIndex(d => d.name === md.name);
+      if (i >= 0) drivers.splice(i, 1);
+      rlS.dsel = Math.min(rlS.dsel, drivers.length - 1); if (rlS.dsel < 0) rlS.dsel = 0;
+      rlS.modal = null; changed(); draw();
+    };
+    box.addEventListener('click', ev => {
+      const t = ev.target;
+      let x;
+      if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
+      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { quit(); closeLayer(); return; } rlS.view = a; draw(); return; }
+      if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
+      if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
+      if (rlS.modal) return;
+      if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
+      if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
+      if ((x = t.closest('[data-rln]'))) { rlS.sel = x.dataset.rln; rlS.shut.delete(rlS.sel); draw(); return; }
+      if ((x = t.closest('[data-rlk]'))) { rlS.sel = x.dataset.rlk; rlS.shut.delete(rlS.sel); draw(); return; }
+      if (t.closest('[data-rlref]')) { browse(); return; }
+      if (t.closest('[data-rlclose]')) { rlS.view = 'rswho'; draw(); return; }
+      if ((x = t.closest('[data-rlrow]'))) { rlS.dsel = +x.dataset.rlrow; draw(); return; }
+      if (t.closest('[data-rladd]')) {
+        const ty = RLTYPES.find(y => y[0] === rlS.dtype);
+        if (!RLAVAIL.includes(ty[0])) { toast('That driver is not available in this version.', 'err'); return; }
+        if (drivers.some(d => d.type === ty[0])) { toast(`Only one ${ty[1].replace(/ \(.*/, '')} driver can be configured.`, 'err'); return; }
+        let n = 1; while (drivers.some(d => d.name.toUpperCase() === ty[2] + n)) n++;
+        rlS.modal = { k: 'add', type: ty[0], v: ty[2] + n, err: '' }; draw(); return;
+      }
+      const d = drivers[rlS.dsel];
+      if (t.closest('[data-rlstart]') && d) { d.run = true; changed(); draw(); return; }
+      if (t.closest('[data-rlstop]') && d) { d.run = false; changed(); draw(); return; }
+      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); }
+    });
+    box.addEventListener('change', ev => {
+      if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
+      if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
+    });
+    layerKey = ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
+      if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
+    };
+    draw(); browse();
+    return el;
   }
 
   /* ---------- setup wizard: the real order of a first project (spec section 17) ----------
@@ -1867,7 +2838,7 @@
      path), 5 Ladder. Quick setup does all of it with the defaults. */
   const WZSTEPS = [['Communications', 'Configure Drivers'], ['Emulator', 'Chassis and controller'], ['New Project', 'Type, revision, slot, I/O'], ['Who Active', 'Set Project Path'], ['Ladder', 'Write, Verify, Download']];
   function setupWizard(step0) {
-    const wz = { step: step0 || 0, name: '', made: false, size: 10 };
+    const wz = { step: step0 || 0, name: '', made: false, size: 8 };
     const ctls = () => racks.flatMap((r, ri) => r.controllers().map(m => ({ r, ri, m })));
     // the controllers a running driver reaches: every powered one of the virtual chassis, and those with an IP address
     const gates = () => ctls().filter(x => x.m.ctl.powered && ((driverUp('vbp') && x.ri === 0) || (driverUp('emulate') && x.m.ip)));
@@ -1889,7 +2860,7 @@
         c = `<h3>3. New Project</h3><p class="help">The project's controller must match the emulated one: type, revision and slot.</p>
           <div class="frow"><label>Name</label><input class="inp" id="wz-n" value="${esc(wz.name || (S.p && !wz.made ? uniqueProj('New_Project') : S.p.controller.name))}"${wz.made ? ' disabled' : ''}></div>
           ${kv('Type', 'PLC-CPU (emulated)')}${kv('Revision', '1.0')}
-          <div class="frow"><label>Chassis size</label><select class="inp" id="wz-z"${wz.made ? ' disabled' : ''}>${E.RACKS.map(n => `<option${n === (g ? g.r.size : 10) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+          <div class="frow"><label>Chassis size</label><select class="inp" id="wz-z"${wz.made ? ' disabled' : ''}>${E.RACKS.concat(g && !E.RACKS.includes(g.r.size) ? [g.r.size] : []).map(n => `<option${n === (g ? g.r.size : 8) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
           ${kv('Slot', g ? g.m.slot : 0)}
           <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="wz-io" checked${wz.made ? ' disabled' : ''}><span>Put the I/O cards of the emulator chassis in the I/O Configuration</span></label>
           ${wz.made ? '<p class="tip">Project made.</p>' : ''}${nav(true, wz.made ? 'Next: Who Active' : 'Create Project')}`;
@@ -1963,8 +2934,33 @@
     toast('Quick setup done: driver, emulator, project and path are ready.', 'ok');
   }
   function cmdNew() {
-    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(() => setupWizard(0), 0), true);
-    else setupWizard(0);
+    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(newProjectDlg, 0), true);
+    else newProjectDlg();
+  }
+  /* New Project, as in the reference: it only declares the controller (type, name, revision, chassis, slot,
+     description). Drivers, the emulated controller and I/O modules are set up any time after (Setup Wizard,
+     RSLinx, the Emulator, New Module). */
+  function newProjectDlg() {
+    const sl = z => Array.from({ length: z }, (_, i) => `<option>${i}</option>`).join('');
+    const el = dialog({ title: 'New Project', size: 'md', focus: true,
+      body: `<div class="frow"><label>Controller</label><select class="inp" id="np-t"><option value="PLC-CPU">PLC-CPU · Emulated Logix controller</option></select></div>
+        <div class="frow"><label>Name</label><input class="inp" id="np-n" value="${esc(uniqueProj('New_Project'))}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label>Revision</label><select class="inp" id="np-r"><option>1.0</option></select></div>
+        <div class="frow"><label>Chassis</label><select class="inp" id="np-z">${E.RACKS.map(n => `<option value="${n}"${n === 8 ? ' selected' : ''}>PLC-RACK${n} (${n} slots)</option>`).join('')}</select></div>
+        <div class="frow"><label>Slot</label><select class="inp" id="np-s">${sl(8)}</select></div>
+        <div class="frow"><label>Description</label><input class="inp" id="np-d" value=""></div>
+        <p class="help">Drivers, the emulated controller and the I/O modules can be set up any time after: Communications, the Emulator, and New Module.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Finish', pri: true, run: e2 => {
+        const n = e2.querySelector('#np-n').value.trim();
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        const p = blank(n), d = e2.querySelector('#np-d').value.trim();
+        p.rack.size = +e2.querySelector('#np-z').value; p.rack.modules = [];
+        p.controller.slot = +e2.querySelector('#np-s').value; p.controller.rev = e2.querySelector('#np-r').value;
+        if (d) p.controller.desc = d;
+        openProject(p, true); render();
+        toast(`Project ${n} made. Add the I/O modules with New Module, and set the path with Who Active.`, 'ok');
+      } }] });
+    el.querySelector('#np-z').onchange = () => { const s = el.querySelector('#np-s'), v = Math.min(+s.value, +el.querySelector('#np-z').value - 1); s.innerHTML = sl(+el.querySelector('#np-z').value); s.value = v; };
   }
 
 
@@ -1996,7 +2992,7 @@ ${progs.map(g => `<Program Name="${x(g.name)}" MainRoutineName="${x(g.main || ''
 <Routines>
 ${g.routines.map(r => `<Routine Name="${x(r.name)}" Type="RLL">
 <RLLContent>
-${r.rungs.map((u, i) => `<Rung Number="${i}" Type="N">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '') ? u.z : 'N'}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
 </RLLContent>
 </Routine>`).join('\n')}
 </Routines>
@@ -2038,13 +3034,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const type = kindOf(cat);
       if (type && slot > 0 && m.getAttribute('ParentModule') === 'Local') mods.push({ slot, type, name: (m.getAttribute('Name') || type).replace(/[^A-Za-z0-9_]/g, '_') });
     });
-    p.rack.size = E.RACKS.find(n => n >= size) || 12;
+    p.rack.size = E.fitRack(E.RACKS.find(n => n >= size) || size, mods.map(m => m.slot).concat(p.controller.slot || 0));
     p.rack.modules = mods.filter(m => m.slot < p.rack.size);
     const progs = kids(c, 'Programs')[0];
     const list = (progs ? kids(progs, 'Program') : []).map(g => {
       const routines = kids(kids(g, 'Routines')[0] || g, 'Routine').filter(r => (r.getAttribute('Type') || 'RLL') === 'RLL').map(r => ({
         name: r.getAttribute('Name'),
-        rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; return o; }),
+        rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; const ty = u.getAttribute('Type'); if (/^[iIrRD]$/.test(ty || '')) o.z = ty; else if (ty === 'e') o.z = 'i'; return o; }),
       }));
       routines.forEach(r => { if (!r.rungs.length) r.rungs = [{ t: '' }]; });
       return { name: g.getAttribute('Name'), main: g.getAttribute('MainRoutineName') || (routines[0] && routines[0].name) || 'MainRoutine', tags: tagsOf(kids(g, 'Tags')[0]), routines: routines.length ? routines : [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
@@ -2094,7 +3090,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(name)) { el.querySelector('#me').textContent = 'Use letters, digits and _.'; return false; }
         const m = { slot, type, name };
         edit(() => { S.p.rack.modules.push(m); });
-        toast(`Module ${type} added in slot ${slot}: its tags are Local:${slot}:I / O`);
+        toast(`Module ${type} added in slot ${slot}: its tags are ${['C', 'I', 'O'].filter(k => (E.MODULES[type] || {})[k]).map(k => `Local:${slot}:${k}`).join(', ')}`);
       } }] });
   }
   function deleteModule(slot) {
@@ -2128,7 +3124,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
       <div class="frow"><label>Slot</label><select class="inp" id="mp-s"${dis}>${slots.map(s => `<option${s === slot ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
-      <div class="frow"><label>Tags</label><span class="mono">${['I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
+      <div class="frow"><label>Tags</label><span class="mono">${['C', 'I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
     const conn = `<div class="frow"><label>RPI (ms)</label><input class="inp" id="mp-r" type="number" min="2" max="750" value="${m.rpi || 20}"${dis}></div>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
@@ -2267,11 +3263,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
 
   /* ---------- online ---------- */
+  /* Verify clears the dirty marks ('*') of the rungs it finds without errors */
+  function clearDirty(list, v) {
+    const bad = new Set(v.errors.map(e => e.program + '/' + e.routine + '/' + e.rung));
+    allProgs().forEach(g => g.routines.forEach(r => { if (list && !list.includes(r)) return; r.rungs.forEach((x, n) => { if (x.dx && !bad.has(g.name + '/' + r.name + '/' + n)) delete x.dx; }); }));
+  }
   function verifyCmd(routineOnly) {
     reverify();
     const v = routineOnly ? E.verify(S.p, { program: curProg().name, routine: curRoutine().name }) : S.verify;
+    clearDirty(routineOnly ? [curRoutine()] : null, v);
     if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
-    S.verifyShown = v;
+    S.verifyShown = v; S.outTab = 'err';
     render();
     toast(v.errors.length ? `${v.errors.length} error(s), ${v.warnings.length} warning(s)` : `Verified: no errors, ${v.warnings.length} warning(s)`, v.errors.length ? 'err' : 'ok');
   }
@@ -2280,13 +3282,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     S.online = true;
     // the I/O panel holds the simulated field devices: show it when going online
     if (!S.prefs.emu && S.layout !== 'phone') { S.prefs.emu = true; savePrefs(); }
-    render(); live(true);
+    render(); live(true); commLed();
   }
   /* Go Online: the same project goes online; otherwise "Connected To Go Online" (as in the reference): Select File,
      Upload or Download, with what the controller and this device hold */
-  function goOnline() {
-    if (!reachable()) return;
-    if (ctl.holds(S.p) && ctl.M) { online(); toast(`Online with ${ctl.name}`); return; }
+  function goOnline() { connect(goOnline2); }
+  function goOnline2() {
+    if (ctl.M && (ctl.holds(S.p) || (zonesIn(S.p) && (ctl.holds(newLogic(S.p)) || ctl.holds(logicOf(S.p, 'old')))) || (S.ed && S.ed.ctl === ctl))) { online(); toast(`Online with ${ctl.name}`); return; }
     const inCtl = ctl.M ? JSON.parse(ctl.copy) : null;
     const facts = p => { const progs = p.tasks.flatMap(t => t.programs); return `${progs.reduce((n, g) => n + g.routines.length, 0)} routine(s), ${progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0)} rung(s), ${p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0)} tag(s)`; };
     const files = index().filter(x => inCtl && U(x.name) === U(inCtl.controller.name) && x.name !== S.p.controller.name);
@@ -2295,7 +3297,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         <div class="grp" style="background:none;padding-left:0">Controller</div>${kv('Path', esc(curPath()))}${kv('Name', inCtl ? esc(inCtl.controller.name) : '(none)')}${kv('Mode', MODE())}${inCtl ? kv('Contents', facts(inCtl)) : ''}
         <div class="grp" style="background:none;padding-left:0">Offline project</div>${kv('Name', esc(S.p.controller.name))}${kv('Contents', facts(S.p))}
         <p class="help"><b>Select File</b> opens another project on this device that matches the controller. <b>Upload</b> copies the controller's project to this device. <b>Download</b> replaces the controller's project with the open one.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
+      buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
     void files;
   }
   /* Select File: open a saved project; when it matches the controller, go online with it */
@@ -2308,12 +3310,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   /* Upload: the controller's project, with its tag values, goes into a project file on this device (a new one, or
      one that is replaced), then online */
-  function upload() {
-    if (!reachable()) return;
+  function upload() { connect(upload2, 'Upload'); }
+  function upload2() {
     if (!ctl.M) { toast('The controller is empty: nothing to upload.', 'err'); return; }
     const p = ctl.upload();
     confirmDlg('Upload', `Upload <b>${esc(p.controller.name)}</b> from <span class="mono">${esc(curPath())}</span>? It opens here, with the controller's tag values; then pick where to save its file.`, 'Upload', () => {
-      setTimeout(() => showProgress('Uploading', `Uploading from ${curPath()}…`, () => {
+      const x = xferSteps(p, 'Uploading'), from = ctl;
+      setTimeout(() => transfer({ title: 'Uploading', kind: 'upload', ms: x.ms, sub: `From ${curPath()}`, steps: x.st, doneText: 'Upload complete',
+        cancelled: () => { linked = null; toast('Upload cancelled. Nothing was opened.'); }, done: () => {
+        if (ctl !== from) { toast('The controller stopped answering: the upload failed.', 'err'); return; }
         const path = curPath();
         S.ed = null;
         openProject(p, true);
@@ -2322,15 +3327,91 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         online();
         toast(`Uploaded ${p.controller.name}`, 'ok');
         setTimeout(saveFileAs, 300);
-      }), 0);
+      } }), 0);
     });
   }
-  /* the transfer dialog of Download and Upload */
-  function showProgress(title, text, done) {
-    const el = dialog({ title, modal: true, body: `<p>${esc(text)}</p><div class="prog"><i></i></div>` });
-    const bar = el.querySelector('.prog i');
-    requestAnimationFrame(() => { bar.style.width = '100%'; });
-    setTimeout(() => { closeLayer(); done(); }, 650);
+  /* ---------- the feel of a real connection (RSLinx browse, Go Online, Download, Upload) ----------
+     The steps wait on setTimeout, never in a loop, so the screen keeps taking input. fastComm (Options, or
+     ?fastcomm=1 in the address) skips the waits: the tests use it. */
+  const fastComm = () => !!S.prefs.fastComm || /[?&]fastcomm=1(&|$)/.test(location.search);
+  const jitter = (a, b) => Math.round(a + Math.random() * (b - a));
+  let commBusy = 0, linked = null;
+  /* the COMM indicator: blinks fast while data moves, slowly while online, dark offline */
+  const commCls = () => (commBusy ? ' busy' : S.online ? ' on' : '');
+  const commHTML = txt => `<span class="comm" title="Communications activity"><i class="commled${commCls()}"></i>${txt ? '<b>COMM</b>' : ''}</span>`;
+  function commLed() { const c = 'commled' + commCls(); document.querySelectorAll('.commled').forEach(e => { if (e.className !== c) e.className = c; }); }
+  const busyComm = d => { commBusy = Math.max(0, commBusy + d); commLed(); };
+  /* the size of the project, for the transfer time and its steps */
+  function projSize(p) {
+    const progs = p.tasks.flatMap(t => t.programs);
+    return { progs, tags: p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0), rungs: progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0) };
+  }
+  /* the transfer steps of a whole project, as the reference names them while it downloads or uploads */
+  function xferSteps(p, verb) {
+    const z = projSize(p), st = [{ t: `${verb}…`, w: 2 }, { t: `${verb} tags (${z.tags})…`, w: 2 + z.tags / 10 }];
+    z.progs.forEach(g => {
+      st.push({ t: `${verb} program ${g.name}…`, w: 1 });
+      g.routines.forEach(r => st.push({ t: `${verb} routine ${g.name} - ${r.name} (${r.rungs.length} rung${r.rungs.length === 1 ? '' : 's'})…`, w: 1 + r.rungs.length / 8 }));
+    });
+    return { st, ms: Math.min(3000, Math.max(1500, 1400 + z.rungs * 6 + z.tags * 3)) };
+  }
+  /* the transfer dialog of Download, Upload and Go Online: a determinate bar through named steps, with Cancel.
+     A step with run() runs when it starts (false stops the transfer); a step with fixed: true cannot be cancelled
+     any more (the controller has taken the data). */
+  function transfer(o) {
+    const steps = o.steps, W = steps.reduce((s, x) => s + x.w, 0), total = fastComm() ? (o.fastMs != null ? o.fastMs : 600) : o.ms;
+    let i = -1, acc = 0, timer = 0, over = false, fixed = false;
+    busyComm(1);
+    const el = dialog({ title: o.title, modal: true, size: 'xfer',
+      body: `<p class="xfer-t" id="xft">${esc(steps[0].t)}</p><div class="prog det" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="${esc(o.title)}"><i></i></div>
+        <div class="xfer-s"><span class="muted ell grow" id="xfs">${esc(o.sub || '')}</span><span class="mono" id="xfp">0%</span></div>`,
+      buttons: o.noCancel ? [] : [{ l: 'Cancel', run: () => { cancel(); } }],
+      onClose: () => { if (!over) cancel(); } });
+    el.dataset.xfer = o.kind || '';
+    const bar = el.querySelector('.prog i'), pb = el.querySelector('.prog'), cb = el.querySelector('[data-b="0"]');
+    const end = () => { over = true; clearTimeout(timer); busyComm(-1); };
+    function cancel() {
+      if (over || fixed) return false;
+      end(); if (el.isConnected) closeLayer();
+      if (o.cancelled) o.cancelled();
+      return true;
+    }
+    const next = () => {
+      if (over) return;
+      i++;
+      if (i >= steps.length) {
+        end();
+        const fin = () => { if (el.isConnected) closeLayer(); o.done(); };
+        if (o.doneText && el.isConnected) { el.querySelector('#xft').textContent = o.doneText; timer = setTimeout(fin, fastComm() ? 0 : 350); } else fin();
+        return;
+      }
+      const s = steps[i];
+      if (s.fixed) { fixed = true; if (cb) cb.disabled = true; }
+      if (s.run && s.run() === false) { end(); if (el.isConnected) closeLayer(); return; }
+      acc += s.w;
+      const dur = total * s.w / W, pc = Math.round(acc / W * 100);
+      if (el.isConnected) {
+        el.querySelector('#xft').textContent = s.t;
+        bar.style.transitionDuration = Math.round(dur) + 'ms'; bar.style.width = pc + '%';
+        pb.setAttribute('aria-valuenow', pc); el.querySelector('#xfp').textContent = pc + '%';
+      }
+      timer = setTimeout(next, dur);
+    };
+    // Esc is Cancel (not a plain close: the transfer would go on behind it)
+    layerKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); cancel(); } };
+    // the dialog paints at 0 %, then the bar moves
+    timer = setTimeout(next, 30);
+    return { el, cancel };
+  }
+  /* Connecting to the controller: RSLinx opens the path before anything else (Go Online, Download or Upload from
+     offline). Then the checks of reachable(). fastComm, or a path just reached, skips the wait. */
+  function connect(then, what) {
+    const path = curPath();
+    if (fastComm() || S.online || (linked && linked.path === path && linked.ctl === ctl && performance.now() - linked.t < 15000)) { if (reachable()) { linked = { path, ctl, t: performance.now() }; then(); } return; }
+    transfer({ title: what || 'Go Online', kind: 'connect', ms: jitter(600, 1000), sub: path,
+      steps: [{ t: `Connecting to the controller at ${path}…`, w: 3 }, { t: 'Checking the controller: type, revision and project…', w: 1 }],
+      cancelled: () => toast('Connecting was cancelled.'),
+      done: () => { if (!reachable()) { linked = null; return; } linked = { path, ctl, t: performance.now() }; then(); } });
   }
   /* Upload Tag Values: the controller's current values become the project's values (not an edit) */
   function uploadTags(say) {
@@ -2371,7 +3452,12 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     return false;
   }
   function download() {
-    if (!reachable()) return;
+    // verify first (offline, nothing to connect for), then open the path
+    reverify();
+    if (S.verify.errors.length) { download2(); return; }
+    connect(download2, 'Download');
+  }
+  function download2() {
     reverify();
     if (S.verify.errors.length) {
       if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
@@ -2387,20 +3473,28 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Slot', ctlSlot())}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
         <p>${ctl.name ? `The project in the controller (<b>${esc(ctl.name)}</b>) will be replaced by <b>${esc(S.p.controller.name)}</b>.` : `<b>${esc(S.p.controller.name)}</b> will be downloaded.`} ${RUNM() ? 'The controller goes to Remote Program first.' : ''}</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Download', pri: true, run: () => {
+      buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Download', pri: true, run: () => {
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
         const wasRun = ctl.running;
         if (wasRun) ctl.setMode('remprog');
-        setTimeout(() => showProgress('Downloading', `Downloading to ${curPath()}…`, () => {
-          const r = ctl.download(JSON.parse(JSON.stringify(S.p)));
-          if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return; }
+        const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p));
+        let r = null;
+        // the controller takes the project at Verifying: from there the transfer cannot be cancelled
+        x.st.push({ t: 'Verifying…', w: 2, fixed: true, run: () => {
+          if (ctl !== to) { toast('The controller stopped answering: the download failed.', 'err'); return false; }
+          r = ctl.download(copy);
+          if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return false; }
           S.ed = null;
           // the cards of the chassis answer at once
           chassis.advance(0);
           saveChassis();
-          online();
-          if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
-        }), 0);
+        } });
+        setTimeout(() => transfer({ title: 'Downloading', kind: 'download', ms: x.ms, sub: `To ${curPath()}`, steps: x.st, doneText: 'Download complete',
+          cancelled: () => { linked = null; toast('Download cancelled. The project in the controller was not changed.'); },
+          done: () => {
+            online();
+            if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
+          } }), 0);
       } }] });
   }
   const RUNM = () => ctl.mode === 'run' || ctl.mode === 'remrun';
@@ -2415,22 +3509,29 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return;
     }
     if (S.ed && S.ed.ctl === ctl && S.ed.tested) { toast('Assemble or untest the edits being tested first.', 'err'); return; }
+    // accepting verifies the edits: their dirty marks go
+    eachRoutine(S.p, r => r.rungs.forEach(x => { delete x.dx; }));
     if (ctl.running) {
+      // the pending zones become accepted ones: i → I (insert zone), r → R (replace zone); the controller still runs the old logic
+      eachRoutine(S.p, r => r.rungs.forEach(x => { if (x.z === 'i') x.z = 'I'; else if (x.z === 'r') x.z = 'R'; }));
       S.ed = { ctl, orig: S.ed && S.ed.ctl === ctl ? S.ed.orig : ctl.copy, base: JSON.stringify(S.p), tested: false };
-      saveProject();
+      S.undo = []; S.redo = [];
+      S.dirty = true; saveProject();
       toast('Edits accepted. The controller still runs the old logic: Test Accepted Edits to run them.', 'ok');
     } else {
-      const r = ctl.edit(JSON.parse(JSON.stringify(S.p)));
+      // in Program the new rungs replace the originals at once
+      const nl = newLogic(S.p), r = ctl.edit(JSON.parse(JSON.stringify(nl)));
       if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits were not accepted.', 'err'); return; }
-      S.ed = null; saveProject();
+      S.p = nl; S.ed = null; S.undo = []; S.redo = [];
+      S.dirty = true; reverify(); saveProject();
       toast('Edits accepted and finalized in the controller.', 'ok');
     }
     live(true); render();
   }
-  /* Test Accepted Edits: the controller runs the new logic; the old one is kept for Untest */
+  /* Test Accepted Edits: the controller runs the new logic (insert zones, not the replace and delete zones); the old one is kept for Untest */
   function testEdits() {
     confirmDlg('Test Accepted Edits', 'The controller will run the edited logic from the next scan. Test the accepted edits?', 'Test', () => {
-      const r = ctl.edit(JSON.parse(S.ed.base));
+      const r = ctl.edit(newLogic(JSON.parse(S.ed.base)));
       if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits could not be tested.', 'err'); return; }
       S.ed.tested = true; live(true); render();
       toast('Testing the edits: the controller runs the new logic.', 'ok');
@@ -2443,60 +3544,96 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     S.ed.tested = false; live(true); render();
     toast('Untested: the controller runs the old logic again.');
   }
-  /* Assemble Accepted Edits: the new logic stays, the old one is dropped */
+  /* Assemble Accepted Edits: insert zones become normal rungs, the replace and delete zones are removed */
   function assembleEdits() {
-    confirmDlg('Assemble Accepted Edits', 'Keep the edited logic in the controller? The old logic is dropped.', 'Assemble', () => {
-      S.ed = null; saveProject(); live(true); render();
+    dialog({ title: 'Assemble Accepted Edits', body: '<p>Finalize all edits in program?</p><p class="help">The edited logic stays in the controller and the old logic is dropped.</p>', buttons: [{ l: 'No' }, { l: 'Yes', pri: true, run: () => {
+      S.p = newLogic(S.p); S.ed = null; S.undo = []; S.redo = [];
+      S.sel = null; S.selRung = rungs().length ? 0 : null;
+      changed(); live(true);
       toast('Edits assembled.', 'ok');
-    });
+    } }] });
   }
   /* Cancel Pending Edits: back to the accepted edits, or to the controller's logic */
   function cancelEdits() {
-    const back = S.ed && S.ed.ctl === ctl && !S.ed.tested ? S.ed.base : ctl.copy;
-    confirmDlg('Cancel Pending Edits', 'Throw away the pending edits?', 'Cancel Edits', () => edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }), true);
+    const back = S.ed && S.ed.ctl === ctl ? S.ed.base : ctl.copy;
+    confirmDlg('Cancel Pending Edits', 'Throw away the pending edits?', 'Cancel Edits', () => edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true), true);
+  }
+  /* Cancel Pending Rung Edits on one rung: its copy (i) goes and its original (r) is a normal rung again */
+  function cancelRungEdit(ri) {
+    const R = rungs(), r = R[ri];
+    if (!r || !/^[ir]$/.test(r.z || '')) { cancelEdits(); return; }
+    edit(() => {
+      const i = r.z === 'i' ? ri : R[ri - 1] && R[ri - 1].z === 'i' ? ri - 1 : -1, o = r.z === 'r' ? ri : R[ri + 1] && R[ri + 1].z === 'r' ? ri + 1 : -1;
+      if (o >= 0) delete R[o].z;
+      if (i >= 0) R.splice(i, 1);
+      S.sel = null; S.selRung = Math.max(0, Math.min(i >= 0 ? i : ri, R.length - 1));
+    }, true);
+  }
+  /* Start Pending Rung Edits: the rung is copied; the copy (i) is edited, the original (r) stays below it, read-only */
+  function startRungEdit(ri) {
+    const r = rungs()[ri];
+    if (!r) return;
+    if (r.z) { toast(`Rung ${ri} is already ${r.z === 'i' ? 'being edited' : 'an edit zone (' + r.z + ')'}.`, 'err'); return; }
+    edit(() => { const o = { t: r.t, z: 'r' }; if (r.c) o.c = r.c; r.z = 'i'; rungs().splice(ri + 1, 0, o); S.sel = null; S.selRung = ri; }, true);
   }
   /* Cancel Accepted Edits: the accepted edits are removed; the project is the controller's again */
   function cancelAccepted() {
     const back = S.ed.orig;
-    confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }); }, true);
+    confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
-  function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
+  function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */
   function whoActive() {
-    const modeOf = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
+    const modeOf = ctlMode;
     const pad = n => (n < 10 ? '0' + n : n);
     const cur = curPath();
     let sel = resolve(cur) && resolve(cur).ctl ? cur : null;
-    const slotRows = (r, pathFn, ind) => Array.from({ length: r.size }, (_, n) => {
-      const m = r.module(n);
-      if (!m) return '';
-      if (!m.ctl) return `<div class="nd dim" style="padding-left:${ind}px">${ic('io', 'i ti')}${pad(n)}, ${esc(m.type)} ${esc(m.name)}</div>`;
-      const c = m.ctl, p = pathFn(n);
-      if (!c.powered) return `<div class="nd dim" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · off</div>`;
-      if (!sel) sel = p;
-      return `<div class="nd${p === sel ? ' on' : ''}" data-wa="${esc(p)}" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${p === cur ? ' <span class="muted">(project path)</span>' : ''}</div>`;
-    }).join('');
-    const rows = () => {
-      let h = '';
+    // the tree as rows; a driver row (d) is still browsing while its rows are not all found; dev: a device answers
+    const slotRows = (out, r, pathFn, ind) => {
+      for (let n = 0; n < r.size; n++) {
+        const m = r.module(n);
+        if (!m) continue;
+        if (!m.ctl) { out.push({ h: `<div class="nd dim" style="padding-left:${ind}px">${ic('io', 'i ti')}${pad(n)}, ${esc(m.type)} ${esc(m.name)}</div>`, dev: 1 }); continue; }
+        const c = m.ctl, p = pathFn(n);
+        if (!c.powered) { out.push({ h: `<div class="nd dim" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · off</div>`, dev: 1 }); continue; }
+        if (!sel) sel = p;
+        out.push({ h: `<div class="nd${p === sel ? ' on' : ''}" data-wa="${esc(p)}" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${p === cur ? ' <span class="muted">(project path)</span>' : ''}</div>`, dev: 1 });
+      }
+    };
+    const list = () => {
+      const out = [];
       drivers.filter(d => d.run).forEach(d => {
         if (d.type === 'vbp') {
-          h += `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Virtual Backplane</div>`;
+          out.push({ h: `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Virtual Backplane`, d: 1 });
           const r = racks[0];
-          h += r ? `<div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Virtual Chassis, ${esc(r.name)}</div>` + slotRows(r, n => d.name + '\\' + n, 36) : '<div class="nd dim" style="padding-left:20px">No chassis in the emulator.</div>';
+          if (r) { out.push({ h: `<div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Virtual Chassis, ${esc(r.name)}</div>` }); slotRows(out, r, n => d.name + '\\' + n, 36); } else out.push({ h: '<div class="nd dim" style="padding-left:20px">No chassis in the emulator.</div>' });
         } else if (d.type === 'emulate') {
-          h += `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Ethernet</div>`;
+          out.push({ h: `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Ethernet`, d: 1 });
           const seen = new Set();
           racks.forEach(r => r.controllers().forEach(gm => {
             if (!gm.ip || !gm.ctl.powered || seen.has(gm.ip)) return;
             seen.add(gm.ip);
-            h += `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${gm.ip}, PLC-CPU ${esc(gm.name)}</div><div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` + slotRows(r, n => pathOf(gm.ip, n), 52);
+            out.push({ h: `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${gm.ip}, PLC-CPU ${esc(gm.name)}</div>`, dev: 1 }, { h: `<div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` });
+            slotRows(out, r, n => pathOf(gm.ip, n), 52);
           }));
-          if (!seen.size) h += '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>';
+          if (!seen.size) out.push({ h: '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>' });
         }
       });
-      return h || '<div class="nd dim" style="padding-left:6px">No communications driver: Communications &gt; Configure Drivers</div>';
+      return out;
+    };
+    // Browse: the rows come in one by one, as a driver finds the nodes on its network (150-400 ms a device)
+    let shown = 0, btimer = 0, auto = true, last = '', lastSt = '';
+    const rows = all => {
+      if (!all.length) return '<div class="nd dim" style="padding-left:6px">No communications driver: Communications &gt; Configure Drivers</div>';
+      const n = Math.min(shown, all.length);
+      return all.slice(0, n).map((x, i) => {
+        if (!x.d) return x.h;
+        let stop = all.length;
+        for (let j = i + 1; j < all.length; j++) if (all[j].d) { stop = j; break; }
+        return x.h + (n < stop ? ' <span class="browsing"><i class="spin"></i>Browsing…</span>' : '') + '</div>';
+      }).join('');
     };
     const pick = () => (sel ? resolve(sel) : null);
     const info = () => {
@@ -2507,17 +3644,47 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     };
     // the picked controller becomes the project path, then the action runs against it
     const via = fn => () => { const x = pick(); if (!x || !x.ctl) { toast('Pick a controller first.', 'err'); return false; } setPath(sel); setTimeout(fn, 0); };
-    const rowsH = rows();
+    let atimer = 0;
+    list(); // picks the first controller that answers when the project path has none
+    const stopAll =() => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } clearInterval(atimer); };
     const el = dialog({ title: 'Who Active', size: 'md',
-      body: `<div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div id="wa-rows">${rowsH}</div></div>
+      body: `<div class="wabar"><label class="rlck"><input type="checkbox" id="wa-auto" checked>Autobrowse</label><button class="btn" id="wa-ref">Refresh</button><span class="grow"></span><span class="muted ell" id="wa-st"></span></div>
+        <div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div id="wa-rows"></div></div>
         <p class="help" id="wa-i">${info()}</p>`,
-      buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
-        { l: 'Upload…', run: via(upload) }, { l: 'Download…', run: via(download) }, { l: 'Go Online', pri: true, run: via(goOnline) }] });
+      onClose: stopAll,
+      buttons: [{ l: 'Close', run: stopAll }, { l: 'Emulator…', run: () => { stopAll(); setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
+        { l: 'Upload…', run: () => { stopAll(); return via(upload)(); } }, { l: 'Download…', run: () => { stopAll(); return via(download)(); } }, { l: 'Go Online', pri: true, run: () => { stopAll(); return via(goOnline)(); } }] });
+    const draw = () => {
+      const all = list(), h = rows(all), st = shown < all.length ? 'Browsing - node found' : auto ? 'Browsing - done' : 'Not browsing';
+      if (h !== last) { el.querySelector('#wa-rows').innerHTML = h; last = h; }
+      if (st !== lastSt) { el.querySelector('#wa-st').textContent = st; lastSt = st; }
+    };
+    const step = () => {
+      btimer = 0;
+      if (!el.isConnected) { busyComm(-1); return; }
+      const all = list();
+      shown++;
+      if (shown >= all.length) { shown = Infinity; busyComm(-1); draw(); return; }
+      draw();
+      const nx = all[shown];
+      btimer = setTimeout(step, nx && nx.dev ? jitter(150, 400) : jitter(80, 150));
+    };
+    const browse = () => {
+      if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); }
+      if (fastComm()) { shown = Infinity; draw(); return; }
+      shown = 1; busyComm(1); draw();
+      btimer = setTimeout(step, jitter(150, 300));
+    };
+    // Autobrowse: a quiet check each second; the rows change only when the network does (no browse again)
+    atimer = setInterval(() => { if (!el.isConnected) { stopAll(); return; } if (auto && shown === Infinity) draw(); }, 1000);
     el.querySelector('#wa').addEventListener('click', ev => {
       const r = ev.target.closest('[data-wa]'); if (!r) return;
       sel = r.dataset.wa;
-      el.querySelector('#wa-rows').innerHTML = rows(); el.querySelector('#wa-i').innerHTML = info();
+      draw(); el.querySelector('#wa-i').innerHTML = info();
     });
+    el.querySelector('#wa-ref').addEventListener('click', browse);
+    el.querySelector('#wa-auto').addEventListener('change', ev => { auto = ev.target.checked; draw(); });
+    browse();
   }
 
   /* Toggle Bit: an input of a working card follows its field switch, so that switch is flipped; the input of a faulted
@@ -2568,15 +3735,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     r.advance(0);
     refreshIO();
   }
-  const refreshIO = () => { const iob = $('#iob'); if (iob) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(true); };
+  const refreshIO = () => { const iob = $('#iob'); if (iob) { iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); iob._mh = null; } chassisLive(true); };
 
   /* ---------- the emulator dock (P1): the chassis of the project path beside the ladder, sized by a splitter ----------
      bottom (desktop, tablet portrait), side (tablet landscape, phone landscape), full (the phone's Emulator tab).
-     The modules keep their size; a side or full panel shows the used slots and one empty slot. */
+     The modules keep their size; every slot of the chassis shows, in one row that scrolls sideways when it must. */
   function dockBody() {
-    const ri = Math.max(0, racks.indexOf(chassis)), compact = false;   // S.dockCompact: set by dockHTML for the side and full panels
+    const ri = Math.max(0, racks.indexOf(chassis));
     const cs = chassis.controllers();
-    return rackHTML(ri, compact || S.dockCompact) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
+    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
   }
   /* the emulator panel: on the right in landscape and at the bottom in portrait, unless it was moved; it can be
      folded to a thin bar (like the organizer) and opened again from there */
@@ -2585,7 +3752,6 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (S.prefs.emuMin && where !== 'full') {
       return `<div class="dock ${where} min" id="dock"><button class="dkbar" data-dkmin="0" title="Show the emulator panel">${ic(where === 'side' ? 'left' : 'up')}<b>Emulator</b><span class="muted">${esc(chassis.name)}</span></button></div>`;
     }
-    S.dockCompact = where !== 'bottom' || (S.layout === 'phone');
     const P = S.prefs, size = where === 'bottom' ? `height:${S.layout === 'tablet' ? P.emuHp : P.emuH}px` : where === 'side' ? `width:${P.emuW}px` : '';
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
@@ -2604,6 +3770,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      and modules plugged into the slots. An I/O module has its status LEDs and a terminal block (screw terminals, where
      field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
      as in the reference emulator */
+  const rtbOpen = new Set();   // the I/O cards ('rack:slot') whose RTB door is open: UI state only
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
@@ -2621,28 +3788,25 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const own = r.owner(s), okc = m.fault ? 'r blink' : own && own.running ? 'g' : 'g blink';
     const n = m.kind === 'di' || m.kind === 'do' ? 16 : 4;
     const st = m.kind === 'di' ? m.field : m.kind === 'do' ? r.outputs(s) : null;
-    const face = st != null ? `<div class="mmat">${Array.from({ length: 16 }, (_, b) => `<i class="${(st >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}"></i><span>${b}</span>`).join('')}</div>`
+    const face = st != null ? `<div class="mmat" title="Status indicators: points 0-7 and 8-15">${Array.from({ length: 16 }, (_, b) => `<div><span>${b}</span><i class="${(st >> b) & 1 ? (m.kind === 'do' ? 'y' : 'g') : ''}"></i></div>`).join('')}</div>`
       : `<div class="mana">${(m.kind === 'ai' ? m.field : r.outputs(s)).map((v, c) => `<div><span>Ch${c}</span><b>${(+v).toFixed(1)}</b></div>`).join('')}</div>`;
     const com = m.kind === 'di' ? ['GND', 'GND'] : m.kind === 'do' ? ['DC+', 'RTN'] : ['RTN', 'RTN'];
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
     const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
     const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
-    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${term}${tail}</div>`;
+    /* the RTB (removable terminal block) housing: its door is closed over the terminals, as on a 1756 module; a click
+       or tap opens it on its side hinge and shows the terminals, another one closes it (kept per card, not in the project) */
+    const open = rtbOpen.has(id);
+    const rtb = `<div class="mrtb${open ? ' open' : ''}" data-rtb="${id}">${term}<button type="button" class="rtbdoor" data-rtb="${id}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the terminal block door of slot ${s}" title="${open ? 'Close' : 'Open'} the RTB door"><span class="rtblock" aria-hidden="true"></span><span class="rtbrib" aria-hidden="true"></span><b>${esc(m.type.replace('PLC-', ''))}</b><small>RTB</small></button></div>`;
+    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${rtb}${tail}</div>`;
   }
-  /* the chassis drawn in rows of up to 8 slots (6 on a tablet, 3 on a phone); a row can be folded away */
-  const rackHTML = (ri, compact) => {
-    const r = racks[ri], all = Array.from({ length: r.size }, (_, s) => s), firstFree = all.find(s => !r.module(s));
-    const slots = compact ? all.filter(s => r.module(s) || s === firstFree) : all;
-    // rows of 8 slots on Windows, 6 on a tablet, 3 on a phone, so every card stays on the screen
-    const per = S.layout === 'desktop' ? 8 : S.layout === 'phone' ? 3 : 6, rows = [];
-    for (let i = 0; i < slots.length; i += per) rows.push(slots.slice(i, i + per));
-    return rows.map((row, k) => {
-      const key = ri + ':' + k, shut = S.rowHide && S.rowHide.has(key);
-      const head = rows.length > 1 ? `<div class="rkrow" data-rkrow="${key}">${ic(shut ? 'right' : 'down')}Slots ${row[0]}–${row[row.length - 1]}</div>` : '';
-      if (shut) return head;
-      return head + `<div class="chas" style="--n:${row.length}">${k === 0 ? '<div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>' : '<div class="rkps ext" aria-hidden="true"></div>'}
-      <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div>`;
-    }).join('');
+  /* the chassis drawn as one row of slots, as in the Logix Emulate Chassis Monitor: a power supply, then every slot
+     (4 or 8) side by side, each empty slot as big as a module. On a narrow screen the row scrolls sideways; it never
+     wraps into a second row. */
+  const rackHTML = ri => {
+    const r = racks[ri], row = Array.from({ length: r.size }, (_, s) => s);
+    return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
+      <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div></div>`;
   };
   /* ---------- Module I/O window: the I/O of a chassis in one small window that stays open, inputs and outputs
      together. Each input point is a button that switches it; each output point lights while it is on; analog
@@ -2699,7 +3863,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     const cur = w.querySelector('.iom.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
   }
-  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; b.innerHTML = ioWinHTML(ri, +w.dataset.focus); b.scrollTop = st; } }); }
+  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; setHTML(b, ioWinHTML(ri, +w.dataset.focus)); b.scrollTop = st; } }); }
   /* the Module I/O windows of one window (the app, or the Emulator window): close, input switches, analog values, dragging by the title */
   function bindIoWins(doc) {
     const vw = doc.defaultView;
@@ -2724,7 +3888,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function moduleMenu(id, x, y) {
     const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
     if (!m) return;
-    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: () => ({ dataset: { crem: id } }) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
+    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
   }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
@@ -2737,7 +3901,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return `<div class="ph" style="background:none">Chassis</div><div class="emuform">
         <div class="frow"><label>Name</label><input class="inp" id="er-n" value="${esc(r.name)}"></div>
         <div class="frow"><label>Description</label><input class="inp" id="er-d" value="${esc(r.desc || '')}"></div>
-        <div class="frow"><label>Slots</label><select class="inp" id="er-z">${[4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => `<option${n === r.size ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div class="frow"><label>Slots</label><select class="inp" id="er-z">${E.RACKS.concat(E.RACKS.includes(r.size) ? [] : [r.size]).map(n => `<option${n === r.size ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
         <div class="brow"><button class="btn pri" data-erapply="${emuSel.ri}">Apply</button><button class="btn danger" data-erdel="${emuSel.ri}"${racks.length > 1 ? '' : ' disabled'}>Delete chassis</button></div></div>
         <div class="emurack">${rackHTML(emuSel.ri)}</div>`;
     }
@@ -2753,7 +3917,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <div class="frow"><label>IP Address</label><select class="inp" id="ec-ip"><option value=""${m.ip ? '' : ' selected'}>(none)</option>${EMUIPS.map(a => `<option${a === m.ip ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
       ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
       <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
-      ${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      ${kv('Revision', '1.0')}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
       <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
       <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
   }
@@ -2796,7 +3960,19 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     let el;
     const doc = t.ownerDocument;
     if ((el = t.closest('[data-cio]'))) { openIoWin(el.dataset.cio, el.ownerDocument, el.closest('.ccard') || el); return true; }
-    if ((el = t.closest('[data-rkrow]'))) { S.rowHide = S.rowHide || new Set(); const k = el.dataset.rkrow; if (S.rowHide.has(k)) S.rowHide.delete(k); else S.rowHide.add(k); chassisLive(true); refreshIO(); return true; }
+    if ((el = t.closest('[data-rtb]'))) {
+      // the RTB door: swing it open or shut in place (every view of that card), so the hinge animates
+      const k = el.dataset.rtb, open = !rtbOpen.has(k);
+      if (open) rtbOpen.add(k); else rtbOpen.delete(k);
+      const docs = [document].concat(chasWin && !chasWin.closed ? [chasWin.document] : []);
+      docs.forEach(d => d.querySelectorAll(`.mrtb[data-rtb="${k}"]`).forEach(x => {
+        x.classList.toggle('open', open);
+        const b = x.querySelector('.rtbdoor'); if (!b) return;
+        b.setAttribute('aria-expanded', String(open));
+        b.setAttribute('aria-label', `${open ? 'Close' : 'Open'} the terminal block door of slot ${k.split(':')[1]}`); b.title = `${open ? 'Close' : 'Open'} the RTB door`;
+      }));
+      return true;
+    }
     if ((el = t.closest('[data-emu]'))) {
       openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
       if (doc !== document) window.focus();
@@ -2876,7 +4052,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function newRack() {
     let n = 1; while (racks.some(r => U(r.name) === U('Chassis' + n))) n++;
     dialog({ title: 'Add Chassis', size: 'md', focus: true,
-      body: `<div class="frow"><label>Name</label><input class="inp" id="nr-n" value="Chassis${n}"></div><div class="frow"><label>Slots</label><select class="inp" id="nr-z">${[4, 5, 6, 7, 8, 9, 10, 11, 12].map(k => `<option${k === 7 ? ' selected' : ''}>${k}</option>`).join('')}</select></div><div class="frow"><label>Description</label><input class="inp" id="nr-d" value=""></div>`,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="nr-n" value="Chassis${n}"></div><div class="frow"><label>Slots</label><select class="inp" id="nr-z">${E.RACKS.map(k => `<option${k === 8 ? ' selected' : ''}>${k}</option>`).join('')}</select></div><div class="frow"><label>Description</label><input class="inp" id="nr-d" value=""></div>`,
       buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
         const v = e2.querySelector('#nr-n').value.trim();
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
@@ -2897,6 +4073,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         <div class="frow"><label>Module</label><select class="inp" id="ci-t">${types.map(t => `<option value="${t}">${t} · ${esc(CARDNAMES[t] || '')}</option>`).join('')}</select></div>
         <div class="frow"><label>Name</label><input class="inp" id="ci-n" value="" autocomplete="off" spellcheck="false"></div>
         <div id="ci-cpu"><div class="frow"><label>Description</label><input class="inp" id="ci-d" value=""></div>
+          <div class="frow"><label>Revision</label><select class="inp" id="ci-rev"><option>1.0</option></select></div>
+          <div class="frow"><label>Memory Size (KB)</label><input class="inp" id="ci-mem" type="number" min="64" step="64" value="3072"></div>
           <div class="frow"><label>IP Address</label><select class="inp" id="ci-ip"><option value="">(none)</option>${EMUIPS.map(a => `<option>${a}</option>`).join('')}</select></div>
           <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label></div>
         <p class="help" id="ci-h"></p>`,
@@ -2907,7 +4085,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
         const res = r.insert(s, t, n);
         if (!res.ok) { toast(res.msg, 'err'); return false; }
-        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, on: e2.querySelector('#ci-on').checked });
+        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
         r.advance(0); saveChassis();
         emuSel = { k: 'm', ri: racks.indexOf(r), slot: s };
         setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0);
@@ -2940,9 +4118,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (chasWin && !chasWin.closed) { chasWin.focus(); return; }
     const w = window.open('', 'mtps-chassis', 'width=1180,height=720');
     if (!w) { toast('The window was blocked: the emulator stays in the app.', 'err'); chassisMonitor(); return; }
-    const css = new URL('css/app.css', location.href).href, icon = new URL('icons/icon.svg', location.href).href;
+    const css = new URL('css/app.css', location.href).href, css2 = new URL('css/themes.css', location.href).href, icon = new URL('icons/icon.svg', location.href).href;
     w.document.open();
-    w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MT PLC Studio - Emulator</title><link rel="icon" href="${icon}"><link rel="stylesheet" href="${css}"></head>
+    w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MT PLC Studio - Emulator</title><link rel="icon" href="${icon}"><link rel="stylesheet" href="${css}"><link rel="stylesheet" href="${css2}"></head>
       <body class="desk chaswin"><header class="chashead"><b>Emulator</b><span class="muted">emulated chassis and controllers</span><span class="grow"></span><button class="btn" data-wa-open="1">Who Active…</button></header><div id="emubody" class="emu"></div></body></html>`);
     w.document.close();
     closeLayer();
@@ -2952,7 +4130,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function mountChassis(w) {
     chasWin = w;
     const d = w.document;
-    if (document.documentElement.dataset.theme) d.documentElement.dataset.theme = document.documentElement.dataset.theme;
+    d.documentElement.dataset.theme = S.prefs.theme; d.documentElement.dataset.mode = themeMode();
     chassisLive(true);
     d.addEventListener('click', ev => { if (!chassisClick(ev.target) && ev.target.closest('[data-wa-open]')) { window.focus(); whoActive(); } });
     d.addEventListener('pointerdown', ev => { const b = ev.target.closest('[data-io]'); if (!b) return; ioPress(b.dataset.io); ev.preventDefault(); });
@@ -2970,12 +4148,20 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- the controller runs on its own clock; the screen follows only what changed ---------- */
   let lastT = performance.now(), sig = '', lastLive = 0, lastLay = 0;
+  // the ladder part of the signature (what the rungs show), kept apart so a change elsewhere does not redraw them
+  let ladPart = '', ladSig = '', ladCost = 0, lastTags = 0, tagCost = 0, scrollAt = 0;
+  // a redraw of the ladder waits while it is being scrolled (passive: the scroll itself is never held up)
+  document.addEventListener('scroll', ev => { if (ev.target && ev.target.id === 'ladwrap') scrollAt = performance.now(); }, { capture: true, passive: true });
+  // write HTML only when it changed: no new DOM, style and layout for the same content
+  const setHTML = (el, h) => { if (el._mh !== h) { el.innerHTML = h; el._mh = h; } };
   function liveSig() {
-    if (!S.online) return 'off|' + chassisSig();
+    if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
     if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
-    ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); parts.push(JSON.stringify(im)); });
-    return parts.join(',') + '|' + chassisSig();
+    ladPart = parts.join(',');
+    const io = [];
+    ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
+    return ladPart + ',' + io.join(',') + '|' + chassisSig();
   }
   let lastFault = null;
   function live(force) {
@@ -2985,11 +4171,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     // a new major fault (a module that failed, a watchdog) shows in the organizer and the online bar
     const fk = S.online && ctl.fault ? ctl.fault.at : null;
     if (fk !== lastFault) { lastFault = fk; if (!force) { render(); if (fk) toast(`Major fault: ${ctl.fault.text}`, 'err'); return; } }
-    if (S.online && !S.touching) { const now = performance.now(); if (force || now - lastLive > 33) { lastLive = now; renderLadder(); } else { sig = ''; } }
+    // the ladder: only when what it shows changed, at most 20 times a second, and less often when one redraw costs
+    // more (a big routine on a slow device: the gap is 4 times the last redraw), never during a scroll
+    if (S.online && !S.touching && (force || ladPart !== ladSig)) {
+      const now = performance.now();
+      if (force || (now - lastLive > Math.max(50, ladCost * 4) && now - scrollAt > 150)) { lastLive = now; ladSig = ladPart; renderLadder(); const c = performance.now() - now; ladCost = ladCost ? ladCost * 0.7 + c * 0.3 : c; } else { sig = ''; }
+    }
     const ob = $('#olbar');
-    if (ob) ob.innerHTML = S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`;
-    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(false); ioWinsLive();
-    if (S.tagMode === 'mon') refreshTags();
+    if (ob) setHTML(ob, S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`);
+    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) setHTML(iob, iob.classList.contains('dockb') ? dockBody() : ioHTML()); chassisLive(false); ioWinsLive();
+    // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
+    if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
   /* the controller scans on a timer of its own, so it keeps running when the screen does not redraw
@@ -3008,27 +4200,46 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
 
   /* ---------- instruction picker (Insert, the phone's +) with quick entry: "XIC Start_PB" ---------- */
+  /* Add Ladder Element, as in the reference: the Ladder Element box (a mnemonic, or a whole instruction such as
+     "XIC Start_PB"), the list of instructions by group with their description (it jumps to the match while you
+     type), Show Language Elements By Groups, and Instruction Help >> for the selected one */
   function picker(initial) {
-    let tab = S.prefs.tab === 'Favorites' ? 'Bit' : S.prefs.tab;
-    const tiles = () => {
-      const q = U(el.querySelector('#pq').value.trim()).split(/[\s,(]+/)[0];
-      const list = q ? Object.keys(INSTR).filter(k => k.startsWith(q) || U(INSTR[k].name).includes(q)) : TABS[tab].filter(m => INSTR[m]);
-      return list.map(m => `<div class="tile" data-pk="${m}">${L.icon(m)}<b>${m}</b><small>${esc(NAME(m))}</small></div>`).join('') || '<div class="empty">No instruction matches</div>';
-    };
+    const groups = [...new Set(Object.values(INSTR).map(d => d.grp))];
+    let byGrp = S.prefs.aleGroups !== false, help = false, cur = '';
+    const open = new Set();
     const el = dialog({ title: 'Add Ladder Element', size: 'md', focus: true,
-      body: `<input class="inp mono" id="pq" placeholder="Type: XIC Start_PB, or search" value="${esc(initial || '')}" autocomplete="off" spellcheck="false">
-        <div class="fchips" id="pt">${Object.keys(TABS).filter(t => t !== 'Favorites').map(t => `<span class="fchip${t === tab ? ' on' : ''}" data-pt="${esc(t)}">${t}</span>`).join('')}</div>
-        <div class="tiles" id="pg"></div><p class="help">${S.sel ? 'Goes after the selected instruction.' : curSelRung() != null ? `Goes at the end of rung ${curSelRung()}.` : 'Goes in a new rung.'} Enter adds the typed instruction with its operands.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: el2 => quick(el2.querySelector('#pq').value) }] });
-    el.querySelector('#pg').innerHTML = tiles();
-    el.addEventListener('input', () => { el.querySelector('#pg').innerHTML = tiles(); });
+      body: `<div class="ale1"><label for="pq">Ladder Element:</label><input class="inp mono" id="pq" value="${esc(initial || '')}" autocomplete="off" spellcheck="false"><button class="btn" id="alehb">Instruction Help &gt;&gt;</button></div>
+        <div class="alew"><div class="alel" id="pg" role="listbox"></div><div class="aleh" id="alehp" hidden></div></div>
+        <div class="alef"><label class="alec"><input type="checkbox" id="aleg"${byGrp ? ' checked' : ''}> Show Language Elements By Groups</label><span class="grow"></span><button class="btn" disabled title="Add-On Instructions are not in the app yet">New Add-On Instruction…</button></div>
+        <p class="help">${S.sel ? 'Goes after the selected instruction.' : curSelRung() != null ? `Goes at the end of rung ${curSelRung()}.` : 'Goes in a new rung.'} Type a mnemonic or a whole instruction (XIC Start_PB), then OK. A second click on a row adds it.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Help', run: () => { const m = cur; setTimeout(() => instrHelp(m), 0); } }, { l: 'OK', pri: true, run: el2 => quick(el2.querySelector('#pq').value) }] });
+    const q = s => el.querySelector(s);
+    const row = m => `<div class="row${m === cur ? ' on' : ''}" data-pk="${m}" role="option">${L.icon(m)}<b class="mono">${m}</b><span class="ell">${esc(NAME(m))}</span></div>`;
+    const draw = () => {
+      const all = Object.keys(INSTR);
+      q('#pg').innerHTML = byGrp ? groups.map(g => { const ms = all.filter(m => INSTR[m].grp === g), o = open.has(g); return `<div class="row grp" data-pgrp="${esc(g)}">${ic(o ? 'down' : 'right')}${ic('folder')}<span>${esc(g)}</span></div>${o ? ms.map(row).join('') : ''}`; }).join('') : all.slice().sort().map(row).join('');
+      const on = q('#pg .row.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+      if (help) q('#alehp').innerHTML = cur ? `<b class="mono">${cur}</b><div>${esc(NAME(cur))}</div><div class="muted">${esc(INSTR[cur].grp)}</div><div style="margin-top:6px">Operands: ${esc(((L.OPN[cur] || []).join(', ')) || 'none')}</div><button class="btn" data-alefull="1" style="margin-top:8px">${ic('help')}Open Instruction Help</button>` : '<span class="muted">Select an instruction.</span>';
+    };
+    const match = () => {
+      const w = U(q('#pq').value.trim()).split(/[\s,(]+/)[0];
+      cur = w ? Object.keys(INSTR).find(k => k === w) || Object.keys(INSTR).find(k => k.startsWith(w)) || '' : cur;
+      if (cur) open.add(INSTR[cur].grp);
+      draw();
+    };
+    match();
+    el.addEventListener('input', ev => { if (ev.target.id === 'pq') match(); });
+    q('#aleg').addEventListener('change', ev => { byGrp = ev.target.checked; S.prefs.aleGroups = byGrp; savePrefs(); draw(); });
+    q('#alehb').addEventListener('click', () => { help = !help; q('#alehp').hidden = !help; q('#alehb').innerHTML = help ? 'Instruction Help &lt;&lt;' : 'Instruction Help &gt;&gt;'; draw(); });
     el.addEventListener('click', ev => {
-      const c = ev.target.closest('[data-pt]');
-      if (c) { tab = c.dataset.pt; el.querySelectorAll('[data-pt]').forEach(x => x.classList.toggle('on', x === c)); el.querySelector('#pq').value = ''; el.querySelector('#pg').innerHTML = tiles(); return; }
-      const t = ev.target.closest('[data-pk]');
-      if (t) { closeLayer(); insertMn(t.dataset.pk); }
+      if (ev.target.closest('[data-alefull]')) { const m = cur; closeLayer(); instrHelp(m); return; }
+      const g = ev.target.closest('[data-pgrp]');
+      if (g) { const n = g.dataset.pgrp; if (open.has(n)) open.delete(n); else open.add(n); draw(); return; }
+      const r = ev.target.closest('[data-pk]'); if (!r) return;
+      if (r.dataset.pk === cur && r.classList.contains('on')) { closeLayer(); insertMn(cur); return; }
+      cur = r.dataset.pk; q('#pq').value = cur; draw();
     });
-    const inp = el.querySelector('#pq');
+    const inp = q('#pq');
     setTimeout(() => { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }, 30);
   }
   function quick(text) {
@@ -3057,16 +4268,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if (!dg.on && Math.hypot(ev.clientX - dg.x, ev.clientY - dg.y) > 10) {
         dg.on = true;
         dg.g = document.createElement('div');
-        dg.g.className = 'ghost'; dg.g.style.position = 'fixed'; dg.g.style.zIndex = 300;
+        dg.g.className = 'ghost'; dg.g.style.position = 'fixed'; dg.g.style.zIndex = 300; dg.g.style.transform = dg.touch ? 'translate(-50%, -140%)' : 'translate(16px, 12px)';
         dg.g.innerHTML = `${L.icon(dg.mn)}<span>${dg.mn}</span>`;
         document.body.appendChild(dg.g);
+        S.drag = { kind: 'tb' }; renderLadder('nodes');
         try { dg.b.releasePointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
       }
       if (!dg.on) return;
       dg.g.style.left = ev.clientX + 'px'; dg.g.style.top = ev.clientY + 'px';
-      dg.drop = dropAt(ev.clientX, ev.clientY);
+      dg.drop = dropAt(ev.clientX, ev.clientY, 'tb');
       const k = JSON.stringify(dg.drop);
-      if (k !== dg.k) { dg.k = k; renderLadder(dg.drop); }
+      if (k !== dg.k) { dg.k = k; renderLadder(dg.drop || 'nodes'); }
     });
     const end = ev => {
       if (!dg || ev.pointerId !== dg.id) return;
@@ -3074,6 +4286,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       dg = null;
       if (d.g) d.g.remove();
       if (!d.on) { if (ev.type === 'pointerup') insertMn(d.mn); return; }
+      S.drag = null;
       renderLadder();
       if (ev.type === 'pointerup' && d.drop) {
         if (d.mn === 'RUNG') { S.sel = null; S.selRung = d.drop.ri; addRung(); return; }
@@ -3083,12 +4296,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     document.addEventListener('pointerup', end);
     document.addEventListener('pointercancel', end);
   }
-  function dropAt(x, y) {
-    const el = document.elementFromPoint(x, y), t = hit(el);
-    if (!t || t.end || t.ri == null) return null;
-    if (t.leg) return { ri: t.ri, path: t.path, leg: true };
-    if (t.path && !t.br) { const r = el.getBoundingClientRect(); return { ri: t.ri, path: t.path, after: x > r.left + r.width / 2 }; }
-    return { ri: t.ri, end: true };
+  /* the drop point under the pointer: the node beside the instruction half it is on, the free end of a level, else
+     the nearest valid node of the rung under it (drop zones are valid per rung, as in the reference) */
+  function dropAt(x, y, kind) {
+    const el = document.elementFromPoint(x, y), t = hit(el), sv = $('#ladwrap svg'), ns = S.ladNodes || [];
+    if (!t || !sv) return null;
+    const R = sv.getBoundingClientRect(), bare = n => { if (!n) return null; const c = { ...n }; delete c.x; delete c.y; return c; };
+    const near = list => { let b = null, d = 1e9; list.forEach(n => { const q = Math.hypot(R.left + n.x - x, (R.top + n.y - y) * 1.5); if (q < d) { d = q; b = n; } }); return b; };
+    if (kind === 'op') return bare(t.op != null && t.path ? ns.find(n => n.op === t.op && n.ri === t.ri && sameP(n.path, t.path)) : null);
+    if (kind === 'rung') { const rs = ns.filter(n => n.rung != null); let b = null; rs.forEach(n => { if (!b || Math.abs(R.top + n.y - y) < Math.abs(R.top + b.y - y)) b = n; }); return bare(b); }
+    if (t.end || t.ri == null) return null;
+    const mine = ns.filter(n => n.ri === t.ri && n.op == null && n.rung == null);
+    let c = null;
+    if (t.leg) c = mine.find(n => n.leg && sameP(n.path, t.path));
+    else if (t.path && !t.br) { const r = el.getBoundingClientRect(), after = x > r.left + r.width / 2; c = mine.find(n => n.path && !n.leg && n.lvl == null && sameP(n.path, t.path) && !!n.after === after); }
+    return bare(c || near(mine));
   }
 
   /* ---------- events ---------- */
@@ -3097,6 +4319,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     app.addEventListener('click', ev => {
       const t = ev.target;
       let el;
+      if ((el = t.closest('[data-desc]'))) { closeDescBar(el.dataset.desc === 'ok'); return; }
+      if ((el = t.closest('[data-otab]'))) { S.outTab = el.dataset.otab; render(); return; }
       if ((el = t.closest('[data-cmd]')) && !el.disabled) { run(el.dataset.cmd); return; }
       if ((el = t.closest('[data-menu]'))) { const m = MENUS.find(x => x[0] === el.dataset.menu); openMenu(menuItems(m[1]), el); return; }
       if ((el = t.closest('[data-allmenu]'))) { foldMenu(el); return; }
@@ -3147,18 +4371,24 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-tabx]'))) { closeTab(el.dataset.tabx); return; }
       if ((el = t.closest('[data-tabk]'))) { openTab(el.dataset.tabk); return; }
       if ((el = t.closest('[data-texp]'))) { const k = (S.tagScope || '') + '|' + el.dataset.texp; if (S.tagOpen.has(k)) S.tagOpen.delete(k); else S.tagOpen.add(k); refreshTags(); return; }
-      if ((el = t.closest('#tagrows [data-newrow]'))) { newTag({}); return; }
-      if ((el = t.closest('#tagrows [data-tag]'))) { tagClick(el); return; }
+      if ((el = t.closest('#tagrows [data-tconst]'))) { toggleConst(el); return; }
+      if (t.closest('#tagrows [data-newrow]')) return;
+      if ((el = t.closest('#tagrows [data-tag]'))) { tagClick(el, t.closest('[data-tcell]')); return; }
     });
     // the tag editor (also inside a dialog in #layer)
     document.addEventListener('change', ev => {
       if (ev.target.id === 'tscope') { S.tagScope = ev.target.value; if (S.view === 'tags' && S.layout !== 'phone') render(); else refreshTags(); }
       // the dock shows another chassis (the project path keeps its own)
-      if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) b.innerHTML = dockBody(); }
+      if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) { b.innerHTML = dockBody(); b._mh = null; } }
     });
     bindIoWins(document);
     // a module: right-click (mouse) or long-press (touch) opens its menu, as in the reference emulator
-    document.addEventListener('contextmenu', ev => { const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY); });
+    document.addEventListener('contextmenu', ev => {
+      // Logix Emulate: right-click an empty slot of the chassis, then Create
+      const e = ev.target.closest('[data-cins]');
+      if (e) { ev.preventDefault(); const [ri, s] = ids(e.dataset.cins); openMenu([{ l: 'Create…', i: 'plus', run: () => insertCard(ri, s) }], { x: ev.clientX, y: ev.clientY }, `Slot ${s}`); return; }
+      const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY);
+    });
     let lp = null;
     document.addEventListener('pointerdown', ev => {
       const c = ev.target.closest('[data-cmod]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button')) return;
@@ -3181,8 +4411,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); savePrefs(); renderLadder(); };
       addEventListener('pointermove', move); addEventListener('pointerup', up);
     });
+    document.addEventListener('change', ev => { if (ev.target.dataset && ev.target.dataset.errq) rememberErrQ(ev.target.value); });
     document.addEventListener('input', ev => {
       if (ev.target.id === 'tq') { S.tagQ = ev.target.value; refreshTags(); }
+      if (ev.target.dataset && ev.target.dataset.errq) { S.errQ = ev.target.value; S.errCur = null; refreshErrLog(); }
       const a = ev.target.closest && ev.target.closest('[data-ana]');
       if (a) anaSet(a.dataset.ana, +a.value);
     });
@@ -3202,6 +4434,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       ev.preventDefault();
     });
     document.addEventListener('keydown', onKey);
+    // the blank row of Edit Tags: Enter (or leaving the cell) makes the tag, Esc clears it
+    document.addEventListener('keydown', ev => { if (ev.target.id !== 'tnew') return; if (ev.key === 'Enter') { ev.preventDefault(); newTagInline(ev.target); } else if (ev.key === 'Escape') ev.target.value = ''; });
+    document.addEventListener('focusout', ev => { if (ev.target.id === 'tnew' && ev.target.value.trim() && ev.target.isConnected) newTagInline(ev.target); });
     addEventListener('resize', () => { const lay = pickLayout(); if (lay !== S.layout) render(); else if (S.layout === 'tablet') render(); });
     addEventListener('beforeunload', ev => { if (S.dirty && !window.mtpsFS && !window.Capacitor) { ev.preventDefault(); ev.returnValue = ''; } });
     document.addEventListener('visibilitychange', () => { if (document.hidden) saveProject(); });
@@ -3212,21 +4447,23 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const l = $('#layer');
     l.innerHTML = `<div class="scrim" data-close="1"></div><div class="sheet" style="height:46%"><div class="grab"></div><div class="ph" style="background:none;border:0">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button><button class="ib" data-close="1">${ic('close')}</button></div><div class="sb" style="display:flex;flex-direction:column">${errorsHTML()}</div></div>`;
     l.onclick = ev => { if (ev.target.closest('[data-close]')) closeLayer(); };
-    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); };
+    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextErrLine(ev.shiftKey ? -1 : 1); } };
   }
-  function gotoErr(el) {
-    const ri = +el.dataset.errline, rt = el.dataset.errrt;
-    if (rt) { const [g, r] = rt.split('/'); S.prog = g; S.routine = r; }
+  function gotoErr(el) { S.errCur = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.nodeValue : el.textContent) || null; gotoLine(+el.dataset.errline, el.dataset.errrt, el.textContent, true); }
+  /* go to the rung of an Errors line (double-click, or F4): the instruction it names is selected; a double-click also
+     opens its operand editor */
+  function gotoLine(ri, rt, text, openEd) {
+    if (rt) { const [g, r] = rt.split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; }
     S.sel = null; S.selRung = ri;
     if (S.layout === 'phone') S.area = 'ladder';
     reverify(); render(); scrollToSel();
-    const m = /Rung \d+, (\w+)(?:, Operand (\d+))?/.exec(el.textContent || ''), els = parsed(ri);
+    const m = /Rung \d+, (\w+)(?:, Operand (\d+))?/.exec(text || ''), els = parsed(ri);
     if (m && els && editable()) {
       const want = U(m[1]), op = m[2] != null ? +m[2] : 0, hits = [];
       const walk = (arr, p) => arr.forEach((e, k) => { const q = p.concat(k); if (e.t === 'BR') e.legs.forEach((l, li) => walk(l, q.concat(li))); else if (e.t === want) hits.push({ e, q }); });
       walk(els, []);
       const h = hits.find(x => x.e.a[op] === '?' || x.e.a[op] === '') || hits[0];
-      if (h) { S.sel = { ri, path: h.q, op }; S.selRung = null; render(); if (S.layout !== 'desktop') closeLayer(); setTimeout(() => openEditor(ri, h.q, op), 60); }
+      if (h) { S.sel = { ri, path: h.q, op }; S.selRung = null; render(); scrollToSel(); if (openEd) { if (S.layout !== 'desktop') closeLayer(); setTimeout(() => openEditor(ri, h.q, op), 60); } }
     }
   }
   function moveSel(dx, dy) {
@@ -3242,28 +4479,71 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     else if (j < 0) { S.sel = null; S.selRung = ri; }
     render();
   }
+  /* Quick Keys (reference: Tools > Options > Ladder Editor, "Assign Quick Keys"; off by default): one key inserts */
+  const QUICK = { x: 'XIC', f: 'XIO', o: 'OTE', l: 'OTL', u: 'OTU', t: 'TON', c: 'CTU', d: 'GEQ', b: 'BR' };
+  function quickKey(mn) { if (mn === 'BR') addBranch(); else insert(newEl(mn), null, 'inline'); }
+  // the selected instruction (not a branch or a level), and the operand a key edits: the selected one, else the main one
+  const selInstr = () => (S.sel && S.sel.path && !S.sel.br && !S.sel.leg && curEl() ? S.sel : null);
+  const editSelOperand = typed => { const s = selInstr(); return !!s && inlineEdit(s.ri, s.path, s.op != null ? s.op : 0, typed); };
+  /* where the selection is on the screen (for Shift+F10, the context menu of the selection) */
+  function selPoint() {
+    const w = $('#ladwrap'); if (!w) return null;
+    let r = null;
+    if (S.sel && S.sel.path) r = [...w.querySelectorAll(`rect.tap[data-ri="${S.sel.ri}"][data-p="${S.sel.path.join('.')}"]`)].find(x => (S.sel.op != null ? x.dataset.opi === String(S.sel.op) : !x.dataset.opi) && !!x.dataset.br === !!S.sel.br && !!x.dataset.leg === !!S.sel.leg);
+    else if (curSelRung() != null) r = w.querySelector(`rect.tap[data-rn][data-ri="${curSelRung()}"]`);
+    if (!r) return null;
+    const b = r.getBoundingClientRect();
+    return { x: b.left + Math.min(b.width / 2, 40), y: b.top + Math.min(b.height / 2, 30) };
+  }
+  // Alt+0 / Alt+1: show the Controller Organizer / the Errors pane (each layout has its own place for them)
+  function showOrg() { if (S.layout === 'phone') S.area = 'project'; else if (S.layout === 'tablet') { S.prefs.org = true; S.drawer = true; } else S.prefs.org = true; savePrefs(); render(); }
+  function showErrors() { if (S.layout === 'desktop') { S.prefs.err = true; savePrefs(); } else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more'; render(); const q = $('[data-errq]'); if (q && S.layout === 'desktop') q.focus(); }
   function onKey(ev) {
     if ($('#layer').children.length) { if (layerKey) layerKey(ev); return; }
+    if (ev.target.id === 'desctx') {
+      if (ev.key === 'Escape') { ev.preventDefault(); closeDescBar(false); } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey || (S.descEd && S.descEd.rung && !ev.shiftKey))) { ev.preventDefault(); closeDescBar(true); }
+      return;
+    }
+    const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
+    if (k === 'F4') { ev.preventDefault(); nextErrLine(ev.shiftKey ? -1 : 1); return; }
+    if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
-    const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
-    const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find' };
+    if (ev.key === 'Escape' && S.descEd) { ev.preventDefault(); closeDescBar(false); return; }
+    if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
+    if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
+    if (ev.altKey && !ctrl && (ev.code === 'Digit1' || ev.code === 'Numpad1')) { ev.preventDefault(); showErrors(); return; }
+    const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
+    if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
+    if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
     if (k === 'Delete') { run('del'); return; }
     if (k === 'Insert') { ev.preventDefault(); run('ins'); return; }
-    if (k === 'Enter') { if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
+    if (k === 'F10' && ev.shiftKey || k === 'ContextMenu') { ev.preventDefault(); const p = selPoint(); if (p) ctxMenu(S.sel ? { ri: S.sel.ri, path: S.sel.path, br: S.sel.br, leg: S.sel.leg, op: S.sel.op } : { ri: curSelRung() }, p.x, p.y); return; }
+    if (k === 'F2') { ev.preventDefault(); editSelOperand(); return; }
+    if (k === 'Enter') { if (selInstr() && S.sel.op != null) editSelOperand(); else if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
     if (k === 'F1') { ev.preventDefault(); run('help'); return; }
     if (k === 'F3') { ev.preventDefault(); run('findnext'); return; }
+    if (k === 'Home' || k === 'End') {
+      ev.preventDefault();
+      const ri = curSelRung(), fl = ri == null ? [] : flat(parsed(ri) || []);
+      if (fl.length) { S.sel = { ri, path: fl[k === 'Home' ? 0 : fl.length - 1] }; S.selRung = null; render(); scrollToSel(); }
+      return;
+    }
     if (k === 'ArrowLeft' || k === 'ArrowRight') { ev.preventDefault(); moveSel(k === 'ArrowLeft' ? -1 : 1, 0); return; }
     if (k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); moveSel(0, k === 'ArrowUp' ? -1 : 1); return; }
     if (k === 'Escape') { S.sel = null; render(); return; }
-    // quick key entry: typing a mnemonic with a rung or an instruction selected
-    if (!ctrl && !ev.altKey && /^[a-zA-Z]$/.test(k) && editable() && (S.sel || curSelRung() != null)) { ev.preventDefault(); picker(k.toUpperCase()); }
+    if (ctrl || ev.altKey || k.length !== 1 || !editable()) return;
+    // Quick Keys on: one key inserts its instruction after the selection (or at the end of the selected rung)
+    if (S.prefs.quickKeys && QUICK[k.toLowerCase()] && (S.sel || curSelRung() != null)) { ev.preventDefault(); quickKey(QUICK[k.toLowerCase()]); return; }
+    // otherwise typing starts the edit of the selected operand, the typed key replacing its text
+    if (/^[\w:.[\]#+-]$/.test(k) && selInstr()) { ev.preventDefault(); editSelOperand(k); }
   }
 
   /* ---------- updates ---------- */
   let upInfo = null;
   function upbar() { return `<div class="upbar">${ic('download')}<span class="grow"><b>MT PLC Studio v${esc(upInfo.version)}</b>${upInfo.channel === 'beta' ? ' (beta)' : ''} is ready. You have v${esc(VERSION)}.</span><button class="btn pri" data-up="go">Restart to update</button><button class="btn" data-up="later">Later</button></div>`; }
+  document.addEventListener('input', ev => { if (ev.target.id === 'desctx' && S.descEd) S.descEd.value = ev.target.value; });
   document.addEventListener('click', ev => {
     const b = ev.target.closest('[data-up]'); if (!b) return;
     if (b.dataset.up === 'go') { saveProject(); window.MTPSUpdater.apply(upInfo); } else { window.MTPSUpdater.skip(upInfo); upInfo = null; render(); }
@@ -3285,7 +4565,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (window.MTPSUpdater) window.MTPSUpdater.init({ version: VERSION, build: BUILD, onAvailable: info => { upInfo = info; render(); }, toast, dialog, esc });
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast };
+  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   start();
 })();

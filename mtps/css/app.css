@@ -77,6 +77,8 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .sbox .fi { width: 11px; height: 11px; border-radius: 2px; background: var(--surface-3); border: 1px solid var(--border-strong); flex: none; }
 .sbox .fi.en { background: var(--amber); border-color: #9a7200; }
 .sbox .fi.dis { background: #3fbf5f; border-color: #1e7f3f; }
+/* forces installed and enabled: the yellow warning triangle with a red border */
+.sbox .ftri { width: 15px; height: 14px; flex: none; }
 .tab .sbox { height: 38px; padding: 0 8px 0 12px; border-radius: var(--r); font-size: 13px; }
 .phone .sbox { height: 34px; padding: 0 6px 0 10px; border-radius: var(--r); font-size: 13px; }
 .leds { display: grid; grid-template-rows: repeat(4, 12px); align-content: center; font-size: 11px; line-height: 12px; }
@@ -354,11 +356,14 @@ svg.lad .rsel { fill: var(--fill-accent); }
 svg.lad .err { fill: var(--danger); font-size: 1.35em; font-weight: 700; }
 svg.lad .errw { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 3 2; fill: none; }
 svg.lad .emk { fill: var(--warn-text); font: 700 1.25em var(--mono); }
-svg.lad .frc { fill: #c76a00; font-size: .9em; font-weight: 700; }
+svg.lad .emk.on { fill: #fff; }
+svg.lad .frc { fill: var(--danger); font-size: .9em; font-weight: 700; }
+svg.lad .dty { fill: var(--text); font-weight: 700; font-size: 1.15em; }
+svg.lad .rgap { stroke: var(--lad-bg); stroke-width: 5; }
+svg.lad .rdash { stroke: var(--lad-online); stroke-width: 2; stroke-dasharray: 4 3; }
 svg.lad .wrap { fill: var(--lad-wire); }
 svg.lad .tap { fill: transparent; cursor: pointer; }
 svg.lad .press { fill: var(--accent); opacity: .16; }
-svg.lad .drop { stroke: var(--accent); stroke-width: 3; }
 .empty { padding: 30px 20px; text-align: center; color: var(--muted); }
 
 /* ---------- Chassis Monitor (spec section 15): a rack of cards, like an emulator's chassis window ---------- */
@@ -468,8 +473,11 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .mproj { font-size: 10px; color: #4d5866; }
 .ccard .ckey { margin-top: auto; display: flex; }
 .ccard .ckey span { flex: 1; padding: 3px 0; font-size: 9px; min-height: 0; }
-.mmat { display: grid; grid-template-columns: repeat(4, auto minmax(0, 1fr)); gap: 2px; align-items: center; background: #1b2430; padding: 4px; border-radius: 2px; font: 8px var(--mono); color: #9aa4b1; }
+.mmat { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px 1px; align-items: center; background: #1b2430; padding: 4px; border-radius: 2px; font: 8px var(--mono); color: #9aa4b1; }
 .mmat i { width: 7px; height: 7px; border-radius: 1px; background: #3a434e; }
+/* 1756 discrete module: two rows of point indicators, 0-7 and 8-15, each number above its LED */
+.mmat > div { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+.mmat span { line-height: 1; letter-spacing: -.5px; }
 .mmat i.g { background: #2ecc40; box-shadow: 0 0 4px #2ecc40; }
 .mmat i.y { background: #ffd23f; box-shadow: 0 0 4px #ffd23f; }
 .mana { display: grid; gap: 2px; background: #1b2430; padding: 4px; border-radius: 2px; font: 9px var(--mono); color: #cfd6df; }
@@ -526,7 +534,9 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .dock.bottom { border-top: 1px solid var(--border); }
 .dock.side { border-left: 1px solid var(--border); }
 .dock.full { flex: 1; }
-.dock .ph { display: flex; align-items: center; gap: 8px; }
+.dock .ph { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dock .ph > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock .ph .ib { flex: none; }
 .dock .ph .seg span { padding: 2px 8px; }
 .dksel { height: 24px; padding: 0 6px; width: auto; }
 .dockb { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -628,14 +638,30 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl td.val { font-family: var(--mono); cursor: pointer; text-align: right; min-width: 70px; }
 .tagtbl td.val.on { color: var(--ok); font-weight: 700; }
 .tagtbl td.val.f { box-shadow: inset 0 0 0 2px var(--amber); }
-.tagtbl td.ds { color: var(--muted); white-space: normal; min-width: 160px; }
-.tagtbl tr.newrow td { color: var(--accent-text); cursor: pointer; font-style: italic; }
-.tagtbl tr.newrow svg { width: 12px; height: 12px; vertical-align: -2px; }
+.tagtbl td.ds { color: var(--muted); white-space: normal; min-width: 130px; }
+.tagtbl td.nm .tx { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 2px; vertical-align: -3px; color: var(--muted); }
+.tagtbl td.nm .tx[data-texp] { cursor: pointer; }
+.tagtbl td.nm .tx svg { width: 12px; height: 12px; }
+.tagtbl tr.modtag td.nm { color: var(--text); }
+.tagtbl tr.modtag td { background: var(--surface-2); }
+.tagtbl tr.modtag:hover td { background: var(--accent-soft); }
+.tagtbl tr.just td { background: var(--accent-soft); }
+.tagtbl td.ced { cursor: text; }
+.tagtbl td.ck { text-align: center; width: 64px; }
+.tagtbl .cin { width: 100%; min-width: 90px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-sm); padding: 0 4px; height: 20px; }
+.tagtbl tr.newrow td { background: var(--surface); }
+.tagtbl tr.newrow td.ex { color: var(--warn); }
+.tagtbl tr.newrow td.ex svg { width: 13px; height: 13px; }
+.tagtbl tr.newrow td.help { color: var(--muted); white-space: normal; }
+.tagtbl .nrin { width: 100%; min-width: 150px; font: inherit; font-weight: 400; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: var(--r-sm); padding: 0 4px; height: 20px; outline: none; }
+.tagtbl .nrin:focus { border-color: var(--accent); background: var(--surface); }
+.tagtbl .lnk { font: inherit; color: var(--accent-text); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.tab .tagtbl .nrin, .tab .tagtbl .cin { height: 30px; }
 .tab .tagtbl td, .phone .tagtbl td { height: 36px; }
 .tagtabs { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface-2); flex: none; }
-.tagtabs > span[data-tmode] { padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }
+.tagtabs > span[data-tmode] { white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }
 .tagtabs > span.on { background: var(--surface); font-weight: 600; }
-.tagtabs .help { margin: 0; }
+.tagtabs .help { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- I/O modules: a terminal block of screw terminals; the Module I/O window; chassis rows ---------- */
 .mterm { background: linear-gradient(180deg, #2b3038, #23272e); border-top: 2px solid #11151a; padding: 4px 3px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 3px; }
@@ -823,7 +849,9 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .msgp.open .msgb { height: 170px; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border); }
 .msgb .log { flex: 1; overflow: auto; }
 /* moving an instruction: the nodes it can go to, the lifted instruction */
-svg.lad .node { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; }
+/* drop points as in the reference (Edit Ladder Elements): white square = a valid drop point, green circle = the active one */
+svg.lad .node { fill: #fff; stroke: var(--text); stroke-width: 1.2; pointer-events: none; }
+svg.lad .dropc { fill: var(--lad-on); stroke: var(--fill-ok); stroke-width: 1.5; pointer-events: none; }
 svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
 /* the app scrolls the ladder itself, so a held instruction can be dragged on a touch screen */
 .ladwrap { touch-action: none; }
@@ -852,3 +880,230 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .startpg .spc span { display: flex; flex-direction: column; gap: 3px; } .startpg .spc small { color: var(--muted); }
 .startpg .row { display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border); }
 .startpg .row:hover { background: var(--accent-soft); }
+
+/* ---------- the reference's ladder editors: description / rung comment bar, Go To, Add Ladder Element, Import ---------- */
+.descbar { flex: none; border-bottom: 1px solid var(--border); background: var(--surface-2); padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+.descbar .dbh { display: flex; align-items: center; gap: 4px; font-weight: 600; min-width: 0; }
+.descbar .dbh .ell { flex: 0 1 auto; }
+.descbar .dok { color: var(--ok); }
+.descbar .dno { color: var(--danger); }
+.descbar textarea { width: 100%; resize: vertical; font-family: var(--ui); min-height: 52px; }
+.descbar.rungbar textarea { font-family: var(--mono); min-height: 40px; }
+.descbar .errtx { margin: 0; }
+/* inline operand / mnemonic edit on the rung: a small combo box with its tag drop-down */
+.inled { position: absolute; display: flex; flex-direction: column; z-index: 2; }
+.inled .inrow { display: flex; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-sm); box-shadow: var(--shadow); }
+.inled .inrow .inp { flex: 1; height: 24px; border: 0; outline: 0; font-family: var(--mono); font-weight: 600; padding: 0 6px; }
+.inled .inrow .ib { min-width: 24px; height: 24px; flex: none; border-left: 1px solid var(--border); border-radius: 0; }
+.inled .inlist { background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm); box-shadow: var(--shadow); max-height: 216px; overflow: auto; margin-top: 2px; }
+.inled.up { flex-direction: column-reverse; }
+.inled.up .inlist { margin: 0 0 2px; }
+.inled .inlist .row { min-height: 26px; padding: 2px 8px; gap: 8px; }
+.inled .inlist .row.act, .inled .inlist .row:hover { background: var(--accent-soft); }
+.inled .inlist .row.on .nm { color: var(--accent-text); }
+.inled .inlist .empty { padding: 10px; }
+.inled .inerr { background: var(--surface); color: var(--danger); border: 1px solid var(--danger); border-radius: var(--r-sm); padding: 4px 8px; margin-top: 2px; }
+.inled.up .inerr { margin: 0 0 2px; }
+.tab .inled .inrow .inp, .phone .inled .inrow .inp { height: 44px; font-size: 16px; }
+.tab .inled .inrow .ib, .phone .inled .inrow .ib { min-width: 44px; height: 44px; }
+.tab .inled .inlist, .phone .inled .inlist { max-height: 264px; }
+.tab .inled .inlist .row, .phone .inled .inlist .row { min-height: 44px; padding: 4px 12px; }
+.ln.cur { background: var(--accent-soft); outline: 1px solid var(--accent); }
+.errsr { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: 0; }
+.errsr .i { color: var(--muted); flex: none; }
+.errsr .inp { width: 180px; height: 24px; }
+.tab .errsr .inp, .phone .errsr .inp { height: 44px; width: 200px; }
+.phone .errsr { margin-left: 0; flex: 1; } .phone .errsr .inp { width: 100%; }
+.ockb { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; }
+.tab .ockb, .phone .ockb { min-height: 44px; }
+.ockb input { width: 18px; height: 18px; }
+.gotod { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gotod label { display: block; margin-bottom: 4px; }
+.gwl { border: 1px solid var(--border-strong); background: var(--surface); min-height: 120px; }
+.gwl .row { padding: 3px 8px; cursor: pointer; }
+.tab .gwl .row, .phone .gwl .row { padding: 12px; }
+.gwl .row.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.ale1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ale1 .inp { flex: 1; min-width: 120px; width: auto; }
+.alew { display: flex; gap: 8px; min-height: 0; }
+.alel { flex: 1; height: 260px; overflow: auto; border: 1px solid var(--border-strong); background: var(--surface); }
+.alel .row { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.alel .row svg.lg, .alel .row > svg { width: 22px; height: 14px; flex: none; }
+.alel .row b { width: 46px; flex: none; }
+.alel .row.grp { font-weight: 600; padding-left: 4px; }
+.alel .row.grp svg.i { width: 14px; height: 14px; }
+.alel .row:not(.grp) { padding-left: 26px; }
+.alel .row.on { background: var(--accent-soft); color: var(--accent-text); }
+.tab .alel .row, .phone .alel .row { min-height: 44px; }
+.aleh { width: 200px; flex: none; border: 1px solid var(--border); background: var(--surface-2); padding: 8px; overflow: auto; height: 260px; }
+.alef { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.alec { display: inline-flex; align-items: center; gap: 6px; }
+.phone .aleh { display: none; }
+.ictbl { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.ictbl th, .ictbl td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; }
+/* ---------- RSLinx Classic window: menu bar, RSWho (tree + node contents), Configure Drivers ---------- */
+.dlg.rlw { width: min(1040px, calc(100% - 24px)); height: min(700px, calc(100% - 24px)); }
+.rl { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface-2); }
+.rlmb { display: flex; gap: 2px; padding: 2px 6px; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; flex: none; scrollbar-width: none; }
+.rlmb button { height: 26px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; white-space: nowrap; flex: none; }
+.rlmb button:hover, .rlmb button.on { background: var(--accent-soft); color: var(--accent-text); }
+.rltb { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; }
+.rl .rltb .btn, .rl .rlch .btn { min-height: 28px; padding: 0 10px; }
+.rl .btn svg.i { width: 16px; height: 16px; }
+.rltb .btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.rlchild { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 8px; border: 1px solid var(--border-strong); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.rlch { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface-3); flex: none; min-width: 0; }
+.rlck { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 28px; white-space: nowrap; }
+.rlck input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.rlwho { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(240px, 40%) 1fr; }
+.rltree { border-right: 1px solid var(--border); padding: 4px 0; }
+.rlpane { overflow: auto; min-width: 0; }
+.rltiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px; align-content: start; }
+.rltile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 8px; min-height: 96px; border: 1px solid transparent; border-radius: var(--r);
+          background: transparent; cursor: pointer; text-align: center; line-height: 1.35; }
+.rltile:hover { background: var(--surface-2); border-color: var(--border); }
+.rltile svg.i { width: 32px; height: 32px; color: var(--muted); stroke-width: 1.5; }
+.rltile span { overflow-wrap: anywhere; }
+.rltile.dim { color: var(--muted); }
+.rlprops { padding: 4px 16px 8px; max-width: 520px; }
+.rlph { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 14px; border-bottom: 1px solid var(--border); }
+.rlph svg.i { width: 28px; height: 28px; color: var(--muted); }
+.rlst { flex: none; display: flex; gap: 16px; padding: 4px 10px; background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.rlpop { position: absolute; z-index: 5; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow); max-height: calc(100% - 40px); overflow: auto; }
+.rlov { position: absolute; inset: 0; z-index: 3; background: var(--scrim); display: grid; place-items: center; padding: 16px; }
+.rlov2 { z-index: 4; }
+.rlbox { width: min(720px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+.rlbox.rlsm { width: min(420px, 100%); }
+.rlbox .bh { padding: 10px 14px; font-size: 14px; font-weight: 600; border-bottom: 1px solid var(--border); flex: none; }
+.rlbox .bb { padding: 12px 14px; overflow: auto; min-height: 0; }
+.rlbox .bf { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); flex: none; }
+.rlbox .bf .btn { min-width: 88px; }
+.rlcd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; }
+.rlcdl { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.rlcd fieldset { margin: 0; padding: 6px 10px 10px; border: 1px solid var(--border); border-radius: var(--r); min-width: 0; }
+.rlcd legend { padding: 0 4px; font-weight: 600; }
+.rlcd .help { margin: 0; }
+.rlts { display: flex; gap: 8px; align-items: center; }
+.rlts select { flex: 1; }
+.rltabw { border: 1px solid var(--border); border-radius: var(--r-sm); overflow: auto; max-height: 240px; min-height: 120px; }
+.rltab { width: 100%; border-collapse: collapse; }
+.rltab th { position: sticky; top: 0; text-align: left; font-weight: 600; padding: 5px 10px; background: var(--surface-3); border-bottom: 1px solid var(--border); }
+.rltab th:last-child, .rltab td:last-child { width: 96px; border-left: 1px solid var(--border); }
+.rltab td { padding: 5px 10px; height: 28px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.rltab td.run { color: var(--ok); font-weight: 600; }
+.rltab tr:hover td { background: var(--surface-2); }
+.rltab tr.on td { background: var(--accent-soft); }
+.rlbtns { display: flex; flex-direction: column; gap: 8px; }
+.rlbtns .btn { min-width: 112px; }
+.rlgap { height: 18px; }
+/* touch layouts: 44 / 48 px targets; on the phone the window, Configure Drivers and Add New fill the screen */
+.tab .rl .btn, .tab .rl .rltb .btn, .tab .rl .rlch .btn { min-height: 44px; }
+.tab .rlmb button { height: 44px; padding: 0 14px; }
+.phone .rlmb button { height: 48px; padding: 0 14px; }
+.phone .rl .rltb .btn, .phone .rl .rlch .btn { min-height: 48px; }
+.tab .rl .nd { height: 44px; }
+.tab .rlck, .phone .rlck { min-height: 44px; }
+.tab .rlck input, .phone .rlck input { width: 22px; height: 22px; }
+.tab .rltab td { height: 48px; } .phone .rltab td { height: 52px; }
+.tab .rlst, .phone .rlst { padding: 8px 12px; }
+.phone .rlchild { margin: 0; border: 0; border-radius: 0; }
+.phone .rlch { flex-wrap: wrap; gap: 4px 12px; }
+.phone .rlwho { display: flex; flex-direction: column; overflow: auto; }
+.phone .rltree { flex: none; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }
+.phone .rlpane { flex: none; overflow: visible; }
+.phone .rltiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.phone .rlov { padding: 0; place-items: stretch; }
+.phone .rlbox, .phone .rlbox.rlsm { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
+.phone .rlbox .bb { flex: 1; }
+.phone .rlbox .bf .btn { flex: 1; }
+.phone .rlcd { grid-template-columns: 1fr; align-content: start; }
+.phone .rlbtns { flex-direction: row; flex-wrap: wrap; }
+.phone .rlbtns .btn { flex: 1 1 calc(33% - 8px); min-width: 0; }
+.phone .rlgap { display: none; }
+.phone .rlts { flex-wrap: wrap; } .phone .rlts .btn { flex: 1 1 100%; }
+.phone .rlst span:last-child { display: none; }
+/* 0.4.0-beta.4: the chassis is one row of slots (4 or 8), as the Logix Emulate Chassis Monitor. Every slot has the
+   same width and height, an empty one too; on a narrow screen the row scrolls sideways and never wraps. */
+.chasrow { align-self: stretch; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; flex: none; }
+.chas { flex-wrap: nowrap; --sloth: 236px; }
+.tab .chas, .phone .chas { --sloth: 262px; }
+.rkslots { grid-auto-rows: minmax(var(--sloth), auto); align-items: stretch; }
+.chas .ccard, .chas .ccard.empty { width: var(--slotw); min-height: var(--sloth); box-sizing: border-box; }
+
+/* 0.4.0-beta.4: the RTB housing door of an I/O module (1756-IN062: "The RTB housing door is closed"). Closed, it
+   covers the terminal block; a click opens it on its left hinge, so the terminals show; another click closes it. */
+.mrtb { position: relative; perspective: 320px; perspective-origin: 0 50%; cursor: pointer; }
+.mrtb > .mterm { transition: filter .2s; }
+.mrtb:not(.open) > .mterm { filter: brightness(.6); }
+.rtbdoor { position: absolute; inset: 0; z-index: 2; margin: 0; padding: 4px 4px 4px 9px; border: 1px solid #0d1014; border-radius: 2px 3px 3px 2px; cursor: pointer;
+  background: repeating-linear-gradient(180deg, transparent 0 5px, rgba(255, 255, 255, .05) 5px 6px), linear-gradient(90deg, #3a4049, #2c3138 60%, #23272d);
+  box-shadow: inset 2px 0 0 #4b525c, inset -1px 0 0 #161a1f, 0 1px 2px rgba(0, 0, 0, .5);
+  color: #c8ced6; font: 700 8px var(--mono); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  transform-origin: left center; transform: rotateY(0deg); transition: transform .32s cubic-bezier(.3, .7, .3, 1), box-shadow .32s; backface-visibility: visible; }
+.rtbdoor b { font: inherit; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rtbdoor small { font: 600 7px var(--mono); color: #8d97a4; }
+/* the hinge on the left edge and the locking tab at the top, as on the real housing */
+.rtbdoor::before { content: ""; position: absolute; left: 2px; top: 10%; bottom: 10%; width: 3px; border-radius: 2px; background: repeating-linear-gradient(180deg, #8b939e 0 4px, #4a525d 4px 6px); }
+.rtblock { position: absolute; top: 3px; right: 4px; width: 8px; height: 5px; border-radius: 1px; background: #8b939e; box-shadow: inset 0 -1px 0 #4a525d; }
+.rtbrib { width: 60%; height: 3px; border-radius: 2px; background: #1a1e23; box-shadow: 0 1px 0 #4b525c; }
+.rtbdoor:hover { box-shadow: inset 2px 0 0 #4b525c, inset 0 0 0 1px var(--accent), 0 1px 2px rgba(0, 0, 0, .5); }
+.rtbdoor:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mrtb.open > .rtbdoor { transform: rotateY(-96deg); box-shadow: inset 2px 0 0 #4b525c, -3px 0 6px rgba(0, 0, 0, .55); }
+.mrtb.open > .rtbdoor > * { opacity: 0; transition: opacity .12s; }
+/* touch layouts: the door (and the open terminal block) is at least 44 px tall to tap */
+.tab .mrtb, .phone .mrtb { min-height: 44px; }
+.tab .mrtb > .mterm, .phone .mrtb > .mterm { min-height: 44px; box-sizing: border-box; }
+@media (prefers-reduced-motion: reduce) { .rtbdoor, .mrtb > .mterm { transition: none; } }
+
+/* ---------- Cross Reference window ---------- */
+.xr { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.xrh { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.xrh label { display: flex; flex-direction: column; gap: 4px; }
+.xrh label.grow { flex: 1; min-width: 160px; }
+.xrh .inp { width: auto; }
+.xrtabs { display: flex; align-items: center; gap: 4px; padding: 4px 12px 0; border-bottom: 1px solid var(--border); }
+.xtab { border: 1px solid transparent; border-bottom: 0; background: transparent; padding: 6px 14px; border-radius: var(--r-sm) var(--r-sm) 0 0; cursor: pointer; color: inherit; }
+.xtab.on { border-color: var(--border); background: var(--surface); font-weight: 600; margin-bottom: -1px; }
+.xrb { flex: 1; overflow: auto; min-height: 160px; max-height: 60vh; }
+.xrt { width: 100%; border-collapse: collapse; }
+.xrt th { position: sticky; top: 0; background: var(--surface-2); text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border-strong); cursor: pointer; white-space: nowrap; }
+.xrt td { padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.xrt tbody tr { cursor: pointer; }
+.xrt tbody tr:hover { background: var(--surface-2); }
+.xrt tbody tr.on { background: var(--accent-soft); color: var(--accent-text); }
+.tab .xrt td, .phone .xrt td { padding: 12px 8px; }
+.tab .xtab, .phone .xtab { min-height: 44px; }
+.otabs { display: flex; gap: 2px; padding: 0 0 4px; }
+.otab { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 4px 10px; cursor: pointer; color: var(--muted); }
+.otab.on { color: inherit; border-bottom-color: var(--accent); font-weight: 600; }
+.tab .otab, .phone .otab { min-height: 44px; }
+.mvr { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mvr b { width: 80px; }
+
+/* communications: the COMM activity LED, browsing rows, the transfer dialog (Go Online, Download, Upload) */
+.comm { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 10px; color: var(--muted); flex: none; }
+.comm b { font-weight: 600; letter-spacing: .02em; }
+.commled { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #7d8794; background: #c4cad2; flex: none; }
+.commled.on, .commled.busy { background: #2ecc40; border-color: #1e7f3f; }
+.commled.on { animation: commslow 1.6s steps(1, end) infinite; }
+.commled.busy { animation: commfast .18s steps(1, end) infinite; }
+@keyframes commslow { 0%, 88% { background: #2ecc40; } 89%, 100% { background: #c4cad2; } }
+@keyframes commfast { 0% { background: #2ecc40; } 50% { background: #c4cad2; } }
+.tab .comm, .phone .comm { padding: 0 6px; }
+.tab .commled, .phone .commled { width: 11px; height: 11px; }
+.browsing { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; color: var(--muted); font-size: .92em; }
+.spin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.wabar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.wabar .ell { min-width: 0; }
+.dlg.xfer { width: min(440px, calc(100% - 24px)); }
+.phone .dlg.xfer { left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(100% - 32px); height: auto; border-radius: var(--r); border: 1px solid var(--border); }
+.xfer-t { margin: 0 0 4px; min-height: 2.6em; overflow-wrap: anywhere; }
+.xfer-s { display: flex; gap: 8px; font-size: 12px; align-items: baseline; }
+.xfer-s .grow { min-width: 0; }
+.prog.det i { transition-property: width; transition-timing-function: linear; }
+@media (prefers-reduced-motion: reduce) {
+  .commled.on, .commled.busy { animation: none; }
+  .spin { animation: none; border-top-color: var(--border-strong); }
+  .prog.det i { transition: none; }
+}

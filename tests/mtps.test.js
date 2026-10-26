@@ -115,6 +115,9 @@ console.log('Tags and types');
   eq('TIMER members', c.read('Run_Timer'), { PRE: 0, ACC: 0, EN: 0, TT: 0, DN: 0 });
   eq('module input tag', c.read('Local:1:I'), { Fault: 0, Data: 0 });
   eq('analog channel is REAL', c.read('Local:3:I.Ch0Data'), 0);
+  eq('a digital input module has its configuration tag Local:1:C (filters, change of state)', Object.keys(c.read('Local:1:C')), ['FilterOffOn_0_7', 'FilterOnOff_0_7', 'FilterOffOn_8_15', 'FilterOnOff_8_15', 'COSOnOffEn', 'COSOffOnEn']);
+  check('a digital output module has Local:2:C with its fault and program mode states', c.read('Local:2:C.ProgToFaultEn') === 0 && c.read('Local:2:C.FaultValue') === 0);
+  check('the configuration tag can be written (it is not an input image)', c.write('Local:2:C.FaultValue', 5) === true && c.read('Local:2:C.FaultValue') === 5);
   eq('program tag', c.read('Local_Val', 'MainProgram'), 0);
   eq('a program tag hides the controller tag of the same name', c.read('Shared', 'MainProgram'), 2);
   eq('the controller tag is still there', c.read('Shared'), 1);
@@ -676,6 +679,26 @@ console.log('Project copy in the controller');
   check('a project changed offline is not the same as the controller copy', !c.holds(q));
   check('the controller name is known after download', c.name === 'Test');
   check('MTPS.controller is the built-in controller', MTPS.controller instanceof MTPS.Controller);
+}
+
+console.log('Online edit zones (Studio 5000: replace and delete zones are not executed) and dirty marks');
+{
+  // the original (r/R) of an edited rung and a deleted rung (D) are shown but neither verified nor executed
+  const p = proj({ tags: [T('A', 'BOOL'), T('B', 'BOOL'), T('C', 'BOOL')], rungs: [{ t: 'XIC(A)OTE(B);', z: 'I' }, { t: 'XIC(A)OTE(B);', z: 'R' }, { t: 'LBL(L1)XIC(A)OTE(C);', z: 'D' }, { t: 'LBL(L1)NOP();' }] });
+  const v = MTPS.verify(p);
+  check('verify skips R and D zones (a repeated label in a D rung is no error)', v.errors.length === 0, JSON.stringify(v.errors));
+  const q = proj({ tags: [T('A', 'BOOL')], rungs: [{ t: 'XIC(', z: 'r' }, { t: 'XIC(A)OTE(A);', z: 'i' }] });
+  check('a pending r original is not verified; its i copy is', MTPS.verify(q).errors.length === 0);
+  const e = proj({ tags: [T('A', 'BOOL')], rungs: [{ t: '', z: 'i' }] });
+  check('an empty i rung is an error (the e mark)', MTPS.verify(e).errors.some(x => x.rung === 0));
+  const c = new MTPS.Controller();
+  c.download(proj({ tags: [T('A', 'BOOL', { value: 1 }), T('B', 'BOOL'), T('C', 'BOOL')], rungs: [{ t: 'XIC(A)OTE(B);' }, { t: 'XIC(A)OTE(C);', z: 'D' }] }));
+  c.go('remrun'); c.scan(10); c.scan(10);
+  check('a downloaded D zone is not executed', c.read('B') === 1 && c.read('C') === 0);
+  const d = proj({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)OTE(A);'] });
+  const c2 = new MTPS.Controller(); c2.download(d);
+  const d2 = JSON.parse(JSON.stringify(d)); d2.tasks[0].programs[0].routines[0].rungs[0].dx = ['XIC(A)#0'];
+  check('a dirty mark (dx) is not a logic change', c2.holds(d2));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

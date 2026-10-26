@@ -5,7 +5,8 @@
 'use strict';
 const path = require('path');
 const { chromium } = require('playwright');
-const URL = 'file://' + path.resolve(__dirname, '..', 'mtps', 'index.html');
+// fastcomm=1: no connect, browse or transfer delays (the comm feel has its own tests, with the delays on)
+const URL = 'file://' + path.resolve(__dirname, '..', 'mtps', 'index.html') + '?fastcomm=1';
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const LAYOUTS = [
   { name: 'desktop', viewport: { width: 1440, height: 900 } },
