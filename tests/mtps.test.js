@@ -701,5 +701,24 @@ console.log('Online edit zones (Studio 5000: replace and delete zones are not ex
   check('a dirty mark (dx) is not a logic change', c2.holds(d2));
 }
 
+console.log('File/Shift and Sequencer instructions');
+{
+  const INS = MTPS.INSTR;
+  check('BSL and BSR are in the File/Shift group, with EN and DN on the box', ['BSL', 'BSR'].every(m => INS[m].grp === 'File/Shift' && INS[m].bits.join() === 'EN,DN' && INS[m].out));
+  eq('BSL operand names (as the reference box)', MTPS.OPN.BSL, ['Array', 'Control', 'Source Bit', 'Length']);
+  const p = proj({ tags: [T('Ad', 'DINT', { dim: 2 }), T('Ctl', 'CONTROL'), T('In', 'BOOL'), T('G', 'BOOL')], rungs: ['XIC(G)BSL(Ad[0],Ctl,In,10);'] });
+  const c = run({ tags: p.tags, rungs: ['XIC(G)BSL(Ad[0],Ctl,In,10);'] });
+  c.write('In', 1); c.scan(10); c.write('G', 1); c.scan(10);
+  const p2 = JSON.parse(JSON.stringify(p)); p2.tasks[0].programs[0].routines[0].rungs[0].t = 'XIC(G)BSL(Ad[0],Ctl,In,12);';
+  const r = c.edit(p2);
+  check('online edit of a BSL: accepted', r.ok, r.lines.join(' | '));
+  eq('online edit keeps the CONTROL bits and .POS; .LEN comes from the edited rung', [c.read('Ctl.EN'), c.read('Ctl.DN'), c.read('Ctl.POS'), c.read('Ctl.LEN'), c.read('Ad[0]')], [1, 1, 10, 12, 1]);
+  check('BSL Length must be a whole number', MTPS.verify(proj({ tags: p.tags, rungs: ['BSL(Ad[0],Ctl,In,1.5);'] })).errors.some(e => e.op === 3));
+  check('BSL Array must be an array element, not a whole DINT', /array element/.test((MTPS.verify(proj({ tags: [...p.tags, T('D', 'DINT')], rungs: ['BSL(D,Ctl,In,8);'] })).errors[0] || {}).msg || ''));
+  const ix = run({ tags: [...p.tags, T('K', 'DINT', { value: 1 })], rungs: ['XIC(G)BSL(Ad[K],Ctl,In,4);'] });
+  ix.write('In', 1); ix.write('G', 1); ix.scan(10);
+  eq('BSL with an indirect Array element (Ad[K])', [ix.read('Ad[0]'), ix.read('Ad[1]')], [0, 1]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

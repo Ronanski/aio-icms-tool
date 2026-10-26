@@ -200,6 +200,52 @@ console.log('File / misc');
   check('indirect address out of range: major fault, type 4 code 20', !!c.fault && c.fault.type === 4 && c.fault.code === 20, JSON.stringify(c.fault));
 }
 
+console.log('Array (File)/Shift: BSL, BSR (1756-RM003 chapter 9)');
+{
+  // RM003 BSL example 1: Length 10 from array_dint[0]: bit 9 goes to .UL, input_1 into bit 0, bits 10-31 are left alone
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 2, value: [(0xFFFFFC00 | 0x200 | 0x5) | 0, 0] }), T('Ctl', 'CONTROL'), ...bools('In', 'G')], rungs: ['XIC(G)BSL(Ad[0],Ctl,In,10);'] });
+  scans(c, 1);
+  eq('BSL: the Length operand is the .LEN of the CONTROL (written on download)', c.read('Ctl.LEN'), 10);
+  c.write('In', 1); c.write('G', 1); scans(c, 1);
+  eq('BSL example 1: bit 9 to .UL, bits 0-8 up one, Source Bit into bit 0, bits 10-31 kept', [c.read('Ad[0]') >>> 0, c.read('Ctl.UL'), c.read('Ctl.DN'), c.read('Ctl.EN'), c.read('Ctl.POS')], [(0xFFFFFC00 | 0xB) >>> 0, 1, 1, 1, 10]);
+  scans(c, 3);
+  eq('BSL is transitional: no shift while the rung stays true', c.read('Ad[0]') >>> 0, (0xFFFFFC00 | 0xB) >>> 0);
+  c.write('G', 0); scans(c, 1);
+  eq('BSL rung false: .EN .DN .ER cleared, .POS = 0, .UL kept', [c.read('Ctl.EN'), c.read('Ctl.DN'), c.read('Ctl.ER'), c.read('Ctl.POS'), c.read('Ctl.UL')], [0, 0, 0, 0, 1]);
+}
+{
+  // RM003 BSL example 2: Length 58 runs across the elements: [0].31 goes to [1].0, [1].25 goes to .UL
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 2, value: [-2147483648, 1 << 25] }), T('Ctl', 'CONTROL'), ...bools('In', 'G')], rungs: ['XIC(G)BSL(Ad[0],Ctl,In,58);'] });
+  scans(c, 1); c.write('G', 1); scans(c, 1);
+  eq('BSL example 2: [0].31 to [1].0, [1].25 to .UL, [1].26-31 kept', [c.read('Ad[0]'), c.read('Ad[1]'), c.read('Ctl.UL')], [0, 1, 1]);
+}
+{
+  // RM003 BSR example 2: Length 58: [0].0 goes to .UL, [1].0 shifts into [0].31, Source Bit into [1].25
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 2, value: [1, 1] }), T('Ctl', 'CONTROL'), ...bools('In', 'G')], rungs: ['XIC(G)BSR(Ad[0],Ctl,In,58);'] });
+  c.write('In', 1); scans(c, 1); c.write('G', 1); scans(c, 1);
+  eq('BSR example 2: [0].0 to .UL, [1].0 into [0].31, Source Bit into [1].25', [c.read('Ad[0]') >>> 0, c.read('Ad[1]') >>> 0, c.read('Ctl.UL'), c.read('Ctl.DN')], [0x80000000, 1 << 25, 1, 1]);
+}
+{
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 2 }), T('C0', 'CONTROL'), T('Cn', 'CONTROL'), ...bools('In', 'G')], rungs: ['XIC(G)BSL(Ad[0],C0,In,0);', 'XIC(G)BSR(Ad[0],Cn,In,-1);'] });
+  c.write('In', 1); scans(c, 1); c.write('G', 1); scans(c, 1);
+  eq('BSL .LEN = 0: .DN set, .POS = 0, .UL = Source Bit, nothing shifted', [c.read('C0.DN'), c.read('C0.POS'), c.read('C0.UL'), c.read('Ad[0]')], [1, 0, 1, 0]);
+  eq('BSR .LEN < 0: .ER set, .DN clear', [c.read('Cn.ER'), c.read('Cn.DN'), c.read('Cn.EN')], [1, 0, 1]);
+}
+{
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 2 }), T('Ctl', 'CONTROL'), ...bools('In')], rungs: ['BSL(Ad[1],Ctl,In,33);'] });
+  scans(c, 1);
+  check('BSL with .LEN past the end of the array: major fault, type 4 code 20', !!c.fault && c.fault.type === 4 && c.fault.code === 20, JSON.stringify(c.fault));
+}
+{
+  // prescan clears .EN: a rung that is true when the controller goes to Run shifts once on the first scan
+  const c = run({ tags: [T('Ad', 'DINT', { dim: 1 }), T('Ctl', 'CONTROL'), ...bools('In')], rungs: ['BSL(Ad[0],Ctl,In,8);'] });
+  c.write('In', 1); scans(c, 1);
+  c.setMode('remprog'); c.setMode('remrun'); scans(c, 2);
+  eq('BSL: prescan clears .EN, so a true rung shifts once after going to Run', c.read('Ad[0]'), 3);
+  const v = MTPS.verify(proj({ tags: [T('Ad', 'INT', { dim: 2 }), T('D', 'DINT'), T('Ctl', 'CONTROL'), T('Tm', 'TIMER'), ...bools('In')], rungs: ['BSL(Ad[0],Ctl,In,8);', 'BSL(D,Ctl,In,8);', 'BSR(Ad[0],Tm,In,8);'] }));
+  eq('BSL / BSR operands: Array is a DINT array element, Control a CONTROL', v.errors.map(e => e.rung + ':' + e.op), ['0:0', '1:0', '2:0', '2:1']);
+}
+
 console.log('Program control');
 {
   const c = run({ tags: [...bools('Q', 'R', 'Go'), T('N', 'DINT')], rungs: ['XIC(Go)JSR(Sub);', 'OTE(R);'], routines: [{ name: 'Sub', rungs: ['ADD(N,1,N);', 'RET();', 'OTE(Q);'] }] });

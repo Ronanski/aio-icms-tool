@@ -235,6 +235,7 @@
     BTD: ['Source', 'Source Bit', 'Dest', 'Dest Bit', 'Length'], SWPB: ['Source', 'Order Mode', 'Dest'],
     COP: ['Source', 'Dest', 'Length'], FLL: ['Source', 'Dest', 'Length'], JSR: ['Routine Name', 'Input Par'],
     OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
+    BSL: ['Array', 'Control', 'Source Bit', 'Length'], BSR: ['Array', 'Control', 'Source Bit', 'Length'],
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -270,6 +271,8 @@
   const BYTES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
   const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else dv.setFloat32(o, v, true); };
   const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : dv.getFloat32(o, true));
+  // an operand that names one element of an array (Bits[0], Fifo[Ix]): the instructions that walk an array need it
+  const arrEl = r => r.bit < 0 && !r.dim && r.steps.length > 0 && !!r.steps[r.steps.length - 1].len;
   class Const { constructor(v, real) { this.c = v; this.type = real ? 'REAL' : 'DINT'; this.bit = -1; } get() { return this.c; } }
 
   /* text → Ref, or the reason it is not one (program tags hide controller tags; aliases are followed) */
@@ -424,7 +427,9 @@
   /* ---------- Instruction set ---------- */
   /* operand kinds: bit / bitw (BOOL to read / to write), timer, counter, struct (any of the three), imm (a number),
      num / int (a number or a tag), dest / idest (a tag to write), expr, elem / elemw (an array element), routine,
-     label, order (SWPB); a ? at the end makes the operand optional */
+     label, order (SWPB), control (a CONTROL tag), darr (an element of a DINT array, to write); a ? at the end makes
+     the operand optional. ctl is the index of the CONTROL operand; live maps the Length / Position operands to the
+     .LEN / .POS they show (written into the tag on download, as the reference does) */
   const I = (k, grp, name, args, more) => ({ k, grp, name, args: args ? args.split(' ') : [], ...more });
   const INSTR = {
     XIC: I('contact', 'Bit', 'Examine If Closed', 'bit'),
@@ -470,6 +475,9 @@
     SWPB: I('box', 'Move/Logical', 'Swap Byte', 'int order idest', { out: true }),
     COP: I('box', 'File/Misc', 'Copy File', 'elem elemw imm', { out: true }),
     FLL: I('box', 'File/Misc', 'File Fill', 'num elemw imm', { out: true }),
+    // Array (File)/Shift (1756-RM003 chapter 9): transitional, they act on a false-to-true rung
+    BSL: I('box', 'File/Shift', 'Bit Shift Left', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
+    BSR: I('box', 'File/Shift', 'Bit Shift Right', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
     JSR: I('box', 'Program Control', 'Jump to Subroutine', 'routine imm?', { out: true }),
     RET: I('box', 'Program Control', 'Return from Subroutine', '', { out: true }),
     SBR: I('box', 'Program Control', 'Subroutine', ''),
@@ -508,6 +516,8 @@
       case 'timer': return r.type === 'TIMER' && one ? r : BAD_TYPE;
       case 'counter': return r.type === 'COUNTER' && one ? r : BAD_TYPE;
       case 'struct': return ['TIMER', 'COUNTER', 'CONTROL'].includes(r.type) && one ? r : BAD_TYPE;
+      case 'control': return r.type === 'CONTROL' && one ? writable() : BAD_TYPE;
+      case 'darr': if (!arrEl(r)) return 'Operand must be an array element, e.g. Bits[0]'; return r.type === 'DINT' ? writable() : BAD_TYPE;
       case 'num': return isNum(r.type) && one ? r : BAD_TYPE;
       case 'int': return isInt(r.type) && one ? r : BAD_TYPE;
       case 'dest': return isNum(r.type) && one ? writable() : BAD_TYPE;
@@ -565,6 +575,11 @@
     if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && ok) {
       // the preset and accum of the rung text are written into the tag
       try { const s = x[0].obj(); s.PRE = x[1].c; s.ACC = x[2].c; } catch (err) { if (!(err instanceof Fault)) throw err; }
+    }
+    if (d.live && ok) {
+      // Length / Position are the .LEN / .POS of the CONTROL: whole numbers, written into the tag (as a timer's preset)
+      for (const k in d.live) if (x[k] && x[k].type === 'REAL') bad(`${OPN[e.t][k]} must be a whole number`, +k);
+      if (ok) try { const s = x[d.ctl].obj(); for (const k in d.live) s[d.live[k]] = x[k].c; } catch (err) { if (!(err instanceof Fault)) throw err; }
     }
     if ((e.t === 'OTE' || e.t === 'OTL' || e.t === 'OTU') && x[0].input) W('Writing to an input image: the next input update overwrites it', e.t, 0);
     if (e.t === 'OTE' && x[0].norm) {
@@ -788,6 +803,7 @@
               case 'RTO': { const s = x[0].obj(); s.EN = s.TT = 0; break; }
               case 'CTU': x[0].obj().CU = 1; break;
               case 'CTD': x[0].obj().CD = 1; break;
+              case 'BSL': case 'BSR': { const c = x[1].obj(); c.EN = c.DN = c.ER = 0; c.POS = 0; break; }
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -832,7 +848,7 @@
         const r = this.refOf(t.name, prog);
         if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || (r.dim || 0) !== (t.dim || 0)) return;
         const v = this.read(t.name, prog);
-        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER') kept.push([t.name, prog, v]); }
+        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER' || (r.type === 'CONTROL' && !r.dim)) kept.push([t.name, prog, v, r.type === 'CONTROL' ? 'LEN' : 'PRE']); }
       });
       keep(p.tags, null);
       (p.tasks || []).forEach(k => (k.programs || []).forEach(g => keep(g.tags, g.name)));
@@ -843,8 +859,9 @@
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
-      // a timer or a counter keeps its accum and bits: only the preset comes from the (maybe edited) rung
-      kept.forEach(([name, prog, v]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { PRE: o.PRE }); } });
+      // a timer or a counter keeps its accum and bits, a CONTROL its position and bits: only the preset (.LEN) comes
+      // from the (maybe edited) rung
+      kept.forEach(([name, prog, v, k]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { [k]: o[k] }); } });
       this.emit('download');
       return res;
     }
@@ -1040,6 +1057,7 @@
           }
           e.v = p; return p;
         }
+        case 'BSL': case 'BSR': this.bitShift(e.t, x, p); e.v = p; return p;
         case 'JSR': {
           if (p) {
             if (this.d >= 32) throw new Fault(4, 31, 'JSR nesting too deep');
@@ -1079,6 +1097,26 @@
         default: if (b === 0) { r = real ? NaN : a; ov = true; } else r = real ? a - b * Math.trunc(a / b) : a % b;
       }
       this.put(D, r, ov, c);
+    }
+    /* BSL / BSR (1756-RM003, Bit Shift Left / Right): on a false-to-true rung .EN is set and the other bits cleared,
+       then .LEN bits from Array bit 0 shift one place (left: the top bit goes to .UL and Source Bit into bit 0; right:
+       bit 0 goes to .UL and Source Bit into the top bit), .DN set and .POS = .LEN. .LEN = 0: .DN set and .UL = Source
+       Bit; .LEN < 0: .ER set; .LEN past the end of the array: major fault 4/20. A false rung clears .EN .DN .ER .POS */
+    bitShift(t, x, p) {
+      const c = x[1].obj();
+      if (!p) { c.EN = c.DN = c.ER = 0; c.POS = 0; return; }
+      if (c.EN) return;
+      c.EN = 1; c.EU = c.DN = c.EM = c.ER = c.UL = c.IN = c.FD = 0;
+      const len = c.LEN, src = x[2].get() ? 1 : 0;
+      if (len === 0) { c.DN = 1; c.POS = 0; c.UL = src; return; }
+      if (len < 0) { c.ER = 1; return; }
+      const A = file(x[0]);
+      if (len > A.n * 32) throw new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN ${len} is past the end of the array)`);
+      const get = i => (A.g(i >> 5) >>> (i & 31)) & 1;
+      const put = (i, v) => { const w = A.g(i >> 5), m = 1 << (i & 31); A.s(i >> 5, v ? (w | m) | 0 : (w & ~m) | 0); };
+      if (t === 'BSL') { c.UL = get(len - 1); for (let i = len - 1; i > 0; i--) put(i, get(i - 1)); put(0, src); }
+      else { c.UL = get(0); for (let i = 0; i < len - 1; i++) put(i, get(i + 1)); put(len - 1, src); }
+      c.DN = 1; c.POS = len;
     }
     /* ACC = ACC + (now - last scan), from the scan after the timer is enabled. Setting DN pauses a TON / RTO, clearing
        it pauses a TOF (reference help). */

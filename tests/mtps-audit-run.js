@@ -15,12 +15,15 @@ const RUNGS = [
   'ADD(D1,D2,R_ADD);', 'SUB(D1,D2,R_SUB);', 'MUL(D1,D2,R_MUL);', 'DIV(D1,D2,R_DIV);', 'MOD(D1,D2,R_MOD);', 'SQR(16.0,F_SQR);', 'NEG(D1,R_NEG);', 'ABS(-5,R_ABS);',
   'CPT(R_CPT,D1*2+D2);', 'MOV(D1,R_MOV);', 'MVM(D1,16#03,R_MVM);', 'CLR(R_CLR);', 'AND(D1,D2,R_AND);', 'OR(D1,D2,R_OR);', 'XOR(D1,D2,R_XOR);', 'NOT(D1,R_NOT);',
   'BTD(D1,0,R_BTD,4,3);', 'SWPB(D_SW,HIGH/LOW,R_SWP);', 'FLL(5,ARR[0],3);', 'COP(ARR[0],ARR2[1],3);', 'JSR(Sub);',
+  'BSL(BARR[0],CB1,ONE,8);', 'BSR(BARR[1],CB2,ONE,8);',
   'XIC(B1)JMP(Skip);', 'OTE(Q_SKIPPED);', 'LBL(Skip)OTE(Q_AFTER);', 'AFI()OTE(Q_AFI);', 'NOP()OTE(Q_NOP);',
 ];
 const EXPECT = {
   Q_EQU: 1, Q_NEQ: 1, Q_LES: 1, Q_LEQ: 1, Q_GRT: 1, Q_GEQ: 0, Q_LIM: 1, Q_MEQ: 1, Q_CMP: 1,
   R_ADD: 10, R_SUB: 4, R_MUL: 21, R_DIV: 2, R_MOD: 1, F_SQR: 4, R_NEG: -7, R_ABS: 5, R_CPT: 17, R_MOV: 7, R_MVM: 3, R_CLR: 0,
-  R_AND: 3, R_OR: 7, R_XOR: 4, R_NOT: -8, R_BTD: 7 << 4, R_SWP: 0x3412, 'ARR[1]': 5, 'ARR2[1]': 5, 'ARR2[3]': 5, Q_SUB: 1, Q_AFI: 0, Q_NOP: 1, Q_XIO: 1,
+  R_AND: 3, R_OR: 7, R_XOR: 4, R_NOT: -8, R_BTD: 7 << 4, R_SWP: 0x3412, 'ARR[1]': 5, 'ARR2[1]': 5, 'ARR2[3]': 5,
+  // BSL / BSR: a true rung at the change to Run shifts once (prescan clears .EN): Source Bit into bit 0 / bit 7
+  'BARR[0]': 1, 'BARR[1]': 128, 'CB1.DN': 1, 'CB1.POS': 8, 'CB2.EN': 1, Q_SUB: 1, Q_AFI: 0, Q_NOP: 1, Q_XIO: 1,
 };
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
@@ -36,10 +39,11 @@ const EXPECT = {
     const A = MTPS.App, p = A.blank('RunAudit');
     const T = (n, type, dim) => p.tags.push(dim ? { name: n, type, dim } : { name: n, type });
     const txt = rungs.join(' ');
-    const names = new Set((txt.match(/\b[A-Z][A-Za-z_0-9]*\b/g) || []).filter(n => !/^(XIC|XIO|OTE|OTL|OTU|ONS|OSR|OSF|TON|TOF|RTO|CTU|CTD|RES|EQU|NEQ|LES|LEQ|GRT|GEQ|LIM|MEQ|CMP|ADD|SUB|MUL|DIV|MOD|SQR|NEG|ABS|CPT|MOV|MVM|CLR|AND|OR|XOR|NOT|BTD|SWPB|FLL|COP|JSR|JMP|LBL|AFI|NOP|HIGH|LOW|DN|Skip|Sub|ARR|ARR2)$/.test(n)));
+    const names = new Set((txt.match(/\b[A-Z][A-Za-z_0-9]*\b/g) || []).filter(n => !/^(XIC|XIO|OTE|OTL|OTU|ONS|OSR|OSF|TON|TOF|RTO|CTU|CTD|RES|EQU|NEQ|LES|LEQ|GRT|GEQ|LIM|MEQ|CMP|ADD|SUB|MUL|DIV|MOD|SQR|NEG|ABS|CPT|MOV|MVM|CLR|AND|OR|XOR|NOT|BTD|SWPB|FLL|COP|JSR|JMP|LBL|AFI|NOP|HIGH|LOW|DN|Skip|Sub|ARR|ARR2|BSL|BSR|BARR|CB\d|ONE)$/.test(n)));
     names.forEach(n => T(n, /^T\d/.test(n) ? 'TIMER' : /^C\d/.test(n) ? 'COUNTER' : /^(D|R)_?\w*$/.test(n) && !/^(SB|P_|Q_)/.test(n) ? 'DINT' : /^F_/.test(n) ? 'REAL' : 'BOOL'));
     T('ARR', 'DINT', 10); T('ARR2', 'DINT', 10);
     T('Q_SUB', 'BOOL');
+    T('BARR', 'DINT', 2); T('CB1', 'CONTROL'); T('CB2', 'CONTROL'); p.tags.push({ name: 'ONE', type: 'BOOL', value: 1 });
     p.tags.find(t => t.name === 'D_SW').value = 0x1234;
     p.tasks[0].programs[0].routines[0].rungs = rungs.map(t => ({ t }));
     p.tasks[0].programs[0].routines.push({ name: 'Sub', rungs: [{ t: 'OTE(Q_SUB);' }] });
