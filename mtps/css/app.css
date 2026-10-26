@@ -852,3 +852,11 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .startpg .spc span { display: flex; flex-direction: column; gap: 3px; } .startpg .spc small { color: var(--muted); }
 .startpg .row { display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border); }
 .startpg .row:hover { background: var(--accent-soft); }
+
+/* 0.4.0-beta.4: the chassis is one row of slots (4 or 8), as the Logix Emulate Chassis Monitor. Every slot has the
+   same width and height, an empty one too; on a narrow screen the row scrolls sideways and never wraps. */
+.chasrow { align-self: stretch; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; flex: none; }
+.chas { flex-wrap: nowrap; --sloth: 236px; }
+.tab .chas, .phone .chas { --sloth: 262px; }
+.rkslots { grid-auto-rows: minmax(var(--sloth), auto); align-items: stretch; }
+.chas .ccard, .chas .ccard.empty { width: var(--slotw); min-height: var(--sloth); box-sizing: border-box; }
