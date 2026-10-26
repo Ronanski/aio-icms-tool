@@ -185,4 +185,21 @@ module.exports = async function menus({ browser, page, URL, check }) {
   await pick('Select All', tr, true);
   check('tablet (touch): Edit > Select All in the folding menu selects all rungs', (await tr.$$eval('#ladwrap text.rn.on', t => t.length)) === 5);
   await t3.close();
+
+  console.log('Edit > Properties (help v37: the properties of the current component)');
+  await fresh(); await example();
+  const propsOf = async sel => { if (sel) { await page.click(sel); await wait(450); if (await page.$('#layer .dlg')) { await page.keyboard.press('Escape'); await wait(80); } } await menu('Edit', 'Properties'); await wait(80); const t = await dlgTitle(); await page.keyboard.press('Escape'); await wait(80); return t; };
+  check('Edit lists Properties above Controller Properties', (await menu('Edit')).map(x => x[0]).join('|').includes('Properties|Controller Properties…'));
+  await page.keyboard.press('Escape');
+  check('organizer: a routine', (await propsOf('.org [data-org="rt:MainProgram/MainRoutine"]')) === 'Routine Properties - MainRoutine');
+  check('organizer: a program', (await propsOf('.org [data-org="prog:MainProgram"]')) === 'Program Properties - MainProgram');
+  check('organizer: a task', (await propsOf('.org [data-org="task:MainTask"]')) === 'Task Properties - MainTask');
+  check('organizer: the controller', (await propsOf('.org [data-org="ctl"]')) === 'Controller Properties - Motor_Demo');
+  check('organizer: a module', (await propsOf('.org [data-org="mod:1"]')).startsWith('Module Properties - [1]'));
+  await page.click('#ladwrap rect.tap[data-ri="0"][data-p="0.0.0"]:not([data-opi])'); await wait(80);
+  check('ladder: the tag of the selected instruction', (await propsOf()) === 'Tag Properties - Start_PB', JSON.stringify((await st()).sel));
+  await page.click('#ladwrap rect.tap[data-rn][data-ri="1"]'); await wait(80);
+  check('ladder: a rung selected gives the routine', (await propsOf()) === 'Routine Properties - MainRoutine');
+  await ev(() => MTPS.App.run('tagsedit')); await wait(150);
+  check('Tag Editor: the tag of the row', (await propsOf('#tagrows tr[data-tag="Motor_Run"] td.nm')) === 'Tag Properties - Motor_Run');
 };

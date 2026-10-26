@@ -839,6 +839,7 @@
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
     ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
+    props: { l: 'Properties', i: 'gear', run: propsCmd, on: () => !S.noProj },
     drivers: { l: 'Configure Drivers…', i: 'online', run: () => rslinx('drivers') },
     rswho: { l: 'RSWho (RSLinx Classic)', i: 'net', run: () => rslinx('rswho') },
     setup: { l: 'Setup Wizard…', i: 'gear', run: () => setupWizard(0) },
@@ -867,7 +868,7 @@
   };
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
-    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops', '-', 'selall']],
+    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
@@ -3107,6 +3108,30 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- organizer actions ---------- */
   function openRoutine(key) { const [g, r] = key.slice(3).split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; S.sel = null; S.selRung = 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); }
+  /* Edit > Properties (reference: the properties of the current component): what was picked last, in the Controller
+     Organizer (routine, program, task, module, controller), the Tag Editor (a tag) or the ladder (the tag of the
+     selected operand, else the routine) */
+  function propsCmd() {
+    const k = S.orgSel || '';
+    if (S.pickAt === 'org' && k) {
+      if (k.startsWith('rt:')) return routineProps(k);
+      if (k.startsWith('prog:')) return progProps(k.slice(5));
+      if (k.startsWith('task:')) return taskProps(k.slice(5));
+      if (k.startsWith('mod:') && +k.slice(4) !== ctlSlot()) return moduleProps(+k.slice(4));
+      return controllerProps();
+    }
+    if (S.pickAt === 'tag' && S.view === 'tags' && S.tagPick) {
+      const list = scopeTags(S.tagScope || ''), t = list.find(x => x.name === S.tagPick), io = /^Local:(\d+)/.exec(S.tagPick);
+      if (t) return newTag({ tag: t, list });
+      if (io) return moduleProps(+io[1]);
+    }
+    if (S.view === 'ladder') {
+      const a = selOperand(), t = isTagText(a) ? tagFor(String(a).split(/[.[]/)[0]) : null;
+      if (t) return newTag({ tag: t });
+      return routineProps(`rt:${S.prog}/${S.routine}`);
+    }
+    controllerProps();
+  }
   // the program picked in the Controller Organizer (a program or one of its routines), else the open routine's
   function orgProg() {
     const k = S.orgSel || '', g = k.startsWith('prog:') ? k.slice(5) : k.startsWith('rt:') ? k.slice(3).split('/')[0] : '';
