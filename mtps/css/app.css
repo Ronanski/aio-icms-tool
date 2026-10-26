@@ -646,6 +646,7 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl tr.modtag td { background: var(--surface-2); }
 .tagtbl tr.modtag:hover td { background: var(--accent-soft); }
 .tagtbl tr.just td { background: var(--accent-soft); }
+.tagtbl tr.all td { background: var(--accent-soft); }
 .tagtbl td.ced { cursor: text; }
 .tagtbl td.ck { text-align: center; width: 64px; }
 .tagtbl .cin { width: 100%; min-width: 90px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-sm); padding: 0 4px; height: 20px; }

@@ -63,7 +63,9 @@
     return { ip: x.ip, slot: x.slot, rack: r, m, ctl: m && m.ctl && m.ctl.powered ? m.ctl : null };
   }
   const curPath = () => (S.p ? store.get('path.' + S.p.controller.name, DEFPATH) : DEFPATH);
-  function setPath(p) { store.set('path.' + S.p.controller.name, p); relink(); }
+  function setPath(p) { store.set('path.' + S.p.controller.name, p); rememberPath(p); relink(); }
+  // the paths used last (Who Active, Set Project Path, Download, Upload), newest first: Communications > Select Recent Path
+  function rememberPath(p) { if (!p) return; S.prefs.paths = [p].concat((S.prefs.paths || []).filter(x => x !== p)).slice(0, 8); savePrefs(); }
   /* the controller at the project's path; one that went away (card removed, power off) drops the app offline */
   function relink() {
     const x = S.p ? resolve(curPath()) : null;
@@ -297,8 +299,24 @@
   function rememberFile(path) { if (!/\.mtp$/i.test(path)) return; S.prefs.files = [path].concat((S.prefs.files || []).filter(x => x !== path)).slice(0, 8); savePrefs(); }
   function cmdOpen() {
     const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
-    if (S.dirty) confirmDlg('Open Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Open another project anyway? (Save first with Save or Save As.)`, 'Open anyway', go, true);
-    else go();
+    saveChanges(go);
+  }
+  /* File > Close: the project closes (offline first) and the Start Page shows, as at the first start */
+  function closeProject() {
+    if (S.online) { S.online = false; linked = null; commLed(); }
+    S.ed = null; closeLayer();
+    openProject(blank('New_Project'), true);
+    S.noProj = true; S.view = 'start'; S.area = 'ladder'; S.selRung = null; S.drawer = false; reverify();
+    render();
+  }
+  /* the reference's prompt before the project closes (Close, New, Open, Exit): "Save changes to <name>?" Yes saves
+     first (Save As when it has no file yet) and then goes on, No goes on without saving, Cancel stays */
+  function saveChanges(fn) {
+    if (!S.dirty || S.noProj) { fn(); return; }
+    const then = ok => { if (ok) setTimeout(fn, 0); };
+    dialog({ title: 'MT PLC Studio', body: `<p>Save changes to <b>${esc(S.file ? S.file.name : S.p.controller.name)}</b>?</p>`, size: 'sm',
+      buttons: [{ l: 'Yes', pri: true, run: () => { setTimeout(() => (S.file && S.file.path ? writeTo(S.file.path).then(then) : fileDialog({ mode: 'save', title: 'Save As', name: S.p.controller.name + '.mtp', types: ['mtp'], onPick: f => writeTo(f).then(then) })), 0); } },
+        { l: 'No', run: () => { setTimeout(fn, 0); } }, { l: 'Cancel' }] });
   }
   function exportL5X() { fileDialog({ mode: 'save', title: 'Export L5X', name: S.p.controller.name + '.L5X', types: ['l5x'], onPick: async f => { try { await FS.write(f, toL5X(S.p)); toast(`Exported ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } }); }
   function importL5X() { fileDialog({ mode: 'open', title: 'Import L5X', types: ['l5x'], onPick: f => loadFile(f) }); }
@@ -653,7 +671,18 @@
       buttons: [{ l: 'Close', pri: true }],
       mount: el => el.addEventListener('click', ev => { const t = ev.target.closest('[data-mvr]'); if (!t) return; const [w, d] = t.dataset.mvr.split(','); if (!stepRail(w, +d)) toast('The rail cannot move that way.'); }) });
   }
+  /* Edit > Select All (reference: Ladder Editor > Select All selects all the rungs of the routine; in the Tag Editor,
+     all rows of the grid): Copy, Cut and Delete then act on all of them */
+  const selAllOn = () => S.view === 'ladder' && !!S.selAll && S.selAll.k === S.prog + '/' + S.routine && !S.sel && S.selRung === S.selAll.ri && rungs().length > 0;
+  const tagAllOn = () => S.view === 'tags' && !!S.tagAll;
+  function selectAll() {
+    if (S.view === 'tags') { S.tagAll = true; refreshTags(); toast('All tag rows selected: Copy copies them.'); return; }
+    const ri = curSelRung() == null ? 0 : curSelRung();
+    S.sel = null; S.selRung = ri; S.selAll = { k: S.prog + '/' + S.routine, ri };
+    render(); toast(`${rungs().length} rung(s) selected.`);
+  }
   function delSel() {
+    if (selAllOn()) return edit(() => { rungs().splice(0); S.selAll = null; S.sel = null; S.selRung = null; });
     if (S.sel && S.sel.leg) {
       // delete a branch level with what is on it; a branch left with one level is unwrapped
       return edit(() => {
@@ -685,6 +714,19 @@
   }
   const curSelRung = () => (S.sel ? S.sel.ri : S.selRung);
   function copySel(cut) {
+    if (tagAllOn()) {
+      // the rows as text (tab between the columns), as a copy of the grid
+      const rows = scopeTags(S.tagScope || '').map(t => [t.name, t.alias || '', t.alias ? '' : (t.type || 'BOOL') + (t.dim ? '[' + t.dim + ']' : ''), t.desc || ''].join('\t'));
+      try { navigator.clipboard && navigator.clipboard.writeText(['Name\tAlias For\tData Type\tDescription'].concat(rows).join('\n')).catch(() => {}); } catch (e) { /* ignore */ }
+      S.clipTags = rows; toast(`Copied ${rows.length} tag row(s)`); return;
+    }
+    if (selAllOn()) {
+      const list = rungs().map(r => { const c = { ...r }; delete c.z; delete c.dx; return c; });
+      S.clip = { kind: 'rungs', rungs: list };
+      try { navigator.clipboard && navigator.clipboard.writeText(list.map(r => r.t).join('\n')).catch(() => {}); } catch (e) { /* ignore */ }
+      if (cut) delSel(); else toast(`Copied ${list.length} rung(s)`);
+      return;
+    }
     if (S.sel && S.sel.path) {
       const el = curEl(); if (!el) return;
       S.clip = { kind: 'el', el: JSON.parse(JSON.stringify(el)) };
@@ -704,7 +746,8 @@
       if (!S.sel && ri != null && els && els.length) insert(el, { ri, path: [0], after: false }, false);
       else if (S.sel && S.sel.leg && els && (getEl(els, S.sel.path.slice(0, -1)).legs[S.sel.path[S.sel.path.length - 1]] || []).length) insert(el, { ri, path: S.sel.path.concat(0), after: false }, false);
       else insert(el, null, false);
-    } else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
+    } else if (S.clip.kind === 'rungs') edit(() => { const ri = curSelRung(), at = ri == null ? rungs().length : ri + 1; rungs().splice(at, 0, ...S.clip.rungs.map(r => ({ ...r }))); S.sel = null; S.selRung = at; });
+    else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
   }
 
   /* ---------- layout ---------- */
@@ -735,17 +778,19 @@
   const C = {
     new: { l: 'New Project…', k: 'Ctrl+N', i: 'file', run: cmdNew },
     open: { l: 'Open… (.mtp, .L5X)', k: 'Ctrl+O', i: 'open', run: cmdOpen },
+    close: { l: 'Close', i: 'close', run: () => saveChanges(closeProject), on: () => !S.noProj },
     save: { l: 'Save', k: 'Ctrl+S', i: 'save', run: saveCmd },
     uptags: { l: 'Upload Tag Values', i: 'upload', run: () => uploadTags(true), on: () => S.online && !!ctl.M && ctl.holds(S.p) },
     saveas: { l: 'Save As… (.mtp file)', i: 'save', run: saveFileAs },
     import: { l: 'Import L5X…', i: 'upload', run: importL5X },
     export: { l: 'Export L5X…', i: 'download', run: exportL5X },
 
-    exit: { l: 'Exit', i: 'exit', run: () => { saveProject(); window.close(); }, show: () => isElectron },
+    exit: { l: 'Exit', i: 'exit', run: () => saveChanges(() => { saveProject(); S.dirty = false; window.close(); }), show: () => isElectron },
     undo: { l: 'Undo', k: 'Ctrl+Z', i: 'undo', run: undo, on: () => editable() && S.undo.length > 0 },
     redo: { l: 'Redo', k: 'Ctrl+Y', i: 'redo', run: redo, on: () => editable() && S.redo.length > 0 },
     cut: { l: 'Cut', k: 'Ctrl+X', i: 'cut', run: () => copySel(true), on: () => editable() && (!!S.sel || S.selRung != null) },
-    copy: { l: 'Copy', k: 'Ctrl+C', i: 'copy', run: () => copySel(false), on: () => !!S.sel || S.selRung != null },
+    copy: { l: 'Copy', k: 'Ctrl+C', i: 'copy', run: () => copySel(false), on: () => !!S.sel || S.selRung != null || tagAllOn() },
+    selall: { l: 'Select All', k: 'Ctrl+A', i: 'check', run: selectAll, on: () => !S.noProj && (S.view === 'tags' || (S.view === 'ladder' && rungs().length > 0)) },
     paste: { l: 'Paste', k: 'Ctrl+V', i: 'paste', run: paste, on: () => editable() && !!S.clip },
     del: { l: 'Delete', k: 'Del', i: 'trash', run: delSel, on: () => editable() && (!!S.sel || S.selRung != null) },
     rung: { l: 'Add Rung', k: 'Ctrl+R', i: 'ladder', run: addRung, on: editable },
@@ -769,12 +814,22 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
+    // File > New Component (reference order); Program, Task, Data Type and Trend are listed but not in this version yet
+    newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
+    newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
+    newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
+    newdt: { l: 'New Data Type…', i: 'tags', run: () => {}, on: () => false },
+    newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
     foff: { l: 'Force Off', i: 'force', run: () => forceSel(0), on: selForceable },
     frem: { l: 'Remove Force', i: 'close', run: () => forceSel(null), on: () => selForceable() && ctl.forced(curEl().a[0], S.prog) !== null },
     find: { l: 'Find…', k: 'Ctrl+F', i: 'search', run: cmdFind },
+    replace: { l: 'Replace…', k: 'Ctrl+H', i: 'edit', run: cmdReplace, on: () => !S.noProj },
     findnext: { l: 'Find Next', k: 'F3', i: 'search', run: () => findNext(true), on: () => !!S.find },
+    findprev: { l: 'Find Previous', k: 'Shift+F3', i: 'search', run: () => findNext(true, -1), on: () => !!S.find },
+    nextres: { l: 'Next Result', k: 'F4', i: 'down', run: () => nextResult(1), on: () => !S.noProj },
+    prevres: { l: 'Previous Result', k: 'Shift+F4', i: 'up', run: () => nextResult(-1), on: () => !S.noProj },
     goto: { l: 'Go To…', k: 'Ctrl+G', i: 'goto', run: cmdGoto },
     xref: { l: 'Cross Reference', k: 'Ctrl+E', i: 'xref', run: () => xref() },
     verifyr: { l: 'Verify Routine', i: 'checkr', run: () => verifyCmd(true) },
@@ -788,8 +843,10 @@
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
+    recentpath: { l: 'Select Recent Path…', i: 'net', run: recentPathDlg, on: () => !S.noProj && (S.prefs.paths || []).length > 0 },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
     ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
+    props: { l: 'Properties', i: 'gear', run: propsCmd, on: () => !S.noProj },
     drivers: { l: 'Configure Drivers…', i: 'online', run: () => rslinx('drivers') },
     rswho: { l: 'RSWho (RSLinx Classic)', i: 'net', run: () => rslinx('rswho') },
     setup: { l: 'Setup Wizard…', i: 'gear', run: () => setupWizard(0) },
@@ -801,6 +858,8 @@
     prog: { l: 'Program Mode', i: 'stop', run: () => setMode('remprog'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remprog' && !ctl.fault },
     runm: { l: 'Run Mode', i: 'play', run: () => setMode('remrun'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remrun' && !ctl.fault },
     testm: { l: 'Test Mode', i: 'play', run: () => setMode('remtest'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remtest' && !ctl.fault },
+    // reference: the Major Faults tab of Controller Properties; on only while the controller has a major fault
+    gofaults: { l: 'Go To Faults', i: 'fault', run: () => controllerProps('maj'), on: () => S.online && !!ctl.fault },
     clear: { l: 'Clear Faults', i: 'fault', run: () => { ctl.clearFault(); live(true); }, on: () => S.online && !!ctl.fault },
     fen: { l: 'Enable All I/O Forces', i: 'force', run: () => { ctl.enableForces(true); live(true); }, on: () => S.online && ctl.forceState() === 'disabled' },
     fdis: { l: 'Disable All I/O Forces', i: 'force', run: () => { ctl.enableForces(false); live(true); }, on: () => S.online && ctl.forceState() === 'enabled' },
@@ -817,12 +876,12 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
-    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
+    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
-    ['Search', ['find', 'findnext', 'goto', 'xref']],
+    ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
-    ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
+    ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'tips', 'about']],
   ];
@@ -834,7 +893,11 @@
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
-  const menuItems = ids => ids.filter(id => id === '-' || id.hd || !C[id].show || C[id].show()).map(id => (id === '-' || id.hd ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
+  /* menu rows made when the menu opens: the recent projects of File (up to eight, as the reference's Recent Projects) */
+  const DYN = {
+    recent: () => { const f = S.prefs.files || []; return f.length ? [{ hd: 'Recent Projects' }, ...f.slice(0, 8).map((p, n) => ({ l: `${n + 1} ${baseName(p)}`, i: 'file', run: () => saveChanges(() => loadFile(p)) })), '-'] : []; },
+  };
+  const menuItems = ids => ids.flatMap(id => (DYN[id] ? DYN[id]() : [id])).filter(id => typeof id === 'object' || id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' || typeof id === 'object' ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
   /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */
@@ -1002,7 +1065,7 @@
         <div style="margin-top:8px"><div class="kv"><span>Mode</span><span class="v">${modeText()}</span></div><div class="kv"><span>Controller holds</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Path</span><span class="v">${esc(curPath())}</span></div></div>
         <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="rswho">${ic('net')}RSLinx</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
         <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button><button class="btn" data-cmd="download">${ic('download')}Download</button></div>
-        <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
+        <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button><button class="btn" data-cmd="gofaults">${ic('fault')}Go To Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
         <div class="brow" style="margin-top:0"><button class="btn" data-cmd="fen"${can('fen') ? '' : ' disabled'}>Enable</button><button class="btn" data-cmd="fdis"${can('fdis') ? '' : ' disabled'}>Disable</button><button class="btn" data-cmd="fall"${can('fall') ? '' : ' disabled'}>Remove All</button></div></div></div>
 `;
@@ -1010,8 +1073,8 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
-      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
+      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -1059,7 +1122,7 @@
     const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
     if (S.outTab === 'search') {
       const sv = S.search || { lines: [], found: [] };
-      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
+      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^(Found|Replaced)/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
     }
     return tabs + errorsBody();
   }
@@ -1082,6 +1145,15 @@
     S.errCur = x.t;
     gotoLine(x.ri, x.rt, x.t, false);
     refreshErrLog();
+  }
+  /* Search > Next Result / Previous Result (reference: the next result listed in the Output window): the Found lines
+     of Search Results when that tab shows, else the Errors lines (as F4 / Shift+F4) */
+  function nextResult(dir) {
+    const fd = S.search && S.search.found || [];
+    if (S.outTab !== 'search' || !fd.length) { nextErrLine(dir); return; }
+    const i = fd.findIndex(x => x.text === S.searchCur), x = fd[i < 0 ? (dir > 0 ? 0 : fd.length - 1) : (i + dir + fd.length) % fd.length];
+    S.searchCur = x.text;
+    gotoLine(x.rung, x.program + '/' + x.routine, x.text, false);
   }
   function lineRoutine(t, v) { const e = v.errors.concat(v.warnings, v.found || []).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
@@ -1129,7 +1201,7 @@
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
       live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
+      sel: S.sel, selRung: S.sel ? null : S.selRung, selAll: selAllOn(), tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
     w.innerHTML = res.svg;
     S.ladNodes = res.nodes || null;
@@ -1144,6 +1216,7 @@
   }
   function zoom(f) { setZoom(S.prefs.zoom * f); savePrefs(); }
   function select(t) {
+    S.selAll = null; S.pickAt = 'lad';
     if (!t) { S.sel = null; S.selRung = null; return; }
     if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br, leg: t.leg }; if (t.op != null) S.sel.op = t.op; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
   }
@@ -2179,7 +2252,7 @@
     const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
     tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
       const t = e.t && !e.member ? e.t : null, ag = aggr(e);
-      const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : ''].filter(Boolean).join(' ');
+      const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : '', S.tagAll && !depth ? 'all' : ''].filter(Boolean).join(' ');
       const head = `<tr${cls ? ` class="${cls}"` : ''} data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}><td class="ex"></td>`
         + `<td class="nm" style="padding-left:${4 + depth * 16}px"><span class="tx"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span>${esc(e.path)}</td>`;
       if (mon) {
@@ -2208,6 +2281,7 @@
      in place); Monitor Tags toggles or writes the value online, or the start value offline. The module-defined
      tags cannot be edited or deleted: they come and go with their module. */
   function tagClick(row, cell) {
+    S.tagAll = false; S.pickAt = 'tag'; S.tagPick = row.dataset.tag;
     const name = row.dataset.tag, ty = row.dataset.ty, scope = S.tagScope || '';
     const list = scopeTags(scope);
     const t = list.find(x => x.name === name);
@@ -2284,18 +2358,125 @@
     openDescBar(`Rung Comment For Rung: ${ri}`, rungs()[ri].c || '', v => { edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); });
   }
   function cmdFind() { prompt1('Find', 'Find what', S.find, v => { if (!v) return 'Type a tag or an instruction.'; S.find = v; if (!findNext(false)) return `"${v}" was not found in ${curRoutine().name}.`; }, 'Looks for a tag, an operand or a mnemonic in this routine. F3 finds the next one.'); }
-  function findNext(wrapMsg) {
+  function findNext(wrapMsg, dir = 1) {
     const q = U(S.find), R = rungs();
     const items = [];
     R.forEach((r, ri) => { const el = parsed(ri); if (el) flat(el).forEach(p => items.push({ ri, p, e: getEl(el, p) })); });
     if (!items.length) return false;
     const cur = S.sel ? items.findIndex(x => x.ri === S.sel.ri && x.p.join() === S.sel.path.join()) : -1;
-    for (let k = 1; k <= items.length; k++) {
-      const x = items[(cur + k) % items.length];
+    const n = items.length, at = cur < 0 && dir < 0 ? n : cur;
+    for (let k = 1; k <= n; k++) {
+      const x = items[(((at + k * dir) % n) + n) % n];
       if (U(x.e.t) === q || x.e.a.some(a => U(a).includes(q))) { S.sel = { ri: x.ri, path: x.p }; S.selRung = null; render(); scrollToSel(); return true; }
     }
     if (wrapMsg) toast(`"${S.find}" was not found.`);
     return false;
+  }
+  /* Search > Replace, as the reference's Replace dialog: Find What, Replace With, Find Where (this routine or all
+     routines, in the organizer's order), Wrap, Match Whole Word Only, Direction, Find Within (Instructions,
+     Instruction Operands, Rung Comments); Find Next, Replace (the selected occurrence, else finds the first),
+     Replace All (results in Search Results). As in the reference, nothing is replaced while online. */
+  const rxEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function repHits(o) {
+    const q = U(o.what), wb = '[A-Za-z0-9_]', hits = [];
+    const re = o.whole ? new RegExp('(^|[^A-Za-z0-9_])(' + rxEsc(o.what) + ')(?!' + wb + ')', 'i') : null;
+    const has = t => (re ? re.test(String(t)) : U(String(t)).includes(q));
+    const list = o.all ? allProgs().flatMap(g => g.routines.map(r => ({ g, r }))) : [{ g: curProg(), r: curRoutine() }];
+    list.forEach(({ g, r }, gi) => r.rungs.forEach((rg, ri) => {
+      if (o.cm && rg.c && has(rg.c)) hits.push({ g: g.name, r: r.name, ri, kind: 'cm', key: [gi, ri, -1, 0] });
+      const pr = E.parseRung(rg.t); if (pr.err) return;
+      flat(pr.elems).forEach((path, fi) => {
+        const e = getEl(pr.elems, path);
+        if (o.ins && has(e.t)) hits.push({ g: g.name, r: r.name, ri, kind: 'ins', path, key: [gi, ri, fi, 0], e });
+        if (o.ops) (e.a || []).forEach((a, oi) => { if (has(a)) hits.push({ g: g.name, r: r.name, ri, kind: 'op', path, oi, key: [gi, ri, fi, 1 + oi], e }); });
+      });
+    }));
+    return { hits, list, re };
+  }
+  const keyCmp = (a, b) => { for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  const selKey = () => JSON.stringify([S.prog, S.routine, S.sel, S.selRung]);
+  function cmdReplace() {
+    const a = selOperand(), o = { what: isTagText(a) ? String(a) : S.find || '', with: S.repWith || '', all: false, wrap: true, whole: false, up: false, ins: true, ops: true, cm: true };
+    const el = dialog({ title: 'Replace', size: 'md', focus: true,
+      body: `<div class="frow"><label for="rp-f">Find What:</label><input class="inp mono" id="rp-f" value="${esc(o.what)}" autocomplete="off" spellcheck="false" autofocus></div>
+        <div class="frow"><label for="rp-w">Replace With:</label><input class="inp mono" id="rp-w" value="${esc(o.with)}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label for="rp-wh">Find Where:</label><select class="inp" id="rp-wh"><option value="">Current Routine: ${esc(curRoutine().name)}</option><option value="all">All Routines</option></select></div>
+        <div class="frow"><span></span><div><label class="ockb"><input type="checkbox" id="rp-wrap" checked> Wrap</label><label class="ockb"><input type="checkbox" id="rp-whole"> Match Whole Word Only</label>
+          <div class="ockb">Direction: <label class="ockb"><input type="radio" name="rp-dir" id="rp-up"> Up</label><label class="ockb"><input type="radio" name="rp-dir" id="rp-down" checked> Down</label></div></div></div>
+        <div class="frow"><span>Find Within:</span><div><b>Ladder Diagrams</b><label class="ockb"><input type="checkbox" id="rp-ins" checked> Instructions</label><label class="ockb"><input type="checkbox" id="rp-ops" checked> Instruction Operands</label><label class="ockb"><input type="checkbox" id="rp-cm" checked> Rung Comments</label></div></div>
+        <div class="errtx" id="rp-e"></div><p class="help" id="rp-m"></p>`,
+      buttons: [{ l: 'Find Next', pri: true, run: () => { act('next'); return false; } }, { l: 'Replace', run: () => { act('one'); return false; } }, { l: 'Replace All', run: () => { act('all'); return false; } }, { l: 'Close' }] });
+    const q = s2 => el.querySelector(s2);
+    const say = (m, err) => { q('#rp-e').textContent = err ? m : ''; q('#rp-m').textContent = err ? '' : m; };
+    const read = () => { Object.assign(o, { what: q('#rp-f').value.trim(), with: q('#rp-w').value.trim(), all: q('#rp-wh').value === 'all', wrap: q('#rp-wrap').checked, whole: q('#rp-whole').checked, up: q('#rp-up').checked, ins: q('#rp-ins').checked, ops: q('#rp-ops').checked, cm: q('#rp-cm').checked }); S.find = o.what; S.repWith = o.with; };
+    // where the search stands: the occurrence found last while it is still selected, else the selection
+    const pos = list => {
+      if (S.repHit && S.repHit.sk === selKey()) return S.repHit.key;
+      const gi = Math.max(0, list.findIndex(x => x.g.name === S.prog && x.r.name === S.routine));
+      if (S.sel && S.sel.path) { const els = parsed(S.sel.ri) || [], fi = flat(els).findIndex(p => p.join() === S.sel.path.join()); return [gi, S.sel.ri, fi, S.sel.op != null ? 1 + S.sel.op : 0]; }
+      return S.selRung != null ? [gi, S.selRung, -1, -1] : [gi, -1, 0, 0];
+    };
+    const show = h => {
+      S.prog = h.g; S.routine = h.r; S.view = 'ladder'; if (S.layout === 'phone') S.area = 'ladder';
+      if (h.kind === 'cm') { S.sel = null; S.selRung = h.ri; } else { S.sel = { ri: h.ri, path: h.path }; if (h.kind === 'op') S.sel.op = h.oi; S.selRung = null; }
+      S.selAll = null; reverify(); render(); scrollToSel();
+      S.repHit = { key: h.key, sk: selKey() };
+      say(`Found: ${h.g} - ${h.r}, Rung ${h.ri}${h.kind === 'cm' ? ', rung comment' : `, ${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+    };
+    const next = () => {
+      const { hits, list } = repHits(o); if (!hits.length) { say(`Search complete: "${o.what}" was not found.`, true); return null; }
+      const p = pos(list);
+      let h = o.up ? [...hits].reverse().find(x => keyCmp(x.key, p) < 0) : hits.find(x => keyCmp(x.key, p) > 0);
+      if (!h && o.wrap) h = o.up ? hits[hits.length - 1] : hits[0];
+      if (!h) { say(`Search complete: no more "${o.what}" ${o.up ? 'above' : 'below'}.`, true); return null; }
+      show(h); return h;
+    };
+    // the new text of one occurrence (the matched part is replaced, every time it appears in that operand or comment)
+    const swap = (t, re) => String(t).replace(re ? new RegExp(re.source, 'gi') : new RegExp(rxEsc(o.what), 'gi'), (m0, a1, a2) => (re ? a1 + o.with : o.with));
+    function apply(h, re, R) {
+      const rg = R.rungs[h.ri];
+      if (h.kind === 'cm') { const c = swap(rg.c, re); if (c) rg.c = c; else delete rg.c; return true; }
+      const pr = E.parseRung(rg.t); if (pr.err) return false;
+      const x = getEl(pr.elems, h.path); if (!x) return false;
+      if (h.kind === 'op') x.a[h.oi] = swap(x.a[h.oi], re);
+      else { const m = U(swap(x.t, re)); if (!INSTR[m]) return false; x.a = morphOps(x, m); x.t = m; }
+      rg.t = E.serializeRung(pr.elems);
+      return true;
+    }
+    const routineOf = h => allProgs().find(g => g.name === h.g).routines.find(r => r.name === h.r);
+    const act = kind => {
+      read();
+      if (!o.what) { say('Type what to find.', true); return; }
+      if (!o.ins && !o.ops && !o.cm) { say('Pick at least one place in Find Within.', true); return; }
+      if (kind === 'next') { next(); return; }
+      if (S.online) { say('Cannot replace logic, tags or comments while online.', true); return; }
+      if (!editable()) return;
+      const { hits, re } = repHits(o);
+      if (kind === 'one') {
+        const p = S.repHit && S.repHit.sk === selKey() ? S.repHit.key : null, h = p && hits.find(x => keyCmp(x.key, p) === 0);
+        if (!h) { next(); return; }
+        let ok = true;
+        edit(() => { ok = apply(h, re, routineOf(h)); return ok; });
+        if (!ok) { say('Fail to replace element: that is not a valid instruction. Type a valid instruction and try again.', true); return; }
+        S.repHit = null; render();
+        if (!next()) say(`Replaced. No more "${o.what}".`);
+        return;
+      }
+      if (!hits.length) { say(`Nothing to replace: "${o.what}" was not found.`, true); return; }
+      const done = [];
+      edit(() => {
+        // from the last occurrence back, so the paths of the ones before it stay right
+        [...hits].reverse().forEach(h => { if (apply(h, re, routineOf(h))) done.unshift(h); });
+        return done.length ? true : false;
+      });
+      S.repHit = null;
+      const lines = done.map(h => `Replaced: ${h.g} - ${h.r}, Rung ${h.ri}, ${h.kind === 'cm' ? 'Rung Comment' : `${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+      S.search = { errors: [], warnings: [], found: done.map((h, n) => ({ text: lines[n], program: h.g, routine: h.r, rung: h.ri })), lines: [`Replacing "${o.what}" with "${o.with}" in ${o.all ? S.p.controller.name : curRoutine().name}...`, ...lines, `Complete - ${done.length} occurrence(s) replaced.`] };
+      S.outTab = 'search';
+      if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true;
+      reverify(); render();
+      say(done.length < hits.length ? `${done.length} of ${hits.length} replaced (an instruction name that is not valid was left).` : `${done.length} occurrence(s) replaced. See Search Results.`, done.length < hits.length);
+    };
   }
   /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
      in the tag editor) and the rung or the tag to go to */
@@ -2934,8 +3115,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     toast('Quick setup done: driver, emulator, project and path are ready.', 'ok');
   }
   function cmdNew() {
-    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(newProjectDlg, 0), true);
-    else newProjectDlg();
+    saveChanges(newProjectDlg);
   }
   /* New Project, as in the reference: it only declares the controller (type, name, revision, chassis, slot,
      description). Drivers, the emulated controller and I/O modules are set up any time after (Setup Wizard,
@@ -3053,6 +3233,35 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- organizer actions ---------- */
   function openRoutine(key) { const [g, r] = key.slice(3).split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; S.sel = null; S.selRung = 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); }
+  /* Edit > Properties (reference: the properties of the current component): what was picked last, in the Controller
+     Organizer (routine, program, task, module, controller), the Tag Editor (a tag) or the ladder (the tag of the
+     selected operand, else the routine) */
+  function propsCmd() {
+    const k = S.orgSel || '';
+    if (S.pickAt === 'org' && k) {
+      if (k.startsWith('rt:')) return routineProps(k);
+      if (k.startsWith('prog:')) return progProps(k.slice(5));
+      if (k.startsWith('task:')) return taskProps(k.slice(5));
+      if (k.startsWith('mod:') && +k.slice(4) !== ctlSlot()) return moduleProps(+k.slice(4));
+      return controllerProps();
+    }
+    if (S.pickAt === 'tag' && S.view === 'tags' && S.tagPick) {
+      const list = scopeTags(S.tagScope || ''), t = list.find(x => x.name === S.tagPick), io = /^Local:(\d+)/.exec(S.tagPick);
+      if (t) return newTag({ tag: t, list });
+      if (io) return moduleProps(+io[1]);
+    }
+    if (S.view === 'ladder') {
+      const a = selOperand(), t = isTagText(a) ? tagFor(String(a).split(/[.[]/)[0]) : null;
+      if (t) return newTag({ tag: t });
+      return routineProps(`rt:${S.prog}/${S.routine}`);
+    }
+    controllerProps();
+  }
+  // the program picked in the Controller Organizer (a program or one of its routines), else the open routine's
+  function orgProg() {
+    const k = S.orgSel || '', g = k.startsWith('prog:') ? k.slice(5) : k.startsWith('rt:') ? k.slice(3).split('/')[0] : '';
+    return allProgs().some(x => x.name === g) ? g : curProg().name;
+  }
   function newRoutine(gname) {
     const g = allProgs().find(x => x.name === gname);
     prompt1('New Routine', 'Name', 'Routine' + (g.routines.length + 1), v => {
@@ -3582,6 +3791,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
   function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
+  /* Communications > Select Recent Path (reference: go online using a recent communications path) */
+  function recentPathDlg() {
+    let sel = (S.prefs.paths || []).includes(curPath()) ? curPath() : (S.prefs.paths || [])[0];
+    const rows = () => (S.prefs.paths || []).map(p => `<div class="row${p === sel ? ' on' : ''}" data-rpath="${esc(p)}">${ic('net')}<span class="grow mono ell">${esc(p)}</span>${p === curPath() ? '<span class="sub">project path</span>' : ''}</div>`).join('');
+    const go = () => { setPath(sel); render(); if (S.online) { toast('Go Offline first, then go online at the other path.'); return; } setTimeout(goOnline, 0); };
+    const el = dialog({ title: 'Select Recent Path', size: 'md',
+      body: `<p class="help">The communications paths used last. Pick one to go online there.</p><div class="list" id="rpl">${rows()}</div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Set Project Path', run: () => { setPath(sel); render(); toast(`Project path: ${sel}`); } }, { l: 'Go Online', pri: true, run: go }] });
+    el.querySelector('#rpl').addEventListener('click', ev => {
+      const r = ev.target.closest('[data-rpath]'); if (!r) return;
+      if (r.dataset.rpath === sel && r.dataset.clicked) { closeLayer(); go(); return; }
+      sel = r.dataset.rpath; el.querySelector('#rpl').innerHTML = rows();
+      const n = el.querySelector(`[data-rpath="${CSS.escape(sel)}"]`); if (n) { n.dataset.clicked = '1'; setTimeout(() => { delete n.dataset.clicked; }, 450); }
+    });
+  }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */
@@ -4335,6 +4559,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-tw]'))) { const k = el.dataset.tw, c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); return; }
       if ((el = t.closest('[data-org]'))) {
         const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
+        S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
@@ -4353,7 +4578,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
-      if ((el = t.closest('[data-recent]'))) { loadFile(el.dataset.recent); return; }
+      if ((el = t.closest('[data-recent]'))) { const f = el.dataset.recent; saveChanges(() => loadFile(f)); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
       if ((el = t.closest('[data-msgt]')) && !t.closest('[data-cmd]')) { S.errOpen = !S.errOpen; render(); return; }
       if ((el = t.closest('[data-ef]'))) { const f = S.errFilter || { e: true, w: true, m: true }; f[el.dataset.ef] = !f[el.dataset.ef]; S.errFilter = f; render(); return; }
@@ -4447,7 +4672,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const l = $('#layer');
     l.innerHTML = `<div class="scrim" data-close="1"></div><div class="sheet" style="height:46%"><div class="grab"></div><div class="ph" style="background:none;border:0">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button><button class="ib" data-close="1">${ic('close')}</button></div><div class="sb" style="display:flex;flex-direction:column">${errorsHTML()}</div></div>`;
     l.onclick = ev => { if (ev.target.closest('[data-close]')) closeLayer(); };
-    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextErrLine(ev.shiftKey ? -1 : 1); } };
+    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextResult(ev.shiftKey ? -1 : 1); } };
   }
   function gotoErr(el) { S.errCur = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.nodeValue : el.textContent) || null; gotoLine(+el.dataset.errline, el.dataset.errrt, el.textContent, true); }
   /* go to the rung of an Errors line (double-click, or F4): the instruction it names is selected; a double-click also
@@ -4505,7 +4730,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return;
     }
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
-    if (k === 'F4') { ev.preventDefault(); nextErrLine(ev.shiftKey ? -1 : 1); return; }
+    if (k === 'F4') { ev.preventDefault(); nextResult(ev.shiftKey ? -1 : 1); return; }
     if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
@@ -4513,7 +4738,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit1' || ev.code === 'Numpad1')) { ev.preventDefault(); showErrors(); return; }
-    const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
+    const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
@@ -4523,7 +4748,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'F2') { ev.preventDefault(); editSelOperand(); return; }
     if (k === 'Enter') { if (selInstr() && S.sel.op != null) editSelOperand(); else if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
     if (k === 'F1') { ev.preventDefault(); run('help'); return; }
-    if (k === 'F3') { ev.preventDefault(); run('findnext'); return; }
+    if (k === 'F3') { ev.preventDefault(); run(ev.shiftKey ? 'findprev' : 'findnext'); return; }
     if (k === 'Home' || k === 'End') {
       ev.preventDefault();
       const ri = curSelRung(), fl = ri == null ? [] : flat(parsed(ri) || []);
@@ -4532,7 +4757,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     if (k === 'ArrowLeft' || k === 'ArrowRight') { ev.preventDefault(); moveSel(k === 'ArrowLeft' ? -1 : 1, 0); return; }
     if (k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); moveSel(0, k === 'ArrowUp' ? -1 : 1); return; }
-    if (k === 'Escape') { S.sel = null; render(); return; }
+    if (k === 'Escape') { S.sel = null; S.selAll = null; if (S.tagAll) { S.tagAll = false; refreshTags(); } render(); return; }
     if (ctrl || ev.altKey || k.length !== 1 || !editable()) return;
     // Quick Keys on: one key inserts its instruction after the selection (or at the end of the selected rung)
     if (S.prefs.quickKeys && QUICK[k.toLowerCase()] && (S.sel || curSelRung() != null)) { ev.preventDefault(); quickKey(QUICK[k.toLowerCase()]); return; }
