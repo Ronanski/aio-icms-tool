@@ -360,15 +360,32 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  /* edit zones on the rungs (Studio 5000 "Edit ladder logic in run mode"): rung.z is
+     i: the editable copy made by Start Pending Rung Edits, or a new rung (shown e while it has errors);
+     r: the original below it, read-only; after Accept they become I (insert zone) and R (replace zone);
+     D: a rung deleted online in Run (delete zone). Old logic = no i/I rungs, new logic = no r/R/D rungs. */
+  const eachRoutine = (p, fn) => p.tasks.forEach(t => t.programs.forEach(g => g.routines.forEach(fn)));
+  function logicOf(p, which) {
+    const q = JSON.parse(JSON.stringify(p)), drop = which === 'old' ? /^[iI]$/ : /^[rRD]$/;
+    eachRoutine(q, r => { r.rungs = r.rungs.filter(x => !drop.test(x.z || '')); r.rungs.forEach(x => { delete x.z; delete x.dx; }); });
+    return q;
+  }
+  const newLogic = p => logicOf(p, 'new');
+  function zonesIn(p) { let z = ''; eachRoutine(p, r => r.rungs.forEach(x => { if (x.z && !z.includes(x.z)) z += x.z; })); return z; }
+  const RO_Z = /^[rRDI]$/;
+  // online, a rung that is an original (r/R), deleted (D) or accepted (I) cannot be changed
+  const roRung = r => !!(S.online && r && RO_Z.test(r.z || ''));
   function edPhase() {
     if (!S.online || !ctl.M) return null;
-    const dirty = !ctl.holds(S.p);
+    const zs = zonesIn(S.p);
+    if (/[ir]/.test(zs)) return 'pending';
+    const dirty = !ctl.holds(zs ? newLogic(S.p) : S.p);
     if (S.ed && S.ed.ctl === ctl) {
       if (S.ed.tested) return dirty ? 'pending' : 'tested';
       return lkey(S.p) === lkey(JSON.parse(S.ed.base)) ? 'accepted' : 'pending';
     }
-    return dirty ? 'pending' : null;
+    return dirty || zs ? 'pending' : null;
   }
   const pending = () => edPhase() !== null;
   let ctlCopy = { s: null, p: null };
@@ -378,7 +395,6 @@
     const r = P && P.routines.find(x => U(x.name) === U(curRoutine().name));
     return r ? r.rungs : null;
   }
-  const routineEdited = () => pending() && JSON.stringify(ctlRungs()) !== JSON.stringify(rungs());
 
   /* ---------- verify ---------- */
   function reverify() {
@@ -389,14 +405,83 @@
   /* ---------- undo / redo and edits ---------- */
   const snap = () => JSON.stringify({ p: S.p, prog: S.prog, routine: S.routine, sel: S.sel, selRung: S.selRung });
   function restore(s) { const o = JSON.parse(s); Object.assign(S, { p: o.p, prog: o.prog, routine: o.routine, sel: o.sel, selRung: o.selRung }); changed(); }
-  function edit(fn) {
-    const before = snap();
+  function edit(fn, raw) {
+    const before = snap(), post = raw ? null : rungHook();
     if (fn() === false) return false;
+    if (post && post() === false) { restore(before); return false; }
     S.undo.push(before);
     if (S.undo.length > 100) S.undo.shift();
     S.redo = [];
     changed();
     return true;
+  }
+  /* what an edit did to the rungs of the routine (found by object, as writeRung changes a rung in place):
+     - the instructions it added or changed are marked dirty (rung.dx, '*' beside the mnemonic until Verify);
+     - online, it goes through edit zones as in the reference: a changed rung gets its copy (i) with the original
+       below it (r), a new rung is i, a rung deleted in Run stays as D (still executed until the edits are tested);
+       an r/R/D/I rung is read-only, so an edit that changes one is undone. */
+  const ikeys = t => { const pr = E.parseRung(t || ''), out = []; const w = a => a.forEach(e => (e.t === 'BR' ? e.legs.forEach(w) : out.push(L.ikey(e)))); if (!pr.err) w(pr.elems); return out; };
+  // the instructions in rung order as "key#n" (the n-th one with that key), as the ladder draws them
+  const occ = keys => { const c = {}; return keys.map(k => { c[k] = (c[k] || 0) + 1; return k + '#' + (c[k] - 1); }); };
+  // which new instructions are the old ones (longest common subsequence): new index → old index
+  function lcsMap(a, b) {
+    const n = a.length, m = b.length, T = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0)), map = new Map();
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) T[i][j] = a[i] === b[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+    for (let i = 0, j = 0; i < n && j < m;) { if (a[i] === b[j]) { map.set(j, i); i++; j++; } else if (T[i + 1][j] >= T[i][j + 1]) i++; else j++; }
+    return map;
+  }
+  function rungHook() {
+    if (S.noProj) return null;
+    const R = curRoutine(), pre = R.rungs.map(r => ({ r, t: r.t, z: r.z }));
+    return () => {
+      if (curRoutine() !== R) return true;
+      const now = R.rungs, has = new Set(now), at = new Map(pre.map(x => [x.r, x]));
+      // the dirty instructions: what is in the rung now and was not before
+      now.forEach(r => {
+        const x = at.get(r);
+        if (x && x.t === r.t) return;
+        const ok = x ? ikeys(x.t) : [], nk = ikeys(r.t), oo = occ(ok), no = occ(nk), was = new Set(r.dx || []), map = lcsMap(ok, nk);
+        const d = no.filter((k, j) => !map.has(j) || was.has(oo[map.get(j)]));
+        if (d.length) r.dx = d; else delete r.dx;
+      });
+      if (!S.online || !ctl.M) return true;
+      const ro = pre.find(x => RO_Z.test(x.z || '') && (!has.has(x.r) || x.r.t !== x.t));
+      if (ro) { toast(`Rung ${pre.indexOf(ro)} is read-only (${ro.z}): ${ro.z === 'I' || ro.z === 'R' || ro.z === 'D' ? 'test and assemble, or cancel, the accepted edits first' : 'edit the copy (i) above it'}.`, 'err'); return false; }
+      const testing = S.ed && S.ed.ctl === ctl && S.ed.tested, selObj = now[curSelRung()];
+      let dels = 0;
+      pre.forEach((x, k) => {
+        if (has.has(x.r) || x.z) return;
+        // a rung deleted in Run is a delete zone (D) until the edits are assembled; in Program it just goes
+        if (!ctl.running) return;
+        if (testing) { dels = -1; return; }
+        let j = -1;
+        for (let q = k - 1; q >= 0 && j < 0; q--) j = now.indexOf(pre[q].r);
+        x.r.z = 'D'; delete x.r.dx; now.splice(j + 1, 0, x.r); has.add(x.r); dels++;
+      });
+      if (dels < 0) { toast('Assemble or untest the edits being tested first.', 'err'); return false; }
+      now.slice().forEach(r => {
+        const x = at.get(r);
+        if (!x) { if (!/^[i]$/.test(r.z || '')) { r.z = 'i'; } return; }
+        if (x.z || x.t === r.t) return;
+        // the first change to a rung starts its pending edit: the copy (i) above, the original (r) below
+        r.z = 'i';
+        const o = { t: x.t, z: 'r' }; if (r.c) o.c = r.c;
+        now.splice(now.indexOf(r) + 1, 0, o);
+      });
+      // the zones moved rungs down: the selection follows its rung
+      const si = selObj ? now.indexOf(selObj) : -1;
+      if (si >= 0) { if (S.sel) S.sel.ri = si; else S.selRung = si; }
+      if (dels > 0) acceptZones();
+      return true;
+    };
+  }
+  /* the D zones go to the controller as accepted edits at once (it keeps running the old logic) */
+  function acceptZones() {
+    if (!S.ed || S.ed.ctl !== ctl) S.ed = { ctl, orig: ctl.copy, base: null, tested: false };
+    // the accepted state: without the pending edits (i copies dropped, r originals back to normal rungs)
+    const q = JSON.parse(JSON.stringify(S.p));
+    eachRoutine(q, r => { r.rungs = r.rungs.filter(x => x.z !== 'i'); r.rungs.forEach(x => { if (x.z === 'r') delete x.z; }); });
+    S.ed.base = JSON.stringify(q);
   }
   function changed() { S.dirty = true; S.verifyShown = null; reverify(); scheduleSave(); render(); }
   function undo() { if (!editable() || !S.undo.length) return; S.redo.push(snap()); restore(S.undo.pop()); }
@@ -529,7 +614,7 @@
   const branchPath = () => !S.sel || !S.sel.path ? null : S.sel.br ? S.sel.path : S.sel.leg ? S.sel.path.slice(0, -1) : S.sel.path.length >= 3 ? S.sel.path.slice(0, -2) : null;
   /* Move Branch Rail: the start or end rail of the branch moves one element left or right; the element it passes
      goes into or out of the top level of the branch, as when the rail is dragged in the reference */
-  function moveRail(which, dir) {
+  function stepRail(which, dir) {
     const bp0 = branchPath(); if (!bp0) return false;
     let ok = false;
     edit(() => {
@@ -553,7 +638,7 @@
         <div class="mvr"><b>Start rail</b><button class="btn" data-mvr="start,-1">◀ Left</button><button class="btn" data-mvr="start,1">Right ▶</button></div>
         <div class="mvr"><b>End rail</b><button class="btn" data-mvr="end,-1">◀ Left</button><button class="btn" data-mvr="end,1">Right ▶</button></div>`,
       buttons: [{ l: 'Close', pri: true }],
-      mount: el => el.addEventListener('click', ev => { const t = ev.target.closest('[data-mvr]'); if (!t) return; const [w, d] = t.dataset.mvr.split(','); if (!moveRail(w, +d)) toast('The rail cannot move that way.'); }) });
+      mount: el => el.addEventListener('click', ev => { const t = ev.target.closest('[data-mvr]'); if (!t) return; const [w, d] = t.dataset.mvr.split(','); if (!stepRail(w, +d)) toast('The rail cannot move that way.'); }) });
   }
   function delSel() {
     if (S.sel && S.sel.leg) {
@@ -590,17 +675,23 @@
     if (S.sel && S.sel.path) {
       const el = curEl(); if (!el) return;
       S.clip = { kind: 'el', el: JSON.parse(JSON.stringify(el)) };
-      try { navigator.clipboard && navigator.clipboard.writeText(E.serializeRung([el]).replace(/;$/, '')); } catch (e) { /* ignore */ }
+      try { navigator.clipboard && navigator.clipboard.writeText(E.serializeRung([el]).replace(/;$/, '')).catch(() => {}); } catch (e) { /* ignore */ }
     } else if (S.selRung != null) {
-      S.clip = { kind: 'rung', rung: { ...rungs()[S.selRung] } };
-      try { navigator.clipboard && navigator.clipboard.writeText(rungs()[S.selRung].t); } catch (e) { /* ignore */ }
+      S.clip = { kind: 'rung', rung: { ...rungs()[S.selRung] } }; delete S.clip.rung.z;
+      try { navigator.clipboard && navigator.clipboard.writeText(rungs()[S.selRung].t).catch(() => {}); } catch (e) { /* ignore */ }
     } else return;
     if (cut) delSel(); else toast('Copied');
   }
   function paste() {
     if (!S.clip) { toast('Nothing to paste yet.'); return; }
-    if (S.clip.kind === 'el') insert(JSON.parse(JSON.stringify(S.clip.el)), null, false);
-    else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; rungs().splice(at, 0, { ...S.clip.rung }); S.sel = null; S.selRung = at; });
+    if (S.clip.kind === 'el') {
+      // the paste matrix of the reference: an instruction pasted on a selected rung (its rung selection region) goes
+      // at the start of the rung, on a selected branch level at the start of that level; else after the selection
+      const el = JSON.parse(JSON.stringify(S.clip.el)), ri = S.sel ? S.sel.ri : S.selRung, els = ri != null ? parsed(ri) : null;
+      if (!S.sel && ri != null && els && els.length) insert(el, { ri, path: [0], after: false }, false);
+      else if (S.sel && S.sel.leg && els && (getEl(els, S.sel.path.slice(0, -1)).legs[S.sel.path[S.sel.path.length - 1]] || []).length) insert(el, { ri, path: S.sel.path.concat(0), after: false }, false);
+      else insert(el, null, false);
+    } else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
   }
 
   /* ---------- layout ---------- */
@@ -654,9 +745,9 @@
     cdef: { l: 'Clear Instruction Defaults', i: 'close', run: () => {}, on: () => false },
     rimp: { l: 'Import Rungs…', i: 'upload', run: () => importRungs(), on: editable },
     rexp: { l: 'Export Rungs…', i: 'download', run: () => exportRungs(curSelRung()), on: () => curSelRung() != null },
-    rstart: { l: 'Start Pending Rung Edits', k: 'Ctrl+Shift+S', i: 'edit', run: () => rungText(curSelRung()), on: () => S.online && editable() && curSelRung() != null },
+    rstart: { l: 'Start Pending Rung Edits', k: 'Ctrl+Shift+S', i: 'edit', run: () => startRungEdit(curSelRung()), on: () => S.online && !!ctl.M && editable() && curSelRung() != null && !!rungs()[curSelRung()] && !rungs()[curSelRung()].z },
     raccept: { l: 'Accept Pending Rung Edits', i: 'check', run: acceptEdits, on: () => edPhase() === 'pending' },
-    rcancel: { l: 'Cancel Pending Rung Edits', i: 'undo', run: cancelEdits, on: () => edPhase() === 'pending' },
+    rcancel: { l: 'Cancel Pending Rung Edits', i: 'undo', run: () => cancelRungEdit(curSelRung()), on: () => edPhase() === 'pending' },
     rasm: { l: 'Assemble Rung Edit', i: 'check', run: assembleEdits, on: () => edPhase() === 'tested' },
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
@@ -792,19 +883,22 @@
   const modeBox = () => `<span class="sbox${modeCls()}" data-box="mode" title="Controller mode">${modeText()}${ic('down')}</span>`;
   function forcesBox() {
     const st = S.online ? ctl.forceState() : 'none';
-    return `<span class="sbox" data-box="forces" title="I/O forces" style="font-weight:400"><i class="fi${st === 'enabled' ? ' en' : st === 'disabled' ? ' dis' : ''}"></i>${st === 'none' ? 'No Forces' : 'Forces'}${ic('down')}</span>`;
+    // installed and enabled: the yellow triangle with a red border (as the reference's online bar); the text stays
+    const tri = '<svg class="ftri" viewBox="0 0 15 14" aria-hidden="true"><path d="M7.5 1 14 13H1z" fill="#F2C400" stroke="#D0271D" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.5 5v4M7.5 10.6v.9" stroke="#1A1300" stroke-width="1.5"/></svg>';
+    return `<span class="sbox" data-box="forces" title="${st === 'enabled' ? 'I/O forces installed and enabled' : st === 'disabled' ? 'I/O forces installed, disabled' : 'I/O forces'}" style="font-weight:400">${st === 'enabled' ? tri : `<i class="fi${st === 'disabled' ? ' dis' : ''}"></i>`}${st === 'none' ? 'No Forces' : st === 'enabled' ? 'Forces' : 'Forces Disabled'}${ic('down')}</span>`;
   }
   const EDTXT = { pending: 'Edits Present', accepted: 'Accepted Edits', tested: 'Testing Edits' };
   const editsBox = () => { const ph = edPhase(); return `<span class="sbox plain${ph ? ' edits' : ''}" title="Online edits">${ph ? EDTXT[ph] : 'No Edits'}</span>`; };
   function editbar() {
     const ph = edPhase(), b = (id, pri) => `<button class="btn${pri ? ' pri' : ''}" data-cmd="${id}">${C[id].l}</button>`;
-    if (ph === 'accepted') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Accepted edits (i).</b> The controller still runs the old logic. Test them to run the new logic.</span>${b('tested', true)}${b('cancelacc')}</div>`;
-    if (ph === 'tested') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Testing edits (I).</b> The controller runs the new logic. Assemble to keep it, or Untest to go back.</span>${b('assemble', true)}${b('untest')}</div>`;
-    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Pending edits (e).</b> ${ctl.running ? 'The controller keeps the old logic: accept, then test the edits.' : 'Accept them to send them to the controller.'}</span>${b('accept', true)}${b('cancele')}</div>`;
+    if (ph === 'accepted') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Accepted edits (I, R, D).</b> The controller still runs the old logic (R, D). Test them to run the new logic (I).</span>${b('tested', true)}${b('cancelacc')}</div>`;
+    if (ph === 'tested') return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Testing edits (I).</b> The controller runs the new logic (I), not R or D. Assemble to keep it, or Untest to go back.</span>${b('assemble', true)}${b('untest')}</div>`;
+    return `<div class="upbar editbar">${ic('edit')}<span class="grow"><b>Pending edits (i, e).</b> ${ctl.running ? 'The controller keeps the old logic: accept, then test the edits.' : 'Accept them to send them to the controller.'}</span>${b('accept', true)}${b('cancele')}</div>`;
   }
   function ledsHTML() {
     const on = S.online, run = on && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault;
-    const L4 = on ? [[run ? 'g' : '', modeText()], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Battery OK'], ctl.ioOk() ? ['g', 'I/O OK'] : ['r blink', 'I/O Not Responding']] : [['', 'RUN'], ['', 'OK'], ['', 'BAT'], ['', 'I/O']];
+    // the four indicators of the reference's online bar: Run Mode, Controller OK, Energy Storage OK, I/O OK
+    const L4 = on ? [[run ? 'g' : '', 'Run Mode'], [ctl.fault ? 'r blink' : 'g', ctl.fault ? 'Major Fault' : 'Controller OK'], ['g', 'Energy Storage OK'], ctl.ioOk() ? ['g', 'I/O OK'] : ['r blink', 'I/O Not Responding']] : [['', 'Run Mode'], ['', 'Controller OK'], ['', 'Energy Storage OK'], ['', 'I/O OK']];
     return L4.map(([c, t]) => `<div><i class="led ${c}"></i>${t}</div>`).join('');
   }
   const keyHTML = () => `<span class="key" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>`;
@@ -985,27 +1079,29 @@
     const P = ctl.M.programs.find(p => U(p.name) === U(curProg().name));
     return P ? P.routines.get(U(curRoutine().name)) : null;
   }
-  /* the edit mark beside each rung number: e (pending), i (accepted), I (being tested), against the logic before */
-  function rungsOf(json) {
-    if (!json) return [];
-    const p = JSON.parse(json), P = p.tasks.flatMap(t => t.programs).find(g => U(g.name) === U(curProg().name));
-    const r = P && P.routines.find(x => U(x.name) === U(curRoutine().name));
-    return r ? r.rungs.map(x => x.t) : [];
+  /* which shown rung the controller executes (index into its routine), or null when it runs other logic:
+     before the edits are tested it runs the normal rungs and the r/R/D zones, while testing the normal rungs,
+     the I zones and the r originals of newer pending edits; i copies are never executed */
+  function liveIdx() {
+    const R = liveRoutine(), cr = ctlRungs();
+    if (!R || !cr) return null;
+    const tested = !!(S.ed && S.ed.ctl === ctl && S.ed.tested);
+    const runs = r => (!r.z ? true : tested ? r.z === 'I' || r.z === 'r' : r.z === 'r' || r.z === 'R' || r.z === 'D');
+    const map = [], txt = [];
+    rungs().forEach(r => { if (runs(r)) { map.push(txt.length); txt.push(r.t); } else map.push(-1); });
+    return txt.length === cr.length && txt.every((t, i) => t === cr[i].t) && R.rungs.length === cr.length ? map : null;
   }
-  function editMarks() {
-    const ph = edPhase(); if (!ph) return null;
-    const ed = S.ed && S.ed.ctl === ctl ? S.ed : null;
-    const before = rungsOf(ph === 'pending' ? (ed && !ed.tested ? ed.base : ctl.copy) : ed.orig);
-    const ch = ph === 'pending' ? 'e' : ph === 'accepted' ? 'i' : 'I';
-    return rungs().map((r, i) => (r.t !== before[i] ? ch : ''));
-  }
+  // the mark left of the rung number: i (e while it has errors), r, I, R, D
+  const markOf = (r, err) => (!r.z ? '' : r.z === 'i' && err ? 'e' : r.z);
   function ladderRungs() {
-    const R = routineEdited() ? null : liveRoutine(), mk = editMarks();
-    if (R) {
-      const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
-      return R.rungs.map((r, i) => { r.elems.forEach(e => e && tag(e)); return { elems: r.elems.filter(Boolean), c: rungs()[i] && rungs()[i].c, mk: mk && mk[i] }; });
-    }
-    return rungs().map((r, i) => { const pr = E.parseRung(r.t); return { elems: pr.err ? [] : pr.elems, c: r.c, err: S.errRungs.has(i) || !!pr.err, mk: mk && mk[i] }; });
+    const R = liveRoutine(), map = R ? liveIdx() : null;
+    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
+    return rungs().map((r, i) => {
+      const pr = E.parseRung(r.t), err = S.errRungs.has(i) || !!pr.err;
+      const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx };
+      if (map && map[i] >= 0) { const lr = R.rungs[map[i]]; lr.elems.forEach(e => e && tag(e)); return { ...base, elems: lr.elems.filter(Boolean) }; }
+      return { ...base, elems: pr.err ? [] : pr.elems, still: !!map };
+    });
   }
   const CELL = { desktop: 104, tablet: 112, phone: 80 };
   function renderLadder(drop, press) {
@@ -1015,10 +1111,11 @@
     const z = S.prefs.zoom;
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
-      live: S.online && !routineEdited() && !!liveRoutine(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodes: !!drop, lifted: S.lifted, press,
+      live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
+      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
     w.innerHTML = res.svg;
+    S.ladNodes = res.nodes || null;
   }
   let ro = null, lastW = 0;
   function watchLadder(w) {
@@ -1038,7 +1135,7 @@
     if (!r) return null;
     const d = r.dataset;
     if (d.end) return { end: true };
-    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, leg: !!d.leg, rn: !!d.rn, op: d.opi != null ? +d.opi : undefined };
+    return { ri: +d.ri, path: d.p ? d.p.split('.').map(Number) : null, br: !!d.br, rr: !!d.rr, leg: !!d.leg, rn: !!d.rn, op: d.opi != null ? +d.opi : undefined, ly: d.ly ? d.ly.split(',').map(Number) : null };
   };
   const tkey = t => (t ? `${t.ri}|${t.path ? t.path.join('.') : ''}|${t.leg ? 'l' : ''}${t.rn ? 'n' : ''}${t.end ? 'e' : ''}|${t.op != null ? t.op : ''}` : '');
   let lastTap = { k: '', t: 0 };
@@ -1053,6 +1150,132 @@
     // as in the reference: a double-click on an operand edits it in place, on the instruction itself its mnemonic
     if (t.path && !t.br && !t.leg) { if (editable()) inlineEdit(t.ri, t.path, t.op != null ? t.op : 'mn'); }
     else if (t.rn) { if (editable()) rungText(t.ri); }
+  }
+  /* ---------- drag and drop (Studio 5000 "Edit Ladder Elements", Dragging and Dropping) ----------
+     the part grabbed decides what moves: an instruction (Ctrl copies), only its operand (a tag name: always a copy,
+     onto another operand), the rung number (the rung), the left branch rail (one branch level), the right branch rail
+     (the end of the branch; with Ctrl or Alt the whole branch). Dropped in another routine, an instruction is copied. */
+  function dragKind(t, ev) {
+    if (!t || t.end || t.ri == null) return null;
+    if (t.rn) return 'rung';
+    if (t.br) return t.rr ? (ev.ctrlKey || ev.altKey ? 'el' : 'rr') : 'lvl';
+    if (!t.path || t.leg) return null;
+    if (t.op != null) { const e = getEl(parsed(t.ri) || [], t.path); return e && e.a && isTagText(e.a[t.op]) ? 'op' : 'el'; }
+    return 'el';
+  }
+  const pfx = (p, q, strict) => !!p && p.length >= q.length + (strict ? 1 : 0) && q.every((v, i) => p[i] === v);
+  const sameP = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
+  const NOTAG = /^(routine|label|imm|expr|order)$/;
+  /* is a node a valid drop point for what is dragged (white square)? */
+  function nodeOk(n) {
+    const d = S.drag; if (!d) return false;
+    const src = d.src || {};
+    if (d.kind === 'rung') return n.rung != null && !(d.rt === curProg().name + '/' + curRoutine().name && (n.rung === src.ri || n.rung === src.ri + 1));
+    if (n.rung != null) return false;
+    if (d.kind === 'op') {
+      if (n.op == null || (n.ri === src.ri && sameP(n.path, src.path) && n.op === src.op)) return false;
+      const e = getEl(parsed(n.ri) || [], n.path), kind = e && INSTR[e.t] ? (INSTR[e.t].args[n.op] || '').replace('?', '') : '';
+      return !!kind && !NOTAG.test(kind);
+    }
+    if (n.op != null) return false;
+    if (n.lvl != null) return d.kind === 'lvl' && !(n.ri === src.ri && sameP(n.path, src.path) && (n.lvl === d.lvl || n.lvl === d.lvl + 1)) && !(n.ri === src.ri && pfx(n.path, src.path.concat(d.lvl)));
+    if (d.kind === 'rr') return railOk(n, src);
+    if (d.kind === 'el' && d.rt === curProg().name + '/' + curRoutine().name && n.ri === src.ri && src.path && pfx(n.path, src.path, true)) return false;
+    if (d.kind === 'lvl' && n.ri === src.ri && n.path && pfx(n.path, src.path.concat(d.lvl))) return false;
+    return true;
+  }
+  /* the right rail of a branch moves along its own sequence: after the branch (the instructions passed go into the
+     first level) or back into the first level (the instructions passed come out after the branch) */
+  function railOk(n, src) {
+    if (n.ri !== src.ri || n.leg) return false;
+    const bp = src.path, bi = bp[bp.length - 1], els = parsed(src.ri), b = els && getEl(els, bp);
+    if (!b || b.t !== 'BR') return false;
+    if (n.end) return bp.length === 1 && bi < els.length - 1;
+    if (!n.path) return false;
+    const at = n.path[n.path.length - 1] + (n.after ? 1 : 0);
+    if (n.path.length === bp.length && pfx(n.path, bp.slice(0, -1))) return at > bi + 1;
+    if (n.path.length === bp.length + 2 && pfx(n.path, bp.concat(0))) return at < b.legs[0].length;
+    return false;
+  }
+  function moveRail(src, drop) {
+    return edit(() => {
+      const els = parsed(src.ri); if (!els) return false;
+      const bp = src.path, b = getEl(els, bp), { arr, idx: bi } = seqOf(els, bp);
+      if (drop.end) b.legs[0].push(...arr.splice(bi + 1));
+      else {
+        const at = drop.path[drop.path.length - 1] + (drop.after ? 1 : 0);
+        if (drop.path.length === bp.length) b.legs[0].push(...arr.splice(bi + 1, at - bi - 1));
+        else arr.splice(bi + 1, 0, ...b.legs[0].splice(at));
+      }
+      tidy(els); writeRung(src.ri, els);
+      const l = locate(els, b); S.sel = l ? { ri: src.ri, path: l.path, br: true } : null; if (!l) S.selRung = src.ri;
+    });
+  }
+  /* a branch level moves to a level slot of a branch, or its instructions onto a rung at a node */
+  function moveLevel(src, k, drop, copy) {
+    const same = src.ri === drop.ri;
+    return edit(() => {
+      const se = parsed(src.ri), de = same ? se : parsed(drop.ri);
+      if (!se || !de) return false;
+      const b = getEl(se, src.path); if (!b || b.t !== 'BR' || !b.legs[k]) return false;
+      const lvl = copy ? JSON.parse(JSON.stringify(b.legs[k])) : b.legs[k];
+      const tb = drop.lvl != null ? getEl(de, drop.path) : null, before = tb ? tb.legs[drop.lvl] : null;
+      const lb = drop.leg ? getEl(de, drop.path.slice(0, -1)).legs[drop.path[drop.path.length - 1]] : null;
+      const tgt = drop.path && !drop.leg && drop.lvl == null ? getEl(de, drop.path) : null;
+      if (!copy) b.legs.splice(b.legs.indexOf(lvl), 1);
+      if (tb) tb.legs.splice(before ? tb.legs.indexOf(before) : tb.legs.length, 0, lvl);
+      else if (lb) lb.push(...lvl);
+      else if (tgt) { const at = locate(de, tgt); at.arr.splice(at.idx + (drop.after ? 1 : 0), 0, ...lvl); }
+      else de.push(...lvl);
+      tidy(se); if (!same) tidy(de);
+      writeRung(src.ri, se); if (!same) writeRung(drop.ri, de);
+      S.sel = null; S.selRung = drop.ri;
+    });
+  }
+  /* the rung number moves the rung (Ctrl copies). Online a moved rung is a new rung (i) and, in Run, a deleted one (D) */
+  function moveRung(from, to, copy) {
+    return edit(() => {
+      const R = rungs(), r = R[from]; if (!r || to < 0 || to > R.length) return false;
+      const c = { t: r.t }; if (r.c) c.c = r.c;
+      if (copy || (S.online && ctl.M)) { R.splice(to, 0, c); if (!copy) R.splice(R.indexOf(r), 1); S.selRung = R.indexOf(c); }
+      else { R.splice(from, 1); const k = to > from ? to - 1 : to; R.splice(k, 0, r); S.selRung = k; }
+      S.sel = null;
+    });
+  }
+  /* dragging a tag name copies only the operand onto another instruction's operand */
+  function copyOperand(src, drop) {
+    const se = parsed(src.ri), e0 = se && getEl(se, src.path), v = e0 && e0.a[src.op];
+    if (v == null) return false;
+    return edit(() => {
+      const de = parsed(drop.ri), e = de && getEl(de, drop.path);
+      if (!e || !e.a || drop.op >= e.a.length) return false;
+      e.a[drop.op] = v; writeRung(drop.ri, de);
+      S.sel = { ri: drop.ri, path: drop.path, op: drop.op }; S.selRung = null;
+    });
+  }
+  function dropDone(p, copy) {
+    const k = p.kind, here = curProg().name + '/' + curRoutine().name;
+    if (k === 'op') return copyOperand(p.t, p.drop);
+    if (k === 'rung') return p.rt === here ? moveRung(p.t.ri, p.drop.rung, copy) : false;
+    if (k === 'lvl') return moveLevel(p.t, p.lvl, p.drop, copy);
+    if (k === 'rr') return moveRail(p.t, p.drop);
+    if (p.rt !== here) { if (!p.el) return false; insert(JSON.parse(JSON.stringify(p.el)), p.drop.end ? { ri: p.drop.ri } : p.drop, false); toast(`Copied ${p.el.t === 'BR' ? 'branch' : p.el.t} to ${curRoutine().name}, rung ${p.drop.ri}`); return true; }
+    return moveEl(p.t, p.drop, copy);
+  }
+  // a drag held over a routine tab or an organizer routine row opens that routine
+  const rtHover = { k: '', timer: 0 };
+  function hoverRoutine(p, x, y) {
+    const el = document.elementFromPoint(x, y), tb = el && el.closest && (el.closest('[data-tabk]') || el.closest('[data-org^="rt:"]'));
+    const k = tb ? (tb.dataset.tabk || tb.dataset.org.slice(3)) : '';
+    if (k === rtHover.k) return;
+    clearTimeout(rtHover.timer); rtHover.k = k;
+    if (!k || k === 'tags' || k === curProg().name + '/' + curRoutine().name) return;
+    rtHover.timer = setTimeout(() => {
+      const [g, r] = k.split('/'), P = allProgs().find(x => x.name === g);
+      if (!S.drag || !P || !P.routines.some(x => x.name === r)) return;
+      S.prog = g; S.routine = r; S.view = 'ladder'; if (!S.tabs.includes(k)) S.tabs.push(k);
+      S.sel = null; S.selRung = null; S.lifted = null; reverify(); render(); renderLadder('nodes');
+    }, 600);
   }
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom */
   /* pointer handling on the ladder: tap, double-tap, long-press (touch) / right-click (mouse), pinch zoom.
@@ -1082,9 +1305,11 @@
       }
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       const t = hit(ev.target);
-      const movable = !!(t && t.path && !t.leg && editable());
+      const kind = editable() ? dragKind(t, ev) : null, movable = !!kind;
       cancelAnimationFrame(fling);
-      pd = { x: ev.clientX, y: ev.clientY, lx: ev.clientX, ly: ev.clientY, lt: performance.now(), vx: 0, vy: 0, t, moved: false, long: false, mouse: ev.pointerType === 'mouse', lift: ev.pointerType === 'mouse' && movable };
+      pd = { x: ev.clientX, y: ev.clientY, lx: ev.clientX, ly: ev.clientY, lt: performance.now(), vx: 0, vy: 0, t, moved: false, long: false, mouse: ev.pointerType === 'mouse', lift: ev.pointerType === 'mouse' && movable, kind, ctrl: ev.ctrlKey || ev.altKey };
+      // a left branch rail moves one level: the one nearest the pointer
+      if (kind === 'lvl' && t.ly) { const sv = w.querySelector('svg'), top = sv ? sv.getBoundingClientRect().top : 0; let k = 0; t.ly.forEach((yy, i) => { if (Math.abs(top + yy - ev.clientY) < Math.abs(top + t.ly[k] - ev.clientY)) k = i; }); pd.lvl = k; }
       busy();
       if (!pd.mouse) {
         pd.timer = setTimeout(() => {
@@ -1129,20 +1354,29 @@
     const dragTo = (p, x, y) => {
       if (!p.drag) {
         p.drag = true; p.moved = true; clearTimeout(p.timer);
-        if (p.mouse) { select(p.t); S.lifted = p.t; }
-        const e = getEl(parsed(p.t.ri) || [], p.t.path);
-        p.g = document.createElement('div'); p.g.className = 'ghost'; p.g.style.position = 'fixed'; p.g.style.zIndex = 300; p.g.style.transform = 'translate(-50%, -140%)';
-        p.g.innerHTML = e && e.t !== 'BR' ? `${L.icon(e.t)}<span>${e.t}</span>` : '<span>Branch</span>';
+        if (p.mouse) { select(p.t); S.lifted = p.kind === 'el' ? p.t : null; }
+        const e = p.t.path ? getEl(parsed(p.t.ri) || [], p.t.path) : null;
+        p.el = e ? JSON.parse(JSON.stringify(e)) : null; p.rt = curProg().name + '/' + curRoutine().name;
+        p.g = document.createElement('div'); p.g.className = 'ghost'; p.g.style.position = 'fixed'; p.g.style.zIndex = 300; p.g.style.transform = p.mouse ? 'translate(16px, 12px)' : 'translate(-50%, -140%)'; // never over the green circle
+        p.g.innerHTML = p.kind === 'op' ? `<span>${esc(e.a[p.t.op])}</span>` : p.kind === 'rung' ? `<span>Rung ${p.t.ri}</span>` : p.kind === 'lvl' ? '<span>Branch Level</span>' : p.kind === 'rr' ? '<span>Branch End</span>' : e && e.t !== 'BR' ? `${L.icon(e.t)}<span>${e.t}</span>` : '<span>Branch</span>';
         document.body.appendChild(p.g);
+        S.drag = { kind: p.kind, src: p.t, lvl: p.lvl, rt: p.rt };
+        renderLadder('nodes');
       }
       p.g.style.left = x + 'px'; p.g.style.top = y + 'px';
       const w = $('#ladwrap');
       if (w) { const r = w.getBoundingClientRect(); if (y < r.top + 30) w.scrollTop -= 12; else if (y > r.bottom - 30) w.scrollTop += 12; }
-      p.drop = dropAt(x, y);
+      // held over another routine (its tab or its organizer row): that routine opens, and the drop there copies
+      if (p.kind === 'el') hoverRoutine(p, x, y);
+      p.drop = dropAt(x, y, p.kind);
       const k = JSON.stringify(p.drop);
       if (k !== p.k) { p.k = k; S.dragDrop = p.drop || 'nodes'; renderLadder(S.dragDrop); }
     };
     document.addEventListener('touchmove', ev => { if (pd && pd.lift && !pd.mouse) ev.preventDefault(); }, { passive: false });
+    // the menu that opens when a held finger lets go must not get that finger's click (a phone sheet is under it)
+    let menuUp = 0;
+    document.addEventListener('click', ev => { if (menuUp && performance.now() - menuUp < 400) { menuUp = 0; ev.preventDefault(); ev.stopPropagation(); } }, true);
+    document.addEventListener('pointerdown', () => { menuUp = 0; }, true);
     const up = ev => {
       if (!pts.has(ev.pointerId)) return;
       pts.delete(ev.pointerId);
@@ -1152,9 +1386,9 @@
       const p = pd;
       pd = null;
       busy();
-      S.lifted = null; S.dragDrop = null;
-      if (p.drag) { p.g.remove(); if (ev.type === 'pointerup' && p.drop && moveEl(p.t, p.drop, ev.ctrlKey)) return; render(); return; }
-      if (p.long && p.lift && ev.type === 'pointerup') { render(); ctxMenu(p.t, p.x, p.y); return; }
+      S.lifted = null; S.dragDrop = null; S.drag = null; clearTimeout(rtHover.timer); rtHover.k = '';
+      if (p.drag) { p.g.remove(); if (ev.type === 'pointerup' && p.drop && dropDone(p, !(p.t && p.t.rr) && (ev.ctrlKey || p.ctrl))) return; render(); return; }
+      if (p.long && p.lift && ev.type === 'pointerup') { render(); ctxMenu(p.t, p.x, p.y); menuUp = performance.now(); return; }
       if (p.moved && !p.mouse && !p.long && performance.now() - p.lt < 80 && Math.hypot(p.vx, p.vy) > .3) flick(p.vx, p.vy);
       if (ev.type === 'pointercancel' || p.moved || p.long) { if (!p.long) live(true); else if (p.lift) render(); return; }
       onTap(p.t, ev.clientX, ev.clientY, false, !p.mouse);
@@ -1212,7 +1446,7 @@
       let items = renamed(menuItems(ids), { cut: 'Cut Instruction', copy: 'Copy Instruction', del: 'Delete Instruction' });
       items = items.map(it => (it === '-' ? it : it.id === 'help' ? { ...it, id: null, run: () => instrHelp(e.t) } : it.id === 'desc' && oi ? { ...it, l: `Edit "${a}" Description` } : it));
       // a box operand holding a tag: its forced value is monitored and edited there (the app forces I/O bits only)
-      if (!bit && t.op != null && isTagText(a)) items.splice(items.findIndex(it => it.id === 'frem'), 0, { l: `Monitor/Edit Force Value Of "${a}"`, dis: true }, '-');
+      if (!bit && t.op != null && isTagText(a)) items.splice(items.findIndex(it => it.id === 'frem'), 0, { l: `Monitor/Edit Force Value Of "${a}"`, i: 'force', run: () => monitorTag(String(a).split(/[.[]/)[0]) }, '-');
       openMenu(tagItems(e, oi, t.op != null).concat(items), { x, y }, `Rung ${t.ri} · ${e.t} ${e.a.join(', ')}`);
       return;
     }
@@ -2074,6 +2308,7 @@
     reverify();
     const g = curProg().name, r = curRoutine().name, mine = x => x.program === g && x.routine === r && x.rung === ri;
     const errors = S.verify.errors.filter(mine), warnings = S.verify.warnings.filter(mine);
+    if (!errors.length && rungs()[ri].dx) { delete rungs()[ri].dx; renderLadder(); }
     showOutput({ errors, warnings, lines: [`Verifying rung ${ri} of routine '${r}' of program '${g}'...`, ...errors.map(x => x.text), ...warnings.map(x => x.text), `Complete - ${errors.length} error(s), ${warnings.length} warning(s)`] });
     toast(errors.length ? `Rung ${ri}: ${errors.length} error(s)` : `Rung ${ri} verified: no errors`, errors.length ? 'err' : 'ok');
   }
@@ -2673,7 +2908,7 @@ ${progs.map(g => `<Program Name="${x(g.name)}" MainRoutineName="${x(g.main || ''
 <Routines>
 ${g.routines.map(r => `<Routine Name="${x(r.name)}" Type="RLL">
 <RLLContent>
-${r.rungs.map((u, i) => `<Rung Number="${i}" Type="N">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '') ? u.z : 'N'}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
 </RLLContent>
 </Routine>`).join('\n')}
 </Routines>
@@ -2721,7 +2956,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const list = (progs ? kids(progs, 'Program') : []).map(g => {
       const routines = kids(kids(g, 'Routines')[0] || g, 'Routine').filter(r => (r.getAttribute('Type') || 'RLL') === 'RLL').map(r => ({
         name: r.getAttribute('Name'),
-        rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; return o; }),
+        rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; const ty = u.getAttribute('Type'); if (/^[iIrRD]$/.test(ty || '')) o.z = ty; else if (ty === 'e') o.z = 'i'; return o; }),
       }));
       routines.forEach(r => { if (!r.rungs.length) r.rungs = [{ t: '' }]; });
       return { name: g.getAttribute('Name'), main: g.getAttribute('MainRoutineName') || (routines[0] && routines[0].name) || 'MainRoutine', tags: tagsOf(kids(g, 'Tags')[0]), routines: routines.length ? routines : [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
@@ -2944,9 +3179,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
 
   /* ---------- online ---------- */
+  /* Verify clears the dirty marks ('*') of the rungs it finds without errors */
+  function clearDirty(list, v) {
+    const bad = new Set(v.errors.map(e => e.program + '/' + e.routine + '/' + e.rung));
+    allProgs().forEach(g => g.routines.forEach(r => { if (list && !list.includes(r)) return; r.rungs.forEach((x, n) => { if (x.dx && !bad.has(g.name + '/' + r.name + '/' + n)) delete x.dx; }); }));
+  }
   function verifyCmd(routineOnly) {
     reverify();
     const v = routineOnly ? E.verify(S.p, { program: curProg().name, routine: curRoutine().name }) : S.verify;
+    clearDirty(routineOnly ? [curRoutine()] : null, v);
     if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
     S.verifyShown = v; S.outTab = 'err';
     render();
@@ -2963,7 +3204,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      Upload or Download, with what the controller and this device hold */
   function goOnline() {
     if (!reachable()) return;
-    if (ctl.holds(S.p) && ctl.M) { online(); toast(`Online with ${ctl.name}`); return; }
+    if (ctl.M && (ctl.holds(S.p) || (zonesIn(S.p) && (ctl.holds(newLogic(S.p)) || ctl.holds(logicOf(S.p, 'old')))) || (S.ed && S.ed.ctl === ctl))) { online(); toast(`Online with ${ctl.name}`); return; }
     const inCtl = ctl.M ? JSON.parse(ctl.copy) : null;
     const facts = p => { const progs = p.tasks.flatMap(t => t.programs); return `${progs.reduce((n, g) => n + g.routines.length, 0)} routine(s), ${progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0)} rung(s), ${p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0)} tag(s)`; };
     const files = index().filter(x => inCtl && U(x.name) === U(inCtl.controller.name) && x.name !== S.p.controller.name);
@@ -3092,22 +3333,29 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return;
     }
     if (S.ed && S.ed.ctl === ctl && S.ed.tested) { toast('Assemble or untest the edits being tested first.', 'err'); return; }
+    // accepting verifies the edits: their dirty marks go
+    eachRoutine(S.p, r => r.rungs.forEach(x => { delete x.dx; }));
     if (ctl.running) {
+      // the pending zones become accepted ones: i → I (insert zone), r → R (replace zone); the controller still runs the old logic
+      eachRoutine(S.p, r => r.rungs.forEach(x => { if (x.z === 'i') x.z = 'I'; else if (x.z === 'r') x.z = 'R'; }));
       S.ed = { ctl, orig: S.ed && S.ed.ctl === ctl ? S.ed.orig : ctl.copy, base: JSON.stringify(S.p), tested: false };
-      saveProject();
+      S.undo = []; S.redo = [];
+      S.dirty = true; saveProject();
       toast('Edits accepted. The controller still runs the old logic: Test Accepted Edits to run them.', 'ok');
     } else {
-      const r = ctl.edit(JSON.parse(JSON.stringify(S.p)));
+      // in Program the new rungs replace the originals at once
+      const nl = newLogic(S.p), r = ctl.edit(JSON.parse(JSON.stringify(nl)));
       if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits were not accepted.', 'err'); return; }
-      S.ed = null; saveProject();
+      S.p = nl; S.ed = null; S.undo = []; S.redo = [];
+      S.dirty = true; reverify(); saveProject();
       toast('Edits accepted and finalized in the controller.', 'ok');
     }
     live(true); render();
   }
-  /* Test Accepted Edits: the controller runs the new logic; the old one is kept for Untest */
+  /* Test Accepted Edits: the controller runs the new logic (insert zones, not the replace and delete zones); the old one is kept for Untest */
   function testEdits() {
     confirmDlg('Test Accepted Edits', 'The controller will run the edited logic from the next scan. Test the accepted edits?', 'Test', () => {
-      const r = ctl.edit(JSON.parse(S.ed.base));
+      const r = ctl.edit(newLogic(JSON.parse(S.ed.base)));
       if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'The edits could not be tested.', 'err'); return; }
       S.ed.tested = true; live(true); render();
       toast('Testing the edits: the controller runs the new logic.', 'ok');
@@ -3120,22 +3368,42 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     S.ed.tested = false; live(true); render();
     toast('Untested: the controller runs the old logic again.');
   }
-  /* Assemble Accepted Edits: the new logic stays, the old one is dropped */
+  /* Assemble Accepted Edits: insert zones become normal rungs, the replace and delete zones are removed */
   function assembleEdits() {
     dialog({ title: 'Assemble Accepted Edits', body: '<p>Finalize all edits in program?</p><p class="help">The edited logic stays in the controller and the old logic is dropped.</p>', buttons: [{ l: 'No' }, { l: 'Yes', pri: true, run: () => {
-      S.ed = null; saveProject(); live(true); render();
+      S.p = newLogic(S.p); S.ed = null; S.undo = []; S.redo = [];
+      S.sel = null; S.selRung = rungs().length ? 0 : null;
+      changed(); live(true);
       toast('Edits assembled.', 'ok');
     } }] });
   }
   /* Cancel Pending Edits: back to the accepted edits, or to the controller's logic */
   function cancelEdits() {
-    const back = S.ed && S.ed.ctl === ctl && !S.ed.tested ? S.ed.base : ctl.copy;
-    confirmDlg('Cancel Pending Edits', 'Throw away the pending edits?', 'Cancel Edits', () => edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }), true);
+    const back = S.ed && S.ed.ctl === ctl ? S.ed.base : ctl.copy;
+    confirmDlg('Cancel Pending Edits', 'Throw away the pending edits?', 'Cancel Edits', () => edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true), true);
+  }
+  /* Cancel Pending Rung Edits on one rung: its copy (i) goes and its original (r) is a normal rung again */
+  function cancelRungEdit(ri) {
+    const R = rungs(), r = R[ri];
+    if (!r || !/^[ir]$/.test(r.z || '')) { cancelEdits(); return; }
+    edit(() => {
+      const i = r.z === 'i' ? ri : R[ri - 1] && R[ri - 1].z === 'i' ? ri - 1 : -1, o = r.z === 'r' ? ri : R[ri + 1] && R[ri + 1].z === 'r' ? ri + 1 : -1;
+      if (o >= 0) delete R[o].z;
+      if (i >= 0) R.splice(i, 1);
+      S.sel = null; S.selRung = Math.max(0, Math.min(i >= 0 ? i : ri, R.length - 1));
+    }, true);
+  }
+  /* Start Pending Rung Edits: the rung is copied; the copy (i) is edited, the original (r) stays below it, read-only */
+  function startRungEdit(ri) {
+    const r = rungs()[ri];
+    if (!r) return;
+    if (r.z) { toast(`Rung ${ri} is already ${r.z === 'i' ? 'being edited' : 'an edit zone (' + r.z + ')'}.`, 'err'); return; }
+    edit(() => { const o = { t: r.t, z: 'r' }; if (r.c) o.c = r.c; r.z = 'i'; rungs().splice(ri + 1, 0, o); S.sel = null; S.selRung = ri; }, true);
   }
   /* Cancel Accepted Edits: the accepted edits are removed; the project is the controller's again */
   function cancelAccepted() {
     const back = S.ed.orig;
-    confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }); }, true);
+    confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
   function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
@@ -3764,16 +4032,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if (!dg.on && Math.hypot(ev.clientX - dg.x, ev.clientY - dg.y) > 10) {
         dg.on = true;
         dg.g = document.createElement('div');
-        dg.g.className = 'ghost'; dg.g.style.position = 'fixed'; dg.g.style.zIndex = 300;
+        dg.g.className = 'ghost'; dg.g.style.position = 'fixed'; dg.g.style.zIndex = 300; dg.g.style.transform = dg.touch ? 'translate(-50%, -140%)' : 'translate(16px, 12px)';
         dg.g.innerHTML = `${L.icon(dg.mn)}<span>${dg.mn}</span>`;
         document.body.appendChild(dg.g);
+        S.drag = { kind: 'tb' }; renderLadder('nodes');
         try { dg.b.releasePointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
       }
       if (!dg.on) return;
       dg.g.style.left = ev.clientX + 'px'; dg.g.style.top = ev.clientY + 'px';
-      dg.drop = dropAt(ev.clientX, ev.clientY);
+      dg.drop = dropAt(ev.clientX, ev.clientY, 'tb');
       const k = JSON.stringify(dg.drop);
-      if (k !== dg.k) { dg.k = k; renderLadder(dg.drop); }
+      if (k !== dg.k) { dg.k = k; renderLadder(dg.drop || 'nodes'); }
     });
     const end = ev => {
       if (!dg || ev.pointerId !== dg.id) return;
@@ -3781,6 +4050,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       dg = null;
       if (d.g) d.g.remove();
       if (!d.on) { if (ev.type === 'pointerup') insertMn(d.mn); return; }
+      S.drag = null;
       renderLadder();
       if (ev.type === 'pointerup' && d.drop) {
         if (d.mn === 'RUNG') { S.sel = null; S.selRung = d.drop.ri; addRung(); return; }
@@ -3790,12 +4060,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     document.addEventListener('pointerup', end);
     document.addEventListener('pointercancel', end);
   }
-  function dropAt(x, y) {
-    const el = document.elementFromPoint(x, y), t = hit(el);
-    if (!t || t.end || t.ri == null) return null;
-    if (t.leg) return { ri: t.ri, path: t.path, leg: true };
-    if (t.path && !t.br) { const r = el.getBoundingClientRect(); return { ri: t.ri, path: t.path, after: x > r.left + r.width / 2 }; }
-    return { ri: t.ri, end: true };
+  /* the drop point under the pointer: the node beside the instruction half it is on, the free end of a level, else
+     the nearest valid node of the rung under it (drop zones are valid per rung, as in the reference) */
+  function dropAt(x, y, kind) {
+    const el = document.elementFromPoint(x, y), t = hit(el), sv = $('#ladwrap svg'), ns = S.ladNodes || [];
+    if (!t || !sv) return null;
+    const R = sv.getBoundingClientRect(), bare = n => { if (!n) return null; const c = { ...n }; delete c.x; delete c.y; return c; };
+    const near = list => { let b = null, d = 1e9; list.forEach(n => { const q = Math.hypot(R.left + n.x - x, (R.top + n.y - y) * 1.5); if (q < d) { d = q; b = n; } }); return b; };
+    if (kind === 'op') return bare(t.op != null && t.path ? ns.find(n => n.op === t.op && n.ri === t.ri && sameP(n.path, t.path)) : null);
+    if (kind === 'rung') { const rs = ns.filter(n => n.rung != null); let b = null; rs.forEach(n => { if (!b || Math.abs(R.top + n.y - y) < Math.abs(R.top + b.y - y)) b = n; }); return bare(b); }
+    if (t.end || t.ri == null) return null;
+    const mine = ns.filter(n => n.ri === t.ri && n.op == null && n.rung == null);
+    let c = null;
+    if (t.leg) c = mine.find(n => n.leg && sameP(n.path, t.path));
+    else if (t.path && !t.br) { const r = el.getBoundingClientRect(), after = x > r.left + r.width / 2; c = mine.find(n => n.path && !n.leg && n.lvl == null && sameP(n.path, t.path) && !!n.after === after); }
+    return bare(c || near(mine));
   }
 
   /* ---------- events ---------- */

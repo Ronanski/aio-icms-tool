@@ -672,6 +672,9 @@
         const text = String(src && (src.t != null ? src.t : src.text) || '');
         const rung = { n, text, c: (src && src.c) || '', elems: [] };
         R.rungs.push(rung);
+        // an online edit zone that does not run in the new logic (r/R: the original of an edited rung, D: a deleted
+        // rung) is shown but not verified or executed (Studio 5000: "the replace zones and delete zones are not executed")
+        if (src && /^[rRD]$/.test(src.z || '')) { rung.zone = src.z; return; }
         const pr = parseRung(text);
         if (pr.err) { err(n, pr.err); return; }
         if (!pr.elems.length) { err(n, 'Rung has no instructions'); return; }
@@ -696,7 +699,7 @@
 
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

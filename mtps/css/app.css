@@ -77,6 +77,8 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .sbox .fi { width: 11px; height: 11px; border-radius: 2px; background: var(--surface-3); border: 1px solid var(--border-strong); flex: none; }
 .sbox .fi.en { background: var(--amber); border-color: #9a7200; }
 .sbox .fi.dis { background: #3fbf5f; border-color: #1e7f3f; }
+/* forces installed and enabled: the yellow warning triangle with a red border */
+.sbox .ftri { width: 15px; height: 14px; flex: none; }
 .tab .sbox { height: 38px; padding: 0 8px 0 12px; border-radius: var(--r); font-size: 13px; }
 .phone .sbox { height: 34px; padding: 0 6px 0 10px; border-radius: var(--r); font-size: 13px; }
 .leds { display: grid; grid-template-rows: repeat(4, 12px); align-content: center; font-size: 11px; line-height: 12px; }
@@ -354,11 +356,14 @@ svg.lad .rsel { fill: var(--fill-accent); }
 svg.lad .err { fill: var(--danger); font-size: 1.35em; font-weight: 700; }
 svg.lad .errw { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 3 2; fill: none; }
 svg.lad .emk { fill: var(--warn-text); font: 700 1.25em var(--mono); }
-svg.lad .frc { fill: #c76a00; font-size: .9em; font-weight: 700; }
+svg.lad .emk.on { fill: #fff; }
+svg.lad .frc { fill: var(--danger); font-size: .9em; font-weight: 700; }
+svg.lad .dty { fill: var(--text); font-weight: 700; font-size: 1.15em; }
+svg.lad .rgap { stroke: var(--lad-bg); stroke-width: 5; }
+svg.lad .rdash { stroke: var(--lad-online); stroke-width: 2; stroke-dasharray: 4 3; }
 svg.lad .wrap { fill: var(--lad-wire); }
 svg.lad .tap { fill: transparent; cursor: pointer; }
 svg.lad .press { fill: var(--accent); opacity: .16; }
-svg.lad .drop { stroke: var(--accent); stroke-width: 3; }
 .empty { padding: 30px 20px; text-align: center; color: var(--muted); }
 
 /* ---------- Chassis Monitor (spec section 15): a rack of cards, like an emulator's chassis window ---------- */
@@ -844,7 +849,9 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .msgp.open .msgb { height: 170px; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border); }
 .msgb .log { flex: 1; overflow: auto; }
 /* moving an instruction: the nodes it can go to, the lifted instruction */
-svg.lad .node { fill: var(--surface); stroke: var(--muted); stroke-width: 1.2; }
+/* drop points as in the reference (Edit Ladder Elements): white square = a valid drop point, green circle = the active one */
+svg.lad .node { fill: #fff; stroke: var(--text); stroke-width: 1.2; pointer-events: none; }
+svg.lad .dropc { fill: var(--lad-on); stroke: var(--fill-ok); stroke-width: 1.5; pointer-events: none; }
 svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 4 3; }
 /* the app scrolls the ladder itself, so a held instruction can be dragged on a touch screen */
 .ladwrap { touch-action: none; }
