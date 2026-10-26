@@ -242,7 +242,7 @@
       const rungBot = Math.max(y, rungTop + 40);
       y = rungBot;
       if (R.dash) dashes.push([rungTop - 4, rungBot]);
-      const selR = o.selRung === ri;
+      const selR = o.selRung === ri || !!o.selAll;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
       out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
