@@ -8,6 +8,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 - Docs: `HANDOFF.md` trimmed to current status; old history moved verbatim to `docs/HANDOFF-ARCHIVE.md`.
 
+### Changed (MT PLC Studio 0.4.0): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+- **Right-click menus in the Studio 5000 order**, one for each target: "?" (New Tag…), an undefined name
+  (New "name"), a tag name (Edit Properties, Find All, Go To Cross Reference For, Monitor, Trend), a bit or a box
+  instruction, a branch, a branch level, and a rung (Import/Export Rungs, Start/Accept/Cancel Pending Rung Edits,
+  Assemble, Verify Rung). Edit "Bit" is gone.
+- **Edit bar above the routine** for the main operand description, the rung comment and the rung text
+  (✓ accepts, ✕ cancels, Ctrl+Enter). **Go To** dialog. **Add Ladder Element** is a grouped list with a help pane.
+- **Operands are edited on the rung** in a small combo box with the tags of the operand's type (Enter goes to the
+  next operand, Esc cancels); a double-click on an instruction changes its mnemonic and keeps the operands that fit.
+- **Quick Keys are off** by default (Tools > Options > Ladder Editor); a letter starts an operand edit and
+  Alt+Insert opens Add Ladder Element. New shortcuts: Ctrl+I, F2, F4 / Shift+F4, Alt+0, Alt+1, Shift+F10,
+  Home/End, Ctrl+Home/End, Ctrl+Enter. The Errors pane has a Search box with history.
+- **Cross Reference window** as in the Rockwell help: Type, Scope, Name (* wildcard), Show (All, Destructive,
+  Non-Destructive), Refresh; the Logic tab (Element, Container, Routine, Location, Reference, BaseTag,
+  Destructive, Description, sorted by a click on a header, double-click goes there) and the Tag tab (aliases).
+  **Find All** lists its results in a Search Results tab of the Output window.
+- **Branch menu:** Add Branch Level (after the level at the caret), Append New Level, Move Branch Rail.
+- **New Project only declares the controller** (Controller, Name, Revision, Chassis, Slot, Description).
+  Drivers, the emulated controller and I/O modules are set up any time after. File > New Component holds Tag
+  and Module.
+- **Chassis:** one row of 4 or 8 slots, an empty slot as big as a module; an old 7/10/12-slot chassis becomes 8
+  when its modules fit. Each I/O card has an **RTB door** over its terminals that opens on its hinge. Discrete
+  cards show their status indicators in two rows, 0-7 and 8-15.
+- **Logix Emulate:** right-click an empty slot, then Create. The emulated controller has a Revision and a Memory
+  Size (3072 KB by default).
+- **Module tags:** each module makes its `Local:<slot>:C`, `:I` and `:O` tags in Controller Tags (read-only,
+  live online). **Edit Tags** is a grid (Name, Alias For, Base Tag, Data Type, Style, Description, Usage,
+  Constant) with a blank last row for a new tag.
+- **RSLinx Classic window:** menu bar, RSWho (tree, Autobrowse, Refresh) and Configure Drivers (Available Driver
+  Types, Add New with a 15-character name, Configured Drivers with Status, Start, Stop, Delete).
+- Fixed: "Remove module" in a module's menu opened the Module I/O window; the Emulator panel's header buttons
+  were cut off in a narrow side panel.
+
 ### Changed (MT PLC Studio 0.4.0-beta.3): tag addresses, moving instructions, tablet portrait, no project kept in the app (owner)
 - **Projects live in files only.** The app keeps no project inside it any more: it starts on a start page with
   New Project and Open Project (a .mtp or .L5X file on the device's storage), and the files opened lately. Save with
