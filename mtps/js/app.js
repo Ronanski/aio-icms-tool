@@ -63,7 +63,9 @@
     return { ip: x.ip, slot: x.slot, rack: r, m, ctl: m && m.ctl && m.ctl.powered ? m.ctl : null };
   }
   const curPath = () => (S.p ? store.get('path.' + S.p.controller.name, DEFPATH) : DEFPATH);
-  function setPath(p) { store.set('path.' + S.p.controller.name, p); relink(); }
+  function setPath(p) { store.set('path.' + S.p.controller.name, p); rememberPath(p); relink(); }
+  // the paths used last (Who Active, Set Project Path, Download, Upload), newest first: Communications > Select Recent Path
+  function rememberPath(p) { if (!p) return; S.prefs.paths = [p].concat((S.prefs.paths || []).filter(x => x !== p)).slice(0, 8); savePrefs(); }
   /* the controller at the project's path; one that went away (card removed, power off) drops the app offline */
   function relink() {
     const x = S.p ? resolve(curPath()) : null;
@@ -841,6 +843,7 @@
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
+    recentpath: { l: 'Select Recent Path…', i: 'net', run: recentPathDlg, on: () => !S.noProj && (S.prefs.paths || []).length > 0 },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
     ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
     props: { l: 'Properties', i: 'gear', run: propsCmd, on: () => !S.noProj },
@@ -876,7 +879,7 @@
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
-    ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
+    ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'tips', 'about']],
   ];
@@ -3786,6 +3789,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
   function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
+  /* Communications > Select Recent Path (reference: go online using a recent communications path) */
+  function recentPathDlg() {
+    let sel = (S.prefs.paths || []).includes(curPath()) ? curPath() : (S.prefs.paths || [])[0];
+    const rows = () => (S.prefs.paths || []).map(p => `<div class="row${p === sel ? ' on' : ''}" data-rpath="${esc(p)}">${ic('net')}<span class="grow mono ell">${esc(p)}</span>${p === curPath() ? '<span class="sub">project path</span>' : ''}</div>`).join('');
+    const go = () => { setPath(sel); render(); if (S.online) { toast('Go Offline first, then go online at the other path.'); return; } setTimeout(goOnline, 0); };
+    const el = dialog({ title: 'Select Recent Path', size: 'md',
+      body: `<p class="help">The communications paths used last. Pick one to go online there.</p><div class="list" id="rpl">${rows()}</div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Set Project Path', run: () => { setPath(sel); render(); toast(`Project path: ${sel}`); } }, { l: 'Go Online', pri: true, run: go }] });
+    el.querySelector('#rpl').addEventListener('click', ev => {
+      const r = ev.target.closest('[data-rpath]'); if (!r) return;
+      if (r.dataset.rpath === sel && r.dataset.clicked) { closeLayer(); go(); return; }
+      sel = r.dataset.rpath; el.querySelector('#rpl').innerHTML = rows();
+      const n = el.querySelector(`[data-rpath="${CSS.escape(sel)}"]`); if (n) { n.dataset.clicked = '1'; setTimeout(() => { delete n.dataset.clicked; }, 450); }
+    });
+  }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */

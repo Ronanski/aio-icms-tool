@@ -28,8 +28,8 @@ module.exports = async function menus({ browser, page, URL, check }) {
   }
   async function example() { await ev(() => MTPS.App.openProject(MTPS.App.example())); await wait(120); }
   // Go Online through its dialogs (Connected To Go Online > Download > Download), as a user answers them
-  async function online() {
-    await ev(() => MTPS.App.run('online'));
+  async function online(start = true) {
+    if (start) await ev(() => MTPS.App.run('online'));
     for (let k = 0; k < 8 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) {
       await wait(150);
       const b = await page.$('#layer .dlg .btn.pri'); if (b && !(await page.$('#layer .dlg .prog'))) await b.click(); else await wait(500);
@@ -282,4 +282,32 @@ module.exports = async function menus({ browser, page, URL, check }) {
   await clickBtn('Replace All', pq);
   check('phone: Replace All works', await pq.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[0].t.includes('Go_PB')));
   await p4.close();
+
+  console.log('Communications > Select Recent Path (help v37: go online using a recent communications path)');
+  await fresh(); await example();
+  f = await menu('Communications');
+  check('Communications: Who Active, then Select Recent Path… (off while no path was used)', f.findIndex(x => x[0] === 'Select Recent Path…') === f.findIndex(x => x[0] === 'Who Active') + 1 && f.find(x => x[0] === 'Select Recent Path…')[1] === true, f.map(x => x[0]).join('|'));
+  await page.keyboard.press('Escape');
+  await menu('Communications', 'Who Active');
+  await page.waitForFunction(() => document.querySelector('#wa-rows [data-wa]'), null, { timeout: 4000 }).catch(() => {});
+  const was = await page.$$eval('#wa-rows [data-wa]', r => r.map(x => x.dataset.wa));
+  await page.click(`#wa-rows [data-wa="${was[was.length - 1].replace(/\\/g, '\\\\')}"]`); await wait(150);
+  await clickBtn('Set Project Path'); await clickBtn('Close'); await wait(100);
+  const p1 = await ev(() => MTPS.App.state.prefs.paths[0]);
+  check('Set Project Path in Who Active remembers the path', p1 === was[was.length - 1], `${p1} ${was}`);
+  await menu('Communications', 'Select Recent Path…');
+  check('Select Recent Path lists the paths used, newest first', (await dlgTitle()) === 'Select Recent Path' && (await page.$$eval('#rpl [data-rpath]', r => r.map(x => x.dataset.rpath)))[0] === p1 && (await dlgBtns()).join(',') === 'Cancel,Set Project Path,Go Online');
+  await clickBtn('Go Online');
+  check('Go Online goes online at that path', await online(false));
+  await ev(() => MTPS.App.run('offline')); await wait(100);
+  const t4 = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+  const ts = await t4.newPage();
+  await ts.goto(URL); await ts.waitForTimeout(300); await ts.keyboard.press('Escape');
+  await ts.evaluate(p => { MTPS.App.state.prefs.paths = [p, 'VBP-1\\3']; MTPS.App.openProject(MTPS.App.example()); }, p1); await ts.waitForTimeout(150);
+  await ts.tap('[data-allmenu]'); await ts.waitForTimeout(150); await ts.tap('[data-fold="Communications"]'); await ts.waitForTimeout(150);
+  await pick('Select Recent Path…', ts, true);
+  await ts.tap('#rpl [data-rpath="VBP-1\\\\3"]'); await ts.waitForTimeout(100);
+  await clickBtn('Set Project Path', ts);
+  check('tablet (touch): pick a recent path and Set Project Path', (await ts.evaluate(() => document.querySelector('.tstat .pathbar .pv') ? document.querySelector('.tstat .pathbar .pv').textContent : '')) === 'VBP-1\\3');
+  await t4.close();
 };
