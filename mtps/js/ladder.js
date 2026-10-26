@@ -17,6 +17,10 @@
   const widthOf = e => (e.t === 'BR' ? Math.max(1, ...e.legs.map(l => l.reduce((s, x) => s + widthOf(x), 0))) : isBox(e) ? boxCells(e) : 1);
   const same = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // an instruction as text (its mnemonic and operands): the key of the dirty marks (rung.dx)
+  const ikey = e => e.t + '(' + (e.a || []).join(',') + ')';
+  // a drop point (node) as text: two descriptors at the same place are still two nodes
+  const nkey = n => (n ? [n.ri, n.path ? n.path.join('.') : '', n.after ? 'a' : '', n.leg ? 'l' : '', n.end ? 'e' : '', n.lvl != null ? 'v' + n.lvl : '', n.rung != null ? 'r' + n.rung : '', n.op != null ? 'o' + n.op : ''].join('|') : '');
 
   /* ---------- text measuring (cached per string and font) ---------- */
   const ctx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
@@ -58,7 +62,11 @@
   /* ---------- render ----------
      rungs: [{ elems, c (comment), err }]
      o: { W, cell, live, run, sel {ri, path}, selRung, tag(name) → {desc, alias}, descLines, forced(operand) → 0/1/null,
-          drop {ri, path, after}, press {ri, path}, font (px) } */
+          nodeOk(node) → bool (while dragging), drop (the node under the pointer), press {ri, path}, font (px) }
+     A rung can also carry mk (its edit mark), dash (a pending edit: dashed left rail), dx (dirty instructions).
+     Drop points, as in the reference: every valid one is a small white square, the one the pointer is on a green
+     circle. Nodes: {ri, path, after} beside an instruction, {ri, path, leg} the free end of a branch level,
+     {ri, end} the end of the rung, {ri, path, lvl} a level slot of a branch, {rung} between rungs, {ri, path, op} an operand. */
   function render(rungs, o) {
     const S = o.font || 11, LH = Math.round(S * 1.2), CW = o.cell;
     const fB = (S) + 'px Arial';
@@ -66,6 +74,8 @@
     const LM = Math.round(Math.max(30, CW * 0.36)), cols = Math.max(3, Math.floor((o.W - LM - 8) / CW)), RR = LM + cols * CW;
     const fName = `${S + 1}px Arial`, fDesc = `${S}px Arial`, descLines = o.descLines || 2;
     let y = 8, out = '', taps = '';
+    const nodes = [], dashes = [], dk = nkey(o.drop);
+    const node = (n, x, y) => { if (o.nodeOk && o.nodeOk(n)) nodes.push(Object.assign({}, n, { x, y })); };
     const tagOf = a => (o.tag ? o.tag(String(a || '').split(/[.[]/)[0]) : null);
     const head = e => {
       if (!e.a || !e.a.length) return { lines: [], h: 4 };
@@ -111,6 +121,8 @@
     }
     rungs.forEach((R, ri) => {
       const elems = R.elems || [];
+      const dirty = new Set(R.dx || []), seen = {};
+      const lock = !!R.ro;
       let split = elems.length;
       while (split > 0 && isOut(elems[split - 1])) split--;
       const ins = elems.slice(0, split), outs = elems.slice(split);
@@ -125,6 +137,7 @@
         y += cl.length * (LH + 2) + 6;
       }
       const rungTop = y;
+      if (!lock) node({ rung: ri }, LM, rungTop - 6);
       let insDone = 0;
       lines.forEach((line, li) => {
         const last = li === lines.length - 1, items = [], brs = [];
@@ -169,46 +182,46 @@
           if (isSel) out += `<rect class="sel" x="${x1 - 3}" y="${ys[0] - 10}" width="${x2 - x1 + 6}" height="${ys[ys.length - 1] - ys[0] + 20}" rx="3" fill="none"/>`;
           // the branch rails are hit targets of their own, above the instructions (added after them):
           // the left rail selects the branch (add a level), the right rail the whole branch
-          railTaps += `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" x="${x1 - 6}" y="${ys[0] + 6}" width="12" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`
+          railTaps += `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" data-ly="${ys.join(',')}" x="${x1 - 6}" y="${ys[0] + 6}" width="12" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`
             + `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" data-rr="1" x="${x2 - 6}" y="${ys[0] + 6}" width="12" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`;
           // the free wire at the end of each leg is a hit target too: select the level, add an instruction into it
+          if (!lock) { b.rows.forEach((r, k) => node({ ri, path: b.path, lvl: k }, x1, ys[k])); node({ ri, path: b.path, lvl: b.rows.length }, x1, ys[ys.length - 1] + 16); }
           b.rows.forEach((r, k) => {
             const lx = X(b.ends[k]) + (b.ends[k] === b.col ? 10 : 2), lw = x2 - lx - 2, lp = b.path.concat(k);
             if (lw < 12) return;
             if (o.sel && o.sel.leg && o.sel.ri === ri && same(o.sel.path, lp)) out += `<rect class="sel" x="${lx}" y="${ys[k] - 9}" width="${lw}" height="18" rx="3"/>`;
-            if (o.nodes) out += `<rect class="node" x="${lx - 1}" y="${ys[k] - 4}" width="8" height="8"/>`;
-            if (o.drop && o.drop.leg && o.drop.ri === ri && same(o.drop.path, lp)) out += `<line class="drop" x1="${lx + 2}" y1="${ys[k] - 18}" x2="${lx + 2}" y2="${ys[k] + 18}"/>`;
+            if (!lock) node({ ri, path: lp, leg: true }, lx + 3, ys[k]);
             taps += `<rect class="tap" data-ri="${ri}" data-p="${lp.join('.')}" data-leg="1" x="${lx}" y="${ys[k] - 12}" width="${lw}" height="24"/>`;
           });
         });
-        if (o.nodes && last) out += `<rect class="node" x="${X(startOut) - 6}" y="${wy - 4}" width="8" height="8"/>`;
-        if (o.drop && o.drop.ri === ri && o.drop.end && last) {
-          const dx = X(startOut) - 2;
-          out += `<line class="drop" x1="${dx}" y1="${wy - 18}" x2="${dx}" y2="${wy + 18}"/>`;
-        }
+        if (last && !lock) node({ ri, end: true }, X(startOut) - 2, wy);
         all.forEach(it => {
           const e = it.e, x = X(it.col), w = (isBox(e) ? boxCells(e) : 1) * CW, cy = rowY[it.row], cx = x + w / 2, h = head(e);
           const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, it.path);
           if (isSel) out += `<rect class="sel" x="${x + 2.5}" y="${cy - h.h - 6.5}" width="${w - 5}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 26)}" rx="3"/>`;
-          if (o.nodes) out += `<rect class="node" x="${x - 4}" y="${cy - 4}" width="8" height="8"/><rect class="node" x="${x + w - 4}" y="${cy - 4}" width="8" height="8"/>`;
+          if (!lock) { node({ ri, path: it.path, after: false }, x, cy); node({ ri, path: it.path, after: true }, x + w, cy); }
           if (o.lifted && o.lifted.ri === ri && same(o.lifted.path, it.path)) out += `<rect class="lift" x="${x + 1.5}" y="${cy - h.h - 7.5}" width="${w - 3}" height="${h.h + (isBox(e) ? boxH(e) + 6 : 28)}" rx="4"/>`;
           if (o.press && o.press.ri === ri && same(o.press.path, it.path)) out += `<circle class="press" cx="${cx}" cy="${cy}" r="${CW * .4}"/>`;
-          if (o.drop && o.drop.ri === ri && same(o.drop.path, it.path)) {
-            const dx = o.drop.after ? x + w - 2 : x + 2;
-            out += `<line class="drop" x1="${dx}" y1="${cy - 18}" x2="${dx}" y2="${cy + 18}"/>`;
-          }
           h.lines.forEach(([k, t], i) => { out += `<text class="${k}" x="${cx}" y="${cy - h.h + LH - 4 + i * LH}" text-anchor="middle">${esc(t)}</text>`; });
           const on = o.live && !!e.v;
           if (isBox(e)) out += box(e, x, cy, w, on, o, opsOf(e), LH);
           else out += glyph(e, x, cy, w, on, S);
+          // a dirty instruction (changed since the last verify): '*' right of the mnemonic
+          const ik = ikey(e); seen[ik] = (seen[ik] || 0) + 1;
+          if (dirty.has(ik + '#' + (seen[ik] - 1))) {
+            out += isBox(e) ? `<text class="dty" x="${x + 8 + 6 + tw(e.t, `700 ${S + 1}px Arial`) + 3}" y="${cy - 9 + 13}">*</text>` : `<text class="dty" x="${cx + 9}" y="${cy - 7}">*</text>`;
+          }
           const f = o.forced && e.a && e.a[0] ? o.forced(e.a[0]) : null;
-          if (f !== null && f !== undefined) out += `<text class="frc" x="${x + 6}" y="${cy + 22}">▸${f ? 'ON' : 'OFF'}</text>`;
+          if (f !== null && f !== undefined) out += `<text class="frc" x="${cx}" y="${cy + 24}" text-anchor="middle">▸${f ? 'ON' : 'OFF'}</text>`;
           if (e.a && e.a.some(a => a === '?' || a === '')) out += `<rect class="errw" x="${x + 4.5}" y="${cy - 12.5}" width="${w - 9}" height="25" rx="2"/>`;
           // the tag name above a bit instruction is its own hit target (operand 0), as the operand rows of a box are;
           // the instruction's own target is then the glyph below it
           const nameTap = !isBox(e) && e.a && e.a.length && h.h > 8;
-          if (nameTap) taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - 8}" width="${w}" height="30"/>`
-            + `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="0" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h - 2}"/>`;
+          if (nameTap) {
+            taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - 8}" width="${w}" height="30"/>`
+              + `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="0" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h - 2}"/>`;
+            if (!lock) node({ ri, path: it.path, op: 0 }, x + 7, cy - h.h / 2 - 7);
+          }
           else taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 28)}"/>`;
           if (isBox(e)) {
             const bits = (INSTR[e.t] || {}).bits || [], L = x + 8, Rt = x + w - (bits.length ? 30 : 8);
@@ -218,6 +231,7 @@
               if (isSel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
               const d = o.desc && e.a[i] ? o.desc(e.a[i]) : '';
               taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="${i}" x="${L}" y="${yy - LH - 1}" width="${Rt - L}" height="${hgt}">${d ? `<title>${esc(n + ': ' + d)}</title>` : ''}</rect>`;
+              if (!lock) node({ ri, path: it.path, op: i }, L - 2, yy - LH / 2 + 1);
               yy += hgt;
             });
           }
@@ -227,12 +241,14 @@
       });
       const rungBot = Math.max(y, rungTop + 40);
       y = rungBot;
+      if (R.dash) dashes.push([rungTop - 4, rungBot]);
       const selR = o.selRung === ri;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
       out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
-      // online edit mark: e pending, i accepted, I being tested
-      if (R.mk) out += `<text class="emk" x="${LM - 8}" y="${rungTop + (R.err ? 3 : 2) * LH + 16}" text-anchor="end">${R.mk}</text>`;
+      // online edit mark (Studio 5000): i the edited copy (e while it has errors), r its original; I and R once
+      // accepted; D a deleted rung
+      if (R.mk) out += `<text class="emk${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + (R.err ? 3 : 2) * LH + 16}" text-anchor="end">${R.mk}</text>`;
       // the rung itself (empty space) and its number are hit targets too
       // (underneath the instructions and branches, so a branch that starts on the left rail can still be tapped)
       taps = `<rect class="tap rung" data-ri="${ri}" x="${LM}" y="${rungTop - 4}" width="${RR - LM}" height="${rungBot - rungTop + 4}"/>`
@@ -241,11 +257,18 @@
     });
     // the power rails run unbroken from the first rung down to (End), as in the reference editor
     out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="4" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="4" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;
+    // a pending edit (the copy) has a dashed left rail in the online wire colour: it is not executed
+    dashes.forEach(([a, b]) => { out += `<line class="rgap" x1="${LM + .5}" y1="${a}" x2="${LM + .5}" y2="${b}"/><line class="rdash" x1="${LM + .5}" y1="${a}" x2="${LM + .5}" y2="${b}"/>`; });
+    // the drop points while dragging: white squares, the active one a green circle
+    node({ rung: rungs.length }, LM, y - 6);
+    const act = nodes.find(n => nkey(n) === dk);
+    nodes.forEach(n => { if (n !== act && !(act && n.x === act.x && n.y === act.y)) out += `<rect class="node" x="${n.x - 4}" y="${n.y - 4}" width="8" height="8"/>`; });
+    if (act) out += `<circle class="dropc" cx="${act.x}" cy="${act.y}" r="6"/>`;
     taps += `<rect class="tap" data-end="1" x="0" y="${y - 4}" width="${RR}" height="30"/>`;
     y += 44;
     const W = Math.max(o.W, RR + 8);
     const cls = 'lad' + (o.live ? ' online' : '') + (o.run ? ' run' : '');
-    return { svg: `<svg class="${cls}" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}" style="font-size:${S}px">${out}${taps}</svg>`, height: y, cols };
+    return { svg: `<svg class="${cls}" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}" style="font-size:${S}px">${out}${taps}</svg>`, height: y, cols, nodes };
   }
   function glyph(e, x, cy, w, on, S) {
     const cx = x + w / 2, g = 7, k = e.t;
@@ -260,7 +283,8 @@
       if (lb && lb.length === 1) s += `<text class="nm" x="${cx}" y="${cy + 4}" text-anchor="middle">${lb}</text>`;
       else if (lb) s += `<text class="bt" x="${cx}" y="${cy + S + 12}" text-anchor="middle">${lb}</text>`;
     }
-    if (on) s += `<rect class="bar" x="${cx - g - 15}" y="${cy - 1.5}" width="11" height="4"/><rect class="bar" x="${cx + g + 4}" y="${cy - 1.5}" width="11" height="4"/>`;
+    // energized (Run, true): a green bar along almost the whole wire on each side, as in the reference
+    if (on) { const bw = Math.max(11, w / 2 - g - 6); s += `<rect class="bar" x="${cx - g - 3 - bw}" y="${cy - 1.5}" width="${bw}" height="4"/><rect class="bar" x="${cx + g + 3}" y="${cy - 1.5}" width="${bw}" height="4"/>`; }
     return s;
   }
   function box(e, x, cy, w, on, o, ops, LH) {
@@ -281,11 +305,11 @@
     if (bits.length) bits.forEach((b, i) => {
       const by = cy + i * (LH + 4), bOn = o.live && e.bv && e.bv[b];
       s += `<line class="w" x1="${Rt}" y1="${by + .5}" x2="${x + w}" y2="${by + .5}"/><text class="bt" x="${Rt + 14}" y="${by - 3}" text-anchor="middle">${b}</text>`;
-      if (bOn) s += `<rect class="bar" x="${Rt + 3}" y="${by - 1.5}" width="22" height="4"/>`;
+      if (bOn) s += `<rect class="bar" x="${Rt + 2}" y="${by - 1.5}" width="${x + w - Rt - 3}" height="4"/>`;
     });
     else {
       s += `<line class="w" x1="${Rt}" y1="${cy + .5}" x2="${x + w}" y2="${cy + .5}"/>`;
-      if (on) s += `<rect class="bar" x="${x + 1}" y="${cy - 1.5}" width="6" height="4"/><rect class="bar" x="${Rt + 1}" y="${cy - 1.5}" width="6" height="4"/>`;
+      if (on) s += `<rect class="bar" x="${x + 1}" y="${cy - 1.5}" width="${L - x - 2}" height="4"/><rect class="bar" x="${Rt + 1}" y="${cy - 1.5}" width="${x + w - Rt - 2}" height="4"/>`;
     }
     return s;
   }
@@ -308,5 +332,5 @@
     return `<svg viewBox="0 0 30 18" aria-hidden="true">${b}</svg>`;
   }
 
-  MTPS.Ladder = { render, icon, isBox, isOut, widthOf, OPN };
+  MTPS.Ladder = { render, icon, isBox, isOut, widthOf, OPN, ikey, nkey };
 })(typeof window !== 'undefined' ? window : globalThis);
