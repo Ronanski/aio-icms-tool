@@ -993,7 +993,7 @@
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
-    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
+    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who" title="Who Active" aria-label="Who Active">${ic('search')}<span>Who Active</span></button></div>${body}<nav class="pnav">${nav}</nav>`;
   }
   function controllerPage() {
     const on = S.online;

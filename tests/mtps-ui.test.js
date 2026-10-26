@@ -1960,6 +1960,20 @@ function check(name, cond, info = '') {
       await tp.close();
     }
   }
+  console.log('Phone mode strip: Edits Present shows whole at 360-414 px');
+  for (const w of [360, 390, 414]) {
+    const tp = await browser.newPage({ viewport: { width: w, height: 800 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.download(MTPS.App.state.p); MTPS.App.run('online'); });
+    await tp.waitForTimeout(400);
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.run('rstart'); });
+    await tp.waitForTimeout(300);
+    const r = await tp.evaluate(() => { const s = document.querySelector('.strip'); return { fit: s.scrollWidth <= s.clientWidth + 1, boxes: [...s.querySelectorAll('.sbox')].map(b => [b.textContent.trim(), b.scrollWidth <= b.clientWidth + 1]), who: (() => { const b = s.querySelector('.whob').getBoundingClientRect(); return b.right <= innerWidth && b.width >= 38 && b.height >= 34; })() }; });
+    check(`phone ${w} px: the strip fits; Rem Prog, No Forces and Edits Present show whole; Who Active is there`, r.fit && r.boxes.length === 3 && r.boxes.every(b => b[1]) && r.boxes[2][0] === 'Edits Present' && r.who, JSON.stringify(r));
+    if (w === 360) { await tp.tap('.strip .whob'); await tp.waitForTimeout(200); check('phone 360 px: a tap on the Who Active icon opens Who Active', (await tp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '')) === 'Who Active'); }
+    await tp.close();
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
