@@ -310,4 +310,30 @@ module.exports = async function menus({ browser, page, URL, check }) {
   await clickBtn('Set Project Path', ts);
   check('tablet (touch): pick a recent path and Set Project Path', (await ts.evaluate(() => document.querySelector('.tstat .pathbar .pv') ? document.querySelector('.tstat .pathbar .pv').textContent : '')) === 'VBP-1\\3');
   await t4.close();
+
+  console.log('Communications > Go To Faults (help v37: the Major Faults tab of Controller Properties)');
+  await fresh();
+  // rung 2 times all the time, so a negative preset written online is a major fault (Type 4, Code 34)
+  const faulty = () => { const p = MTPS.App.example(); p.tasks[0].programs[0].routines[0].rungs[2].t = 'TON(Run_Timer,5000,0);'; MTPS.App.openProject(p); };
+  await ev(faulty); await wait(120);
+  f = await menu('Communications');
+  check('Go To Faults is listed after Clear Faults, off without a major fault', f.findIndex(x => x[0] === 'Go To Faults') === f.findIndex(x => x[0] === 'Clear Faults') + 1 && f.find(x => x[0] === 'Go To Faults')[1] === true);
+  await page.keyboard.press('Escape');
+  check('online for the next step', await online());
+  await ev(() => { MTPS.App.run('runm'); MTPS.App.ctl.write('Run_Timer.PRE', -5); }); await wait(400);
+  check('the controller faulted', await ev(() => !!MTPS.App.ctl.fault), await ev(() => JSON.stringify(MTPS.App.ctl.fault)));
+  await menu('Communications', 'Go To Faults');
+  check('Go To Faults opens Controller Properties on the Major Faults tab', (await dlgTitle()) === 'Controller Properties - Motor_Demo' && (await page.$eval('#layer [data-dt].on', t => t.textContent)).startsWith('Major Faults') && (await page.$eval('#layer [data-pane="maj"]', p => !p.hidden && p.textContent.includes('Code 34'))));
+  await page.keyboard.press('Escape');
+  const p5 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const pf = await p5.newPage();
+  await pf.goto(URL); await pf.waitForTimeout(300); await pf.keyboard.press('Escape');
+  await pf.evaluate(faulty); await pf.waitForTimeout(150);
+  await pf.evaluate(() => MTPS.App.run('online')); await pf.waitForTimeout(150);
+  for (let k = 0; k < 8 && !(await pf.evaluate(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) { await pf.waitForTimeout(150); const b = await pf.$('#layer .dlg .btn.pri'); if (b && !(await pf.$('#layer .dlg .prog'))) await b.tap(); else await pf.waitForTimeout(500); }
+  await pf.evaluate(() => { MTPS.App.run('runm'); MTPS.App.ctl.write('Run_Timer.PRE', -5); }); await pf.waitForTimeout(400);
+  await pf.tap('[data-go="controller"]'); await pf.waitForTimeout(150);
+  await pf.tap('#ctlpage [data-cmd="gofaults"]'); await pf.waitForTimeout(150);
+  check('phone (touch): Controller > Go To Faults', (await pf.$eval('#layer [data-dt].on', t => t.textContent).catch(() => '')).startsWith('Major Faults'));
+  await p5.close();
 };
