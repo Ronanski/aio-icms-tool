@@ -406,6 +406,23 @@ console.log('Math');
   const zr = one('SUB(A,B,D);', { A: 4, B: 4 });
   check('S:Z on a zero result', zr.read('S:Z') === 1 && zr.read('S:N') === 0 && zr.read('S:V') === 0);
   check('S:N on a negative result', one('SUB(A,B,D);', { A: 1, B: 4 }).read('S:N') === 1);
+  // 1756-RM003 / Studio 5000 help (Math Status Flags, Monitor Status Flags)
+  const sv = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT')], rungs: ['ADD(A,1,D);'] });
+  scans(sv, 3);
+  check('S:V that stays set makes one minor fault, not one per scan (only "from cleared to set")', sv.minors.length === 1 && sv.minors[0].count === 1 && sv.read('S:V') === 1);
+  const mv = run({ tags: [T('A', 'DINT', { value: -5 }), T('D', 'DINT'), T('Z', 'DINT')], rungs: ['SUB(A,A,Z);', 'MVM(A,16#FF,D);'] });
+  mv.scan(10);
+  check('MVM does not change the math status flags (5580): S:Z of the SUB before it stays', mv.read('S:Z') === 1 && mv.read('S:N') === 0 && mv.read('D') === 251);
+  const sa = MTPS.verify(proj({ tags: [T('First', 'BOOL', { alias: 'S:FS' })], rungs: ['XIC(First)NOP();'] }));
+  check('an alias to a status flag is refused: S:FS is a keyword, not a tag', sa.errors.some(e => /status flag keyword/.test(e.text)));
+  {
+    const pj = proj({ tags: [T('N', 'DINT')], rungs: ['NOP();'] });
+    pj.tasks[0].programs.push({ name: 'P2', main: 'R', inhibit: true, tags: [], routines: [{ name: 'R', rungs: [{ t: 'XIC(S:FS)ADD(N,1,N);' }] }] });
+    const c = new MTPS.Controller(); c.download(pj); c.setMode('remrun'); scans(c, 3);
+    check('an inhibited program does not run', c.read('N') === 0);
+    pj.tasks[0].programs[1].inhibit = false; c.edit(pj); scans(c, 3);
+    check('S:FS is set on the first scan of a program after it is uninhibited (once)', c.read('N') === 1);
+  }
   eq('CPT with precedence', one('CPT(D,A+B*2);', { A: 1, B: 3 }).read('D'), 7);
   eq('CPT with ( )', one('CPT(D,(A+B)*2);', { A: 1, B: 3 }).read('D'), 8);
   eq('CPT: / is the divide, integers truncate', one('CPT(D,A/B);', { A: 7, B: 2 }).read('D'), 3);
@@ -559,7 +576,8 @@ console.log('Modules: inhibit, fault, Upload, fault logs');
   check('"Major fault on controller if the connection fails": type 3 code 16', c.fault && c.fault.type === 3 && c.fault.code === 16);
   check('outputs of a faulted card are off', c.ioImage(2).out === 0);
   check('the major fault is logged', c.majors.length === 1 && c.majors[0].code === 16);
-  const m = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT')], rungs: ['ADD(A,1,D);'] });
+  // MOV clears S:V again, so each scan S:V goes from cleared to set: one minor fault per scan
+  const m = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT'), T('E', 'DINT')], rungs: ['ADD(A,1,D);', 'MOV(0,E);'] });
   scans(m, 3);
   check('an overflow is logged as a minor fault, repeats counted', m.minors.length === 1 && m.minors[0].type === 4 && m.minors[0].count === 3);
   m.clearMinors();

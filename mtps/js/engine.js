@@ -287,6 +287,8 @@
     if (!rec) return `Undefined tag '${text}'`;
     if (rec.alias) {
       if (depth > 8) return `Alias '${rec.name}' points back to itself`;
+      // the status flags are keywords, not tags: no alias can point at one (reference help, Monitor Status Flags)
+      if (/^S:/i.test(rec.alias)) return `'${rec.alias}' is a status flag keyword, not a tag: an alias cannot point to it`;
       return ref(M, scope, rec.alias + p.rest, depth + 1);
     }
     let type = rec.type, dim = rec.dim, bit = -1, ptype = null, norm = (scope ? scope.name + '/' : '') + rec.name;
@@ -840,6 +842,8 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       Object.assign(r.model.S, this.S);
+      // a program that was inhibited and is not any more gets S:FS on its next scan
+      r.model.programs.forEach(P => { const o = this.M.programs.find(x => U(x.name) === U(P.name)); if (o && o.inhibit && !P.inhibit) P.fs = true; });
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
@@ -867,7 +871,8 @@
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
-        for (const P of this.M.programs) if (P.main && !P.inhibit) this.routine(P.main);
+        // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
+      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         this.majorFault(e.type, e.code, e.message);
@@ -985,7 +990,8 @@
         }
         case 'CPT': if (p) { DIV0 = false; const v = x[1].get(); this.put(x[0], v, DIV0); } e.v = p; return p;
         case 'MOV': if (p) this.put(x[1], x[0].get()); e.v = p; return p;
-        case 'MVM': if (p) { const m = i32(x[1].get()); this.put(x[2], (i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
+        // MVM does not affect the math status flags on a 5580 controller (reference manual 1756-RM003)
+        case 'MVM': if (p) { const m = i32(x[1].get()); x[2].set((i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
         case 'CLR': if (p) this.put(x[0], 0); e.v = p; return p;
         case 'AND': if (p) this.put(x[2], i32(x[0].get()) & i32(x[1].get())); e.v = p; return p;
         case 'OR': if (p) this.put(x[2], i32(x[0].get()) | i32(x[1].get())); e.v = p; return p;
@@ -1062,10 +1068,11 @@
        S:N negative; S:C carry only from ADD and SUB */
     put(dest, v, ov, carry) {
       dest.set(v);
-      const r = dest.get(), S = this.S;
+      const r = dest.get(), S = this.S, was = S.V;
       S.V = OV || ov ? 1 : 0; S.Z = r === 0 ? 1 : 0; S.N = r < 0 ? 1 : 0;
       if (carry !== undefined) S.C = carry ? 1 : 0;
-      if (S.V) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
+      // each time S:V goes from cleared to set it makes a minor fault (type 4, code 4)
+      if (S.V && !was) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
     }
     arith(op, A, B, D) {
       const a = A.get(), b = B.get(), real = A.type === 'REAL' || B.type === 'REAL' || D.type === 'REAL';

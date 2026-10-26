@@ -1701,6 +1701,27 @@ function check(name, cond, info = '') {
     check('an old Dark setting becomes Classic, Dark', JSON.stringify(await old.evaluate(() => [document.documentElement.dataset.theme, document.documentElement.dataset.mode])) === '["classic","dark"]');
     await old.close();
   }
+  console.log('Tags and modules (Studio 5000: New Tag, Select Data Type, Tag Editor, module tags, status flags)');
+  {
+    const bctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await bctx.route('https://ronanski.github.io/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: '{"version":"0.0.1"}' }));
+    const bp = await bctx.newPage();
+    bp.on('pageerror', e => errors.push(e.message));
+    await bp.goto(URL); await bp.evaluate(() => localStorage.clear()); await bp.reload(); await bp.waitForTimeout(300);
+    await bp.keyboard.press('Escape');
+    const bev = (fn, arg) => bp.evaluate(fn, arg);
+    const bdlg = () => bp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '');
+    const bthrough = async () => { for (let k = 0; k < 5; k++) { await bp.waitForTimeout(150); const b = await bp.$('#layer .dlg .btn.pri'); if (b) await b.click(); else if (await bp.$('#layer .dlg .prog')) await bp.waitForTimeout(800); } };
+    // B5: a status flag is never highlighted on the ladder (the help: "even when a status flag is set, an instruction
+    // that references that flag is not highlighted")
+    await bev(() => { const p = MTPS.App.example(); p.tags.push({ name: 'SF_X', type: 'BOOL', value: 1 }, { name: 'SF_Y', type: 'BOOL' }); p.tasks[0].programs[0].routines[0].rungs = [{ t: 'XIC(SF_X)XIO(S:FS)OTE(SF_Y);' }]; MTPS.App.openProject(p); MTPS.App.run('online'); });
+    await bthrough();
+    await bev(() => MTPS.App.run('runm')); await bp.waitForTimeout(150); { const rb = await bp.$('#layer .dlg .btn.pri'); if (rb) { await rb.click(); await bp.waitForTimeout(250); } }
+    check('B5: online in Run, XIC(SF_X) and OTE(SF_Y) are highlighted but XIO(S:FS) is not (4 bars, not 6)', (await bp.$$eval('#ladwrap svg rect.bar', r => r.length)) === 4, String(await bp.$$eval('#ladwrap svg rect.bar', r => r.length)));
+    await bev(() => MTPS.App.run('offline')); await bp.waitForTimeout(100);
+    /*B-NEXT*/
+    await bctx.close();
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
