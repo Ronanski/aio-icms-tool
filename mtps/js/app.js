@@ -1300,7 +1300,7 @@
         return n;
       };
       const ioRows = [];
-      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
       groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
       const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = typeOf(t) + (t.dim ? '[' + t.dim + ']' : ''); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
       groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
@@ -1593,22 +1593,43 @@
     }, own ? 'The description of the tag: it shows wherever the tag is used.' : 'A description of this operand (an I/O point or a member): it shows above it in the ladder.');
   }
   const fmtVal = v => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toPrecision(7))) : v === undefined ? '' : String(v));
+  /* the rows of the tag editor, as in the reference: at controller scope the module-defined tags of each module in
+     the I/O Configuration come first (Local:<slot>:C, :I and :O, made with the module, read-only, gone with it), then
+     the project's tags. A structure opens to its members, an array to its elements, an integer to its bits. */
+  function tagKids(path, ty, dim) {
+    if (dim) return Array.from({ length: Math.min(dim, 64) }, (_, i) => ({ path: `${path}[${i}]`, ty, dim: 0 }));
+    const mem = membersOf(ty);
+    if (mem) return mem.map(m => ({ path: `${path}.${m.name}`, ty: m.type, dim: m.dim || 0 }));
+    if (NBITS[ty]) return Array.from({ length: NBITS[ty] }, (_, b) => ({ path: `${path}.${b}`, ty: 'BOOL', dim: 0 }));
+    return null;
+  }
+  function moduleTags() {
+    const out = [];
+    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
+    return out;
+  }
+  const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
+  // calls fn(entry, depth, kids, open) for each row shown: the tags, then the members of the open ones
+  function tagWalk(scope, q, fn) {
+    const qq = U(q || ''), hit = (n, d) => !qq || U(n).includes(qq) || U(d || '').includes(qq);
+    const top = (scope ? [] : moduleTags().filter(x => hit(x.path)))
+      .concat(scopeTags(scope).filter(t => hit(t.name, t.desc)).map(t => ({ path: t.name, ty: typeOf(t), dim: t.dim || 0, t })));
+    const go = (e, depth) => {
+      const kids = tagKids(e.path, e.ty, e.dim), open = !!kids && S.tagOpen.has(scope + '|' + e.path);
+      fn(e, depth, kids, open);
+      if (open) kids.forEach(k => go({ ...k, mod: e.mod, member: true }, depth + 1));
+    };
+    top.forEach(e => go(e, 0));
+  }
+  const tyText = e => (e.t ? (e.t.alias || !e.t.type ? e.ty : e.t.type) + (e.t.dim ? '[' + e.t.dim + ']' : '') : e.ty + (e.dim ? '[' + e.dim + ']' : ''));
+  const aggr = e => !!e.dim || !!membersOf(e.ty) || /\[\d+\]$/.test(e.ty);
   function tagRows(mode, scope, q) {
-    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags;
     const rows = [];
-    const qq = U(q || '');
-    list.filter(t => !qq || U(t.name).includes(qq) || U(t.desc || '').includes(qq)).forEach(t => {
-      const ty = typeOf(t), path = t.name, isStruct = !!E.PREDEF[ty] || !!t.dim, open = S.tagOpen.has((scope || '') + '|' + t.name);
-      const val = rowVal(path, ty, scope, t);
-      rows.push(`<div class="row" data-tag="${esc(t.name)}" data-ty="${esc(ty)}"><span class="exp" data-texp="${esc(t.name)}">${isStruct ? ic(open ? 'down' : 'right') : ''}</span><div class="grow"><div class="nm">${esc(t.name)}</div><div class="sub">${esc(t.alias ? '<' + t.alias + '>  ' : '')}${esc(t.desc || '')}</div></div>
-        ${mode === 'mon' && !isStruct ? `<span class="val${val.cls}" data-tv="${esc(path)}">${esc(val.t)}</span>` : ''}<span class="ty">${esc(t.alias ? ty : t.type)}${t.dim ? '[' + t.dim + ']' : ''}</span></div>`);
-      if (isStruct && open) {
-        const mem = t.dim ? Array.from({ length: Math.min(t.dim, 64) }, (_, i) => ({ name: `[${i}]`, type: t.type })) : E.PREDEF[ty];
-        mem.forEach(m => {
-          const p = t.dim ? `${t.name}${m.name}` : `${t.name}.${m.name}`, v = E.PREDEF[m.type] ? { t: '{…}', cls: '' } : rowVal(p, m.type, scope);
-          rows.push(`<div class="row mem" data-tag="${esc(p)}" data-ty="${esc(m.type)}"><div class="grow"><div class="nm">${esc(p)}</div></div>${mode === 'mon' ? `<span class="val${v.cls}" data-tv="${esc(p)}">${esc(v.t)}</span>` : ''}<span class="ty">${esc(m.type)}</span></div>`);
-        });
-      }
+    tagWalk(scope || '', q, (e, depth, kids, open) => {
+      const v = aggr(e) ? null : rowVal(e.path, e.ty, scope, e.t);
+      const sub = e.t ? (e.t.alias ? '<' + e.t.alias + '>  ' : '') + (e.t.desc || '') : !e.member && e.mod ? `[${e.mod.slot}] ${e.mod.name} (module-defined)` : '';
+      rows.push(`<div class="row${depth ? ' mem' : ''}${e.mod ? ' modtag' : ''}" data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}${depth ? ` style="padding-left:${20 + depth * 18}px"` : ''}><span class="exp"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span><div class="grow"><div class="nm">${esc(e.path)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
+        ${mode === 'mon' && v ? `<span class="val${v.cls}" data-tv="${esc(e.path)}">${esc(v.t)}</span>` : ''}<span class="ty">${esc(tyText(e))}</span></div>`);
     });
     return rows.join('') || '<div class="empty">No tags yet. Use + to add one.</div>';
   }
@@ -1640,50 +1661,98 @@
   function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
   /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
      Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
-  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] ? '' : 'Decimal');
+  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
+  // the tag an alias ends at (an alias of an alias goes on to the base tag)
+  const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
+  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'Usage', 'Constant'] };
   function tagTableRows() {
-    const scope = S.tagScope || '', mon = S.tagMode === 'mon';
-    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags, qq = U(S.tagQ || '');
-    const rows = [];
-    list.filter(t => !qq || U(t.name).includes(qq) || U(t.desc || '').includes(qq)).forEach(t => {
-      const ty = typeOf(t), isStruct = !!E.PREDEF[ty] || !!t.dim, open = S.tagOpen.has(scope + '|' + t.name), v = rowVal(t.name, ty, scope, t);
-      const fm = S.online && ctl.M && ty === 'BOOL' ? ctl.forced(t.name, scope || undefined) : null;
-      rows.push(`<tr data-tag="${esc(t.name)}" data-ty="${esc(ty)}"><td class="ex" data-texp="${esc(t.name)}">${isStruct ? ic(open ? 'down' : 'right') : ''}</td><td class="nm">${esc(t.name)}</td>`
-        + (mon ? `<td class="val${v.cls}" data-tv="${esc(t.name)}">${isStruct ? '{…}' : esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(ty)}</td>`
-          : `<td class="mono">${esc(t.alias || '')}</td>`)
-        + `<td class="mono">${esc(t.alias ? ty : t.type)}${t.dim ? '[' + t.dim + ']' : ''}</td>${mon ? '' : `<td>${styleOf(ty)}</td>`}<td class="ds">${esc(t.desc || '')}</td></tr>`);
-      if (isStruct && open) {
-        const mem = t.dim ? Array.from({ length: Math.min(t.dim, 64) }, (_, i) => ({ name: `[${i}]`, type: t.type })) : E.PREDEF[ty];
-        mem.forEach(m => {
-          const p = t.dim ? `${t.name}${m.name}` : `${t.name}.${m.name}`, mv = E.PREDEF[m.type] ? { t: '{…}', cls: '' } : rowVal(p, m.type, scope);
-          rows.push(`<tr class="mem" data-tag="${esc(p)}" data-ty="${esc(m.type)}"><td></td><td class="nm">${esc(p)}</td>${mon ? `<td class="val${mv.cls}" data-tv="${esc(p)}">${esc(mv.t)}</td><td></td><td>${styleOf(m.type)}</td>` : '<td></td>'}<td class="mono">${esc(m.type)}</td>${mon ? '' : `<td>${styleOf(m.type)}</td>`}<td></td></tr>`);
-        });
+    const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
+    tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
+      const t = e.t && !e.member ? e.t : null, ag = aggr(e);
+      const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : ''].filter(Boolean).join(' ');
+      const head = `<tr${cls ? ` class="${cls}"` : ''} data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}><td class="ex"></td>`
+        + `<td class="nm" style="padding-left:${4 + depth * 16}px"><span class="tx"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span>${esc(e.path)}</td>`;
+      if (mon) {
+        const v = ag ? { t: '{…}', cls: '' } : rowVal(e.path, e.ty, scope, t);
+        const fm = S.online && ctl.M && e.ty === 'BOOL' ? ctl.forced(e.path, scope || undefined) : null;
+        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
+        return;
       }
+      const base = !!t && !t.alias;
+      rows.push(head + `<td class="mono">${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
+        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td>${styleOf(e.ty)}</td>`
+        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
+        + `<td class="ck">${depth ? '' : `<input type="checkbox" data-tconst="${esc(e.path)}"${t && t.constant ? ' checked' : ''}${base ? '' : ' disabled'} aria-label="Constant">`}</td></tr>`);
     });
-    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td></td><td colspan="5">${ic('plus')} Click to add a new tag</td></tr>`);
-    return rows.join('') || '<tr><td colspan="6" class="empty">No tags.</td></tr>';
+    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="7" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
+    return rows.join('') || `<tr><td colspan="${TCOLS.mon.length + 1}" class="empty">No tags.</td></tr>`;
   }
   function tagWsHTML() {
     const sc = S.tagScope || '', mon = S.tagMode === 'mon';
     return `<div class="tagws" id="tagpage"><div class="tagbar"><label for="tscope">Scope:</label><select class="inp" id="tscope"><option value="">${esc(S.p.controller.name)} (controller)</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>${esc(g.name)} (program)</option>`).join('')}</select>
         <input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
-      <div class="tagtbl"><table><thead><tr><th></th><th>Name</th>${mon ? '<th>Value</th><th>Force Mask</th><th>Style</th>' : '<th>Alias For</th>'}<th>Data Type</th>${mon ? '' : '<th>Style</th>'}<th>Description</th></tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
-      <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it.'}</span></div></div>`;
+      <div class="tagtbl"><table><thead><tr><th></th>${TCOLS[mon ? 'mon' : 'edit'].map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
+      <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it. Type a name in the last row to add one.'}</span></div></div>`;
   }
-  function tagClick(row) {
+  /* a click on a row of the tag editor: Edit Tags opens Tag Properties (or edits the Data Type / Description cell
+     in place); Monitor Tags toggles or writes the value online, or the start value offline. The module-defined
+     tags cannot be edited or deleted: they come and go with their module. */
+  function tagClick(row, cell) {
     const name = row.dataset.tag, ty = row.dataset.ty, scope = S.tagScope || '';
-    const list = scope ? allProgs().find(g => g.name === scope).tags : S.p.tags;
+    const list = scopeTags(scope);
     const t = list.find(x => x.name === name);
-    if (S.tagMode === 'edit') { if (t) newTag({ tag: t, list }); return; }
-    if (E.PREDEF[ty] || (t && t.dim)) return;
+    const slot = row.dataset.mod ? (/^Local:(\d+)/.exec(name) || [])[1] : null;
+    if (S.tagMode === 'edit') {
+      if (t && cell) { tagCellEdit(cell, t, list); return; }
+      if (t) { newTag({ tag: t, list }); return; }
+      if (slot != null) toast(`${name.split(/[.[]/)[0]} is a module-defined tag: it comes with the module in slot ${slot}. Change the module in the I/O Configuration.`);
+      return;
+    }
+    if (membersOf(ty) || /\[\d+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
       if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
       prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined)) return 'This tag cannot be written (an input or read-only).'; live(true); });
       return;
     }
+    if (slot != null) { toast('A module-defined tag has no start value: its values come from the module when online.'); return; }
     if (!t || t.alias) { toast('Start values can be set for base tags only.'); return; }
     if (ty === 'BOOL') { edit(() => { t.value = t.value ? 0 : 1; }); refreshTags(); return; }
     prompt1('Start value', name, fmtVal(t.value || 0), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; edit(() => { t.value = n.v; }); });
+  }
+  // Edit Tags: the Data Type or Description cell of a tag, edited in place (Enter or another cell keeps it, Esc does not)
+  function tagCellEdit(td, t, list) {
+    if (td.querySelector('input, select')) return;
+    const k = td.dataset.tcell, types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
+    td.innerHTML = k === 'type' ? `<select class="cin" aria-label="Data Type">${types.map(x => `<option${x === (t.type || 'BOOL') ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
+    const f = td.firstChild;
+    let done = false;
+    const commit = keep => {
+      if (done) return; done = true;
+      const v = f.value.trim(), was = k === 'type' ? t.type || 'BOOL' : t.desc || '';
+      if (!keep || v === was) { refreshTags(); return; }
+      edit(() => { const n = { ...t }; if (k === 'type') { n.type = v; delete n.value; } else if (v) n.desc = v; else delete n.desc; list[list.indexOf(t)] = n; });
+    };
+    f.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(true); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commit(false); } });
+    f.addEventListener('blur', () => commit(true));
+    if (k === 'type') f.addEventListener('change', () => commit(true));
+    f.focus(); if (f.select) f.select();
+  }
+  // Edit Tags: the blank row at the end (the pencil): a name typed there makes a DINT tag in this scope
+  function newTagInline(inp) {
+    const name = inp.value.trim(), list = scopeTags(S.tagScope || '');
+    if (!name) return;
+    if (!E.validName(name)) { toast('Tag names: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.', 'err'); return; }
+    if (list.some(t => U(t.name) === U(name))) { toast(`A tag named ${name} already exists in this scope.`, 'err'); return; }
+    inp.value = '';
+    if (!edit(() => { list.push({ name, type: 'DINT' }); })) return;
+    S.tagJust = name;
+    toast(`Tag ${name} created (DINT)`);
+    setTimeout(() => { const i = $('#tnew'); if (i) i.focus(); }, 0);
+  }
+  function toggleConst(box) {
+    const list = scopeTags(S.tagScope || ''), t = list.find(x => x.name === box.dataset.tconst);
+    if (!t || t.alias) return;
+    edit(() => { const n = { ...t }; if (box.checked) n.constant = true; else delete n.constant; list[list.indexOf(t)] = n; });
   }
 
   /* ---------- dialogs: rung text, comment, find, go to, cross reference, help ---------- */
@@ -2094,7 +2163,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(name)) { el.querySelector('#me').textContent = 'Use letters, digits and _.'; return false; }
         const m = { slot, type, name };
         edit(() => { S.p.rack.modules.push(m); });
-        toast(`Module ${type} added in slot ${slot}: its tags are Local:${slot}:I / O`);
+        toast(`Module ${type} added in slot ${slot}: its tags are ${['C', 'I', 'O'].filter(k => (E.MODULES[type] || {})[k]).map(k => `Local:${slot}:${k}`).join(', ')}`);
       } }] });
   }
   function deleteModule(slot) {
@@ -2128,7 +2197,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
       <div class="frow"><label>Slot</label><select class="inp" id="mp-s"${dis}>${slots.map(s => `<option${s === slot ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
-      <div class="frow"><label>Tags</label><span class="mono">${['I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
+      <div class="frow"><label>Tags</label><span class="mono">${['C', 'I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
     const conn = `<div class="frow"><label>RPI (ms)</label><input class="inp" id="mp-r" type="number" min="2" max="750" value="${m.rpi || 20}"${dis}></div>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
@@ -3147,8 +3216,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-tabx]'))) { closeTab(el.dataset.tabx); return; }
       if ((el = t.closest('[data-tabk]'))) { openTab(el.dataset.tabk); return; }
       if ((el = t.closest('[data-texp]'))) { const k = (S.tagScope || '') + '|' + el.dataset.texp; if (S.tagOpen.has(k)) S.tagOpen.delete(k); else S.tagOpen.add(k); refreshTags(); return; }
-      if ((el = t.closest('#tagrows [data-newrow]'))) { newTag({}); return; }
-      if ((el = t.closest('#tagrows [data-tag]'))) { tagClick(el); return; }
+      if ((el = t.closest('#tagrows [data-tconst]'))) { toggleConst(el); return; }
+      if (t.closest('#tagrows [data-newrow]')) return;
+      if ((el = t.closest('#tagrows [data-tag]'))) { tagClick(el, t.closest('[data-tcell]')); return; }
     });
     // the tag editor (also inside a dialog in #layer)
     document.addEventListener('change', ev => {
@@ -3202,6 +3272,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       ev.preventDefault();
     });
     document.addEventListener('keydown', onKey);
+    // the blank row of Edit Tags: Enter (or leaving the cell) makes the tag, Esc clears it
+    document.addEventListener('keydown', ev => { if (ev.target.id !== 'tnew') return; if (ev.key === 'Enter') { ev.preventDefault(); newTagInline(ev.target); } else if (ev.key === 'Escape') ev.target.value = ''; });
+    document.addEventListener('focusout', ev => { if (ev.target.id === 'tnew' && ev.target.value.trim() && ev.target.isConnected) newTagInline(ev.target); });
     addEventListener('resize', () => { const lay = pickLayout(); if (lay !== S.layout) render(); else if (S.layout === 'tablet') render(); });
     addEventListener('beforeunload', ev => { if (S.dirty && !window.mtpsFS && !window.Capacitor) { ev.preventDefault(); ev.returnValue = ''; } });
     document.addEventListener('visibilitychange', () => { if (document.hidden) saveProject(); });

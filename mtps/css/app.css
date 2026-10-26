@@ -628,14 +628,30 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl td.val { font-family: var(--mono); cursor: pointer; text-align: right; min-width: 70px; }
 .tagtbl td.val.on { color: var(--ok); font-weight: 700; }
 .tagtbl td.val.f { box-shadow: inset 0 0 0 2px var(--amber); }
-.tagtbl td.ds { color: var(--muted); white-space: normal; min-width: 160px; }
-.tagtbl tr.newrow td { color: var(--accent-text); cursor: pointer; font-style: italic; }
-.tagtbl tr.newrow svg { width: 12px; height: 12px; vertical-align: -2px; }
+.tagtbl td.ds { color: var(--muted); white-space: normal; min-width: 130px; }
+.tagtbl td.nm .tx { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 2px; vertical-align: -3px; color: var(--muted); }
+.tagtbl td.nm .tx[data-texp] { cursor: pointer; }
+.tagtbl td.nm .tx svg { width: 12px; height: 12px; }
+.tagtbl tr.modtag td.nm { color: var(--text); }
+.tagtbl tr.modtag td { background: var(--surface-2); }
+.tagtbl tr.modtag:hover td { background: var(--accent-soft); }
+.tagtbl tr.just td { background: var(--accent-soft); }
+.tagtbl td.ced { cursor: text; }
+.tagtbl td.ck { text-align: center; width: 64px; }
+.tagtbl .cin { width: 100%; min-width: 90px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-sm); padding: 0 4px; height: 20px; }
+.tagtbl tr.newrow td { background: var(--surface); }
+.tagtbl tr.newrow td.ex { color: var(--warn); }
+.tagtbl tr.newrow td.ex svg { width: 13px; height: 13px; }
+.tagtbl tr.newrow td.help { color: var(--muted); white-space: normal; }
+.tagtbl .nrin { width: 100%; min-width: 150px; font: inherit; font-weight: 400; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: var(--r-sm); padding: 0 4px; height: 20px; outline: none; }
+.tagtbl .nrin:focus { border-color: var(--accent); background: var(--surface); }
+.tagtbl .lnk { font: inherit; color: var(--accent-text); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.tab .tagtbl .nrin, .tab .tagtbl .cin { height: 30px; }
 .tab .tagtbl td, .phone .tagtbl td { height: 36px; }
 .tagtabs { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface-2); flex: none; }
-.tagtabs > span[data-tmode] { padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }
+.tagtabs > span[data-tmode] { white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }
 .tagtabs > span.on { background: var(--surface); font-weight: 600; }
-.tagtabs .help { margin: 0; }
+.tagtabs .help { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- I/O modules: a terminal block of screw terminals; the Module I/O window; chassis rows ---------- */
 .mterm { background: linear-gradient(180deg, #2b3038, #23272e); border-top: 2px solid #11151a; padding: 4px 3px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 3px; }
