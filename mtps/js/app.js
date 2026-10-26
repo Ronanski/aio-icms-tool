@@ -912,7 +912,7 @@
     return `<div class="dmenu">${MENUS.map(([n]) => `<span data-menu="${n}">${n}</span>`).join('')}</div>
       <div class="dtb">${tbtn('new')}${tbtn('open')}${tbtn('save')}<span class="vsep"></span>${tbtn('cut')}${tbtn('copy')}${tbtn('paste')}<span class="vsep"></span>${tbtn('undo')}${tbtn('redo')}
         <span class="vsep"></span>${tbtn('find')}${tbtn('xref')}<span class="vsep"></span>${tbtn('verifyc')}${tbtn('verifyr')}<span class="vsep"></span>${tbtn('tagsmon')}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
-        <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span></span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
+        <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span>${commHTML(true)}</span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
@@ -932,7 +932,7 @@
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
         <span class="vsep"></span><button class="btn" data-cmd="rswho" title="RSLinx Classic: RSWho and Configure Drivers">${ic('net')}RSLinx</button><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
-        ${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
+        ${commHTML(land)}${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
@@ -976,7 +976,7 @@
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
-    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span><button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
+    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
   }
   function controllerPage() {
     const on = S.online;
@@ -2137,6 +2137,20 @@
     S.tagMode = mode || 'mon'; if (scope !== undefined) S.tagScope = scope;
     S.view = 'tags'; S.drawer = false; render();
   }
+  /* Monitor Tags while values change: only the Value (and Force Mask) cells are written, the rows stay */
+  function liveTagValues() {
+    const r = $('#tagrows'); if (!r) return;
+    const scope = S.tagScope || '', byName = new Map(scopeTags(scope).map(t => [t.name, t]));
+    r.querySelectorAll('[data-tv]').forEach(c => {
+      if (c.children.length) return; // a value being typed
+      const row = c.closest('[data-tag]'), path = c.dataset.tv, ty = row ? row.dataset.ty : '';
+      const v = rowVal(path, ty, scope, row && !row.classList.contains('mem') ? byName.get(path) : null), cls = 'val' + v.cls;
+      if (c.className !== cls) c.className = cls;
+      if (c.textContent !== v.t) c.textContent = v.t;
+      const fc = c.tagName === 'TD' ? c.nextElementSibling : null;
+      if (fc) { const fm = S.online && ctl.M && ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null, ft = fm === 1 ? '1' : fm === 0 ? '0' : ''; if (fc.textContent !== ft) fc.textContent = ft; }
+    });
+  }
   function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
   /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
      Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
@@ -2537,8 +2551,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>
         <div class="grp">Ladder Editor</div>
         <label class="ockb"><input type="checkbox" id="oqk"${P.quickKeys ? ' checked' : ''}> Enable Quick Keys</label>
-        <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.layout = el.querySelector('#ol').value; P.theme = el.querySelector('#ot').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
+        <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>
+        <div class="frow"><label>Communications</label><label class="rlck"><input type="checkbox" id="ofc"${P.fastComm ? ' checked' : ''}>Fast communications (no connect, browse or transfer delays)</label></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.fastComm = el.querySelector('#ofc').checked; P.layout = el.querySelector('#ol').value; P.theme = el.querySelector('#ot').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
   }
 
   /* ---------- projects: new, open, save as, import, export ---------- */
@@ -2629,10 +2644,20 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     return { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
   }
   const rlFind = (n, k) => { if (n.k === k) return n; for (const c of n.kids) { const f = rlFind(c, k); if (f) return f; } return null; };
-  function rlTreeHTML(root) {
+  const rlCount = n => 1 + n.kids.reduce((s, c) => s + rlCount(c), 0);
+  /* lim: how many nodes the browse has found so far (in tree order); a node whose nodes are not all found yet shows
+     that it is still browsing */
+  function rlTreeHTML(root, lim = Infinity) {
+    let left = lim;
     const row = (n, d) => {
-      const open = !rlS.shut.has(n.k), has = n.kids.length > 0;
-      return `<div class="nd${n.k === rlS.sel ? ' on' : ''}${n.dim ? ' dim' : ''}" data-rln="${esc(n.k)}" style="padding-left:${6 + d * 16}px"><span class="tw"${has ? ` data-rltw="${esc(n.k)}"` : ''}>${has ? ic(open ? 'down' : 'right') : ''}</span>${ic(n.i, 'i ti')}<span class="ell">${esc(n.l)}${n.dim ? ' · off' : ''}</span></div>${has && open ? n.kids.map(c => row(c, d + 1)).join('') : ''}`;
+      if (left <= 0) return '';
+      left--;
+      const open = !rlS.shut.has(n.k), has = n.kids.length > 0, before = left;
+      let kids = '';
+      if (has && open) kids = n.kids.map(c => row(c, d + 1)).join('');
+      else if (has) left -= Math.min(left, rlCount(n) - 1);
+      const busy = d > 0 && has && before - left < rlCount(n) - 1;
+      return `<div class="nd${n.k === rlS.sel ? ' on' : ''}${n.dim ? ' dim' : ''}" data-rln="${esc(n.k)}" style="padding-left:${6 + d * 16}px"><span class="tw"${has ? ` data-rltw="${esc(n.k)}"` : ''}>${has ? ic(open ? 'down' : 'right') : ''}</span>${ic(n.i, 'i ti')}<span class="ell">${esc(n.l)}${n.dim ? ' · off' : ''}</span>${busy ? '<span class="browsing"><i class="spin"></i>Browsing…</span>' : ''}</div>${kids}`;
     };
     return row(root, 0) + (root.kids.length ? '' : '<div class="nd dim" style="padding-left:38px">No driver is running: Communications &gt; Configure Drivers…</div>');
   }
@@ -2664,8 +2689,11 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rslinx(view) {
     rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null;
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
-    let treeKey = '';
-    const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => clearInterval(timer) });
+    let treeKey = '', lim = Infinity, btimer = 0;
+    const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
+    const quit = () => { clearInterval(timer); stopBrowse(); };
+    const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
+    const bstat = root => (lim < rlCount(root) ? 'Browsing - node found' : rlS.auto ? 'Browsing - done' : 'Not browsing');
     const box = el.querySelector('#rl');
     const draw = () => {
       const root = rlTree();
@@ -2674,8 +2702,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
       box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
         <div class="rltb"><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
-        <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell">${rlS.auto ? 'Browsing - node found' : 'Not browsing'}</span></div>
-          <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
+        <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
+          <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
         <div class="rlst"><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
         ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}
         ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}><span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
@@ -2686,11 +2714,41 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       }
       if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
     };
-    // Autobrowse: the tree follows the emulator (controllers turned on or off, cards added) while the box is ticked
+    // a browse step redraws only the tree, its pane and the status (the scroll position and the menus stay)
+    const drawTree = () => {
+      const t = box.querySelector('#rltree'), pn = box.querySelector('#rlpane'), bs = box.querySelector('#rlbst');
+      if (!t || rlS.menu || rlS.modal) { draw(); return; }
+      const root = rlTree();
+      if (!rlFind(root, rlS.sel)) rlS.sel = 'ws';
+      treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
+      const h = rlTreeHTML(root, lim), ph = rlPaneHTML(root), st = bstat(root);
+      if (t.innerHTML !== h) t.innerHTML = h;
+      if (pn.dataset.h !== ph) { pn.innerHTML = ph; pn.dataset.h = ph; }
+      if (bs.textContent !== st) bs.textContent = st;
+    };
+    // Browse: the nodes come in one by one in tree order; a device (a controller or a card) takes 150-400 ms to answer
+    const order = n => [n].concat(...n.kids.map(order));
+    const step = () => {
+      btimer = 0;
+      if (!el.isConnected) { busyComm(-1); return; }
+      const all = order(rlTree());
+      lim++;
+      if (lim >= all.length) { lim = Infinity; busyComm(-1); drawTree(); return; }
+      drawTree();
+      btimer = setTimeout(step, all[lim] && all[lim].m ? jitter(150, 400) : jitter(80, 160));
+    };
+    const browse = () => {
+      stopBrowse();
+      if (fastComm()) { lim = Infinity; drawTree(); return; }
+      lim = 2; busyComm(1); drawTree();
+      btimer = setTimeout(step, jitter(150, 300));
+    };
+    // Autobrowse: the tree follows the emulator (controllers turned on or off, cards added) while the box is ticked,
+    // quietly: only a change redraws it, and it is not browsed again
     const timer = setInterval(() => {
-      if (!el.isConnected) { clearInterval(timer); return; }
-      if (!rlS.auto || rlS.menu || rlS.modal) return;
-      if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) draw();
+      if (!el.isConnected) { quit(); return; }
+      if (!rlS.auto || rlS.menu || rlS.modal || lim !== Infinity) return;
+      if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
     }, 1000);
     const changed = () => { saveDrivers(); relink(); render(); };
     const addOk = () => {
@@ -2714,7 +2772,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const t = ev.target;
       let x;
       if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
-      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { clearInterval(timer); closeLayer(); return; } rlS.view = a; draw(); return; }
+      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { quit(); closeLayer(); return; } rlS.view = a; draw(); return; }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if (rlS.modal) return;
@@ -2722,7 +2780,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
       if ((x = t.closest('[data-rln]'))) { rlS.sel = x.dataset.rln; rlS.shut.delete(rlS.sel); draw(); return; }
       if ((x = t.closest('[data-rlk]'))) { rlS.sel = x.dataset.rlk; rlS.shut.delete(rlS.sel); draw(); return; }
-      if (t.closest('[data-rlref]')) { draw(); toast('RSWho refreshed.'); return; }
+      if (t.closest('[data-rlref]')) { browse(); return; }
       if (t.closest('[data-rlclose]')) { rlS.view = 'rswho'; draw(); return; }
       if ((x = t.closest('[data-rlrow]'))) { rlS.dsel = +x.dataset.rlrow; draw(); return; }
       if (t.closest('[data-rladd]')) {
@@ -2742,10 +2800,10 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
     layerKey = ev => {
-      if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { clearInterval(timer); closeLayer(); } }
+      if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
       if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
     };
-    draw();
+    draw(); browse();
     return el;
   }
 
@@ -3198,12 +3256,12 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     S.online = true;
     // the I/O panel holds the simulated field devices: show it when going online
     if (!S.prefs.emu && S.layout !== 'phone') { S.prefs.emu = true; savePrefs(); }
-    render(); live(true);
+    render(); live(true); commLed();
   }
   /* Go Online: the same project goes online; otherwise "Connected To Go Online" (as in the reference): Select File,
      Upload or Download, with what the controller and this device hold */
-  function goOnline() {
-    if (!reachable()) return;
+  function goOnline() { connect(goOnline2); }
+  function goOnline2() {
     if (ctl.M && (ctl.holds(S.p) || (zonesIn(S.p) && (ctl.holds(newLogic(S.p)) || ctl.holds(logicOf(S.p, 'old')))) || (S.ed && S.ed.ctl === ctl))) { online(); toast(`Online with ${ctl.name}`); return; }
     const inCtl = ctl.M ? JSON.parse(ctl.copy) : null;
     const facts = p => { const progs = p.tasks.flatMap(t => t.programs); return `${progs.reduce((n, g) => n + g.routines.length, 0)} routine(s), ${progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0)} rung(s), ${p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0)} tag(s)`; };
@@ -3213,7 +3271,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         <div class="grp" style="background:none;padding-left:0">Controller</div>${kv('Path', esc(curPath()))}${kv('Name', inCtl ? esc(inCtl.controller.name) : '(none)')}${kv('Mode', MODE())}${inCtl ? kv('Contents', facts(inCtl)) : ''}
         <div class="grp" style="background:none;padding-left:0">Offline project</div>${kv('Name', esc(S.p.controller.name))}${kv('Contents', facts(S.p))}
         <p class="help"><b>Select File</b> opens another project on this device that matches the controller. <b>Upload</b> copies the controller's project to this device. <b>Download</b> replaces the controller's project with the open one.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
+      buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
     void files;
   }
   /* Select File: open a saved project; when it matches the controller, go online with it */
@@ -3226,12 +3284,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   /* Upload: the controller's project, with its tag values, goes into a project file on this device (a new one, or
      one that is replaced), then online */
-  function upload() {
-    if (!reachable()) return;
+  function upload() { connect(upload2, 'Upload'); }
+  function upload2() {
     if (!ctl.M) { toast('The controller is empty: nothing to upload.', 'err'); return; }
     const p = ctl.upload();
     confirmDlg('Upload', `Upload <b>${esc(p.controller.name)}</b> from <span class="mono">${esc(curPath())}</span>? It opens here, with the controller's tag values; then pick where to save its file.`, 'Upload', () => {
-      setTimeout(() => showProgress('Uploading', `Uploading from ${curPath()}…`, () => {
+      const x = xferSteps(p, 'Uploading'), from = ctl;
+      setTimeout(() => transfer({ title: 'Uploading', kind: 'upload', ms: x.ms, sub: `From ${curPath()}`, steps: x.st, doneText: 'Upload complete',
+        cancelled: () => { linked = null; toast('Upload cancelled. Nothing was opened.'); }, done: () => {
+        if (ctl !== from) { toast('The controller stopped answering: the upload failed.', 'err'); return; }
         const path = curPath();
         S.ed = null;
         openProject(p, true);
@@ -3240,15 +3301,91 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         online();
         toast(`Uploaded ${p.controller.name}`, 'ok');
         setTimeout(saveFileAs, 300);
-      }), 0);
+      } }), 0);
     });
   }
-  /* the transfer dialog of Download and Upload */
-  function showProgress(title, text, done) {
-    const el = dialog({ title, modal: true, body: `<p>${esc(text)}</p><div class="prog"><i></i></div>` });
-    const bar = el.querySelector('.prog i');
-    requestAnimationFrame(() => { bar.style.width = '100%'; });
-    setTimeout(() => { closeLayer(); done(); }, 650);
+  /* ---------- the feel of a real connection (RSLinx browse, Go Online, Download, Upload) ----------
+     The steps wait on setTimeout, never in a loop, so the screen keeps taking input. fastComm (Options, or
+     ?fastcomm=1 in the address) skips the waits: the tests use it. */
+  const fastComm = () => !!S.prefs.fastComm || /[?&]fastcomm=1(&|$)/.test(location.search);
+  const jitter = (a, b) => Math.round(a + Math.random() * (b - a));
+  let commBusy = 0, linked = null;
+  /* the COMM indicator: blinks fast while data moves, slowly while online, dark offline */
+  const commCls = () => (commBusy ? ' busy' : S.online ? ' on' : '');
+  const commHTML = txt => `<span class="comm" title="Communications activity"><i class="commled${commCls()}"></i>${txt ? '<b>COMM</b>' : ''}</span>`;
+  function commLed() { const c = 'commled' + commCls(); document.querySelectorAll('.commled').forEach(e => { if (e.className !== c) e.className = c; }); }
+  const busyComm = d => { commBusy = Math.max(0, commBusy + d); commLed(); };
+  /* the size of the project, for the transfer time and its steps */
+  function projSize(p) {
+    const progs = p.tasks.flatMap(t => t.programs);
+    return { progs, tags: p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0), rungs: progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0) };
+  }
+  /* the transfer steps of a whole project, as the reference names them while it downloads or uploads */
+  function xferSteps(p, verb) {
+    const z = projSize(p), st = [{ t: `${verb}…`, w: 2 }, { t: `${verb} tags (${z.tags})…`, w: 2 + z.tags / 10 }];
+    z.progs.forEach(g => {
+      st.push({ t: `${verb} program ${g.name}…`, w: 1 });
+      g.routines.forEach(r => st.push({ t: `${verb} routine ${g.name} - ${r.name} (${r.rungs.length} rung${r.rungs.length === 1 ? '' : 's'})…`, w: 1 + r.rungs.length / 8 }));
+    });
+    return { st, ms: Math.min(3000, Math.max(1500, 1400 + z.rungs * 6 + z.tags * 3)) };
+  }
+  /* the transfer dialog of Download, Upload and Go Online: a determinate bar through named steps, with Cancel.
+     A step with run() runs when it starts (false stops the transfer); a step with fixed: true cannot be cancelled
+     any more (the controller has taken the data). */
+  function transfer(o) {
+    const steps = o.steps, W = steps.reduce((s, x) => s + x.w, 0), total = fastComm() ? (o.fastMs != null ? o.fastMs : 600) : o.ms;
+    let i = -1, acc = 0, timer = 0, over = false, fixed = false;
+    busyComm(1);
+    const el = dialog({ title: o.title, modal: true, size: 'xfer',
+      body: `<p class="xfer-t" id="xft">${esc(steps[0].t)}</p><div class="prog det" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="${esc(o.title)}"><i></i></div>
+        <div class="xfer-s"><span class="muted ell grow" id="xfs">${esc(o.sub || '')}</span><span class="mono" id="xfp">0%</span></div>`,
+      buttons: o.noCancel ? [] : [{ l: 'Cancel', run: () => { cancel(); } }],
+      onClose: () => { if (!over) cancel(); } });
+    el.dataset.xfer = o.kind || '';
+    const bar = el.querySelector('.prog i'), pb = el.querySelector('.prog'), cb = el.querySelector('[data-b="0"]');
+    const end = () => { over = true; clearTimeout(timer); busyComm(-1); };
+    function cancel() {
+      if (over || fixed) return false;
+      end(); if (el.isConnected) closeLayer();
+      if (o.cancelled) o.cancelled();
+      return true;
+    }
+    const next = () => {
+      if (over) return;
+      i++;
+      if (i >= steps.length) {
+        end();
+        const fin = () => { if (el.isConnected) closeLayer(); o.done(); };
+        if (o.doneText && el.isConnected) { el.querySelector('#xft').textContent = o.doneText; timer = setTimeout(fin, fastComm() ? 0 : 350); } else fin();
+        return;
+      }
+      const s = steps[i];
+      if (s.fixed) { fixed = true; if (cb) cb.disabled = true; }
+      if (s.run && s.run() === false) { end(); if (el.isConnected) closeLayer(); return; }
+      acc += s.w;
+      const dur = total * s.w / W, pc = Math.round(acc / W * 100);
+      if (el.isConnected) {
+        el.querySelector('#xft').textContent = s.t;
+        bar.style.transitionDuration = Math.round(dur) + 'ms'; bar.style.width = pc + '%';
+        pb.setAttribute('aria-valuenow', pc); el.querySelector('#xfp').textContent = pc + '%';
+      }
+      timer = setTimeout(next, dur);
+    };
+    // Esc is Cancel (not a plain close: the transfer would go on behind it)
+    layerKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); cancel(); } };
+    // the dialog paints at 0 %, then the bar moves
+    timer = setTimeout(next, 30);
+    return { el, cancel };
+  }
+  /* Connecting to the controller: RSLinx opens the path before anything else (Go Online, Download or Upload from
+     offline). Then the checks of reachable(). fastComm, or a path just reached, skips the wait. */
+  function connect(then, what) {
+    const path = curPath();
+    if (fastComm() || S.online || (linked && linked.path === path && linked.ctl === ctl && performance.now() - linked.t < 15000)) { if (reachable()) { linked = { path, ctl, t: performance.now() }; then(); } return; }
+    transfer({ title: what || 'Go Online', kind: 'connect', ms: jitter(600, 1000), sub: path,
+      steps: [{ t: `Connecting to the controller at ${path}…`, w: 3 }, { t: 'Checking the controller: type, revision and project…', w: 1 }],
+      cancelled: () => toast('Connecting was cancelled.'),
+      done: () => { if (!reachable()) { linked = null; return; } linked = { path, ctl, t: performance.now() }; then(); } });
   }
   /* Upload Tag Values: the controller's current values become the project's values (not an edit) */
   function uploadTags(say) {
@@ -3289,7 +3426,12 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     return false;
   }
   function download() {
-    if (!reachable()) return;
+    // verify first (offline, nothing to connect for), then open the path
+    reverify();
+    if (S.verify.errors.length) { download2(); return; }
+    connect(download2, 'Download');
+  }
+  function download2() {
     reverify();
     if (S.verify.errors.length) {
       if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
@@ -3305,20 +3447,28 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Slot', ctlSlot())}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
         <p>${ctl.name ? `The project in the controller (<b>${esc(ctl.name)}</b>) will be replaced by <b>${esc(S.p.controller.name)}</b>.` : `<b>${esc(S.p.controller.name)}</b> will be downloaded.`} ${RUNM() ? 'The controller goes to Remote Program first.' : ''}</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Download', pri: true, run: () => {
+      buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Download', pri: true, run: () => {
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
         const wasRun = ctl.running;
         if (wasRun) ctl.setMode('remprog');
-        setTimeout(() => showProgress('Downloading', `Downloading to ${curPath()}…`, () => {
-          const r = ctl.download(JSON.parse(JSON.stringify(S.p)));
-          if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return; }
+        const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p));
+        let r = null;
+        // the controller takes the project at Verifying: from there the transfer cannot be cancelled
+        x.st.push({ t: 'Verifying…', w: 2, fixed: true, run: () => {
+          if (ctl !== to) { toast('The controller stopped answering: the download failed.', 'err'); return false; }
+          r = ctl.download(copy);
+          if (!r.ok) { toast(r.lines[r.lines.length - 1] || 'Download failed.', 'err'); return false; }
           S.ed = null;
           // the cards of the chassis answer at once
           chassis.advance(0);
           saveChassis();
-          online();
-          if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
-        }), 0);
+        } });
+        setTimeout(() => transfer({ title: 'Downloading', kind: 'download', ms: x.ms, sub: `To ${curPath()}`, steps: x.st, doneText: 'Download complete',
+          cancelled: () => { linked = null; toast('Download cancelled. The project in the controller was not changed.'); },
+          done: () => {
+            online();
+            if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
+          } }), 0);
       } }] });
   }
   const RUNM = () => ctl.mode === 'run' || ctl.mode === 'remrun';
@@ -3405,7 +3555,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const back = S.ed.orig;
     confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
-  function goOffline() { S.online = false; toast('Offline. The controller keeps running.'); render(); }
+  function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */
@@ -3414,34 +3564,50 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const pad = n => (n < 10 ? '0' + n : n);
     const cur = curPath();
     let sel = resolve(cur) && resolve(cur).ctl ? cur : null;
-    const slotRows = (r, pathFn, ind) => Array.from({ length: r.size }, (_, n) => {
-      const m = r.module(n);
-      if (!m) return '';
-      if (!m.ctl) return `<div class="nd dim" style="padding-left:${ind}px">${ic('io', 'i ti')}${pad(n)}, ${esc(m.type)} ${esc(m.name)}</div>`;
-      const c = m.ctl, p = pathFn(n);
-      if (!c.powered) return `<div class="nd dim" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · off</div>`;
-      if (!sel) sel = p;
-      return `<div class="nd${p === sel ? ' on' : ''}" data-wa="${esc(p)}" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${p === cur ? ' <span class="muted">(project path)</span>' : ''}</div>`;
-    }).join('');
-    const rows = () => {
-      let h = '';
+    // the tree as rows; a driver row (d) is still browsing while its rows are not all found; dev: a device answers
+    const slotRows = (out, r, pathFn, ind) => {
+      for (let n = 0; n < r.size; n++) {
+        const m = r.module(n);
+        if (!m) continue;
+        if (!m.ctl) { out.push({ h: `<div class="nd dim" style="padding-left:${ind}px">${ic('io', 'i ti')}${pad(n)}, ${esc(m.type)} ${esc(m.name)}</div>`, dev: 1 }); continue; }
+        const c = m.ctl, p = pathFn(n);
+        if (!c.powered) { out.push({ h: `<div class="nd dim" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · off</div>`, dev: 1 }); continue; }
+        if (!sel) sel = p;
+        out.push({ h: `<div class="nd${p === sel ? ' on' : ''}" data-wa="${esc(p)}" style="padding-left:${ind}px">${ic('chip', 'i ti')}${pad(n)}, PLC-CPU ${esc(m.name)} · ${esc(c.name || '(empty)')} · ${modeOf(c)}${p === cur ? ' <span class="muted">(project path)</span>' : ''}</div>`, dev: 1 });
+      }
+    };
+    const list = () => {
+      const out = [];
       drivers.filter(d => d.run).forEach(d => {
         if (d.type === 'vbp') {
-          h += `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Virtual Backplane</div>`;
+          out.push({ h: `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Virtual Backplane`, d: 1 });
           const r = racks[0];
-          h += r ? `<div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Virtual Chassis, ${esc(r.name)}</div>` + slotRows(r, n => d.name + '\\' + n, 36) : '<div class="nd dim" style="padding-left:20px">No chassis in the emulator.</div>';
+          if (r) { out.push({ h: `<div class="nd" style="padding-left:20px">${ic('rack', 'i ti')}Virtual Chassis, ${esc(r.name)}</div>` }); slotRows(out, r, n => d.name + '\\' + n, 36); } else out.push({ h: '<div class="nd dim" style="padding-left:20px">No chassis in the emulator.</div>' });
         } else if (d.type === 'emulate') {
-          h += `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Ethernet</div>`;
+          out.push({ h: `<div class="nd" style="padding-left:6px">${ic('online', 'i ti')}${esc(d.name)}, Ethernet`, d: 1 });
           const seen = new Set();
           racks.forEach(r => r.controllers().forEach(gm => {
             if (!gm.ip || !gm.ctl.powered || seen.has(gm.ip)) return;
             seen.add(gm.ip);
-            h += `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${gm.ip}, PLC-CPU ${esc(gm.name)}</div><div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` + slotRows(r, n => pathOf(gm.ip, n), 52);
+            out.push({ h: `<div class="nd" style="padding-left:20px">${ic('chip', 'i ti')}${gm.ip}, PLC-CPU ${esc(gm.name)}</div>`, dev: 1 }, { h: `<div class="nd" style="padding-left:36px">${ic('rack', 'i ti')}Backplane, ${esc(r.name)}</div>` });
+            slotRows(out, r, n => pathOf(gm.ip, n), 52);
           }));
-          if (!seen.size) h += '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>';
+          if (!seen.size) out.push({ h: '<div class="nd dim" style="padding-left:20px">No emulated controller is on with an IP address.</div>' });
         }
       });
-      return h || '<div class="nd dim" style="padding-left:6px">No communications driver: Communications &gt; Configure Drivers</div>';
+      return out;
+    };
+    // Browse: the rows come in one by one, as a driver finds the nodes on its network (150-400 ms a device)
+    let shown = 0, btimer = 0, auto = true, last = '', lastSt = '';
+    const rows = all => {
+      if (!all.length) return '<div class="nd dim" style="padding-left:6px">No communications driver: Communications &gt; Configure Drivers</div>';
+      const n = Math.min(shown, all.length);
+      return all.slice(0, n).map((x, i) => {
+        if (!x.d) return x.h;
+        let stop = all.length;
+        for (let j = i + 1; j < all.length; j++) if (all[j].d) { stop = j; break; }
+        return x.h + (n < stop ? ' <span class="browsing"><i class="spin"></i>Browsing…</span>' : '') + '</div>';
+      }).join('');
     };
     const pick = () => (sel ? resolve(sel) : null);
     const info = () => {
@@ -3452,17 +3618,47 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     };
     // the picked controller becomes the project path, then the action runs against it
     const via = fn => () => { const x = pick(); if (!x || !x.ctl) { toast('Pick a controller first.', 'err'); return false; } setPath(sel); setTimeout(fn, 0); };
-    const rowsH = rows();
+    let atimer = 0;
+    list(); // picks the first controller that answers when the project path has none
+    const stopAll =() => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } clearInterval(atimer); };
     const el = dialog({ title: 'Who Active', size: 'md',
-      body: `<div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div id="wa-rows">${rowsH}</div></div>
+      body: `<div class="wabar"><label class="rlck"><input type="checkbox" id="wa-auto" checked>Autobrowse</label><button class="btn" id="wa-ref">Refresh</button><span class="grow"></span><span class="muted ell" id="wa-st"></span></div>
+        <div class="tree" id="wa" style="border:1px solid var(--border);border-radius:var(--r)"><div class="nd">${ic('chip', 'i ti')}Workstation, MT PLC Studio</div><div id="wa-rows"></div></div>
         <p class="help" id="wa-i">${info()}</p>`,
-      buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
-        { l: 'Upload…', run: via(upload) }, { l: 'Download…', run: via(download) }, { l: 'Go Online', pri: true, run: via(goOnline) }] });
+      onClose: stopAll,
+      buttons: [{ l: 'Close', run: stopAll }, { l: 'Emulator…', run: () => { stopAll(); setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
+        { l: 'Upload…', run: () => { stopAll(); return via(upload)(); } }, { l: 'Download…', run: () => { stopAll(); return via(download)(); } }, { l: 'Go Online', pri: true, run: () => { stopAll(); return via(goOnline)(); } }] });
+    const draw = () => {
+      const all = list(), h = rows(all), st = shown < all.length ? 'Browsing - node found' : auto ? 'Browsing - done' : 'Not browsing';
+      if (h !== last) { el.querySelector('#wa-rows').innerHTML = h; last = h; }
+      if (st !== lastSt) { el.querySelector('#wa-st').textContent = st; lastSt = st; }
+    };
+    const step = () => {
+      btimer = 0;
+      if (!el.isConnected) { busyComm(-1); return; }
+      const all = list();
+      shown++;
+      if (shown >= all.length) { shown = Infinity; busyComm(-1); draw(); return; }
+      draw();
+      const nx = all[shown];
+      btimer = setTimeout(step, nx && nx.dev ? jitter(150, 400) : jitter(80, 150));
+    };
+    const browse = () => {
+      if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); }
+      if (fastComm()) { shown = Infinity; draw(); return; }
+      shown = 1; busyComm(1); draw();
+      btimer = setTimeout(step, jitter(150, 300));
+    };
+    // Autobrowse: a quiet check each second; the rows change only when the network does (no browse again)
+    atimer = setInterval(() => { if (!el.isConnected) { stopAll(); return; } if (auto && shown === Infinity) draw(); }, 1000);
     el.querySelector('#wa').addEventListener('click', ev => {
       const r = ev.target.closest('[data-wa]'); if (!r) return;
       sel = r.dataset.wa;
-      el.querySelector('#wa-rows').innerHTML = rows(); el.querySelector('#wa-i').innerHTML = info();
+      draw(); el.querySelector('#wa-i').innerHTML = info();
     });
+    el.querySelector('#wa-ref').addEventListener('click', browse);
+    el.querySelector('#wa-auto').addEventListener('change', ev => { auto = ev.target.checked; draw(); });
+    browse();
   }
 
   /* Toggle Bit: an input of a working card follows its field switch, so that switch is flipped; the input of a faulted
@@ -3513,7 +3709,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     r.advance(0);
     refreshIO();
   }
-  const refreshIO = () => { const iob = $('#iob'); if (iob) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(true); };
+  const refreshIO = () => { const iob = $('#iob'); if (iob) { iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); iob._mh = null; } chassisLive(true); };
 
   /* ---------- the emulator dock (P1): the chassis of the project path beside the ladder, sized by a splitter ----------
      bottom (desktop, tablet portrait), side (tablet landscape, phone landscape), full (the phone's Emulator tab).
@@ -3641,7 +3837,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     const cur = w.querySelector('.iom.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
   }
-  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; b.innerHTML = ioWinHTML(ri, +w.dataset.focus); b.scrollTop = st; } }); }
+  function ioWinsLive() { ioWins.forEach((w, ri) => { if (!w.isConnected) { ioWins.delete(ri); return; } if (!w.contains(w.ownerDocument.activeElement) || !w.ownerDocument.activeElement.matches('input')) { const b = w.querySelector('.iowb'), st = b.scrollTop; setHTML(b, ioWinHTML(ri, +w.dataset.focus)); b.scrollTop = st; } }); }
   /* the Module I/O windows of one window (the app, or the Emulator window): close, input switches, analog values, dragging by the title */
   function bindIoWins(doc) {
     const vw = doc.defaultView;
@@ -3926,12 +4122,20 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- the controller runs on its own clock; the screen follows only what changed ---------- */
   let lastT = performance.now(), sig = '', lastLive = 0, lastLay = 0;
+  // the ladder part of the signature (what the rungs show), kept apart so a change elsewhere does not redraw them
+  let ladPart = '', ladSig = '', ladCost = 0, lastTags = 0, tagCost = 0, scrollAt = 0;
+  // a redraw of the ladder waits while it is being scrolled (passive: the scroll itself is never held up)
+  document.addEventListener('scroll', ev => { if (ev.target && ev.target.id === 'ladwrap') scrollAt = performance.now(); }, { capture: true, passive: true });
+  // write HTML only when it changed: no new DOM, style and layout for the same content
+  const setHTML = (el, h) => { if (el._mh !== h) { el.innerHTML = h; el._mh = h; } };
   function liveSig() {
-    if (!S.online) return 'off|' + chassisSig();
+    if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
     if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
-    ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); parts.push(JSON.stringify(im)); });
-    return parts.join(',') + '|' + chassisSig();
+    ladPart = parts.join(',');
+    const io = [];
+    ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
+    return ladPart + ',' + io.join(',') + '|' + chassisSig();
   }
   let lastFault = null;
   function live(force) {
@@ -3941,11 +4145,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     // a new major fault (a module that failed, a watchdog) shows in the organizer and the online bar
     const fk = S.online && ctl.fault ? ctl.fault.at : null;
     if (fk !== lastFault) { lastFault = fk; if (!force) { render(); if (fk) toast(`Major fault: ${ctl.fault.text}`, 'err'); return; } }
-    if (S.online && !S.touching) { const now = performance.now(); if (force || now - lastLive > 33) { lastLive = now; renderLadder(); } else { sig = ''; } }
+    // the ladder: only when what it shows changed, at most 20 times a second, and less often when one redraw costs
+    // more (a big routine on a slow device: the gap is 4 times the last redraw), never during a scroll
+    if (S.online && !S.touching && (force || ladPart !== ladSig)) {
+      const now = performance.now();
+      if (force || (now - lastLive > Math.max(50, ladCost * 4) && now - scrollAt > 150)) { lastLive = now; ladSig = ladPart; renderLadder(); const c = performance.now() - now; ladCost = ladCost ? ladCost * 0.7 + c * 0.3 : c; } else { sig = ''; }
+    }
     const ob = $('#olbar');
-    if (ob) ob.innerHTML = S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`;
-    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) iob.innerHTML = iob.classList.contains('dockb') ? dockBody() : ioHTML(); chassisLive(false); ioWinsLive();
-    if (S.tagMode === 'mon') refreshTags();
+    if (ob) setHTML(ob, S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`);
+    const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) setHTML(iob, iob.classList.contains('dockb') ? dockBody() : ioHTML()); chassisLive(false); ioWinsLive();
+    // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
+    if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
   /* the controller scans on a timer of its own, so it keeps running when the screen does not redraw
@@ -4143,7 +4353,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     document.addEventListener('change', ev => {
       if (ev.target.id === 'tscope') { S.tagScope = ev.target.value; if (S.view === 'tags' && S.layout !== 'phone') render(); else refreshTags(); }
       // the dock shows another chassis (the project path keeps its own)
-      if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) b.innerHTML = dockBody(); }
+      if (ev.target.dataset && ev.target.dataset.dkr) { chassis = racks[+ev.target.value] || chassis; const b = $('#iob'); if (b) { b.innerHTML = dockBody(); b._mh = null; } }
     });
     bindIoWins(document);
     // a module: right-click (mouse) or long-press (touch) opens its menu, as in the reference emulator
