@@ -824,6 +824,9 @@
     frem: { l: 'Remove Force', i: 'close', run: () => forceSel(null), on: () => selForceable() && ctl.forced(curEl().a[0], S.prog) !== null },
     find: { l: 'Find…', k: 'Ctrl+F', i: 'search', run: cmdFind },
     findnext: { l: 'Find Next', k: 'F3', i: 'search', run: () => findNext(true), on: () => !!S.find },
+    findprev: { l: 'Find Previous', k: 'Shift+F3', i: 'search', run: () => findNext(true, -1), on: () => !!S.find },
+    nextres: { l: 'Next Result', k: 'F4', i: 'down', run: () => nextResult(1), on: () => !S.noProj },
+    prevres: { l: 'Previous Result', k: 'Shift+F4', i: 'up', run: () => nextResult(-1), on: () => !S.noProj },
     goto: { l: 'Go To…', k: 'Ctrl+G', i: 'goto', run: cmdGoto },
     xref: { l: 'Cross Reference', k: 'Ctrl+E', i: 'xref', run: () => xref() },
     verifyr: { l: 'Verify Routine', i: 'checkr', run: () => verifyCmd(true) },
@@ -870,7 +873,7 @@
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
-    ['Search', ['find', 'findnext', 'goto', 'xref']],
+    ['Search', ['find', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
@@ -1113,7 +1116,7 @@
     const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
     if (S.outTab === 'search') {
       const sv = S.search || { lines: [], found: [] };
-      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
+      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
     }
     return tabs + errorsBody();
   }
@@ -1136,6 +1139,15 @@
     S.errCur = x.t;
     gotoLine(x.ri, x.rt, x.t, false);
     refreshErrLog();
+  }
+  /* Search > Next Result / Previous Result (reference: the next result listed in the Output window): the Found lines
+     of Search Results when that tab shows, else the Errors lines (as F4 / Shift+F4) */
+  function nextResult(dir) {
+    const fd = S.search && S.search.found || [];
+    if (S.outTab !== 'search' || !fd.length) { nextErrLine(dir); return; }
+    const i = fd.findIndex(x => x.text === S.searchCur), x = fd[i < 0 ? (dir > 0 ? 0 : fd.length - 1) : (i + dir + fd.length) % fd.length];
+    S.searchCur = x.text;
+    gotoLine(x.rung, x.program + '/' + x.routine, x.text, false);
   }
   function lineRoutine(t, v) { const e = v.errors.concat(v.warnings, v.found || []).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
@@ -2340,14 +2352,15 @@
     openDescBar(`Rung Comment For Rung: ${ri}`, rungs()[ri].c || '', v => { edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); });
   }
   function cmdFind() { prompt1('Find', 'Find what', S.find, v => { if (!v) return 'Type a tag or an instruction.'; S.find = v; if (!findNext(false)) return `"${v}" was not found in ${curRoutine().name}.`; }, 'Looks for a tag, an operand or a mnemonic in this routine. F3 finds the next one.'); }
-  function findNext(wrapMsg) {
+  function findNext(wrapMsg, dir = 1) {
     const q = U(S.find), R = rungs();
     const items = [];
     R.forEach((r, ri) => { const el = parsed(ri); if (el) flat(el).forEach(p => items.push({ ri, p, e: getEl(el, p) })); });
     if (!items.length) return false;
     const cur = S.sel ? items.findIndex(x => x.ri === S.sel.ri && x.p.join() === S.sel.path.join()) : -1;
-    for (let k = 1; k <= items.length; k++) {
-      const x = items[(cur + k) % items.length];
+    const n = items.length, at = cur < 0 && dir < 0 ? n : cur;
+    for (let k = 1; k <= n; k++) {
+      const x = items[(((at + k * dir) % n) + n) % n];
       if (U(x.e.t) === q || x.e.a.some(a => U(a).includes(q))) { S.sel = { ri: x.ri, path: x.p }; S.selRung = null; render(); scrollToSel(); return true; }
     }
     if (wrapMsg) toast(`"${S.find}" was not found.`);
@@ -4532,7 +4545,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const l = $('#layer');
     l.innerHTML = `<div class="scrim" data-close="1"></div><div class="sheet" style="height:46%"><div class="grab"></div><div class="ph" style="background:none;border:0">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button><button class="ib" data-close="1">${ic('close')}</button></div><div class="sb" style="display:flex;flex-direction:column">${errorsHTML()}</div></div>`;
     l.onclick = ev => { if (ev.target.closest('[data-close]')) closeLayer(); };
-    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextErrLine(ev.shiftKey ? -1 : 1); } };
+    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextResult(ev.shiftKey ? -1 : 1); } };
   }
   function gotoErr(el) { S.errCur = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.nodeValue : el.textContent) || null; gotoLine(+el.dataset.errline, el.dataset.errrt, el.textContent, true); }
   /* go to the rung of an Errors line (double-click, or F4): the instruction it names is selected; a double-click also
@@ -4590,7 +4603,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return;
     }
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
-    if (k === 'F4') { ev.preventDefault(); nextErrLine(ev.shiftKey ? -1 : 1); return; }
+    if (k === 'F4') { ev.preventDefault(); nextResult(ev.shiftKey ? -1 : 1); return; }
     if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
@@ -4608,7 +4621,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'F2') { ev.preventDefault(); editSelOperand(); return; }
     if (k === 'Enter') { if (selInstr() && S.sel.op != null) editSelOperand(); else if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
     if (k === 'F1') { ev.preventDefault(); run('help'); return; }
-    if (k === 'F3') { ev.preventDefault(); run('findnext'); return; }
+    if (k === 'F3') { ev.preventDefault(); run(ev.shiftKey ? 'findprev' : 'findnext'); return; }
     if (k === 'Home' || k === 'End') {
       ev.preventDefault();
       const ri = curSelRung(), fl = ri == null ? [] : flat(parsed(ri) || []);
