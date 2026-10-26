@@ -340,6 +340,11 @@
   }
 
   /* ---------- state ---------- */
+  // [id, name, idea, mini preview: shell, background, canvas, energized]
+  const THEMES = [['classic', 'CLASSIC', 'Like the Windows software', '#FFFFFF', '#F0F0F0', '#FFFFFF', '#22A84C'],
+    ['controlroom', 'CONTROL ROOM', 'ISA-101 grey, colour only for PLC state', '#E4E7EA', '#D3D7DC', '#F2F3F4', '#14804A'],
+    ['workbench', 'WORKBENCH', 'Dark shell, square, IBM Carbon', '#161616', '#F4F4F4', '#FFFFFF', '#198038'],
+    ['tonal', 'TONAL TOUCH', 'Soft, rounded, Material 3', '#F5F2FA', '#FBF8FF', '#FFFFFF', '#398A4A']];
   const S = {
     p: null, prog: '', routine: '', sel: null, selRung: null, clip: null, undo: [], redo: [], dirty: false, online: false,
     layout: 'desktop', area: 'ladder', drawer: false, ioOpen: false, errOpen: false, tagOpen: new Set(), verify: null, errRungs: new Set(),
@@ -347,7 +352,15 @@
     find: '', ed: null, tabs: [], view: 'ladder',
   };
   const savePrefs = () => store.set('prefs', S.prefs);
+  const hadTheme = 'theme' in store.get('prefs', {});
   if (!S.prefs.classic) { S.prefs.classic = 1; if (S.prefs.theme === 'auto') S.prefs.theme = 'classic'; savePrefs(); }
+  // themes (Tools > Options > Theme): the old Theme setting becomes Classic in Light, Dark or Follow the device
+  if (!S.prefs.themes) {
+    const t = S.prefs.theme;
+    S.prefs.mode = !hadTheme ? 'auto' : t === 'dark' ? 'dark' : t === 'auto' ? 'auto' : 'light';
+    if (!THEMES.some(x => x[0] === t)) S.prefs.theme = 'classic';
+    S.prefs.themes = 1; savePrefs();
+  }
   const allProgs = () => S.p.tasks.flatMap(t => t.programs);
   const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
@@ -701,10 +714,14 @@
     const w = innerWidth, coarse = matchMedia('(pointer: coarse)').matches;
     return w < 768 ? 'phone' : w < 1200 || (coarse && w < 1600) ? 'tablet' : 'desktop';
   }
+  /* the theme changes the look only; data-mode is the resolved Light or Dark (Follow the device asks the system) */
+  const darkMq = matchMedia('(prefers-color-scheme: dark)');
+  const themeMode = () => S.prefs.mode === 'dark' || (S.prefs.mode === 'auto' && darkMq.matches) ? 'dark' : 'light';
   function applyTheme() {
-    const t = S.prefs.theme;
-    if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = t;
+    const docs = [document].concat(chasWin && !chasWin.closed ? [chasWin.document] : []);
+    docs.forEach(d => { d.documentElement.dataset.theme = S.prefs.theme; d.documentElement.dataset.mode = themeMode(); });
   }
+  if (darkMq.addEventListener) darkMq.addEventListener('change', () => { if (S.prefs.mode === 'auto') applyTheme(); });
   function title() {
     if (!S.p) return;
     if (S.noProj) { document.title = 'MT PLC Studio'; return; }
@@ -2543,17 +2560,26 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`, buttons: [{ l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
   }
   function options() {
-    const P = S.prefs;
-    dialog({ title: 'Options',
+    const P = S.prefs, was = [P.theme, P.mode], back = () => { [P.theme, P.mode] = was; applyTheme(); };
+    dialog({ title: 'Options', size: 'md',
       body: `<div class="frow"><label>Layout</label><select class="inp" id="ol">${[['auto', 'Automatic (follows the window)'], ['desktop', 'Desktop'], ['tablet', 'Tablet'], ['phone', 'Phone']].map(([v, t]) => `<option value="${v}"${P.layout === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow"><label>Theme</label><select class="inp" id="ot">${[['classic', 'Classic (like the Windows software)'], ['auto', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([v, t]) => `<option value="${v}"${P.theme === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="frow"><label>Theme</label><div class="thpick" role="radiogroup" aria-label="Theme">${THEMES.map(([v, n, d, sh, bg, cv, on]) => `<button type="button" class="thc" role="radio" data-th="${v}" aria-checked="${P.theme === v}"><span class="tmini" style="background:${bg};--mon:${on}"><i style="background:${sh}"></i><span><u style="background:${sh}"></u><u style="background:${cv}"></u></span></span><b>${n}</b><small>${d}</small></button>`).join('')}</div></div>
+        <div class="frow"><label>Mode</label><div class="thmode" role="group" aria-label="Mode">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Follow the device']].map(([v, t]) => `<button type="button" data-thm="${v}" aria-pressed="${P.mode === v}">${t}</button>`).join('')}</div></div>
         <div class="frow"><label>Density</label><select class="inp" id="od">${[['auto', 'Automatic (compact with a mouse, larger on touch)'], ['compact', 'Compact'], ['touch', 'Touch (larger)']].map(([v, t]) => `<option value="${v}"${P.density === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>
         <div class="grp">Ladder Editor</div>
         <label class="ockb"><input type="checkbox" id="oqk"${P.quickKeys ? ' checked' : ''}> Enable Quick Keys</label>
         <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>
         <div class="frow"><label>Communications</label><label class="rlck"><input type="checkbox" id="ofc"${P.fastComm ? ' checked' : ''}>Fast communications (no connect, browse or transfer delays)</label></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.fastComm = el.querySelector('#ofc').checked; P.layout = el.querySelector('#ol').value; P.theme = el.querySelector('#ot').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
+      // a theme shows at once; Cancel or Close puts the one before back
+      mount: el => el.addEventListener('click', ev => {
+        const c = ev.target.closest('[data-th]'), m = ev.target.closest('[data-thm]');
+        if (c) { P.theme = c.dataset.th; el.querySelectorAll('[data-th]').forEach(b => b.setAttribute('aria-checked', b === c)); }
+        if (m) { P.mode = m.dataset.thm; el.querySelectorAll('[data-thm]').forEach(b => b.setAttribute('aria-pressed', b === m)); }
+        if (c || m) applyTheme();
+      }),
+      onClose: back,
+      buttons: [{ l: 'Cancel', run: back }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.fastComm = el.querySelector('#ofc').checked; P.layout = el.querySelector('#ol').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
   }
 
   /* ---------- projects: new, open, save as, import, export ---------- */
@@ -4092,9 +4118,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (chasWin && !chasWin.closed) { chasWin.focus(); return; }
     const w = window.open('', 'mtps-chassis', 'width=1180,height=720');
     if (!w) { toast('The window was blocked: the emulator stays in the app.', 'err'); chassisMonitor(); return; }
-    const css = new URL('css/app.css', location.href).href, icon = new URL('icons/icon.svg', location.href).href;
+    const css = new URL('css/app.css', location.href).href, css2 = new URL('css/themes.css', location.href).href, icon = new URL('icons/icon.svg', location.href).href;
     w.document.open();
-    w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MT PLC Studio - Emulator</title><link rel="icon" href="${icon}"><link rel="stylesheet" href="${css}"></head>
+    w.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MT PLC Studio - Emulator</title><link rel="icon" href="${icon}"><link rel="stylesheet" href="${css}"><link rel="stylesheet" href="${css2}"></head>
       <body class="desk chaswin"><header class="chashead"><b>Emulator</b><span class="muted">emulated chassis and controllers</span><span class="grow"></span><button class="btn" data-wa-open="1">Who Active…</button></header><div id="emubody" class="emu"></div></body></html>`);
     w.document.close();
     closeLayer();
@@ -4104,7 +4130,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function mountChassis(w) {
     chasWin = w;
     const d = w.document;
-    if (document.documentElement.dataset.theme) d.documentElement.dataset.theme = document.documentElement.dataset.theme;
+    d.documentElement.dataset.theme = S.prefs.theme; d.documentElement.dataset.mode = themeMode();
     chassisLive(true);
     d.addEventListener('click', ev => { if (!chassisClick(ev.target) && ev.target.closest('[data-wa-open]')) { window.focus(); whoActive(); } });
     d.addEventListener('pointerdown', ev => { const b = ev.target.closest('[data-io]'); if (!b) return; ioPress(b.dataset.io); ev.preventDefault(); });

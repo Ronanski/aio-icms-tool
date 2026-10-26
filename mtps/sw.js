@@ -5,8 +5,10 @@ const VER = 'v0.4.0';
 const SCOPE = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CH = /\/beta\/$/.test(SCOPE) ? 'beta' : 'stable';
 const CACHE = `mtps-${CH}-${VER}`;
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'js/engine.js', 'js/ladder.js', 'js/update.js', 'js/help.js', 'js/help-ref.js', 'js/app.js',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/app.css', 'css/themes.css', 'js/engine.js', 'js/ladder.js', 'js/update.js', 'js/help.js', 'js/help-ref.js', 'js/app.js',
+  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
+  'fonts/ibm-plex-sans-latin-400-normal.woff2', 'fonts/ibm-plex-sans-latin-600-normal.woff2', 'fonts/ibm-plex-sans-latin-700-normal.woff2', 'fonts/ibm-plex-mono-latin-400-normal.woff2', 'fonts/ibm-plex-mono-latin-600-normal.woff2',
+  'fonts/roboto-latin-400-normal.woff2', 'fonts/roboto-latin-500-normal.woff2', 'fonts/roboto-latin-700-normal.woff2', 'fonts/roboto-mono-latin-400-normal.woff2', 'fonts/roboto-mono-latin-600-normal.woff2'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));

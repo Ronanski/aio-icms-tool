@@ -1666,6 +1666,33 @@ function check(name, cond, info = '') {
     check(`${vp.n} (touch): the rung is copied: i above, r below (44 px menu row)`, (await rt()).length === n0 + 1 && (await tp.$$eval('#ladwrap svg .emk', t => t.map(x => x.textContent).join(''))) === 'ir' && mb.h >= 40, JSON.stringify(mb));
     await tp.close();
   }
+  console.log('Themes (Tools > Options > Theme)');
+  {
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; });
+    const html = () => ev(() => [document.documentElement.dataset.theme, document.documentElement.dataset.mode]);
+    const led = () => ev(() => { const l = document.createElement('i'); l.className = 'led y'; document.querySelector('#app').appendChild(l); const c = getComputedStyle(l).backgroundColor; l.remove(); return c; });
+    check('the first start: Classic, following the device (Light here)', JSON.stringify(await html()) === '["classic","light"]', JSON.stringify(await html()));
+    const led0 = await led();
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    check('Options: 4 theme cards and Light, Dark, Follow the device', (await page.$$eval('#layer [data-th]', b => b.map(x => x.dataset.th).join(','))) === 'classic,controlroom,workbench,tonal' && (await page.$$eval('#layer [data-thm]', b => b.map(x => x.textContent).join(','))) === 'Light,Dark,Follow the device');
+    await page.click('#layer [data-th="workbench"]'); await page.click('#layer [data-thm="dark"]'); await page.waitForTimeout(80);
+    check('a theme shows at once, before OK', JSON.stringify(await html()) === '["workbench","dark"]' && (await page.$eval('.dmenu', m => getComputedStyle(m).backgroundColor)) === 'rgb(0, 0, 0)');
+    await page.click('#layer .df .btn:not(.pri)'); await page.waitForTimeout(80);
+    check('Cancel puts the theme before back', JSON.stringify(await html()) === '["classic","light"]');
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await page.click('#layer [data-th="tonal"]'); await page.click('#layer [data-thm="dark"]'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
+    check('OK keeps it and saves it (Tonal Touch, Dark)', JSON.stringify(await html()) === '["tonal","dark"]' && await ev(() => { const p = JSON.parse(localStorage.getItem('mtps.prefs') || Object.keys(localStorage).filter(k => k.includes('prefs')).map(k => localStorage.getItem(k))[0]); return p.theme === 'tonal' && p.mode === 'dark'; }));
+    check('the module LEDs keep their colour in every theme', led0 === 'rgb(242, 178, 0)' && (await led()) === led0, `${led0} / ${await led()}`);
+    check('Tonal Touch, Dark: the ladder canvas is dark', (await ev(() => getComputedStyle(document.documentElement).getPropertyValue('--lad-bg').trim())) === '#0D0E13');
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await page.click('#layer [data-th="classic"]'); await page.click('#layer [data-thm="light"]'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
+    check('back to Classic, Light', JSON.stringify(await html()) === '["classic","light"]');
+    const old = await browser.newPage();
+    await old.addInitScript(() => { if (!sessionStorage.getItem('x')) { sessionStorage.setItem('x', 1); const k = 'mtps.prefs'; localStorage.setItem(k, JSON.stringify({ theme: 'dark', classic: 1 })); } });
+    await old.goto(URL); await old.waitForTimeout(300);
+    check('an old Dark setting becomes Classic, Dark', JSON.stringify(await old.evaluate(() => [document.documentElement.dataset.theme, document.documentElement.dataset.mode])) === '["classic","dark"]');
+    await old.close();
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added (MT PLC Studio 0.4.0, Stable): four themes (owner)
+- **Four themes, each Light and Dark**, in Tools > Options > Theme: CLASSIC (the look so far), CONTROL ROOM (ISA-101
+  grey, flat and dense), WORKBENCH (IBM Carbon: dark menu bar and toolbar, square corners, IBM Plex fonts) and
+  TONAL TOUCH (Material 3: rounded panels, pill buttons, Roboto fonts). A theme changes colours, corners, fonts,
+  density, the menu bar and toolbar, and shadows; behaviour and layout stay as in the reference.
+- Mode: Light, Dark or Follow the device. A theme shows at once in Options; Cancel puts the one before back. The
+  choice is kept on the device, not in the project. The old Theme setting moves over (Dark becomes Classic Dark).
+- The PLC state colours mean the same in every theme (green energized, red forced, red with an icon fault, amber
+  pending, blue online), and every theme passes WCAG 2.2 AA contrast. Forced bits are now red in Classic too.
+- The chassis, the modules and their LEDs keep their hardware colours in every theme.
+- The theme fonts are part of the app (offline, SIL Open Font License, in `mtps/fonts/`).
+
 ### Changed
 - Docs: `HANDOFF.md` trimmed to current status; old history moved verbatim to `docs/HANDOFF-ARCHIVE.md`.
 
