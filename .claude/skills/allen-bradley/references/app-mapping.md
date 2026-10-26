@@ -35,3 +35,12 @@ Where each reference concept lives in the app (`mtps/`), and what still differs.
 - No rack-optimized connections.
 - Electronic keying and RPI exist in Module Properties, but the connection codes are simplified.
 - Phone: there is no instruction toolbar row. It uses the + picker.
+- Only a continuous MainTask: no periodic or event tasks, one program per task in practice.
+- Data types: BOOL, SINT, INT, DINT, REAL, TIMER, COUNTER, CONTROL. No LINT, STRING, UDT editor or Add-On Instructions.
+- Instructions missing compared with 1756-RM003 (audit 2026-10-26): GSV/SSV, BSL/BSR, FFL/FFU, LFL/LFU, SQO/SQI/SQL,
+  FAL/FSC/AVE/SRT/SIZE, MSG, PID, TRN/TOD/FRD/DEG/RAD, SIN/COS/TAN/LN/LOG/XPY, CTUD/TONR (FBD/ST only), UID/UIE, IOT,
+  string instructions. The engine has the 53 in `INSTR`.
+- RSLinx: no EtherNet/IP driver (listed as "not in this version"), so no path to a real controller.
+- Logix Emulate extras: no speed of time, single scan or BPT/TPT.
+- L5X export: modules are written without revision, keying and connection data, and the controller is fixed as
+  1756-L85E v37. Not yet imported into a real Studio 5000 to prove it opens there.
