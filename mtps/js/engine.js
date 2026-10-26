@@ -1249,7 +1249,7 @@
       if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
-      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; }
+      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
       return { ok: true, module: m };
@@ -1275,6 +1275,7 @@
       if (o.name != null) m.name = String(o.name);
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
+      if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
       return true;
@@ -1309,7 +1310,7 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
-        ip: m.ctl ? m.ip : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined,
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
     }
     static from(o) {
@@ -1324,7 +1325,7 @@
         if (m.kind === 'di') m.field = Number(x.field) | 0;
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
-          m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || '';
+          m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }

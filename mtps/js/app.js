@@ -3243,7 +3243,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <div class="frow"><label>IP Address</label><select class="inp" id="ec-ip"><option value=""${m.ip ? '' : ' selected'}>(none)</option>${EMUIPS.map(a => `<option${a === m.ip ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
       ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
       <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
-      ${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      ${kv('Revision', '1.0')}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
       <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
       <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
   }
@@ -3399,6 +3399,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         <div class="frow"><label>Module</label><select class="inp" id="ci-t">${types.map(t => `<option value="${t}">${t} · ${esc(CARDNAMES[t] || '')}</option>`).join('')}</select></div>
         <div class="frow"><label>Name</label><input class="inp" id="ci-n" value="" autocomplete="off" spellcheck="false"></div>
         <div id="ci-cpu"><div class="frow"><label>Description</label><input class="inp" id="ci-d" value=""></div>
+          <div class="frow"><label>Revision</label><select class="inp" id="ci-rev"><option>1.0</option></select></div>
+          <div class="frow"><label>Memory Size (KB)</label><input class="inp" id="ci-mem" type="number" min="64" step="64" value="3072"></div>
           <div class="frow"><label>IP Address</label><select class="inp" id="ci-ip"><option value="">(none)</option>${EMUIPS.map(a => `<option>${a}</option>`).join('')}</select></div>
           <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label></div>
         <p class="help" id="ci-h"></p>`,
@@ -3409,7 +3411,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
         const res = r.insert(s, t, n);
         if (!res.ok) { toast(res.msg, 'err'); return false; }
-        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, on: e2.querySelector('#ci-on').checked });
+        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
         r.advance(0); saveChassis();
         emuSel = { k: 'm', ri: racks.indexOf(r), slot: s };
         setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0);
@@ -3682,7 +3684,12 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     });
     bindIoWins(document);
     // a module: right-click (mouse) or long-press (touch) opens its menu, as in the reference emulator
-    document.addEventListener('contextmenu', ev => { const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY); });
+    document.addEventListener('contextmenu', ev => {
+      // Logix Emulate: right-click an empty slot of the chassis, then Create
+      const e = ev.target.closest('[data-cins]');
+      if (e) { ev.preventDefault(); const [ri, s] = ids(e.dataset.cins); openMenu([{ l: 'Create…', i: 'plus', run: () => insertCard(ri, s) }], { x: ev.clientX, y: ev.clientY }, `Slot ${s}`); return; }
+      const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY);
+    });
     let lp = null;
     document.addEventListener('pointerdown', ev => {
       const c = ev.target.closest('[data-cmod]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button')) return;

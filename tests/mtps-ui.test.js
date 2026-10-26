@@ -1119,6 +1119,19 @@ function check(name, cond, info = '') {
     await ev(() => { MTPS.App.run('undo'); MTPS.App.state.sel = { ri: 0, path: [0, 0, 0] }; MTPS.App.run('applevel'); });
     check('Append New Level puts it at the end of the branch', (await rungTexts())[0] === '[XIC(Start_PB),XIC(Motor_Run),]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);', (await rungTexts())[0]);
   }
+  console.log('Logix Emulate: right-click an empty slot, Create');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); });
+    await page.waitForTimeout(200);
+    const e = await page.$('[data-cins]');
+    await e.click({ button: 'right' }); await page.waitForTimeout(80);
+    check('right-click an empty slot: Create…', (await page.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))) === 'Create…');
+    await page.click('#layer .it'); await page.waitForTimeout(120);
+    await page.selectOption('#ci-t', 'PLC-CPU'); await page.waitForTimeout(60);
+    check('the controller gets a Revision and a Memory Size of 3072 KB by default', (await page.$eval('#ci-mem', i => i.value)) === '3072' && (await page.$eval('#ci-rev', i => i.value)) === '1.0');
+    await page.keyboard.press('Escape');
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
