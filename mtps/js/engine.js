@@ -9,7 +9,7 @@
   const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT';
   const isNum = t => isInt(t) || t === 'REAL';
   const U = s => String(s).toUpperCase();
-  const members = s => s.split(' ').map(x => { const [name, type] = x.split(':'); return { name, type }; });
+  const members = s => s.split(' ').map(x => { const k = x.indexOf(':'); return { name: x.slice(0, k), type: x.slice(k + 1) }; });
   const CH4 = t => [0, 1, 2, 3].map(k => `Ch${k}Data:${t}`).join(' ');
   const PREDEF = {
     TIMER: members('PRE:DINT ACC:DINT EN:BOOL TT:BOOL DN:BOOL'),
@@ -27,12 +27,16 @@
     'AB:1756_DO:I:0': members('Fault:DINT Data:DINT'), 'AB:1756_DO:O:0': members('Data:DINT'),
     'AB:1756_IF4_Float:I:0': members('Fault:DINT ' + CH4('REAL')),
     'AB:1756_OF4_Float:I:0': members('Fault:DINT'), 'AB:1756_OF4_Float:O:0': members(CH4('REAL')),
-    // the configuration tags (Local:<slot>:C), laid out like those of the 1756 I/O modules: input filters and
-    // change of state (digital in), the fault and program mode states (digital out), scaling and states (analog)
-    'AB:1756_DI:C:0': members('FilterOffOn_0_7:SINT FilterOnOff_0_7:SINT FilterOffOn_8_15:SINT FilterOnOff_8_15:SINT COSOnOffEn:DINT COSOffOnEn:DINT'),
+    // the configuration tags (Local:<slot>:C), as in the module profiles: AB:1756_DI:C:0 (help 1756-IB16: the filter
+    // times of four groups of 8 points, as the type is shared with the 32-point modules, and change of state),
+    // AB:1756_DO:C:0 (help 1756-OB16I / -OW16I), and the floating point analog ones (1756-UM009, Floating Point
+    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel
+    'AB:1756_DI:C:0': members(['OffOn', 'OnOff'].map(d => ['0_7', '8_15', '16_23', '24_31'].map(g => `Filter${d}_${g}:SINT`).join(' ')).join(' ') + ' COSOnOffEn:DINT COSOffOnEn:DINT'),
     'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
-    'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}LowEngineering:REAL Ch${k}HighEngineering:REAL`).join(' ')),
-    'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}FaultValue:REAL Ch${k}ProgValue:REAL`).join(' ')),
+    'AB:1756_NII_Struct:C:0': members('AlarmDisable:BOOL ProcessAlarmLatch:BOOL RateAlarmLatch:BOOL DigitalFilter:INT RateAlarmLimit:INT LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL LAlarmLimit:REAL HAlarmLimit:REAL LLAlarmLimit:REAL HHAlarmLimit:REAL AlarmDeadband:REAL CalBias:REAL'),
+    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
+    'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NII_Struct:C:0`).join(' ')),
+    'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NIO_Struct:C:0`).join(' ')),
   };
   // the names of 0.4.0 and older (PLC:DI16:I …): a project that uses one still reads
   const OLDTYPES = { 'PLC:DI16:I': 'AB:1756_DI:I:0', 'PLC:DI16:C': 'AB:1756_DI:C:0', 'PLC:DO16:I': 'AB:1756_DO:I:0', 'PLC:DO16:O': 'AB:1756_DO:O:0', 'PLC:DO16:C': 'AB:1756_DO:C:0',

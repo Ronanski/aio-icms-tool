@@ -1726,6 +1726,13 @@ function check(name, cond, info = '') {
     check('B4: Controller Tags shows AB:1756_DI:I:0, AB:1756_DI:C:0, AB:1756_DO:I:0, AB:1756_DO:O:0 and AB:1756_DO:C:0', (await bty('Local:1:I')).includes('AB:1756_DI:I:0') && (await bty('Local:1:C')).includes('AB:1756_DI:C:0') && (await bty('Local:2:I')).includes('AB:1756_DO:I:0') && (await bty('Local:2:O')).includes('AB:1756_DO:O:0') && (await bty('Local:2:C')).includes('AB:1756_DO:C:0'));
     await bp.click('#tagrows [data-texp="Local:2:I"]'); await bp.waitForTimeout(80);
     check('B4: Local:2:I (output card) opens to Fault and Data', (await bty('Local:2:I.Fault')) !== '' && (await bty('Local:2:I.Data')).includes('DINT'));
+    // B7: Local:<slot>:C members as in the module profiles
+    await bp.click('#tagrows [data-texp="Local:1:C"]'); await bp.waitForTimeout(80);
+    check('B7: Local:1:C (AB:1756_DI:C:0) opens to the filters of 4 groups and COS', await (async () => { const n = await bp.$$eval('#tagrows tr[data-tag]', r => r.map(x => x.dataset.tag)); return ['FilterOffOn_0_7', 'FilterOffOn_24_31', 'FilterOnOff_16_23', 'COSOnOffEn', 'COSOffOnEn'].every(m => n.includes('Local:1:C.' + m)); })());
+    await bev(() => { const p = MTPS.App.example(); p.rack.modules.push({ slot: 3, type: 'PLC-AI4', name: 'AI_1' }); MTPS.App.openProject(p, true); MTPS.App.run('tagsmon'); }); await bp.waitForTimeout(150);
+    await bp.click('#tagrows [data-texp="Local:3:C"]'); await bp.waitForTimeout(80);
+    await bp.click('#tagrows [data-texp="Local:3:C.Ch0Config"]'); await bp.waitForTimeout(80);
+    check('B7: Local:3:C (analog in) opens to Ch0Config, a structure with LowEngineering and HighEngineering (REAL)', (await bty('Local:3:C.Ch0Config')).includes('AB:1756_NII_Struct:C:0') && (await bty('Local:3:C.Ch0Config.LowEngineering')).includes('REAL') && (await bty('Local:3:C.Ch0Config.HighEngineering')).includes('REAL'));
     /*B-NEXT*/
     await bctx.close();
   }

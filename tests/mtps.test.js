@@ -115,7 +115,12 @@ console.log('Tags and types');
   eq('TIMER members', c.read('Run_Timer'), { PRE: 0, ACC: 0, EN: 0, TT: 0, DN: 0 });
   eq('module input tag', c.read('Local:1:I'), { Fault: 0, Data: 0 });
   eq('analog channel is REAL', c.read('Local:3:I.Ch0Data'), 0);
-  eq('a digital input module has its configuration tag Local:1:C (filters, change of state)', Object.keys(c.read('Local:1:C')), ['FilterOffOn_0_7', 'FilterOnOff_0_7', 'FilterOffOn_8_15', 'FilterOnOff_8_15', 'COSOnOffEn', 'COSOffOnEn']);
+  eq('a digital input module has its configuration tag Local:1:C (AB:1756_DI:C:0: filters of 4 groups, change of state)', Object.keys(c.read('Local:1:C')), ['FilterOffOn_0_7', 'FilterOffOn_8_15', 'FilterOffOn_16_23', 'FilterOffOn_24_31', 'FilterOnOff_0_7', 'FilterOnOff_8_15', 'FilterOnOff_16_23', 'FilterOnOff_24_31', 'COSOnOffEn', 'COSOffOnEn']);
+  check('the analog input card Local:3:C: RealTimeSample and Ch0Config … Ch3Config (AB:1756_NII_Struct:C:0) with the scaling members', Object.keys(c.read('Local:3:C')).join() === 'RealTimeSample,Ch0Config,Ch1Config,Ch2Config,Ch3Config' && c.read('Local:3:C.Ch2Config.LowEngineering') === 0 && c.write('Local:3:C.Ch2Config.HighEngineering', 100) && c.read('Local:3:C.Ch2Config.HighEngineering') === 100);
+  {
+    const a = run({ modules: [{ slot: 4, type: 'PLC-AO4', name: 'AO_1' }] });
+    check('the analog output card Local:4:C: ProgToFaultEn and Ch<n>Config (AB:1756_NIO_Struct:C:0) with FaultValue, ProgValue, limits', Object.keys(a.read('Local:4:C')).join() === 'ProgToFaultEn,Ch0Config,Ch1Config,Ch2Config,Ch3Config' && a.read('Local:4:C.Ch3Config.FaultValue') === 0 && a.read('Local:4:C.Ch0Config.HighLimit') === 0);
+  }
   check('a digital output module has Local:2:C with its fault and program mode states', c.read('Local:2:C.ProgToFaultEn') === 0 && c.read('Local:2:C.FaultValue') === 0);
   check('the configuration tag can be written (it is not an input image)', c.write('Local:2:C.FaultValue', 5) === true && c.read('Local:2:C.FaultValue') === 5);
   eq('program tag', c.read('Local_Val', 'MainProgram'), 0);
