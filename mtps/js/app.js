@@ -823,6 +823,7 @@
     foff: { l: 'Force Off', i: 'force', run: () => forceSel(0), on: selForceable },
     frem: { l: 'Remove Force', i: 'close', run: () => forceSel(null), on: () => selForceable() && ctl.forced(curEl().a[0], S.prog) !== null },
     find: { l: 'Find…', k: 'Ctrl+F', i: 'search', run: cmdFind },
+    replace: { l: 'Replace…', k: 'Ctrl+H', i: 'edit', run: cmdReplace, on: () => !S.noProj },
     findnext: { l: 'Find Next', k: 'F3', i: 'search', run: () => findNext(true), on: () => !!S.find },
     findprev: { l: 'Find Previous', k: 'Shift+F3', i: 'search', run: () => findNext(true, -1), on: () => !!S.find },
     nextres: { l: 'Next Result', k: 'F4', i: 'down', run: () => nextResult(1), on: () => !S.noProj },
@@ -873,7 +874,7 @@
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
-    ['Search', ['find', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
+    ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
@@ -1067,7 +1068,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
@@ -1116,7 +1117,7 @@
     const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
     if (S.outTab === 'search') {
       const sv = S.search || { lines: [], found: [] };
-      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
+      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^(Found|Replaced)/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
     }
     return tabs + errorsBody();
   }
@@ -2365,6 +2366,112 @@
     }
     if (wrapMsg) toast(`"${S.find}" was not found.`);
     return false;
+  }
+  /* Search > Replace, as the reference's Replace dialog: Find What, Replace With, Find Where (this routine or all
+     routines, in the organizer's order), Wrap, Match Whole Word Only, Direction, Find Within (Instructions,
+     Instruction Operands, Rung Comments); Find Next, Replace (the selected occurrence, else finds the first),
+     Replace All (results in Search Results). As in the reference, nothing is replaced while online. */
+  const rxEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function repHits(o) {
+    const q = U(o.what), wb = '[A-Za-z0-9_]', hits = [];
+    const re = o.whole ? new RegExp('(^|[^A-Za-z0-9_])(' + rxEsc(o.what) + ')(?!' + wb + ')', 'i') : null;
+    const has = t => (re ? re.test(String(t)) : U(String(t)).includes(q));
+    const list = o.all ? allProgs().flatMap(g => g.routines.map(r => ({ g, r }))) : [{ g: curProg(), r: curRoutine() }];
+    list.forEach(({ g, r }, gi) => r.rungs.forEach((rg, ri) => {
+      if (o.cm && rg.c && has(rg.c)) hits.push({ g: g.name, r: r.name, ri, kind: 'cm', key: [gi, ri, -1, 0] });
+      const pr = E.parseRung(rg.t); if (pr.err) return;
+      flat(pr.elems).forEach((path, fi) => {
+        const e = getEl(pr.elems, path);
+        if (o.ins && has(e.t)) hits.push({ g: g.name, r: r.name, ri, kind: 'ins', path, key: [gi, ri, fi, 0], e });
+        if (o.ops) (e.a || []).forEach((a, oi) => { if (has(a)) hits.push({ g: g.name, r: r.name, ri, kind: 'op', path, oi, key: [gi, ri, fi, 1 + oi], e }); });
+      });
+    }));
+    return { hits, list, re };
+  }
+  const keyCmp = (a, b) => { for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  const selKey = () => JSON.stringify([S.prog, S.routine, S.sel, S.selRung]);
+  function cmdReplace() {
+    const a = selOperand(), o = { what: isTagText(a) ? String(a) : S.find || '', with: S.repWith || '', all: false, wrap: true, whole: false, up: false, ins: true, ops: true, cm: true };
+    const el = dialog({ title: 'Replace', size: 'md', focus: true,
+      body: `<div class="frow"><label for="rp-f">Find What:</label><input class="inp mono" id="rp-f" value="${esc(o.what)}" autocomplete="off" spellcheck="false" autofocus></div>
+        <div class="frow"><label for="rp-w">Replace With:</label><input class="inp mono" id="rp-w" value="${esc(o.with)}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label for="rp-wh">Find Where:</label><select class="inp" id="rp-wh"><option value="">Current Routine: ${esc(curRoutine().name)}</option><option value="all">All Routines</option></select></div>
+        <div class="frow"><span></span><div><label class="ockb"><input type="checkbox" id="rp-wrap" checked> Wrap</label><label class="ockb"><input type="checkbox" id="rp-whole"> Match Whole Word Only</label>
+          <div class="ockb">Direction: <label class="ockb"><input type="radio" name="rp-dir" id="rp-up"> Up</label><label class="ockb"><input type="radio" name="rp-dir" id="rp-down" checked> Down</label></div></div></div>
+        <div class="frow"><span>Find Within:</span><div><b>Ladder Diagrams</b><label class="ockb"><input type="checkbox" id="rp-ins" checked> Instructions</label><label class="ockb"><input type="checkbox" id="rp-ops" checked> Instruction Operands</label><label class="ockb"><input type="checkbox" id="rp-cm" checked> Rung Comments</label></div></div>
+        <div class="errtx" id="rp-e"></div><p class="help" id="rp-m"></p>`,
+      buttons: [{ l: 'Find Next', pri: true, run: () => { act('next'); return false; } }, { l: 'Replace', run: () => { act('one'); return false; } }, { l: 'Replace All', run: () => { act('all'); return false; } }, { l: 'Close' }] });
+    const q = s2 => el.querySelector(s2);
+    const say = (m, err) => { q('#rp-e').textContent = err ? m : ''; q('#rp-m').textContent = err ? '' : m; };
+    const read = () => { Object.assign(o, { what: q('#rp-f').value.trim(), with: q('#rp-w').value.trim(), all: q('#rp-wh').value === 'all', wrap: q('#rp-wrap').checked, whole: q('#rp-whole').checked, up: q('#rp-up').checked, ins: q('#rp-ins').checked, ops: q('#rp-ops').checked, cm: q('#rp-cm').checked }); S.find = o.what; S.repWith = o.with; };
+    // where the search stands: the occurrence found last while it is still selected, else the selection
+    const pos = list => {
+      if (S.repHit && S.repHit.sk === selKey()) return S.repHit.key;
+      const gi = Math.max(0, list.findIndex(x => x.g.name === S.prog && x.r.name === S.routine));
+      if (S.sel && S.sel.path) { const els = parsed(S.sel.ri) || [], fi = flat(els).findIndex(p => p.join() === S.sel.path.join()); return [gi, S.sel.ri, fi, S.sel.op != null ? 1 + S.sel.op : 0]; }
+      return S.selRung != null ? [gi, S.selRung, -1, -1] : [gi, -1, 0, 0];
+    };
+    const show = h => {
+      S.prog = h.g; S.routine = h.r; S.view = 'ladder'; if (S.layout === 'phone') S.area = 'ladder';
+      if (h.kind === 'cm') { S.sel = null; S.selRung = h.ri; } else { S.sel = { ri: h.ri, path: h.path }; if (h.kind === 'op') S.sel.op = h.oi; S.selRung = null; }
+      S.selAll = null; reverify(); render(); scrollToSel();
+      S.repHit = { key: h.key, sk: selKey() };
+      say(`Found: ${h.g} - ${h.r}, Rung ${h.ri}${h.kind === 'cm' ? ', rung comment' : `, ${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+    };
+    const next = () => {
+      const { hits, list } = repHits(o); if (!hits.length) { say(`Search complete: "${o.what}" was not found.`, true); return null; }
+      const p = pos(list);
+      let h = o.up ? [...hits].reverse().find(x => keyCmp(x.key, p) < 0) : hits.find(x => keyCmp(x.key, p) > 0);
+      if (!h && o.wrap) h = o.up ? hits[hits.length - 1] : hits[0];
+      if (!h) { say(`Search complete: no more "${o.what}" ${o.up ? 'above' : 'below'}.`, true); return null; }
+      show(h); return h;
+    };
+    // the new text of one occurrence (the matched part is replaced, every time it appears in that operand or comment)
+    const swap = (t, re) => String(t).replace(re ? new RegExp(re.source, 'gi') : new RegExp(rxEsc(o.what), 'gi'), (m0, a1, a2) => (re ? a1 + o.with : o.with));
+    function apply(h, re, R) {
+      const rg = R.rungs[h.ri];
+      if (h.kind === 'cm') { const c = swap(rg.c, re); if (c) rg.c = c; else delete rg.c; return true; }
+      const pr = E.parseRung(rg.t); if (pr.err) return false;
+      const x = getEl(pr.elems, h.path); if (!x) return false;
+      if (h.kind === 'op') x.a[h.oi] = swap(x.a[h.oi], re);
+      else { const m = U(swap(x.t, re)); if (!INSTR[m]) return false; x.a = morphOps(x, m); x.t = m; }
+      rg.t = E.serializeRung(pr.elems);
+      return true;
+    }
+    const routineOf = h => allProgs().find(g => g.name === h.g).routines.find(r => r.name === h.r);
+    const act = kind => {
+      read();
+      if (!o.what) { say('Type what to find.', true); return; }
+      if (!o.ins && !o.ops && !o.cm) { say('Pick at least one place in Find Within.', true); return; }
+      if (kind === 'next') { next(); return; }
+      if (S.online) { say('Cannot replace logic, tags or comments while online.', true); return; }
+      if (!editable()) return;
+      const { hits, re } = repHits(o);
+      if (kind === 'one') {
+        const p = S.repHit && S.repHit.sk === selKey() ? S.repHit.key : null, h = p && hits.find(x => keyCmp(x.key, p) === 0);
+        if (!h) { next(); return; }
+        let ok = true;
+        edit(() => { ok = apply(h, re, routineOf(h)); return ok; });
+        if (!ok) { say('Fail to replace element: that is not a valid instruction. Type a valid instruction and try again.', true); return; }
+        S.repHit = null; render();
+        if (!next()) say(`Replaced. No more "${o.what}".`);
+        return;
+      }
+      if (!hits.length) { say(`Nothing to replace: "${o.what}" was not found.`, true); return; }
+      const done = [];
+      edit(() => {
+        // from the last occurrence back, so the paths of the ones before it stay right
+        [...hits].reverse().forEach(h => { if (apply(h, re, routineOf(h))) done.unshift(h); });
+        return done.length ? true : false;
+      });
+      S.repHit = null;
+      const lines = done.map(h => `Replaced: ${h.g} - ${h.r}, Rung ${h.ri}, ${h.kind === 'cm' ? 'Rung Comment' : `${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+      S.search = { errors: [], warnings: [], found: done.map((h, n) => ({ text: lines[n], program: h.g, routine: h.r, rung: h.ri })), lines: [`Replacing "${o.what}" with "${o.with}" in ${o.all ? S.p.controller.name : curRoutine().name}...`, ...lines, `Complete - ${done.length} occurrence(s) replaced.`] };
+      S.outTab = 'search';
+      if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true;
+      reverify(); render();
+      say(done.length < hits.length ? `${done.length} of ${hits.length} replaced (an instruction name that is not valid was left).` : `${done.length} occurrence(s) replaced. See Search Results.`, done.length < hits.length);
+    };
   }
   /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
      in the tag editor) and the rung or the tag to go to */
@@ -4611,7 +4718,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit1' || ev.code === 'Numpad1')) { ev.preventDefault(); showErrors(); return; }
-    const map = { a: 'selall', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
+    const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
