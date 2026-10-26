@@ -3756,7 +3756,53 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
       <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `${innerWidth > innerHeight ? `<button class="ib" data-dkat="${where === 'side' ? 'bottom' : 'right'}" title="${where === 'side' ? 'Move the panel under the ladder' : 'Move the panel to the right of the ladder'}">${ic(where === 'side' ? 'dockb' : 'dockr')}</button>` : ''}<button class="ib" data-dkmin="1" title="Fold the emulator panel">${ic(where === 'side' ? 'right' : 'down')}</button>`}</div>
-      <div class="dockb" id="iob">${dockBody()}</div></div>`;
+      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div></div>`;
+  }
+  /* the Chassis Monitor menu bar (Logix Emulate, LGEM5K-GR016M chapters 3-5): Slot > Create Module / Remove Module /
+     Properties, View, Options, All Modules > Run / Program, Help; the right-click menus stay as they are */
+  const EMUMENUS = ['File', 'Slot', 'View', 'Options', 'All Modules', 'Help'];
+  const emuMenuBar = where => `<div class="emb" role="menubar">${EMUMENUS.map(n => `<button type="button" data-emb="${where}:${n}">${n}</button>`).join('')}</div>`;
+  function emuMenu(el) {
+    const [where, name] = el.dataset.emb.split(':'), doc = el.ownerDocument, was = emuOpen();
+    const ri = where === 'dock' ? Math.max(0, racks.indexOf(chassis)) : Math.min(emuSel.ri || 0, racks.length - 1), r = racks[ri];
+    const used = [...r.mods.keys()].sort((a, b) => a - b), free = Array.from({ length: r.size }, (_, s) => s).filter(s => !r.module(s));
+    const cur = emuSel.k === 'm' && emuSel.ri === ri && r.module(emuSel.slot) ? emuSel.slot : null;
+    const P = S.prefs, tog = k => () => { P[k] = !P[k]; savePrefs(); chassisLive(true); render(); backToEmu(was); };
+    const items = {
+      File: [{ l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
+      Slot: [{ l: 'Create Module…', i: 'plus', dis: !free.length, run: () => insertCard(ri, free[0]) }, { l: 'Remove Module…', i: 'trash', dis: !used.length, run: () => removeModuleDlg(ri, cur, was) }, '-',
+        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
+      View: [{ l: 'Compact', ck: !!P.emuCompact, run: tog('emuCompact') }, { l: 'Hide Slots 9-16', ck: false, dis: true }],
+      Options: [{ l: 'Clear Configuration on Remove', ck: !!P.clearOnRemove, run: tog('clearOnRemove') }, { l: 'Always On Top', ck: false, dis: true }, { l: 'Auto Refresh Rate', dis: true }],
+      'All Modules': [{ l: 'Run…', dis: !r.controllers().length, run: () => allModes(ri, 'RUN', was) }, { l: 'Program…', dis: !r.controllers().length, run: () => allModes(ri, 'PROG', was) }],
+      Help: [{ l: 'Help Topics', i: 'help', run: () => run('tips') }, { l: 'About MT PLC Studio', i: 'info', run: () => run('about') }] }[name];
+    openMenu(items, doc === document ? el : { x: 40, y: 80 }, name);
+    if (doc !== document) window.focus();
+  }
+  /* Slot > Remove Module: pick the slot, then a prompt confirms the removal (cannot be undone) */
+  function removeModuleDlg(ri, cur, was) {
+    const r = racks[ri], used = [...r.mods.keys()].sort((a, b) => a - b);
+    dialog({ title: 'Remove Module', size: '', focus: true,
+      body: `<div class="frow"><label>Slot</label><select class="inp" id="rmm-s">${used.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}: ${esc(r.module(s).type)} ${esc(r.module(s).name)}</option>`).join('')}</select></div>`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const s = +e2.querySelector('#rmm-s').value, m = r.module(s);
+        if (!m) return;
+        setTimeout(() => {
+          if (m.ctl) { removeCpu(ri, s, was); return; }
+          dialog({ title: 'Remove Module', size: '', body: `<p>Remove <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from the virtual chassis ${esc(r.name)}? This cannot be undone.</p>`,
+            buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', danger: true, run: () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); backToEmu(was); } }] });
+        }, 0);
+      } }] });
+  }
+  /* All Modules > Run / Program: every emulated controller of the chassis is ticked; clear the ones to leave as they are */
+  function allModes(ri, k, was) {
+    const r = racks[ri], cs = r.controllers(), t = k === 'RUN' ? 'Run' : 'Program';
+    dialog({ title: `${t} Mode`, size: '',
+      body: `<p style="margin-top:0">Put these emulated controllers in ${t} mode:</p>${cs.map(m => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" data-amod="${m.slot}" checked><span>Slot ${m.slot}: ${esc(m.name)}</span></label>`).join('')}`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        e2.querySelectorAll('[data-amod]').forEach(b => { if (b.checked) r.controller(+b.dataset.amod).setKey(k); });
+        saveChassis(); chassisLive(true); live(true); render(); backToEmu(was);
+      } }] });
   }
   /* ---------- Emulator dashboard (spec section 15), laid out like a PC emulator's dashboard ----------
      Devices pane: the chassis and their cards. Details: the Controller pane (name, description, IP address, power),
@@ -4000,7 +4046,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }));
     return rows.join('') || '<p class="help" style="padding:8px">No emulated controllers. Add one.</p>';
   }
-  const emuHTML = () => `<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
+  const emuHTML = () => `${emuMenuBar('win')}<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
     <div class="emumain" id="emumain">${detailsHTML()}</div>
     <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div>`;
   const chassisSig = () => racks.map(r => r.name + ':' + [...r.mods.values()].map(m => (m.ctl ? [m.slot, m.name, m.ip, m.ctl.powered, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.name, m.fault, JSON.stringify(m.field), JSON.stringify(r.outputs(m.slot))].join(','))).join('|')).join('#') + curPath();
@@ -4013,6 +4059,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const b = d.getElementById('emubody');
       if (!b || (!force && b.dataset.sig === sg)) return;
       b.dataset.sig = sg;
+      b.classList.toggle('compact', !!S.prefs.emuCompact);
       const a = d.activeElement, busy = a && b.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
       if (!busy) { b.innerHTML = emuHTML(); return; }
       // typing in the details: refresh the devices, the status and the rack around it
@@ -4054,6 +4101,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if (doc !== document) window.focus();
       return true;
     }
+    if ((el = t.closest('[data-emb]'))) { emuMenu(el); return true; }
     if ((el = t.closest('[data-ecfg]'))) { configEmulation(el.dataset.ecfg, emuOpen()); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
@@ -4201,7 +4249,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   function chassisMonitor() {
     dialog({ title: 'Emulator', size: 'lg', flush: true,
-      body: `<div id="emubody" class="emu">${emuHTML()}</div>`,
+      body: `<div id="emubody" class="emu${S.prefs.emuCompact ? ' compact' : ''}">${emuHTML()}</div>`,
       buttons: (S.layout === 'phone' ? [] : [{ l: 'Open in a window', run: () => { setTimeout(popChassis, 0); } }]).concat([{ l: 'Who Active…', run: () => { setTimeout(whoActive, 0); } }, { l: 'Close', pri: true }]) });
   }
   /* the emulator in a window of its own, beside the programming software. The window starts blank (so it shares this

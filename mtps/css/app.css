@@ -1114,3 +1114,11 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .sotrow .num { width: 72px; }
 .ciprev { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
 .ciprev p { margin: 4px 0; }
+/* Logix Emulate Chassis Monitor menu bar (Emulator window and panel) */
+.emb { display: flex; flex-wrap: wrap; gap: 2px; padding: 1px 6px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; grid-column: 1 / -1; }
+.emb button { height: 24px; padding: 0 9px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.emb button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.tab .emb button, .phone .emb button { height: 32px; }
+.emu { grid-template-rows: auto minmax(0, 1fr) minmax(92px, auto); }
+.emu.compact { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+.emu.compact .emudev, .emu.compact .emustat { display: none; }

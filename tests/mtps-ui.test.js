@@ -1779,6 +1779,60 @@ function check(name, cond, info = '') {
     check('then a new controller there starts from defaults (no prompt)', await page.$eval('#ci-prev', b => b.hidden));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
   }
+  console.log('Logix Emulate: Chassis Monitor menu bar (File, Slot, View, Options, All Modules, Help)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); MTPS.App.state.prefs.emuMin = false; MTPS.App.render(); });
+    await page.waitForTimeout(200);
+    check('the emulator panel has the menu bar', (await page.$$eval('#dock .emb button', b => b.map(x => x.textContent).join(','))) === 'File,Slot,View,Options,All Modules,Help');
+    await page.click('#dock [data-emb="dock:Slot"]'); await page.waitForTimeout(80);
+    check('Slot: Create Module…, Remove Module…, Properties…', (await page.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))) === 'Create Module…|Remove Module…|Properties…');
+    await page.click('#layer .it:has-text("Remove Module")'); await page.waitForTimeout(100);
+    check('Slot > Remove Module: the Remove Module dialog asks for the slot', (await dlgTitle()) === 'Remove Module' && (await page.$$eval('#rmm-s option', o => o.length)) >= 3);
+    await page.selectOption('#rmm-s', '2'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(120);
+    check('OK: a prompt confirms the removal', (await dlgTitle()) === 'Remove Module' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('cannot be undone'));
+    await page.click('#layer .df .btn.danger'); await page.waitForTimeout(150);
+    check('the module in slot 2 is removed', await ev(() => !MTPS.App.racks[0].module(2)));
+    await page.click('#dock [data-emb="dock:Slot"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Create Module")'); await page.waitForTimeout(120);
+    check('Slot > Create Module: the create dialog on the first free slot', (await dlgTitle()) === 'Add Module' && (await page.$eval('#ci-s', s => s.value)) === '2');
+    await page.selectOption('#ci-t', 'PLC-DO16-24V'); await page.fill('#ci-n', 'DO_1'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(250);
+    check('the module is created in slot 2 again', await ev(() => MTPS.App.racks[0].module(2) && MTPS.App.racks[0].module(2).type === 'PLC-DO16-24V'));
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; });
+    await ev(() => MTPS.App.run('chassis')); await page.waitForTimeout(150);
+    check('the Emulator window has the same menu bar', (await page.$$eval('#layer .emb button', b => b.map(x => x.textContent).join(','))) === 'File,Slot,View,Options,All Modules,Help');
+    await page.click('#layer [data-esel="m:0:0"]'); await page.waitForTimeout(80);
+    await page.click('#layer [data-emb="win:Options"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Clear Configuration on Remove")'); await page.waitForTimeout(200);
+    check('Options > Clear Configuration on Remove (ticked), and the Emulator window comes back', (await ev(() => MTPS.App.state.prefs.clearOnRemove)) === true && (await page.$('#layer #emubody')) !== null);
+    await page.click('#layer [data-emb="win:Slot"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Remove Module")'); await page.waitForTimeout(100);
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(120);
+    check('then the Clear module configuration box is ticked at first', (await page.$eval('#rm-clr', i => i.checked)) === true);
+    await page.click('#layer .df .btn:not(.danger)'); await page.waitForTimeout(200);
+    await page.click('#layer [data-emb="win:View"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Compact")'); await page.waitForTimeout(200);
+    check('View > Compact: the Devices and Device Status panes hide', await page.$eval('#layer #emubody', b => b.classList.contains('compact') && getComputedStyle(b.querySelector('.emudev')).display === 'none'));
+    await page.click('#layer [data-emb="win:View"]'); await page.waitForTimeout(80); await page.click('#layer .it:has-text("Compact")'); await page.waitForTimeout(200);
+    await page.click('#layer [data-emb="win:All Modules"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Program")'); await page.waitForTimeout(100);
+    check('All Modules > Program: the Program Mode dialog with every controller ticked', (await dlgTitle()) === 'Program Mode' && (await page.$$eval('#layer [data-amod]', b => b.length > 0 && b.every(x => x.checked))));
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
+    check('OK: the controllers go to Program', await ev(() => MTPS.App.racks[0].controllers().every(m => m.ctl.key === 'PROG')));
+    await ev(() => { MTPS.App.racks[0].controllers().forEach(m => m.ctl.setKey('REM')); MTPS.App.state.prefs.clearOnRemove = false; document.querySelector('#layer').innerHTML = ''; });
+    for (const [w, h] of [[390, 844], [800, 1280]]) {
+      const tp = await browser.newPage({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+      tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+      await tp.waitForTimeout(300);
+      if (w < 768) { await tp.tap('[data-ptab="1"]'); await tp.waitForTimeout(200); }
+      const mb = await tp.$$eval('#dock .emb button', b => b.map(x => { const r = x.getBoundingClientRect(); return r.right <= innerWidth && r.height >= 32; }));
+      await tp.tap('#dock [data-emb="dock:Slot"]'); await tp.waitForTimeout(120);
+      check(`${w} px (touch): the panel menu bar fits and Slot opens its menu`, mb.length === 6 && mb.every(Boolean) && (await tp.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))).includes('Create Module…') && (await tp.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)));
+      await tp.close();
+    }
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
