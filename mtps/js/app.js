@@ -25,7 +25,7 @@
   const DEFPATH = 'Emulate\\127.0.0.1\\Backplane\\0';
   const pathOf = (ip, slot) => 'Emulate\\' + ip + '\\Backplane\\' + slot;
   function defaultRacks() {
-    const c = new E.Chassis(10, 'Chassis');
+    const c = new E.Chassis(8, 'Chassis');
     c.insert(0, 'PLC-CPU', 'Emulator'); c.setController(0, { ip: '127.0.0.1' });
     c.insert(1, 'PLC-DI16-24V', 'DI_1'); c.insert(2, 'PLC-DO16-24V', 'DO_1');
     return [c];
@@ -83,7 +83,7 @@
   }
   racks.forEach(watchRack);
   function addRack(name, desc, size) {
-    const r = new E.Chassis(size || 10, name); r.desc = desc || '';
+    const r = new E.Chassis(size || 8, name); r.desc = desc || '';
     racks.push(r); watchRack(r); saveChassis();
     return r;
   }
@@ -127,7 +127,7 @@
   function blank(name) {
     return {
       format: 'mt-plc-studio', version: 1, controller: { name, type: 'PLC-CPU', rev: '1.0' },
-      rack: { size: 10, modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
+      rack: { size: 8, modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
       dataTypes: [], tags: [],
       tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [{ t: '' }] }] }] }],
     };
@@ -320,6 +320,8 @@
   function openProject(p, quiet) {
     S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.descEd = null; S.view = 'ladder'; S.noProj = false;
     // modules of a type this version does not have (the generic module of 0.4.0-beta.1) leave the I/O configuration
+    // a project of 0.4.0-beta.3 or older (7, 10 or 12 slots) gets an 8-slot chassis when its modules fit
+    if (p.rack && p.rack.size != null && !E.RACKS.includes(p.rack.size)) p.rack.size = E.fitRack(p.rack.size, (p.rack.modules || []).map(m => m.slot).concat(p.controller && Number.isInteger(p.controller.slot) ? p.controller.slot : 0));
     const gone = (p.rack && p.rack.modules || []).filter(m => !E.MODULES[m.type]);
     if (gone.length) { p.rack.modules = p.rack.modules.filter(m => E.MODULES[m.type]); setTimeout(() => toast(`Removed from the I/O configuration: ${gone.map(m => `[${m.slot}] ${m.name}`).join(', ')} (module type no longer in the app).`), 300); }
     S.prog = allProgs()[0].name;
@@ -2180,7 +2182,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
      path), 5 Ladder. Quick setup does all of it with the defaults. */
   const WZSTEPS = [['Communications', 'Configure Drivers'], ['Emulator', 'Chassis and controller'], ['New Project', 'Type, revision, slot, I/O'], ['Who Active', 'Set Project Path'], ['Ladder', 'Write, Verify, Download']];
   function setupWizard(step0) {
-    const wz = { step: step0 || 0, name: '', made: false, size: 10 };
+    const wz = { step: step0 || 0, name: '', made: false, size: 8 };
     const ctls = () => racks.flatMap((r, ri) => r.controllers().map(m => ({ r, ri, m })));
     // the controllers a running driver reaches: every powered one of the virtual chassis, and those with an IP address
     const gates = () => ctls().filter(x => x.m.ctl.powered && ((driverUp('vbp') && x.ri === 0) || (driverUp('emulate') && x.m.ip)));
@@ -2202,7 +2204,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         c = `<h3>3. New Project</h3><p class="help">The project's controller must match the emulated one: type, revision and slot.</p>
           <div class="frow"><label>Name</label><input class="inp" id="wz-n" value="${esc(wz.name || (S.p && !wz.made ? uniqueProj('New_Project') : S.p.controller.name))}"${wz.made ? ' disabled' : ''}></div>
           ${kv('Type', 'PLC-CPU (emulated)')}${kv('Revision', '1.0')}
-          <div class="frow"><label>Chassis size</label><select class="inp" id="wz-z"${wz.made ? ' disabled' : ''}>${E.RACKS.map(n => `<option${n === (g ? g.r.size : 10) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+          <div class="frow"><label>Chassis size</label><select class="inp" id="wz-z"${wz.made ? ' disabled' : ''}>${E.RACKS.concat(g && !E.RACKS.includes(g.r.size) ? [g.r.size] : []).map(n => `<option${n === (g ? g.r.size : 8) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
           ${kv('Slot', g ? g.m.slot : 0)}
           <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="wz-io" checked${wz.made ? ' disabled' : ''}><span>Put the I/O cards of the emulator chassis in the I/O Configuration</span></label>
           ${wz.made ? '<p class="tip">Project made.</p>' : ''}${nav(true, wz.made ? 'Next: Who Active' : 'Create Project')}`;
@@ -2351,7 +2353,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const type = kindOf(cat);
       if (type && slot > 0 && m.getAttribute('ParentModule') === 'Local') mods.push({ slot, type, name: (m.getAttribute('Name') || type).replace(/[^A-Za-z0-9_]/g, '_') });
     });
-    p.rack.size = E.RACKS.find(n => n >= size) || 12;
+    p.rack.size = E.fitRack(E.RACKS.find(n => n >= size) || size, mods.map(m => m.slot).concat(p.controller.slot || 0));
     p.rack.modules = mods.filter(m => m.slot < p.rack.size);
     const progs = kids(c, 'Programs')[0];
     const list = (progs ? kids(progs, 'Program') : []).map(g => {
@@ -2885,11 +2887,11 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- the emulator dock (P1): the chassis of the project path beside the ladder, sized by a splitter ----------
      bottom (desktop, tablet portrait), side (tablet landscape, phone landscape), full (the phone's Emulator tab).
-     The modules keep their size; a side or full panel shows the used slots and one empty slot. */
+     The modules keep their size; every slot of the chassis shows, in one row that scrolls sideways when it must. */
   function dockBody() {
-    const ri = Math.max(0, racks.indexOf(chassis)), compact = false;   // S.dockCompact: set by dockHTML for the side and full panels
+    const ri = Math.max(0, racks.indexOf(chassis));
     const cs = chassis.controllers();
-    return rackHTML(ri, compact || S.dockCompact) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
+    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
   }
   /* the emulator panel: on the right in landscape and at the bottom in portrait, unless it was moved; it can be
      folded to a thin bar (like the organizer) and opened again from there */
@@ -2898,7 +2900,6 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (S.prefs.emuMin && where !== 'full') {
       return `<div class="dock ${where} min" id="dock"><button class="dkbar" data-dkmin="0" title="Show the emulator panel">${ic(where === 'side' ? 'left' : 'up')}<b>Emulator</b><span class="muted">${esc(chassis.name)}</span></button></div>`;
     }
-    S.dockCompact = where !== 'bottom' || (S.layout === 'phone');
     const P = S.prefs, size = where === 'bottom' ? `height:${S.layout === 'tablet' ? P.emuHp : P.emuH}px` : where === 'side' ? `width:${P.emuW}px` : '';
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
@@ -2917,6 +2918,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      and modules plugged into the slots. An I/O module has its status LEDs and a terminal block (screw terminals, where
      field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
      as in the reference emulator */
+  const rtbOpen = new Set();   // the I/O cards ('rack:slot') whose RTB door is open: UI state only
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
@@ -2940,22 +2942,19 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
     const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
     const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
-    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${term}${tail}</div>`;
+    /* the RTB (removable terminal block) housing: its door is closed over the terminals, as on a 1756 module; a click
+       or tap opens it on its side hinge and shows the terminals, another one closes it (kept per card, not in the project) */
+    const open = rtbOpen.has(id);
+    const rtb = `<div class="mrtb${open ? ' open' : ''}" data-rtb="${id}">${term}<button type="button" class="rtbdoor" data-rtb="${id}" aria-expanded="${open}" aria-label="${open ? 'Close' : 'Open'} the terminal block door of slot ${s}" title="${open ? 'Close' : 'Open'} the RTB door"><span class="rtblock" aria-hidden="true"></span><span class="rtbrib" aria-hidden="true"></span><b>${esc(m.type.replace('PLC-', ''))}</b><small>RTB</small></button></div>`;
+    return `<div class="ccard io${m.fault ? ' flt' : ''}" data-esel="m:${id}" data-cmod="${id}"><div class="mf"><div class="mcat">${esc(m.type.replace('PLC-', ''))}</div><div class="mleds one">${led(true, 'OK', okc)}</div>${face}<div class="mname">${esc(m.name)}</div></div>${rtb}${tail}</div>`;
   }
-  /* the chassis drawn in rows of up to 8 slots (6 on a tablet, 3 on a phone); a row can be folded away */
-  const rackHTML = (ri, compact) => {
-    const r = racks[ri], all = Array.from({ length: r.size }, (_, s) => s), firstFree = all.find(s => !r.module(s));
-    const slots = compact ? all.filter(s => r.module(s) || s === firstFree) : all;
-    // rows of 8 slots on Windows, 6 on a tablet, 3 on a phone, so every card stays on the screen
-    const per = S.layout === 'desktop' ? 8 : S.layout === 'phone' ? 3 : 6, rows = [];
-    for (let i = 0; i < slots.length; i += per) rows.push(slots.slice(i, i + per));
-    return rows.map((row, k) => {
-      const key = ri + ':' + k, shut = S.rowHide && S.rowHide.has(key);
-      const head = rows.length > 1 ? `<div class="rkrow" data-rkrow="${key}">${ic(shut ? 'right' : 'down')}Slots ${row[0]}–${row[row.length - 1]}</div>` : '';
-      if (shut) return head;
-      return head + `<div class="chas" style="--n:${row.length}">${k === 0 ? '<div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>' : '<div class="rkps ext" aria-hidden="true"></div>'}
-      <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div>`;
-    }).join('');
+  /* the chassis drawn as one row of slots, as in the Logix Emulate Chassis Monitor: a power supply, then every slot
+     (4 or 8) side by side, each empty slot as big as a module. On a narrow screen the row scrolls sideways; it never
+     wraps into a second row. */
+  const rackHTML = ri => {
+    const r = racks[ri], row = Array.from({ length: r.size }, (_, s) => s);
+    return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
+      <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div></div>`;
   };
   /* ---------- Module I/O window: the I/O of a chassis in one small window that stays open, inputs and outputs
      together. Each input point is a button that switches it; each output point lights while it is on; analog
@@ -3037,7 +3036,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function moduleMenu(id, x, y) {
     const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
     if (!m) return;
-    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: () => ({ dataset: { crem: id } }) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
+    openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
   }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
@@ -3050,7 +3049,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return `<div class="ph" style="background:none">Chassis</div><div class="emuform">
         <div class="frow"><label>Name</label><input class="inp" id="er-n" value="${esc(r.name)}"></div>
         <div class="frow"><label>Description</label><input class="inp" id="er-d" value="${esc(r.desc || '')}"></div>
-        <div class="frow"><label>Slots</label><select class="inp" id="er-z">${[4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => `<option${n === r.size ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div class="frow"><label>Slots</label><select class="inp" id="er-z">${E.RACKS.concat(E.RACKS.includes(r.size) ? [] : [r.size]).map(n => `<option${n === r.size ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
         <div class="brow"><button class="btn pri" data-erapply="${emuSel.ri}">Apply</button><button class="btn danger" data-erdel="${emuSel.ri}"${racks.length > 1 ? '' : ' disabled'}>Delete chassis</button></div></div>
         <div class="emurack">${rackHTML(emuSel.ri)}</div>`;
     }
@@ -3109,7 +3108,19 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     let el;
     const doc = t.ownerDocument;
     if ((el = t.closest('[data-cio]'))) { openIoWin(el.dataset.cio, el.ownerDocument, el.closest('.ccard') || el); return true; }
-    if ((el = t.closest('[data-rkrow]'))) { S.rowHide = S.rowHide || new Set(); const k = el.dataset.rkrow; if (S.rowHide.has(k)) S.rowHide.delete(k); else S.rowHide.add(k); chassisLive(true); refreshIO(); return true; }
+    if ((el = t.closest('[data-rtb]'))) {
+      // the RTB door: swing it open or shut in place (every view of that card), so the hinge animates
+      const k = el.dataset.rtb, open = !rtbOpen.has(k);
+      if (open) rtbOpen.add(k); else rtbOpen.delete(k);
+      const docs = [document].concat(chasWin && !chasWin.closed ? [chasWin.document] : []);
+      docs.forEach(d => d.querySelectorAll(`.mrtb[data-rtb="${k}"]`).forEach(x => {
+        x.classList.toggle('open', open);
+        const b = x.querySelector('.rtbdoor'); if (!b) return;
+        b.setAttribute('aria-expanded', String(open));
+        b.setAttribute('aria-label', `${open ? 'Close' : 'Open'} the terminal block door of slot ${k.split(':')[1]}`); b.title = `${open ? 'Close' : 'Open'} the RTB door`;
+      }));
+      return true;
+    }
     if ((el = t.closest('[data-emu]'))) {
       openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
       if (doc !== document) window.focus();
@@ -3189,7 +3200,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function newRack() {
     let n = 1; while (racks.some(r => U(r.name) === U('Chassis' + n))) n++;
     dialog({ title: 'Add Chassis', size: 'md', focus: true,
-      body: `<div class="frow"><label>Name</label><input class="inp" id="nr-n" value="Chassis${n}"></div><div class="frow"><label>Slots</label><select class="inp" id="nr-z">${[4, 5, 6, 7, 8, 9, 10, 11, 12].map(k => `<option${k === 7 ? ' selected' : ''}>${k}</option>`).join('')}</select></div><div class="frow"><label>Description</label><input class="inp" id="nr-d" value=""></div>`,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="nr-n" value="Chassis${n}"></div><div class="frow"><label>Slots</label><select class="inp" id="nr-z">${E.RACKS.map(k => `<option${k === 8 ? ' selected' : ''}>${k}</option>`).join('')}</select></div><div class="frow"><label>Description</label><input class="inp" id="nr-d" value=""></div>`,
       buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
         const v = e2.querySelector('#nr-n').value.trim();
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }

@@ -29,7 +29,17 @@
     'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O' },
     'PLC-ENET': { kind: 'enet' },
   };
-  const RACKS = [4, 7, 10, 12];   // chassis sizes: 4 to 12 slots
+  const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
+  const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
+  /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
+     otherwise they keep their size so no module is lost */
+  const fitRack = (size, slots) => {
+    size = Math.floor(+size) || 8;
+    if (RACKS.includes(size)) return size;
+    const top = Math.max(-1, ...(slots || []).filter(n => Number.isInteger(n)));
+    if (top < 8) return 8;
+    return OLDRACKS.includes(size) && size > top ? size : OLDRACKS.find(n => n > top) || 12;
+  };
   const SFLAGS = ['FS', 'N', 'Z', 'V', 'C', 'MINOR'];
   // the reference's name rules: letters, digits and _, starting with a letter or _, up to 40, no __ and no _ at the end
   const validName = n => { const s = String(n == null ? '' : n); return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(s) && !/__/.test(s) && !/_$/.test(s); };
@@ -574,8 +584,9 @@
     const M = { name: ctl.name || '', types, tags: new Map(), vals: {}, S: { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 }, mods: new Map(), programs: [], otes: new Map() };
 
     const rack = pj.rack || {};
-    const size = RACKS.includes(rack.size) ? rack.size : 10;
-    if (rack.size != null && !RACKS.includes(rack.size)) ctlErr(`Rack size ${rack.size} does not exist (4, 7, 10 or 12 slots)`);
+    const okSize = n => RACKS.includes(n) || OLDRACKS.includes(n);
+    const size = okSize(rack.size) ? rack.size : 8;
+    if (rack.size != null && !okSize(rack.size)) ctlErr(`Rack size ${rack.size} does not exist (4 or 8 slots)`);
     const cslot = Number.isInteger(ctl.slot) ? ctl.slot : 0;
     if (!(cslot >= 0 && cslot < size)) ctlErr(`The controller's slot ${cslot} is not in the ${size}-slot rack`);
     M.slot = cslot;
@@ -1220,7 +1231,7 @@
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU';
   class Chassis {
-    constructor(size = 10, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
+    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
     static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
@@ -1237,10 +1248,10 @@
       return { ok: true, module: m };
     }
     remove(slot) { const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok; }
-    /* another chassis size (4 to 12 slots); refused while a module sits in a slot that would go */
+    /* another chassis size (4 or 8 slots); refused while a module sits in a slot that would go */
     resize(n) {
       n = Math.floor(n);
-      if (!(n >= 4 && n <= 12)) return { ok: false, msg: 'A chassis has 4 to 12 slots.' };
+      if (!RACKS.includes(n)) return { ok: false, msg: 'A chassis has 4 or 8 slots.' };
       const out = [...this.mods.keys()].filter(s => s >= n);
       if (out.length) return { ok: false, msg: `Take out the module in slot ${out.join(', ')} first.` };
       this.size = n; this.emit('insert');
@@ -1295,7 +1306,8 @@
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
     }
     static from(o) {
-      const ch = new Chassis(o && o.size > 0 ? Math.min(12, Math.max(4, Math.floor(o.size))) : 10, (o && o.name) || 'Chassis');
+      // an old chassis (7, 10 or 12 slots) becomes 8 slots when its modules fit, else it keeps its size
+      const ch = new Chassis(o && o.size > 0 ? fitRack(Math.min(12, Math.max(4, Math.floor(o.size))), ((o && o.mods) || []).map(x => x.slot)) : 8, (o && o.name) || 'Chassis');
       ch.desc = (o && o.desc) || '';
       ((o && o.mods) || []).forEach(x => {
         const r = ch.insert(x.slot, x.type, x.name);
@@ -1319,7 +1331,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, INSTR,
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;

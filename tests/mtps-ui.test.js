@@ -305,7 +305,7 @@ function check(name, cond, info = '') {
   await ev(() => MTPS.App.run('chassis'));
   await page.waitForTimeout(100);
   check('Emulator: Devices pane with the chassis and its cards, Device Status with the controller', (await page.$$eval('#emudev .nd', n => n.length)) === 4 && (await page.$$eval('#emustat .emurow', r => r.length)) === 1);
-  check('the chassis view: a 10-slot rack with the controller and the two I/O cards', (await page.$$eval('#emumain .ccard', c => c.length)) === 10 && (await page.$$eval('#emumain .ccard.empty', c => c.length)) === 7);
+  check('the chassis view: an 8-slot rack with the controller and the two I/O cards', (await page.$$eval('#emumain .ccard', c => c.length)) === 8 && (await page.$$eval('#emumain .ccard.empty', c => c.length)) === 5);
   await page.click('#emudev [data-esel="m:0:0"]');
   await page.waitForTimeout(80);
   check('the Controller pane: type, revision, name, IP address 127.0.0.1, chassis, slot, On', (await page.$eval('#emumain', e => e.textContent)).includes('PLC-CPU (emulated)') && (await page.$eval('#ec-ip', s => s.value)) === '127.0.0.1' && (await page.$('#emumain [data-epow="0:0:1"].on')) !== null);
@@ -531,7 +531,50 @@ function check(name, cond, info = '') {
   await page.click('#dock [data-dkat="bottom"]');
   await page.waitForTimeout(100);
   check('P1: the panel can be moved under the ladder; the modules keep their size (not stretched)', (await page.$('.ed #dock.bottom')) !== null && (await page.$eval('#dock .rkslots .ccard', c => c.getBoundingClientRect().width)) <= 100);
-  check('the rack looks like hardware: power supply, rails, slot numbers', (await page.$('#dock .rkps')) !== null && (await page.$$eval('#dock .rkrail.bot span', s => s.length)) === 10);
+  check('the rack looks like hardware: power supply, rails, slot numbers', (await page.$('#dock .rkps')) !== null && (await page.$$eval('#dock .rkrail.bot span', s => s.length)) === 8);
+  // the chassis as the Logix Emulate Chassis Monitor: one row of 4 or 8 slots, an empty slot as big as a module
+  const slotGeo = () => page.$$eval('#dock .rkslots > .ccard', cs => cs.map(c => { const b = c.getBoundingClientRect(); return { top: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height), empty: c.classList.contains('empty') }; }));
+  const oneRow = g => g.length > 0 && [4, 8].includes(g.length) && g.every(x => x.top === g[0].top);
+  const sameSize = g => g.some(x => x.empty) && g.some(x => !x.empty) && g.every(x => Math.abs(x.w - g[0].w) <= 1 && Math.abs(x.h - g[0].h) <= 1);
+  let geo = await slotGeo();
+  check('desktop: the chassis is one row of 8 equal slots', oneRow(geo) && geo.length === 8, JSON.stringify(geo));
+  check('desktop: an empty slot is the same width and height as a module', sameSize(geo), JSON.stringify(geo));
+  await ev(() => { MTPS.App.racks[0].resize(4); MTPS.App.render(); });
+  await page.waitForTimeout(100);
+  geo = await slotGeo();
+  check('a 4-slot chassis: one row of 4 equal slots', oneRow(geo) && geo.length === 4 && sameSize(geo), JSON.stringify(geo));
+  await ev(() => { MTPS.App.racks[0].resize(8); MTPS.App.render(); });
+  await page.setViewportSize({ width: 800, height: 1280 });
+  await page.waitForFunction(() => MTPS.App.state.layout === 'tablet', null, { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(250);
+  geo = await slotGeo();
+  check('tablet 800 × 1280: still one row of 8 equal slots (it scrolls sideways, it does not wrap), no page scroll', oneRow(geo) && geo.length === 8 && sameSize(geo) && await noHScroll(), JSON.stringify(geo));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForFunction(() => MTPS.App.state.layout === 'desktop', null, { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const mig = await ev(() => { const p = MTPS.App.example(); p.rack.size = 10; const q = MTPS.App.example(); q.rack.size = 12; q.rack.modules.push({ slot: 9, type: 'PLC-AI4', name: 'AI_9' }); const a = MTPS.verify(q).errors.length; return [p, q].map(x => { MTPS.App.openProject(x, true); return MTPS.App.state.p.rack.size; }).concat(a); });
+  check('an old project of 10 slots opens as 8; one with a module in slot 9 keeps its size and verifies', mig.join() === '8,12,0', mig.join());
+  await ev(() => MTPS.App.openProject(MTPS.App.example(), true));
+  await page.waitForTimeout(150);
+  // the RTB door of an I/O module: closed by default over the terminals; a click opens it (the terminals show), another closes it
+  const door = (pg, id) => pg.evaluate(id => {
+    const c = document.querySelector(`#iob .ccard.io[data-cmod="${id}"]`), r = c.querySelector('.mrtb'), d = r.querySelector('.rtbdoor'), t = r.querySelector('.mterm .scr').getBoundingClientRect();
+    const hit = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2), b = d.getBoundingClientRect(), rb = r.getBoundingClientRect();
+    return { open: r.classList.contains('open'), aria: d.getAttribute('aria-expanded'), covered: !!(hit && hit.closest('.rtbdoor')), terminal: !!(hit && hit.closest('.scr')), screws: r.querySelectorAll('.mterm .scr').length, doorH: Math.round(b.height), rtbH: Math.round(rb.height), cpuDoor: !!document.querySelector('#iob .ccard.cpu .rtbdoor'), iowin: !!document.querySelector('.iowin') };
+  }, id);
+  let dr = await door(page, '0:1');
+  check('RTB door: every I/O module has one, closed by default over its terminals (the CPU has none)', !dr.open && dr.aria === 'false' && dr.covered && !dr.terminal && dr.screws === 18 && !dr.cpuDoor && (await page.$$eval('#iob .ccard.io .mrtb:not(.open)', x => x.length)) === 2, JSON.stringify(dr));
+  await page.click('#iob .ccard.io[data-cmod="0:1"] .rtbdoor');
+  await page.waitForTimeout(450);
+  dr = await door(page, '0:1');
+  check('RTB door: a click opens it on its hinge and shows the 20 terminals; no Module I/O window opens', dr.open && dr.aria === 'true' && dr.terminal && !dr.covered && !dr.iowin, JSON.stringify(dr));
+  check('RTB door: only that module\'s door opens; the LEDs and the name stay as they are', (await page.$$eval('#iob .mrtb.open', x => x.length)) === 1 && (await page.$$eval('#iob [data-cmod="0:1"] .mmat i', c => c.length)) === 16);
+  await ev(() => MTPS.App.render()); await page.waitForTimeout(100);
+  check('RTB door: it stays open when the panel is drawn again (kept per card, not in the project)', (await door(page, '0:1')).open && await ev(() => !JSON.stringify(MTPS.App.state.p).includes('rtb')));
+  await page.click('#iob .ccard.io[data-cmod="0:1"] .mterm .scr');
+  await page.waitForTimeout(450);
+  dr = await door(page, '0:1');
+  check('RTB door: a click again closes it', !dr.open && dr.aria === 'false' && dr.covered && !dr.iowin, JSON.stringify(dr));
   await ev(() => MTPS.App.run('vio'));
   check('View > Emulator Panel hides the dock', (await page.$('#dock')) === null);
   await ev(() => MTPS.App.run('vio'));
@@ -600,8 +643,8 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   const l5 = await ev(() => { const p = MTPS.App.example(), q = MTPS.App.fromL5X(MTPS.App.toL5X(p)), n = r => r.map(x => (x.c || '') + '|' + x.t).join('\n'); return [n(p.tasks[0].programs[0].routines[0].rungs) === n(q.tasks[0].programs[0].routines[0].rungs), q.tags.length === p.tags.length, q.rack.modules.length, MTPS.verify(q).errors.length]; });
   check('P4: L5X export then import gives the same rungs, tags and I/O, no errors', l5[0] && l5[1] && l5[2] === 2 && l5[3] === 0);
-  const rz = await ev(() => { const r = MTPS.App.racks[0]; const bad = r.resize(2).ok, busy = r.resize(2).ok; const big = r.resize(12).ok, back = r.resize(10).ok; return [bad, busy, big, back, r.size]; });
-  check('chassis sizes: 4 to 12 slots', rz[0] === false && rz[2] === true && rz[3] === true && rz[4] === 10);
+  const rz = await ev(() => { const r = MTPS.App.racks[0]; return [r.resize(2).ok, r.resize(12).ok, r.resize(10).ok, r.resize(4).ok, r.resize(8).ok, r.size, MTPS.RACKS.join()]; });
+  check('chassis sizes: 4 or 8 slots only (2, 10 and 12 are refused)', rz[0] === false && rz[1] === false && rz[2] === false && rz[3] === true && rz[4] === true && rz[5] === 8 && rz[6] === '4,8');
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.waitForFunction(() => MTPS.App.state.layout === 'tablet', null, { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(300);
@@ -617,7 +660,7 @@ function check(name, cond, info = '') {
   await page.waitForFunction(() => innerWidth === 1194, null, { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(350);
   if (await page.$('#dock [data-dkat="right"]')) { await page.click('#dock [data-dkat="right"]'); await page.waitForTimeout(150); }
-  check('tablet landscape: the dock at the side shows only the used slots and one empty', (await page.$('#dock.side')) !== null && (await page.$$eval('#dock .rkslots .ccard', c => c.length)) === (await ev(() => MTPS.App.racks[0].mods.size)) + 1);
+  check('tablet landscape: the dock at the side shows every slot in one row that scrolls sideways', (await page.$('#dock.side')) !== null && (await page.$$eval('#dock .rkslots .ccard', c => c.length)) === 8 && await page.$eval('#dock .chasrow', e => getComputedStyle(e).overflowX === 'auto' && e.scrollWidth > e.clientWidth) && await noHScroll());
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => MTPS.App.state.layout === 'phone', null, { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(300);
@@ -678,14 +721,9 @@ function check(name, cond, info = '') {
   await page.click('.iowin[data-iowin="0"] [data-iox]');
   check('1. the module front is a terminal block (screws), with the LED points', (await page.$$eval('#iob [data-cmod="0:1"] .mterm .scr', c => c.length)) >= 16 && (await page.$$eval('#iob [data-cmod="0:1"] .mmat i', c => c.length)) === 16);
   if (await page.$('#dock [data-dkat="bottom"]')) { await page.click('#dock [data-dkat="bottom"]'); await page.waitForTimeout(150); }
-  await ev(() => { MTPS.App.racks[0].resize(12); MTPS.App.render(); });
-  await page.waitForTimeout(120);
-  check('chassis: past 8 slots a new row starts; each row can be folded away', (await page.$$eval('#iob .rkrow', r => r.length)) === 2);
-  await page.click('#iob .rkrow[data-rkrow="0:1"]');
-  await page.waitForTimeout(100);
-  check('chassis: a folded row hides its slots', (await page.$$eval('#iob .chas', c => c.length)) === 1);
-  await page.click('#iob .rkrow[data-rkrow="0:1"]');
-  await ev(() => { MTPS.App.racks[0].resize(10); MTPS.App.render(); });
+  const old = await ev(() => { const a = MTPS.Chassis.from({ size: 12, mods: [{ slot: 0, type: 'PLC-CPU' }, { slot: 3, type: 'PLC-DI16-24V' }] }), b = MTPS.Chassis.from({ size: 10, mods: [{ slot: 9, type: 'PLC-DO16-24V' }] }), c = MTPS.Chassis.from({ size: 7, mods: [] }); return [a.size, a.mods.size, b.size, b.mods.size, c.size, MTPS.fitRack(4, [1])]; });
+  check('an old chassis of 7, 10 or 12 slots opens as 8 slots when its modules fit, else it keeps its size (no module lost)', old.join() === '8,2,10,1,8,4');
+  check('chassis: one row of slots, no folded rows', (await page.$$eval('#iob .chas', c => c.length)) === 1 && (await page.$$eval('#iob .rkrow', r => r.length)) === 0);
   await page.keyboard.press('F1');
   await page.waitForTimeout(120);
   check('Instruction Help in the reference layout: contents, operands table, flags, faults, execution table', (await dlgTitle()) === 'Instruction Help' && (await page.$$eval('#layer .ihi', i => i.length)) >= 50 && await page.$eval('.ihc', p => ['Operands', 'Description', 'Arithmetic Status Flags', 'Fault Conditions', 'Execution', 'Prescan', 'Rung-condition-in is true', 'Postscan'].every(k => p.textContent.includes(k))));
@@ -933,6 +971,30 @@ function check(name, cond, info = '') {
     const y0 = await tp.$eval('#ladwrap', w => w.scrollTop);
     await T('touchStart', 400, 700); for (let i = 1; i <= 6; i++) { await T('touchMove', 400, 700 - i * 40); await tp.waitForTimeout(16); } await T('touchEnd'); await tp.waitForTimeout(400);
     check('a quick swipe still scrolls the ladder', (await tp.$eval('#ladwrap', w => w.scrollTop)) > y0 + 100 && (await rung(1)) === 'XIC(Motor_Run)OTE(Motor_Cmd);');
+    await tp.close();
+  }
+  console.log('Tablet with touch: the RTB door of an I/O module');
+  {
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await tp.waitForTimeout(300);
+    let td = await door(tp, '0:2');
+    check('tablet (touch): the RTB door is closed and at least 44 px tall to tap', !td.open && td.covered && td.doorH >= 44, JSON.stringify(td));
+    await tp.tap('#iob .ccard.io[data-cmod="0:2"] .rtbdoor'); await tp.waitForTimeout(450);
+    td = await door(tp, '0:2');
+    check('tablet (touch): a tap opens the RTB door and shows the terminals', td.open && td.terminal && !td.iowin, JSON.stringify(td));
+    await tp.tap('#iob .ccard.io[data-cmod="0:2"] .mrtb'); await tp.waitForTimeout(450);
+    check('tablet (touch): a tap again closes it', !(await door(tp, '0:2')).open);
+    await tp.setViewportSize({ width: 390, height: 844 });
+    await tp.waitForFunction(() => MTPS.App.state.layout === 'phone', null, { timeout: 3000 }).catch(() => {});
+    await tp.waitForTimeout(300);
+    await tp.tap('[data-ptab="1"]'); await tp.waitForTimeout(200);
+    td = await door(tp, '0:1');
+    check('phone (touch): the chassis is one row of 8 slots and the door is at least 44 px tall', (await tp.$$eval('#iob .rkslots > .ccard', c => new Set(c.map(x => Math.round(x.getBoundingClientRect().top))).size === 1 && c.length === 8)) && !td.open && td.doorH >= 44, JSON.stringify(td));
+    await tp.tap('#iob .ccard.io[data-cmod="0:1"] .rtbdoor'); await tp.waitForTimeout(450);
+    check('phone (touch): a tap opens the RTB door', (await door(tp, '0:1')).open);
     await tp.close();
   }
   console.log('Mouse: drag an instruction to a node (Ctrl copies)');
