@@ -676,6 +676,10 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl .cdt .cin { flex: 1; }
 .tagtbl .cdtb { flex: none; height: 20px; min-width: 22px; padding: 0 4px; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; }
 .tab .tagtbl .cdtb, .phone .tagtbl .cdtb { height: 30px; min-width: 36px; }
+.tagtbl .cdtb svg { width: 12px; height: 12px; vertical-align: -2px; }
+.tagtbl td.dim { color: var(--muted); }
+/* the tag browser of an Alias For cell: over the grid, under the cell */
+.asg.tabr { position: fixed; z-index: 90; margin: 0; box-shadow: var(--shadow, 0 4px 16px rgba(0, 0, 0, .25)); }
 .tab .tagtbl td, .phone .tagtbl td { height: 36px; }
 .tagtabs { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface-2); flex: none; }
 .tagtabs > span[data-tmode] { white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }

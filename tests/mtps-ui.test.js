@@ -1846,6 +1846,65 @@ function check(name, cond, info = '') {
       check(`B2: ${vp.n} (touch): tap …, tap REAL, Dim 0 = 6, tap OK: REAL[6] (rows of 44 px)`, (await tp.$eval('#tt', i => i.value)) === 'REAL[6]' && rh >= 44, String(rh));
       await tctx.close();
     }
+    // B3: the Edit Tags grid: Alias For (with the tag browser), Style and External Access are edited in their cells
+    await bev(() => { document.querySelector('#layer').innerHTML = ''; const p = MTPS.App.example(); p.tags.push({ name: 'Fill_X', type: 'DINT', value: 15 }, { name: 'Fill_Al', alias: 'Fill_X' }, { name: 'Fill_Z', type: 'DINT' }, { name: 'Speed_R', type: 'REAL', value: 15 }); MTPS.App.openProject(p, true); MTPS.App.run('tagsmon'); }); await bp.waitForTimeout(150);
+    await bp.click('.tagtabs [data-tmode="edit"]'); await bp.waitForTimeout(100);
+    const hd = await bp.$$eval('#tagrows', b => [...b[0].closest('table').querySelectorAll('thead th')].map(x => x.textContent));
+    check('B3: Edit Tags has an External Access column (after Description)', hd.indexOf('External Access') === hd.indexOf('Description') + 1, hd.join(','));
+    const cellT = (n, k) => bp.$eval(`#tagrows tr[data-tag="${n}"]`, (r, k) => { const th = [...r.closest('table').querySelectorAll('thead th')].map(x => x.textContent); return r.cells[th.indexOf(k)].textContent; }, k);
+    check('B3: External Access: Read/Write for a base tag, its base tag\'s for an alias, none for a module-defined tag', (await cellT('Fill_X', 'External Access')) === 'Read/Write' && (await cellT('Fill_Al', 'External Access')) === 'Read/Write' && (await cellT('Local:1:I', 'External Access')) === '' && !(await bp.$('#tagrows tr[data-tag="Fill_Al"] [data-tcell="access"]')));
+    await bp.click('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"]'); await bp.waitForTimeout(60);
+    check('B3: the Style cell of a DINT lists Binary, Octal, Decimal, Hex, ASCII', (await bp.$$eval('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"] option', o => o.map(x => x.textContent).join('|'))) === 'Binary|Octal|Decimal|Hex|ASCII');
+    await bp.selectOption('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"] select', 'Hex'); await bp.waitForTimeout(150);
+    check('B3: choosing Hex keeps it on the tag and shows it in the cell', (await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_X').style)) === 'Hex' && (await cellT('Fill_X', 'Style')) === 'Hex');
+    await bp.click('#tagrows tr[data-tag="Fill_X"] [data-tcell="access"]'); await bp.waitForTimeout(60);
+    await bp.selectOption('#tagrows tr[data-tag="Fill_X"] [data-tcell="access"] select', 'None'); await bp.waitForTimeout(150);
+    check('B3: External Access None is kept on the tag; its alias shows None too', (await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_X').access)) === 'None' && (await cellT('Fill_Al', 'External Access')) === 'None');
+    // Monitor Tags shows the value in the tag's Style (1756-RM014: 15 is 16#000F in an INT)
+    await bp.click('.tagtabs [data-tmode="mon"]'); await bp.waitForTimeout(100);
+    const vOf = n => bp.$eval(`#tagrows [data-tv="${n}"]`, c => c.textContent);
+    const v15 = [await vOf('Fill_X')];
+    for (const st of ['Binary', 'Octal', 'ASCII']) { await bev(st => { MTPS.App.state.p.tags.find(t => t.name === 'Fill_X').style = st; MTPS.App.render(); }, st); await bp.waitForTimeout(80); v15.push(await vOf('Fill_X')); }
+    await bev(() => { MTPS.App.state.p.tags.find(t => t.name === 'Speed_R').style = 'Exponential'; MTPS.App.render(); }); await bp.waitForTimeout(80); v15.push(await vOf('Speed_R'));
+    check('B3: Monitor Tags shows 15 in Hex, Binary, Octal, ASCII and Exponential as the reference does', JSON.stringify(v15) === JSON.stringify(['16#0000_000F', '2#0000_0000_0000_0000_0000_0000_0000_1111', '8#00_000_000_017', "'$00$00$00$0F'", '1.5000000e+01']), JSON.stringify(v15));
+    check('B3: Monitor Tags: the Style column shows the tag\'s Style', (await cellT('Speed_R', 'Style')) === 'Exponential');
+    // Alias For: the cell has a button that opens the tag browser
+    await bp.click('.tagtabs [data-tmode="edit"]'); await bp.waitForTimeout(100);
+    await bp.click('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"]'); await bp.waitForTimeout(60);
+    check('B3: the Alias For cell opens with the alias and a browse button', (await bp.$eval('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"] input', i => i.value)) === 'Fill_X' && !!(await bp.$('#tagrows [data-cabb]')));
+    await bp.click('#tagrows [data-cabb]'); await bp.waitForTimeout(80);
+    check('B3: the button opens the tag browser under the cell (I/O tags, Controller Tags)', await bp.$eval('.asg.tabr', b => !b.hidden && b.textContent.includes('Controller Tags') && b.textContent.includes('I/O tags')));
+    await bp.fill('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"] input', 'Fill_Z'); await bp.waitForTimeout(60);
+    await bp.click('.asg.tabr [data-abp="Fill_Z"]'); await bp.waitForTimeout(150);
+    check('B3: a click on Fill_Z in the browser makes Fill_Al an alias of Fill_Z; the browser closes', (await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Al').alias)) === 'Fill_Z' && !(await bp.$('.asg.tabr')) && (await cellT('Fill_Al', 'Base Tag')) === 'Fill_Z');
+    await bp.click('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"]'); await bp.waitForTimeout(60);
+    await bp.fill('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"] input', 'Nope_Tag'); await bp.keyboard.press('Enter'); await bp.waitForTimeout(150);
+    check('B3: Alias For of a tag that is not there is refused', (await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Al').alias)) === 'Fill_Z' && /Nope_Tag is not a tag/.test(await bp.$eval('body', b => b.textContent)));
+    await bp.click('#tagrows tr[data-tag="Fill_Z"] [data-tcell="alias"]'); await bp.waitForTimeout(60);
+    await bp.fill('#tagrows tr[data-tag="Fill_Z"] [data-tcell="alias"] input', 'Fill_Z.3'); await bp.keyboard.press('Enter'); await bp.waitForTimeout(150);
+    check('B3: an alias of itself is refused', !(await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Z').alias)));
+    await bp.click('#tagrows tr[data-tag="Fill_Z"] [data-tcell="alias"]'); await bp.waitForTimeout(60);
+    await bp.fill('#tagrows tr[data-tag="Fill_Z"] [data-tcell="alias"] input', 'local:1:i.Data.2'); await bp.keyboard.press('Enter'); await bp.waitForTimeout(150);
+    const fz = await bev(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Z'));
+    check('B3: a base tag given an Alias For becomes an alias of it (written Local:1:I.Data.2)', fz.alias === 'Local:1:I.Data.2' && !fz.type && (await cellT('Fill_Z', 'Data Type')) === 'BOOL', JSON.stringify(fz));
+    // tablet (touch): tap the Alias For cell, tap the button, tap a tag in the browser
+    {
+      const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+      const tp = await tctx.newPage(); tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { const p = MTPS.App.example(); p.tags.push({ name: 'Fill_X', type: 'DINT' }, { name: 'Fill_Al', alias: 'Fill_X' }, { name: 'Fill_Z', type: 'DINT' }); MTPS.App.openProject(p, true); MTPS.App.run('tagsmon'); }); await tp.waitForTimeout(200);
+      await tp.tap('.tagtabs [data-tmode="edit"]'); await tp.waitForTimeout(120);
+      await tp.tap('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"]'); await tp.waitForTimeout(80);
+      await tp.tap('#tagrows [data-cabb]'); await tp.waitForTimeout(100);
+      await tp.fill('#tagrows tr[data-tag="Fill_Al"] [data-tcell="alias"] input', 'Fill_Z'); await tp.waitForTimeout(60);
+      const rh = await tp.$eval('.asg.tabr [data-abp="Fill_Z"]', r => r.getBoundingClientRect().height);
+      await tp.tap('.asg.tabr [data-abp="Fill_Z"]'); await tp.waitForTimeout(150);
+      check('B3: tablet (touch): tap Alias For, tap the button, tap Fill_Z: Fill_Al is an alias of Fill_Z', (await tp.evaluate(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_Al').alias)) === 'Fill_Z', String(rh));
+      await tp.tap('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"]'); await tp.waitForTimeout(80);
+      await tp.selectOption('#tagrows tr[data-tag="Fill_X"] [data-tcell="style"] select', 'Octal'); await tp.waitForTimeout(150);
+      check('B3: tablet (touch): the Style cell takes Octal', (await tp.evaluate(() => MTPS.App.state.p.tags.find(t => t.name === 'Fill_X').style)) === 'Octal');
+      await tctx.close();
+    }
     /*B-NEXT*/
     await bctx.close();
   }

@@ -2016,6 +2016,23 @@
   const defStyle = ty => (U(baseTy(ty)) === 'REAL' ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
   const styleOfTag = (t, ty) => { const l = stylesOf(ty || (t && t.type)); return t && l.includes(t.style) ? t.style : defStyle(ty || (t && t.type)); };
   const accessOf = t => (t && ACCESS.includes(t.access) ? t.access : 'Read/Write');
+  /* a value as its Style shows it (1756-RM014, Data display style: 15 in an INT is 2#0000_0000_0000_1111, 8#000_017,
+     16#000F, '$00$0F', 1.5000000e+01); null for Decimal and Float, which show the number as it is */
+  const BITW = { SINT: 8, INT: 16, DINT: 32 };
+  const grp_ = (x, n) => x.replace(new RegExp(`\\B(?=(\\w{${n}})+$)`, 'g'), '_');
+  function styled(v, ty, st) {
+    if (typeof v !== 'number' || !st || st === 'Decimal' || st === 'Float') return null;
+    if (st === 'Exponential') { const [m, e] = v.toExponential(7).split('e'); return m + 'e' + (e[0] === '-' ? '-' : '+') + e.replace(/^[+-]/, '').padStart(2, '0'); }
+    const w = BITW[U(ty)];
+    if (!w || !Number.isInteger(v)) return null;
+    const u = BigInt.asUintN(w, BigInt(v));
+    if (st === 'Hex') return '16#' + grp_(u.toString(16).toUpperCase().padStart(w / 4, '0'), 4);
+    if (st === 'Binary') return '2#' + grp_(u.toString(2).padStart(w, '0'), 4);
+    if (st === 'Octal') return '8#' + grp_(u.toString(8).padStart(Math.ceil(w / 3), '0'), 3);
+    if (st === 'ASCII') { let x = ''; for (let k = w / 8 - 1; k >= 0; k--) { const c = Number((u >> BigInt(8 * k)) & 255n); x += c === 36 ? '$$' : c === 39 ? "$'" : c > 31 && c < 127 ? String.fromCharCode(c) : '$' + c.toString(16).toUpperCase().padStart(2, '0'); } return `'${x}'`; }
+    return null;
+  }
+  const fmtSt = (v, ty, t) => (t && !t.alias && !t.dim && styled(v, ty, styleOfTag(t, ty))) || fmtVal(v);
   // the base tag of an alias (the last link of the chain), whose External Access and Constant the alias shows
   const aliasBase = a => { const x = baseTagOf(a) || '', b = /^([A-Za-z_]\w*)/.exec(x), t = b && !/^Local:/i.test(x) ? tagFor(b[1]) : null; return t && !t.alias ? t : null; };
   /* the L5X attributes of a base tag, and back; Dimensions="10" or "4 5" (also read with commas or brackets) */
@@ -2258,11 +2275,11 @@
   function rowVal(path, ty, scope, t) {
     if (S.online && ctl.M) {
       const v = ctl.read(path, scope || undefined), f = ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null;
-      return { t: fmtVal(v), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
+      return { t: fmtSt(v, ty, t), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
     }
-    if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtVal(t.value), cls: '' };
+    if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtSt(t.value, ty, t), cls: '' };
     // an atomic tag without a start value starts at 0
-    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
+    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
   }
   function tagEditorBody(inline, mode0, scope0) {
     S.tagMode = mode0 || S.tagMode || 'mon';
@@ -2300,7 +2317,7 @@
   const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
   // the tag an alias ends at (an alias of an alias goes on to the base tag)
   const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
-  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'Usage', 'Constant'] };
+  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'External Access', 'Usage', 'Constant'] };
   function tagTableRows() {
     const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
     tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
@@ -2311,16 +2328,19 @@
       if (mon) {
         const v = ag ? { t: '{…}', cls: '' } : rowVal(e.path, e.ty, scope, t);
         const fm = S.online && ctl.M && e.ty === 'BOOL' ? ctl.forced(e.path, scope || undefined) : null;
-        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
+        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${t ? styleOfTag(t.alias ? null : t, e.ty) : styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
         return;
       }
-      const base = !!t && !t.alias;
-      rows.push(head + `<td class="mono">${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
-        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td>${styleOf(e.ty)}</td>`
-        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
+      const base = !!t && !t.alias, sty = base && stylesOf(t.type).length;
+      // an alias takes External Access from its base tag (greyed); a module-defined tag has none (help: Tag Editor)
+      const acc = base ? accessOf(t) : t && aliasBase(t.alias) ? accessOf(aliasBase(t.alias)) : '';
+      rows.push(head + `<td class="mono${t ? ' ced' : ''}"${t ? ' data-tcell="alias"' : ''}>${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
+        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td${sty ? ' class="ced" data-tcell="style"' : ''}>${t ? styleOfTag(base ? t : null, e.ty) : styleOf(e.ty)}</td>`
+        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td>`
+        + `<td class="${base ? 'ced' : 'dim'}"${base ? ' data-tcell="access"' : ''}>${acc}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
         + `<td class="ck">${depth ? '' : `<input type="checkbox" data-tconst="${esc(e.path)}"${t && t.constant ? ' checked' : ''}${base ? '' : ' disabled'} aria-label="Constant">`}</td></tr>`);
     });
-    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="7" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
+    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="8" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
     return rows.join('') || `<tr><td colspan="${TCOLS.mon.length + 1}" class="empty">No tags.</td></tr>`;
   }
   function tagWsHTML() {
@@ -2355,17 +2375,36 @@
     if (ty === 'BOOL') { edit(() => { t.value = t.value ? 0 : 1; }); refreshTags(); return; }
     prompt1('Start value', name, fmtVal(t.value || 0), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; edit(() => { t.value = n.v; }); });
   }
-  // Edit Tags: the Data Type or Description cell of a tag, edited in place (Enter or another cell keeps it, Esc does not)
+  /* Edit Tags: the Alias For, Data Type, Style, Description or External Access cell of a tag, edited in place (Enter
+     or another cell keeps it, Esc does not). Alias For has the button of the reference that opens the tag browser. */
   function tagCellEdit(td, t, list) {
     if (td.querySelector('input, select')) return;
     const k = td.dataset.tcell, types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
-    td.innerHTML = k === 'type' ? `<span class="cdt"><input class="cin mono" aria-label="Data Type" value="${esc(tyDims(t.type || 'BOOL', t.dim))}" list="cdtl" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="cdtb" type="button" data-cdtb="1" title="Select Data Type" aria-label="Select Data Type">…</button><datalist id="cdtl">${types.map(x => `<option value="${esc(x)}">`).join('')}</datalist></span>` : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
-    const f = td.querySelector('input');
-    let done = false, picking = false;
+    td.innerHTML = k === 'type' ? `<span class="cdt"><input class="cin mono" aria-label="Data Type" value="${esc(tyDims(t.type || 'BOOL', t.dim))}" list="cdtl" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="cdtb" type="button" data-cdtb="1" title="Select Data Type" aria-label="Select Data Type">…</button><datalist id="cdtl">${types.map(x => `<option value="${esc(x)}">`).join('')}</datalist></span>`
+      : k === 'style' ? cellSel(stylesOf(t.type), styleOfTag(t), 'Style') : k === 'access' ? cellSel(ACCESS, accessOf(t), 'External Access')
+      : k === 'alias' ? `<span class="cdt"><input class="cin mono" aria-label="Alias For" value="${esc(t.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="cdtb" type="button" data-cabb="1" title="Browse tags" aria-label="Browse tags">${ic('down')}</button></span>`
+      : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
+    const f = td.querySelector('input, select');
+    let done = false, picking = false, box = null;
     const commit = keep => {
       if (done) return; done = true;
-      const v = f.value.trim(), was = k === 'type' ? tyDims(t.type || 'BOOL', t.dim) : t.desc || '';
+      if (box) { box.remove(); box = null; }
+      const v = f.value.trim(), was = k === 'type' ? tyDims(t.type || 'BOOL', t.dim) : k === 'style' ? styleOfTag(t) : k === 'access' ? accessOf(t) : k === 'alias' ? t.alias || '' : t.desc || '';
       if (!keep || v === was) { refreshTags(); return; }
+      if (k === 'style' || k === 'access') {
+        edit(() => { const n = { ...t }; if (k === 'style') { if (v === defStyle(t.type)) delete n.style; else n.style = v; } else if (v === 'Read/Write') delete n.access; else n.access = v; list[list.indexOf(t)] = n; });
+        return;
+      }
+      if (k === 'alias') {
+        // a tag typed in Alias For makes the tag an alias of it (it then takes its data type from there)
+        const a = v.replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([icos])/, (m, x, y) => x + y.toUpperCase());
+        const bad = !a ? 'Alias For: type or browse the tag, member or bit this alias points to. To make it a base tag, open its Tag Properties.'
+          : U(a.split(/[.[]/)[0]) === U(t.name) ? 'A tag cannot be an alias for itself.'
+          : !addrType(a) ? (/^Local:/i.test(a) ? `Alias For: ${a} is not an I/O point of this project.` : `Alias For: ${a} is not a tag, member or bit of this project.`) : '';
+        if (bad) { toast(bad, 'err'); refreshTags(); return; }
+        edit(() => { const n = { name: t.name, alias: a }; if (t.desc) n.desc = t.desc; list[list.indexOf(t)] = n; });
+        return;
+      }
       if (k === 'type') {
         const dt = parseDataType(v);
         if (typeof dt === 'string') { toast(dt, 'err'); refreshTags(); return; }
@@ -2377,6 +2416,19 @@
     };
     f.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(true); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commit(false); } });
     f.addEventListener('blur', () => { if (!picking) commit(true); });
+    if (f.tagName === 'SELECT') f.addEventListener('change', () => commit(true));
+    const ab = td.querySelector('[data-cabb]');
+    if (ab) {
+      // the tag browser of Alias For, under the cell (over the grid); picking a row writes it in the cell
+      box = document.createElement('div'); box.className = 'asg abrw tabr'; box.hidden = true; document.body.appendChild(box);
+      const place = () => { const r = td.getBoundingClientRect(), w = Math.min(Math.max(r.width, 380), innerWidth - 16); box.style.width = w + 'px'; box.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; box.style.top = (r.bottom + 270 < innerHeight ? r.bottom + 2 : Math.max(8, r.top - 264)) + 'px'; };
+      const br = aliasBrowser(box, f, { self: t.name, scope: () => S.tagScope || '', picked: () => { picking = false; commit(true); } });
+      box.addEventListener('pointerdown', () => { picking = true; setTimeout(() => { picking = false; }, 600); });
+      box.addEventListener('mousedown', ev => ev.preventDefault());
+      ab.addEventListener('pointerdown', () => { picking = true; });
+      ab.addEventListener('mousedown', ev => { picking = true; ev.preventDefault(); });
+      ab.addEventListener('click', ev => { ev.stopPropagation(); picking = false; place(); br.toggle(); f.focus(); });
+    }
     const b = td.querySelector('[data-cdtb]');
     if (b) {
       // the … opens Select Data Type; the cell waits for it (OK writes the type, Cancel goes back to the cell)
@@ -2386,6 +2438,7 @@
     }
     f.focus(); if (f.select) f.select();
   }
+  const cellSel = (l, cur, lab) => `<select class="cin" aria-label="${lab}">${l.map(x => `<option${x === cur ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
   // Edit Tags: the blank row at the end (the pencil): a name typed there makes a DINT tag in this scope
   function newTagInline(inp) {
     const name = inp.value.trim(), list = scopeTags(S.tagScope || '');
