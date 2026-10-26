@@ -1107,3 +1107,8 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
   .spin { animation: none; border-top-color: var(--border-strong); }
   .prog.det i { transition: none; }
 }
+/* Logix Emulate: Configure Emulation (Speed of Time) */
+.sotf { margin: 0 0 10px; padding: 6px 10px 10px; border: 1px solid var(--border); border-radius: var(--r); min-width: 0; }
+.sotf input[type=range] { width: 100%; }
+.sotrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.sotrow .num { width: 72px; }

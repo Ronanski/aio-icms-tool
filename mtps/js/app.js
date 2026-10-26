@@ -3778,7 +3778,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (m.ctl) {
       const c = m.ctl, run = c.powered && c.running, fs = c.forceState();
       const disp = !c.powered ? '' : c.fault ? 'FLT' : { prog: 'PROG', run: 'RUN', remprog: 'PROG', remrun: 'RUN', remtest: 'TEST' }[c.mode];
-      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}">
+      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}" data-ccpu="${id}">
         <div class="mf"><div class="mcat">PLC-CPU</div><div class="mdisp">${disp}</div>
           <div class="mleds">${led(run, 'RUN')}${led(c.powered && fs !== 'none', 'FORCE', fs === 'enabled' ? 'a' : 'a blink')}${led(c.powered && c.M, 'I/O', c.ioOk() ? 'g' : 'r blink')}${led(c.powered, 'OK', c.fault ? 'r blink' : 'g')}</div>
           <div class="mname">${esc(m.name)}</div><div class="mip">${esc(m.ip || 'no IP')}</div>
@@ -3890,6 +3890,43 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (!m) return;
     openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
   }
+  /* Logix Emulate: right-click (or long-press) an emulated controller: its mode, Configure Emulation, Remove
+     (LGEM5K-GR016M chapters 4 and 5) */
+  const emuOpen = () => !!document.querySelector('#layer #emubody');
+  const backToEmu = was => { if (was) setTimeout(() => { if (!emuOpen() && !$('#layer .dlg, #layer .menu')) chassisMonitor(); }, 0); };
+  function cpuMenu(id, x, y) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s), was = emuOpen();
+    if (!m || !m.ctl) return;
+    const c = m.ctl, key = k => () => { c.setKey(k); saveChassis(); chassisLive(true); live(true); render(); backToEmu(was); };
+    openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') }, '-',
+      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, '-',
+      { l: 'Remove', i: 'trash', run: () => { chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })); } }], { x, y }, `[${s}] PLC-CPU ${m.name}`);
+  }
+  /* Configure Emulation: the Speed of Time area (slider in 1 % steps or the % box, Confirm Time % Change, 100% NOW,
+     0% NOW; the last value set shows on the left). A change takes effect at once; 0 % stops execution. */
+  function configEmulation(id, was) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    const c = m.ctl;
+    const el = dialog({ title: 'Configure Emulation', size: 'md', onClose: () => backToEmu(was),
+      body: `<p class="help" style="margin-top:0">[${s}] PLC-CPU <b>${esc(m.name)}</b> · ${esc(r.name)}</p>
+        <fieldset class="sotf"><legend>Speed of Time</legend><input type="range" id="sot-r" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time">
+          <div class="sotrow"><span>Set: <b id="sot-cur">${c.sot}</b> %</span><span class="grow"></span><input class="inp num" id="sot-v" type="number" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time percent"><span>%</span></div>
+          <div class="sotrow"><button class="btn" data-sot="0">0% NOW</button><button class="btn" data-sot="100">100% NOW</button><span class="grow"></span><button class="btn pri" data-sot="ok">Confirm Time % Change</button></div></fieldset>
+        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>`,
+      buttons: [{ l: 'Close', run: () => backToEmu(was) }] });
+    const q = k => el.querySelector(k);
+    const show = () => { q('#sot-cur').textContent = c.sot; q('#sot-r').value = c.sot; q('#sot-v').value = c.sot; };
+    q('#sot-r').oninput = () => { q('#sot-v').value = q('#sot-r').value; };
+    q('#sot-v').oninput = () => { q('#sot-r').value = q('#sot-v').value; };
+    el.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-sot]'); if (!b) return;
+      const ok = b.dataset.sot === 'ok', v = ok ? +q('#sot-v').value : +b.dataset.sot;
+      if ((ok && q('#sot-v').value === '') || !(v >= 0 && v <= 100)) { toast('Speed of time: 0 to 100 %.', 'err'); return; }
+      r.setController(s, { sot: Math.round(v) }); saveChassis(); chassisLive(true); live(true);
+      show(); toast(`Speed of time: ${c.sot} %.`, 'ok');
+    });
+  }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -3918,6 +3955,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
       <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
       ${kv('Revision', '1.0')}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      <div class="frow"><label>Speed of Time</label><span>${c.sot} % <button class="btn" data-ecfg="${id}">Configure Emulation…</button></span></div>
       <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
       <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
   }
@@ -3985,6 +4023,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if (doc !== document) window.focus();
       return true;
     }
+    if ((el = t.closest('[data-ecfg]'))) { configEmulation(el.dataset.ecfg, emuOpen()); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
     if ((el = t.closest('[data-epow]'))) { const [ri, s, on] = ids(el.dataset.epow); racks[ri].setController(s, { on: !!on }); saveChassis(); chassisLive(true); live(true); return true; }
@@ -4387,13 +4426,14 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       // Logix Emulate: right-click an empty slot of the chassis, then Create
       const e = ev.target.closest('[data-cins]');
       if (e) { ev.preventDefault(); const [ri, s] = ids(e.dataset.cins); openMenu([{ l: 'Create…', i: 'plus', run: () => insertCard(ri, s) }], { x: ev.clientX, y: ev.clientY }, `Slot ${s}`); return; }
+      const u = ev.target.closest('[data-ccpu]'); if (u) { ev.preventDefault(); cpuMenu(u.dataset.ccpu, ev.clientX, ev.clientY); return; }
       const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY);
     });
     let lp = null;
     document.addEventListener('pointerdown', ev => {
-      const c = ev.target.closest('[data-cmod]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button')) return;
+      const c = ev.target.closest('[data-cmod],[data-ccpu]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button,.seg')) return;
       const x = ev.clientX, y = ev.clientY;
-      lp = { x, y, t: setTimeout(() => { lp = null; moduleMenu(c.dataset.cmod, x, y); }, 550) };
+      lp = { x, y, t: setTimeout(() => { lp = null; if (c.dataset.ccpu) cpuMenu(c.dataset.ccpu, x, y); else moduleMenu(c.dataset.cmod, x, y); }, 550) };
     });
     const lpEnd = ev => { if (lp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - lp.x, ev.clientY - lp.y) > 10)) { clearTimeout(lp.t); lp = null; } };
     ['pointerup', 'pointercancel', 'pointermove'].forEach(t => document.addEventListener(t, lpEnd));

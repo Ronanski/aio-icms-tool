@@ -721,6 +721,7 @@
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
+      this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -879,9 +880,12 @@
       const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
     }
+    /* speed of time (LGEM5K-GR016: 0-100 %, takes effect at once; 60 % makes 1 s take about 1.67 s) */
+    setSpeed(p) { p = Math.round(Number(p)); if (!(p >= 0 && p <= 100)) return false; this.sot = p; this.emit('speed'); return true; }
     /* the controller's own clock: fixed scans of `period` ms, catching up after a slow frame (at most 1 s) */
     advance(ms) {
       if (!this.powered) return 0;
+      ms *= this.sot / 100;
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
       while (this.acc >= this.period) { this.acc -= this.period; this.scan(this.period); n++; }
@@ -1279,6 +1283,7 @@
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
       if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
+      if (o.sot != null) m.ctl.setSpeed(o.sot);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
       return true;
@@ -1313,7 +1318,7 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
-        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined,
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
     }
     static from(o) {
@@ -1329,6 +1334,7 @@
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
+          if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }

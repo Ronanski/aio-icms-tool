@@ -701,5 +701,22 @@ console.log('Online edit zones (Studio 5000: replace and delete zones are not ex
   check('a dirty mark (dx) is not a logic change', c2.holds(d2));
 }
 
+console.log('Logix Emulate: speed of time (LGEM5K-GR016, Configure Emulation)');
+{
+  const p = proj({ tags: [T('En', 'BOOL', { value: 1 }), T('T1', 'TIMER')], rungs: ['XIC(En)TON(T1,5000,0);'] });
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun');
+  const run = ms => { for (let k = 0; k < ms / 20; k++) c.advance(20); };
+  run(1000);
+  check('speed of time 100 %: a timer counts in real time', c.read('T1.ACC') >= 980 && c.read('T1.ACC') <= 1010, c.read('T1.ACC'));
+  check('speed of time: 0-100 %, other values refused', c.setSpeed(50) && !c.setSpeed(101) && !c.setSpeed(-1) && c.sot === 50);
+  const a0 = c.read('T1.ACC'), s0 = c.scans; run(1000);
+  check('speed of time 50 %: 1 s of real time is 0.5 s for the timer and half the scans', Math.abs(c.read('T1.ACC') - a0 - 500) <= 20 && Math.abs(c.scans - s0 - 50) <= 2, c.read('T1.ACC') - a0);
+  c.setSpeed(0); const a1 = c.read('T1.ACC'), s1 = c.scans; run(1000);
+  check('speed of time 0 % stops execution: no scan, the timer holds', c.read('T1.ACC') === a1 && c.scans === s1);
+  const ch = new MTPS.Chassis(8); ch.insert(0, 'PLC-CPU', 'Emu'); ch.setController(0, { sot: 60 });
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch)));
+  check('the speed of time is kept with the chassis', back.controller(0).sot === 60 && MTPS.Chassis.from(JSON.parse(JSON.stringify(new MTPS.Chassis(4)))).size === 4);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

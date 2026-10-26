@@ -1701,6 +1701,36 @@ function check(name, cond, info = '') {
     check('an old Dark setting becomes Classic, Dark', JSON.stringify(await old.evaluate(() => [document.documentElement.dataset.theme, document.documentElement.dataset.mode])) === '["classic","dark"]');
     await old.close();
   }
+  console.log('Logix Emulate: Speed of Time (right-click the controller, Configure Emulation)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); });
+    await page.waitForTimeout(200);
+    await page.click('#iob [data-ccpu="0:0"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    const items = await page.$$eval('#layer .it', t => t.map(x => x.textContent.trim()));
+    check('right-click the emulated controller: Program, Run, Remote, Configure Emulation…, Remove', ['Program', 'Run', 'Remote', 'Configure Emulation…', 'Remove'].every(x => items.some(y => y.endsWith(x))), items.join('|'));
+    await page.click('#layer .it:has-text("Configure Emulation")'); await page.waitForTimeout(100);
+    check('Configure Emulation opens with the Speed of Time at 100 %', (await dlgTitle()) === 'Configure Emulation' && (await page.$eval('#sot-v', i => i.value)) === '100' && (await page.$eval('#sot-cur', i => i.textContent)) === '100');
+    await page.fill('#sot-v', '50'); await page.click('[data-sot="ok"]'); await page.waitForTimeout(60);
+    check('Confirm Time % Change sets the speed of time (the last value set shows)', (await ev(() => MTPS.App.racks[0].controller(0).sot)) === 50 && (await page.$eval('#sot-cur', i => i.textContent)) === '50');
+    await page.click('[data-sot="0"]'); await page.waitForTimeout(60);
+    const s0 = await ev(() => MTPS.App.racks[0].controller(0).scans); await page.waitForTimeout(300);
+    check('0% NOW sets 0 % at once (execution stops)', (await ev(() => MTPS.App.racks[0].controller(0).sot)) === 0 && (await ev(() => MTPS.App.racks[0].controller(0).scans)) === s0);
+    await page.click('[data-sot="100"]'); await page.waitForTimeout(60);
+    check('100% NOW puts it back to real time', (await ev(() => MTPS.App.racks[0].controller(0).sot)) === 100);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await tp.waitForTimeout(300);
+    const b = await tp.$eval('#iob [data-ccpu="0:0"] .mname', e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x, y: b.y }] }); await tp.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await tp.waitForTimeout(150);
+    check('tablet (touch): a long-press on the controller opens its menu with Configure Emulation…', (await tp.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))).includes('Configure Emulation…'));
+    await tp.close();
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
