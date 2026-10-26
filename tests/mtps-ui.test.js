@@ -468,7 +468,7 @@ function check(name, cond, info = '') {
   await page.evaluate(() => [...document.querySelectorAll('#layer .rlpop .it')].find(x => x.textContent === 'Configure Drivers…').click());
   await page.waitForTimeout(80);
   check('Communications > Configure Drivers…: Available Driver Types, Configured Drivers with Name and Description, Status', (await page.$('#layer .rlcdbox #rldt')) !== null && (await page.$$eval('#layer .rltab th', t => t.map(x => x.textContent).join(','))) === 'Name and Description,Status' && (await page.$eval('#layer .rltab tbody', b => b.textContent)).includes('Running'));
-  check('Configure Drivers: Configure… and Startup… greyed out, Start/Stop/Delete/Close there', await page.$$eval('#layer .rlbtns .btn', b => { const f = n => b.find(x => x.textContent === n); return f('Configure…').disabled && f('Startup…').disabled && !!f('Start') && !!f('Stop') && !!f('Delete') && !!f('Close'); }));
+  check('Configure Drivers: Configure… on, Startup… greyed out, Start/Stop/Delete/Close there', await page.$$eval('#layer .rlbtns .btn', b => { const f = n => b.find(x => x.textContent === n); return !f('Configure…').disabled && f('Startup…').disabled && !!f('Start') && !!f('Stop') && !!f('Delete') && !!f('Close'); }));
   const nDrv = await nDrvs();
   await page.selectOption('#rldt', 'vbp');
   await page.click('#layer [data-rladd]');
@@ -1869,6 +1869,34 @@ function check(name, cond, info = '') {
     await tp.tap('#layer .rlctx [data-rlci="props"]'); await tp.waitForTimeout(150);
     check('tablet (touch): Device Properties opens', (await tp.$$eval('#layer .rlov2 .kv', r => r.length)) >= 6);
     await tp.close();
+  }
+  console.log('RSLinx Classic: Configure Drivers > Configure… (Virtual Backplane, Emulate Ethernet)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
+    await page.click('#layer .rltb [data-rlv="drivers"]'); await page.waitForTimeout(100);
+    const row = n => page.evaluate(n => [...document.querySelectorAll('#layer [data-rlrow]')].find(r => r.textContent.includes(n)).click(), n);
+    await row('EMULATE-1'); await page.waitForTimeout(60);
+    await page.click('#layer [data-rlcfg]'); await page.waitForTimeout(100);
+    check('Configure… on the Emulate Ethernet driver: Station Mapping, one station per emulated controller IP', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)) === 'Configure driver: EMULATE-1' && (await page.$eval('#rlmap tbody', b => b.textContent)).includes('127.0.0.1'));
+    await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    if (!(await ev(() => [...document.querySelectorAll('#layer [data-rlrow]')].some(r => r.textContent.includes('Virtual Chassis'))))) {
+      await page.selectOption('#rldt', 'vbp'); await page.waitForTimeout(60);
+      await page.click('#layer [data-rladd]'); await page.waitForTimeout(80);
+      await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(100);
+    }
+    await row('Virtual Chassis'); await page.waitForTimeout(60);
+    await page.click('#layer [data-rlcfg]'); await page.waitForTimeout(100);
+    check('Configure… on the Virtual Backplane driver: Configure Virtual Backplane with Slot Number 0 by default', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)).startsWith('Configure Virtual Backplane') && (await page.$eval('#rlslot', i => i.value)) === '0');
+    await page.fill('#rlslot', '1'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    check('a slot that holds a module is refused with a message', (await page.$eval('#rlerr', e => e.textContent)).includes('Slot 1 holds'));
+    await page.fill('#rlslot', '9'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    check('a slot outside the chassis is refused', (await page.$eval('#rlerr', e => e.textContent)).includes('from 0 to 7'));
+    await page.fill('#rlslot', '5'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    check('OK keeps the slot number with the driver', (await page.$('#layer .rlov2')) === null && (await ev(() => JSON.parse(localStorage.getItem('mtps.emu.drivers')).find(d => d.type === 'vbp').slot)) === 5);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
   }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 

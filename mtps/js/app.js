@@ -2701,7 +2701,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="rlcdl"><fieldset><legend>Available Driver Types:</legend><div class="rlts"><select class="inp" id="rldt">${RLTYPES.map(([k, n]) => `<option value="${k}"${k === rlS.dtype ? ' selected' : ''}>${esc(n)}${RLAVAIL.includes(k) ? '' : ' (not in this version)'}</option>`).join('')}</select><button class="btn" data-rladd="1">Add New…</button></div></fieldset>
         <fieldset class="rlcfg"><legend>Configured Drivers:</legend><div class="rltabw"><table class="rltab"><thead><tr><th>Name and Description</th><th>Status</th></tr></thead><tbody>${drivers.map((x, i) => `<tr class="${i === rlS.dsel ? 'on' : ''}" data-rlrow="${i}"><td><span class="mono">${esc(x.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === x.type) || [, , , x.type])[3])}</span></td><td class="${x.run ? 'run' : ''}">${x.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers. Pick a type, then Add New…</td></tr>'}</tbody></table></div></fieldset>
         <p class="help">${t && RLAVAIL.includes(t[0]) ? '' : 'That driver type reaches real hardware: it is not in this version. '}Without a running driver, Who Active finds nothing and the project cannot go online.</p></div>
-      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" disabled>Configure…</button><button class="btn" disabled>Startup…</button>
+      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" data-rlcfg="1"${d ? '' : ' disabled'}>Configure…</button><button class="btn" disabled>Startup…</button>
         <button class="btn" data-rlstart="1"${d && !d.run ? '' : ' disabled'}>Start</button><button class="btn" data-rlstop="1"${d && d.run ? '' : ' disabled'}>Stop</button><button class="btn" data-rldel="1"${d ? '' : ' disabled'}>Delete</button></div></div></div>`;
   }
   /* RSWho: right-click a device (RSLinx Classic GR001: Station Diagnostics, Configure DDE Topic and the other services
@@ -2721,8 +2721,25 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
     return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
   }
+  /* Configure… of a driver. Virtual Backplane: the Configure Virtual Backplane window, Slot Number (the slot of the
+     RSLinx Classic module in the virtual chassis, slot 0 by default; LGEM5K-GR016M chapter 6). Emulate Ethernet: the
+     station mapping of an Ethernet devices driver, one station per emulated controller with an IP address. */
+  function rlCfgHTML(md) {
+    const d = drivers.find(x => x.name === md.name);
+    if (!d) return '';
+    const bf = `<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div><div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
+    if (d.type === 'vbp') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Configure Virtual Backplane"><div class="bh">Configure Virtual Backplane (${esc(d.name)})</div><div class="bb">
+      <div class="frow"><label for="rlslot">Slot Number</label><input class="inp num" id="rlslot" type="number" min="0" max="${(racks[0] ? racks[0].size : 8) - 1}" step="1" value="${esc(md.v != null ? md.v : d.slot || 0)}"></div>
+      <p class="help">The slot of the RSLinx Classic module in the virtual chassis (${esc(racks[0] ? racks[0].name : 'Chassis')}). An emulated controller can be in any other slot.</p>${bf}`;
+    const st = [];
+    racks.forEach(r => r.controllers().forEach(m => { if (m.ip && !st.some(x => x[1] === m.ip)) st.push([st.length, m.ip, m.name]); }));
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Configure driver"><div class="bh">Configure driver: ${esc(d.name)}</div><div class="bb">
+      <div class="lbl">Station Mapping</div><div class="rltabw"><table class="rltab" id="rlmap"><thead><tr><th>Station</th><th>Host Name</th></tr></thead><tbody>${st.map(([n, ip, nm]) => `<tr><td>${n}</td><td class="mono">${esc(ip)} <span class="muted">${esc(nm)}</span></td></tr>`).join('') || '<tr><td colspan="2" class="muted">No emulated controller has an IP address.</td></tr>'}</tbody></table></div>
+      <p class="help">The host names are the IP addresses of the emulated controllers (Emulator > Controller > IP Address).</p>${bf}`;
+  }
   function rlModalHTML() {
     const md = rlS.modal;
+    if (md.k === 'cfg') return rlCfgHTML(md);
     if (md.k === 'props') {
       const n = rlFind(rlTree(), md.key);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
@@ -2811,6 +2828,16 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const md = rlS.modal;
       if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
+      if (md.k === 'cfg') {
+        const d = drivers.find(x => x.name === md.name), i = box.querySelector('#rlslot');
+        if (d && i) {
+          const v = i.value.trim(), n = +v, max = (racks[0] ? racks[0].size : 8) - 1, m = racks[0] && racks[0].module(n);
+          const err = !/^\d+$/.test(v) || n > max ? `Enter a slot number from 0 to ${max}.` : m && n !== (d.slot || 0) ? `Slot ${n} holds [${n}] ${m.ctl ? 'PLC-CPU' : m.type} ${m.name}: pick a free slot.` : '';
+          if (err) { md.v = v; md.err = err; draw(); return; }
+          d.slot = n; saveDrivers();
+        }
+        rlS.modal = null; draw(); return;
+      }
       const i = drivers.findIndex(d => d.name === md.name);
       if (i >= 0) drivers.splice(i, 1);
       rlS.dsel = Math.min(rlS.dsel, drivers.length - 1); if (rlS.dsel < 0) rlS.dsel = 0;
@@ -2867,7 +2894,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const d = drivers[rlS.dsel];
       if (t.closest('[data-rlstart]') && d) { d.run = true; changed(); draw(); return; }
       if (t.closest('[data-rlstop]') && d) { d.run = false; changed(); draw(); return; }
-      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); }
+      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); return; }
+      if (t.closest('[data-rlcfg]') && d) { rlS.modal = { k: 'cfg', name: d.name }; draw(); }
     });
     box.addEventListener('change', ev => {
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
