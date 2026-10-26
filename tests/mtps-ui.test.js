@@ -1132,6 +1132,14 @@ function check(name, cond, info = '') {
     check('the controller gets a Revision and a Memory Size of 3072 KB by default', (await page.$eval('#ci-mem', i => i.value)) === '3072' && (await page.$eval('#ci-rev', i => i.value)) === '1.0');
     await page.keyboard.press('Escape');
   }
+  console.log('New Project only declares the controller');
+  {
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.state.dirty = false; MTPS.App.run('new'); }); await page.waitForTimeout(120);
+    check('New Project: Controller, Name, Revision, Chassis, Slot, Description (no driver step)', (await dlgTitle()) === 'New Project' && (await page.$$eval('#layer .frow label', l => l.map(x => x.textContent).join('|'))) === 'Controller|Name|Revision|Chassis|Slot|Description' && !(await page.$('#layer [data-drvadd]')));
+    await page.fill('#np-n', 'Declared_Only'); await page.selectOption('#np-z', '4'); await page.selectOption('#np-s', '2');
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
+    check('Finish makes the project: the controller in slot 2 of a 4-slot chassis, no I/O modules yet', await ev(() => { const p = MTPS.App.state.p; return p.controller.name === 'Declared_Only' && p.controller.slot === 2 && p.rack.size === 4 && p.rack.modules.length === 0; }));
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

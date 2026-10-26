@@ -2456,8 +2456,33 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     toast('Quick setup done: driver, emulator, project and path are ready.', 'ok');
   }
   function cmdNew() {
-    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(() => setupWizard(0), 0), true);
-    else setupWizard(0);
+    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(newProjectDlg, 0), true);
+    else newProjectDlg();
+  }
+  /* New Project, as in the reference: it only declares the controller (type, name, revision, chassis, slot,
+     description). Drivers, the emulated controller and I/O modules are set up any time after (Setup Wizard,
+     RSLinx, the Emulator, New Module). */
+  function newProjectDlg() {
+    const sl = z => Array.from({ length: z }, (_, i) => `<option>${i}</option>`).join('');
+    const el = dialog({ title: 'New Project', size: 'md', focus: true,
+      body: `<div class="frow"><label>Controller</label><select class="inp" id="np-t"><option value="PLC-CPU">PLC-CPU · Emulated Logix controller</option></select></div>
+        <div class="frow"><label>Name</label><input class="inp" id="np-n" value="${esc(uniqueProj('New_Project'))}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label>Revision</label><select class="inp" id="np-r"><option>1.0</option></select></div>
+        <div class="frow"><label>Chassis</label><select class="inp" id="np-z">${E.RACKS.map(n => `<option value="${n}"${n === 8 ? ' selected' : ''}>PLC-RACK${n} (${n} slots)</option>`).join('')}</select></div>
+        <div class="frow"><label>Slot</label><select class="inp" id="np-s">${sl(8)}</select></div>
+        <div class="frow"><label>Description</label><input class="inp" id="np-d" value=""></div>
+        <p class="help">Drivers, the emulated controller and the I/O modules can be set up any time after: Communications, the Emulator, and New Module.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Finish', pri: true, run: e2 => {
+        const n = e2.querySelector('#np-n').value.trim();
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        const p = blank(n), d = e2.querySelector('#np-d').value.trim();
+        p.rack.size = +e2.querySelector('#np-z').value; p.rack.modules = [];
+        p.controller.slot = +e2.querySelector('#np-s').value; p.controller.rev = e2.querySelector('#np-r').value;
+        if (d) p.controller.desc = d;
+        openProject(p, true); render();
+        toast(`Project ${n} made. Add the I/O modules with New Module, and set the path with Who Active.`, 'ok');
+      } }] });
+    el.querySelector('#np-z').onchange = () => { const s = el.querySelector('#np-s'), v = Math.min(+s.value, +el.querySelector('#np-z').value - 1); s.innerHTML = sl(+el.querySelector('#np-z').value); s.value = v; };
   }
 
 
