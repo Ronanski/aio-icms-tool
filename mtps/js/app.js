@@ -709,7 +709,7 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', 'import', 'export', '-', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
@@ -726,7 +726,7 @@
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
-  const menuItems = ids => ids.filter(id => id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' ? '-' : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
+  const menuItems = ids => ids.filter(id => id === '-' || id.hd || !C[id].show || C[id].show()).map(id => (id === '-' || id.hd ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
   /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */
@@ -1213,7 +1213,7 @@
   /* ---------- layer: menus, sheets, dialogs, toasts ---------- */
   /* the menus as an accordion: tap a menu name to open its commands, tap again to fold it */
   function foldMenu(at) {
-    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-').map(x => ({ ...x, grp: n })));
+    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-' && !x.hd).map(x => ({ ...x, grp: n })));
     openMenu(items, at);
     const menu = $('#layer .menu'); if (!menu) return;
     // group the commands under their menu's header; a tap on a header folds its group open or shut in place
