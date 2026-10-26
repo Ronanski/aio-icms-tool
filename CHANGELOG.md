@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+- Docs: `HANDOFF.md` trimmed to current status; old history moved verbatim to `docs/HANDOFF-ARCHIVE.md`.
+
 ### Changed (MT PLC Studio 0.4.0-beta.3): tag addresses, moving instructions, tablet portrait, no project kept in the app (owner)
 - **Projects live in files only.** The app keeps no project inside it any more: it starts on a start page with
   New Project and Open Project (a .mtp or .L5X file on the device's storage), and the files opened lately. Save with
