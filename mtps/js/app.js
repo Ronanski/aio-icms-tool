@@ -1604,7 +1604,7 @@
   function addrType(addr, seen) {
     const a = String(addr || '').trim();
     let ty, dim = 0, rest;
-    const io = /^Local:(\d+):([ICO])(.*)$/i.exec(a);
+    const io = /^Local:(\d+):([ICOS])(.*)$/i.exec(a);
     if (io) {
       const m = S.p.rack.modules.find(x => x.slot === +io[1]), d = m && E.MODULES[m.type], k = U(io[2]);
       if (!d || !d[k]) return null;
@@ -1645,7 +1645,7 @@
         return n;
       };
       const ioRows = [];
-      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
       groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
       const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = typeOf(t) + (t.dim ? '[' + t.dim + ']' : ''); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
       groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
@@ -2031,7 +2031,7 @@
         if (!edit0 && list.some(t => U(t.name) === U(name))) return err(`A tag named ${name} already exists in this scope.`);
         const t = { name, desc: el.querySelector('#td').value.trim() };
         if (alias) {
-          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([ico])/, (m, a, b) => a + b.toUpperCase());
+          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([icos])/, (m, a, b) => a + b.toUpperCase());
           if (!t.alias) return err('Alias For: pick the tag, member or bit this alias points to (Browse).');
           if (U(t.alias.split(/[.[]/)[0]) === U(name)) return err('A tag cannot be an alias for itself.');
           if (!addrType(t.alias)) return err(/^Local:/i.test(t.alias) ? `Alias For: ${t.alias} is not an I/O point of this project. I/O tags are Local:<slot>:I or O, then .Data.<bit> (digital) or .Ch<n>Data (analog), for a module in the I/O Configuration.` : `Alias For: ${t.alias} is not a tag, member or bit of this project.`);
@@ -2101,7 +2101,7 @@
   }
   function moduleTags() {
     const out = [];
-    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
+    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
     return out;
   }
   const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
@@ -2971,7 +2971,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function toL5X(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
-    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF4FXOF2F', 'PLC-AO4': '1756-OF4' };
+    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF8', 'PLC-AO4': '1756-OF4' };
     const tag = t => t.alias ? `<Tag Name="${x(t.name)}" TagType="Alias" AliasFor="${x(t.alias)}">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`
       : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${t.dim ? ` Dimensions="${t.dim}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="Read/Write">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
     const progs = p.tasks.flatMap(t => t.programs);

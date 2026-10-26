@@ -16,26 +16,36 @@
     COUNTER: members('PRE:DINT ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL'),
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
   };
+  /* the module-defined data types, named as Studio 5000 names them (help: 1756 discrete / analog module-defined data
+     types): the digital cards are 1756-IB16 / -IA16 (AB:1756_DI) and 1756-OB16E / -OW16I (AB:1756_DO); the analog input
+     card is a 1756-IF8 in differential float mode (4 channels: AB:1756_IF4_Float), the analog output card a 1756-OF4
+     (AB:1756_OF4_Float). Status tags (Local:<slot>:S) are made for a module type that has an S type; these 1756 modules
+     have none. */
   const MODTYPES = {
-    'PLC:DI16:I': members('Fault:DINT Data:DINT'),
-    'PLC:DO16:I': members('Fault:DINT'), 'PLC:DO16:O': members('Data:DINT'),
-    'PLC:AI4:I': members('Fault:DINT ' + CH4('REAL')),
-    'PLC:AO4:I': members('Fault:DINT'), 'PLC:AO4:O': members(CH4('REAL')),
+    'AB:1756_DI:I:0': members('Fault:DINT Data:DINT'),
+    // the output card echoes the outputs it applies in its input tag (Data)
+    'AB:1756_DO:I:0': members('Fault:DINT Data:DINT'), 'AB:1756_DO:O:0': members('Data:DINT'),
+    'AB:1756_IF4_Float:I:0': members('Fault:DINT ' + CH4('REAL')),
+    'AB:1756_OF4_Float:I:0': members('Fault:DINT'), 'AB:1756_OF4_Float:O:0': members(CH4('REAL')),
     // the configuration tags (Local:<slot>:C), laid out like those of the 1756 I/O modules: input filters and
     // change of state (digital in), the fault and program mode states (digital out), scaling and states (analog)
-    'PLC:DI16:C': members('FilterOffOn_0_7:SINT FilterOnOff_0_7:SINT FilterOffOn_8_15:SINT FilterOnOff_8_15:SINT COSOnOffEn:DINT COSOffOnEn:DINT'),
-    'PLC:DO16:C': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
-    'PLC:AI4:C': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}LowEngineering:REAL Ch${k}HighEngineering:REAL`).join(' ')),
-    'PLC:AO4:C': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}FaultValue:REAL Ch${k}ProgValue:REAL`).join(' ')),
+    'AB:1756_DI:C:0': members('FilterOffOn_0_7:SINT FilterOnOff_0_7:SINT FilterOffOn_8_15:SINT FilterOnOff_8_15:SINT COSOnOffEn:DINT COSOffOnEn:DINT'),
+    'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
+    'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}LowEngineering:REAL Ch${k}HighEngineering:REAL`).join(' ')),
+    'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}FaultValue:REAL Ch${k}ProgValue:REAL`).join(' ')),
   };
-  const DO = { kind: 'do', I: 'PLC:DO16:I', O: 'PLC:DO16:O', C: 'PLC:DO16:C' };
-  const DI = { kind: 'di', I: 'PLC:DI16:I', C: 'PLC:DI16:C' };
+  // the names of 0.4.0 and older (PLC:DI16:I …): a project that uses one still reads
+  const OLDTYPES = { 'PLC:DI16:I': 'AB:1756_DI:I:0', 'PLC:DI16:C': 'AB:1756_DI:C:0', 'PLC:DO16:I': 'AB:1756_DO:I:0', 'PLC:DO16:O': 'AB:1756_DO:O:0', 'PLC:DO16:C': 'AB:1756_DO:C:0',
+    'PLC:AI4:I': 'AB:1756_IF4_Float:I:0', 'PLC:AI4:C': 'AB:1756_IF4_Float:C:0', 'PLC:AO4:I': 'AB:1756_OF4_Float:I:0', 'PLC:AO4:O': 'AB:1756_OF4_Float:O:0', 'PLC:AO4:C': 'AB:1756_OF4_Float:C:0' };
+  const DO = { kind: 'do', I: 'AB:1756_DO:I:0', O: 'AB:1756_DO:O:0', C: 'AB:1756_DO:C:0' };
+  const DI = { kind: 'di', I: 'AB:1756_DI:I:0', C: 'AB:1756_DI:C:0' };
   const MODULES = {
     'PLC-DI16-24V': DI, 'PLC-DI16-120V': DI,
     'PLC-DO16-24V': DO, 'PLC-DO16-RLY': DO,
-    'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I', C: 'PLC:AI4:C' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O', C: 'PLC:AO4:C' },
+    'PLC-AI4': { kind: 'ai', I: 'AB:1756_IF4_Float:I:0', C: 'AB:1756_IF4_Float:C:0' }, 'PLC-AO4': { kind: 'ao', I: 'AB:1756_OF4_Float:I:0', O: 'AB:1756_OF4_Float:O:0', C: 'AB:1756_OF4_Float:C:0' },
     'PLC-ENET': { kind: 'enet' },
   };
+  const IODIRS = ['I', 'O', 'C', 'S'];
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
   const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
   /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
@@ -89,7 +99,7 @@
     return t;
   }
   function canon(types, name) {
-    const u = U(name || '');
+    const u = U(OLDTYPES[name] || OLDTYPES[U(name || '')] || name || '');
     if (ATOMIC[u]) return u;
     const d = types.get(u);
     return d ? d.name : null;
@@ -607,7 +617,7 @@
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
       const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
-      for (const dir of ['I', 'O', 'C']) {
+      for (const dir of IODIRS) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
         mod[dir] = name;
@@ -905,6 +915,7 @@
         }
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
+        else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
       }
     }
@@ -1349,7 +1360,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, fitRack, INSTR,
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;

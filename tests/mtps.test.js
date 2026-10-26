@@ -127,8 +127,18 @@ console.log('Tags and types');
   check('writing an input image is refused', c.write('Local:1:I.Data.0', 1) === false && c.write('Start_PB', 1) === false && c.read('Start_PB') === 0);
   check('writing an output image is allowed', c.write('Motor_Cmd', 1) === true && c.read('Local:2:O.Data.0') === 1);
   check('S:FS is read-only, S:V can be set (as with OTE / OTL in the reference)', c.write('S:FS', 1) === false && c.write('S:V', 1) === true && c.read('S:V') === 1);
+  // module-defined data types as Studio 5000 names them (help: 1756 discrete / analog module-defined data types)
+  eq('module tag types: AB:1756_DI / AB:1756_DO / AB:1756_IF4_Float', [MTPS.MODULES['PLC-DI16-24V'].I, MTPS.MODULES['PLC-DI16-24V'].C, MTPS.MODULES['PLC-DO16-24V'].I, MTPS.MODULES['PLC-DO16-24V'].O, MTPS.MODULES['PLC-DO16-24V'].C, MTPS.MODULES['PLC-AI4'].I, MTPS.MODULES['PLC-AO4'].O],
+    ['AB:1756_DI:I:0', 'AB:1756_DI:C:0', 'AB:1756_DO:I:0', 'AB:1756_DO:O:0', 'AB:1756_DO:C:0', 'AB:1756_IF4_Float:I:0', 'AB:1756_OF4_Float:O:0']);
+  check('the 1756 discrete and analog modules have no status tag Local:<slot>:S (none in their module profile)', c.read('Local:1:S') === undefined && c.read('Local:2:S') === undefined);
+  check('a tag of an old module type name (PLC:DI16:I, 0.4.0) still verifies', MTPS.verify(proj({ tags: [T('Old_In', 'PLC:DI16:I')], rungs: ['XIC(Old_In.Data.0)NOP();'] })).errors.length === 0);
+  {
+    const d = run({ tags: [T('Q', 'BOOL', { alias: 'Local:2:O.Data.3' })], rungs: ['OTE(Q);'] });
+    scans(d, 2);
+    check('a digital output module echoes its applied outputs in Local:2:I.Data (AB:1756_DO:I:0)', d.read('Local:2:I.Data') === 8 && d.read('Local:2:I.Fault') === 0);
+  }
   const dt = MTPS.dataTypes(proj({ dataTypes: [{ name: 'Pump', members: [{ name: 'Running', type: 'BOOL' }] }] }));
-  check('data types list: predefined, module-defined, user-defined', dt.predefined.includes('TIMER') && dt.moduleDefined.includes('PLC:DI16:I') && dt.userDefined.includes('Pump'));
+  check('data types list: predefined, module-defined, user-defined', dt.predefined.includes('TIMER') && dt.moduleDefined.includes('AB:1756_DI:I:0') && dt.userDefined.includes('Pump'));
   check('tag name rule', MTPS.validName('Motor_1') && MTPS.validName('_x') && !MTPS.validName('1abc') && !MTPS.validName('a-b') && !MTPS.validName('a'.repeat(41)));
 }
 

@@ -702,7 +702,7 @@ function check(name, cond, info = '') {
   const tnames = () => page.$$eval('#tagrows tr[data-tag]', r => r.map(x => x.dataset.tag));
   const tn0 = await tnames();
   check('Controller Tags lists the module-defined tags of each module: Local:1:C, Local:1:I, Local:2:C, Local:2:I, Local:2:O', ['Local:1:C', 'Local:1:I', 'Local:2:C', 'Local:2:I', 'Local:2:O'].every(n => tn0.includes(n)) && !tn0.includes('Local:1:O') && tn0.indexOf('Local:2:O') < tn0.indexOf('Start_PB'), tn0.slice(0, 7).join(','));
-  check('a module-defined tag shows its module type (PLC:DI16:I) and a {…} value', await page.$eval('#tagrows tr[data-tag="Local:1:I"]', r => r.textContent.includes('PLC:DI16:I') && r.querySelector('.val').textContent === '{…}'));
+  check('a module-defined tag shows its module type (AB:1756_DI:I:0, as Studio 5000 names it) and a {…} value', await page.$eval('#tagrows tr[data-tag="Local:1:I"]', r => r.textContent.includes('AB:1756_DI:I:0') && r.querySelector('.val').textContent === '{…}'));
   await page.click('#tagrows [data-texp="Local:1:I"]'); await page.waitForTimeout(80);
   check('Local:1:I opens to .Fault and .Data (DINT)', (await tnames()).includes('Local:1:I.Fault') && (await page.$eval('#tagrows tr[data-tag="Local:1:I.Data"]', r => r.textContent.includes('DINT'))));
   await page.click('#tagrows [data-texp="Local:1:I.Data"]'); await page.waitForTimeout(80);
@@ -1719,6 +1719,13 @@ function check(name, cond, info = '') {
     await bev(() => MTPS.App.run('runm')); await bp.waitForTimeout(150); { const rb = await bp.$('#layer .dlg .btn.pri'); if (rb) { await rb.click(); await bp.waitForTimeout(250); } }
     check('B5: online in Run, XIC(SF_X) and OTE(SF_Y) are highlighted but XIO(S:FS) is not (4 bars, not 6)', (await bp.$$eval('#ladwrap svg rect.bar', r => r.length)) === 4, String(await bp.$$eval('#ladwrap svg rect.bar', r => r.length)));
     await bev(() => MTPS.App.run('offline')); await bp.waitForTimeout(100);
+    // B4: the module-defined tags carry the Studio 5000 type names; the output card's input tag has the echo Data
+    await bev(() => MTPS.App.openProject(MTPS.App.example(), true)); await bp.waitForTimeout(100);
+    await bev(() => MTPS.App.run('tagsmon')); await bp.waitForTimeout(150);
+    const bty = n => bp.$eval(`#tagrows tr[data-tag="${n}"]`, r => r.textContent).catch(() => '');
+    check('B4: Controller Tags shows AB:1756_DI:I:0, AB:1756_DI:C:0, AB:1756_DO:I:0, AB:1756_DO:O:0 and AB:1756_DO:C:0', (await bty('Local:1:I')).includes('AB:1756_DI:I:0') && (await bty('Local:1:C')).includes('AB:1756_DI:C:0') && (await bty('Local:2:I')).includes('AB:1756_DO:I:0') && (await bty('Local:2:O')).includes('AB:1756_DO:O:0') && (await bty('Local:2:C')).includes('AB:1756_DO:C:0'));
+    await bp.click('#tagrows [data-texp="Local:2:I"]'); await bp.waitForTimeout(80);
+    check('B4: Local:2:I (output card) opens to Fault and Data', (await bty('Local:2:I.Fault')) !== '' && (await bty('Local:2:I.Data')).includes('DINT'));
     /*B-NEXT*/
     await bctx.close();
   }
