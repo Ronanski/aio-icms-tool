@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 - Docs: `HANDOFF.md` trimmed to current status; old history moved verbatim to `docs/HANDOFF-ARCHIVE.md`.
 
-### Changed (MT PLC Studio 0.4.0): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+### Changed (MT PLC Studio 0.4.0, Stable): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
 - **Right-click menus in the Studio 5000 order**, one for each target: "?" (New Tag…), an undefined name
   (New "name"), a tag name (Edit Properties, Find All, Go To Cross Reference For, Monitor, Trend), a bit or a box
   instruction, a branch, a branch level, and a rung (Import/Export Rungs, Start/Accept/Cancel Pending Rung Edits,
@@ -38,6 +38,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Constant) with a blank last row for a new tag.
 - **RSLinx Classic window:** menu bar, RSWho (tree, Autobrowse, Refresh) and Configure Drivers (Available Driver
   Types, Add New with a 15-character name, Configured Drivers with Status, Start, Stop, Delete).
+- **Drag and drop as in the reference:** white squares mark where an element can go, one green circle where it
+  will. Ctrl copies, and so does a drop on another routine. The tag name alone copies the operand; the rung number
+  moves the rung; the left rail of a branch moves that level, the right rail its end.
+- **Online edits with edit zones:** Start Pending Rung Edits copies the rung: the copy is `i` (dashed rail) with the
+  original `r` below, read-only. Accept makes them `I` and `R`; a rung deleted in Run is `D`; Test runs the `I`
+  rungs, Assemble removes `R` and `D`, Cancel restores. A changed instruction shows `*` until Verify.
+- **Run look:** thick green rails, long green bars on both sides of a true instruction, red ▸ON / ▸OFF for a forced
+  bit, a triangle in the Forces box; the online bar LEDs read Run Mode, Controller OK, Energy Storage OK, I/O OK.
+  Pasting an instruction on a selected rung puts it at the start of the rung.
+- **Communications feel real:** RSWho and Who Active browse node by node; Go Online connects first; Download and
+  Upload show their stages with a progress bar and Cancel; a COMM LED blinks while data moves. Options > Fast
+  communications skips the delays.
+- **Smoother on slow devices:** live values redraw only what changed (the ladder up to 20 times a second, Monitor
+  Tags cell by cell); scrolling a 200-rung ladder on a slow CPU went from about 3 to over 40 frames a second.
 - Fixed: "Remove module" in a module's menu opened the Module I/O window; the Emulator panel's header buttons
   were cut off in a narrow side panel.
 

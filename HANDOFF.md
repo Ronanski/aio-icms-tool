@@ -5,7 +5,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 ## Savepoint
 | | |
 |---|---|
-| **Version** | MT PLC Studio **0.4.0-beta.3** released 2026-10-26 (PR #91, tag `mtps-v0.4.0-beta.3`, Beta `beta.08a7974`). Stable is still `mtps-v0.1.0`. PLC Trainer (repo root): latest `v2.0.0` stable. |
+| **Version** | MT PLC Studio **0.4.0** (Stable) prepared on PR #95, 2026-10-26; released after the themes commit and green CI (owner GO 17:46). Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
 | **Tags** | `mtps-v0.4.0-beta.3`, `mtps-v0.1.0`; Trainer `v2.0.0` back to `v1.1.0` (full list in archive). |
 | **Branch** | `main` is the default branch and holds released code. Work on feature branches, merged through PRs only with the owner's GO. |
 | **Tests** | See "Tests in the cloud container" below for current counts. |
@@ -16,7 +16,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 
 ## Next session: CLOUD session (owner, 2026-10-26), read first
 **MT PLC Studio** (`mtps/`, separate from the PLC Trainer at the repo root):
-- Status: 0.4.0-beta.3 is released. `main` = `175eea9` (docs savepoint #92 on top of `08a7974`). No open MT PLC Studio PR.
+- Status: PR #95 (branch `claude/project-thread-c32nav`) holds 0.4.0: Studio 5000 right-click menus, one-row chassis + RTB door, Local:n:C tags + Edit Tags grid, RSLinx window, Cross Reference / Find All / branch menu, ladder drag / inline edit / online edit zones / force / Run look, New Project declares only, Logix Emulate Create, staged comm, responsive + perf. Themes thread commits last, then one merge + Stable. Next: COVERAGE MAP artifact (HAVE / PARTIAL / MISSING vs the three products).
 - **Before any change in `mtps/`, read the skill `.claude/skills/allen-bradley/`.** Its `references/app-mapping.md` shows where each Studio 5000 / RSLinx / Logix Emulate concept lives in the app, and lists the known differences still open.
 - The owner's golden reference is Studio 5000 Logix Designer, RSLinx Classic and Logix Emulate. Research first (the Rockwell manuals are listed in the skill's `references/sources.md`). The owner was angry about unresearched changes: "hindi mo iresearch, hindi mo aralin… puro changes tyo d2".
 - Owner rules that also live in local memory (a cloud session cannot see it, so they are copied here):
@@ -32,10 +32,10 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
   - The VM walkthrough needs a local session over Remote Desktop, with the owner typing the password.
   - In the cloud, work from the docs and the skill only.
 - **Tests in the cloud container** (one per file, same env as `CLAUDE.md`):
-  `NODE_PATH=/opt/node-tools/node_modules CHROMIUM_PATH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome | head -1) node tests/<file>`
-  - `mtps.test.js`: 308
+  `NODE_PATH=/opt/node-tools/node_modules CHROMIUM_PATH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome | head -1) node tests/<file>` (the folder may be `chrome-linux64`)
+  - `mtps.test.js`: 316
   - `mtps-ref.test.js`: 67
-  - `mtps-ui.test.js`: 212
+  - `mtps-ui.test.js`: 412
   - `e2e.test.js`: 884
   - `npm run audit` (`tests/mtps-audit-run.js`): 45
 - **Release chain:**
