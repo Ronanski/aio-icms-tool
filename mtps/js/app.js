@@ -299,6 +299,14 @@
     const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
     saveChanges(go);
   }
+  /* File > Close: the project closes (offline first) and the Start Page shows, as at the first start */
+  function closeProject() {
+    if (S.online) { S.online = false; linked = null; commLed(); }
+    S.ed = null; closeLayer();
+    openProject(blank('New_Project'), true);
+    S.noProj = true; S.view = 'start'; S.area = 'ladder'; S.selRung = null; S.drawer = false; reverify();
+    render();
+  }
   /* the reference's prompt before the project closes (Close, New, Open, Exit): "Save changes to <name>?" Yes saves
      first (Save As when it has no file yet) and then goes on, No goes on without saving, Cancel stays */
   function saveChanges(fn) {
@@ -743,6 +751,7 @@
   const C = {
     new: { l: 'New Project…', k: 'Ctrl+N', i: 'file', run: cmdNew },
     open: { l: 'Open… (.mtp, .L5X)', k: 'Ctrl+O', i: 'open', run: cmdOpen },
+    close: { l: 'Close', i: 'close', run: () => saveChanges(closeProject), on: () => !S.noProj },
     save: { l: 'Save', k: 'Ctrl+S', i: 'save', run: saveCmd },
     uptags: { l: 'Upload Tag Values', i: 'upload', run: () => uploadTags(true), on: () => S.online && !!ctl.M && ctl.holds(S.p) },
     saveas: { l: 'Save As… (.mtp file)', i: 'save', run: saveFileAs },
@@ -825,7 +834,7 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
@@ -1019,7 +1028,7 @@
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
-      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}</div>
+      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 

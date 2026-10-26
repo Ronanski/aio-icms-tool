@@ -27,6 +27,15 @@ module.exports = async function menus({ browser, page, URL, check }) {
     await page.keyboard.press('Escape'); await wait(80);
   }
   async function example() { await ev(() => MTPS.App.openProject(MTPS.App.example())); await wait(120); }
+  // Go Online through its dialogs (Connected To Go Online > Download > Download), as a user answers them
+  async function online() {
+    await ev(() => MTPS.App.run('online'));
+    for (let k = 0; k < 8 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) {
+      await wait(150);
+      const b = await page.$('#layer .dlg .btn.pri'); if (b && !(await page.$('#layer .dlg .prog'))) await b.click(); else await wait(500);
+    }
+    return ev(() => MTPS.App.state.online);
+  }
   async function dirty() { await page.click('#ladwrap rect.tap[data-rn][data-ri="0"]'); await wait(60); await page.keyboard.press('Control+r'); await wait(120); }
 
   console.log('Studio 5000 menus: save-changes prompt (Logix Designer help v37: Close / Exit command)');
@@ -56,4 +65,39 @@ module.exports = async function menus({ browser, page, URL, check }) {
   await menu('File', 'New Project…');
   check('no changes: no prompt', (await dlgTitle()) === 'New Project');
   await page.keyboard.press('Escape'); await wait(80);
+
+  console.log('File > Close (help v37: Close command): back to the Start Page');
+  await fresh(); await example();
+  let f = await menu('File');
+  check('File: New, Setup, Open, Close, Save, Save As in the reference order', f.map(x => x[0]).slice(0, 7).join('|') === 'New Project…|Setup Wizard…|-|Open… (.mtp, .L5X)|Close|Save|Save As… (.mtp file)', f.map(x => x[0]).join('|'));
+  await pick('Close');
+  check('Close without changes: the Start Page, no project open', (await st()).noProj === true && (await page.$('.startpg [data-cmd="new"]')) !== null && (await ev(() => document.title)) === 'MT PLC Studio');
+  f = await menu('File');
+  check('with no project open, Close is off', f.find(x => x[0] === 'Close')[1] === true);
+  await page.keyboard.press('Escape'); await wait(80);
+  await example();
+  check('online for the next step', await online());
+  await dirty();
+  await menu('File', 'Close');
+  check('Close with changes asks to save first', (await dlgText()).trim() === 'Save changes to Motor_Demo?');
+  await clickBtn('No'); await wait(150);
+  check('No: closed without saving, offline, the Start Page', (await st()).noProj === true && (await ev(() => MTPS.App.state.online)) === false && (await page.$('.startpg')) !== null);
+  // tablet (touch): the folding menu
+  const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+  const tp = await tctx.newPage();
+  await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+  await tp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await tp.waitForTimeout(150);
+  await tp.tap('[data-allmenu]'); await tp.waitForTimeout(150); await tp.tap('[data-fold="File"]'); await tp.waitForTimeout(150);
+  await pick('Close', tp, true);
+  check('tablet (touch): Close in the folding File menu goes to the Start Page', (await tp.evaluate(() => MTPS.App.state.noProj)) === true && (await tp.$('.startpg')) !== null);
+  await tctx.close();
+  // phone (touch): More > Close Project
+  const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const pp = await pctx.newPage();
+  await pp.goto(URL); await pp.waitForTimeout(300); await pp.keyboard.press('Escape');
+  await pp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await pp.waitForTimeout(150);
+  await pp.tap('[data-go="more"]'); await pp.waitForTimeout(150);
+  await pp.tap('.page [data-cmd="close"]'); await pp.waitForTimeout(200);
+  check('phone (touch): More > Close Project shows the Start Page on the Ladder tab', (await pp.evaluate(() => MTPS.App.state.noProj && MTPS.App.state.area === 'ladder')) && (await pp.$('.startpg')) !== null);
+  await pctx.close();
 };
