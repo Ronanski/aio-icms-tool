@@ -570,8 +570,9 @@ function check(name, cond, info = '') {
   await ev(() => MTPS.App.select({ ri: 0, path: [0, 0, 0] }));
   await ev(() => MTPS.App.run('desc'));
   await page.waitForTimeout(100);
-  await page.fill('#layer input', 'Green start button');
-  await page.keyboard.press('Enter');
+  check('Edit Main Operand Description opens the description bar above the ladder', (await page.$eval('#descbar .dbh', b => b.textContent)).includes('Description For: Start_PB'));
+  await page.fill('#desctx', 'Green start button');
+  await page.click('#descbar [data-desc="ok"]');
   await page.waitForTimeout(150);
   check('4. an instruction gets a description, drawn above it', (await page.$eval('#ladwrap svg', s => s.textContent)).includes('Green start button'));
   await page.click('#iob [data-cmod="0:1"]', { button: 'right' });
@@ -664,17 +665,17 @@ function check(name, cond, info = '') {
   await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2, { button: 'right' });
   await page.waitForTimeout(100);
   const om = await page.$$eval('#layer .it', i => i.map(x => x.textContent.trim()));
-  check('right-click on an operand: Edit, New tag and Description for that operand', om[0] === 'Edit "Dest"…' && om[1] === 'New "Speed_Cmd"…' && om.some(t => t.startsWith('Edit "Speed_Cmd" Description')));
+  check('right-click on an operand that is no tag yet: New "x" first, then the instruction items with its Description', om[0].startsWith('New "Speed_Cmd"') && om.some(t => t.startsWith('Cut Instruction')) && om.some(t => t.startsWith('Edit "Speed_Cmd" Description')) && !om.some(t => t.startsWith('Edit "Dest"')), om.join('|'));
   await page.evaluate(() => [...document.querySelectorAll('#layer .it')].find(x => x.textContent.trim().startsWith('Edit "Speed_Cmd" Description')).click());
   await page.waitForTimeout(100);
-  await page.fill('#layer input', 'Speed command to the drive');
-  await page.keyboard.press('Enter');
+  await page.fill('#desctx', 'Speed command to the drive');
+  await page.keyboard.press('Control+Enter');
   await page.waitForTimeout(120);
   check('the description is kept for that operand', await ev(() => (MTPS.App.state.p.comments || {}).SPEED_CMD === 'Speed command to the drive'));
   await ev(() => MTPS.App.select({ ri: 0, path: [1], op: 0 }));
   await page.keyboard.press('Control+d');
   await page.waitForTimeout(100);
-  check('Ctrl+D on a timer edits its tag description', (await dlgTitle()) === 'Edit Main Operand Description' && (await page.$eval('#layer input', i => i.value)) === 'Conveyor run delay');
+  check('Ctrl+D on a timer edits its tag description in the bar', (await page.$eval('#descbar .dbh', b => b.textContent)).includes('Description For: Tmr1') && (await page.$eval('#desctx', i => i.value)) === 'Conveyor run delay');
   await page.keyboard.press('Escape');
   await page.dblclick('.nd[data-org="task:MainTask"]');
   await page.waitForTimeout(120);
@@ -839,7 +840,7 @@ function check(name, cond, info = '') {
     check('Undo puts it back', (await rung(1)) === 'XIC(Motor_Run)OTE(Motor_Cmd);');
     const c = await box('1', '0');
     await T('touchStart', c.x, c.y); await tp.waitForTimeout(600); await T('touchEnd'); await tp.waitForTimeout(200);
-    check('hold and let go without moving: the instruction menu', (await tp.$eval('#layer', l => l.textContent)).includes('Edit "Motor_Run" Properties'));
+    check('hold and let go without moving: the instruction menu', (await tp.$eval('#layer', l => l.textContent)).includes('Cut Instruction'));
     await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; }); await tp.waitForTimeout(500);
     await tp.touchscreen.tap(c.x, c.y); await tp.waitForTimeout(450); await tp.touchscreen.tap(c.x, c.y); await tp.waitForTimeout(250);
     check('tap selects, tap again on the selected instruction opens its operands', (await tp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '')) === 'Rung 1 · XIC');
@@ -851,13 +852,14 @@ function check(name, cond, info = '') {
   }
   console.log('Mouse: drag an instruction to a node (Ctrl copies)');
   {
-    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(200);
+    await page.setViewportSize({ width: 1440, height: 1100 }); await page.waitForTimeout(200);
     await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
     await page.waitForTimeout(200);
     const box = (ri, p) => page.evaluate(([ri, p]) => { const x = [...document.querySelectorAll('#ladwrap rect.tap')].find(r => r.dataset.ri === ri && r.dataset.p === p && !r.dataset.opi); const b = x.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, l: b.left, r: b.right }; }, [ri, p]);
     await ev(() => { document.querySelector('#ladwrap').scrollTop = 0; }); await page.waitForTimeout(100);
     const a = await box('1', '0'), b = await box('0', '2');
-    await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(a.x + 20, a.y - 10, { steps: 3 }); await page.mouse.move(b.r - 6, b.y, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(150);
+    await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(a.x + 20, a.y - 10, { steps: 3 }); await page.mouse.move(b.r - 6, b.y, { steps: 6 });
+    await page.mouse.up(); await page.waitForTimeout(150);
     check('drag XIC Motor_Run of rung 1 onto rung 0, after OL_OK', (await rungTexts())[0] === '[XIC(Start_PB),XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)XIC(Motor_Run)OTE(Motor_Run);' && (await rungTexts())[1] === 'OTE(Motor_Cmd);', JSON.stringify((await rungTexts()).slice(0, 2)));
     const c = await box('0', '3'), d = await box('1', '0');
     await page.keyboard.down('Control'); await page.mouse.move(c.x, c.y); await page.mouse.down(); await page.mouse.move(d.l + 4, d.y, { steps: 8 }); await page.mouse.up(); await page.keyboard.up('Control'); await page.waitForTimeout(150);

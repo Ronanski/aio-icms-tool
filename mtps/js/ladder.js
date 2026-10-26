@@ -139,6 +139,7 @@
           outBrs.forEach(b => { b.path[0] += split; });
         }
         const all = items.concat(outItems), allBr = brs.concat(outBrs);
+        let railTaps = '';
         const nRows = Math.max(1, ...all.map(it => it.row + 1), ...allBr.map(b => b.rows[b.rows.length - 1] + 1));
         const above = [], below = [];
         for (let r = 0; r < nRows; r++) {
@@ -166,8 +167,10 @@
           out += `<line class="w" x1="${x1 + .5}" y1="${ys[0]}" x2="${x1 + .5}" y2="${ys[ys.length - 1]}"/><line class="w" x1="${x2 + .5}" y1="${ys[0]}" x2="${x2 + .5}" y2="${ys[ys.length - 1]}"/>`;
           const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, b.path);
           if (isSel) out += `<rect class="sel" x="${x1 - 3}" y="${ys[0] - 10}" width="${x2 - x1 + 6}" height="${ys[ys.length - 1] - ys[0] + 20}" rx="3" fill="none"/>`;
-          // the branch rail is a hit target of its own (select the branch, add a leg)
-          taps += `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" x="${x1 - 10}" y="${ys[0] + 6}" width="20" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`;
+          // the branch rails are hit targets of their own, above the instructions (added after them):
+          // the left rail selects the branch (add a level), the right rail the whole branch
+          railTaps += `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" x="${x1 - 6}" y="${ys[0] + 6}" width="12" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`
+            + `<rect class="tap" data-ri="${ri}" data-p="${b.path.join('.')}" data-br="1" data-rr="1" x="${x2 - 6}" y="${ys[0] + 6}" width="12" height="${Math.max(12, ys[ys.length - 1] - ys[0] - 6)}"/>`;
           // the free wire at the end of each leg is a hit target too: select the level, add an instruction into it
           b.rows.forEach((r, k) => {
             const lx = X(b.ends[k]) + (b.ends[k] === b.col ? 10 : 2), lw = x2 - lx - 2, lp = b.path.concat(k);
@@ -201,7 +204,12 @@
           const f = o.forced && e.a && e.a[0] ? o.forced(e.a[0]) : null;
           if (f !== null && f !== undefined) out += `<text class="frc" x="${x + 6}" y="${cy + 22}">▸${f ? 'ON' : 'OFF'}</text>`;
           if (e.a && e.a.some(a => a === '?' || a === '')) out += `<rect class="errw" x="${x + 4.5}" y="${cy - 12.5}" width="${w - 9}" height="25" rx="2"/>`;
-          taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 28)}"/>`;
+          // the tag name above a bit instruction is its own hit target (operand 0), as the operand rows of a box are;
+          // the instruction's own target is then the glyph below it
+          const nameTap = !isBox(e) && e.a && e.a.length && h.h > 8;
+          if (nameTap) taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - 8}" width="${w}" height="30"/>`
+            + `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="0" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h - 2}"/>`;
+          else taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" x="${x}" y="${cy - h.h - 6}" width="${w}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 28)}"/>`;
           if (isBox(e)) {
             const bits = (INSTR[e.t] || {}).bits || [], L = x + 8, Rt = x + w - (bits.length ? 30 : 8);
             let yy = cy - 9 + 17 + LH + 2;
@@ -214,6 +222,7 @@
             });
           }
         });
+        taps += railTaps;
         y = yy + 2;
       });
       const rungBot = Math.max(y, rungTop + 40);

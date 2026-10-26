@@ -852,3 +852,35 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .startpg .spc span { display: flex; flex-direction: column; gap: 3px; } .startpg .spc small { color: var(--muted); }
 .startpg .row { display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border); }
 .startpg .row:hover { background: var(--accent-soft); }
+
+/* ---------- the reference's ladder editors: description / rung comment bar, Go To, Add Ladder Element, Import ---------- */
+.descbar { flex: none; border-bottom: 1px solid var(--border); background: var(--surface-2); padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+.descbar .dbh { display: flex; align-items: center; gap: 4px; font-weight: 600; min-width: 0; }
+.descbar .dbh .ell { flex: 0 1 auto; }
+.descbar .dok { color: var(--ok); }
+.descbar .dno { color: var(--danger); }
+.descbar textarea { width: 100%; resize: vertical; font-family: var(--ui); min-height: 52px; }
+.gotod { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gotod label { display: block; margin-bottom: 4px; }
+.gwl { border: 1px solid var(--border-strong); background: var(--surface); min-height: 120px; }
+.gwl .row { padding: 3px 8px; cursor: pointer; }
+.tab .gwl .row, .phone .gwl .row { padding: 12px; }
+.gwl .row.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.ale1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ale1 .inp { flex: 1; min-width: 120px; width: auto; }
+.alew { display: flex; gap: 8px; min-height: 0; }
+.alel { flex: 1; height: 260px; overflow: auto; border: 1px solid var(--border-strong); background: var(--surface); }
+.alel .row { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.alel .row svg.lg, .alel .row > svg { width: 22px; height: 14px; flex: none; }
+.alel .row b { width: 46px; flex: none; }
+.alel .row.grp { font-weight: 600; padding-left: 4px; }
+.alel .row.grp svg.i { width: 14px; height: 14px; }
+.alel .row:not(.grp) { padding-left: 26px; }
+.alel .row.on { background: var(--accent-soft); color: var(--accent-text); }
+.tab .alel .row, .phone .alel .row { min-height: 44px; }
+.aleh { width: 200px; flex: none; border: 1px solid var(--border); background: var(--surface-2); padding: 8px; overflow: auto; height: 260px; }
+.alef { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.alec { display: inline-flex; align-items: center; gap: 6px; }
+.phone .aleh { display: none; }
+.ictbl { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.ictbl th, .ictbl td { border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left; }

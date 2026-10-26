@@ -213,7 +213,7 @@
       body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div><div class="row" data-fbex="1">${ic('ladder')}<span class="ell">Motor_Demo</span></div>` : ''}</aside>
         <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
           <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
-          <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}
+          <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}${o.descField ? '<label for="fbd">File description</label><input class="inp" id="fbd" autocomplete="off">' : ''}
             <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : 'All projects'}</option>`).join('')}</select></div></div></div>
         <p class="help fbhint">${FS.kind === 'browser' ? 'In a browser, the files are kept by this browser. The Windows and Android apps keep them in the folders of the device.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: o.mode === 'save' ? 'Save' : 'Open', pri: true, run: () => { act(); return false; } }] });
@@ -238,7 +238,8 @@
       if (/[\\/:*?"<>|]/.test(n)) { toast('A file name cannot hold \\ / : * ? " < > |', 'err'); return; }
       if (!new RegExp(ext().replace('.', '\\.') + '$', 'i').test(n)) n += ext();
       const f = FS.join(st.dir, n);
-      const go = () => { closeLayer(); o.onPick(f); };
+      const dsc = o.descField ? q('#fbd').value.trim() : '';
+      const go = () => { closeLayer(); o.onPick(f, dsc); };
       if (await FS.exists(f)) confirmDlg('Replace file', `<b>${esc(n)}</b> already exists in this folder. Replace it?`, 'Replace', go, true);
       else go();
     };
@@ -317,7 +318,7 @@
     if (moved) toast(`${moved} project(s) from this app were saved as .mtp files in ${dir}.`, 'ok');
   }
   function openProject(p, quiet) {
-    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.view = 'ladder'; S.noProj = false;
+    S.p = p; S.file = null; S.dirty = false; S.tabs = []; S.descEd = null; S.view = 'ladder'; S.noProj = false;
     // modules of a type this version does not have (the generic module of 0.4.0-beta.1) leave the I/O configuration
     const gone = (p.rack && p.rack.modules || []).filter(m => !E.MODULES[m.type]);
     if (gone.length) { p.rack.modules = p.rack.modules.filter(m => E.MODULES[m.type]); setTimeout(() => toast(`Removed from the I/O configuration: ${gone.map(m => `[${m.slot}] ${m.name}`).join(', ')} (module type no longer in the app).`), 300); }
@@ -612,6 +613,16 @@
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
     comment: { l: 'Edit Rung Comment', i: 'text', run: () => rungComment(curSelRung()), on: () => editable() && curSelRung() != null },
     desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => isTagText(selOperand()) },
+    sdef: { l: 'Save Instruction Defaults', i: 'save', run: () => {}, on: () => false },
+    cdef: { l: 'Clear Instruction Defaults', i: 'close', run: () => {}, on: () => false },
+    rimp: { l: 'Import Rungs…', i: 'upload', run: () => importRungs(), on: editable },
+    rexp: { l: 'Export Rungs…', i: 'download', run: () => exportRungs(curSelRung()), on: () => curSelRung() != null },
+    rstart: { l: 'Start Pending Rung Edits', k: 'Ctrl+Shift+S', i: 'edit', run: () => rungText(curSelRung()), on: () => S.online && editable() && curSelRung() != null },
+    raccept: { l: 'Accept Pending Rung Edits', i: 'check', run: acceptEdits, on: () => edPhase() === 'pending' },
+    rcancel: { l: 'Cancel Pending Rung Edits', i: 'undo', run: cancelEdits, on: () => edPhase() === 'pending' },
+    rasm: { l: 'Assemble Rung Edit', i: 'check', run: assembleEdits, on: () => edPhase() === 'tested' },
+    rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
+    verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
@@ -727,12 +738,15 @@
     if (lay !== S.layout) { S.layout = lay; closeLayer(); }
     const app = $('#app');
     const lw = $('#ladwrap'), st = lw ? [lw.scrollTop, lw.scrollLeft] : null;
+    const dt = document.activeElement && document.activeElement.id === 'desctx' ? document.activeElement : null, dsel = dt && [dt.selectionStart, dt.selectionEnd];
+    if (dt && S.descEd) S.descEd.value = dt.value;
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
     app.className = document.body.className = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
     app.innerHTML = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
     const nl = $('#ladwrap');
     if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
+    if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
   }
   const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
@@ -772,7 +786,7 @@
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
-          <div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
+          ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
   }
@@ -791,7 +805,7 @@
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
           ${port && S.view === 'ladder' ? `<div class="ibar top"><div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div></div>` : ''}
-          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `<div class="ladwrap" id="ladwrap" tabindex="0"></div>
+          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>
           ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}</div>
           ${S.prefs.emu && dockSide(port) === 'bottom' ? dockHTML('bottom') : ''}
           ${port ? msgPane() : `<div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div>`}</section>
@@ -822,7 +836,7 @@
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
       if (emuTab) { body = tabs + dockHTML('full'); }
       else body = tabs + `<div class="pbar"><span class="rt grow" data-routines="1"><span class="tt">${esc(curRoutine().name)}<small>${esc(curProg().name)}</small></span>${ic('down')}</span>${tbtn('undo')}${tbtn('find')}<button class="ib" data-more="ladder">${ic('more')}</button></div>
-        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0"><div class="ladwrap" id="ladwrap" tabindex="0"></div><button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button></div>${selbarHTML(curEl())}`;
+        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div><button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button></div>${selbarHTML(curEl())}`;
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
@@ -891,7 +905,7 @@
     return `<div class="chips"><span class="chip${f.e ? ' on' : ''}" data-ef="e">${ic('fault')}${v.errors.length} Errors</span><span class="chip${f.w ? ' on' : ''}" data-ef="w">${ic('warn')}${v.warnings.length} Warnings</span><span class="chip${f.m ? ' on' : ''}" data-ef="m">${ic('info')}Messages</span></div>
       <div class="log">${lines.map(x => { const m = /Rung (\d+)/.exec(x.t), rt = /^Verifying routine '([^']+)' of program '([^']+)'/.exec(x.t); return `<div class="ln ${x.k}"${m ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(x.t, v))}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`; void rt; }).join('')}</div>`;
   }
-  function lineRoutine(t, v) { const e = v.errors.concat(v.warnings).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
+  function lineRoutine(t, v) { const e = v.errors.concat(v.warnings, v.found || []).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
   /* ---------- ladder ---------- */
   function tagFor(op) {
@@ -1101,29 +1115,41 @@
   }
 
   /* ---------- context menus (right-click / long-press): spec section 4 ---------- */
+  /* the ladder's right-click menus, as in the reference (Studio 5000): the rung number, a branch rail, an instruction
+     and the tag name of an instruction each have their own menu. The instruction items are the same for every
+     instruction; a Bit instruction (BOOL operand) adds Toggle Bit, Force On and Force Off */
+  const renamed = (items, names) => items.map(it => (it === '-' || !names[it.id] ? it : { ...it, l: names[it.id] }));
+  const kb = k => (S.layout === 'desktop' ? k : '');
+  function tagItems(e, oi, onName) {
+    const kind = (((INSTR[e.t] || {}).args || [])[oi] || '').replace('?', ''), a = e.a[oi];
+    if (!kind || /^(routine|label|imm|expr|order)$/.test(kind)) return [];
+    if (a === '?' || a === '') return [{ l: 'New Tag…', k: kb('Ctrl+W'), i: 'newtag', run: () => newTag({ kind }), dis: !editable() }, '-'];
+    if (!isTagText(a)) return [];
+    const base = String(a).split(/[.[]/)[0], tg = tagFor(base);
+    if (!tg) return [{ l: `New "${base}"`, k: kb('Ctrl+W'), i: 'newtag', run: () => newTag({ name: base, kind }), dis: !editable() }, '-'];
+    if (!onName) return [];
+    return [{ l: `Edit "${tg.name}" Properties`, i: 'tag', run: () => newTag({ tag: tg }) }, { l: `Find All "${a}"`, i: 'search', run: () => findAll(a) },
+      { l: `Go To Cross Reference For "${base}"`, i: 'xref', run: () => xref(base) }, { l: `Monitor "${a}"`, i: 'tags', run: () => monitorTag(base) },
+      { l: `Trend "${a}"`, dis: true }, '-'];
+  }
   function ctxMenu(t, x, y) {
     if (!t || t.end) return;
-    let ids, head;
-    if (t.leg) { head = `Rung ${t.ri} · Branch Level`; ids = ['paste', 'del', '-', 'level']; }
-    else if (t.path && !t.br) {
-      const e = curEl(), oi = selOpIdx(), a = e && e.a ? e.a[oi] : undefined, onm = e ? (L.OPN[e.t] || [])[oi] || 'Operand' : '';
-      head = `Rung ${t.ri} · ${e ? e.t + ' ' + e.a.join(', ') : ''}`;
-      const pre = [];
-      if (e && e.a && e.a.length) {
-        pre.push({ l: `Edit "${onm}"…`, i: 'edit', run: () => openEditor(t.ri, t.path, oi), dis: !editable() });
-        const base = isTagText(a) ? String(a).split(/[.[]/)[0] : null, tg = base && tagFor(base);
-        if (base && !tg) pre.push({ l: `New "${base}"…`, i: 'newtag', run: () => newTag({ name: base, kind: (INSTR[e.t].args[oi] || '').replace('?', '') }), dis: !editable() });
-        if (tg) pre.push({ l: `Edit "${tg.name}" Properties…`, i: 'tag', run: () => newTag({ tag: tg }) });
-        if (base) pre.push({ l: oi ? `Edit "${a}" Description…` : 'Edit Main Operand Description…', i: 'tag', run: editDesc, k: 'Ctrl+D' });
-        pre.push('-');
-      }
-      ids = ['cut', 'copy', 'paste', 'del', '-', 'ins', 'edit', '-', 'toggle', 'fon', 'foff', 'frem', '-', 'goto', 'xref', 'help'];
-      openMenu(pre.concat(menuItems(ids)), { x, y }, head);
+    if (t.leg) { openMenu(renamed(menuItems(['paste', 'del', '-', 'level']), { del: 'Delete Branch Level' }), { x, y }, `Rung ${t.ri} · Branch Level`); return; }
+    if (t.br) { openMenu(renamed(menuItems(['cut', 'copy', 'paste', 'del', '-', 'level']), { cut: 'Cut Branch', copy: 'Copy Branch', del: 'Delete Branch' }), { x, y }, `Rung ${t.ri} · Branch`); return; }
+    if (t.path) {
+      const e = curEl();
+      if (!e) return;
+      const d = INSTR[e.t] || {}, bit = d.grp === 'Bit', oi = selOpIdx(), a = e.a[oi];
+      const ids = ['cut', 'copy', 'paste', '-', 'del', 'ins', 'desc', '-', 'sdef', 'cdef', '-'].concat(bit ? ['toggle', '-', 'fon', '-', 'foff', '-'] : [], ['frem', '-', 'goto', 'help']);
+      let items = renamed(menuItems(ids), { cut: 'Cut Instruction', copy: 'Copy Instruction', del: 'Delete Instruction' });
+      items = items.map(it => (it === '-' ? it : it.id === 'help' ? { ...it, id: null, run: () => instrHelp(e.t) } : it.id === 'desc' && oi ? { ...it, l: `Edit "${a}" Description` } : it));
+      // a box operand holding a tag: its forced value is monitored and edited there (the app forces I/O bits only)
+      if (!bit && t.op != null && isTagText(a)) items.splice(items.findIndex(it => it.id === 'frem'), 0, { l: `Monitor/Edit Force Value Of "${a}"`, dis: true }, '-');
+      openMenu(tagItems(e, oi, t.op != null).concat(items), { x, y }, `Rung ${t.ri} · ${e.t} ${e.a.join(', ')}`);
       return;
-    } else if (t.br) { head = `Rung ${t.ri} · Branch`; ids = ['cut', 'copy', 'paste', 'del', '-', 'level']; }
-    else { head = `Rung ${t.ri}`; ids = ['cut', 'copy', 'paste', 'del', '-', 'rung', 'rtext', 'comment', 'verifyr', '-', 'goto']; }
-    const items = menuItems(ids).map(it => (it === '-' ? it : { ...it, l: it.id === 'newtag' ? `New "${curEl().a[0]}"` : t.br && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Branch' : t.leg && it.id === 'del' ? 'Delete Branch Level' : !t.path && ['cut', 'copy', 'del'].includes(it.id) ? it.l + ' Rung' : it.id === 'del' ? 'Delete Instruction' : it.l }));
-    openMenu(items, { x, y }, head);
+    }
+    const ids = ['cut', 'copy', 'paste', '-', 'del', 'rung', 'rtext', 'comment', 'rimp', 'rexp', '-', 'rstart', 'raccept', 'rcancel', '-', 'rasm', 'rcanc', '-', 'verifyrung', '-', 'goto', '-', 'ins'];
+    openMenu(renamed(menuItems(ids), { cut: 'Cut Rung', copy: 'Copy Rung', del: 'Delete Rung' }), { x, y }, `Rung ${t.ri}`);
   }
   function orgMenu(key, x, y) {
     const items = [];
@@ -1584,13 +1610,33 @@
   const selOperand = () => { const e = curEl(); return e && e.a ? e.a[selOpIdx()] : undefined; };
   const isTagText = a => !!a && a !== '?' && /^[A-Za-z_]\w*$/.test(String(a).split(/[.[]/)[0]) && !E.parseNumber(a);
   function editDesc() {
-    const e = curEl(), op = selOperand();
+    const op = selOperand();
     if (!op || op === '?') return;
     const t = tagFor(op), own = t && U(t.name) === U(op);
-    prompt1(selOpIdx() ? `Edit "${op}" Description` : 'Edit Main Operand Description', op, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
+    openDescBar(`Description For: ${op}`, own ? t.desc || '' : (S.p.comments || {})[U(op)] || '', v => {
       if (own) { const P = curProg(); const list = P.tags.includes(t) ? P.tags : S.p.tags; edit(() => { const i = list.indexOf(t); list[i] = { ...list[i], desc: v }; if (!v) delete list[i].desc; }); return; }
       edit(() => { S.p.comments = S.p.comments || {}; if (v) S.p.comments[U(op)] = v; else delete S.p.comments[U(op)]; });
-    }, own ? 'The description of the tag: it shows wherever the tag is used.' : 'A description of this operand (an I/O point or a member): it shows above it in the ladder.');
+    });
+  }
+  /* the description and rung comment editors, as in the reference: a bar above the ladder ("Description For: tag",
+     "Rung Comment For Rung: n") with a check mark to keep the text and a cross to drop it */
+  function descBarHTML() {
+    const d = S.descEd;
+    if (!d) return '';
+    return `<div class="descbar" id="descbar"><div class="dbh"><span class="ell">${esc(d.title)}</span><button class="ib dok" data-desc="ok" title="Accept (Ctrl+Enter)">${ic('check')}</button><button class="ib dno" data-desc="x" title="Cancel (Esc)">${ic('close')}</button></div><textarea class="inp" id="desctx" rows="3" spellcheck="false">${esc(d.value)}</textarea></div>`;
+  }
+  function openDescBar(title, value, save) {
+    if (S.layout === 'phone') S.area = 'ladder';
+    S.descEd = { title, value, save };
+    render();
+    const tx = $('#desctx'); if (tx) { tx.focus(); tx.select(); }
+  }
+  function closeDescBar(ok) {
+    const d = S.descEd; if (!d) return;
+    const tx = $('#desctx'), v = (tx ? tx.value : d.value).trim();
+    S.descEd = null;
+    if (ok) d.save(v);
+    render();
   }
   const fmtVal = v => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toPrecision(7))) : v === undefined ? '' : String(v));
   function tagRows(mode, scope, q) {
@@ -1698,9 +1744,8 @@
       } }] });
   }
   function rungComment(ri) {
-    if (ri == null) return;
-    dialog({ title: `Rung ${ri} Comment`, size: 'md', focus: true, body: `<textarea class="inp" id="rc" rows="4" style="font-family:var(--ui)">${esc(rungs()[ri].c || '')}</textarea>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { const v = el.querySelector('#rc').value.trim(); edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); } }] });
+    if (ri == null || !rungs()[ri]) return;
+    openDescBar(`Rung Comment For Rung: ${ri}`, rungs()[ri].c || '', v => { edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); });
   }
   function cmdFind() { prompt1('Find', 'Find what', S.find, v => { if (!v) return 'Type a tag or an instruction.'; S.find = v; if (!findNext(false)) return `"${v}" was not found in ${curRoutine().name}.`; }, 'Looks for a tag, an operand or a mnemonic in this routine. F3 finds the next one.'); }
   function findNext(wrapMsg) {
@@ -1716,7 +1761,112 @@
     if (wrapMsg) toast(`"${S.find}" was not found.`);
     return false;
   }
-  function cmdGoto() { prompt1('Go To', 'Rung number', curSelRung() == null ? '0' : String(curSelRung()), v => { const n = parseInt(v, 10); if (!(n >= 0 && n < rungs().length)) return `Type a rung from 0 to ${rungs().length - 1}.`; S.sel = null; S.selRung = n; render(); scrollToSel(); }); }
+  /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
+     in the tag editor) and the rung or the tag to go to */
+  function cmdGoto() {
+    const a = selOperand(), tag0 = isTagText(a) ? String(a).split(/[.[]/)[0] : '';
+    const WHAT = [['rung', 'Rung', 'Place caret on rung:'], ['xref', 'Cross Reference', 'Tag:'], ['edit', 'Edit', 'Tag:'], ['mon', 'Monitor', 'Tag:'], ['props', 'Properties', 'Tag:'], ['tag', 'Tag', 'Set row selection on tag:']];
+    let what = 'rung';
+    const val = w => (w === 'rung' ? (curSelRung() == null ? '0' : String(curSelRung())) : tag0);
+    const el = dialog({ title: 'Go To', focus: true,
+      body: `<div class="gotod"><div><label>Go to what:</label><div class="gwl" id="gwl">${WHAT.map(([k, l]) => `<div class="row${k === what ? ' on' : ''}" data-gw="${k}">${l}</div>`).join('')}</div></div>
+        <div><label for="gv" id="gl">${WHAT[0][2]}</label><input class="inp mono" id="gv" value="${esc(val(what))}" autocomplete="off" spellcheck="false" autofocus><div class="errtx" id="ge"></div></div></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Go To', pri: true, run: el2 => {
+        const v = el2.querySelector('#gv').value.trim(), err = m => { el2.querySelector('#ge').textContent = m; return false; };
+        if (what === 'rung') { const n = parseInt(v, 10); if (!(n >= 0 && n < rungs().length)) return err(`Type a rung from 0 to ${rungs().length - 1}.`); setTimeout(() => { S.sel = null; S.selRung = n; render(); scrollToSel(); }, 0); return; }
+        const tg = tagFor(v);
+        if (!tg) return err(`"${v}" is not a tag of ${curProg().name} or of the controller.`);
+        const scope = curProg().tags.includes(tg) ? curProg().name : '';
+        setTimeout(() => { if (what === 'xref') xref(tg.name); else if (what === 'props') newTag({ tag: tg }); else if (what === 'mon') monitorTag(tg.name); else { S.tagQ = tg.name; tagEditor('edit', scope); } }, 0);
+      } }] });
+    el.querySelector('#gwl').addEventListener('click', ev => {
+      const r = ev.target.closest('[data-gw]'); if (!r) return;
+      what = r.dataset.gw;
+      el.querySelectorAll('[data-gw]').forEach(x => x.classList.toggle('on', x === r));
+      el.querySelector('#gl').textContent = WHAT.find(x => x[0] === what)[2];
+      const inp = el.querySelector('#gv'); inp.value = val(what); inp.focus(); inp.select();
+    });
+  }
+  /* Monitor "tag": the tag editor in Monitor Tags, filtered to the tag */
+  function monitorTag(name) {
+    const tg = tagFor(name), scope = tg && curProg().tags.includes(tg) ? curProg().name : '';
+    S.tagQ = name; tagEditor('mon', scope);
+  }
+  /* the Errors pane as the reference's output window: Verify Rung and Find All write their results there */
+  function showOutput(v) {
+    if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more';
+    S.verifyShown = v;
+    render();
+  }
+  function verifyRung(ri) {
+    if (ri == null || !rungs()[ri]) return;
+    reverify();
+    const g = curProg().name, r = curRoutine().name, mine = x => x.program === g && x.routine === r && x.rung === ri;
+    const errors = S.verify.errors.filter(mine), warnings = S.verify.warnings.filter(mine);
+    showOutput({ errors, warnings, lines: [`Verifying rung ${ri} of routine '${r}' of program '${g}'...`, ...errors.map(x => x.text), ...warnings.map(x => x.text), `Complete - ${errors.length} error(s), ${warnings.length} warning(s)`] });
+    toast(errors.length ? `Rung ${ri}: ${errors.length} error(s)` : `Rung ${ri} verified: no errors`, errors.length ? 'err' : 'ok');
+  }
+  /* Find All "tag": every instruction of the project that uses the tag (or one of its members), as Found lines */
+  function findAll(what) {
+    const w = U(String(what || '')), whole = !/[.[]/.test(w), found = [];
+    const hitOp = x => { const u = U(String(x)); return u === w || (whole && u.split(/[.[]/)[0] === w); };
+    allProgs().forEach(g => g.routines.forEach(r => r.rungs.forEach((rg, ri) => {
+      const pr = E.parseRung(rg.t); if (pr.err) return;
+      const walk = arr => arr.forEach(e => {
+        if (e.t === 'BR') { e.legs.forEach(walk); return; }
+        (e.a || []).forEach((x, oi) => { if (hitOp(x)) { const text = `Found: ${g.name} - ${r.name}, Rung ${ri}, ${e.t}, Operand ${oi}: ${e.t}(${e.a.join(',')})`; found.push({ text, program: g.name, routine: r.name, rung: ri }); } });
+      });
+      walk(pr.elems);
+    })));
+    showOutput({ errors: [], warnings: [], found, lines: [`Searching for "${what}" in ${S.p.controller.name}...`, ...found.map(x => x.text), `Complete - ${found.length} occurrence(s) found.`] });
+  }
+  /* Export Rungs / Import Rungs: the rungs as a Logix .L5X file (TargetType Rung), with the tags they use */
+  function rungsL5X(list, desc) {
+    const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`, P = curProg(), names = new Set();
+    list.forEach(r => { const pr = E.parseRung(r.t); if (pr.err) return; const walk = arr => arr.forEach(e => { if (e.t === 'BR') e.legs.forEach(walk); else (e.a || []).forEach(x => { if (isTagText(x)) names.add(U(String(x).split(/[.[]/)[0])); }); }); walk(pr.elems); });
+    const tags = [...P.tags, ...S.p.tags].filter(tg => names.has(U(tg.name)));
+    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${tg.dim ? ` Dimensions="${tg.dim}"` : ''}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.00" TargetType="Rung" TargetCount="${list.length}" ContainsContext="true" ExportDate="${new Date().toUTCString()}" ExportOptions="References NoRawData L5KData DecoratedData Context RoutineLabels AliasExtras IOTags NoStringData ForceProtectedEncoding AllProjDocTrans">
+<Controller Use="Context" Name="${esc(S.p.controller.name)}">${desc ? `<Description>${cd(desc)}</Description>` : ''}
+<Tags Use="Context">${tags.filter(tg => S.p.tags.includes(tg)).map(tagX).join('')}</Tags>
+<Programs Use="Context"><Program Use="Context" Name="${esc(P.name)}"><Tags Use="Context">${tags.filter(tg => P.tags.includes(tg)).map(tagX).join('')}</Tags>
+<Routines Use="Context"><Routine Use="Context" Name="${esc(curRoutine().name)}" Type="RLL"><RLLContent Use="Context">
+${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+</RLLContent></Routine></Routines></Program></Programs></Controller></RSLogix5000Content>
+`;
+  }
+  function exportRungs(ri) {
+    if (ri == null || !rungs()[ri]) return;
+    fileDialog({ mode: 'save', title: 'Export Rungs', name: `${curRoutine().name}_Rung${ri}.L5X`, types: ['l5x'], descField: true,
+      onPick: async (f, desc) => { try { await FS.write(f, rungsL5X([rungs()[ri]], desc)); toast(`Exported rung ${ri} to ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } });
+  }
+  function importRungs() {
+    fileDialog({ mode: 'open', title: 'Import Rungs', types: ['l5x'], onPick: async f => {
+      let x;
+      try { x = await FS.read(f); } catch (e) { toast('That file could not be read: ' + (e.message || e), 'err'); return; }
+      const doc = new DOMParser().parseFromString(x, 'application/xml'), root = doc.querySelector('RSLogix5000Content');
+      const rs = root ? [...doc.querySelectorAll('Rung')].map(r => ({ t: (r.querySelector('Text') || {}).textContent || '', c: ((r.querySelector('Comment') || {}).textContent || '').trim() })) : [];
+      if (!rs.length) { toast('That file holds no rungs to import.', 'err'); return; }
+      const bad = rs.map(r => E.parseRung(r.t.trim())).findIndex(pr => pr.err);
+      if (bad >= 0) { toast(`Rung ${bad} of the file cannot be read.`, 'err'); return; }
+      const have = n => !!tagFor(n);
+      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: +(tg.getAttribute('Dimensions') || 0), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
+      // Import Configuration, as in the reference: each tag of the file is created, or the project's tag of that name is used
+      dialog({ title: 'Import Configuration', size: 'md',
+        body: `<p>${rs.length} rung(s) from <b class="mono">${esc(baseName(f))}</b> go after ${curSelRung() == null ? 'the last rung' : `rung ${curSelRung()}`} of ${esc(curRoutine().name)}.</p>
+          <table class="ictbl"><tr><th>Tag</th><th>Operation</th><th>Final Name</th></tr>${tags.map(tg => `<tr><td class="mono">${esc(tg.name)}</td><td>${have(tg.name) ? 'Use Existing' : 'Create'}</td><td class="mono">${esc(tg.name)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No tags in the file.</td></tr>'}</table>`,
+        buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: () => {
+          edit(() => {
+            const at = curSelRung() == null ? rungs().length : curSelRung() + 1;
+            rungs().splice(at, 0, ...rs.map(r => (r.c ? { t: r.t.trim(), c: r.c } : { t: r.t.trim() })));
+            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; (tg.prog ? curProg().tags : S.p.tags).push(o); });
+            S.sel = null; S.selRung = at;
+          });
+          toast(`Imported ${rs.length} rung(s).`, 'ok');
+        } }] });
+    } });
+  }
   function scrollToSel() {
     const w = $('#ladwrap'); if (!w) return;
     const ri = curSelRung();
@@ -2445,10 +2595,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   /* Assemble Accepted Edits: the new logic stays, the old one is dropped */
   function assembleEdits() {
-    confirmDlg('Assemble Accepted Edits', 'Keep the edited logic in the controller? The old logic is dropped.', 'Assemble', () => {
+    dialog({ title: 'Assemble Accepted Edits', body: '<p>Finalize all edits in program?</p><p class="help">The edited logic stays in the controller and the old logic is dropped.</p>', buttons: [{ l: 'No' }, { l: 'Yes', pri: true, run: () => {
       S.ed = null; saveProject(); live(true); render();
       toast('Edits assembled.', 'ok');
-    });
+    } }] });
   }
   /* Cancel Pending Edits: back to the accepted edits, or to the controller's logic */
   function cancelEdits() {
@@ -3008,27 +3158,46 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
 
   /* ---------- instruction picker (Insert, the phone's +) with quick entry: "XIC Start_PB" ---------- */
+  /* Add Ladder Element, as in the reference: the Ladder Element box (a mnemonic, or a whole instruction such as
+     "XIC Start_PB"), the list of instructions by group with their description (it jumps to the match while you
+     type), Show Language Elements By Groups, and Instruction Help >> for the selected one */
   function picker(initial) {
-    let tab = S.prefs.tab === 'Favorites' ? 'Bit' : S.prefs.tab;
-    const tiles = () => {
-      const q = U(el.querySelector('#pq').value.trim()).split(/[\s,(]+/)[0];
-      const list = q ? Object.keys(INSTR).filter(k => k.startsWith(q) || U(INSTR[k].name).includes(q)) : TABS[tab].filter(m => INSTR[m]);
-      return list.map(m => `<div class="tile" data-pk="${m}">${L.icon(m)}<b>${m}</b><small>${esc(NAME(m))}</small></div>`).join('') || '<div class="empty">No instruction matches</div>';
-    };
+    const groups = [...new Set(Object.values(INSTR).map(d => d.grp))];
+    let byGrp = S.prefs.aleGroups !== false, help = false, cur = '';
+    const open = new Set();
     const el = dialog({ title: 'Add Ladder Element', size: 'md', focus: true,
-      body: `<input class="inp mono" id="pq" placeholder="Type: XIC Start_PB, or search" value="${esc(initial || '')}" autocomplete="off" spellcheck="false">
-        <div class="fchips" id="pt">${Object.keys(TABS).filter(t => t !== 'Favorites').map(t => `<span class="fchip${t === tab ? ' on' : ''}" data-pt="${esc(t)}">${t}</span>`).join('')}</div>
-        <div class="tiles" id="pg"></div><p class="help">${S.sel ? 'Goes after the selected instruction.' : curSelRung() != null ? `Goes at the end of rung ${curSelRung()}.` : 'Goes in a new rung.'} Enter adds the typed instruction with its operands.</p>`,
-      buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: el2 => quick(el2.querySelector('#pq').value) }] });
-    el.querySelector('#pg').innerHTML = tiles();
-    el.addEventListener('input', () => { el.querySelector('#pg').innerHTML = tiles(); });
+      body: `<div class="ale1"><label for="pq">Ladder Element:</label><input class="inp mono" id="pq" value="${esc(initial || '')}" autocomplete="off" spellcheck="false"><button class="btn" id="alehb">Instruction Help &gt;&gt;</button></div>
+        <div class="alew"><div class="alel" id="pg" role="listbox"></div><div class="aleh" id="alehp" hidden></div></div>
+        <div class="alef"><label class="alec"><input type="checkbox" id="aleg"${byGrp ? ' checked' : ''}> Show Language Elements By Groups</label><span class="grow"></span><button class="btn" disabled title="Add-On Instructions are not in the app yet">New Add-On Instruction…</button></div>
+        <p class="help">${S.sel ? 'Goes after the selected instruction.' : curSelRung() != null ? `Goes at the end of rung ${curSelRung()}.` : 'Goes in a new rung.'} Type a mnemonic or a whole instruction (XIC Start_PB), then OK. A second click on a row adds it.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Help', run: () => { const m = cur; setTimeout(() => instrHelp(m), 0); } }, { l: 'OK', pri: true, run: el2 => quick(el2.querySelector('#pq').value) }] });
+    const q = s => el.querySelector(s);
+    const row = m => `<div class="row${m === cur ? ' on' : ''}" data-pk="${m}" role="option">${L.icon(m)}<b class="mono">${m}</b><span class="ell">${esc(NAME(m))}</span></div>`;
+    const draw = () => {
+      const all = Object.keys(INSTR);
+      q('#pg').innerHTML = byGrp ? groups.map(g => { const ms = all.filter(m => INSTR[m].grp === g), o = open.has(g); return `<div class="row grp" data-pgrp="${esc(g)}">${ic(o ? 'down' : 'right')}${ic('folder')}<span>${esc(g)}</span></div>${o ? ms.map(row).join('') : ''}`; }).join('') : all.slice().sort().map(row).join('');
+      const on = q('#pg .row.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+      if (help) q('#alehp').innerHTML = cur ? `<b class="mono">${cur}</b><div>${esc(NAME(cur))}</div><div class="muted">${esc(INSTR[cur].grp)}</div><div style="margin-top:6px">Operands: ${esc(((L.OPN[cur] || []).join(', ')) || 'none')}</div><button class="btn" data-alefull="1" style="margin-top:8px">${ic('help')}Open Instruction Help</button>` : '<span class="muted">Select an instruction.</span>';
+    };
+    const match = () => {
+      const w = U(q('#pq').value.trim()).split(/[\s,(]+/)[0];
+      cur = w ? Object.keys(INSTR).find(k => k === w) || Object.keys(INSTR).find(k => k.startsWith(w)) || '' : cur;
+      if (cur) open.add(INSTR[cur].grp);
+      draw();
+    };
+    match();
+    el.addEventListener('input', ev => { if (ev.target.id === 'pq') match(); });
+    q('#aleg').addEventListener('change', ev => { byGrp = ev.target.checked; S.prefs.aleGroups = byGrp; savePrefs(); draw(); });
+    q('#alehb').addEventListener('click', () => { help = !help; q('#alehp').hidden = !help; q('#alehb').innerHTML = help ? 'Instruction Help &lt;&lt;' : 'Instruction Help &gt;&gt;'; draw(); });
     el.addEventListener('click', ev => {
-      const c = ev.target.closest('[data-pt]');
-      if (c) { tab = c.dataset.pt; el.querySelectorAll('[data-pt]').forEach(x => x.classList.toggle('on', x === c)); el.querySelector('#pq').value = ''; el.querySelector('#pg').innerHTML = tiles(); return; }
-      const t = ev.target.closest('[data-pk]');
-      if (t) { closeLayer(); insertMn(t.dataset.pk); }
+      if (ev.target.closest('[data-alefull]')) { const m = cur; closeLayer(); instrHelp(m); return; }
+      const g = ev.target.closest('[data-pgrp]');
+      if (g) { const n = g.dataset.pgrp; if (open.has(n)) open.delete(n); else open.add(n); draw(); return; }
+      const r = ev.target.closest('[data-pk]'); if (!r) return;
+      if (r.dataset.pk === cur && r.classList.contains('on')) { closeLayer(); insertMn(cur); return; }
+      cur = r.dataset.pk; q('#pq').value = cur; draw();
     });
-    const inp = el.querySelector('#pq');
+    const inp = q('#pq');
     setTimeout(() => { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }, 30);
   }
   function quick(text) {
@@ -3097,6 +3266,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     app.addEventListener('click', ev => {
       const t = ev.target;
       let el;
+      if ((el = t.closest('[data-desc]'))) { closeDescBar(el.dataset.desc === 'ok'); return; }
       if ((el = t.closest('[data-cmd]')) && !el.disabled) { run(el.dataset.cmd); return; }
       if ((el = t.closest('[data-menu]'))) { const m = MENUS.find(x => x[0] === el.dataset.menu); openMenu(menuItems(m[1]), el); return; }
       if ((el = t.closest('[data-allmenu]'))) { foldMenu(el); return; }
@@ -3244,10 +3414,16 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   }
   function onKey(ev) {
     if ($('#layer').children.length) { if (layerKey) layerKey(ev); return; }
+    if (ev.target.id === 'desctx') {
+      if (ev.key === 'Escape') { ev.preventDefault(); closeDescBar(false); } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); closeDescBar(true); }
+      return;
+    }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
+    if (ev.key === 'Escape' && S.descEd) { ev.preventDefault(); closeDescBar(false); return; }
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
     const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find' };
+    if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
     if (k === 'Delete') { run('del'); return; }
     if (k === 'Insert') { ev.preventDefault(); run('ins'); return; }
@@ -3264,6 +3440,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* ---------- updates ---------- */
   let upInfo = null;
   function upbar() { return `<div class="upbar">${ic('download')}<span class="grow"><b>MT PLC Studio v${esc(upInfo.version)}</b>${upInfo.channel === 'beta' ? ' (beta)' : ''} is ready. You have v${esc(VERSION)}.</span><button class="btn pri" data-up="go">Restart to update</button><button class="btn" data-up="later">Later</button></div>`; }
+  document.addEventListener('input', ev => { if (ev.target.id === 'desctx' && S.descEd) S.descEd.value = ev.target.value; });
   document.addEventListener('click', ev => {
     const b = ev.target.closest('[data-up]'); if (!b) return;
     if (b.dataset.up === 'go') { saveProject(); window.MTPSUpdater.apply(upInfo); } else { window.MTPSUpdater.skip(upInfo); upInfo = null; render(); }
