@@ -834,7 +834,7 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'findnext', 'goto', 'xref']],
@@ -851,7 +851,11 @@
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
-  const menuItems = ids => ids.filter(id => id === '-' || id.hd || !C[id].show || C[id].show()).map(id => (id === '-' || id.hd ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
+  /* menu rows made when the menu opens: the recent projects of File (up to eight, as the reference's Recent Projects) */
+  const DYN = {
+    recent: () => { const f = S.prefs.files || []; return f.length ? [{ hd: 'Recent Projects' }, ...f.slice(0, 8).map((p, n) => ({ l: `${n + 1} ${baseName(p)}`, i: 'file', run: () => saveChanges(() => loadFile(p)) })), '-'] : []; },
+  };
+  const menuItems = ids => ids.flatMap(id => (DYN[id] ? DYN[id]() : [id])).filter(id => typeof id === 'object' || id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' || typeof id === 'object' ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
   /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */

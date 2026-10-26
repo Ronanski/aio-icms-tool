@@ -100,4 +100,35 @@ module.exports = async function menus({ browser, page, URL, check }) {
   await pp.tap('.page [data-cmd="close"]'); await pp.waitForTimeout(200);
   check('phone (touch): More > Close Project shows the Start Page on the Ladder tab', (await pp.evaluate(() => MTPS.App.state.noProj && MTPS.App.state.area === 'ladder')) && (await pp.$('.startpg')) !== null);
   await pctx.close();
+
+  console.log('File > Recent Projects (help v37: up to eight most recently accessed projects)');
+  await fresh(); await example();
+  f = await menu('File');
+  check('no project saved or opened yet: no Recent Projects rows', !f.some(x => x[0] === '#Recent Projects'));
+  await page.keyboard.press('Escape');
+  for (const n of ['WA_R1', 'WA_R2']) {
+    await ev(() => MTPS.App.run('saveas')); await page.waitForFunction(() => document.querySelector('#layer #fbn'), null, { timeout: 3000 }).catch(() => {});
+    await page.fill('#fbn', n); await clickBtn('Save'); await wait(250);
+  }
+  f = await menu('File');
+  const ri = f.findIndex(x => x[0] === '#Recent Projects');
+  check('File lists Recent Projects near the bottom, the newest first', ri > 0 && f[ri + 1][0] === '1 WA_R2.mtp' && f[ri + 2][0] === '2 WA_R1.mtp' && ri > f.findIndex(x => x[0] === 'Export L5X…'), f.map(x => x[0]).join('|'));
+  await page.keyboard.press('Escape');
+  await ev(() => { const s = MTPS.App.state; s.prefs.files = Array.from({ length: 8 }, (_, i) => '/x/P' + i + '.mtp').concat(s.prefs.files); });
+  f = await menu('File');
+  check('at most eight of them', f.filter(x => /^\d /.test(x[0])).length === 8);
+  await page.keyboard.press('Escape');
+  await ev(() => { const s = MTPS.App.state; s.prefs.files = s.prefs.files.filter(x => !x.startsWith('/x/')); });
+  await dirty();
+  await menu('File', '2 WA_R1.mtp');
+  check('a recent project with changes in this one: the save-changes prompt first', (await dlgText()).trim() === 'Save changes to WA_R2.mtp?');
+  await clickBtn('No'); await wait(300);
+  check('No: the recent project opens', (await st()).file === 'WA_R1.mtp' && (await st()).dirty === false);
+  const t2 = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+  const tq = await t2.newPage();
+  await tq.goto(URL); await tq.waitForTimeout(300); await tq.keyboard.press('Escape');
+  await tq.evaluate(() => { const s = MTPS.App.state; s.prefs.files = ['/x/Tab_Proj.mtp']; MTPS.App.openProject(MTPS.App.example()); }); await tq.waitForTimeout(150);
+  await tq.tap('[data-allmenu]'); await tq.waitForTimeout(150); await tq.tap('[data-fold="File"]'); await tq.waitForTimeout(150);
+  check('tablet (touch): the folding File menu lists the recent project', (await items(tq)).some(x => x[0] === '1 Tab_Proj.mtp'));
+  await t2.close();
 };
