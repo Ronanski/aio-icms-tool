@@ -1192,3 +1192,43 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
   .phone .strip .warn { padding: 0 8px; }
 }
 @media (max-width: 380px) { .phone .strip .sbox { font-size: 12px; padding: 0 6px; } .phone .strip { gap: 3px; } }
+/* Logix Emulate trace windows (BPT / TPT) and the trace area of Configure Emulation */
+.trwin { width: 380px; min-width: 0; max-width: calc(100vw - 16px); }
+.trwin .iowb { display: grid; gap: 6px; }
+.trlist { max-height: 220px; min-height: 80px; overflow: auto; white-space: pre; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 4px 6px; }
+.trbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.trbtns .btn.on { background: var(--accent-soft); color: var(--accent-text); }
+.trset { max-height: 140px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r); }
+.trset .row { display: flex; gap: 8px; align-items: center; padding: 4px 8px; min-height: 30px; cursor: default; }
+.trset .row.on { background: var(--accent-soft); }
+.tab .trset .row, .phone .trset .row, .tab .trbtns .btn, .phone .trbtns .btn { min-height: 44px; }
+/* Chassis Monitor: the Computer box (View > Compact hides it) and the status bar */
+.emcomp { grid-column: 1 / -1; padding: 3px 10px; font-size: 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.emst { grid-column: 1 / -1; flex: none; display: flex; gap: 14px; align-items: center; min-width: 0; overflow: hidden; padding: 3px 10px; font-size: 11px; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); white-space: nowrap; }
+.emst > span:not(.grow) { border-left: 1px solid var(--border); padding-left: 10px; }
+.emu { grid-template-rows: auto auto minmax(0, 1fr) minmax(92px, auto) auto; }
+.emu.compact { grid-template-rows: auto minmax(0, 1fr) auto; }
+.emu.compact .emcomp { display: none; }
+.phone .emst > span:not(.grow):not(:nth-child(4)) { display: none; }
+/* RSLinx Classic diagnostic windows (Driver / CIP / Station Diagnostics, Module Statistics, Data Monitor): child windows
+   under the menu bar, so the Station and Window menus stay in reach */
+.rldgo { top: var(--rlmbh, 32px); }
+.rlbox.rldg { width: min(620px, 100%); height: min(560px, 100%); }
+.rldg .rldt { padding: 8px 14px 0; flex: none; }
+.rldg .bb { flex: 1; }
+.rldg .bf .grow { align-self: center; }
+.rldtab td { cursor: default; }
+.rldtab td.mono:last-child { text-align: right; width: 120px; }
+.rldtab.rlwide th:last-child, .rldtab.rlwide td:last-child { width: auto; }
+.phone .rlbox.rldg { height: 100%; }
+/* Data Monitor: the file list and the data table fill the window, a status bar under them */
+.rldg .rldmw { max-height: none; min-height: 0; height: calc(100% - 34px); }
+.rldm th[data-rlsort] { cursor: pointer; user-select: none; }
+.rldm td { cursor: default; white-space: nowrap; }
+.rldm select.inp { height: 26px; padding: 0 4px; min-width: 88px; }
+.rldm th:last-child, .rldm td:last-child { width: auto; }
+.rldms { display: flex; gap: 14px; padding: 6px 2px 0; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.rldms .grow { overflow: hidden; text-overflow: ellipsis; }
+.rldmb { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.tab .rldm select.inp, .phone .rldm select.inp { height: 40px; }
+.rlck2 { grid-template-columns: auto 1fr; }

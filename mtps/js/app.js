@@ -122,6 +122,7 @@
     'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     Sequencer: ['SQI', 'SQO', 'SQL'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
+    Debug: ['BPT', 'TPT'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
@@ -229,7 +230,7 @@
         <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
           <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
           <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}${o.descField ? '<label for="fbd">File description</label><input class="inp" id="fbd" autocomplete="off">' : ''}
-            <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : 'All projects'}</option>`).join('')}</select></div></div></div>
+            <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : t === 'txt' ? 'Text file (*.txt)' : 'All projects'}</option>`).join('')}</select></div></div></div>
         <p class="help fbhint">${FS.kind === 'browser' ? 'In a browser, the files are kept by this browser. The Windows and Android apps keep them in the folders of the device.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: o.mode === 'save' ? 'Save' : 'Open', pri: true, run: () => { act(); return false; } }] });
     const q = s => el.querySelector(s);
@@ -241,7 +242,7 @@
       const items = st.data.items.filter(x => x.dir || want.test(x.name)).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
       q('#fbl').innerHTML = items.map(x => `<div class="row fbi" data-fbi="${esc(x.path)}" data-dir="${x.dir ? 1 : ''}">${ic(x.dir ? 'folder' : /\.l5x$/i.test(x.name) ? 'upload' : 'file')}<span class="grow ell">${esc(x.name)}</span><span class="sub">${x.mtime ? new Date(x.mtime).toLocaleString() : ''}</span><span class="sub fbsz">${x.dir ? '' : fmtSize(x.size)}</span></div>`).join('') || '<div class="empty">This folder has no projects.</div>';
     };
-    const ext = () => (st.type === 'l5x' ? '.L5X' : '.mtp');
+    const ext = () => (st.type === 'l5x' ? '.L5X' : st.type === 'txt' ? '.txt' : '.mtp');
     const act = async () => {
       if (o.mode === 'open') {
         if (!st.sel) { toast('Pick a file.'); return; }
@@ -1781,7 +1782,7 @@
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
-    control: ['CONTROL'], darr: ['DINT'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
+    control: ['CONTROL'], darr: ['DINT'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr'];
@@ -3125,7 +3126,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
-  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
+  const HGRP = [['Debug', 'Debug Instructions (Logix Emulate)'], ['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
      instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
@@ -3351,6 +3352,126 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   }
   const configureDrivers = () => rslinx('drivers');
 
+  /* ---------- RSLinx Classic diagnostic counters (Driver Diagnostics, CIP Diagnostics, Station Diagnostics) ----------
+     What the drivers carry is counted the way RSLinx Classic counts it (RSLinx Classic help, Driver Diagnostics and
+     CIP Diagnostics): an RSWho browse or poll is one unconnected request and its reply per device, Go Online opens a
+     CIP connection (a Forward Open), and while online the tag updates go as connected packets, 4 a second each way.
+     The labels are the ones of the help; Packets/second is worked out every second. */
+  const RLDIAG = {
+    vbp: [['gen', 'General', ['Unconnected requests sent', 'Unconnected responses sent', 'Connected packets sent', 'Unsendable packets', 'Sends failed', 'Unconnected requests received', 'Unconnected responses received', 'Connected packets received', 'Unrecognized receipts']],
+      ['perf', 'Performance', null], ['vb', 'Virtual Backplane', ['Packets received', 'Untraceable packets']]],
+    eth: [['gen', 'General', ['Commands Sent', 'Replies Received', 'Unsol. Received', 'Unsol. Replied', 'Broadcast Sent', 'Broadcast Received', 'Communication Errors', 'Commands canceled', 'Commands timed out', 'Connections open', 'Total connections initiated', 'Server connections open', 'Total connections accepted']],
+      ['perf', 'Performance', null], ['log', 'Connection Event Log', null], ['act', 'Active Connections', null]],
+    cip: [['disp', 'CIP Dispatching', ['"Fast" PCCC requests via Messaging', '"Slow" PCCC requests via Messaging', '"Fast" PCCC requests via DHRIO', '"Slow" PCCC requests via DHRIO', 'Requests canceled', 'Requests not sent', 'Requests sent unconnected', 'Requests sent connected', 'Requests timed out unconnected', 'Requests timed out on connection', 'Requests failed with connection', 'CIP error responses received', 'PCCC responses received', 'Connections open', 'Connections attempted', 'Connections established', 'Connections rejected', 'Connections closed', 'Connections timed out', 'Connections dropped']],
+      ['msg', 'Messaging', ['PCCC requests received', 'PCCC replies canceled', 'PCCC replies returned', 'CIP requests received', 'CIP replies canceled', 'CIP replies returned', 'MR connections open', 'MR connections requested', 'MR connections accepted', 'MR connections closed', 'MR connections timed out', 'MR connection receipts', 'MR connection sends', 'Unconnected requests outstanding', 'Unconnected requests sent', 'Unconnected requests failed', 'Unconnected requests canceled', 'Unconnected requests completed', 'Unconnected requests timed out', 'Fragmentation NAKs received']],
+      ['conn', 'Connections', ['Originated connections', 'Bridged connections', 'Accepted connections', 'Connection open attempts', 'Open attempts rejected', 'Connection close attempts', 'Close attempts rejected', 'Connections established', 'Connections closed', 'Connections timed out sending', 'Connections timed out receiving', 'Connections dropped', 'Packet send attempts', 'Packets written', 'Packets overwritten', 'Packets sent', 'Packets resent', 'Packets received', 'Invalid receipts', 'Duplicate receipts']]] };
+  const rlStat = { d: {}, cip: {}, m: {} };
+  let rlCur = null;   // the CIP connection open now: { drv, path, node, host, bs, br }
+  const rlD = n => rlStat.d[n] || (rlStat.d[n] = { c: {}, ev: [], rate: [0, 0], prev: [0, 0] });
+  const rlInc = (o, k, n = 1) => { o[k] = (o[k] || 0) + n; };
+  const rlEth = d => !!d && d.type !== 'vbp';
+  const rlDrvOf = path => { const x = parsePath(path); return x ? drivers.find(d => d.run && d.type === (x.vbp ? 'vbp' : 'emulate')) || null : null; };
+  // the station number of an address on the Ethernet driver: its row in the station mapping (Configure…)
+  const rlStation = ip => { const st = []; racks.forEach(r => r.controllers().forEach(m => { if (m.ip && !st.includes(m.ip)) st.push(m.ip); })); const i = st.indexOf(ip); return i < 0 ? st.length : i; };
+  function rlEvt(d, node, err) { const s = rlD(d.name); s.ev.unshift({ t: Date.now(), node, err }); if (s.ev.length > 255) s.ev.length = 255; }
+  // one unconnected request to a device (a browse, a poll, Device Properties); ok false: the device does not answer
+  function rlUnc(d, ok, node) {
+    if (!d) return;
+    const c = rlD(d.name).c, x = rlStat.cip;
+    if (rlEth(d)) { rlInc(c, 'Commands Sent'); if (ok) rlInc(c, 'Replies Received'); else { rlInc(c, 'Commands timed out'); rlInc(c, 'Communication Errors'); rlEvt(d, node, 'Command timed out: no reply from the node'); } }
+    else { rlInc(c, 'Unconnected requests sent'); if (ok) { rlInc(c, 'Unconnected responses received'); rlInc(c, 'Packets received'); } else rlInc(c, 'Sends failed'); }
+    rlInc(x, 'msg:Unconnected requests sent'); rlInc(x, ok ? 'msg:Unconnected requests completed' : 'msg:Unconnected requests timed out');
+  }
+  // an RSWho node found by a browse (or polled by Autobrowse): its driver is the first part of its key
+  function rlAsk(n) {
+    if (!n || !n.m) return;
+    const d = drivers.find(x => x.name === n.k.slice(2).split('/')[0]), ip = (/\/ip:([\d.]+)/.exec(n.k) || [])[1], ok = !n.m.ctl || n.m.ctl.powered;
+    rlUnc(d, ok, ip ? rlStation(ip) : n.m.slot);
+    if (d && ok) rlInc(rlM(rlRackOf(n.m), n.m), 'Unconnected requests received');
+  }
+  // n packets each way on the open connection (the tag updates while online)
+  function rlPkt(n) {
+    const d = rlCur && drivers.find(x => x.name === rlCur.drv && x.run);
+    if (!d) return;
+    const c = rlD(d.name).c;
+    if (rlEth(d)) { rlInc(c, 'Commands Sent', n); rlInc(c, 'Replies Received', n); } else { rlInc(c, 'Connected packets sent', n); rlInc(c, 'Connected packets received', n); rlInc(c, 'Packets received', n); }
+    ['Packet send attempts', 'Packets written', 'Packets sent', 'Packets received'].forEach(k => rlInc(rlStat.cip, 'conn:' + k, n));
+    rlCur.bs += n * jitter(60, 90); rlCur.br += n * jitter(90, 260);
+  }
+  // Go Online, Download, Upload: the connection to the controller at the path (one at a time, as the project has one path)
+  function rlOpen(path) {
+    if (rlCur && rlCur.path === path) return;
+    rlClose(false);
+    const d = rlDrvOf(path), x = parsePath(path);
+    if (!d || !x) return;
+    rlUnc(d, true, x.vbp ? x.slot : rlStation(x.ip));
+    ['Connection open attempts', 'Connections established'].forEach(k => rlInc(rlStat.cip, 'conn:' + k));
+    if (rlEth(d)) rlInc(rlD(d.name).c, 'Total connections initiated');
+    const t = resolve(path);
+    if (t && t.m) ['Connection requests received', 'Connections accepted'].forEach(k => rlInc(rlM(t.rack, t.m), k));
+    rlCur = { drv: d.name, path, node: x.vbp ? x.slot : rlStation(x.ip), host: x.vbp ? `${x.vbp}\\${x.slot}` : x.ip, bs: 0, br: 0 };
+  }
+  function rlClose(lost) {
+    if (!rlCur) return;
+    const d = drivers.find(x => x.name === rlCur.drv);
+    rlInc(rlStat.cip, 'conn:Connection close attempts'); rlInc(rlStat.cip, lost ? 'conn:Connections timed out receiving' : 'conn:Connections closed');
+    if (lost && rlEth(d)) rlEvt(d, rlCur.node, 'Connection timed out: the node stopped answering');
+    const t = resolve(rlCur.path), x = parsePath(rlCur.path), r = t && t.rack, m = r && x && r.module(x.slot);
+    if (m) rlInc(rlM(r, m), lost ? 'Connections timed out' : 'Connections closed');
+    rlCur = null;
+  }
+  // no controller answers at the path: the open attempt is rejected (the Ethernet driver logs it)
+  function rlRefused(path) {
+    const d = rlDrvOf(path), x = parsePath(path);
+    if (!d || !x) return;
+    rlUnc(d, false, x.vbp ? x.slot : rlStation(x.ip));
+    rlInc(rlStat.cip, 'conn:Connection open attempts'); rlInc(rlStat.cip, 'conn:Open attempts rejected');
+    const t = resolve(path);
+    if (t && t.m && !t.m.ctl) rlInc(rlM(t.rack, t.m), 'Connections rejected');
+  }
+  setInterval(() => {
+    if (!rlCur) return;
+    const x = resolve(rlCur.path);
+    if (!x || !x.ctl || !drivers.some(d => d.name === rlCur.drv && d.run)) { rlClose(true); return; }
+    if (S.online && ctl !== NOCTL) rlPkt(1); else if (!linked || performance.now() - linked.t > 15000) rlClose(false);
+  }, 250);
+  const rlTot = (d, s) => (rlEth(d) ? [s.c['Commands Sent'] || 0, s.c['Replies Received'] || 0] : [(s.c['Unconnected requests sent'] || 0) + (s.c['Connected packets sent'] || 0) + (s.c['Unconnected responses sent'] || 0), (s.c['Unconnected responses received'] || 0) + (s.c['Connected packets received'] || 0) + (s.c['Unconnected requests received'] || 0)]);
+  setInterval(() => drivers.forEach(d => { const s = rlD(d.name), t = rlTot(d, s); s.rate = [Math.max(0, t[0] - s.prev[0]), Math.max(0, t[1] - s.prev[1])]; s.prev = t; }), 1000);
+  /* the diagnostic windows: a table of counters per tab; md.snap holds them while the window is frozen */
+  const rlNum = v => `<td class="mono">${(v || 0).toLocaleString('en-US')}</td>`;
+  const rlCtab = (labels, get) => `<table class="rltab rldtab"><thead><tr><th>Counter</th><th>Value</th></tr></thead><tbody>${labels.map(l => `<tr><td>${esc(l)}</td>${rlNum(get(l))}</tr>`).join('')}</tbody></table>`;
+  function rlDrvBody(md) {
+    const src = md.snap || { d: rlStat.d, cur: rlCur }, d = drivers.find(x => x.name === md.name);
+    if (!d) return '<p class="help">The driver was deleted.</p>';
+    const s = src.d[d.name] || { c: {}, ev: [], rate: [0, 0] }, tabs = RLDIAG[rlEth(d) ? 'eth' : 'vbp'], tab = tabs.find(t => t[0] === md.tab) || tabs[0];
+    const cur = src.cur && src.cur.drv === d.name ? src.cur : null, gauge = { 'Connections open': cur ? 1 : 0 };
+    if (tab[0] === 'perf') return `${rlCtab(['Packets Sent/second', 'Packets received/second'], l => s.rate[l.startsWith('Packets Sent') ? 0 : 1])}<p class="help">${d.run ? `${esc(d.name)} is running.` : `${esc(d.name)} is stopped: nothing goes through it.`}</p>`;
+    if (tab[0] === 'log') return `<table class="rltab rldtab rlwide"><thead><tr><th>Time</th><th>Node</th><th>Error Description</th></tr></thead><tbody>${s.ev.map(e => `<tr><td class="mono">${esc(new Date(e.t).toLocaleTimeString())}</td><td class="mono">${esc(String(e.node))}</td><td>${esc(e.err)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No connection events.</td></tr>'}</tbody></table><p class="help">The last 255 events are kept.</p>`;
+    if (tab[0] === 'act') return `<table class="rltab rldtab rlwide"><thead><tr><th>Node</th><th>Station</th><th>Host Name</th><th>Bytes sent</th><th>Bytes Received</th></tr></thead><tbody>${cur ? `<tr><td class="mono">${esc(String(cur.node))}</td><td class="mono">${esc(String(cur.node))}</td><td class="mono">${esc(cur.host)}</td>${rlNum(cur.bs)}${rlNum(cur.br)}</tr>` : '<tr><td colspan="5" class="muted">No active connections.</td></tr>'}</tbody></table><p class="help">Updated every 2 seconds.</p>`;
+    return rlCtab(tab[2], l => (l in gauge ? gauge[l] : s.c[l]));
+  }
+  function rlCipBody(md) {
+    const src = md.snap || { cip: rlStat.cip, cur: rlCur }, tab = RLDIAG.cip.find(t => t[0] === md.tab) || RLDIAG.cip[0];
+    const gauge = { 'conn:Originated connections': src.cur ? 1 : 0 };
+    return rlCtab(tab[2], l => { const k = tab[0] + ':' + l; return k in gauge ? gauge[k] : src.cip[k]; });
+  }
+  const rlTabs = (md, tabs) => `<div class="fchips dtabs rldt">${tabs.map(([k, l]) => `<span class="fchip${k === md.tab ? ' on' : ''}" data-rltab="${k}">${esc(l)}</span>`).join('')}</div>`;
+  const rlWin = (title, tabs, body, foot) => `<div class="rlov rlov2 rldgo"><div class="rlbox rldg" role="dialog" aria-label="${esc(title)}"><div class="bh">${esc(title)}</div>${tabs}<div class="bb" data-rldg>${body}</div><div class="bf">${foot || ''}<button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
+  function rlDiagBody(md) {
+    if (md.k === 'cipdiag') return rlCipBody(md);
+    if (md.k === 'mstat') { const n = rlFind(rlTree(), md.key); return n && n.m ? rlMsBody(md, n.m) : '<p class="help">The device does not answer.</p>'; }
+    if (md.k === 'dmon') return rlDmBody(md);
+    if (md.k === 'settime') { const n = rlDmCtl(md), c = n && n.m.ctl; return c ? kv('Controller time', esc(rlNowOf(c).toLocaleString())) + kv('Workstation time', esc(new Date().toLocaleString())) : ''; }
+    if (md.k === 'drvdiag' && !md.name) return `<div class="rltabw"><table class="rltab" id="rldl"><thead><tr><th>Driver</th><th>Status</th></tr></thead><tbody>${drivers.map(d => `<tr class="${d.name === md.sel ? 'on' : ''}" data-rldp="${esc(d.name)}"><td><span class="mono">${esc(d.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === d.type) || [, , , d.type])[3])}</span></td><td class="${d.run ? 'run' : ''}">${d.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers are configured.</td></tr>'}</tbody></table></div><p class="help">Pick a configured driver to see its counters.</p>`;
+    return rlDrvBody(md);
+  }
+  function rlDiagHTML(md) {
+    if (md.k === 'cipdiag') return rlWin('CIP Diagnostics', rlTabs(md, RLDIAG.cip), rlDiagBody(md), md.snap ? '<span class="grow muted">Frozen</span>' : '');
+    if (md.k === 'drvdiag' && !md.name) return rlWin('Driver Diagnostics', '', rlDiagBody(md), `<button class="btn" data-rldx="dpick"${md.sel ? '' : ' disabled'}>OK</button>`);
+    const d = drivers.find(x => x.name === md.name);
+    return rlWin(md.title || `Driver Diagnostics - ${md.name}`, d ? rlTabs(md, RLDIAG[rlEth(d) ? 'eth' : 'vbp']) : '', rlDiagBody(md), (md.foot || '') + (md.snap ? '<span class="grow muted">Frozen</span>' : ''));
+  }
+
   /* ---------- RSLinx Classic: one window with the menu bar, RSWho and Configure Drivers (RSLinx Classic 4.40) ----------
      It works on the same drivers list as Who Active, Go Online and Download (drivers, saveDrivers, relink): a driver
      added, stopped or deleted here is what they see. Only Communications > RSWho and Configure Drivers work; the other
@@ -3359,22 +3480,50 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     ['emulate', 'Emulate Ethernet (emulated controllers by IP)', 'EMU500-', 'A-B Ethernet, emulated controllers'],
     ['ethip', 'EtherNet/IP Driver', 'AB_ETHIP-', 'A-B Ethernet'], ['eth', 'Ethernet devices', 'AB_ETH-', 'A-B Ethernet'], ['df1', 'RS-232 DF1 devices', 'AB_DF1-', 'DF1']];
   const RLAVAIL = ['vbp', 'emulate'];
-  const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
-    ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
-    ['View', [['Toolbar', 'tb'], ['Status Bar', 'sb'], '-', ['Options…']]],
-    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
-    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode…', 'chmode'], ['Set Time']]],
-    ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
-    ['Security', [['Network Security…'], ['Change Password…']]],
-    ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
-    ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
-  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true };
+  /* the menus of RSLinx Classic (RSLinx Classic help, the menu reference). What cannot work without real hardware,
+     Windows DDE/OPC clients or FactoryTalk security opens a note that says so (na:<key>, RLNA) */
+  const RLMENUS = [['File', [['Open Project…', 'na:open'], ['Select Default Project…', 'na:defproj'], ['Compact Harmony…', 'na:harmony'], '-', ['Exit', 'exit']]],
+    ['Edit', [['Copy DDE/OPC Link to the Clipboard', 'na:copylink']]],
+    ['View', [['RSWho', 'rswho'], ['Event Log…', 'evlog'], '-', ['Options…', 'opts']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…', 'na:shortcuts'], ['Configure Client Application(s)…', 'na:clients'], ['Configure CIP Options…', 'na:cipopts'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag']]],
+    ['Station', [['Diagnostics', 'stdiag', () => !!rlSelDev()], '-', ['Freeze', 'frz', () => !!(rlS.modal && rlS.modal.st && !rlS.modal.snap)], ['Unfreeze', 'unfrz', () => !!(rlS.modal && rlS.modal.st && rlS.modal.snap)], ['Reset Diagnostic Counters', 'rst', () => !!(rlS.modal && rlS.modal.st)], '-',
+      ['Data Monitor', 'dmon', () => !!rlSelCpu()], ['Change Mode…', 'chmode'], ['Set Time…', 'settime', () => !!rlSelCpu()]]],
+    ['DDE/OPC', [['Topic Configuration…', 'na:dde.1'], ['Alias Topic Configuration…', 'na:dde.2'], ['Active Topics/Items…', 'na:dde.3'], ['Communication Events…', 'na:dde.4'], ['Optimized Packets…', 'na:dde.5'], ['Server Diagnostics…', 'na:dde.6'], ['DDE Client Diagnostics…', 'na:dde.7'], ['OPC Group Diagnostics…', 'na:dde.8'], '-', ['Update ControlLogix Tag Info', 'na:dde.9'], '-', ['Options…', 'na:dde.10']]],
+    ['Security', [['Set Security User…', 'na:sec.11'], ['Show Security Access…', 'na:sec.12']]],
+    ['Window', [['Cascade', 'wcas'], ['Tile', 'wtile'], ['Arrange Icons', 'warr'], ['Close All', 'wclose']]],
+    ['Help', [['RSLinx Classic Help', 'na:help'], ['Release Notes', 'na:notes'], ['Quick Start', 'na:quick'], '-', ['About RSLinx Classic…', 'about']]]];
+  const RLNA = {
+    open: 'Open Project opens an RSLinx Classic project (the drivers, topics and settings saved as a file). In emulation the drivers are kept with MT PLC Studio: Configure Drivers holds them.',
+    defproj: 'Select Default Project picks the RSLinx Classic project loaded at startup. In emulation the drivers are kept with MT PLC Studio.',
+    harmony: 'Compact Harmony compacts the Harmony files of the RSWho browse. The emulated browse keeps no Harmony files.',
+    copylink: 'Copy DDE/OPC Link to the Clipboard copies a link for a DDE/OPC client (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation.',
+    shortcuts: 'Configure Shortcuts names the paths that DDE/OPC topics and FactoryTalk applications use. There are no DDE/OPC clients in emulation: the project path is set in Who Active.',
+    clients: 'Configure Client Application(s) sets up the client programs of RSLinx Classic on this computer. They are not part of the emulation.',
+    cipopts: 'Configure CIP Options sets the CIP connection options of RSLinx Classic. The emulation uses fixed values.',
+    dde: 'The DDE/OPC server of RSLinx Classic serves controller data to Windows programs (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation: use Data Monitor, or the Watch and Monitor Tags windows of the programming software.',
+    sec: 'RSLinx Classic security comes from FactoryTalk Security on a Windows network. It is not part of the emulation: everyone has full access.',
+    help: 'The RSLinx Classic help is not part of the emulation. The help of MT PLC Studio (F1) explains these windows.',
+    notes: 'The release notes of RSLinx Classic are not part of the emulation. Help > About RSLinx Classic shows the version.',
+    quick: 'The Quick Start of RSLinx Classic is not part of the emulation. In short: Communications > Configure Drivers, add a driver, then RSWho.',
+    eds: 'Upload EDS file from device reads the EDS file a device holds. The emulated modules are known to RSLinx already: there is nothing to upload.',
+    topic: 'Configure New DDE/OPC Topic makes a DDE/OPC topic for this controller. There are no DDE/OPC clients in emulation: use Data Monitor.' };
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true, gone: new Set(), bg: [] };
+  // the device / the controller picked in RSWho (the Station menu works on it)
+  const rlSelDev = () => { const n = rlFind(rlTree(), rlS.sel); return n && n.m ? n : null; };
+  const rlSelCpu = () => { const n = rlSelDev(); return n && n.m.ctl ? n : null; };
+  const rlMiOn = it => !!it[1] && (!it[2] || it[2]());
+  // the Window menu ends with the open child windows; the one in front is ticked
+  const rlWinItems = () => {
+    const ws = (rlS.nochild ? [] : [['RSWho - 1', 'wsel:rw']]).concat(rlS.modal && rlS.modal.live ? [[rlS.modal.title || rlLiveTitle(rlS.modal), 'wsel:m']] : [], (rlS.bg || []).map((m, i) => [m.title || rlLiveTitle(m), 'wsel:' + i]));
+    return RLMENUS.find(m => m[0] === 'Window')[1].concat(ws.length ? ['-'] : [], ws.map(([l, a], i) => [`${i + 1} ${l}`, a, null, a === (rlS.modal && rlS.modal.live ? 'wsel:m' : 'wsel:rw')]));
+  };
+  const rlLiveTitle = md => ({ drvdiag: md.name ? `Driver Diagnostics - ${md.name}` : 'Driver Diagnostics', cipdiag: 'CIP Diagnostics', mstat: 'Module Statistics', dmon: 'Data Monitor', settime: 'Set Time' })[md.k] || 'RSLinx Classic';
   const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
   function rlTree() {
     const pad = n => (n < 10 ? '0' + n : n);
     const slots = (r, k, pathFn) => Array.from({ length: r.size }, (_, n) => {
-      const m = r.module(n); if (!m) return null;
+      const m = r.module(n); if (!m || rlS.gone.has(k + '/s' + n)) return null;
       const c = m.ctl;
       return { k: k + '/s' + n, l: `${pad(n)}, ${c ? 'PLC-CPU' : m.type} ${m.name}`, i: c ? 'chip' : 'io', dim: c && !c.powered, path: c ? pathFn(n) : null, m, kids: [] };
     }).filter(Boolean);
@@ -3439,14 +3588,44 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
     return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
       ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
-      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']]);
+      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']], [['Faults', rlFaults(m)]]);
+  }
+  // the fault information a device reports (Device Properties, Module Statistics > General)
+  const rlFaults = m => (m.ctl ? (m.ctl.fault ? `Major fault: Type ${m.ctl.fault.type}, Code ${m.ctl.fault.code}` : m.ctl.minors && m.ctl.minors.length ? `Minor faults: ${m.ctl.minors.length}` : 'None') : m.fault ? 'Module fault' : 'None');
+  /* Module Statistics (right-click a module in RSWho; the ControlLogix Gateway Configuration tool of RSLinx Classic,
+     which supports SoftLogix5800): General, Connection Manager and Backplane, polled once a second, with Lock Counters
+     and Reset Counters. A virtual backplane has no CRC errors or bus timeouts, so those stay at 0. */
+  const RLMS = { cm: ['Unconnected requests received', 'Connection requests received', 'Connections accepted', 'Connections rejected', 'Connections open', 'Connections closed', 'Connections timed out'],
+    bp: ['Received Multicast CRC', 'Received Bad CRC', 'Received Bus Timeouts', 'Transmit Bad CRC', 'Transmit Bus Timeout', 'Multicast CRC Threshold', 'Transmit Retry Limit'] };
+  const rlRackOf = m => racks.find(x => x.module(m.slot) === m) || racks[0];
+  const rlMk = (r, m) => `${r.name}:${m.slot}`;
+  const rlM = (r, m) => rlStat.m[rlMk(r, m)] || (rlStat.m[rlMk(r, m)] = {});
+  const rlMsHTML = md => {
+    const n = rlFind(rlTree(), md.key), m = n && n.m;
+    const body = rlDiagBody(md);
+    return rlWin(`Module Statistics - ${n ? n.l : ''}`, m ? rlTabs(md, [['gen', 'General'], ['cm', 'Connection Manager'], ['bp', 'Backplane']]) : '', body,
+      `<button class="btn${md.lock ? ' on' : ''}" data-rldx="lock" aria-pressed="${md.lock ? 'true' : 'false'}">Lock Counters</button><button class="btn" data-rldx="reset">Reset Counters</button><span class="grow"></span>`);
+  };
+  function rlMsBody(md, m) {
+    const r = rlRackOf(m), on = !m.ctl || m.ctl.powered, c = md.lock || rlM(r, m);
+    if (!on) return `<p class="help">The device does not answer: ${esc(m.name)} is off.</p>`;
+    if (md.tab === 'cm') {
+      const open = rlCur && (() => { const x = resolve(rlCur.path); return x && x.m === m ? 1 : 0; })();
+      return `<div class="lbl">Statistics</div>${rlCtab(RLMS.cm, l => (l === 'Connections open' ? (md.lock ? md.lock[l] : open) : c[l]))}`;
+    }
+    if (md.tab === 'bp') return `${kv('ControlBus Status', 'OK')}${kv('Slot Address', String(m.slot))}${kv('Rack Size', `${r.size} slots`)}${kv('Serial Number', rlSerial(r, { slot: 'chassis', type: r.name }))}${kv('Revision', '1.0')}${rlCtab(RLMS.bp, () => 0)}`;
+    const d = Object.fromEntries(rlDevice(m));
+    return [['Device name', d['Product Name']], ['Vendor', d.Vendor], ['Product type', d['Product Type']], ['Product code', d['Product Code']], ['Revision', d.Revision], ['Serial number', d['Serial Number']], ['Faults', d.Faults]].map(([a, b]) => kv(a, esc(b))).join('');
   }
   function rlCtxHTML(root) {
     const c = rlS.ctx, n = rlFind(root, c.k);
+    if (n && !n.m && /^d:[^/]+$/.test(n.k)) return rlDrvCtx(c);
     if (!n || !n.m) return '';
     const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
-    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}${it('Module Statistics', 'mstat')}<hr>${it('Station Diagnostics', 'stdiag')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor', 'dmon') + it('Set Time…', 'settime') + it('Configure New DDE/OPC Topic', 'na:topic') : ''}${it('Upload EDS file from device', 'na:eds')}<hr>${it('Remove', n.dim ? 'remove' : '')}</div>`;
   }
+  // right-click a driver in RSWho: Driver Diagnostics
+  const rlDrvCtx = c => `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px"><div class="it" data-rlci="drvdiag"><span>Driver Diagnostics</span></div></div>`;
   /* Configure… of a driver. Virtual Backplane: the Configure Virtual Backplane window, Slot Number (the slot of the
      RSLinx Classic module in the virtual chassis, slot 0 by default; LGEM5K-GR016M chapter 6). Emulate Ethernet: the
      station mapping of an Ethernet devices driver, one station per emulated controller with an IP address. */
@@ -3463,9 +3642,108 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="lbl">Station Mapping</div><div class="rltabw"><table class="rltab" id="rlmap"><thead><tr><th>Station</th><th>Host Name</th></tr></thead><tbody>${st.map(([n, ip, nm]) => `<tr><td>${n}</td><td class="mono">${esc(ip)} <span class="muted">${esc(nm)}</span></td></tr>`).join('') || '<tr><td colspan="2" class="muted">No emulated controller has an IP address.</td></tr>'}</tbody></table></div>
       <p class="help">The host names are the IP addresses of the emulated controllers (Emulator > Controller > IP Address).</p>${bf}`;
   }
+  /* Data Monitor (right-click a controller, or Station > Data Monitor; RSLinx Classic help): the data file list (File,
+     Type, Elements, Length in bytes, sortable, loaded with a progress and Stop), then a file's data table: one row per
+     element with its Radix (Binary, Octal, Decimal, Hex, ASCII), Type and Access Rights, polled at the poll rate (250 ms
+     to 34560000 ms; above 1000 ms it is polled at 1000 ms). It only reads. A Logix controller has tags, not data files:
+     each atomic controller tag (or array of them) is one file here. */
+  const RLBY = { BOOL: 1, SINT: 1, INT: 2, DINT: 4, REAL: 4 }, RLRX = ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'];
+  function rlFiles(c) {
+    if (!c || !c.M) return [];
+    return [...c.M.tags.values()].filter(r => RLBY[r.type] && !r.alias).map(r => {
+      const n = r.dims && r.dims.length ? r.dims.reduce((a, b) => a * b, 1) : r.dim || 1;
+      return { f: r.name, t: r.type + (r.dim ? `[${(r.dims && r.dims.length ? r.dims : [r.dim]).join(',')}]` : ''), n, b: n * RLBY[r.type], rec: r };
+    });
+  }
+  // the addresses of a file's elements (at most 256 shown)
+  function rlAddrs(rec) {
+    if (!rec.dim) return [rec.name];
+    const ds = rec.dims && rec.dims.length ? rec.dims : [rec.dim], out = [], idx = ds.map(() => 0);
+    for (let k = 0; k < 256; k++) {
+      out.push(`${rec.name}[${idx.join(',')}]`);
+      let j = ds.length - 1; while (j >= 0 && ++idx[j] >= ds[j]) idx[j--] = 0;
+      if (j < 0) break;
+    }
+    return out;
+  }
+  function rlRadix(v, rx, type) {
+    if (type === 'REAL') return Number(v).toPrecision(7).replace(/\.?0+$/, '').replace(/\.?0+e/, 'e');
+    const bits = { BOOL: 1, SINT: 8, INT: 16, DINT: 32 }[type] || 32, u = bits === 32 ? v >>> 0 : (v & ((1 << bits) - 1));
+    if (rx === 'Binary') return u.toString(2).padStart(bits, '0');
+    if (rx === 'Octal') return u.toString(8);
+    if (rx === 'Hex') return u.toString(16).toUpperCase().padStart(Math.ceil(bits / 4), '0');
+    if (rx === 'ASCII') { let s = ''; for (let b = Math.ceil(bits / 8) - 1; b >= 0; b--) { const ch = (u >>> (b * 8)) & 255; s += ch >= 32 && ch < 127 ? String.fromCharCode(ch) : '.'; } return `'${s}'`; }
+    return String(v);
+  }
+  const rlDmCtl = md => { const n = rlFind(rlTree(), md.key); return n && n.m && n.m.ctl ? n : null; };
+  function rlDmRead(md) {
+    const n = rlDmCtl(md), c = n && n.m.ctl, f = c && rlFiles(c).find(x => x.f === md.file);
+    if (!f || !c.powered) return false;
+    md.vals = rlAddrs(f.rec).map(a => { try { return Number(c.read(a)); } catch (e) { return 0; } });
+    rlAsk(n);
+    return true;
+  }
+  function rlDmBody(md) {
+    const n = rlDmCtl(md), c = n && n.m.ctl;
+    if (!c || !c.powered) return '<p class="help">The device does not answer.</p>';
+    const fs = rlFiles(c);
+    if (!md.file) {
+      const key = { File: 'f', Type: 't', Elements: 'n', 'Length (bytes)': 'b' }[md.sort] || 'f', s = fs.slice().sort((a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0) * (md.desc ? -1 : 1)).slice(0, md.loaded);
+      return `<div class="rltabw rldmw"><table class="rltab rldm" id="rldmf"><thead><tr>${['File', 'Type', 'Elements', 'Length (bytes)'].map(h => `<th data-rlsort="${h}">${h}${md.sort === h ? (md.desc ? ' ▼' : ' ▲') : ''}</th>`).join('')}</tr></thead><tbody>${s.map(x => `<tr class="${x.f === md.fsel ? 'on' : ''}" data-rldf="${esc(x.f)}"><td class="mono">${esc(x.f)}</td><td>${esc(x.t)}</td><td class="mono">${x.n}</td><td class="mono">${x.b}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">${c.M ? 'No data files.' : 'The controller holds no project.'}</td></tr>`}</tbody></table></div>
+        <div class="rldms"><span class="grow">${md.loaded < fs.length && !md.stop ? `Loading data files… ${Math.round(md.loaded / Math.max(1, fs.length) * 100)}%` : md.stop && md.loaded < fs.length ? `Stopped: ${md.loaded} of ${fs.length} files` : 'Complete'}</span></div>`;
+    }
+    if (md.pp) return `<div class="frow"><label for="rldmr">Poll rate (ms)</label><input class="inp num" id="rldmr" type="number" min="250" max="34560000" value="${esc(md.pp.v)}"></div><p class="help">From 250 to 34560000 ms. A rate above 1000 ms is polled at 1000 ms.</p><div class="errtx" id="rlerr">${esc(md.pp.err || '')}</div>
+      <div class="rldmb"><button class="btn" data-rldx="ppcancel">Cancel</button><button class="btn pri" data-rldx="ppok">OK</button></div>`;
+    const f = fs.find(x => x.f === md.file);
+    if (!f) return '<p class="help">The file is gone (the controller holds another project).</p>';
+    const ro = f.rec.constant || (f.rec.io && f.rec.io.dir === 'I'), vals = md.vals || [];
+    return `<div class="rltabw rldmw"><table class="rltab rldm" id="rldmt"><thead><tr><th>Address</th><th>Value</th><th>Radix</th><th>Type</th><th>Access Rights</th></tr></thead><tbody>${rlAddrs(f.rec).map((a, i) => { const rx = md.rx[i] || 'Decimal'; return `<tr class="${md.selr === a ? 'on' : ''}" data-rldr="${esc(a)}"><td class="mono">${esc(a)}</td><td class="mono">${esc(rlRadix(vals[i] || 0, rx, f.rec.type))}</td><td><select class="inp" data-rlrx="${i}"${f.rec.type === 'REAL' ? ' disabled' : ''}>${RLRX.map(r => `<option${r === rx ? ' selected' : ''}>${r}</option>`).join('')}</select></td><td>${esc(f.rec.type)}</td><td>${ro ? 'Read Only' : 'Read/Write'}</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="rldms"><span>Status: ${md.active ? 'active' : 'inactive'}</span><span class="grow">Selection: ${esc(md.selr || '')}</span><span>Poll rate: ${md.rate} ms</span></div>`;
+  }
+  function rlDmHTML(md) {
+    const n = rlDmCtl(md), nm = n ? n.l.replace(/^\d+, /, '') : '';
+    const foot = !md.file ? `<button class="btn" data-rldx="dmstop"${md.stop || !n || md.loaded >= rlFiles(n.m.ctl).length ? ' disabled' : ''}>Stop</button><span class="grow"></span>`
+      : md.pp ? '<span class="grow"></span>' : `<button class="btn" data-rldx="dmprop">Properties…</button><button class="btn" data-rldx="dmref">Refresh</button><button class="btn" data-rldx="dmact">${md.active ? 'Deactivate' : 'Activate'}</button><span class="grow"></span>`;
+    return rlWin(`Data Monitor - ${nm}${md.file ? ' - ' + md.file : ''}`, '', rlDiagBody(md), foot) + (md.gm ? `<div class="menu rlpop rlctx" role="menu" style="left:${md.gm.x}px;top:${md.gm.y}px">${[['Properties…', 'dmprop'], ['Refresh', 'dmref'], ['Activate', 'dmon1'], ['Deactivate', 'dmoff']].map(([l, a]) => `<div class="it${(a === 'dmon1' && md.active) || (a === 'dmoff' && !md.active) ? ' dis' : ''}" data-rldx="${a}"><span>${l}</span></div>`).join('')}</div>` : '');
+  }
+  /* Set Time: the date and time of the controller's clock, set from the workstation's or typed in */
+  const rlNowOf = c => new Date(Date.now() + (c.wallOff || 0));
+  const rlDt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  function rlStHTML(md) {
+    const n = rlDmCtl(md), c = n && n.m.ctl;
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Set Time"><div class="bh">Set Time - ${esc(n ? n.l : '')}</div><div class="bb">${c && c.powered ? `<div data-rldg>${rlDiagBody(md)}</div>
+      <div class="frow"><label for="rlstv">New controller time</label><input class="inp" id="rlstv" type="datetime-local" step="1" value="${esc(md.v || rlDt(rlNowOf(c)))}"></div>
+      <button class="btn" data-rldx="stnow">Set to Workstation Time</button>` : '<p class="help">The device does not answer.</p>'}<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="stok"${c && c.powered ? '' : ' disabled'}>OK</button></div></div></div>`;
+  }
+  // a note, a question or an About box in the RSLinx Classic window
+  const rlNote = (title, body, btns) => `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="${esc(title)}"><div class="bh">${esc(title)}</div><div class="bb">${body}</div><div class="bf">${btns || '<button class="btn pri" data-rlpx="cancel">OK</button>'}</div></div></div>`;
+  function rlMiscHTML(md) {
+    if (md.k === 'note') return rlNote(md.t, `<p style="margin-top:0"><b>${esc(md.t)}</b> is not available in emulation.</p><p class="help" style="margin-bottom:0">${esc(md.x)}</p>`);
+    if (md.k === 'remove') return rlNote('RSLinx Classic', `<p style="margin:0">Are you sure you want to remove this node?</p><p class="help" style="margin-bottom:0">${esc(md.l)}. It comes back with the next browse if it answers again.</p>`, '<button class="btn" data-rlpx="cancel">No</button><button class="btn pri" data-rldx="rmok">Yes</button>');
+    if (md.k === 'about') return rlNote('About RSLinx Classic', `<p style="margin-top:0"><b>RSLinx Classic</b>, as emulated by MT PLC Studio ${esc(VERSION)}</p>${kv('Drivers', 'Virtual Backplane, Emulate Ethernet')}${kv('Configured', String(drivers.length))}${kv('Running', String(drivers.filter(d => d.run).length))}<p class="help" style="margin-bottom:0">Not the Rockwell Automation product: a practice copy of its windows for the emulated controllers.</p>`);
+    if (md.k === 'evlog') {
+      const ev = []; drivers.forEach(d => (rlStat.d[d.name] ? rlStat.d[d.name].ev : []).forEach(e => ev.push(Object.assign({ d: d.name }, e))));
+      ev.sort((a, b) => b.t - a.t);
+      return rlNote('Open Event Viewer', `<p style="margin-top:0">RSLinx Classic writes its events to the Windows Event Viewer (the Application log). The emulation has no Event Viewer; these are the events of this session:</p>
+        <div class="rltabw"><table class="rltab rldtab rlwide"><thead><tr><th>Time</th><th>Driver</th><th>Event</th></tr></thead><tbody>${ev.slice(0, 100).map(e => `<tr><td class="mono">${esc(new Date(e.t).toLocaleTimeString())}</td><td class="mono">${esc(e.d)}</td><td>${esc(`Node ${e.node}: ${e.err}`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No events.</td></tr>'}</tbody></table></div>`);
+    }
+    if (md.k === 'opts') {
+      const gen = `<label class="frow rlck2"><input type="checkbox" id="rlo-sb"${md.sb ? ' checked' : ''}><span>Show Status Bar</span></label><label class="frow rlck2"><input type="checkbox" id="rlo-tb"${md.tb ? ' checked' : ''}><span>Show Toolbar</span></label>`;
+      const dde = `<p class="help" style="margin:0">${esc(RLNA.dde)}</p>`;
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Options"><div class="bh">Options</div>${rlTabs(md, [['gen', 'General'], ['dde', 'DDE/OPC']])}<div class="bb">${md.tab === 'dde' ? dde : gen}</div>
+        <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="optok">OK</button></div></div></div>`;
+    }
+    return '';
+  }
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    const misc = rlMiscHTML(md); if (misc) return misc;
+    if (md.k === 'dmon') return rlDmHTML(md);
+    if (md.k === 'settime') return rlStHTML(md);
+    if (md.k === 'drvdiag' || md.k === 'cipdiag') return rlDiagHTML(md);
+    if (md.k === 'mstat') return rlMsHTML(md);
     if (md.k === 'mode') {
       const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, cur = c && { prog: 'remprog', run: 'remrun' }[c.mode] || (c && c.mode);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Change Mode"><div class="bh">Change Mode</div><div class="bb">${c ? `<p style="margin-top:0"><b>${esc(n.l)}</b><br>Current mode: ${esc(ctlMode(c))} · key switch ${esc(c.key)}</p>
@@ -3476,7 +3754,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (md.k === 'props') {
       const n = rlFind(rlTree(), md.key);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
-      <div class="bf"><button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
+      <div class="bf">${n && n.m ? '<button class="btn" data-rldx="mstat">Module Statistics…</button>' : ''}<button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
     }
     if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
       <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
@@ -3492,7 +3770,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
     let treeKey = '', lim = Infinity, btimer = 0;
     const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
-    const quit = () => { clearInterval(timer); stopBrowse(); };
+    const quit = () => { clearInterval(timer); clearInterval(ltimer); stopBrowse(); };
     const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
     const bstat = root => (lim < rlCount(root) ? browseSt(order(root)[lim - 1].l) : rlS.auto ? 'Browsing - done' : 'Not browsing');
     const box = el.querySelector('#rl');
@@ -3503,17 +3781,135 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
       box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
         <div class="rltb"${rlS.tb ? '' : ' hidden'}><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
-        <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
+        <div class="rlchild"${rlS.nochild ? ' hidden' : ''}><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
           <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
         <div class="rlst"${rlS.sb ? '' : ' hidden'}><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
         ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}${rlS.ctx ? rlCtxHTML(root) : ''}
-        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' ? `<span class="ck">${rlS[it[1]] ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${(rlS.menu === 'Window' ? rlWinItems() : RLMENUS.find(m => m[0] === rlS.menu)[1]).map(it => (it === '-' ? '<hr>' : `<div class="it${rlMiOn(it) ? '' : ' dis'}"${rlMiOn(it) ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' || it.length > 3 ? `<span class="ck">${(it.length > 3 ? it[3] : rlS[it[1]]) ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
       if (rlS.menu) {
         const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
         p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
         p.style.left = Math.max(4, Math.min(b.offsetLeft - box.querySelector('.rlmb').scrollLeft, box.clientWidth - p.offsetWidth - 4)) + 'px';
       }
       if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+      box.style.setProperty('--rlmbh', box.querySelector('.rlmb').offsetHeight + 'px');
+      const dg = box.querySelector('[data-rldg]'); if (dg) dg.dataset.h = dg.innerHTML;
+    };
+    /* the diagnostic windows are live: their counters are read 4 times a second (Active Connections every 2 seconds),
+       while the window is not frozen; a menu or a right-click menu over them holds them */
+    let ltick = 0;
+    const rlLive = md => {
+      if (md.k === 'drvdiag' && md.tab === 'act' && ltick % 8) return false;
+      if (md.k === 'dmon') {
+        // the file list loads a few files at a time; the data table is polled at its rate (1000 ms at most)
+        if (md.gm) return false;
+        if (!md.file) { const n = rlDmCtl(md), all = n ? rlFiles(n.m.ctl).length : 0; if (md.stop || md.loaded >= all) return false; md.loaded = fastComm() ? all : Math.min(all, md.loaded + 2); return true; }
+        if (md.pp || !md.active || (ltick * 250) % Math.min(1000, md.rate) >= 250) return false;
+        rlDmRead(md); return true;
+      }
+      if (md.k === 'settime') return ltick % 4 === 0;
+      if (md.k === 'mstat') {
+        // Module Statistics polls the module once a second (an unconnected request through its driver)
+        if (ltick % 4) return false;
+        const n = rlFind(rlTree(), md.key);
+        if (n && n.m) rlAsk(n);
+        return true;
+      }
+      return true;
+    };
+    const ltimer = setInterval(() => {
+      if (!el.isConnected) { clearInterval(ltimer); return; }
+      ltick++;
+      const md = rlS.modal;
+      if (!md || !md.live || rlS.menu || rlS.ctx || rlLive(md) === false) return;
+      const b = box.querySelector('[data-rldg]'); if (!b) return;
+      const h = rlDiagBody(md);
+      if (b.dataset.h !== h) { b.innerHTML = h; b.dataset.h = b.innerHTML; }
+    }, 250);
+    const rlAct = a => {
+      if (a === 'drvdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: null, sel: (drivers[0] || {}).name, tab: 'gen', live: true }; draw(); return true; }
+      if (a === 'cipdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'cipdiag', tab: 'disp', live: true }; draw(); return true; }
+      if (a.startsWith('na:')) {
+        const it = RLMENUS.flatMap(m => m[1]).find(x => x !== '-' && x[1] === a);
+        rlS.modal = { k: 'note', t: it ? it[0].replace(/…$/, '') : 'RSLinx Classic', x: RLNA[a.slice(3).split('.')[0]] }; draw(); return true;
+      }
+      if (a === 'about' || a === 'evlog') { rlS.modal = { k: a }; draw(); return true; }
+      if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb }; draw(); return true; }
+      // Window: one child window shows at a time here, so Cascade, Tile and Arrange Icons leave it as it is
+      if (a === 'wcas' || a === 'wtile' || a === 'warr') { draw(); return true; }
+      if (a === 'wclose') { rlS.modal = null; rlS.bg = []; rlS.nochild = true; draw(); return true; }
+      if (a.startsWith('wsel:')) {
+        const w = a.slice(5), cur = rlS.modal && rlS.modal.live ? rlS.modal : null;
+        if (w === 'rw') { if (cur) rlS.bg.push(cur); rlS.modal = null; }
+        else if (w !== 'm') { const m = rlS.bg.splice(+w, 1)[0]; if (cur) rlS.bg.push(cur); rlS.modal = m; }
+        draw(); return true;
+      }
+      if (a === 'rswho') { rlS.nochild = false; rlS.view = 'rswho'; if (rlS.modal && rlS.modal.live) { rlS.bg.push(rlS.modal); rlS.modal = null; } draw(); return true; }
+      // Station Diagnostics: the counters of the station's driver, with Station > Freeze, Unfreeze and Reset Diagnostic
+      // Counters (Reset keeps the last four counters of an Ethernet driver, the connection counts)
+      if (a === 'stdiag') { const n = rlSelDev(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: drvOfKey(n.k), title: `Station Diagnostics - ${n.l}`, tab: 'gen', live: true, st: true }; } draw(); return true; }
+      if (a === 'frz' && rlS.modal) { rlS.modal.snap = JSON.parse(JSON.stringify({ d: rlStat.d, cur: rlCur })); draw(); return true; }
+      if (a === 'unfrz' && rlS.modal) { rlS.modal.snap = null; draw(); return true; }
+      if (a === 'rst' && rlS.modal) {
+        const s = rlD(rlS.modal.name), keep = ['Connections open', 'Total connections initiated', 'Server connections open', 'Total connections accepted'];
+        s.c = Object.fromEntries(Object.entries(s.c).filter(([k]) => keep.includes(k))); s.rate = [0, 0]; s.prev = rlTot(drivers.find(x => x.name === rlS.modal.name), s);
+        if (rlS.modal.snap) rlS.modal.snap = JSON.parse(JSON.stringify({ d: rlStat.d, cur: rlCur }));
+        draw(); return true;
+      }
+      if (a === 'dmon') { const n = rlSelCpu(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'dmon', key: n.k, sort: 'File', desc: false, loaded: fastComm() ? 1e9 : 0, file: null, rx: {}, rate: 1000, active: true, live: true }; } draw(); return true; }
+      if (a === 'settime') { const n = rlSelCpu(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'settime', key: n.k, live: true }; } draw(); return true; }
+      return false;
+    };
+    const drvOfKey = k => (k ? k.slice(2).split('/')[0] : '');
+    const rlCtxAct = (a, k) => {
+      if (a === 'drvdiag') { rlS.modal = { k: 'drvdiag', name: drvOfKey(k), tab: 'gen', live: true }; return; }
+      if (a === 'mstat') { rlS.modal = { k: 'mstat', key: k, tab: 'gen', live: true }; return; }
+      if (a.startsWith('na:')) { rlS.modal = { k: 'note', t: { eds: 'Upload EDS file from device', topic: 'Configure New DDE/OPC Topic' }[a.slice(3)] || 'RSLinx Classic', x: RLNA[a.slice(3)] }; return; }
+      if (a === 'remove') { const n = rlFind(rlTree(), k); rlS.modal = { k: 'remove', key: k, l: n ? n.l : '' }; return; }
+      if (a === 'stdiag' || a === 'dmon' || a === 'settime') { rlS.sel = k; rlAct(a); return; }
+      rlS.modal = { k: 'props', key: k };
+    };
+    const rlDx = a => {
+      const md = rlS.modal;
+      if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
+      if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
+      if (a === 'rmok') { rlS.gone.add(md.key); if (rlS.sel === md.key) rlS.sel = 'ws'; rlS.modal = null; draw(); }
+      if (a === 'optok') { const sb = box.querySelector('#rlo-sb'), tb = box.querySelector('#rlo-tb'); if (sb) rlS.sb = sb.checked; if (tb) rlS.tb = tb.checked; rlS.modal = null; draw(); }
+      if (md.k === 'dmon') {
+        md.gm = null;
+        if (a === 'dmstop') md.stop = true;
+        if (a === 'dmprop') md.pp = { v: md.rate };
+        if (a === 'ppcancel') md.pp = null;
+        if (a === 'ppok') {
+          const v = box.querySelector('#rldmr').value.trim(), n = +v;
+          if (!/^\d+$/.test(v) || n < 250 || n > 34560000) { md.pp = { v, err: 'Enter a poll rate from 250 to 34560000 ms.' }; draw(); return; }
+          md.rate = n; md.pp = null;
+        }
+        if (a === 'dmref') rlDmRead(md);
+        if (a === 'dmact') md.active = !md.active;
+        if (a === 'dmon1') md.active = true;
+        if (a === 'dmoff') md.active = false;
+        draw();
+      }
+      if (md.k === 'settime') {
+        const c = rlDmCtl(md) && rlDmCtl(md).m.ctl, i = box.querySelector('#rlstv');
+        if (!c || !i) return;
+        if (a === 'stnow') { md.v = rlDt(new Date()); md.err = ''; draw(); return; }
+        if (a === 'stok') {
+          const t = new Date(i.value);
+          if (!i.value || isNaN(t)) { md.v = i.value; md.err = 'Enter a date and a time.'; draw(); return; }
+          c.wallOff = t.getTime() - Date.now(); rlAsk(rlDmCtl(md)); rlS.modal = null; toast('The controller\'s clock is set.', 'ok'); draw();
+        }
+      }
+      // Lock Counters holds the values shown (the module goes on counting); Reset Counters sets them to 0
+      if (md.k === 'mstat' && (a === 'lock' || a === 'reset')) {
+        const n = rlFind(rlTree(), md.key), m = n && n.m;
+        if (!m) return;
+        const r = rlRackOf(m);
+        if (a === 'lock') md.lock = md.lock ? null : Object.assign({ 'Connections open': rlCur && resolve(rlCur.path) && resolve(rlCur.path).m === m ? 1 : 0 }, rlM(r, m));
+        else { rlStat.m[rlMk(r, m)] = {}; if (md.lock) md.lock = { 'Connections open': md.lock['Connections open'] }; }
+        draw();
+      }
     };
     // a browse step redraws only the tree, its pane and the status (the scroll position and the menus stay)
     const drawTree = () => {
@@ -3534,13 +3930,15 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (!el.isConnected) { busyComm(-1); return; }
       const all = order(rlTree());
       lim++;
+      rlAsk(all[lim - 1]);
       if (lim >= all.length) { lim = Infinity; busyComm(-1); drawTree(); return; }
       drawTree();
       btimer = setTimeout(step, all[lim] && all[lim].m ? jitter(150, 400) : jitter(80, 160));
     };
     const browse = () => {
       stopBrowse();
-      if (fastComm()) { lim = Infinity; drawTree(); return; }
+      rlS.gone.clear();
+      if (fastComm()) { lim = Infinity; order(rlTree()).forEach(rlAsk); drawTree(); return; }
       lim = 2; busyComm(1); drawTree();
       btimer = setTimeout(step, jitter(150, 300));
     };
@@ -3548,6 +3946,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     // quietly: only a change redraws it, and it is not browsed again
     const timer = setInterval(() => {
       if (!el.isConnected) { quit(); return; }
+      // Autobrowse polls every device it found, once a second
+      if (rlS.auto && lim === Infinity) order(rlTree()).forEach(rlAsk);
       if (!rlS.auto || rlS.menu || rlS.modal || rlS.ctx || lim !== Infinity) return;
       if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
     }, 1000);
@@ -3562,6 +3962,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     };
     const modalAct = ok => {
       const md = rlS.modal;
+      // Close of a data table goes back to the data file list
+      if (!ok && md.k === 'dmon' && md.file) { md.file = null; md.pp = null; md.gm = null; draw(); return; }
       if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
       if (md.k === 'mode') {
@@ -3593,7 +3995,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       rlS.ctx = { k, x: Math.max(4, Math.min(cx - b.left, b.width - 230)), y: Math.max(4, Math.min(cy - b.top, b.height - 220)) };
       rlS.sel = k; draw();
     };
-    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && n.m ? k : null; };
+    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && (n.m || /^d:[^/]+$/.test(n.k)) ? k : null; };
     box.addEventListener('contextmenu', ev => { const k = devAt(ev.target); if (!k || rlS.modal || rlS.view !== 'rswho') return; ev.preventDefault(); rlS.menu = ''; ctxAt(k, ev.clientX, ev.clientY); });
     let rlLp = null;
     box.addEventListener('pointerdown', ev => {
@@ -3612,7 +4014,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         const it = t.closest('[data-rlci]'), k = rlS.ctx.k;
         if (!it && t.closest('.rlctx')) return;
         rlS.ctx = null;
-        if (it) rlS.modal = { k: 'props', key: k };
+        if (it) rlCtxAct(it.dataset.rlci, k);
         draw();
         return;
       }
@@ -3623,10 +4025,23 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         // View > Toolbar / Status Bar: show or hide them (kept while the app runs)
         if (a === 'tb' || a === 'sb') { rlS[a] = !rlS[a]; draw(); return; }
         if (a === 'chmode') { const n = rlFind(rlTree(), rlS.sel); if (n && n.m && n.m.ctl) { rlS.view = 'rswho'; rlS.modal = { k: 'mode', key: rlS.sel }; } else toast('Select a controller in RSWho first.', 'err'); draw(); return; }
+        if (rlAct(a)) return;
         rlS.view = a; draw(); return;
       }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
+      if ((x = t.closest('[data-rltab]')) && rlS.modal) { rlS.modal.tab = x.dataset.rltab; draw(); return; }
+      // picking a driver marks its row in place (a redraw would split a double-click)
+      if ((x = t.closest('[data-rldp]')) && rlS.modal) { rlS.modal.sel = x.dataset.rldp; box.querySelectorAll('[data-rldp]').forEach(r => r.classList.toggle('on', r === x)); const b = box.querySelector('[data-rldx="dpick"]'); if (b) b.disabled = false; return; }
+      if ((x = t.closest('[data-rldx]')) && rlS.modal) { rlDx(x.dataset.rldx, x); return; }
+      if (rlS.modal && rlS.modal.k === 'dmon') {
+        const md = rlS.modal;
+        if (md.gm) { md.gm = null; draw(); return; }
+        if ((x = t.closest('[data-rlsort]'))) { md.desc = md.sort === x.dataset.rlsort ? !md.desc : false; md.sort = x.dataset.rlsort; draw(); return; }
+        // a file: a click picks it, a double-click (or a tap on the picked one) opens its data table
+        if ((x = t.closest('[data-rldf]'))) { if (md.fsel === x.dataset.rldf && ev.pointerType !== 'mouse' && ev.detail < 2) { rlDmOpen(md, x.dataset.rldf); return; } md.fsel = x.dataset.rldf; box.querySelectorAll('[data-rldf]').forEach(r => r.classList.toggle('on', r === x)); return; }
+        if ((x = t.closest('[data-rldr]')) && !t.closest('select')) { md.selr = x.dataset.rldr; draw(); return; }
+      }
       if (rlS.modal) return;
       if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
       if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
@@ -3648,7 +4063,18 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); return; }
       if (t.closest('[data-rlcfg]') && d) { rlS.modal = { k: 'cfg', name: d.name }; draw(); }
     });
+    box.addEventListener('dblclick', ev => { const x = ev.target.closest('[data-rldp]'); if (x && rlS.modal) { rlS.modal.sel = x.dataset.rldp; rlDx('dpick'); } });
+    const rlDmOpen = (md, f) => { md.file = f; md.fsel = f; md.selr = null; md.rx = {}; md.vals = null; rlDmRead(md); draw(); };
+    box.addEventListener('dblclick', ev => { const x = ev.target.closest('[data-rldf]'); if (x && rlS.modal && rlS.modal.k === 'dmon') rlDmOpen(rlS.modal, x.dataset.rldf); });
+    // right-click the data table: Properties, Refresh, Activate, Deactivate
+    box.addEventListener('contextmenu', ev => {
+      const md = rlS.modal; if (!md || md.k !== 'dmon' || !md.file || md.pp || !ev.target.closest('#rldmt')) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const b = box.getBoundingClientRect(); md.gm = { x: Math.max(4, Math.min(ev.clientX - b.left, b.width - 200)), y: Math.max(4, Math.min(ev.clientY - b.top, b.height - 170)) }; draw();
+    }, true);
     box.addEventListener('change', ev => {
+      if ((ev.target.id === 'rlo-sb' || ev.target.id === 'rlo-tb') && rlS.modal && rlS.modal.k === 'opts') { rlS.modal[ev.target.id.slice(4)] = ev.target.checked; return; }
+      if (ev.target.dataset.rlrx && rlS.modal && rlS.modal.k === 'dmon') { rlS.modal.rx[+ev.target.dataset.rlrx] = ev.target.value; draw(); return; }
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
@@ -4511,11 +4937,11 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
      offline). Then the checks of reachable(). fastComm, or a path just reached, skips the wait. */
   function connect(then, what) {
     const path = curPath();
-    if (fastComm() || S.online || (linked && linked.path === path && linked.ctl === ctl && performance.now() - linked.t < 15000)) { if (reachable()) { linked = { path, ctl, t: performance.now() }; then(); } return; }
+    if (fastComm() || S.online || (linked && linked.path === path && linked.ctl === ctl && performance.now() - linked.t < 15000)) { if (reachable()) { linked = { path, ctl, t: performance.now() }; rlOpen(path); then(); } return; }
     transfer({ title: what || 'Go Online', kind: 'connect', ms: jitter(600, 1000), sub: path,
       steps: [{ t: `Connecting to the controller at ${path}…`, w: 3 }, { t: 'Checking the controller: type, revision and project…', w: 1 }],
       cancelled: () => toast('Connecting was cancelled.'),
-      done: () => { if (!reachable()) { linked = null; return; } linked = { path, ctl, t: performance.now() }; then(); } });
+      done: () => { if (!reachable()) { linked = null; return; } linked = { path, ctl, t: performance.now() }; rlOpen(path); then(); } });
   }
   /* Upload Tag Values: the controller's current values become the project's values (not an edit) */
   function uploadTags(say) {
@@ -4550,6 +4976,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       : !x.m ? `Slot ${x.slot} of chassis ${esc(x.rack.name)} is empty.`
         : !x.m.ctl ? `Slot ${x.slot} holds an I/O card (${esc(x.m.type)}), not a controller.`
           : `The controller in slot ${x.slot} (${esc(x.m.name)}) is off.`;
+    rlRefused(curPath());
     dialog({ title: 'Failed to go online', body: `<p>No controller answers at the path <b class="mono">${esc(curPath())}</b>.</p>
         <p class="help">${why} Pick a controller in Who Active, or add or turn one on in the Emulator.</p>`,
       buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
@@ -4698,7 +5125,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const back = S.ed.orig;
     confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
-  function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
+  function goOffline() { S.online = false; linked = null; rlClose(false); toast('Offline. The controller keeps running.'); render(); commLed(); }
   /* Communications > Select Recent Path (reference: go online using a recent communications path) */
   function recentPathDlg() {
     let sel = (S.prefs.paths || []).includes(curPath()) ? curPath() : (S.prefs.paths || [])[0];
@@ -4888,7 +5315,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
       <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `${innerWidth > innerHeight ? `<button class="ib" data-dkat="${where === 'side' ? 'bottom' : 'right'}" title="${where === 'side' ? 'Move the panel under the ladder' : 'Move the panel to the right of the ladder'}">${ic(where === 'side' ? 'dockb' : 'dockr')}</button>` : ''}<button class="ib" data-dkmin="1" title="Fold the emulator panel">${ic(where === 'side' ? 'right' : 'down')}</button>`}</div>
-      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div></div>`;
+      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div><div class="emst" id="emst-dock">${emuStatus(Math.max(0, racks.indexOf(chassis)))}</div></div>`;
   }
   /* the Chassis Monitor menu bar (Logix Emulate, LGEM5K-GR016M chapters 3-5): Slot > Create Module / Remove Module /
      Properties, View, Options, All Modules > Run / Program, Help; the right-click menus stay as they are */
@@ -4901,9 +5328,9 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const cur = emuSel.k === 'm' && emuSel.ri === ri && r.module(emuSel.slot) ? emuSel.slot : null;
     const P = S.prefs, tog = k => () => { P[k] = !P[k]; savePrefs(); chassisLive(true); render(); backToEmu(was); };
     const items = {
-      File: [{ l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
+      File: [{ l: 'Chassis Properties…', i: 'gear', run: () => chassisProps(ri, 'gen', was) }, '-', { l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
       Slot: [{ l: 'Create Module…', i: 'plus', dis: !free.length, run: () => insertCard(ri, free[0]) }, { l: 'Remove Module…', i: 'trash', dis: !used.length, run: () => removeModuleDlg(ri, cur, was) }, '-',
-        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
+        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (r.module(cur).ctl) { emuProps(ri + ':' + cur, 'gen', was); return; } if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
       View: [{ l: 'Compact', ck: !!P.emuCompact, run: tog('emuCompact') }, { l: 'Hide Slots 9-16', ck: false, dis: true }],
       Options: [{ l: 'Clear Configuration on Remove', ck: !!P.clearOnRemove, run: tog('clearOnRemove') }, { l: 'Always On Top', ck: false, dis: true }, { l: 'Auto Refresh Rate', dis: true }],
       'All Modules': [{ l: 'Run…', dis: !r.controllers().length, run: () => allModes(ri, 'RUN', was) }, { l: 'Program…', dis: !r.controllers().length, run: () => allModes(ri, 'PROG', was) }],
@@ -4997,7 +5424,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
      wraps into a second row. */
   const rackHTML = ri => {
     const r = racks[ri], row = Array.from({ length: r.size }, (_, s) => s);
-    return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
+    return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}" data-chas="${ri}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
       <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div></div>`;
   };
   /* ---------- Module I/O window: the I/O of a chassis in one small window that stays open, inputs and outputs
@@ -5092,7 +5519,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const c = m.ctl, key = k => () => { c.setKey(k); saveChassis(); chassisLive(true); live(true); render(); backToEmu(was); };
     openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') },
       { l: 'Single Scan', ck: c.single, run: () => { c.singleScan(!c.single); asked.delete(c); chassisLive(true); live(true); render(); backToEmu(was); } }, '-',
-      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, '-',
+      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, { l: 'Properties…', i: 'info', run: () => emuProps(id, 'gen', was) }, '-',
       { l: 'Remove', i: 'trash', run: () => { chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })); } }], { x, y }, `[${s}] PLC-CPU ${m.name}`);
   }
   /* Single Scan: when the one scan is done, a prompt asks to run the controller continuously or to scan once more */
@@ -5135,8 +5562,10 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         <fieldset class="sotf"><legend>Speed of Time</legend><input type="range" id="sot-r" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time">
           <div class="sotrow"><span>Set: <b id="sot-cur">${c.sot}</b> %</span><span class="grow"></span><input class="inp num" id="sot-v" type="number" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time percent"><span>%</span></div>
           <div class="sotrow"><button class="btn" data-sot="0">0% NOW</button><button class="btn" data-sot="100">100% NOW</button><span class="grow"></span><button class="btn pri" data-sot="ok">Confirm Time % Change</button></div></fieldset>
-        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>`,
+        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>
+        ${traceCfgHTML(c)}`,
       buttons: [{ l: 'Close', run: () => backToEmu(was) }] });
+    bindTraceCfg(el, ri, s, () => configEmulation(id, was));
     const q = k => el.querySelector(k);
     const show = () => { q('#sot-cur').textContent = c.sot; q('#sot-r').value = c.sot; q('#sot-v').value = c.sot; };
     q('#sot-r').oninput = () => { q('#sot-v').value = q('#sot-r').value; };
@@ -5149,6 +5578,221 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       show(); toast(`Speed of time: ${c.sot} %.`, 'ok');
     });
   }
+  /* ---------- Logix Emulate breakpoints, tracepoints and trace windows (LGEM5K-GR016M chapters 4, 9 and 11) ----------
+     A trace window opens by itself the first time a BPT or TPT of a controller writes a trace (Display all new
+     traces); its title bar holds the slot and the text of the Format before the colon. Freeze Display, Clear Display,
+     Freeze Log (only while the trace is logged to disk). A triggered breakpoint stops the program and prompts; OK
+     lets it run on. The traces, the settings and the log file are in Configure Emulation. */
+  const trWins = new Map();   // 'rack:slot|title' → its window
+  const trFrozen = new Set(), trSeen = new WeakMap(), bpAsked = new WeakSet();
+  const trStamp = e => (e.t == null ? '' : `${String(e.t).padStart(8)} ms  `);
+  const trTitle = (c, tr) => `Slot ${c.slot}: ${tr.head}`;
+  const tlogOf = c => c.tlog || (c.tlog = { on: false, file: '', text: '', dirty: false, frozen: new Set() });
+  const trKey = k => { const i = k.indexOf('|'), [ri, s] = ids(k.slice(0, i)), title = k.slice(i + 1); return { ri, s, title, c: racks[ri] && racks[ri].controller(s) }; };
+  function trWinHTML(ri, s, title) {
+    const c = racks[ri] && racks[ri].controller(s), tr = c && c.traces.get(title), k = ri + ':' + s + '|' + title;
+    if (!tr) return '<p class="help">This trace was removed.</p>';
+    const lg = tlogOf(c);
+    return `<div class="trtags muted">Trace This: <span class="mono">${esc(tr.tags.join(', '))}</span></div><div class="trlist mono" data-trl="1">${trRows(tr)}</div>
+      <div class="trbtns"><button class="btn${trFrozen.has(k) ? ' on' : ''}" data-trf="${esc(k)}" aria-pressed="${trFrozen.has(k)}">Freeze Display</button><button class="btn" data-trc="${esc(k)}">Clear Display</button><button class="btn${lg.frozen.has(title) ? ' on' : ''}" data-trg="${esc(k)}"${lg.on ? '' : ' disabled'}>Freeze Log</button></div>`;
+  }
+  const trRows = tr => tr.list.slice(-200).map(e => `<div>${esc(trStamp(e) + e.text)}</div>`).join('') || '<span class="muted">No traces.</span>';
+  function openTrace(ri, s, title, doc) {
+    const c = racks[ri] && racks[ri].controller(s), tr = c && c.traces.get(title);
+    if (!tr) return;
+    doc = doc || document;
+    const k = ri + ':' + s + '|' + title;
+    let w = trWins.get(k);
+    if (w && !w.isConnected) w = null;
+    if (!w) {
+      w = doc.createElement('div'); w.className = 'iowin trwin'; w.dataset.trwin = k;
+      doc.body.appendChild(w); trWins.set(k, w);
+      const n = [...trWins.values()].filter(x => x.isConnected).length - 1, vw = doc.defaultView || window;
+      w.style.left = Math.max(4, Math.min(vw.innerWidth - 360, 80 + n * 26)) + 'px'; w.style.top = Math.max(4, Math.min(vw.innerHeight - 260, 90 + n * 26)) + 'px';
+    }
+    w.innerHTML = `<div class="iowh" data-iodrag="1"><b class="ell">${esc(trTitle(c, tr))}</b><span class="grow"></span><button class="ib" data-trx="${esc(k)}" aria-label="Close">${ic('close')}</button></div><div class="iowb trb">${trWinHTML(ri, s, title)}</div>`;
+    const l = w.querySelector('[data-trl]'); if (l) l.scrollTop = l.scrollHeight;
+  }
+  function closeTraces(c) { trWins.forEach((w, k) => { if (!c || trKey(k).c === c) { w.remove(); trWins.delete(k); } }); }
+  /* each tick: new traces open their window and go to the log, a triggered breakpoint prompts, open windows follow */
+  function tracesLive() {
+    racks.forEach((r, ri) => r.controllers().forEach(m => {
+      const c = m.ctl, seen = trSeen.get(c) || new Map(), lg = tlogOf(c);
+      trSeen.set(c, seen);
+      c.traces.forEach((tr, title) => {
+        const was = seen.get(title), k = ri + ':' + m.slot + '|' + title;
+        if (was !== tr.n) {
+          if (was == null && c.tcfg.show) openTrace(ri, m.slot, title);
+          if (lg.on && !lg.frozen.has(title)) { tr.list.slice(-Math.min(tr.list.length, tr.n - (was || 0))).forEach(e => { lg.text += `${trTitle(c, tr)}\t${trStamp(e)}${e.text}\r\n`; }); lg.dirty = true; }
+          seen.set(title, tr.n);
+        }
+        // only the list follows (at most 8 times a second): the buttons stay in place under the pointer
+        const w = trWins.get(k), now = performance.now();
+        if (w && w.isConnected && !trFrozen.has(k) && +w.dataset.n !== tr.n && now - (+w.dataset.at || 0) >= 120) {
+          w.dataset.n = String(tr.n); w.dataset.at = String(now);
+          const l = w.querySelector('[data-trl]'); if (l) { l.innerHTML = trRows(tr); l.scrollTop = l.scrollHeight; }
+        }
+      });
+      if (c.bp && !bpAsked.has(c.bp)) {
+        const bp = c.bp; bpAsked.add(bp);
+        const was = emuOpen(), ack = () => { if (c.bp === bp) c.resume(); live(true); backToEmu(was); };
+        dialog({ title: `Slot ${m.slot}: ${bp.head}`, size: '', modal: true, onClose: ack,
+          body: `<p style="margin-top:0" class="bptext">${esc(bp.text)}</p><div class="rlprops">${bp.tags.map((t, i) => kv(esc(t), esc(String(bp.vals[i])))).join('')}</div>
+            <p class="help">The breakpoint of <b>${esc(m.name)}</b> stopped the program. The project cannot be edited until the execution goes on. OK lets the program run; it stops again while the condition holds.</p>`,
+          buttons: [{ l: 'OK', pri: true, run: ack }] });
+      }
+    }));
+  }
+  // the trace log file is written about once a second
+  setInterval(() => racks.forEach(r => r.controllers().forEach(m => { const lg = m.ctl.tlog; if (lg && lg.dirty && lg.file) { lg.dirty = false; FS.write(lg.file, lg.text).catch(e => toast('Could not write the trace log file: ' + (e.message || e), 'err')); } })), 1000);
+  /* the trace area of Configure Emulation (LGEM5K-GR016M, Configure trace windows) */
+  function traceCfgHTML(c) {
+    const lg = tlogOf(c), list = [...c.traces.entries()];
+    return `<fieldset class="sotf trcfg"><legend>Traces</legend>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="tr-ign"${c.tcfg.ignore ? ' checked' : ''}><span>Ignore If No Value Changed</span></label>
+      <div class="frow"><label for="tr-ts">TimeStamp</label><select class="inp" id="tr-ts">${['None', 'Delta', 'Absolute'].map(t => `<option${t === c.tcfg.ts ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="tr-show"${c.tcfg.show ? ' checked' : ''}><span>Display all new traces</span></label>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="tr-log"${lg.on ? ' checked' : ''}><span>Log new traces to disk</span></label>
+      <div class="frow"><label>Trace Log File</label><span class="sotrow"><span class="mono ell" id="tr-file">${esc(lg.file || '(none)')}</span><span class="grow"></span><button class="btn" data-trbrowse="1">Browse…</button></span></div>
+      <div class="lbl">Current traces <span class="muted">(double-click to open)</span></div><div class="trset" id="tr-list">${list.map(([t, tr]) => `<div class="row" data-tro="${esc(t)}"><span class="mono">${tr.kind}</span><span class="grow ell">${esc(tr.head)}</span><span class="muted">${tr.n}</span></div>`).join('') || '<div class="empty">No traces yet.</div>'}</div>
+      <div class="sotrow wrap"><button class="btn" data-trall="1"${list.length ? '' : ' disabled'}>Display All Traces</button><button class="btn" data-trclose="1">Close All Traces</button><button class="btn" data-trrem="1"${list.length ? '' : ' disabled'}>Remove All Traces</button><button class="btn" data-trlogx="1"${lg.on ? '' : ' disabled'}>Close Log File</button></div></fieldset>`;
+  }
+  function bindTraceCfg(el, ri, s, reopen) {
+    const c = racks[ri].controller(s), lg = tlogOf(c);
+    const redraw = () => { const f = el.querySelector('.trcfg'); if (f) f.outerHTML = traceCfgHTML(c); };
+    el.addEventListener('change', ev => {
+      const t = ev.target;
+      if (t.id === 'tr-ign') c.tcfg.ignore = t.checked;
+      else if (t.id === 'tr-ts') c.tcfg.ts = t.value;
+      else if (t.id === 'tr-show') c.tcfg.show = t.checked;
+      else if (t.id === 'tr-log') { if (t.checked && !lg.file) { t.checked = false; toast('Browse to the trace log file first.', 'err'); return; } lg.on = t.checked; redraw(); return; }
+      else return;
+      saveChassis();
+    });
+    // Browse: the log file; a file that holds data is appended to or overwritten
+    const pick = () => fileDialog({ mode: 'save', title: 'Trace Log File', name: lg.file ? baseName(lg.file) : 'traces.txt', types: ['txt'], onPick: async f => {
+      let old = '';
+      try { if (await FS.exists(f)) old = await FS.read(f); } catch (e) { old = ''; }
+      const use = keep => { lg.file = f; lg.text = keep ? old : ''; lg.dirty = !keep; lg.on = true; setTimeout(reopen, 0); };
+      if (old) setTimeout(() => dialog({ title: 'Trace Log File', size: '', body: `<p><b>${esc(baseName(f))}</b> already holds data. Append the traces to the end of the file, or overwrite it?</p>`, buttons: [{ l: 'Cancel', run: () => setTimeout(reopen, 0) }, { l: 'Overwrite', run: () => use(false) }, { l: 'Append', pri: true, run: () => use(true) }] }), 0);
+      else use(false);
+    } });
+    el.addEventListener('click', ev => {
+      const t = ev.target;
+      if (t.closest('[data-trbrowse]')) { pick(); return; }
+      if (t.closest('[data-trall]')) { c.traces.forEach((_, k) => openTrace(ri, s, k)); return; }
+      if (t.closest('[data-trclose]')) { closeTraces(c); return; }
+      if (t.closest('[data-trrem]')) { closeTraces(c); c.traces.clear(); trSeen.delete(c); redraw(); return; }
+      if (t.closest('[data-trlogx]')) { if (lg.dirty && lg.file) { lg.dirty = false; FS.write(lg.file, lg.text).catch(() => {}); } lg.on = false; redraw(); toast('The trace log file is closed.', 'ok'); return; }
+      const r = t.closest('[data-tro]');
+      // double-click (on touch: a tap) a trace to open its window
+      if (r) { el.querySelectorAll('[data-tro].on').forEach(x => x.classList.remove('on')); r.classList.add('on'); if (S.layout !== 'desktop' || (r.dataset.clk && performance.now() - +r.dataset.clk < 450)) openTrace(ri, s, r.dataset.tro); r.dataset.clk = String(performance.now()); }
+    });
+  }
+  /* the buttons of a trace window */
+  document.addEventListener('click', ev => {
+    const t = ev.target, w = t.closest && t.closest('.trwin');
+    if (!w) return;
+    let x;
+    if ((x = t.closest('[data-trx]'))) { w.remove(); trWins.delete(x.dataset.trx); return; }
+    const k = (x = t.closest('[data-trf],[data-trc],[data-trg]')) && (x.dataset.trf || x.dataset.trc || x.dataset.trg), o = k && trKey(k);
+    if (!o || !o.c) return;
+    const tr = o.c.traces.get(o.title), lg = tlogOf(o.c);
+    if (x.dataset.trf) { if (trFrozen.has(k)) trFrozen.delete(k); else trFrozen.add(k); }
+    else if (x.dataset.trc) { if (tr) tr.list = []; }
+    else if (lg.frozen.has(o.title)) lg.frozen.delete(o.title); else lg.frozen.add(o.title);
+    openTrace(o.ri, o.s, o.title);
+  });
+  /* Properties of an emulated controller, on the emulator side. General and System hold the settings of the create
+     wizard (LGEM5K-GR016M, Create a Studio 5000 Logix Emulate controller, steps 6 and 8): Version, Startup Mode,
+     Memory Size, Periodic Save Interval, Use RSLinx Classic, Enable Periodic Save; Continuous Task Dwell Time, CPU
+     Affinity, Channel 0 Serial Port. Emulator: speed of time, Single Scan, IP address, power. Debug: the trace
+     settings and traces of Configure Emulation. */
+  function emuProps(id, tab, was) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    const c = m.ctl, e = c.emu, chk = (i, on, t, dis) => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="${i}"${on ? ' checked' : ''}${dis ? ' disabled' : ''}><span>${t}</span></label>`;
+    const cpus = Math.max(1, Math.min(64, navigator.hardwareConcurrency || 1));
+    const gen = `${kv('Module Type', 'PLC-CPU (emulated controller)')}${kv('Slot', s)}
+      <div class="frow"><label for="ep-n">Name</label><input class="inp" id="ep-n" value="${esc(m.name)}" autocomplete="off" spellcheck="false"></div>
+      <div class="frow"><label for="ep-d">Description</label><input class="inp" id="ep-d" value="${esc(m.desc || '')}"></div>
+      <div class="frow"><label for="ep-v">Version</label><select class="inp" id="ep-v"><option>1.0</option></select></div>
+      <div class="frow"><label for="ep-st">Startup Mode</label><select class="inp" id="ep-st"><option value="remprog"${e.startup === 'remprog' ? ' selected' : ''}>Remote Program</option><option value="last"${e.startup === 'last' ? ' selected' : ''}>Last Controller State</option></select></div>
+      <div class="frow"><label for="ep-m">Memory Size (KB)</label><input class="inp num" id="ep-m" type="number" min="64" step="64" value="${m.mem || 3072}"></div>
+      <div class="frow"><label for="ep-ps">Periodic Save Interval (min)</label><input class="inp num" id="ep-ps" type="number" min="1" max="1440" step="1" value="${e.psave}"></div>
+      ${chk('ep-lx', e.linx, 'Use RSLinx Classic <span class="muted">(for internal communications)</span>')}${chk('ep-pson', e.psaveOn, 'Enable Periodic Save')}
+      <p class="help">Remote Program: with the key switch in REM the controller always starts in Remote Program. Last Controller State: it starts in the mode it had. Periodic Save keeps the program, data and configuration every interval.</p>`;
+    const sys = `<div class="frow"><label for="ep-dw">Continuous Task Dwell Time (ms)</label><input class="inp num" id="ep-dw" type="number" min="0" max="100" step="1" value="${e.dwell}"></div>
+      <div class="frow"><label for="ep-cpu">CPU Affinity</label><select class="inp" id="ep-cpu">${Array.from({ length: cpus }, (_, n) => `<option value="${n}"${n === e.cpu ? ' selected' : ''}>CPU ${n}</option>`).join('')}</select></div>
+      <div class="frow"><label for="ep-com">Channel 0 Serial Port</label><select class="inp" id="ep-com">${['', 'COM1', 'COM2', 'COM3', 'COM4'].map(p => `<option value="${p}"${p === e.com0 ? ' selected' : ''}>${p || '(none)'}</option>`).join('')}</select></div>
+      <p class="help">The dwell time is the time between the end of the continuous task and its next start (0-100 ms, default 10): the time left for the other applications. The emulated controller runs on one CPU. A serial port emulates channel 0 of the controller.</p>`;
+    const emu = `<div class="frow"><label>Speed of Time</label><span><b>${c.sot}</b> % <button class="btn" data-ecfg="${id}">Configure Emulation…</button></span></div>
+      ${chk('ep-ss', c.single, 'Single Scan')}
+      <div class="frow"><label for="ep-ip">IP Address</label><select class="inp" id="ep-ip"><option value=""${m.ip ? '' : ' selected'}>(none)</option>${EMUIPS.map(a => `<option${a === m.ip ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+      ${chk('ep-on', c.powered, 'Controller on')}${kv('Mode', c.powered ? esc(modeName(c)) : 'Off')}${kv('Key switch', esc(c.key))}${kv('Holds', c.name ? esc(c.name) + (c.dlAt ? ' <span class="muted">· downloaded ' + esc(new Date(c.dlAt).toLocaleString()) + '</span>' : '') : '(no project)')}
+      <p class="help">Speed of time and Single Scan are Logix Emulate only: a physical controller runs in real time.</p>`;
+    const el = dialog({ title: `Module Properties - [${s}] PLC-CPU ${m.name}`, size: 'md', onClose: () => backToEmu(was),
+      body: tabbed([['gen', 'General', gen], ['sys', 'System', sys], ['emu', 'Emulator', emu], ['dbg', 'Debug', traceCfgHTML(c)]], tab || 'gen'),
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const v = k => e2.querySelector(k).value.trim(), n = v('#ep-n');
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        const err = c.setEmu({ startup: v('#ep-st'), psave: v('#ep-ps'), psaveOn: e2.querySelector('#ep-pson').checked, linx: e2.querySelector('#ep-lx').checked, dwell: v('#ep-dw'), cpu: +v('#ep-cpu'), com0: v('#ep-com') });
+        if (err) { toast(err, 'err'); return false; }
+        if (!(+v('#ep-m') >= 64)) { toast('Memory Size: 64 KB or more.', 'err'); return false; }
+        r.setController(s, { name: n, desc: v('#ep-d'), mem: +v('#ep-m'), ip: v('#ep-ip'), on: e2.querySelector('#ep-on').checked });
+        if (e2.querySelector('#ep-ss').checked !== c.single) c.singleScan(e2.querySelector('#ep-ss').checked);
+        saveChassis(); chassisLive(true); live(true); render(); backToEmu(was);
+      } }],
+      mount: e2 => { bindTabs(e2); e2.addEventListener('click', ev => { const b = ev.target.closest('[data-ecfg]'); if (b) { ev.stopPropagation(); setTimeout(() => configEmulation(id, was), 0); } }); } });
+    bindTraceCfg(el, ri, s, () => emuProps(id, 'dbg', was));
+  }
+  // Enable Periodic Save: the chassis (programs, data, configuration) is saved every Periodic Save Interval
+  let lastPSave = Date.now();
+  setInterval(() => { const due = racks.some(r => r.controllers().some(m => m.ctl.emu.psaveOn && Date.now() - lastPSave >= m.ctl.emu.psave * 60000)); if (due) { lastPSave = Date.now(); saveChassis(); } }, 15000);
+  /* the Chassis Monitor's Computer box (hidden by View > Compact, LGEM5K-GR016M chapter 3) and its status bar: the
+     selected module on the left; the slots in use, the controllers running and the slot of the RSLinx Classic module
+     (Configure Virtual Backplane) on the right */
+  const computerName = () => (location.hostname || 'localhost').toUpperCase();
+  function emuStatus(ri) {
+    const r = racks[ri];
+    if (!r) return '<span class="grow">Ready</span>';
+    const cs = r.controllers(), run = cs.filter(m => m.ctl.powered && m.ctl.running).length, d = drivers.find(x => x.type === 'vbp');
+    const m = emuSel.k === 'm' && emuSel.ri === ri ? r.module(emuSel.slot) : null;
+    const left = m ? `Slot ${m.slot}: ${m.ctl ? 'PLC-CPU' : m.type} ${m.name}${m.ctl ? ' · ' + (m.ctl.powered ? modeName(m.ctl) + (m.ctl.bp ? ' · Breakpoint' : '') : 'Off') : m.fault ? ' · Faulted' : ''}` : 'Ready';
+    return `<span class="grow ell">${esc(left)}</span><span>${esc(r.name)}</span><span>${r.mods.size} of ${r.size} slots used</span><span>${run} of ${cs.length} controller${cs.length === 1 ? '' : 's'} running</span>${d ? `<span>RSLinx: ${esc(d.name)}, slot ${d.slot || 0}</span>` : ''}`;
+  }
+  /* chassis Properties (File > Chassis Properties…, or right-click the power supply): General (name, description,
+     slots, computer) and Slots (what each slot holds) */
+  function chassisProps(ri, tab, was) {
+    const r = racks[ri];
+    if (!r) return;
+    const d = drivers.find(x => x.type === 'vbp');
+    const gen = `<div class="frow"><label for="cp-n">Name</label><input class="inp" id="cp-n" value="${esc(r.name)}" autocomplete="off" spellcheck="false"></div>
+      <div class="frow"><label for="cp-d">Description</label><input class="inp" id="cp-d" value="${esc(r.desc || '')}"></div>
+      <div class="frow"><label for="cp-z">Slots</label><select class="inp" id="cp-z">${E.RACKS.concat(E.RACKS.includes(r.size) ? [] : [r.size]).map(n => `<option${n === r.size ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+      ${kv('Computer', esc(computerName()))}${kv('Virtual Backplane', d ? `${esc(d.name)} · the RSLinx Classic module in slot ${d.slot || 0}` : 'No Virtual Backplane driver (RSLinx Classic > Configure Drivers)')}`;
+    const slots = `<div class="rltabw"><table class="rltab" id="cp-slots"><thead><tr><th>Slot</th><th>Module</th><th>Name</th><th>Status</th></tr></thead><tbody>${Array.from({ length: r.size }, (_, s) => {
+      const m = r.module(s), st = !m ? '' : m.ctl ? (m.ctl.powered ? modeName(m.ctl) : 'Off') : m.fault ? 'Faulted' : r.owner(s) ? 'Running' : 'OK';
+      return `<tr><td>${s}</td><td>${m ? esc(m.ctl ? 'PLC-CPU' : m.type) : d && (d.slot || 0) === s ? 'RSLinx Classic' : '<span class="muted">Empty</span>'}</td><td>${m ? esc(m.name) : ''}</td><td>${esc(st)}</td></tr>`; }).join('')}</tbody></table></div>`;
+    dialog({ title: `Chassis Properties - ${r.name}`, size: 'md', onClose: () => backToEmu(was),
+      body: tabbed([['gen', 'General', gen], ['slots', 'Slots', slots]], tab || 'gen'),
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const n = e2.querySelector('#cp-n').value.trim(), z = +e2.querySelector('#cp-z').value;
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        if (racks.some(x => x !== r && U(x.name) === U(n))) { toast('Another chassis has that name.', 'err'); return false; }
+        if (z !== r.size) { const rz = r.resize(z); if (!rz.ok) { toast(rz.msg, 'err'); return false; } }
+        r.name = n; r.desc = e2.querySelector('#cp-d').value.trim(); saveChassis(); relink(); chassisLive(true); render(); backToEmu(was);
+      } }],
+      mount: bindTabs });
+  }
+  // right-click (or long-press) the power supply of a chassis: its Properties
+  document.addEventListener('contextmenu', ev => {
+    const ps = ev.target.closest && ev.target.closest('.rkps'), ch = ps && ps.closest('[data-chas]');
+    if (!ch) return;
+    ev.preventDefault();
+    const ri = +ch.dataset.chas, was = emuOpen();
+    openMenu([{ l: 'Properties…', i: 'gear', run: () => chassisProps(ri, 'gen', was) }], { x: ev.clientX, y: ev.clientY }, racks[ri] ? racks[ri].name : '');
+  });
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -5192,15 +5836,16 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     }));
     return rows.join('') || '<p class="help" style="padding:8px">No emulated controllers. Add one.</p>';
   }
-  const emuHTML = () => `${emuMenuBar('win')}<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
+  const emuHTML = () => `${emuMenuBar('win')}<div class="emcomp">Computer: <b>${esc(computerName())}</b></div><div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
     <div class="emumain" id="emumain">${detailsHTML()}</div>
-    <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div>`;
+    <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div><div class="emst">${emuStatus(Math.min(emuSel.ri || 0, racks.length - 1))}</div>`;
   const chassisSig = () => racks.map(r => r.name + ':' + [...r.mods.values()].map(m => (m.ctl ? [m.slot, m.name, m.ip, m.ctl.powered, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.name, m.fault, JSON.stringify(m.field), JSON.stringify(r.outputs(m.slot))].join(','))).join('|')).join('#') + curPath();
   /* the emulator in the app and in its own window follows the controllers; a form being typed in is left alone */
   function chassisLive(force) {
     const docs = [document];
     if (chasWin && !chasWin.closed) docs.push(chasWin.document); else chasWin = null;
-    const sg = chassisSig();
+    const sg = chassisSig(), est = $('#emst-dock');
+    if (est) setHTML(est, emuStatus(Math.max(0, racks.indexOf(chassis))));
     docs.forEach(d => {
       const b = d.getElementById('emubody');
       if (!b || (!force && b.dataset.sig === sg)) return;
@@ -5466,6 +6111,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const ob = $('#olbar');
     if (ob) setHTML(ob, S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`);
     const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) setHTML(iob, iob.classList.contains('dockb') ? dockBody() : ioHTML()); chassisLive(false); ioWinsLive();
+    const est = $('#emst-dock'); if (est) setHTML(est, emuStatus(Math.max(0, racks.indexOf(chassis))));
     // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
     if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
@@ -5476,7 +6122,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
     racks.forEach(r => r.advance(dt));
-    singleAsk();
+    singleAsk(); tracesLive();
   }
   function loop(now) {
     tick();

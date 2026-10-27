@@ -179,10 +179,13 @@
         i++;
         // operands split at commas outside ( ) and [ ] (CPT expressions, array subscripts)
         const a = [];
-        let cur = '', depth = 0;
+        let cur = '', depth = 0, q = false;
         for (;;) {
           const ch = s[i];
           if (ch === undefined) fail(`${m[0]}: ) is missing`);
+          // a quoted string ('Trace:%d', the Format of BPT / TPT) keeps its commas and brackets
+          if (ch === "'") q = !q;
+          if (q) { cur += ch; i++; continue; }
           if (depth === 0 && (ch === ',' || ch === ')')) { a.push(cur.trim()); cur = ''; i++; if (ch === ')') break; continue; }
           if (ch === '(' || ch === '[') depth++; else if (ch === ')' || ch === ']') depth--;
           cur += ch; i++;
@@ -264,6 +267,7 @@
     LFL: ['Source', 'LIFO', 'Control', 'Length', 'Position'], LFU: ['LIFO', 'Dest', 'Control', 'Length', 'Position'],
     SQI: ['Array', 'Mask', 'Source', 'Control', 'Length', 'Position'], SQO: ['Array', 'Mask', 'Dest', 'Control', 'Length', 'Position'],
     SQL: ['Array', 'Source', 'Control', 'Length', 'Position'],
+    BPT: ['Format'].concat(Array(8).fill('Trace This')), TPT: ['Format'].concat(Array(8).fill('Trace This')),
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -544,6 +548,9 @@
     AFI: I('contact', 'Program Control', 'Always False', ''),
     NOP: I('box', 'Program Control', 'No Operation', ''),
     TND: I('box', 'Program Control', 'Temporary End', '', { out: true }),
+    // Logix Emulate only (LGEM5K-GR016M chapter 9, the Debug tab): Format, then the tags to trace (here up to 8)
+    BPT: I('box', 'Debug', 'Breakpoint', 'fmt trace' + ' trace?'.repeat(7), { out: true }),
+    TPT: I('box', 'Debug', 'Tracepoint', 'fmt trace' + ' trace?'.repeat(7), { out: true }),
   };
   const BAD_TYPE = 'Invalid data type. Argument must match parameter data type';
   const BITS = t => (t === 'REAL' ? 0 : ATOMIC[t] || 32);
@@ -557,6 +564,12 @@
       case 'routine': return P.routines.get(U(s)) || `Undefined routine '${s}'`;
       case 'order': return ['REVERSE', 'WORD', 'HIGH/LOW'].includes(U(s)) ? { order: U(s) } : 'Order mode must be REVERSE, WORD or HIGH/LOW';
       case 'expr': return compileExpr(M, P, s);
+      // the Format of BPT / TPT: 'heading:text %f' (82 characters at most); Logix Emulate takes a STRING tag
+      case 'fmt': {
+        if (/^'.*'$/.test(s)) { const f = s.slice(1, -1); return f.length > 82 ? 'The format string can contain only 82 characters' : { fmt: f }; }
+        const r = ref(M, P, s);
+        return typeof r !== 'string' && r.type === 'STRING' ? r : `Format must be a string, e.g. 'Trace:Value = %d' (a STRING tag is required)`;
+      }
     }
     const c = parseNumber(s);
     if (c) {
@@ -580,6 +593,7 @@
       case 'fsrc': return one && r.bit < 0 && r.type !== 'BOOL' ? r : BAD_TYPE;
       case 'fdst': return one && r.bit < 0 && r.type !== 'BOOL' ? writable() : BAD_TYPE;
       case 'ddest': return r.type === 'DINT' && one ? writable() : BAD_TYPE;
+      case 'trace': return !one || !ATOMIC[r.type] ? 'Tag structures are not traceable: trace a member (e.g. Timer1.ACC)' : r;
       case 'num': return isNum(r.type) && one ? r : BAD_TYPE;
       case 'int': return isInt(r.type) && one ? r : BAD_TYPE;
       case 'dest': return isNum(r.type) && one ? writable() : BAD_TYPE;
@@ -632,6 +646,11 @@
       case 'FFL': case 'FFU': case 'LFL': case 'LFU': {
         const ld = e.t.endsWith('L'), arr = ld ? x[1] : x[0], o = ld ? x[0] : x[1];
         if (isNum(arr.type) ? !isNum(o.type) : o.type !== arr.type) bad(BAD_TYPE, ld ? 0 : 1);
+        break;
+      }
+      case 'BPT': case 'TPT': {
+        const n = x[0].fmt != null ? (x[0].fmt.replace(/%%/g, '').match(/%[-+ #0]*\d*(\.\d+)?[doxXeEfgG]/g) || []).length : null;
+        if (n != null && n !== x.length - 1) W(`The format has ${n} type indicator(s) for ${x.length - 1} traced tag(s): one % type is required for each tag`, e.t, 0);
         break;
       }
       case 'LBL':
@@ -797,6 +816,39 @@
   // a sequencer Mask: a SINT or INT is zero extended to a DINT (RM003, SQI Mask)
   const maskOf = r => { const v = i32(r.get()); return r.type === 'SINT' ? v & 0xFF : r.type === 'INT' ? v & 0xFFFF : v; };
 
+  /* ---------- Logix Emulate trace format (LGEM5K-GR016M chapter 9: heading:(text)%(type), C printf types) ---------- */
+  const e3 = (v, k, up) => { if (!isFinite(v)) return String(v); const t = v.toExponential(k).split('e'), x = +t[1]; const r = t[0] + 'e' + (x < 0 ? '-' : '+') + String(Math.abs(x)).padStart(3, '0'); return up ? r.toUpperCase() : r; };
+  function traceFmt(fmt, vals) {
+    const f = String(fmt == null ? '' : fmt), c = f.indexOf(':'), head = c >= 0 ? f.slice(0, c) : f, body = c >= 0 ? f.slice(c + 1) : '';
+    let k = 0;
+    const text = body.replace(/%%|%([-+ #0]*)(\d*)(?:\.(\d+))?([doxXeEfgG])/g, (all, fl, w, pr, t) => {
+      if (all === '%%') return '%';
+      const v = Number(vals[k++]) || 0, p = pr != null && pr !== '' ? +pr : 6, n = Math.trunc(v), u = n >>> 0;
+      let o;
+      switch (t) {
+        case 'd': o = String(n); break;
+        case 'o': o = u.toString(8); break;
+        case 'x': o = u.toString(16); break;
+        case 'X': o = u.toString(16).toUpperCase(); break;
+        case 'e': case 'E': o = e3(v, p, t === 'E'); break;
+        case 'f': o = v.toFixed(p); break;
+        default: {
+          // %g / %G: %e or %f, whichever is shorter (6 significant digits), trailing zeros dropped
+          const P = p || 1, x = v === 0 ? 0 : Math.floor(Math.log10(Math.abs(v)));
+          const strip = q => q.replace(/(\.\d*?)0+(?=$|e)/, '$1').replace(/\.(?=$|e)/, '');
+          o = x < -4 || x >= P ? strip(e3(v, P - 1)) : strip(v.toFixed(Math.max(0, P - 1 - x)));
+          if (t === 'G') o = o.toUpperCase();
+        }
+      }
+      if (/\+/.test(fl) && v >= 0 && 'deEfgG'.includes(t)) o = '+' + o;
+      return w && o.length < +w ? (/-/.test(fl) ? o.padEnd(+w) : o.padStart(+w, /0/.test(fl) ? '0' : ' ')) : o;
+    });
+    return { head: head.trim(), text };
+  }
+  // a breakpoint stops the program where it is: the rest of the scan does not run until it is acknowledged
+  class Halt {}
+
+  const EMU0 = { ver: '1.0', startup: 'last', psave: 10, psaveOn: false, linx: true, dwell: 10, cpu: 0, com0: '' };
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -819,6 +871,24 @@
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
       this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
       this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
+      // Logix Emulate breakpoints and tracepoints: the traces (by title), the triggered breakpoint, the trace settings
+      // of Configure Emulation, and the emulated time (ms) since the last change to Run (the Absolute time stamp)
+      this.traces = new Map(); this.bp = null; this.tcfg = { ignore: false, ts: 'None', show: true }; this.clock = 0; this.runAt = 0;
+      // the emulated controller's own settings (Logix Emulate, Create a controller: General and System screens)
+      this.emu = Object.assign({}, EMU0);
+    }
+    /* General / System settings: Startup Mode (Remote Program or Last Controller State), Periodic Save, Use RSLinx
+       Classic, Continuous Task Dwell Time (0-100 ms between the end of the continuous task and its next start: the scan
+       period here), CPU Affinity, Channel 0 Serial Port */
+    setEmu(o) {
+      const e = Object.assign({}, this.emu, o);
+      if (!['remprog', 'last'].includes(e.startup)) return 'Startup Mode: Remote Program or Last Controller State.';
+      if (!(Number.isInteger(+e.dwell) && +e.dwell >= 0 && +e.dwell <= 100)) return 'Continuous Task Dwell Time: 0 to 100 milliseconds.';
+      if (!(Number.isInteger(+e.psave) && +e.psave >= 1 && +e.psave <= 1440)) return 'Periodic Save Interval: 1 to 1440 minutes.';
+      e.dwell = +e.dwell; e.psave = +e.psave; e.cpu = Math.max(0, Math.floor(+e.cpu || 0)); e.psaveOn = !!e.psaveOn; e.linx = e.linx !== false;
+      this.emu = e; this.period = Math.max(1, e.dwell);
+      this.emit('config');
+      return '';
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -829,6 +899,8 @@
       if (m === this.mode) return;
       const was = RUN(this.mode);
       this.mode = m;
+      if (!was && RUN(m)) this.runAt = this.clock;
+      if (!RUN(m)) this.bp = null;
       if (!was && RUN(m) && this.M) this.prescan();
       this.emit('mode');
     }
@@ -913,7 +985,7 @@
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project); this.dlAt = Date.now();
-      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
+      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear(); this.bp = null;
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
       this.emit('download');
@@ -935,8 +1007,9 @@
       on = !!on;
       if (on === this.powered) return;
       if (!on) { this.wasRun = RUN(this.mode) && !this.fault; this.powered = false; this.emit('power'); return; }
-      this.powered = true; this.fault = null; this.acc = 0; this.first = true;
-      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M ? 'remrun' : 'remprog';
+      this.powered = true; this.fault = null; this.acc = 0; this.first = true; this.bp = null;
+      // Startup Mode Remote Program: in REM the controller always starts in Remote Program
+      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M && this.emu.startup !== 'remprog' ? 'remrun' : 'remprog';
       this.mode = to;
       if (RUN(to) && this.M) this.prescan();
       this.emit('power'); this.emit('mode');
@@ -945,6 +1018,8 @@
        values of the tags that keep their name and type stay; new tags start from their start value. */
     edit(project) {
       if (!this.M) return { ok: false, errors: [], warnings: [], lines: ['The controller is empty: Download first.'] };
+      // LGEM5K-GR016M: while a breakpoint is triggered the project is not editable
+      if (this.bp) return { ok: false, errors: [], warnings: [], lines: ['Failed to accept the edits: the controller is not in the correct mode (a breakpoint is triggered; acknowledge it to continue).'] };
       const p = JSON.parse(JSON.stringify(project)), kept = [];
       const keep = (list, prog) => (list || []).forEach(t => {
         if (t.alias) return;
@@ -983,7 +1058,8 @@
       if (!this.M) return;
       this.dt = Math.round(dt);
       this.inputs();
-      if (!this.running) return;
+      if (!this.running || this.bp) return;
+      this.clock += this.dt;
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
@@ -992,8 +1068,9 @@
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
       for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
       } catch (e) {
-        if (!(e instanceof Fault)) throw e;
-        this.majorFault(e.type, e.code, e.message);
+        if (e instanceof Halt) { this.d = 0; this.mcr = false; }
+        else if (!(e instanceof Fault)) throw e;
+        else this.majorFault(e.type, e.code, e.message);
       }
       this.S.FS = 0;
       this.first = false;
@@ -1011,7 +1088,7 @@
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
       while (this.acc >= this.period) {
-        if (this.single && this.held) { this.acc = 0; break; }
+        if ((this.single && this.held) || this.bp) { this.acc = 0; break; }
         this.acc -= this.period; this.scan(this.period); n++;
         if (this.single && this.running) { this.held = true; this.acc = 0; this.emit('single'); }
       }
@@ -1190,6 +1267,7 @@
         case 'RET': if (p) this.ret = true; e.v = p; return p;
         case 'JMP': if (p) this.jmp = x[0].label; e.v = p; return p;
         case 'TND': if (p) this.tnd = true; e.v = p; return p;
+        case 'BPT': case 'TPT': if (p) this.trace(e); e.v = p; return p;
         case 'MCR': if (!p) this.mcr = !this.mcr; e.v = p; return p;
         case 'AFI': e.v = false; return false;
         default: e.v = p; return p;   // LBL, SBR, NOP
@@ -1317,6 +1395,26 @@
     }
     /* ACC = ACC + (now - last scan), from the scan after the timer is enabled. Setting DN pauses a TON / RTO, clearing
        it pauses a TOF (reference help). */
+    /* a true BPT / TPT: one trace entry (its values in the Format), into the trace of that title; a BPT then stops the
+       program (LGEM5K-GR016M chapter 9). Ignore If No Value Changed skips an entry whose values did not change. */
+    trace(e) {
+      const x = e.x, vals = x.slice(1).map(r => r.get());
+      let fmt = x[0].fmt;
+      if (fmt == null) { try { const o = x[0].obj(); fmt = String.fromCharCode(...(o.DATA || []).slice(0, o.LEN).map(c => c & 255)); } catch (err) { fmt = ''; } }
+      const f = traceFmt(fmt, vals), title = (e.t === 'BPT' ? 'B:' : 'T:') + f.head;
+      let tr = this.traces.get(title);
+      if (!tr) { tr = { kind: e.t, head: f.head || (e.t === 'BPT' ? 'Breakpoint' : 'Tracepoint'), slot: this.slot, tags: e.a.slice(1), list: [], last: null, lastAt: null, n: 0 }; this.traces.set(title, tr); }
+      const key = JSON.stringify(vals);
+      if (!(this.tcfg.ignore && tr.last === key)) {
+        const at = this.clock - this.runAt, ts = this.tcfg.ts, t = ts === 'Absolute' ? at : ts === 'Delta' ? (tr.lastAt == null ? 0 : at - tr.lastAt) : null;
+        tr.list.push({ t, ts, text: f.text, vals, at }); if (tr.list.length > 500) tr.list.shift();
+        tr.last = key; tr.lastAt = at; tr.n++; this.tseq = (this.tseq || 0) + 1;
+        this.emit('trace');
+      }
+      if (e.t === 'BPT') { this.bp = { title, head: tr.head, text: f.text, tags: e.a.slice(1), vals, at: Date.now() }; this.emit('breakpoint'); throw new Halt(); }
+    }
+    /* acknowledging the breakpoint prompt: the program runs on (and stops again if the condition is still true) */
+    resume() { if (!this.bp) return false; this.bp = null; this.emit('mode'); return true; }
     timer(t, s, p) {
       const dt = this.dt;
       if (p && (s.PRE < 0 || s.ACC < 0)) throw new Fault(4, 34, `Timer ${t}: a negative .PRE or .ACC`);
@@ -1475,7 +1573,7 @@
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
      module fault when the slot is empty (16#0204) or holds another module (16#0116). An output card follows the
      controller that owns it: the first one, by slot, whose project configures it. */
-  const CPU = 'PLC-CPU';
+  const CPU = 'PLC-CPU', TCFG0 = JSON.stringify(new Controller().tcfg);
   class Chassis {
     constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; this.kept = new Map(); }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
@@ -1497,7 +1595,7 @@
        configuration): a controller created later in that slot can use it, and load the saved controller image. */
     remove(slot, keep) {
       const m = this.mods.get(slot);
-      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
+      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, emu: m.ctl.emu, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
       const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok;
     }
     /* a controller created in a slot whose configuration was kept: use it (else defaults, the name stays), and load
@@ -1507,7 +1605,7 @@
       if (!k || !m || !m.ctl) return false;
       this.kept.delete(slot);
       m.name = k.name;
-      if (useConfig) this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot });
+      if (useConfig) { this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot }); if (k.emu) m.ctl.setEmu(k.emu); }
       if (loadImage && k.project) { const key = m.ctl.key; m.ctl.key = 'REM'; m.ctl.download(k.project); if (k.at) m.ctl.dlAt = k.at; m.ctl.key = key; if (key === 'PROG') m.ctl.go('prog'); }
       this.emit('controller');
       return true;
@@ -1569,7 +1667,8 @@
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
         ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
-        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })),
+        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
+        tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
     }
     static from(o) {
@@ -1587,6 +1686,8 @@
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
           if (x.sot != null) m.ctl.setSpeed(x.sot);
+          if (x.tcfg) Object.assign(m.ctl.tcfg, x.tcfg);
+          if (x.emu) m.ctl.setEmu(x.emu);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }
@@ -1601,7 +1702,7 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN, traceFmt });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

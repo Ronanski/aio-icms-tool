@@ -124,6 +124,13 @@
     AFI: { ops: [], desc: 'Always false. Use it to disable a rung while testing.', exec: [['Prescan', RCO_F], ['Rung-condition-in is false', RCO_F], ['Rung-condition-in is true', RCO_F], ['Postscan', RCO_F]], flags: NOF, faults: 'None.' },
     NOP: { ops: [], desc: 'No operation. A placeholder that passes the rung condition.', exec: IN('The rung-condition-out is set to true.'), flags: NOF, faults: 'None.' },
     TND: { ops: [], desc: 'Ends the current scan at this point. The rungs after it are not scanned. Use it for testing.', exec: ACT('The scan of the routine ends here.'), flags: NOF, faults: 'None.' },
+    // Logix Emulate only (LGEM5K-GR016M chapter 9): not supported by a physical Logix 5000 controller
+    BPT: { ops: ['heading:(text)%(type): the text before the colon is the title of the trace window; one % type (%d %o %x %X %e %E %f %g %G) for each traced tag. 82 characters at most.', 'A BOOL, SINT, INT, DINT or REAL tag (or a member) to trace. Structures are not traceable.'],
+      desc: 'Breakpoint (Logix Emulate only). When the rung is true, the program stops at the BPT and a prompt shows the traced values; acknowledging it lets the program run on. While it is triggered the project is not editable. A trace window lists each time it triggered.',
+      exec: ACT('A trace entry is written and the program execution stops until the breakpoint is acknowledged.'), flags: NOF, faults: 'None. Remove the BPT before the project goes to a physical controller.' },
+    TPT: { ops: ['heading:(text)%(type): the text before the colon is the title of the trace window; one % type for each traced tag. 82 characters at most.', 'A BOOL, SINT, INT, DINT or REAL tag (or a member) to trace. Structures are not traceable.'],
+      desc: 'Tracepoint (Logix Emulate only). Each scan the rung is true, a trace entry with the values of the traced tags is written to its trace window (and to the trace log file when Log new traces to disk is set in Configure Emulation).',
+      exec: ACT('A trace entry is written.'), flags: NOF, faults: 'None. Remove the TPT before the project goes to a physical controller.' },
   };
   // the operand types and formats, by kind of operand
   const KIND = {
@@ -134,6 +141,7 @@
     control: ['CONTROL', 'tag'], darr: ['DINT', 'array tag'],
     ddest: ['DINT', 'tag'],
     fsrc: ['SINT, INT, DINT, REAL, structure', 'immediate or tag'], farr: ['SINT, INT, DINT, REAL, structure', 'array tag'], fdst: ['SINT, INT, DINT, REAL, structure', 'tag'],
+    fmt: ['STRING', "quoted string 'heading:text %d'"], trace: ['BOOL, SINT, INT, DINT, REAL', 'tag'],
     routine: ['ROUTINE', 'name'], label: ['LABEL', 'name'], order: ['keyword', 'REVERSE, WORD, HIGH/LOW'],
   };
   const G = window.MTPS || (window.MTPS = {});
