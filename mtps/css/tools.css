@@ -99,3 +99,14 @@ body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
 .rl.rl-tile:has(.rldgo) .rlchild { margin-right: calc(50% + 4px); }
 .phone .rl.rl-cas .rldgo, .phone .rl.rl-tile .rldgo { top: var(--rlmbh, 32px); left: 0; padding: 0; place-items: stretch; }
 .phone .rl.rl-tile:has(.rldgo) .rlchild { margin-right: 0; }
+/* RSLinx Classic: Communications > Configure Shortcuts */
+.rlbox.rlshort { width: min(760px, 100%); }
+.rlscw { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.rlscw fieldset { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rlscw .errtx { grid-column: 1 / -1; }
+.rlscl, .rlsct { min-height: 160px; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
+.rlscl .nd, .rlsct .nd { cursor: pointer; }
+.rlscb { display: flex; gap: 6px; flex-wrap: wrap; }
+.rlscp { min-height: 1.4em; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); word-break: break-all; }
+.phone .rlbox.rlshort { height: 100%; }
+.phone .rlscw { grid-template-columns: 1fr; overflow: auto; }

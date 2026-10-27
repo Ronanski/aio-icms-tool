@@ -467,5 +467,43 @@ module.exports = async function w3a({ browser, URL, check }) {
     }
     check(`${n}: no JS errors (RSLinx Options, Help, Window)`, !T.errs.length, T.errs.join(' | '));
   }
+  /* ---------- 10. RSLinx Classic: Communications > Configure Shortcuts ---------- */
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    await rlOpen(T);
+    await rlMenu(T, 'Communications', 'shortcuts');
+    check(`${n}: Configure Shortcuts opens Configure Shortcuts to Remote Networks`, (await T.text('#layer .rlshort .bh')) === 'Configure Shortcuts to Remote Networks');
+    check(`${n}: no shortcuts yet; Delete and Apply greyed`, /No shortcuts/.test(await T.text('#layer .rlscl')) && (await T.pg.$eval('#layer [data-rldx="scdel"]', b => b.disabled)) && (await T.pg.$eval('#layer [data-rldx="scapply"]', b => b.disabled)));
+    await T.hit('#layer [data-rldx="scnew"]');
+    await T.hit('#layer [data-rldx="scapply"]');
+    check(`${n}: Apply without a name is refused`, /name/.test(await T.text('#layer .rlshort #rlerr')));
+    await T.pg.fill('#layer #rlscn', 'LINE_1');
+    await T.hit('#layer [data-rldx="scapply"]');
+    check(`${n}: Apply without a network is refused`, /Pick the network/.test(await T.text('#layer .rlshort #rlerr')));
+    const key = await T.pg.$eval('#layer [data-rlsp^="d:"]', x => x.dataset.rlsp);
+    await T.hit(`#layer [data-rlsp="${key}"]`);
+    const path = await T.text('#layer #rlscp');
+    check(`${n}: picking a network shows the path in Shortcut points to this network or chassis`, path === key.slice(2), path);
+    check(`${n}: the typed name is kept while picking`, (await T.pg.$eval('#layer #rlscn', i => i.value)) === 'LINE_1');
+    await T.hit('#layer [data-rldx="scapply"]');
+    check(`${n}: Apply saves the shortcut`, (await T.pg.$$eval('#layer [data-rlsc]', x => x.map(y => y.dataset.rlsc))).join() === 'LINE_1' && (await T.ev(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /rlshort/.test(k))) || '[]').length)) === 1);
+    await T.hit('#layer [data-rldx="scnew"]'); await T.pg.fill('#layer #rlscn', 'line_1'); await T.hit(`#layer [data-rlsp="${key}"]`); await T.hit('#layer [data-rldx="scapply"]');
+    check(`${n}: a second shortcut with the same name is refused`, /already exists/.test(await T.text('#layer .rlshort #rlerr')));
+    if (n === 'desktop') await T.shot('rslinx-shortcuts');
+    await T.hit('#layer .rlshort [data-rlpx="cancel"]');
+    check(`${n}: the shortcut shows under the workstation in RSWho`, !!(await T.pg.$('#layer #rltree [data-rln="sc:LINE_1"]')));
+    await T.hit('#layer #rltree [data-rln="sc:LINE_1"]');
+    const tiles = await T.pg.$$eval('#layer #rlpane [data-rlk]', x => x.map(y => y.dataset.rlk));
+    check(`${n}: the shortcut opens what that network holds`, tiles.length > 0 && tiles.every(k => k.startsWith(key + '/')), tiles.join());
+    // Delete
+    await rlMenu(T, 'Communications', 'shortcuts');
+    await T.hit('#layer [data-rlsc="LINE_1"]');
+    check(`${n}: picking a shortcut shows its name and path`, (await T.pg.$eval('#layer #rlscn', i => i.value)) === 'LINE_1' && (await T.text('#layer #rlscp')) === path);
+    await T.hit('#layer [data-rldx="scdel"]');
+    check(`${n}: Delete removes the shortcut`, /No shortcuts/.test(await T.text('#layer .rlscl')));
+    await T.hit('#layer .rlshort [data-rlpx="cancel"]');
+    check(`${n}: … and RSWho no longer shows it`, !(await T.pg.$('#layer #rltree [data-rln="sc:LINE_1"]')));
+    check(`${n}: no JS errors (Configure Shortcuts)`, !T.errs.length, T.errs.join(' | '));
+  }
   for (const T of opened) await T.cx.close();
 };

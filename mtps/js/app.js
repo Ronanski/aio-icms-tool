@@ -3974,7 +3974,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   const RLMENUS = [['File', [['Open Project…', 'na:open'], ['Select Default Project…', 'na:defproj'], ['Compact Harmony…', 'na:harmony'], '-', ['Exit', 'exit']]],
     ['Edit', [['Copy DDE/OPC Link to the Clipboard', 'na:copylink']]],
     ['View', [['RSWho', 'rswho'], ['Event Log…', 'evlog'], '-', ['Options…', 'opts']]],
-    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…', 'na:shortcuts'], ['Configure Client Application(s)…', 'na:clients'], ['Configure CIP Options…', 'na:cipopts'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…', 'shortcuts'], ['Configure Client Application(s)…', 'na:clients'], ['Configure CIP Options…', 'na:cipopts'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag']]],
     ['Station', [['Diagnostics', 'stdiag', () => !!rlSelDev()], '-', ['Freeze', 'frz', () => !!(rlS.modal && rlS.modal.st && !rlS.modal.snap)], ['Unfreeze', 'unfrz', () => !!(rlS.modal && rlS.modal.st && rlS.modal.snap)], ['Reset Diagnostic Counters', 'rst', () => !!(rlS.modal && rlS.modal.st)], '-',
       ['Data Monitor', 'dmon', () => !!rlSelCpu()], ['Change Mode…', 'chmode'], ['Set Time…', 'settime', () => !!rlSelCpu()]]],
     ['DDE/OPC', [['Topic Configuration…', 'na:dde.1'], ['Alias Topic Configuration…', 'na:dde.2'], ['Active Topics/Items…', 'na:dde.3'], ['Communication Events…', 'na:dde.4'], ['Optimized Packets…', 'na:dde.5'], ['Server Diagnostics…', 'na:dde.6'], ['DDE Client Diagnostics…', 'na:dde.7'], ['OPC Group Diagnostics…', 'na:dde.8'], '-', ['Update ControlLogix Tag Info', 'na:dde.9'], '-', ['Options…', 'na:dde.10']]],
@@ -3986,7 +3986,6 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     defproj: 'Select Default Project picks the RSLinx Classic project loaded at startup. In emulation the drivers are kept with MT PLC Studio.',
     harmony: 'Compact Harmony compacts the Harmony files of the RSWho browse. The emulated browse keeps no Harmony files.',
     copylink: 'Copy DDE/OPC Link to the Clipboard copies a link for a DDE/OPC client (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation.',
-    shortcuts: 'Configure Shortcuts names the paths that DDE/OPC topics and FactoryTalk applications use. There are no DDE/OPC clients in emulation: the project path is set in Who Active.',
     clients: 'Configure Client Application(s) sets up the client programs of RSLinx Classic on this computer. They are not part of the emulation.',
     cipopts: 'Configure CIP Options sets the CIP connection options of RSLinx Classic. The emulation uses fixed values.',
     dde: 'The DDE/OPC server of RSLinx Classic serves controller data to Windows programs (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation: use Data Monitor, or the Watch and Monitor Tags windows of the programming software.',
@@ -4011,7 +4010,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       ['qs1', 'Configure a driver (Step 1 of 4)', ['Communications > Configure Drivers. Pick the driver type in Available Driver Types and press Add New. Enter a name (15 characters maximum) and press OK. The driver starts; RSWho lists what it reaches.', 'Virtual Backplane reaches the controllers of the emulated chassis by slot; Emulate Ethernet reaches them by IP address.']],
       ['qs2', 'Configure a topic (Step 2 of 4)', null], ['qs3', 'Copy a link (Step 3 of 4)', null], ['qs4', 'Paste a link (Step 4 of 4)', null]]],
     ['How To...', [['drv', 'Use drivers and bridge devices', ['Configure Drivers lists the configured drivers with their status. Start and Stop run or stop a driver; Configure sets the slot of a Virtual Backplane driver; Delete removes it. Only one driver of each type can be configured.', 'Communications > Driver Diagnostics shows the counters of a driver; Station > Diagnostics those of the device picked in RSWho.']],
-      ['net', 'Set up networks', ['RSWho shows each running driver with the chassis and the devices it reaches. Right-click a device for Device Properties, Module Statistics, Station Diagnostics and Data Monitor.']],
+      ['net', 'Set up networks', ['RSWho shows each running driver with the chassis and the devices it reaches. Right-click a device for Device Properties, Module Statistics, Station Diagnostics and Data Monitor.', 'Network shortcuts: Communications > Configure Shortcuts. Press New, type a name (1 to 15 characters), pick the network or chassis in the RSWho tree of the dialog (the path shows in Shortcut points to this network or chassis) and press Apply. The shortcut shows under the workstation in RSWho and opens that network. To delete it, select it in the Shortcuts list and press Delete.']],
       ['install', 'Install and start RSLinx Classic', null], ['eds', 'Register EDS files of devices', null], ['fts', 'Secure RSLinx Classic with FactoryTalk Security', null]]],
     ['Troubleshooting', [['faq', 'Frequently asked questions (FAQ)', ['RSWho shows no devices: check that a driver is running (Communications > Configure Drivers) and that the emulated chassis is on.', 'A device has a red X: it does not answer. Power the controller on in the emulator, then Refresh.']],
       ['drverr', 'Driver configuration errors', ['A driver name is 1 to 15 characters: letters, digits, - and _, starting with a letter, and not the name of another driver.', 'A Virtual Backplane driver needs a free slot for its own card.']], ['ddeerr', 'DDE/OPC communication event errors', null]]],
@@ -4059,7 +4058,31 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       }));
       return { k, l: `${d.name}, Ethernet`, i: 'online', kids: ips };
     });
-    return { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
+    const root = { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
+    // the network shortcuts (Communications > Configure Shortcuts): one node each, while what it points to is there
+    rlShorts().forEach(x => { if (rlFind(root, x.key)) kids.push({ k: 'sc:' + x.name, l: `${x.name}, Shortcut`, i: 'net', sc: x.key, kids: [] }); });
+    return root;
+  }
+  /* Communications > Configure Shortcuts (RSLinx Classic 4.60 help: Configure Shortcuts to Remote Networks, Configure a
+     shortcut, Delete a shortcut): a name (1 to 15 characters) for a network or a chassis picked with RSWho; kept on
+     this device [{name, key}] */
+  const rlShorts = () => { const v = store.get('rlshort', []); return Array.isArray(v) ? v.filter(x => x && x.name && x.key) : []; };
+  const rlKeyPath = (root, key) => {
+    const walk = (n, acc) => { const a = acc.concat(n.k === 'ws' ? [] : [String(n.l).split(',')[0].trim()]); if (n.k === key) return a; for (const c of n.kids) { const r = walk(c, a); if (r) return r; } return null; };
+    const p = walk(root, []); return p ? (p.length ? p.join('\\') : 'Workstation') : '';
+  };
+  function rlShortHTML(md) {
+    const root = rlTree(), list = rlShorts();
+    const net = (n, d) => (n.m || n.sc ? '' : `<div class="nd${n.k === md.key ? ' on' : ''}" data-rlsp="${esc(n.k)}" style="padding-left:${6 + d * 16}px"><span class="tw"></span>${ic(n.i, 'i ti')}<span class="ell">${esc(n.l)}</span></div>${n.kids.map(c => net(c, d + 1)).join('')}`);
+    const edit = md.isNew || md.sel != null;
+    return `<div class="rlov rlov2"><div class="rlbox rlshort" role="dialog" aria-label="Configure Shortcuts to Remote Networks"><div class="bh">Configure Shortcuts to Remote Networks</div><div class="bb rlscw">
+      <fieldset><legend>Shortcuts</legend><div class="rlscl">${list.map(x => `<div class="nd${x.name === md.sel ? ' on' : ''}" data-rlsc="${esc(x.name)}">${ic('net', 'i ti')}<span class="ell">${esc(x.name)}</span></div>`).join('') || '<div class="nd dim">No shortcuts.</div>'}</div>
+        ${edit ? `<input class="inp mono" id="rlscn" value="${esc(md.name || '')}" maxlength="15" aria-label="Shortcut name" placeholder="Shortcut name" autocomplete="off" spellcheck="false">` : ''}
+        <div class="rlscb"><button class="btn" data-rldx="scnew">New</button><button class="btn" data-rldx="scdel"${md.sel != null ? '' : ' disabled'}>Delete</button><button class="btn" data-rldx="scapply"${edit ? '' : ' disabled'}>Apply</button></div></fieldset>
+      <fieldset><legend>RSWho</legend><div class="rltree tree rlsct">${net(root, 0)}</div>
+        <div class="muted" style="margin-top:6px">Shortcut points to this network or chassis:</div><div class="mono rlscp" id="rlscp">${esc(md.key ? rlKeyPath(root, md.key) : '')}</div></fieldset>
+      <div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
   }
   const rlFind = (n, k) => { if (n.k === k) return n; for (const c of n.kids) { const f = rlFind(c, k); if (f) return f; } return null; };
   const rlCount = n => 1 + n.kids.reduce((s, c) => s + rlCount(c), 0);
@@ -4080,7 +4103,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     return row(root, 0) + (root.kids.length ? '' : '<div class="nd dim" style="padding-left:38px">No driver is running: Communications &gt; Configure Drivers…</div>');
   }
   function rlPaneHTML(root) {
-    const n = rlFind(root, rlS.sel) || root;
+    let n = rlFind(root, rlS.sel) || root;
+    if (n.sc) n = rlFind(root, n.sc) || n;
     if (n.kids.length) return `<div class="rltiles">${n.kids.map(c => `<button class="rltile${c.dim ? ' dim' : ''}" data-rlk="${esc(c.k)}">${ic(c.i)}<span>${esc(c.l)}${c.dim ? ' · off' : ''}</span></button>`).join('')}</div>`;
     if (!n.m) return `<p class="help" style="padding:12px">${n.k === 'ws' ? 'No driver is running. Add one in Communications &gt; Configure Drivers…' : 'Nothing found on this node.'}</p>`;
     const m = n.m, c = m.ctl, kv = (a, b) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`;
@@ -4261,6 +4285,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
     if (md.k === 'help') return rlHelpHTML(md);
+    if (md.k === 'short') return rlShortHTML(md);
     const misc = rlMiscHTML(md); if (misc) return misc;
     if (md.k === 'dmon') return rlDmHTML(md);
     if (md.k === 'settime') return rlStHTML(md);
@@ -4358,6 +4383,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       }
       if (a === 'about' || a === 'evlog') { rlS.modal = { k: a }; draw(); return true; }
       if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb, o: rlOpts() }; draw(); return true; }
+      if (a === 'shortcuts') { rlS.modal = { k: 'short', sel: null, name: '', key: null }; draw(); return true; }
       if (a === 'help' || a.startsWith('help:')) { rlS.modal = { k: 'help', t: a.slice(5) || 'ov' }; draw(); return true; }
       /* Window: Cascade stacks the diagnostic window in front over RSWho with the RSWho title in view; Tile puts them
          side by side, both usable. Arrange Icons has no icons to arrange (no window is minimized here). */
@@ -4400,6 +4426,19 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
       if (a === 'rmok') { rlS.gone.add(md.key); if (rlS.sel === md.key) rlS.sel = 'ws'; rlS.modal = null; draw(); }
+      if (md.k === 'short') {
+        const i = box.querySelector('#rlscn'); if (i) md.name = i.value;
+        md.err = '';
+        if (a === 'scnew') { md.isNew = true; md.sel = null; md.name = ''; md.key = null; }
+        if (a === 'scdel' && md.sel != null) { store.set('rlshort', rlShorts().filter(x => x.name !== md.sel)); md.sel = null; md.isNew = false; md.name = ''; md.key = null; }
+        if (a === 'scapply') {
+          const v = String(md.name || '').trim(), list = rlShorts();
+          md.err = !v ? 'Type a name for the shortcut.' : v.length > 15 ? 'A shortcut name has 1 to 15 characters.' : list.some(x => x.name.toUpperCase() === v.toUpperCase() && x.name !== md.sel) ? `A shortcut named ${v} already exists.` : !md.key ? 'Pick the network or chassis in RSWho.' : '';
+          if (!md.err) { store.set('rlshort', list.filter(x => x.name !== md.sel).concat([{ name: v, key: md.key }])); md.sel = v; md.name = v; md.isNew = false; }
+        }
+        draw(); if (a === 'scnew') { const n = box.querySelector('#rlscn'); if (n) n.focus(); }
+        return;
+      }
       if (a === 'optok') {
         const o = md.o || rlOpts(), n = +o.every;
         const err = o.tofile && !String(o.file).trim() ? 'Enter the file for the communication errors.' : o.clean && !(Number.isInteger(n) && n > 0) ? 'Enter the cleanup interval as a whole number above 0.' : '';
@@ -4499,7 +4538,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const md = rlS.modal;
       // Close of a data table goes back to the data file list
       if (!ok && md.k === 'dmon' && md.file) { md.file = null; md.pp = null; md.gm = null; draw(); return; }
-      if (!ok || md.k === 'props' || md.k === 'help') { rlS.modal = null; draw(); return; }
+      if (!ok || md.k === 'props' || md.k === 'help' || md.k === 'short') { rlS.modal = null; draw(); return; }
       if (md.k === 'opts') { rlDx('optok'); return; }
       if (md.k === 'add') { addOk(); return; }
       if (md.k === 'mode') {
@@ -4567,6 +4606,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if ((x = t.closest('[data-rltab]')) && rlS.modal) { rlS.modal.tab = x.dataset.rltab; draw(); return; }
+      if ((x = t.closest('[data-rlsc]')) && rlS.modal && rlS.modal.k === 'short') { const md = rlS.modal, sc = rlShorts().find(y => y.name === x.dataset.rlsc); if (sc) { md.sel = sc.name; md.name = sc.name; md.key = sc.key; md.isNew = false; md.err = ''; } draw(); return; }
+      if ((x = t.closest('[data-rlsp]')) && rlS.modal && rlS.modal.k === 'short') { const md = rlS.modal, i = box.querySelector('#rlscn'); if (i) md.name = i.value; md.key = x.dataset.rlsp; if (md.sel == null && !md.isNew) md.isNew = true; draw(); return; }
       if ((x = t.closest('[data-rlht]')) && rlS.modal && rlS.modal.k === 'help') { rlS.modal.t = x.dataset.rlht; draw(); const h = box.querySelector('#rlhx'); if (h) h.scrollTop = 0; return; }
       // picking a driver marks its row in place (a redraw would split a double-click)
       if ((x = t.closest('[data-rldp]')) && rlS.modal) { rlS.modal.sel = x.dataset.rldp; box.querySelectorAll('[data-rldp]').forEach(r => r.classList.toggle('on', r === x)); const b = box.querySelector('[data-rldx="dpick"]'); if (b) b.disabled = false; return; }
