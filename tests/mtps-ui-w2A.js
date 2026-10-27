@@ -314,4 +314,42 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('phone (touch): tap P2, Go To opens its main routine', await pp.evaluate(() => MTPS.App.state.prog === 'P2' && MTPS.App.state.routine === 'Main2' && MTPS.App.state.area === 'ladder'));
     await pctx.close();
   }
+  if (want('opt')) {
+    console.log('Tools > Options (help v37: Workstation Options; Ladder Editor > Display preferences)');
+    await fresh(); await ev(() => { const A = MTPS.App, p = A.example(); p.tasks[0].programs[0].routines[0].desc = 'Motor start and stop'; A.openProject(p, true); A.render(); });
+    const lad = () => ev(() => { const s = document.querySelector('#ladwrap svg'); const n = c => s.querySelectorAll('text.' + c).length; return { rn: n('rn'), cm: s.querySelectorAll('text.cm:not(.rdsc)').length, ds: n('ds'), al: n('al'), rd: [...s.querySelectorAll('text.rdsc')].map(t => t.textContent).join(' ') }; });
+    const l0 = await lad();
+    check('by default: rung numbers, comments, operand descriptions and alias lines; no routine description', l0.rn === 6 && l0.cm >= 3 && l0.ds > 0 && l0.al > 0 && !l0.rd, JSON.stringify(l0));
+    await menu('Tools', 'Options…');
+    check('Options: Categories (Application, Ladder Editor, Display, Appearance), opens on Application', (await page.$$eval('#ocats .row', r => r.map(x => x.textContent))).join('|') === 'Application|Ladder Editor|Display|Appearance' && (await page.$eval('#ocats .row.on', r => r.textContent)) === 'Application' && await page.$eval('#ofc', x => x.offsetParent !== null));
+    check('buttons Cancel, Apply, OK and Reset Category', (await page.$$eval('#layer .df .btn', b => b.map(x => x.textContent))).join(',') === 'Cancel,Apply,OK' && (await page.$('#oreset')) !== null);
+    await page.click('#layer [data-ocat="ladv"]');
+    const lbl = await page.$$eval('[data-opg="ladv"] label, [data-opg="ladv"] .grp', l => l.map(x => x.textContent.trim()));
+    check('Ladder Editor > Display: Show Routine Description; Rung Display; Instruction Display', ['Show Routine Description', 'Rung Display', 'Show Rung Numbers', 'Show Rung Comments', 'Maximum Lines', 'Instruction Display', 'Show Main Operand Description', 'Show Tag Alias Information'].every(x => lbl.includes(x)), lbl.join('|'));
+    await page.click('#ornum'); await page.click('#orcm'); await page.click('#oodsc'); await page.click('#oali'); await page.click('#ordsc');
+    check('a changed category: a * after its name', (await page.$eval('#ocats .row.on', r => r.textContent)) === 'Display*');
+    await clickBtn('Apply'); await wait(150);
+    const l1 = await lad();
+    check('Apply: the dialog stays, the ladder has no rung numbers (only End), comments, descriptions or alias lines; the routine description on top', (await dlgTitle()) === 'Options' && l1.rn === 1 && l1.cm === 0 && l1.ds === 0 && l1.al === 0 && l1.rd === 'Motor start and stop' && (await page.$eval('#ocats .row.on', r => r.textContent)) === 'Display', JSON.stringify(l1));
+    await page.click('#oreset'); await wait(60);
+    check('Reset Category: the defaults of the page', await page.$eval('#ornum', c => c.checked) && await page.$eval('#orcm', c => c.checked) && !(await page.$eval('#ordsc', c => c.checked)));
+    await page.click('#orcm'); await page.fill('#oodl', '1'); await clickBtn('OK'); await wait(150);
+    const l2 = await lad(), pr = await ev(() => MTPS.App.state.prefs.lad);
+    check('OK: numbers back, comments still off, 1 description line; saved', l2.rn === 6 && l2.cm === 0 && l2.ds > 0 && !l2.rd && JSON.stringify(pr) === '{"cm":false,"descLines":1}', JSON.stringify([l2, pr]));
+    await menu('Tools', 'Options…'); await page.click('#layer [data-ocat="ladv"]');
+    check('the next time: the saved values', !(await page.$eval('#orcm', c => c.checked)) && (await page.$eval('#oodl', i => i.value)) === '1');
+    await page.click('#orcm'); await page.fill('#oodl', ''); await clickBtn('Cancel'); await wait(100);
+    check('Cancel keeps what was saved', (await lad()).cm === 0);
+    await ev(() => { MTPS.App.state.prefs.lad = {}; MTPS.App.render(); });
+    // tablet (touch): Show Rung Comments off from the More menu's Options
+    const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    const tp = await tctx.newPage();
+    await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await tp.waitForTimeout(150);
+    await tp.tap('[data-allmenu]'); await tp.waitForTimeout(150); await tp.tap('[data-fold="Tools"]'); await tp.waitForTimeout(150);
+    await pick('Options…', tp, true); await tp.waitForTimeout(150);
+    await tp.tap('#layer [data-ocat="ladv"]'); await tp.tap('#orcm'); await clickBtn('OK', tp, true); await tp.waitForTimeout(200);
+    check('tablet (touch): Show Rung Comments off hides the comments', await tp.evaluate(() => document.querySelectorAll('#ladwrap svg text.cm').length === 0 && MTPS.App.state.prefs.lad.cm === false));
+    await tctx.close();
+  }
 };

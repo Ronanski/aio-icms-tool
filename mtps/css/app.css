@@ -956,6 +956,14 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .bltree .sub { color: var(--muted); font-weight: 400; }
 .blx { display: inline-block; width: 16px; text-align: center; color: var(--muted); }
 .tab .blx, .phone .blx { width: 28px; }
+/* Tools > Options: the Categories list and the page */
+.optd { display: grid; grid-template-columns: 170px 1fr; gap: 12px; }
+.optd > div > label { display: block; margin-bottom: 4px; }
+.optd .gwl { min-height: 200px; }
+.phone .optd { grid-template-columns: 1fr; }
+.phone .optd .gwl { min-height: 0; }
+.optpg .brow { justify-content: flex-start; }
+.optpg .brow .btn { flex: 0 0 auto; width: auto; }
 .bldesc { border: 1px solid var(--border-strong); background: var(--surface); min-height: 48px; padding: 6px 8px; white-space: pre-wrap; }
 .ale1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .ale1 .inp { flex: 1; min-width: 120px; width: auto; }

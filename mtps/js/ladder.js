@@ -74,6 +74,8 @@
     const LM = Math.round(Math.max(30, CW * 0.36)), cols = Math.max(3, Math.floor((o.W - LM - 8) / CW)), RR = LM + cols * CW;
     const fName = `${S + 1}px Arial`, fDesc = `${S}px Arial`, descLines = o.descLines || 2;
     let y = 8, out = '', taps = '';
+    // the routine's description above the first rung (Options: Show Routine Description)
+    if (o.rdesc) { wrapWords(o.rdesc, RR - LM - 16, fDesc, 4).forEach(t => { out += `<text class="cm rdsc" x="${LM + 8}" y="${y + LH}">${esc(t)}</text>`; y += LH + 2; }); y += 8; }
     const parts = [];   // each rung's drawing, in a <g data-rg> of its own: a redraw can replace only the rungs that changed
     const nodes = [], dashes = [], dk = nkey(o.drop);
     const node = (n, x, y) => { if (o.nodeOk && o.nodeOk(n)) nodes.push(Object.assign({}, n, { x, y })); };
@@ -81,14 +83,15 @@
     const head = e => {
       if (!e.a || !e.a.length) return { lines: [], h: 4 };
       const a = e.a[0], lines = [], tag = tagOf(a);
-      const dsc = o.desc ? o.desc(a) : tag && tag.desc;
+      // noDesc, noAlias: Options > Ladder Editor > Display (Show Main Operand Description, Show Tag Alias Information)
+      const dsc = o.noDesc ? '' : o.desc ? o.desc(a) : tag && tag.desc;
       if (isBox(e)) {
         if (dsc) wrapWords(dsc, 2 * CW - 16, fDesc, descLines).forEach(t => lines.push(['ds', t]));
         return lines.length ? { lines, h: lines.length * LH + 12 } : { lines: [], h: 4 };
       }
       if (dsc) wrapWords(dsc, CW - 8, fDesc, descLines).forEach(t => lines.push(['ds', t]));
       wrapName(a, CW - 8, fName, 2).forEach(t => lines.push(['nm', t]));
-      if (tag && tag.alias && !/[.[]/.test(a)) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
+      if (tag && tag.alias && !o.noAlias && !/[.[]/.test(a)) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
       return { lines, h: lines.length * LH + 6 };
     };
     const opsOf = e => {
@@ -135,8 +138,8 @@
       let used = 0;
       ins.forEach(e => { const w = widthOf(e); if (used + w > cols && lines[lines.length - 1].length) { lines.push([]); used = 0; } lines[lines.length - 1].push(e); used += w; });
       if (used + outW > cols && lines[lines.length - 1].length) lines.push([]);
-      if (R.c) {
-        const cl = wrapWords(R.c, RR - LM - 16, `${S + 1}px Arial`, 4);
+      if (R.c && !o.noCm) {
+        const cl = wrapWords(R.c, RR - LM - 16, `${S + 1}px Arial`, o.cmLines || 4);
         cl.forEach((t, i) => { out += `<text class="cm" x="${(LM + RR) / 2}" y="${y + LH + i * (LH + 2)}" text-anchor="middle">${esc(t)}</text>`; });
         y += cl.length * (LH + 2) + 6;
       }
@@ -250,7 +253,7 @@
       if (R.dash) dashes.push([rungTop - 4, rungBot]);
       const selR = o.selRung === ri || !!o.selAll;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
-      out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
+      if (!o.noNums) out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
       // online edit mark (Studio 5000): i the edited copy (e while it has errors), r its original; I and R once
       // accepted; D a deleted rung

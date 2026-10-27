@@ -1268,13 +1268,19 @@
     });
   }
   const CELL = { desktop: 104, tablet: 112, phone: 80 };
+  /* Tools > Options > Ladder Editor > Display (help v37): Show Routine Description, Rung Display (Show Rung Numbers,
+     Show Rung Comments, Maximum Lines) and Instruction Display (Show Main Operand Description, Maximum Lines, Show Tag
+     Alias Information). Saved in prefs.lad; a missing key is the default. */
+  const LADDEF = { rdesc: false, nums: true, cm: true, cmLines: 4, desc: true, descLines: 0, alias: true };
+  const ladPref = k => { const d = S.prefs.lad || {}; return k in d ? d[k] : LADDEF[k]; };
+  const ladShow = () => ({ noNums: !ladPref('nums'), noCm: !ladPref('cm'), cmLines: ladPref('cmLines'), noDesc: !ladPref('desc'), noAlias: !ladPref('alias'), rdesc: ladPref('rdesc') ? curRoutine().desc || '' : '' });
   function renderLadder(drop, press) {
     if (drop === undefined && S.dragDrop) drop = S.dragDrop;
     const w = $('#ladwrap');
     if (!w) return;
     const z = S.prefs.zoom;
     const res = L.render(ladderRungs(), {
-      W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
+      W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: ladPref('descLines') || (S.layout === 'phone' ? 1 : 2), ...ladShow(),
       live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
       sel: S.sel, selRung: S.sel || insAllOn() ? null : S.selRung, selAll: selAllOn(), selIns: insAllOn() ? S.selIns.ri : null, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
@@ -3142,27 +3148,72 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     dialog({ title: 'About MT PLC Studio', body: `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
       <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`, buttons: [{ l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
   }
-  function options() {
+  /* Tools > Options, as the Workstation Options dialog (help v37): the Categories list on the left (a changed
+     category gets a * after its name), the page of the category, Reset Category; OK, Cancel, Apply. The pages are the
+     options this app has: Application, Ladder Editor, Ladder Editor > Display, and the app's own Appearance. */
+  const OCATS = [['app', 'Application', 0], ['ladd', 'Ladder Editor', 0], ['ladv', 'Display', 1], ['look', 'Appearance', 0]];
+  function options(cat) {
     const P = S.prefs, was = [P.theme, P.mode], back = () => { [P.theme, P.mode] = was; applyTheme(); };
-    dialog({ title: 'Options', size: 'md',
-      body: `<div class="frow"><label>Layout</label><select class="inp" id="ol">${[['auto', 'Automatic (follows the window)'], ['desktop', 'Desktop'], ['tablet', 'Tablet'], ['phone', 'Phone']].map(([v, t]) => `<option value="${v}"${P.layout === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+    let on = OCATS.some(c => c[0] === cat) ? cat : 'app';
+    const lp = ladPref, ck = (id, v, t) => `<label class="ockb"><input type="checkbox" id="${id}"${v ? ' checked' : ''}> ${t}</label>`;
+    const num = (id, v, a, b, t, ph) => `<div class="frow"><label for="${id}">${t}</label><input class="inp" id="${id}" type="number" min="${a}" max="${b}" value="${v || ''}"${ph ? ` placeholder="${ph}"` : ''}></div>`;
+    const pages = {
+      app: `<div class="grp">Application</div>
+        <div class="frow"><label>Communications</label><label class="rlck"><input type="checkbox" id="ofc"${P.fastComm ? ' checked' : ''}>Fast communications (no connect, browse or transfer delays)</label></div>`,
+      ladd: `<div class="grp">Ladder Editor</div>
+        <label class="ockb"><input type="checkbox" id="oqk"${P.quickKeys ? ' checked' : ''}> Enable Quick Keys</label>
+        <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>`,
+      ladv: `<div class="grp">Ladder Editor &gt; Display</div>
+        ${ck('ordsc', lp('rdesc'), 'Show Routine Description')}
+        <div class="grp">Rung Display</div>${ck('ornum', lp('nums'), 'Show Rung Numbers')}${ck('orcm', lp('cm'), 'Show Rung Comments')}${num('orcl', lp('cmLines'), 1, 1000, 'Maximum Lines')}
+        <div class="grp">Instruction Display</div>${ck('oodsc', lp('desc'), 'Show Main Operand Description')}${num('oodl', lp('descLines'), 1, 20, 'Maximum Lines', 'Automatic (2, 1 on a phone)')}${ck('oali', lp('alias'), 'Show Tag Alias Information')}`,
+      look: `<div class="grp">Appearance</div>
+        <div class="frow"><label>Layout</label><select class="inp" id="ol">${[['auto', 'Automatic (follows the window)'], ['desktop', 'Desktop'], ['tablet', 'Tablet'], ['phone', 'Phone']].map(([v, t]) => `<option value="${v}"${P.layout === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="frow"><label>Theme</label><div class="thpick" role="radiogroup" aria-label="Theme">${THEMES.map(([v, n, d, sh, bg, cv, on]) => `<button type="button" class="thc" role="radio" data-th="${v}" aria-checked="${P.theme === v}"><span class="tmini" style="background:${bg};--mon:${on}"><i style="background:${sh}"></i><span><u style="background:${sh}"></u><u style="background:${cv}"></u></span></span><b>${n}</b><small>${d}</small></button>`).join('')}</div></div>
         <div class="frow"><label>Mode</label><div class="thmode" role="group" aria-label="Mode">${[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Follow the device']].map(([v, t]) => `<button type="button" data-thm="${v}" aria-pressed="${P.mode === v}">${t}</button>`).join('')}</div></div>
         <div class="frow"><label>Density</label><select class="inp" id="od">${[['auto', 'Automatic (compact with a mouse, larger on touch)'], ['compact', 'Compact'], ['touch', 'Touch (larger)']].map(([v, t]) => `<option value="${v}"${P.density === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>
-        <div class="grp">Ladder Editor</div>
-        <label class="ockb"><input type="checkbox" id="oqk"${P.quickKeys ? ' checked' : ''}> Enable Quick Keys</label>
-        <p class="help">On: one key inserts an instruction after the selection: ${Object.entries(QUICK).map(([q, m]) => `<b class="mono">${q.toUpperCase()}</b> ${m === 'BR' ? 'Branch' : m}`).join(', ')}. Off (the default): typing edits the selected operand; Alt+Insert opens Add Ladder Element.</p>
-        <div class="frow"><label>Communications</label><label class="rlck"><input type="checkbox" id="ofc"${P.fastComm ? ' checked' : ''}>Fast communications (no connect, browse or transfer delays)</label></div>`,
+        <div class="frow"><label>Ladder zoom</label><input class="inp" id="oz" type="range" min="60" max="200" step="5" value="${Math.round(P.zoom * 100)}"></div>`,
+    };
+    const dirty = new Set();
+    const cats = () => OCATS.map(([k, t, lv]) => `<div class="row${k === on ? ' on' : ''}" data-ocat="${k}" style="padding-left:${8 + lv * 16}px">${t}${dirty.has(k) ? '*' : ''}</div>`).join('');
+    // the defaults of a category (Reset Category)
+    const reset = el => {
+      const q = x => el.querySelector(x);
+      if (on === 'app') q('#ofc').checked = false;
+      if (on === 'ladd') q('#oqk').checked = false;
+      if (on === 'ladv') { q('#ordsc').checked = LADDEF.rdesc; q('#ornum').checked = LADDEF.nums; q('#orcm').checked = LADDEF.cm; q('#orcl').value = LADDEF.cmLines; q('#oodsc').checked = LADDEF.desc; q('#oodl').value = ''; q('#oali').checked = LADDEF.alias; }
+      if (on === 'look') { q('#ol').value = 'auto'; q('#od').value = 'auto'; q('#oz').value = 100; P.theme = 'classic'; P.mode = 'auto'; applyTheme(); el.querySelectorAll('[data-th]').forEach(b => b.setAttribute('aria-checked', b.dataset.th === 'classic')); el.querySelectorAll('[data-thm]').forEach(b => b.setAttribute('aria-pressed', b.dataset.thm === 'auto')); }
+      dirty.add(on); el.querySelector('#ocats').innerHTML = cats();
+    };
+    const clamp = (v, a, b) => { const n = parseInt(v, 10); return n >= a ? Math.min(b, n) : 0; };
+    const save = el => {
+      const q = x => el.querySelector(x);
+      P.quickKeys = q('#oqk').checked; P.fastComm = q('#ofc').checked; P.layout = q('#ol').value; P.density = q('#od').value; P.zoom = +q('#oz').value / 100;
+      const lad = { rdesc: q('#ordsc').checked, nums: q('#ornum').checked, cm: q('#orcm').checked, cmLines: clamp(q('#orcl').value, 1, 1000) || LADDEF.cmLines, desc: q('#oodsc').checked, descLines: clamp(q('#oodl').value, 1, 20), alias: q('#oali').checked };
+      P.lad = {}; Object.keys(lad).forEach(k => { if (lad[k] !== LADDEF[k]) P.lad[k] = lad[k]; });
+      savePrefs(); applyTheme(); was[0] = P.theme; was[1] = P.mode;
+      dirty.clear(); el.querySelector('#ocats').innerHTML = cats();
+      setTimeout(render, 0);
+    };
+    dialog({ title: 'Options', size: 'lg',
+      body: `<div class="optd"><div><label>Categories:</label><div class="gwl" id="ocats">${cats()}</div></div>
+        <div class="optpg">${OCATS.map(([k]) => `<div data-opg="${k}"${k === on ? '' : ' hidden'}>${pages[k]}</div>`).join('')}
+        <div class="brow"><button type="button" class="btn" id="oreset">Reset Category</button></div></div></div>`,
       // a theme shows at once; Cancel or Close puts the one before back
-      mount: el => el.addEventListener('click', ev => {
-        const c = ev.target.closest('[data-th]'), m = ev.target.closest('[data-thm]');
-        if (c) { P.theme = c.dataset.th; el.querySelectorAll('[data-th]').forEach(b => b.setAttribute('aria-checked', b === c)); }
-        if (m) { P.mode = m.dataset.thm; el.querySelectorAll('[data-thm]').forEach(b => b.setAttribute('aria-pressed', b === m)); }
-        if (c || m) applyTheme();
-      }),
+      mount: el => {
+        el.addEventListener('click', ev => {
+          const c = ev.target.closest('[data-th]'), m = ev.target.closest('[data-thm]'), g = ev.target.closest('[data-ocat]');
+          if (g) { on = g.dataset.ocat; el.querySelectorAll('[data-opg]').forEach(x => { x.hidden = x.dataset.opg !== on; }); el.querySelector('#ocats').innerHTML = cats(); return; }
+          if (ev.target.closest('#oreset')) { reset(el); return; }
+          if (c) { P.theme = c.dataset.th; el.querySelectorAll('[data-th]').forEach(b => b.setAttribute('aria-checked', b === c)); }
+          if (m) { P.mode = m.dataset.thm; el.querySelectorAll('[data-thm]').forEach(b => b.setAttribute('aria-pressed', b === m)); }
+          if (c || m) { applyTheme(); if (!dirty.has('look')) { dirty.add('look'); el.querySelector('#ocats').innerHTML = cats(); } }
+        });
+        const mark = ev => { const pg = ev.target.closest('[data-opg]'); if (pg && !dirty.has(pg.dataset.opg)) { dirty.add(pg.dataset.opg); el.querySelector('#ocats').innerHTML = cats(); } };
+        el.addEventListener('change', mark); el.addEventListener('input', mark);
+      },
       onClose: back,
-      buttons: [{ l: 'Cancel', run: back }, { l: 'OK', pri: true, run: el => { P.quickKeys = el.querySelector('#oqk').checked; P.fastComm = el.querySelector('#ofc').checked; P.layout = el.querySelector('#ol').value; P.density = el.querySelector('#od').value; P.zoom = +el.querySelector('#oz').value / 100; savePrefs(); applyTheme(); setTimeout(render, 0); } }] });
+      buttons: [{ l: 'Cancel', run: back }, { l: 'Apply', run: el => { save(el); return false; } }, { l: 'OK', pri: true, run: el => { save(el); } }] });
   }
 
   /* ---------- projects: new, open, save as, import, export ---------- */
