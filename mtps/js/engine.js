@@ -794,7 +794,7 @@
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
      nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' || k === 'info' || k === 'noDocs' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* the .EM / .DN of a FIFO or LIFO from its .POS and .LEN (RM003 flow charts, Prescan and false): .LEN <= 0 or
      .POS < 0 set both; else .EM while .POS = 0 and .DN while .POS >= .LEN */
@@ -927,6 +927,8 @@
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project); this.dlAt = Date.now(); this.ioCleared.clear();
+      // Download Project Documentation and Extended Properties (Controller Properties > Project)
+      this.docs = !project.noDocs;
       this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;

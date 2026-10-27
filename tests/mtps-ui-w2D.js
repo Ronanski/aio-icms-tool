@@ -198,6 +198,38 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     check('phone (touch): Download goes online', await tp.evaluate(() => MTPS.App.state.online));
     await tp.close();
   }
+  console.log('Wave 2 D: Controller Properties > Project tab (v37 help: Name, Path, Created, Edited, Download Project Documentation)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    const projTab = async () => { await page.dblclick('.nd[data-org="ctl"]'); await wait(200); await page.click('#layer [data-dt="proj"]'); await wait(80); return page.$eval('#layer [data-pane="proj"]', e => e.textContent); };
+    check('the tabs: General, Major Faults, Minor Faults, Date/Time, Advanced, Project, Memory', (await (async () => { await page.dblclick('.nd[data-org="ctl"]'); await wait(200); return page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent.trim()).join('|')); })()) === 'General|Major Faults|Minor Faults|Date/Time|Advanced|Project|Memory');
+    await page.keyboard.press('Escape'); await wait(80);
+    let t = await projTab();
+    check('not saved yet: Name (not saved yet), Created set, Edited -', /Name\(not saved yet\)/.test(t) && /Created\d/.test(t) && /Edited-/.test(t), t);
+    check('Download Project Documentation and Extended Properties: checked by default', await page.$eval('#cp-docs', c => c.checked && !c.disabled));
+    await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => MTPS.App.run('saveas')); await page.waitForFunction(() => document.querySelector('#layer #fbn'), null, { timeout: 3000 }).catch(() => {});
+    await page.fill('#fbn', 'WA_Proj'); await clickBtn('Save'); await wait(300);
+    t = await projTab();
+    check('after Save As: Name WA_Proj.mtp, its folder as Path, Edited = the save time', /NameWA_Proj\.mtp/.test(t) && /Path\//.test(t) && /Edited\d/.test(t), t);
+    await shot('project-tab');
+    await page.click('#cp-docs'); await clickBtn('OK');
+    check('cleared and OK: the project keeps the setting', await ev(() => MTPS.App.state.p.noDocs === true));
+    check('Go Online with a Download', await online());
+    check('the controller holds no documentation: an upload has no rung comments or tag descriptions', await ev(() => { const u = MTPS.App.ctl.upload(); return !u.tasks[0].programs[0].routines[0].rungs.some(r => r.c) && !u.tags.some(x => x.desc); }));
+    check('documentation alone does not stop going online (still correlated)', await ev(() => MTPS.App.ctl.holds(MTPS.App.state.p)));
+    t = await projTab();
+    check('online: the check box shows the controller\'s setting and is off', await page.$eval('#cp-docs', c => !c.checked && c.disabled));
+    await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => MTPS.App.run('offline')); await wait(100);
+    // tablet, touch
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 800, height: 1280 }); await open(tp, () => MTPS.App.openProject(MTPS.App.example()));
+    await tp.evaluate(() => MTPS.App.run('ctlprops')); await tp.waitForTimeout(200);
+    await tp.tap('#layer [data-dt="proj"]'); await tp.waitForTimeout(100);
+    check('tablet (touch): the Project tab opens', (await tp.$eval('#layer [data-pane="proj"]', e => !e.hidden && /Created/.test(e.textContent)).catch(() => false)));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {
