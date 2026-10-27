@@ -341,6 +341,42 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     check('tablet (touch): the module keeps Disable Keying and revision 1.3', await tp.evaluate(() => { const m = MTPS.App.state.p.rack.modules.find(x => x.type === 'PLC-AI4'); return m && m.key === 'off' && m.rev === '1.3'; }));
     await tp.close();
   }
+  console.log('Wave 2 D: L5X module, connection, handler and rung zone attributes (1756-RM014D)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    const r = await ev(() => {
+      const A = MTPS.App, p = JSON.parse(JSON.stringify(A.state.p));
+      const m = p.rack.modules.find(x => x.type === 'PLC-DI16-24V'); Object.assign(m, { key: 'exact', rev: '1.4', rpi: 0.5, inhibit: true, majorOnFail: true, desc: 'Inputs' });
+      p.tasks[0].watchdog = 250;
+      const g = p.tasks[0].programs[0]; g.routines.push({ name: 'Fault', rungs: [{ t: 'NOP();' }] }); g.fault = 'Fault';
+      p.tasks.push({ name: 'Controller Fault Handler', type: 'fault', programs: [{ name: 'FH', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'NOP();' }] }], main: 'Main' }] });
+      p.tasks.push({ name: 'Power-Up Handler', type: 'powerup', programs: [{ name: 'PU', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'NOP();' }] }], main: 'Main' }] });
+      const rs = g.routines[0].rungs; rs.splice(0, 0, { t: 'NOP();', z: 'i' }, { t: 'NOP();', z: 'r' }, { t: 'NOP();', z: 'i' }, { t: 'NOP();', z: 'I' }, { t: 'NOP();', z: 'R' }, { t: 'NOP();', z: 'I' }, { t: 'NOP();', z: 'D' });
+      const x = A.toL5X(p), q = A.fromL5X(x);
+      return { x, q, types: [...x.matchAll(/<Rung Number="\d+" Type="([^"]+)"/g)].slice(0, 8).map(y => y[1]).join(' '), slot: m.slot };
+    });
+    const mod = (r.x.match(new RegExp(`<Module Name="DI_1"[^]*?</Module>`)) || [''])[0];
+    check('Module: CatalogNumber, Vendor, ProductType 7, ProductCode, Major 1, Minor 4, ParentModule, ParentModPortId, Inhibited, MajorFault', /CatalogNumber="1756-IB16" Vendor="1" ProductType="7" ProductCode="\d+" Major="1" Minor="4" ParentModule="Local" ParentModPortId="1" Inhibited="true" MajorFault="true"/.test(mod), mod.slice(0, 300));
+    check('Module: Description, <EKey State="ExactMatch"/>, Port Id 1 Address = slot Type ICP Upstream', mod.includes('<Description><![CDATA[Inputs]]></Description><EKey State="ExactMatch"/>') && mod.includes(`<Port Id="1" Address="${r.slot}" Type="ICP" Upstream="true"/>`));
+    check('Connection: RPI in microseconds (500), Type Input', /<Communications><Connections><Connection Name="Input" RPI="500" Type="Input" EventID="0"\/><\/Connections><\/Communications>/.test(mod));
+    check('an output module: a Connection of Type Output, RPI 20000', /<Module Name="DO_1"[^]*?<Connection Name="Output" RPI="20000" Type="Output"/.test(r.x));
+    check('the controller (Local): ProductType 14, EKey', /<Module Name="Local" CatalogNumber="1756-L85E" Vendor="1" ProductType="14"[^>]*><EKey State="CompatibleModule"\/>/.test(r.x));
+    check('Controller MajorFaultProgram="FH" PowerLossProgram="PU"', /<Controller [^>]*MajorFaultProgram="FH" PowerLossProgram="PU">/.test(r.x));
+    check('Program FaultRoutineName="Fault"; Task Watchdog="250"; the handler programs are not scheduled in a task', /<Program Name="MainProgram" MainRoutineName="MainRoutine" FaultRoutineName="Fault">/.test(r.x) && /<Task Name="MainTask" Type="CONTINUOUS" Watchdog="250">/.test(r.x) && !/<ScheduledProgram Name="(FH|PU)"/.test(r.x) && /<Program Name="FH"/.test(r.x));
+    check('Rung Type: er rN e IR R I D N (pending replace, pending insert, accepted replace and insert, delete, normal)', r.types === 'er rN e IR R I D N', r.types);
+    const qm = r.q.rack.modules.find(m => m.slot === r.slot);
+    check('import: keying, revision, RPI, inhibit, major fault and description come back', qm && qm.type === 'PLC-DI16-24V' && qm.key === 'exact' && qm.rev === '1.4' && qm.rpi === 0.5 && qm.inhibit && qm.majorOnFail && qm.desc === 'Inputs', JSON.stringify(qm));
+    check('import: the exact catalog numbers map back (1756-OW16I is the relay card)', await ev(() => { const p = MTPS.App.blank('X'); p.rack.modules = [{ slot: 1, type: 'PLC-DO16-RLY', name: 'R1' }, { slot: 3, type: 'PLC-DI16-120V', name: 'A1' }]; const q = MTPS.App.fromL5X(MTPS.App.toL5X(p)); return q.rack.modules.map(m => m.type).join() === 'PLC-DO16-RLY,PLC-DI16-120V'; }));
+    check('import: the handler programs go to the Controller Fault Handler and Power-Up Handler, the fault routine and watchdog back', r.q.tasks.length === 3 && r.q.tasks[0].programs.length === 1 && r.q.tasks[0].watchdog === 250 && r.q.tasks[0].programs[0].fault === 'Fault' && r.q.tasks[1].type === 'fault' && r.q.tasks[1].programs[0].name === 'FH' && r.q.tasks[2].type === 'powerup' && r.q.tasks[2].programs[0].name === 'PU', JSON.stringify(r.q.tasks.map(t => [t.name, t.type, t.programs.map(g => g.name)])));
+    check('import: the rung zones come back (i r i I R I D)', r.q.tasks[0].programs[0].routines[0].rungs.slice(0, 7).map(u => u.z || '').join(' ') === 'i r i I R I D');
+    check('import of Studio 5000 zone types: d is D, rI and rR are r', await ev(() => { const x = MTPS.App.toL5X(MTPS.App.example()).replace(/(<Rung Number="0" Type=")N/, '$1d').replace(/(<Rung Number="1" Type=")N/, '$1rI').replace(/(<Rung Number="2" Type=")N/, '$1rR'); return MTPS.App.fromL5X(x).tasks[0].programs[0].routines[0].rungs.slice(0, 3).map(u => u.z).join() === 'D,r,r'; }));
+    // the imported project opens: the handlers show in the organizer (phone, touch)
+    const tp = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 390, height: 844 });
+    await tp.evaluate(x => MTPS.App.openProject(MTPS.App.fromL5X(x)), r.x); await tp.waitForTimeout(300);
+    check('phone: the imported L5X opens with FH and PU in their handler folders, 0 Verify errors', await tp.evaluate(() => { const A = MTPS.App, t = A.state.p.tasks; return t.some(k => k.type === 'fault' && k.programs[0].name === 'FH') && t.some(k => k.type === 'powerup' && k.programs[0].name === 'PU') && MTPS.verify(A.state.p).errors.length === 0; }));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {

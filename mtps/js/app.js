@@ -3505,39 +3505,53 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   /* ---------- project files (P4): .mtp (the project, like a project file of the reference software) and .L5X ----------
      Open and Save As use the system's file dialogs where there are any (Windows: Open / Save As); elsewhere Open reads
      a picked file and Save As downloads it. Projects are also kept on this device, as before. */
+  /* the L5X of a module and of a rung, as 1756-RM014D describes them. Module: Name, CatalogNumber, Vendor, ProductType
+     (7 discrete, 14 controller; 10 analog is not confirmed), ProductCode (this app's own numbers), Major, Minor,
+     ParentModule, ParentModPortId, Inhibited, MajorFault; then Description, <EKey State="CompatibleModule|ExactMatch|
+     Disabled"/>, <Ports> (Port Id, Address = slot, Type ICP, Upstream) and <Communications><Connections> (Connection
+     Name, RPI in microseconds, Type Input or Output, EventID). Rung Type: N normal; this app's pending edit (the copy i
+     above the original r) is er above rN, a pending insert e; an accepted edit (I above R) is IR above R, an accepted
+     insert I; D delete. Import reads them back (d, a pending delete, as D; rI and rR as r). */
+  const L5XCAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF8', 'PLC-AO4': '1756-OF4' };
+  const L5XKEY = { exact: 'ExactMatch', compat: 'CompatibleModule', off: 'Disabled' };
+  const l5xZone = (rs, i) => { const z = rs[i].z || '', nx = (rs[i + 1] || {}).z; return z === 'i' ? (nx === 'r' ? 'er' : 'e') : z === 'r' ? 'rN' : z === 'I' ? (nx === 'R' ? 'IR' : 'I') : z === 'R' || z === 'D' ? z : 'N'; };
+  const l5xZoneIn = ty => ({ e: 'i', er: 'i', rN: 'r', rI: 'r', rR: 'r', IR: 'I', I: 'I', R: 'R', D: 'D', d: 'D', i: 'i', r: 'r' })[ty] || '';
+  function l5xModule(m, x, cd) {
+    const d = E.MODULES[m.type] || {}, [M1, n1] = String(m.rev || E.REV0).split('.'), out = d.kind === 'do' || d.kind === 'ao';
+    return `<Module Name="${x(m.name)}" CatalogNumber="${L5XCAT[m.type] || m.type}" Vendor="1" ProductType="${E.PTYPE[d.kind] || 0}" ProductCode="${Object.keys(E.MODULES).indexOf(m.type) + 2}" Major="${+M1}" Minor="${+n1}" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}" MajorFault="${m.majorOnFail ? 'true' : 'false'}">${m.desc ? `<Description>${cd(m.desc)}</Description>` : ''}<EKey State="${L5XKEY[m.key] || 'CompatibleModule'}"/><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports><Communications><Connections><Connection Name="${out ? 'Output' : 'Input'}" RPI="${Math.round((m.rpi || 20) * 1000)}" Type="${out ? 'Output' : 'Input'}" EventID="0"/></Connections></Communications></Module>`;
+  }
   /* L5X export: controller, I/O modules, tags (base and alias), programs, routines and rungs in the neutral text */
   function toL5X(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
-    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF8', 'PLC-AO4': '1756-OF4' };
     const tag = t => t.alias ? `<Tag Name="${x(t.name)}" TagType="Alias" AliasFor="${x(t.alias)}">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`
       : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${l5xDims(t)}${l5xAttrs(t, x)}>${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
-    const progs = p.tasks.flatMap(t => t.programs);
+    const progs = p.tasks.flatMap(t => t.programs), hp = k => { const t = p.tasks.find(y => y.type === k); return t && t.programs[0] ? t.programs[0].name : ''; };
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
-<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="1756-L85E" MajorRev="37" MinorRev="11">
+<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="1756-L85E" MajorRev="37" MinorRev="11"${hp('fault') ? ` MajorFaultProgram="${x(hp('fault'))}"` : ''}${hp('powerup') ? ` PowerLossProgram="${x(hp('powerup'))}"` : ''}>
 ${p.controller.desc ? `<Description>${cd(p.controller.desc)}</Description>` : ''}<DataTypes/>
 <Modules>
-<Module Name="Local" CatalogNumber="1756-L85E" Vendor="1" ParentModule="Local" ParentModPortId="1"><Ports><Port Id="1" Address="0" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
-${p.rack.modules.map(m => `<Module Name="${x(m.name)}" CatalogNumber="${CAT[m.type] || m.type}" Vendor="1" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}"><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports></Module>`).join('\n')}
+<Module Name="Local" CatalogNumber="1756-L85E" Vendor="1" ProductType="14" Major="37" Minor="11" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="true"><EKey State="CompatibleModule"/><Ports><Port Id="1" Address="0" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
+${p.rack.modules.map(m => l5xModule(m, x, cd)).join('\n')}
 </Modules>
 <Tags>
 ${p.tags.map(tag).join('\n')}
 </Tags>
 <Programs>
-${progs.map(g => `<Program Name="${x(g.name)}" MainRoutineName="${x(g.main || '')}">
+${progs.map(g => `<Program Name="${x(g.name)}" MainRoutineName="${x(g.main || '')}"${g.fault ? ` FaultRoutineName="${x(g.fault)}"` : ''}>
 <Tags>${g.tags.map(tag).join('')}</Tags>
 <Routines>
 ${g.routines.map(r => `<Routine Name="${x(r.name)}" Type="RLL">
 <RLLContent>
-${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '') ? u.z : 'N'}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${l5xZone(r.rungs, i)}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
 </RLLContent>
 </Routine>`).join('\n')}
 </Routines>
 </Program>`).join('\n')}
 </Programs>
 <Tasks>
-${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
+${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.watchdog || 500}"><ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
 </Tasks>
 </Controller>
 </RSLogix5000Content>
@@ -3570,7 +3584,18 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
       const cat = m.getAttribute('CatalogNumber') || '', port = m.querySelector('Port'), slot = parseInt(port && port.getAttribute('Address'), 10);
       const bus = m.querySelector('Bus'); if (bus && m.getAttribute('ParentModule') === 'Local' && m.getAttribute('Name') === 'Local') size = parseInt(bus.getAttribute('Size'), 10) || size;
       const type = kindOf(cat);
-      if (type && slot > 0 && m.getAttribute('ParentModule') === 'Local') mods.push({ slot, type, name: (m.getAttribute('Name') || type).replace(/[^A-Za-z0-9_]/g, '_') });
+      const exact = Object.keys(L5XCAT).find(k => L5XCAT[k] === cat.toUpperCase()), mt = exact || type;
+      if (mt && slot > 0 && m.getAttribute('ParentModule') === 'Local') {
+        const o = { slot, type: mt, name: (m.getAttribute('Name') || mt).replace(/[^A-Za-z0-9_]/g, '_') }, a = k => m.getAttribute(k), ek = m.querySelector('EKey'), cx = m.querySelector('Connections > Connection'), ds = txt(kids(m, 'Description')[0]).trim();
+        const st = ek && ek.getAttribute('State'), key = Object.keys(L5XKEY).find(k => L5XKEY[k] === st), M1 = (ek && st === 'Custom' && ek.getAttribute('Major')) || a('Major'), n1 = (ek && st === 'Custom' && ek.getAttribute('Minor')) || a('Minor');
+        if (ds) o.desc = ds;
+        if (key && key !== 'compat') o.key = key;
+        if (/^\d+$/.test(M1 || '') && /^\d+$/.test(n1 || '') && `${+M1}.${+n1}` !== E.REV0) o.rev = `${+M1}.${+n1}`;
+        if (a('Inhibited') === 'true') o.inhibit = true;
+        if (a('MajorFault') === 'true') o.majorOnFail = true;
+        const rpi = cx && +cx.getAttribute('RPI') / 1000; if (rpi >= E.RPI[0] && rpi <= E.RPI[1] && rpi !== 20) o.rpi = rpi;
+        mods.push(o);
+      }
     });
     p.rack.size = E.fitRack(E.RACKS.find(n => n >= size) || size, mods.map(m => m.slot).concat(p.controller.slot || 0));
     p.rack.modules = mods.filter(m => m.slot < p.rack.size);
@@ -3578,12 +3603,20 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     const list = (progs ? kids(progs, 'Program') : []).map(g => {
       const routines = kids(kids(g, 'Routines')[0] || g, 'Routine').filter(r => (r.getAttribute('Type') || 'RLL') === 'RLL').map(r => ({
         name: r.getAttribute('Name'),
-        rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; const ty = u.getAttribute('Type'); if (/^[iIrRD]$/.test(ty || '')) o.z = ty; else if (ty === 'e') o.z = 'i'; return o; }),
+        rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; const z = l5xZoneIn(u.getAttribute('Type')); if (z) o.z = z; return o; }),
       }));
       routines.forEach(r => { if (!r.rungs.length) r.rungs = [{ t: '' }]; });
-      return { name: g.getAttribute('Name'), main: g.getAttribute('MainRoutineName') || (routines[0] && routines[0].name) || 'MainRoutine', tags: tagsOf(kids(g, 'Tags')[0]), routines: routines.length ? routines : [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
+      const o = { name: g.getAttribute('Name'), main: g.getAttribute('MainRoutineName') || (routines[0] && routines[0].name) || 'MainRoutine', tags: tagsOf(kids(g, 'Tags')[0]), routines: routines.length ? routines : [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
+      const fr = g.getAttribute('FaultRoutineName'); if (fr && routines.some(r => r.name === fr)) o.fault = fr;
+      return o;
     });
-    if (list.length) p.tasks = [{ name: 'MainTask', type: 'continuous', programs: list }];
+    // the Controller Fault Handler and Power-Up Handler programs (Controller MajorFaultProgram, PowerLossProgram)
+    const hand = [['fault', c.getAttribute('MajorFaultProgram')], ['powerup', c.getAttribute('PowerLossProgram')]].map(([k, n]) => [k, n && list.find(g => g.name === n)]).filter(([, g]) => g);
+    const main = list.filter(g => !hand.some(([, h]) => h === g));
+    if (list.length) {
+      const tk = kids(kids(c, 'Tasks')[0] || c, 'Task')[0], wd = tk && parseInt(tk.getAttribute('Watchdog'), 10);
+      p.tasks = [Object.assign({ name: 'MainTask', type: 'continuous', programs: main }, wd > 0 && wd !== 500 ? { watchdog: wd } : {})].concat(hand.map(([k, g]) => ({ name: HANDLERS[k], type: k, programs: [g] })));
+    }
     const n = list.reduce((k, g) => k + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0);
     setTimeout(() => toast(`Imported ${name}: ${list.length} program(s), ${n} rung(s), ${p.tags.length} controller tag(s). Run Verify to see what this app does not support.`, 'ok'), 50);
     return p;
