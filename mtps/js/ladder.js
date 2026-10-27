@@ -220,10 +220,11 @@
           const on = o.live && !!e.v && !(e.a && /^S:/i.test(e.a[0] || ''));
           if (isBox(e)) out += box(e, x, cy, w, on, o, opsOf(e), LH);
           else out += glyph(e, x, cy, w, on, S);
-          // a dirty instruction (changed since the last verify): '*' right of the mnemonic
+          // a dirty instruction (changed since the last verify): '*' right of the mnemonic of a box; under the wire, right
+          // of a bit instruction (above it the alias line of the tag would cover it)
           const ik = ikey(e); seen[ik] = (seen[ik] || 0) + 1;
           if (dirty.has(ik + '#' + (seen[ik] - 1))) {
-            out += isBox(e) ? `<text class="dty" x="${x + 8 + 6 + tw(e.t, `700 ${S + 1}px Arial`) + 3}" y="${cy - 9 + 13}">*</text>` : `<text class="dty" x="${cx + 9}" y="${cy - 7}">*</text>`;
+            out += isBox(e) ? `<text class="dty" x="${x + 8 + 6 + tw(e.t, `700 ${S + 1}px Arial`) + 3}" y="${cy - 9 + 13}">*</text>` : `<text class="dty" x="${cx + 11}" y="${cy + 15}">*</text>`;
           }
           const f = o.forced && e.a && e.a[0] ? o.forced(e.a[0]) : null;
           if (f !== null && f !== undefined) out += `<text class="frc" x="${cx}" y="${cy + 24}" text-anchor="middle">▸${f ? 'ON' : 'OFF'}</text>`;

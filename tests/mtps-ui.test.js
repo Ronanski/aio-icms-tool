@@ -783,7 +783,7 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(80);
   await page.evaluate(() => [...document.querySelectorAll('#layer .it')].find(x => x.textContent.trim() === 'Module I/O…').click());
   await page.waitForTimeout(100);
-  check('1. right-click on a module: the Module I/O window, inputs and outputs together, the module marked', (await page.$$eval('.iowin[data-iowin="0"] [data-iobit^="0:1:"]', c => c.length)) === 16 && (await page.$$eval('.iowin[data-iowin="0"] .iob.out', c => c.length)) >= 16 && (await page.$eval('.iowin[data-iowin="0"] .iom.cur', e => e.dataset.iom)) === '1');
+  check('1. right-click on an input module: the Module I/O window shows that module only, its 16 inputs as switches, no outputs', (await page.$$eval('.iowin[data-iowin="0"] [data-iobit^="0:1:"]', c => c.length)) === 16 && (await page.$$eval('.iowin[data-iowin="0"] .iob.out', c => c.length)) === 0 && (await page.$$eval('.iowin[data-iowin="0"] .iom', c => c.map(e => e.dataset.iom).join())) === '1' && /\[1\] DI_1/.test(await page.$eval('.iowin[data-iowin="0"] .iowh', e => e.textContent)));
   const f0 = await ev(() => MTPS.App.racks[0].module(1).field);
   await page.click('.iowin[data-iowin="0"] [data-iobit="0:1:7"]');
   await page.waitForTimeout(80);
@@ -793,6 +793,7 @@ function check(name, cond, info = '') {
   await page.click('#iob .ccard.io[data-cmod="0:2"] .mf');
   await page.waitForTimeout(80);
   check('a tap on an I/O module opens the Module I/O window on it', (await page.$eval('.iowin[data-iowin="0"] .iom.cur', e => e.dataset.iom)) === '2');
+  check('owner 2026-10-27: an output module (DO) shows only its 16 outputs as lamps, no input switch, and says the controller drives them', await page.$eval('.iowin[data-iowin="0"]', w => w.querySelectorAll('.iob.out').length === 16 && !w.querySelector('[data-iobit]') && /Outputs/.test(w.textContent) && !/Inputs/.test(w.textContent) && /controller drives these outputs/.test(w.textContent) && /\[2\] DO_1/.test(w.querySelector('.iowh').textContent)));
   await page.click('.iowin[data-iowin="0"] [data-iox]');
   check('1. the module front is a terminal block (screws), with the LED points', (await page.$$eval('#iob [data-cmod="0:1"] .mterm .scr', c => c.length)) >= 16 && (await page.$$eval('#iob [data-cmod="0:1"] .mmat i', c => c.length)) === 16);
   if (await page.$('#dock [data-dkat="bottom"]')) { await page.click('#dock [data-dkat="bottom"]'); await page.waitForTimeout(150); }
@@ -1050,8 +1051,9 @@ function check(name, cond, info = '') {
     check('hold and let go without moving: the instruction menu', (await tp.$eval('#layer', l => l.textContent)).includes('Cut Instruction'));
     await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; }); await tp.waitForTimeout(500);
     await tp.touchscreen.tap(c.x, c.y); await tp.waitForTimeout(450); await tp.touchscreen.tap(c.x, c.y); await tp.waitForTimeout(250);
-    // replaced: a tap again on the selected instruction edits its mnemonic in place (the operand dialog is the Edit button)
-    check('tap selects, tap again on the selected instruction edits its mnemonic on the rung', (await tp.$eval('#inl', i => i.value).catch(() => '')) === 'XIC' && (await tp.$('#layer .dlg')) === null);
+    // owner 2026-10-27: by touch the operand row is too small to hit, so a tap again on the selected instruction opens
+    // its editor: the instruction and its operands with the tag list (the mnemonic is edited there too)
+    check('tap selects, tap again on the selected instruction opens its editor with the operand and the tag list', await tp.$eval('#layer .dlg', d => /Rung 1 · XIC/.test(d.textContent) && d.querySelectorAll('input').length >= 2 && /TAGS FOR/i.test(d.textContent)).catch(() => false));
     await tp.keyboard.press('Escape'); await tp.waitForTimeout(100);
     const y0 = await tp.$eval('#ladwrap', w => w.scrollTop);
     await T('touchStart', 400, 700); for (let i = 1; i <= 6; i++) { await T('touchMove', 400, 700 - i * 40); await tp.waitForTimeout(16); } await T('touchEnd'); await tp.waitForTimeout(400);
@@ -2344,6 +2346,7 @@ function check(name, cond, info = '') {
   await require('./mtps-ui-w3E')({ browser, page, URL, check });
   await require('./mtps-ui-w3A')({ browser, page, URL, check });
   await require('./mtps-ui-newtag')({ browser, URL, check });
+  await require('./mtps-ui-sealin')({ browser, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

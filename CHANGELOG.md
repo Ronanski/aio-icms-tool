@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Fixed (MT PLC Studio)
+- Ladder on a tablet or phone: an instruction left with "?" could not get its tag, because a tap again on the instruction only edited its mnemonic (XIC) and the operand line is too small to hit with a finger. A tap again on the selected instruction now opens its editor: the instruction, its operands and the tag list, as when it is added from a tile. A double-click with the mouse still edits in place, as in Studio 5000.
+- Emulator: the I/O button of a module showed the points of every module of the chassis, so an output module (DO) showed inputs to switch too. It now shows only that module; the outputs of an output module are lamps that light while the controller drives them on, with a line that says so.
+- The tag browser says what each module tag holds: for an output module, Local:slot:O is the outputs and Local:slot:I is its status (Fault and the output echo, as in a 1756 output module), not inputs.
+- Ladder: the * of a changed instruction covered the alias line under the tag name (for example <Local:1:I.Data.0>); it is now under the wire, right of the instruction.
 - New Tag from Controller Tags (the tag editor's New Tag button, or Controller Tags > New Tag…) made the tag in MainProgram, so the new tag (base or alias) never showed in Controller Tags. The Scope now starts on the scope of the tag editor (Controller Tags: the controller), and the message says where the tag was made. From the ladder the routine's program stays the default.
 
 ### Changed (MT PLC Studio, Wave 3 of the coverage map): the other languages, tasks, Add-On Instructions, messages and more menus (owner)
