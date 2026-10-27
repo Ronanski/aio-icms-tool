@@ -4961,13 +4961,14 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       : (ctl.minors.length ? ctl.minors.map(row).join('') : '<p><b style="color:var(--ok)">No minor faults.</b></p>') +
         `<div class="brow"><button class="btn" id="cp-cn"${ctl.minors.length ? '' : ' disabled'}>Clear Minors</button></div>`;
     dialog({ title: 'Controller Properties - ' + S.p.controller.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['proj', 'Project', projTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
+      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['sfc', 'SFC Execution', TK.sfcHTML()], ['proj', 'Project', projTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!offline()) return;
         const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim(), cs = +el.querySelector('#cp-s').value;
         if (cs !== ctlSlot()) edit(() => { S.p.controller.slot = cs; });
         const docs = el.querySelector('#cp-docs').checked;
         if (docs === !!S.p.noDocs) edit(() => { if (docs) delete S.p.noDocs; else S.p.noDocs = true; });
+        const sfc = TK.sfcRead(el); if (sfc) edit(() => { S.p.controller.sfc = sfc; });
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         const old = S.p.controller.name;
         if (v === old && desc === (S.p.controller.desc || '')) return;

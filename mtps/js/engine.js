@@ -735,6 +735,17 @@
     return ok ? { t: e.t, a: e.a, x, v: false } : null;
   }
 
+  /* the SFC Execution settings of the controller, with the defaults (1756-PM006: Execute current active steps only;
+     Last Scan of Active Steps: Don't scan). exec 'active' | 'false'; restart 'last' | 'initial'; lastScan 'auto' |
+     'prog' | 'dont' */
+  const SFC0 = { exec: 'active', restart: 'last', lastScan: 'dont' };
+  const SFCV = { exec: ['active', 'false'], restart: ['last', 'initial'], lastScan: ['auto', 'prog', 'dont'] };
+  function sfcOf(ctl) {
+    const s = (ctl && ctl.sfc) || {}, o = {};
+    for (const k in SFC0) o[k] = SFCV[k].includes(s[k]) ? s[k] : SFC0[k];
+    return o;
+  }
+
   /* ---------- Build (verify and compile) ---------- */
   /* the whole project → { errors, warnings, lines, model }; filter { program, routine } verifies one routine */
   function build(project, filter) {
@@ -749,6 +760,8 @@
     if (!validName(ctl.name)) ctlErr(`Invalid controller name '${ctl.name || ''}'`);
     const types = typeTable(pj, ctlErr);
     const M = { name: ctl.name || '', types, tags: new Map(), vals: {}, S: { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 }, mods: new Map(), programs: [], otes: new Map() };
+    // Controller Properties > SFC Execution (help v37; 1756-PM006): stored for the SFC routines
+    M.sfc = sfcOf(ctl);
 
     const rack = pj.rack || {};
     const okSize = n => RACKS.includes(n) || OLDRACKS.includes(n);
@@ -2591,7 +2604,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
+  Object.assign(MTPS, { sfcOf, SFC0, ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
   MTPS.GSVOBJ = GSVOBJ;
   MTPS.controller = new Controller();

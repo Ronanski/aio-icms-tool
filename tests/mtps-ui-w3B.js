@@ -337,4 +337,31 @@ module.exports = async function w3B({ browser, page, URL, check }) {
       if (lay.touch) await pg.close();
     }
   }
+  {
+    console.log('Wave 3 B: Controller Properties > SFC Execution (help v37: Controller Properties dialog box - SFC Execution tab)');
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    await page.dblclick('.nd[data-org="ctl"]'); await wait(200);
+    check('the SFC Execution tab comes after Advanced', (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent.trim()).join('|'))).includes('Advanced|SFC Execution|Project'));
+    await page.click('#layer [data-dt="sfc"]'); await wait(80);
+    const txt = await dlgText();
+    check('Execution Control, Restart Position, Last Scan of Active Steps, each with its options', ['Execution Control', 'Execute current active steps only', 'Execute until FALSE transition', 'Restart Position', 'Restart at most recently executed step', 'Restart at initial step', 'Last Scan of Active Steps', 'Automatic reset', 'Programmatic reset', 'Don’t scan'].every(x => txt.includes(x)));
+    check('the defaults: current active steps only, most recently executed step, Don’t scan', (await page.$$eval('#layer [data-sfc]:checked', r => r.map(x => x.value).join(','))) === 'active,last,dont');
+    await page.check('#layer [data-sfc="exec"][value="false"]'); await page.check('#layer [data-sfc="restart"][value="initial"]'); await page.check('#layer [data-sfc="lastScan"][value="prog"]');
+    await shot('after-ctlprops-sfc');
+    await clickBtn('OK');
+    check('OK: the settings are kept in the project', await ev(() => JSON.stringify(MTPS.App.state.p.controller.sfc) === JSON.stringify({ exec: 'false', restart: 'initial', lastScan: 'prog' })));
+    await page.dblclick('.nd[data-org="ctl"]'); await wait(200); await page.click('#layer [data-dt="sfc"]'); await wait(80);
+    check('they show again when the dialog opens', (await page.$$eval('#layer [data-sfc]:checked', r => r.map(x => x.value).join(','))) === 'false,initial,prog');
+    await clickBtn('Cancel');
+    // phone, touch
+    const tp = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 390, height: 844 }); await open(tp, () => MTPS.App.openProject(MTPS.App.example()));
+    await tp.evaluate(() => MTPS.App.run('ctlprops')); await tp.waitForTimeout(200);
+    await hit('#layer [data-dt="sfc"]', tp, true);
+    await hit('#layer [data-sfc="lastScan"][value="auto"]', tp, true);
+    await shot('after-ctlprops-sfc-phone', tp);
+    await clickBtn('OK', tp, true);
+    check('phone (touch): Last Scan of Active Steps, Automatic reset, OK', await tp.evaluate(() => (MTPS.App.state.p.controller.sfc || {}).lastScan === 'auto'));
+    await tp.close();
+  }
 };

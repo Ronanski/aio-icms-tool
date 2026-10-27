@@ -360,6 +360,27 @@
       };
     }
 
+    /* Controller Properties > SFC Execution (help v37: Controller Properties dialog box - SFC Execution tab; 1756-PM006,
+       Configure the execution of the SFC): Execution Control, Restart Position, Last Scan of Active Steps. Kept in
+       project.controller.sfc for the SFC routines; changed offline. */
+    const SFCOPT = [
+      ['exec', 'Execution Control', [['active', 'Execute current active steps only'], ['false', 'Execute until FALSE transition']]],
+      ['restart', 'Restart Position', [['last', 'Restart at most recently executed step'], ['initial', 'Restart at initial step']]],
+      ['lastScan', 'Last Scan of Active Steps', [['auto', 'Automatic reset'], ['prog', 'Programmatic reset'], ['dont', 'Don’t scan']]],
+    ];
+    function sfcHTML() {
+      const v = E.sfcOf(S.p.controller), dis = editable() && offline() ? '' : ' disabled';
+      return SFCOPT.map(([k, h, opts]) => `<div class="grp">${h}</div>${opts.map(([o, l]) => `<label class="ck"><input type="radio" name="sfc-${k}" value="${o}" data-sfc="${k}"${v[k] === o ? ' checked' : ''}${dis}> ${l}</label>`).join('')}`).join('')
+        + `<p class="help">How the SFC routines of the project run: whether a chart goes on past a true transition in the same scan, where it starts again after Program to Run or a power loss (after a major fault it always starts at the initial step), and whether the actions of a step that goes inactive are scanned one last time.${dis ? ' Go offline to change them.' : ''}</p>`;
+    }
+    // the settings picked, when they differ from the project's
+    function sfcRead(el) {
+      if (!el.querySelector('[data-sfc]') || !editable() || !offline()) return null;
+      const cur = E.sfcOf(S.p.controller), v = {};
+      for (const [k] of SFCOPT) { const r = el.querySelector(`[data-sfc="${k}"]:checked`); v[k] = r ? r.value : cur[k]; }
+      return SFCOPT.every(([k]) => v[k] === cur[k]) ? null : v;
+    }
+
     /* the organizer's right-click items this file adds (Studio 5000: Tasks folder > New Task; a task > Add > New
        Program; Unscheduled Programs > New Program; a program or a task > Delete) */
     function orgMore(key, items) {
@@ -379,6 +400,6 @@
     const typeText = T => ({ continuous: 'Continuous task', periodic: 'Periodic task', event: 'Event task' })[T.type || 'continuous'] || T.type;
     const quick = T => T.type === 'periodic' ? [['Period', (T.period || 10) + ' ms'], ['Priority', T.priority == null ? 10 : T.priority]]
       : T.type === 'event' ? [['Trigger', (TRIGGERS.find(x => x[0] === (T.trigger || 'event')) || [0, ''])[1] + (T.trigger === 'input' ? ` (${T.tag})` : '')], ['Priority', T.priority == null ? 10 : T.priority]] : [];
-    return { params, typeText, quick, newProgram, deleteProgram, newTask, deleteTask, taskProps, orgMore, unscheduled, userTasks };
+    return { sfcHTML, sfcRead, params, typeText, quick, newProgram, deleteProgram, newTask, deleteTask, taskProps, orgMore, unscheduled, userTasks };
   };
 })();

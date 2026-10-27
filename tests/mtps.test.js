@@ -1669,5 +1669,14 @@ console.log('Wave 3 B: UID, UIE, EVENT, IOT (1756-RM018A chapters 11 and 4)');
   check('UID and UIE take no operands; EVENT takes one', !errs(multi([], ['UID();', 'UIE();'], [])) && !!errs(multi([], ['UID(MainTask);'], [])));
 }
 
+console.log('Wave 3 B: Controller Properties > SFC Execution settings (help v37; 1756-PM006)');
+{
+  eq('the defaults: Execute current active steps only, Restart at most recently executed step, Don\'t scan', MTPS.sfcOf({}), { exec: 'active', restart: 'last', lastScan: 'dont' });
+  const p = proj({ rungs: ['NOP();'] }); p.controller.sfc = { exec: 'false', restart: 'initial', lastScan: 'auto' };
+  const c = new MTPS.Controller(); c.download(p);
+  eq('the settings of the project reach the controller model (M.sfc) for the SFC routines', c.M.sfc, { exec: 'false', restart: 'initial', lastScan: 'auto' });
+  eq('an unknown value takes the default', MTPS.sfcOf({ sfc: { exec: 'x', lastScan: 'prog' } }), { exec: 'active', restart: 'last', lastScan: 'prog' });
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
