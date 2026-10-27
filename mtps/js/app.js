@@ -935,6 +935,10 @@
     fen: { l: 'Enable All I/O Forces', i: 'force', run: () => { ctl.enableForces(true); live(true); }, on: () => S.online && ctl.forceState() === 'disabled' },
     fdis: { l: 'Disable All I/O Forces', i: 'force', run: () => { ctl.enableForces(false); live(true); }, on: () => S.online && ctl.forceState() === 'enabled' },
     fall: { l: 'Remove All I/O Forces', i: 'close', run: () => { ctl.removeForces(); live(true); }, on: () => S.online && ctl.forceState() !== 'none' },
+    // View > Toolbars, Full Screen, Start Page
+    vtb: { l: 'Toolbars…', i: 'gear', run: () => toolbarsDlg() },
+    vfull: { l: 'Full Screen', i: 'dockr', run: () => fullScreen(), on: () => !!(document.fullscreenEnabled && document.documentElement.requestFullscreen), ck: () => !!document.fullscreenElement },
+    vstart: { l: 'Start Page', i: 'info', run: () => { S.view = 'start'; S.area = 'ladder'; S.sel = null; render(); }, on: () => !S.noProj, ck: () => S.noProj || S.view === 'start' },
     vlorg: { l: 'Logical Organizer', i: 'tree', run: () => toggleLogical(), on: () => !S.noProj, ck: () => !!S.prefs.lorg },
     vorg: { l: 'Controller Organizer', i: 'tree', run: () => { S.prefs.org = !S.prefs.org; S.drawer = !S.drawer; savePrefs(); render(); }, ck: () => S.prefs.org },
     verr: { l: 'Errors', i: 'warn', run: () => { if (S.layout === 'desktop') { S.prefs.err = !S.prefs.err; savePrefs(); } else S.errOpen = !S.errOpen; render(); }, ck: () => S.prefs.err },
@@ -966,7 +970,7 @@
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newstr', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'genrep', { hd: 'Print' }, 'prtrtn', 'prttags', 'prtmod', 'prtdt', 'prtorg', 'prtctl', 'prtall', 'prtopts', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
-    ['View', ['vorg', 'verr', 'vwatch', 'vlorg', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
+    ['View', ['vtb', '-', 'vorg', 'verr', 'vwatch', 'vlorg', 'vio', '-', 'vstart', 'vfull', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
@@ -1018,7 +1022,7 @@
     }
     render();
   }
-  const emptyWs = () => (S.noProj ? startPage() : '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>');
+  const emptyWs = () => (S.noProj || S.view === 'start' ? startPage() : '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>');
   /* the start page while no project is open: New Project, Open Project, the files opened lately (paths only) */
   function startPage() {
     const rec = (S.prefs.files || []).slice(0, 8);
@@ -1041,7 +1045,7 @@
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
     const cls = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
-    if (app.className !== cls) app.className = cls;
+    if (app.className !== cls + tbCls()) app.className = cls + tbCls();
     if (document.body.className !== cls) document.body.className = cls;
     const html = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
     // the ladder stays in place when the new frame has it too: the rest of the screen is brought up to date around it
@@ -1155,7 +1159,7 @@
   function phone() {
     const a = S.area, nErr = S.verify ? S.verify.errors.length : 0;
     let body = '';
-    if (a === 'ladder' && S.noProj) body = `<div class="page" style="display:flex;flex-direction:column">${startPage()}</div>`;
+    if (a === 'ladder' && (S.noProj || S.view === 'start')) body = `<div class="page" style="display:flex;flex-direction:column">${startPage()}</div>`;
     else if (a === 'ladder') {
       const pland = innerWidth > innerHeight, emuTab = !pland && S.phoneEmu;
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
@@ -1188,7 +1192,7 @@
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}${b('newprog')}${b('newtask')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
-      <div class="card">${b('samples', 'Sample Projects…')}${b('vlorg')}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
+      <div class="card">${b('samples', 'Sample Projects…')}${b('vlorg')}${b('vstart')}${C.vfull.on() ? b('vfull') : ''}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -3536,6 +3540,32 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const sync = () => { const f2 = el.querySelector('#npg-f').checked; el.querySelector('#npg-s').disabled = f2; el.querySelector('#npg-i').disabled = f2; };
     el.querySelector('#npg-f').addEventListener('change', sync); sync();
   }
+  /* ---------- View > Toolbars (help v37: Toolbars command, Toolbars, Standard toolbar): show or hide the toolbars
+     this app has: Standard (New, Open, Save, Cut, Copy, Paste, Undo, Redo, Find, Cross Reference, Verify, Monitor Tags,
+     the Emulator panel), Path (the communications path), Online (the indicators, the key switch and the mode, forces and
+     edits boxes), Language Element (the instruction toolbar) and Bookmark. Desktop layout; kept on this device.
+     View > Full Screen (the window over the whole screen) and View > Start Page (the start page in the workspace). */
+  const TBS = [['std', 'Standard'], ['path', 'Path'], ['online', 'Online'], ['lang', 'Language Element'], ['bmk', 'Bookmark']];
+  const tbOn = k => !(S.prefs.tbOff || []).includes(k);
+  const tbCls = () => (S.prefs.tbOff || []).filter(k => TBS.some(x => x[0] === k)).map(k => ' notb-' + k).join('');
+  function toolbarsDlg() {
+    const was = (S.prefs.tbOff || []).slice();
+    const el = dialog({ title: 'Toolbars', size: 'sm',
+      body: `<div class="grp">Toolbars</div>${TBS.map(([k, l]) => `<label class="ck tbck"><input type="checkbox" data-tbk="${k}"${tbOn(k) ? ' checked' : ''}> ${esc(l)}</label>`).join('')}<p class="help">The toolbars of the desktop layout. The tablet and the phone keep their own bars.</p>`,
+      buttons: [{ l: 'Cancel', run: () => { S.prefs.tbOff = was; savePrefs(); render(); } }, { l: 'OK', pri: true }] , onClose: () => {} });
+    el.addEventListener('change', ev => {
+      const k = ev.target.dataset.tbk; if (!k) return;
+      const off = new Set(S.prefs.tbOff || []); if (ev.target.checked) off.delete(k); else off.add(k);
+      S.prefs.tbOff = [...off]; savePrefs(); render();
+    });
+  }
+  function fullScreen() {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else document.documentElement.requestFullscreen().catch(e => toast('Full Screen is not allowed here: ' + (e.message || e), 'err'));
+    } catch (e) { toast('Full Screen is not available on this device.', 'err'); }
+  }
+  document.addEventListener('fullscreenchange', () => { if (S.p) render(); });
   /* ---------- View > Logical Organizer (help v37: Logical Organizer, Use the Logical Organizer, Move items in the
      Logical Organizer): the programs in a tree of folders and parent programs, apart from the tasks that run them. The
      root is the controller; each program holds Parameters and Local Tags, its routines and its child programs. The

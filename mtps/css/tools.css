@@ -57,3 +57,12 @@ body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
 /* Logical Organizer: its tab beside the Controller Organizer */
 .orgtabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface-2); flex: none; }
 .orgtabs .otab { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* View > Toolbars: a toolbar the user hid (desktop) */
+#app.notb-std .dtb > .ib, #app.notb-std .dtb > .vsep { display: none; }
+#app.notb-path .dtb .pathbar { display: none; }
+#app.notb-online .dbar2 .donline { display: none; }
+#app.notb-lang .dbar2 .dinstr { display: none; }
+#app.notb-online.notb-lang .dbar2 { display: none; }
+#app.notb-bmk .rtb [data-cmd^="bm"] { display: none; }
+.tbck { display: flex; align-items: center; gap: 6px; padding: 4px 0; }

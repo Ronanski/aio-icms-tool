@@ -285,5 +285,40 @@ module.exports = async function w3a({ browser, URL, check }) {
     check(`${n}: no JS errors (Logical Organizer)`, !T.errs.length, T.errs.join(' | '));
   }
 
+  /* ---------- 6. View > Toolbars, Full Screen, Start Page ---------- */
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    await example(T); await T.wait(150);
+    if (n === 'desktop') {
+      const vis = sel => T.ev(s => { const e = document.querySelector(s); return !!e && e.offsetParent !== null && getComputedStyle(e).display !== 'none'; }, sel);
+      check(`${n}: the Language Element toolbar shows`, await vis('.dinstr'));
+      await T.cmd('View', 'Toolbars…');
+      check(`${n}: View > Toolbars opens the Toolbars dialog`, (await T.title()) === 'Toolbars');
+      await T.hit('#layer [data-tbk="lang"]'); await T.hit('#layer [data-tbk="std"]');
+      check(`${n}: unticking Language Element hides the instruction toolbar`, !(await vis('.dinstr')));
+      check(`${n}: unticking Standard hides the standard buttons`, !(await vis('.dtb > .ib')));
+      await T.btn('Cancel');
+      check(`${n}: Cancel puts the toolbars back`, (await vis('.dinstr')) && (await vis('.dtb > .ib')));
+      await T.cmd('View', 'Toolbars…'); await T.hit('#layer [data-tbk="bmk"]'); await T.btn('OK');
+      const off = await T.ev(() => MTPS.App.state.prefs.tbOff);
+      check(`${n}: OK keeps the choice`, Array.isArray(off) && off.includes('bmk') && !off.includes('lang'), JSON.stringify(off));
+      await T.ev(() => { MTPS.App.state.prefs.tbOff = []; });
+      // Full Screen: the browser's full-screen API (stubbed in the headless browser)
+      await T.ev(() => { window.__fs = 0; document.documentElement.requestFullscreen = () => { window.__fs++; return Promise.resolve(); }; });
+      await T.cmd('View', 'Full Screen');
+      check(`${n}: View > Full Screen asks for the full screen`, (await T.ev(() => window.__fs)) === 1);
+    }
+    await T.cmd('View', 'Start Page'); await T.wait(150);
+    if (n === 'phone' && !(await T.pg.$('.startpg'))) await T.hit('[data-go="ladder"]');
+    check(`${n}: View > Start Page shows the start page with a project open`, !!(await T.pg.$('.startpg')));
+    check(`${n}: the start page lists the sample projects`, /Sample projects/i.test(await T.text('.startpg')));
+    if (n === 'desktop') await T.shot('startpage-open');
+    if (n !== 'phone') {
+      if (n === 'tablet' && !(await T.pg.$('[data-tabk]'))) await T.hit('[data-drawer="1"]');
+      await T.hit('[data-tabk="MainProgram/MainRoutine"]');
+      check(`${n}: a routine tab goes back from the start page`, !(await T.pg.$('.startpg')) && (await T.ev(() => MTPS.App.state.view)) === 'ladder');
+    }
+    check(`${n}: no JS errors (View)`, !T.errs.length, T.errs.join(' | '));
+  }
   for (const T of opened) await T.cx.close();
 };
