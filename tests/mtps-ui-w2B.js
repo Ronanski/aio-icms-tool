@@ -198,4 +198,48 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
     await pp.context().close();
   }
+
+  /* ---------- 3. LINT and LREAL ---------- */
+  console.log('Wave 2 B: LINT and LREAL (v37 help: Elementary data types; About the Tag Editor, Date/Time styles)');
+  await fresh();
+  await ev(() => MTPS.App.run('newtag')); await wait(120);
+  await page.fill('#tn', 'Stamp'); await page.fill('#tt', 'LINT'); await page.dispatchEvent('#tt', 'input'); await wait(50);
+  check('New Tag: LINT offers Binary, Octal, Decimal, Hex, ASCII, Date/Time, Date/Time (ns)', (await page.$$eval('#tsty option', o => o.map(x => x.textContent).join(','))) === 'Binary,Octal,Decimal,Hex,ASCII,Date/Time,Date/Time (ns)');
+  await page.selectOption('#tsty', 'Date/Time'); await page.selectOption('#ts', ''); await clickBtn('Create');
+  await ev(() => MTPS.App.run('newtag')); await wait(120);
+  await page.fill('#tn', 'Ratio'); await page.fill('#tt', 'LREAL'); await page.dispatchEvent('#tt', 'input'); await wait(50);
+  check('New Tag: LREAL offers Float and Exponential', (await page.$$eval('#tsty option', o => o.map(x => x.textContent).join(','))) === 'Float,Exponential');
+  await page.selectOption('#ts', ''); await clickBtn('Create');
+  await ev(() => { MTPS.App.state.p.tags.push({ name: 'Wide', type: 'LINT', style: 'Hex' }); MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.push({ t: 'MOV(1401303601200000,Stamp)DIV(1,3,Ratio)ADD(Wide,1,Wide);' }); MTPS.App.render(); });
+  check('LINT and LREAL tags in logic verify', (await verifyErrs()).length === 0, JSON.stringify(await verifyErrs()));
+  await ev(() => MTPS.App.run('tagsmon')); await wait(150);
+  check('offline: an LREAL shows 0.0, a LINT in Hex 16#0000_0000_0000_0000', (await cellText('#tagrows tr[data-tag="Ratio"] td.val')) === '0.0' && (await cellText('#tagrows tr[data-tag="Wide"] td.val')) === '16#0000_0000_0000_0000');
+  check('online with LINT and LREAL', await online());
+  await ev(() => MTPS.App.run('runm')); await wait(400);
+  const dtv = await cellText('#tagrows tr[data-tag="Stamp"] td.val');
+  check('a LINT in Date/Time: DT#2014-05-28-…:00:01.200_000 (UTC…) in this computer\'s time zone', /^DT#2014-05-(28|29)-\d\d:\d\d:01\.200_000 \(UTC[+-]\d\d:\d\d\)$/.test(dtv), dtv);
+  check('an LREAL keeps 64-bit precision (1/3)', (await ev(() => MTPS.App.racks[0].controller(0).read('Ratio'))) === 1 / 3);
+  await page.click('#tagrows tr[data-tag="Wide"] [data-texp]'); await wait(80);
+  check('a LINT opens to its 64 bits', (await page.$$('#tagrows tr[data-tag^="Wide."]')).length === 64);
+  await shot('3-lint-lreal');
+  await ev(() => MTPS.App.run('offline')); await wait(100);
+  check('L5X: DataType LINT with Radix Date/Time, LREAL', /<Tag Name="Stamp" TagType="Base" DataType="LINT" Radix="Date\/Time"/.test(await ev(() => MTPS.App.toL5X(MTPS.App.state.p))) && /DataType="LREAL" Radix="Float"/.test(await ev(() => MTPS.App.toL5X(MTPS.App.state.p))));
+  // the Data Type Editor: an LREAL member
+  await ev(() => MTPS.App.run('newdt')); await wait(120);
+  await page.fill('#dten', 'Meas'); await member(0, 'Value', 'LREAL'); await member(1, 'Ok', 'BOOL');
+  await clickBtn('Apply');
+  check('a type with an LREAL member is 8-byte aligned: LREAL + BOOL = 16 bytes', (await cellText('#dtes')) === 'Data Type Size: 16 bytes');
+  await clickBtn('Cancel');
+  {
+    const tp = await touchPage(800, 1280);
+    await fresh(tp);
+    await ev(() => { MTPS.App.state.p.tags.push({ name: 'Big', type: 'LINT' }); MTPS.App.render(); }, null, tp);
+    check('tablet: online', await online(tp));
+    await ev(() => MTPS.App.run('tagsmon'), null, tp); await wait(200, tp);
+    await tp.tap('#tagrows [data-tag="Big"] [data-tv]'); await wait(200, tp);
+    await tp.tap('#p1'); await tp.keyboard.press('Control+a'); await tp.keyboard.type('5000000000'); await clickBtn('OK', tp, true);
+    check('tablet (touch): a LINT takes a value past 32 bits (5000000000)', (await ev(() => MTPS.App.racks[0].controller(0).read('Big'), null, tp)) === 5000000000 && (await cellText('#tagrows [data-tag="Big"] [data-tv]', tp)) === '5000000000');
+    check('tablet: no JS errors', tp._errs.length === 0, tp._errs.join(' | '));
+    await tp.context().close();
+  }
 };

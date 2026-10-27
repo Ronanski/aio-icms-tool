@@ -1717,15 +1717,15 @@
   /* ---------- instruction editor (operands, mnemonic) and the tag browser in it ---------- */
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
-    num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
-    control: ['CONTROL'], darr: ['DINT'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
+    num: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], dest: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], int: ['SINT', 'INT', 'DINT', 'LINT'], idest: ['SINT', 'INT', 'DINT', 'LINT'], expr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL', 'BOOL'],
+    control: ['CONTROL'], darr: ['DINT'], fsrc: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], farr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fdst: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], ddest: ['DINT'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr'];
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
   const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || (d => (d && d.family === 'string' ? strMems(d.len) : d && d.members))((S.p.dataTypes || []).find(d => U(d.name) === U(ty))) || null;
-  const NBITS = { SINT: 8, INT: 16, DINT: 32 };
+  const NBITS = { SINT: 8, INT: 16, DINT: 32, LINT: 64 };
   /* the data type of a tag address, as the reference reads it: Name[Element].Member.Bit, or Location:Slot:Type.Member.Bit
      for the I/O tags of a module; null when the address names nothing in the project */
   function addrType(addr, seen) {
@@ -2139,16 +2139,17 @@
      style; a REAL shows Float or Exponential; an integer or BOOL Binary, Octal, Decimal, Hex (integers also ASCII). */
   const ACCESS = ['Read/Write', 'Read Only', 'None'];
   const baseTy = ty => String(ty || 'BOOL').replace(/\[.*$/, '');
-  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : []; };
-  const defStyle = ty => (U(baseTy(ty)) === 'REAL' ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
+  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' || b === 'LREAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : b === 'LINT' ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII', 'Date/Time', 'Date/Time (ns)'] : []; };
+  const defStyle = ty => (/^L?REAL$/.test(U(baseTy(ty))) ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
   const styleOfTag = (t, ty) => { const l = stylesOf(ty || (t && t.type)); return t && l.includes(t.style) ? t.style : defStyle(ty || (t && t.type)); };
   const accessOf = t => (t && ACCESS.includes(t.access) ? t.access : 'Read/Write');
   /* a value as its Style shows it (1756-RM014, Data display style: 15 in an INT is 2#0000_0000_0000_1111, 8#000_017,
      16#000F, '$00$0F', 1.5000000e+01); null for Decimal and Float, which show the number as it is */
-  const BITW = { SINT: 8, INT: 16, DINT: 32 };
+  const BITW = { SINT: 8, INT: 16, DINT: 32, LINT: 64 };
   const grp_ = (x, n) => x.replace(new RegExp(`\\B(?=(\\w{${n}})+$)`, 'g'), '_');
   function styled(v, ty, st) {
     if (typeof v !== 'number' || !st || st === 'Decimal' || st === 'Float') return null;
+    if (/^Date\/Time/.test(st)) return dateTime(v, st !== 'Date/Time');
     if (st === 'Exponential') { const [m, e] = v.toExponential(7).split('e'); return m + 'e' + (e[0] === '-' ? '-' : '+') + e.replace(/^[+-]/, '').padStart(2, '0'); }
     const w = BITW[U(ty)];
     if (!w || !Number.isInteger(v)) return null;
@@ -2407,7 +2408,7 @@
     }
     if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtSt(t.value, ty, t), cls: '' };
     // an atomic tag without a start value starts at 0
-    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
+    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (/^L?REAL$/.test(ty) ? '0.0' : '0') : '', cls: '' };
   }
   function tagEditorBody(inline, mode0, scope0) {
     S.tagMode = mode0 || S.tagMode || 'mon';
@@ -2442,7 +2443,7 @@
   function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
   /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
      Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
-  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
+  const styleOf = ty => (/^L?REAL$/.test(ty) ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
   // the tag an alias ends at (an alias of an alias goes on to the base tag)
   const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
   const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'External Access', 'Usage', 'Constant'] };
@@ -3983,6 +3984,17 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       }).join('');
       return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members>${ms}</Members></DataType>`;
     }).join('\n')}\n</DataTypes>`;
+  }
+  /* the Date/Time styles of a LINT (v37 help: About the Tag Editor): microseconds since 1970 as
+     DT#2014-05-28-19:00:01.200_000 (UTC-05:00), or nanoseconds as LDT#…200_000_000 (UTC-05:00), in the computer's time
+     zone; a negative value cannot be shown as a date (null: the number is shown) */
+  function dateTime(v, ns) {
+    if (!Number.isInteger(v) || v < 0) return null;
+    const b = BigInt(v), per = ns ? 1000000000n : 1000000n, sec = Number(b / per), frac = (b % per).toString().padStart(ns ? 9 : 6, '0');
+    const d = new Date(sec * 1000);
+    if (isNaN(d) || d.getFullYear() > 2250) return null;
+    const p2 = n => String(n).padStart(2, '0'), off = -d.getTimezoneOffset(), oh = Math.floor(Math.abs(off) / 60), om = Math.abs(off) % 60;
+    return `${ns ? 'LDT' : 'DT'}#${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}-${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${frac.replace(/(\d{3})(?=\d)/g, '$1_')} (UTC${off < 0 ? '-' : '+'}${p2(oh)}:${p2(om)})`;
   }
   /* ---------- strings: STRING (LEN, DATA[82], 1756-PM004) and the string types of Data Types > Strings ----------
      New String Type: Name, Description, Maximum Characters (1 to 65535, v37 help: Using user-defined data types), the
