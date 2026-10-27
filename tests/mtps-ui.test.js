@@ -1157,8 +1157,8 @@ function check(name, cond, info = '') {
     await page.keyboard.press('Shift+F10'); await page.waitForTimeout(100);
     check('Shift+F10: the context menu of the selection', (await page.$$eval('#layer .menu .it', i => i.map(x => x.textContent.trim()))).some(t => t.startsWith('Cut Instruction')));
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+i'); await page.waitForTimeout(100);
-    check('Ctrl+I: Add Ladder Element (insert after the selection)', (await dlgTitle()) === 'Add Ladder Element');
+    await page.keyboard.press('Alt+Insert'); await page.waitForTimeout(100);
+    check('Alt+Insert: Add Ladder Element (help v37 keyboard table; Ctrl+I is insert / append mode)', (await dlgTitle()) === 'Add Ladder Element');
     await page.keyboard.press('Escape');
     await ev(() => { MTPS.App.state.prefs.org = false; MTPS.App.state.prefs.err = false; MTPS.App.render(); });
     await page.keyboard.press('Alt+0'); await page.waitForTimeout(80);

@@ -570,7 +570,7 @@
         lv.push(el);
         path = tgt.concat(lv.length - 1);
       } else if (tgt) {
-        const { arr, idx } = seqOf(elems, tgt), pos = at ? (at.after ? idx + 1 : idx) : idx + 1;
+        const { arr, idx } = seqOf(elems, tgt), pos = at ? (at.after ? idx + 1 : idx) : S.insMode ? idx : idx + 1;
         arr.splice(pos, 0, el);
         path = tgt.slice(0, -1).concat(pos);
       } else { elems.push(el); path = [elems.length - 1]; }
@@ -830,6 +830,7 @@
     redo: { l: 'Redo', k: 'Ctrl+Y', i: 'redo', run: redo, on: () => editable() && S.redo.length > 0 },
     cut: { l: 'Cut', k: 'Ctrl+X', i: 'cut', run: () => copySel(true), on: () => editable() && (!!S.sel || S.selRung != null) },
     copy: { l: 'Copy', k: 'Ctrl+C', i: 'copy', run: () => copySel(false), on: () => !!S.sel || S.selRung != null || tagAllOn() },
+    insmode: { l: 'Insert Mode', k: 'Ctrl+I', i: 'plus', run: () => { S.insMode = !S.insMode; toast(S.insMode ? 'Insert mode: a new instruction goes before the selected one.' : 'Append mode: a new instruction goes after the selected one.'); }, ck: () => !!S.insMode },
     selall: { l: 'Select All', k: 'Ctrl+A', i: 'check', run: selectAll, on: () => !S.noProj && (S.view === 'tags' || (S.view === 'ladder' && rungs().length > 0)) },
     paste: { l: 'Paste', k: 'Ctrl+V', i: 'paste', run: paste, on: () => editable() && !!S.clip },
     del: { l: 'Delete', k: 'Del', i: 'trash', run: delSel, on: () => editable() && (!!S.sel || S.selRung != null) },
@@ -1151,7 +1152,7 @@
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
-      <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
+      <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
   /* ---------- organizer tree ---------- */
@@ -3153,7 +3154,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const grpOf = g => (HGRP.find(x => x[0] === g) || [g, g])[1], T = [];
     const tips = HELP.TIPS.en || [];
     T.push({ id: 'start', t: 'Getting Started', lv: 0, html: () => `<h3>Getting Started</h3><table class="iht"><tbody>${tips.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`, txt: tips.flat().join(' '), kw: tips.map(x => x[0]) });
-    const keys = Object.keys(C).filter(k => C[k].k).map(k => [C[k].k, C[k].l.replace(/…$/, '')]);
+    const keys = Object.keys(C).filter(k => C[k].k).map(k => [C[k].k, C[k].l.replace(/…$/, '')]).concat([['F2', 'Edit the selected operand'], ['Shift+F10', 'Shortcut menu of the selection'], ['Ctrl+Home / Ctrl+End', 'First / last rung'], ['Ctrl+Enter', 'Accept the comment or description being edited'],
+      ['Alt+Enter', 'Properties of the active routine'], ['Alt+0', 'Show or hide the Controller Organizer'], ['Alt+1', 'Show or hide the Errors window'], ['Alt+F, E, V, S, L, C, T, H', 'Open the File, Edit, View, Search, Logic, Communications, Tools, Help menu'],
+      ['Ctrl+PageDown / Ctrl+PageUp', 'Next / previous routine window'], ['Ctrl+Tab / Shift+Ctrl+Tab, Ctrl+F6', 'Next / previous window (routine or tags)'], ['Ctrl+F4', 'Close the window in focus'], ['Ctrl+D (a rung selected)', 'Edit the rung comment'], ['Esc', 'Cancel; clear the selection']]);
     T.push({ id: 'keys', t: 'Keyboard Shortcuts', lv: 0, html: () => `<h3>Keyboard Shortcuts</h3><table class="iht"><thead><tr><th>Keys</th><th>Command</th></tr></thead><tbody>${keys.map(([k, l]) => `<tr><td class="mono">${esc(k)}</td><td>${esc(l)}</td></tr>`).join('')}</tbody></table>`, txt: keys.flat().join(' '), kw: ['keyboard shortcuts', 'shortcut keys'] });
     T.push({ id: 'ins', t: 'Instructions', lv: 0, folder: true });
     [...new Set(Object.values(INSTR).map(d => d.grp))].forEach(g => {
@@ -5751,6 +5754,23 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   // Alt+0 / Alt+1: show the Controller Organizer / the Errors pane (each layout has its own place for them)
   function showOrg() { if (S.layout === 'phone') S.area = 'project'; else if (S.layout === 'tablet') { S.prefs.org = true; S.drawer = true; } else S.prefs.org = true; savePrefs(); render(); }
   function showErrors() { if (S.layout === 'desktop') { S.prefs.err = true; savePrefs(); } else if (S.layout === 'tablet') S.errOpen = true; else S.area = 'more'; render(); const q = $('[data-errq]'); if (q && S.layout === 'desktop') q.focus(); }
+  /* more of the keyboard table (help v37, Use the keyboard to navigate): Alt+Enter the active routine's properties;
+     Alt+F, E, V, S, L, C, T, H the main menu; Ctrl+PageDown / Ctrl+PageUp, Ctrl+Tab / Shift+Ctrl+Tab and Ctrl+F6 the
+     next or previous routine window (tab); Ctrl+F4 closes it; Ctrl+D on a rung edits its comment */
+  const ALTM = { KeyF: 'File', KeyE: 'Edit', KeyV: 'View', KeyS: 'Search', KeyL: 'Logic', KeyC: 'Communications', KeyT: 'Tools', KeyH: 'Help' };
+  function tableKey(ev, k, ctrl) {
+    if (S.noProj && !ev.altKey) return false;
+    if (ev.altKey && !ctrl && k === 'Enter') { if (S.view === 'ladder') routineProps('rt:' + S.prog + '/' + S.routine); return true; }
+    if (ev.altKey && !ctrl && !ev.shiftKey && ALTM[ev.code] && S.layout === 'desktop') { const m = $(`.dmenu [data-menu="${ALTM[ev.code]}"]`); if (m) m.click(); return !!m; }
+    if (!ctrl || ev.altKey) return false;
+    const act = S.view === 'tags' ? 'tags' : S.view === 'ladder' ? S.prog + '/' + S.routine : null;
+    const step = d => { if (!S.tabs.length) return; const i = S.tabs.indexOf(act); openTab(S.tabs[((i < 0 ? 0 : i + d) % S.tabs.length + S.tabs.length) % S.tabs.length]); };
+    if (k === 'PageDown' || k === 'PageUp') { step(k === 'PageDown' ? 1 : -1); return true; }
+    if (k === 'Tab' || k === 'F6') { step(ev.shiftKey ? -1 : 1); return true; }
+    if (k === 'F4') { if (act) closeTab(act); return true; }
+    if (k.toLowerCase() === 'd' && !ev.shiftKey && S.view === 'ladder' && !S.sel && curSelRung() != null) { if (editable()) rungComment(curSelRung()); return true; }
+    return false;
+  }
   function onKey(ev) {
     if ($('#layer').children.length) { if (layerKey) layerKey(ev); return; }
     if (ev.target.id === 'desctx') {
@@ -5758,7 +5778,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       return;
     }
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
-    if (k === 'F4') { ev.preventDefault(); nextResult(ev.shiftKey ? -1 : 1); return; }
+    if (k === 'F4' && !ev.ctrlKey && !ev.metaKey) { ev.preventDefault(); nextResult(ev.shiftKey ? -1 : 1); return; }
     if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
@@ -5766,7 +5786,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit1' || ev.code === 'Numpad1')) { ev.preventDefault(); showErrors(); return; }
-    const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
+    if (tableKey(ev, k, ctrl)) { ev.preventDefault(); return; }
+    const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'insmode' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
