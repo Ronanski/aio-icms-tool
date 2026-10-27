@@ -38,6 +38,14 @@
   const url = ch => PAGES + (ch === 'beta' ? 'beta/' : '');
   const servedHere = ch => onPages() && inBeta() === (ch === 'beta');
 
+  /* the hosted copy of this channel: another build is an update. Elsewhere (the built-in copy of the exe or APK): a
+     newer version, or on Beta also another build of the same version, since every merge into main is a
+     new Beta build without a new version number (owner 2026-10-27: each change reaches Beta by itself) */
+  function isUpdate(info, app, served) {
+    if (served || app.build === 'dev') return info.build !== app.build && (app.build !== 'dev' || compare(info.version, app.version) > 0);
+    const c = compare(info.version, app.version);
+    return c > 0 || (info.channel === 'beta' && c === 0 && info.build !== app.build);
+  }
   async function check(manual) {
     if (!navigator.onLine) { st.status = 'offline'; return st; }
     if (!manual && Date.now() - st.at < 10 * 60e3) return st;
@@ -48,8 +56,7 @@
       const v = await res.json();
       if (!v || typeof v.version !== 'string' || typeof v.build !== 'string') throw new Error('bad version.json');
       const info = { version: v.version, build: v.build, notes: typeof v.notes === 'string' ? v.notes : '', channel: ch };
-      // the hosted copy of this channel: another build is an update. Elsewhere (built-in copy): a newer version only.
-      const newer = servedHere(ch) || A.build === 'dev' ? info.build !== A.build && (A.build !== 'dev' || compare(info.version, A.version) > 0) : compare(info.version, A.version) > 0;
+      const newer = isUpdate(info, A, servedHere(ch));
       Object.assign(st, { status: newer ? 'available' : 'current', at: Date.now(), info: newer ? info : null });
       set('upChecked', String(st.at));
       if (newer && (manual || get('upSkip') !== info.build)) A.onAvailable(info);
@@ -90,7 +97,7 @@
       setInterval(() => check(false), 3600e3);
       addEventListener('online', () => check(false));
     },
-    check, apply, dialog, compare, channel,
+    check, apply, dialog, compare, channel, isUpdate,
     skip(info) { set('upSkip', info.build); },
   };
 })();

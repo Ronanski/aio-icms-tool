@@ -52,6 +52,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Driver Diagnostics and CIP Diagnostics with live counters fed by real traffic (browses, Autobrowse polls, Go Online connections and packets, a lost connection in the event log).
   - Station Diagnostics (Freeze, Unfreeze, Reset Diagnostic Counters), Data Monitor (data list, data table with Radix and poll rate) and Set Time for a controller.
 - **Fixes:** the All… toolbar button no longer throws a JS error on touch.
+- **In-app update:** on the Beta channel, the Windows app and the Android app now see every new Beta build (each merge into main) as an update, even when the version number is the same. The update bar shows the build, for example "v0.5.0 (beta, beta.a324dca) is ready".
 
 ### Changed (MT PLC Studio 0.5.0, Stable, Wave 1 of the coverage map): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
 - **Studio 5000 menus:**

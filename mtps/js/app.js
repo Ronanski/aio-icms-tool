@@ -7455,7 +7455,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
 
   /* ---------- updates ---------- */
   let upInfo = null;
-  function upbar() { return `<div class="upbar">${ic('download')}<span class="grow"><b>MT PLC Studio v${esc(upInfo.version)}</b>${upInfo.channel === 'beta' ? ' (beta)' : ''} is ready. You have v${esc(VERSION)}.</span><button class="btn pri" data-up="go">Restart to update</button><button class="btn" data-up="later">Later</button></div>`; }
+  function upbar() { return `<div class="upbar">${ic('download')}<span class="grow"><b>MT PLC Studio v${esc(upInfo.version)}</b>${upInfo.channel === 'beta' ? ` (beta${upInfo.version === VERSION ? ', ' + esc(upInfo.build) : ''})` : ''} is ready. You have v${esc(VERSION)}.</span><button class="btn pri" data-up="go">Restart to update</button><button class="btn" data-up="later">Later</button></div>`; }
   document.addEventListener('input', ev => { if (ev.target.id === 'desctx' && S.descEd) S.descEd.value = ev.target.value; });
   document.addEventListener('click', ev => {
     const b = ev.target.closest('[data-up]'); if (!b) return;
