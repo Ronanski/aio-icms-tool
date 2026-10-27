@@ -5,7 +5,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Changed (MT PLC Studio, Wave 2 of the coverage map, not released yet): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+### Changed (MT PLC Studio, Wave 3 of the coverage map): the other languages, tasks, Add-On Instructions, messages and more menus (owner)
+- **Languages:**
+  - Structured Text routines (New Routine > Type Structured Text): a text editor with line numbers and colours, Verify errors by line and column, and an online monitor of the values. The controller runs `:=` and `[:=]`, IF / ELSIF / ELSE, CASE, FOR, WHILE, REPEAT, EXIT, comments, the math and conversion functions, strings, and calls such as TONR, TOFR, RTOR, CTUD, JSR, COP, GSV, SSV and PID.
+  - Function Block Diagram routines: sheets, input and output references, connectors, function blocks wired with the mouse or by tapping, block Properties, Verify errors on the diagram; they run in data-flow order (feedback wires need Assume Data Available) with live values on the pins online.
+  - Sequential Function Chart routines: steps, transitions, actions with qualifiers and timers, selection and simultaneous branches, wires, drag with the mouse or touch, Verify, and an online view of the active steps and step timers.
+  - New FBD_TIMER and FBD_COUNTER data types with TONR, TOFR, RTOR and CTUD, for Structured Text and Function Block Diagram.
+  - New Routine lists the four languages in the reference order: Ladder Diagram, Sequential Function Chart, Function Block Diagram, Structured Text.
+- **Tasks and programs:**
+  - Periodic and event tasks (New Task, Delete Task). A higher-priority task interrupts a lower one, and overlaps are counted.
+  - Task Properties: the full Configuration tab (type, period, priority, trigger, timeout, watchdog) and a Monitor tab with scan times, intervals and the overlap count.
+  - New Program dialog and an Unscheduled Programs folder; unscheduled programs are verified but never run.
+  - Program parameters (Input, Output, InOut, Public) with connections, `\Program.Parameter` direct access, and a Parameters tab in Program Properties.
+  - New instructions UID, UIE, EVENT and IOT.
+  - Controller Properties > SFC Execution tab (execution control, restart position, last scan of active steps).
+- **Add-On Instructions, strings and messages:**
+  - Add-On Instructions under a new Assets folder: create them, edit parameters, local tags and ladder logic, then use them in ladder (EnableIn / EnableOut, parameters by value or by reference).
+  - ASCII string and conversion instructions (FIND, MID, CONCAT, DELETE, INSERT, STOD, STOR, DTOS, RTOS, UPPER, LOWER and more) on a new String tab.
+  - MSG instruction with the Message Configuration dialog (Configuration, Communication, Tag, live Status), to the same controller or another controller in the chassis.
+- **Produced and consumed tags, Logix Echo:**
+  - New Tag and Tag Properties: Type Produced and Consumed, with the Connection dialogs and verify checks; Logic > Produced Tags and Logic > Map PLC Messages.
+  - Logix Emulate: produced and consumed tags move data between two emulated controllers at the RPI, with connection fault codes.
+  - Emulator: Add Logix Echo Controller (5580 types, v33 to v37, IP address); Download checks the family and revision.
+- **Menus and files:**
+  - Tools > Compare Tool: compare the open project with a .mtp or .L5X file.
+  - File > Generate Report, File > Print (Routine, Tags, Data Type, Module Properties, Controller Organizer, Controller Properties, Entire Project) and Print Options; Ctrl+P.
+  - Sample projects (Motor, Traffic Light, Tank Level, Conveyor Sorter) on the start page, in Help > Vendor Sample Projects and in Open.
+  - File > New Component lists every kind with its dialog.
+  - View > Logical Organizer (folders and parent programs), View > Toolbars, Full Screen and Start Page.
+  - Window menu: Reset Window Layout, Close, Close All, Close Routine, Next / Previous Window and the open windows.
+  - Help > Release Notes, and an About box with Version History, Installed Components and Controller Support.
+  - RSLinx Classic: View > Options (General, DDE/OPC), Window > Cascade and Tile, Help with its books, and Communications > Configure Shortcuts (shown in RSWho).
+- Not in L5X yet (owner rule: no L5X format change this wave): ST, FBD and SFC routines, Add-On Instructions, MSG configuration, task timing, program parameters and the Logical Organizer.
+
+### Changed (MT PLC Studio, Wave 2 of the coverage map): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
 - **Projects and menus:**
   - Export to L5X carries the whole project (tags with values and attributes, data types, modules with keying, revision and RPI, tasks with watchdog, programs with fault routine, fault handlers, routines with edit zones), and opening that L5X brings it all back.
   - File > Import Component: import a routine, program or data type from an L5X file, with the Import Configuration dialog. The organizer's right-click menus export them.
