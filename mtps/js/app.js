@@ -3980,7 +3980,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     ['DDE/OPC', [['Topic Configuration…', 'na:dde.1'], ['Alias Topic Configuration…', 'na:dde.2'], ['Active Topics/Items…', 'na:dde.3'], ['Communication Events…', 'na:dde.4'], ['Optimized Packets…', 'na:dde.5'], ['Server Diagnostics…', 'na:dde.6'], ['DDE Client Diagnostics…', 'na:dde.7'], ['OPC Group Diagnostics…', 'na:dde.8'], '-', ['Update ControlLogix Tag Info', 'na:dde.9'], '-', ['Options…', 'na:dde.10']]],
     ['Security', [['Set Security User…', 'na:sec.11'], ['Show Security Access…', 'na:sec.12']]],
     ['Window', [['Cascade', 'wcas'], ['Tile', 'wtile'], ['Arrange Icons', 'warr'], ['Close All', 'wclose']]],
-    ['Help', [['RSLinx Classic Help', 'na:help'], ['Release Notes', 'na:notes'], ['Quick Start', 'na:quick'], '-', ['About RSLinx Classic…', 'about']]]];
+    ['Help', [['RSLinx Classic Help', 'help'], ['Release Notes', 'help:rn'], ['Quick Start', 'help:qs'], '-', ['About RSLinx Classic…', 'about']]]];
   const RLNA = {
     open: 'Open Project opens an RSLinx Classic project (the drivers, topics and settings saved as a file). In emulation the drivers are kept with MT PLC Studio: Configure Drivers holds them.',
     defproj: 'Select Default Project picks the RSLinx Classic project loaded at startup. In emulation the drivers are kept with MT PLC Studio.',
@@ -3991,12 +3991,40 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     cipopts: 'Configure CIP Options sets the CIP connection options of RSLinx Classic. The emulation uses fixed values.',
     dde: 'The DDE/OPC server of RSLinx Classic serves controller data to Windows programs (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation: use Data Monitor, or the Watch and Monitor Tags windows of the programming software.',
     sec: 'RSLinx Classic security comes from FactoryTalk Security on a Windows network. It is not part of the emulation: everyone has full access.',
-    help: 'The RSLinx Classic help is not part of the emulation. The help of MT PLC Studio (F1) explains these windows.',
-    notes: 'The release notes of RSLinx Classic are not part of the emulation. Help > About RSLinx Classic shows the version.',
-    quick: 'The Quick Start of RSLinx Classic is not part of the emulation. In short: Communications > Configure Drivers, add a driver, then RSWho.',
     eds: 'Upload EDS file from device reads the EDS file a device holds. The emulated modules are known to RSLinx already: there is nothing to upload.',
     topic: 'Configure New DDE/OPC Topic makes a DDE/OPC topic for this controller. There are no DDE/OPC clients in emulation: use Data Monitor.' };
-  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true, gone: new Set(), bg: [] };
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true, gone: new Set(), bg: [], arr: '' };
+  /* View > Options (RSLinx Classic 4.60 help: Options, General tab; Options, DDE/OPC tab), kept on this device. The
+     DDE/OPC settings are kept but have no DDE/OPC client to act on; Save communication errors to a file writes the
+     events of this session (View > Event Log) to that file when OK is pressed. */
+  const RLOPT0 = { topics: false, logerr: false, adderr: false, eng: false, tofile: false, file: '/MT PLC Studio Projects/RSLinx Errors.log', clean: false, every: 60 };
+  const rlOpts = () => Object.assign({}, RLOPT0, store.get('rlopts', {}));
+  /* Help > RSLinx Classic Help: the books of the RSLinx Classic 4.60 help (Overview, Quick Start, How To..., Troubleshooting,
+     Glossary) with the topics that apply to this emulation; a topic about a part that is not emulated says so.
+     [book, [[id, title, paragraphs or null]]] */
+  const RLHELP = [
+    ['Overview', [['ov', 'Overview of RSLinx Classic', ['RSLinx Classic is the communication server between the programming software, HMI and OPC/DDE clients and the controllers. It holds the drivers (the networks this computer can reach) and browses them in RSWho.', 'In this emulation it reaches the emulated chassis through two drivers: Virtual Backplane and Emulate Ethernet. Who Active, Go Online and Download of the programming software use the same drivers.']],
+      ['explore', 'Explore RSLinx Classic', ['The menu bar: File, Edit, View, Communications, Station, DDE/OPC, Security, Window and Help. The toolbar opens RSWho and Configure Drivers; the status bar shows the path of the device picked in RSWho.', 'View > Options shows or hides the toolbar and the status bar (General tab) and holds the DDE/OPC settings (DDE/OPC tab).', 'Window > Cascade and Tile arrange RSWho and the diagnostic window in front; Close All closes them; the open windows are listed at the end of the Window menu.']],
+      ['dtm', 'Data table monitor', ['Station > Data Monitor lists the data files of the controller picked in RSWho. Double-click a file (or tap the picked one) to see its values; right-click the table for Properties (the poll rate), Refresh, Activate and Deactivate.']],
+      ['opc', 'RSLinx Classic OPC servers', null], ['dcom', 'Application authentication level for DCOM security', null]]],
+    ['Quick Start', [['qs', 'Quick start', ['The main tasks to use RSLinx Classic, in four steps:', '1. Configure a driver. 2. Configure a topic. 3. Copy a link to the clipboard. 4. Paste a link from the clipboard.', 'In this emulation step 1 is the one that matters: the programming software goes online through the driver. Steps 2 to 4 serve DDE/OPC clients, which are not part of the emulation.']],
+      ['qs1', 'Configure a driver (Step 1 of 4)', ['Communications > Configure Drivers. Pick the driver type in Available Driver Types and press Add New. Enter a name (15 characters maximum) and press OK. The driver starts; RSWho lists what it reaches.', 'Virtual Backplane reaches the controllers of the emulated chassis by slot; Emulate Ethernet reaches them by IP address.']],
+      ['qs2', 'Configure a topic (Step 2 of 4)', null], ['qs3', 'Copy a link (Step 3 of 4)', null], ['qs4', 'Paste a link (Step 4 of 4)', null]]],
+    ['How To...', [['drv', 'Use drivers and bridge devices', ['Configure Drivers lists the configured drivers with their status. Start and Stop run or stop a driver; Configure sets the slot of a Virtual Backplane driver; Delete removes it. Only one driver of each type can be configured.', 'Communications > Driver Diagnostics shows the counters of a driver; Station > Diagnostics those of the device picked in RSWho.']],
+      ['net', 'Set up networks', ['RSWho shows each running driver with the chassis and the devices it reaches. Right-click a device for Device Properties, Module Statistics, Station Diagnostics and Data Monitor.']],
+      ['install', 'Install and start RSLinx Classic', null], ['eds', 'Register EDS files of devices', null], ['fts', 'Secure RSLinx Classic with FactoryTalk Security', null]]],
+    ['Troubleshooting', [['faq', 'Frequently asked questions (FAQ)', ['RSWho shows no devices: check that a driver is running (Communications > Configure Drivers) and that the emulated chassis is on.', 'A device has a red X: it does not answer. Power the controller on in the emulator, then Refresh.']],
+      ['drverr', 'Driver configuration errors', ['A driver name is 1 to 15 characters: letters, digits, - and _, starting with a letter, and not the name of another driver.', 'A Virtual Backplane driver needs a free slot for its own card.']], ['ddeerr', 'DDE/OPC communication event errors', null]]],
+    ['Glossary', [['gl', 'A-W', ['Driver: the software that connects RSLinx Classic to one network.', 'Path: the route from this computer to a device, driver first, then the chassis and the slot (for example AB_VBP-1\\1).', 'RSWho: the window that browses the networks of the running drivers.', 'Topic: a named path to a controller that DDE/OPC clients use.']]]],
+    ['Release Notes', [['rn', 'Release Notes', ['This RSLinx Classic window is part of MT PLC Studio. Its changes are in the release notes of MT PLC Studio (Help > Release Notes in the programming software).']]]]];
+  const rlHelpT = id => RLHELP.flatMap(b => b[1]).find(x => x[0] === id) || RLHELP[0][1][0];
+  function rlHelpHTML(md) {
+    const t = rlHelpT(md.t);
+    const toc = RLHELP.map(([b, ts]) => `<div class="rlhbk">${ic('file', 'i')}<b>${esc(b)}</b></div>${ts.map(([id, l]) => `<div class="rlht${id === t[0] ? ' on' : ''}" data-rlht="${id}">${esc(l)}</div>`).join('')}`).join('');
+    const body = t[2] ? t[2].map(p => `<p>${esc(p)}</p>`).join('') : '<p class="help">This topic is about a part of RSLinx Classic that is not emulated (DDE/OPC clients, installation, EDS files, FactoryTalk Security). See the RSLinx Classic help that comes with the product.</p>';
+    return `<div class="rlov rlov2"><div class="rlbox rlhelp" role="dialog" aria-label="RSLinx Classic Help"><div class="bh">RSLinx Classic Help</div><div class="bb rlhw"><nav class="rlhc" aria-label="Contents">${toc}</nav><article class="rlhx" id="rlhx"><h3>${esc(t[1])}</h3>${body}</article></div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
+  }
   // the device / the controller picked in RSWho (the Station menu works on it)
   const rlSelDev = () => { const n = rlFind(rlTree(), rlS.sel); return n && n.m ? n : null; };
   const rlSelCpu = () => { const n = rlSelDev(); return n && n.m.ctl ? n : null; };
@@ -4218,8 +4246,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         <div class="rltabw"><table class="rltab rldtab rlwide"><thead><tr><th>Time</th><th>Driver</th><th>Event</th></tr></thead><tbody>${ev.slice(0, 100).map(e => `<tr><td class="mono">${esc(new Date(e.t).toLocaleTimeString())}</td><td class="mono">${esc(e.d)}</td><td>${esc(`Node ${e.node}: ${e.err}`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No events.</td></tr>'}</tbody></table></div>`);
     }
     if (md.k === 'opts') {
-      const gen = `<label class="frow rlck2"><input type="checkbox" id="rlo-sb"${md.sb ? ' checked' : ''}><span>Show Status Bar</span></label><label class="frow rlck2"><input type="checkbox" id="rlo-tb"${md.tb ? ' checked' : ''}><span>Show Toolbar</span></label>`;
-      const dde = `<p class="help" style="margin:0">${esc(RLNA.dde)}</p>`;
+      const o = md.o, cb = (k, l, x) => `<label class="frow rlck2"><input type="checkbox" data-rlo="${k}"${o[k] ? ' checked' : ''}${x || ''}><span>${l}</span></label>`;
+      const gen = `<label class="frow rlck2"><input type="checkbox" id="rlo-sb"${md.sb ? ' checked' : ''}><span>Show Status Bar</span></label><label class="frow rlck2"><input type="checkbox" id="rlo-tb"${md.tb ? ' checked' : ''}><span>Show Toolbar</span></label>${cb('topics', 'Create DDE/OPC topics from RSLogix programs')}`;
+      const dde = `${cb('logerr', 'Log communication errors')}${cb('adderr', 'Display addressing errors')}${cb('eng', 'Use English language for DDE conversations')}${cb('tofile', 'Save communication errors to a file')}
+        <div class="frow rlfile"><input class="inp mono" data-rlo="file" value="${esc(o.file)}"${o.tofile ? '' : ' disabled'} aria-label="Log file" spellcheck="false"></div>
+        ${cb('clean', 'Enable Automatic Client Connection Cleanup')}<label class="frow rlfile"><span>Interval</span><input class="inp mono" data-rlo="every" value="${esc(o.every)}"${o.clean ? '' : ' disabled'} inputmode="numeric" style="width:90px"></label>
+        <p class="help" style="margin-bottom:0">${esc(RLNA.dde)}</p><div class="errtx" id="rlerr">${esc(md.err || '')}</div>`;
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Options"><div class="bh">Options</div>${rlTabs(md, [['gen', 'General'], ['dde', 'DDE/OPC']])}<div class="bb">${md.tab === 'dde' ? dde : gen}</div>
         <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="optok">OK</button></div></div></div>`;
     }
@@ -4228,6 +4260,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'help') return rlHelpHTML(md);
     const misc = rlMiscHTML(md); if (misc) return misc;
     if (md.k === 'dmon') return rlDmHTML(md);
     if (md.k === 'settime') return rlStHTML(md);
@@ -4281,6 +4314,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         p.style.left = Math.max(4, Math.min(b.offsetLeft - box.querySelector('.rlmb').scrollLeft, box.clientWidth - p.offsetWidth - 4)) + 'px';
       }
       if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+      box.classList.toggle('rl-cas', rlS.arr === 'cas'); box.classList.toggle('rl-tile', rlS.arr === 'tile'); const rlch = box.querySelector('.rlchild'); if (rlch && !rlch.hidden) box.style.setProperty('--rlcht', (rlch.offsetTop - 8) + 'px');
       box.style.setProperty('--rlmbh', box.querySelector('.rlmb').offsetHeight + 'px');
       const dg = box.querySelector('[data-rldg]'); if (dg) dg.dataset.h = dg.innerHTML;
     };
@@ -4323,9 +4357,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         rlS.modal = { k: 'note', t: it ? it[0].replace(/…$/, '') : 'RSLinx Classic', x: RLNA[a.slice(3).split('.')[0]] }; draw(); return true;
       }
       if (a === 'about' || a === 'evlog') { rlS.modal = { k: a }; draw(); return true; }
-      if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb }; draw(); return true; }
-      // Window: one child window shows at a time here, so Cascade, Tile and Arrange Icons leave it as it is
-      if (a === 'wcas' || a === 'wtile' || a === 'warr') { draw(); return true; }
+      if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb, o: rlOpts() }; draw(); return true; }
+      if (a === 'help' || a.startsWith('help:')) { rlS.modal = { k: 'help', t: a.slice(5) || 'ov' }; draw(); return true; }
+      /* Window: Cascade stacks the diagnostic window in front over RSWho with the RSWho title in view; Tile puts them
+         side by side, both usable. Arrange Icons has no icons to arrange (no window is minimized here). */
+      if (a === 'wcas' || a === 'wtile') { rlS.arr = a === 'wcas' ? 'cas' : 'tile'; draw(); return true; }
+      if (a === 'warr') { draw(); return true; }
       if (a === 'wclose') { rlS.modal = null; rlS.bg = []; rlS.nochild = true; draw(); return true; }
       if (a.startsWith('wsel:')) {
         const w = a.slice(5), cur = rlS.modal && rlS.modal.live ? rlS.modal : null;
@@ -4363,7 +4400,16 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
       if (a === 'rmok') { rlS.gone.add(md.key); if (rlS.sel === md.key) rlS.sel = 'ws'; rlS.modal = null; draw(); }
-      if (a === 'optok') { const sb = box.querySelector('#rlo-sb'), tb = box.querySelector('#rlo-tb'); if (sb) rlS.sb = sb.checked; if (tb) rlS.tb = tb.checked; rlS.modal = null; draw(); }
+      if (a === 'optok') {
+        const o = md.o || rlOpts(), n = +o.every;
+        const err = o.tofile && !String(o.file).trim() ? 'Enter the file for the communication errors.' : o.clean && !(Number.isInteger(n) && n > 0) ? 'Enter the cleanup interval as a whole number above 0.' : '';
+        if (err) { md.err = err; md.tab = 'dde'; draw(); return; }
+        rlS.sb = md.sb; rlS.tb = md.tb; store.set('rlopts', Object.assign(o, { every: n || RLOPT0.every })); rlS.modal = null; draw();
+        if (o.tofile) {
+          const ev = []; drivers.forEach(d => (rlStat.d[d.name] ? rlStat.d[d.name].ev : []).forEach(e => ev.push(`${new Date(e.t).toISOString()}\t${d.name}\tNode ${e.node}: ${e.err}`)));
+          FS.write(String(o.file).trim(), ev.join('\r\n') + (ev.length ? '\r\n' : '')).then(() => toast(`Communication errors saved to ${baseName(String(o.file).trim())}.`), e => toast('The file could not be written: ' + (e.message || e), 'err'));
+        }
+      }
       if (md.k === 'dmon') {
         md.gm = null;
         if (a === 'dmstop') md.stop = true;
@@ -4453,7 +4499,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const md = rlS.modal;
       // Close of a data table goes back to the data file list
       if (!ok && md.k === 'dmon' && md.file) { md.file = null; md.pp = null; md.gm = null; draw(); return; }
-      if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
+      if (!ok || md.k === 'props' || md.k === 'help') { rlS.modal = null; draw(); return; }
+      if (md.k === 'opts') { rlDx('optok'); return; }
       if (md.k === 'add') { addOk(); return; }
       if (md.k === 'mode') {
         // the same controller code as Studio's Run / Program / Test Mode (Controller.setMode, REM key only)
@@ -4520,6 +4567,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if ((x = t.closest('[data-rltab]')) && rlS.modal) { rlS.modal.tab = x.dataset.rltab; draw(); return; }
+      if ((x = t.closest('[data-rlht]')) && rlS.modal && rlS.modal.k === 'help') { rlS.modal.t = x.dataset.rlht; draw(); const h = box.querySelector('#rlhx'); if (h) h.scrollTop = 0; return; }
       // picking a driver marks its row in place (a redraw would split a double-click)
       if ((x = t.closest('[data-rldp]')) && rlS.modal) { rlS.modal.sel = x.dataset.rldp; box.querySelectorAll('[data-rldp]').forEach(r => r.classList.toggle('on', r === x)); const b = box.querySelector('[data-rldx="dpick"]'); if (b) b.disabled = false; return; }
       if ((x = t.closest('[data-rldx]')) && rlS.modal) { rlDx(x.dataset.rldx, x); return; }
@@ -4531,7 +4579,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         if ((x = t.closest('[data-rldf]'))) { if (md.fsel === x.dataset.rldf && ev.pointerType !== 'mouse' && ev.detail < 2) { rlDmOpen(md, x.dataset.rldf); return; } md.fsel = x.dataset.rldf; box.querySelectorAll('[data-rldf]').forEach(r => r.classList.toggle('on', r === x)); return; }
         if ((x = t.closest('[data-rldr]')) && !t.closest('select')) { md.selr = x.dataset.rldr; draw(); return; }
       }
-      if (rlS.modal) return;
+      if (rlS.modal && !(rlS.modal.live && rlS.arr === 'tile' && t.closest('.rlchild'))) return;
       if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
       if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
       if ((x = t.closest('[data-rln]'))) { rlS.sel = x.dataset.rln; rlS.shut.delete(rlS.sel); draw(); return; }
@@ -4563,11 +4611,17 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     }, true);
     box.addEventListener('change', ev => {
       if ((ev.target.id === 'rlo-sb' || ev.target.id === 'rlo-tb') && rlS.modal && rlS.modal.k === 'opts') { rlS.modal[ev.target.id.slice(4)] = ev.target.checked; return; }
+      if (ev.target.dataset.rlo && rlS.modal && rlS.modal.k === 'opts') {
+        const k = ev.target.dataset.rlo; rlS.modal.o[k] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
+        if (k === 'tofile' || k === 'clean') draw();
+        return;
+      }
       if (ev.target.dataset.rlrx && rlS.modal && rlS.modal.k === 'dmon') { rlS.modal.rx[+ev.target.dataset.rlrx] = ev.target.value; draw(); return; }
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
     layerKey = ev => {
+      if (ev.key === 'F1') { ev.preventDefault(); rlS.menu = ''; rlS.ctx = null; rlAct('help'); return; }
       if (ev.key === 'Escape' && rlS.ctx) { ev.preventDefault(); rlS.ctx = null; draw(); return; }
       if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
       if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }

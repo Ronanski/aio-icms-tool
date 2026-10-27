@@ -73,3 +73,29 @@ body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
 #abtb .cmpt { width: 100%; }
 .xrtabs:has([data-abt]) { overflow-x: auto; }
 [data-abt] { white-space: nowrap; }
+/* RSLinx Classic: View > Options (the log file and the cleanup interval under their boxes) */
+.rlfile { grid-template-columns: auto 1fr; padding-left: 26px; }
+.phone .rlfile { grid-template-columns: auto 1fr; }
+.rlfile > .inp:only-child { grid-column: 1 / -1; width: 100%; }
+/* RSLinx Classic: Help (the books on the left, the topic on the right) */
+.rlbox.rlhelp { width: min(820px, 100%); height: min(560px, 100%); }
+.rlhw { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px 1fr; gap: 0; padding: 0 !important; }
+.rlhc { overflow: auto; border-right: 1px solid var(--border); padding: 6px 0; background: var(--surface-2); }
+.rlhbk { display: flex; align-items: center; gap: 6px; padding: 6px 10px 2px; font-size: 12px; }
+.rlht { padding: 5px 10px 5px 30px; cursor: pointer; font-size: 13px; }
+.rlht:hover { background: var(--surface-3); }
+.rlht.on { background: var(--accent-soft, var(--surface-3)); font-weight: 600; }
+.rlhx { overflow: auto; padding: 10px 16px; line-height: 1.5; }
+.rlhx h3 { margin: 4px 0 8px; font-size: 15px; }
+.phone .rlbox.rlhelp { height: 100%; }
+.phone .rlhw { grid-template-columns: 1fr; grid-template-rows: 40% 1fr; }
+.phone .rlhc { border-right: 0; border-bottom: 1px solid var(--border); }
+/* RSLinx Classic: Window > Cascade (the window in front offset over RSWho) and Tile (side by side, both usable) */
+.rl.rl-cas .rldgo, .rl.rl-tile .rldgo { background: none; pointer-events: none; }
+.rl.rl-cas .rldgo > .rlbox, .rl.rl-tile .rldgo > .rlbox { pointer-events: auto; }
+.rl.rl-cas .rldgo { top: var(--rlcht, 72px); place-items: start; padding: 30px 8px 8px 40px; }
+.rl.rl-tile .rldgo { top: var(--rlcht, 72px); left: 50%; padding: 8px 8px 30px 4px; place-items: stretch; }
+.rl.rl-tile .rldgo > .rlbox.rldg { width: 100%; height: auto; }
+.rl.rl-tile:has(.rldgo) .rlchild { margin-right: calc(50% + 4px); }
+.phone .rl.rl-cas .rldgo, .phone .rl.rl-tile .rldgo { top: var(--rlmbh, 32px); left: 0; padding: 0; place-items: stretch; }
+.phone .rl.rl-tile:has(.rldgo) .rlchild { margin-right: 0; }

@@ -398,5 +398,74 @@ module.exports = async function w3a({ browser, URL, check }) {
     await T.btn('Close');
     check(`${n}: no JS errors (Help)`, !T.errs.length, T.errs.join(' | '));
   }
+  /* ---------- 9. RSLinx Classic: View > Options, the Window menu, Help ---------- */
+  const rlOpen = async T => { await example(T); await T.wait(100); await T.ev(() => MTPS.App.run('rswho')); await T.wait(300); };
+  const rlMenu = async (T, m, a) => { await T.hit(`#layer [data-rlm="${m}"]`); await T.hit(`#layer .rlpop [data-rlmi="${a}"]`); await T.wait(80); };
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    await rlOpen(T);
+    check(`${n}: the RSLinx Classic window opens`, !!(await T.pg.$('#layer .rl .rlmb')));
+    // View > Options: General
+    await rlMenu(T, 'View', 'opts');
+    const gen = await T.pg.$$eval('#layer .rlov2 .rlck2 span', s => s.map(x => x.textContent));
+    check(`${n}: Options, General tab: status bar, toolbar, DDE/OPC topics from RSLogix programs`, gen.join('|') === 'Show Status Bar|Show Toolbar|Create DDE/OPC topics from RSLogix programs', gen.join('|'));
+    await T.hit('#layer .rlov2 [data-rlo="topics"]');
+    await T.hit('#layer .rlov2 [data-rltab="dde"]');
+    const dde = await T.pg.$$eval('#layer .rlov2 .rlck2 span', s => s.map(x => x.textContent));
+    check(`${n}: Options, DDE/OPC tab: the five settings`, dde.join('|') === 'Log communication errors|Display addressing errors|Use English language for DDE conversations|Save communication errors to a file|Enable Automatic Client Connection Cleanup', dde.join('|'));
+    check(`${n}: the log file box is greyed until Save communication errors is ticked`, await T.pg.$eval('#layer [data-rlo="file"]', i => i.disabled));
+    await T.hit('#layer .rlov2 [data-rlo="tofile"]');
+    check(`${n}: … then it can be typed in`, !(await T.pg.$eval('#layer [data-rlo="file"]', i => i.disabled)));
+    await T.pg.fill('#layer [data-rlo="file"]', '/MT PLC Studio Projects/Linx.log'); await T.pg.dispatchEvent('#layer [data-rlo="file"]', 'change');
+    await T.hit('#layer .rlov2 [data-rlo="clean"]');
+    await T.pg.fill('#layer [data-rlo="every"]', 'x'); await T.pg.dispatchEvent('#layer [data-rlo="every"]', 'change');
+    await T.hit('#layer .rlov2 [data-rldx="optok"]');
+    check(`${n}: a bad cleanup interval is refused`, /cleanup interval/.test(await T.text('#layer .rlov2 #rlerr')));
+    await T.pg.fill('#layer [data-rlo="every"]', '30'); await T.pg.dispatchEvent('#layer [data-rlo="every"]', 'change');
+    if (n === 'desktop') await T.shot('rslinx-options');
+    await T.hit('#layer .rlov2 [data-rldx="optok"]'); await T.wait(200);
+    const kept = await T.ev(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /rlopts/.test(k))) || '{}'));
+    check(`${n}: OK keeps the options`, kept.topics === true && kept.tofile === true && kept.clean === true && kept.every === 30 && kept.file === '/MT PLC Studio Projects/Linx.log', JSON.stringify(kept));
+    check(`${n}: Save communication errors to a file writes the file`, await T.ev(() => MTPS.FS.read('/MT PLC Studio Projects/Linx.log').then(() => true, () => false)));
+    await rlMenu(T, 'View', 'opts'); await T.hit('#layer .rlov2 [data-rltab="dde"]');
+    check(`${n}: Options opens with the kept settings`, await T.pg.$eval('#layer [data-rlo="tofile"]', i => i.checked) && (await T.pg.$eval('#layer [data-rlo="every"]', i => i.value)) === '30');
+    await T.hit('#layer .rlov2 [data-rlpx="cancel"]');
+    // Help
+    await rlMenu(T, 'Help', 'help');
+    check(`${n}: Help > RSLinx Classic Help opens the help with its books`, (await T.pg.$$eval('#layer .rlhbk b', b => b.map(x => x.textContent))).join('|') === 'Overview|Quick Start|How To...|Troubleshooting|Glossary|Release Notes');
+    await T.hit('#layer [data-rlht="qs1"]');
+    check(`${n}: a topic opens`, /Configure a driver \(Step 1 of 4\)/.test(await T.text('#layer #rlhx')) && /Configure Drivers/.test(await T.text('#layer #rlhx')));
+    await T.hit('#layer [data-rlht="qs2"]');
+    check(`${n}: a topic about a part not emulated says so`, /not emulated/.test(await T.text('#layer #rlhx')));
+    if (n === 'desktop') await T.shot('rslinx-help');
+    await T.hit('#layer .rlov2 [data-rlpx="cancel"]');
+    await rlMenu(T, 'Help', 'help:qs');
+    check(`${n}: Help > Quick Start opens the Quick Start`, /^Quick start/.test(await T.text('#layer #rlhx')));
+    await T.hit('#layer .rlov2 [data-rlpx="cancel"]');
+    await rlMenu(T, 'Help', 'help:rn');
+    check(`${n}: Help > Release Notes opens the release notes`, /^Release Notes/.test(await T.text('#layer #rlhx')));
+    await T.hit('#layer .rlov2 [data-rlpx="cancel"]');
+    if (n === 'desktop') {
+      await T.pg.keyboard.press('F1'); await T.wait(80);
+      check(`${n}: F1 opens the RSLinx Classic help`, !!(await T.pg.$('#layer .rlhelp')));
+      await T.pg.keyboard.press('Escape'); await T.wait(80);
+    }
+    // Window > Tile and Cascade with a diagnostic window open
+    await rlMenu(T, 'Communications', 'cipdiag');
+    const rect = sel => T.pg.$eval(sel, e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, w: r.width }; });
+    await rlMenu(T, 'Window', 'wtile');
+    const a = await rect('#layer .rldg'), b = await rect('#layer .rlchild');
+    if (n === 'phone') check(`${n}: Tile keeps the window in front full width on the phone`, a.w > 300, JSON.stringify(a));
+    else {
+      check(`${n}: Window > Tile puts RSWho and the window side by side`, b.r <= a.l + 1 && b.w > 150, JSON.stringify([a, b]));
+      await T.hit('#layer .rlchild [data-rlref]');
+      check(`${n}: RSWho stays usable while tiled`, !!(await T.pg.$('#layer .rldg')) && !T.errs.length);
+      if (n === 'desktop') await T.shot('rslinx-tile');
+      await rlMenu(T, 'Window', 'wcas');
+      const c = await rect('#layer .rldg'), d = await rect('#layer .rlchild');
+      check(`${n}: Window > Cascade offsets the window over RSWho`, c.l > d.l + 20 && c.t > d.t + 20, JSON.stringify([c, d]));
+    }
+    check(`${n}: no JS errors (RSLinx Options, Help, Window)`, !T.errs.length, T.errs.join(' | '));
+  }
   for (const T of opened) await T.cx.close();
 };
