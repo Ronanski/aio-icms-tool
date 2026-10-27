@@ -5,7 +5,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 ## Savepoint
 | | |
 |---|---|
-| **Version** | MT PLC Studio **0.4.0** (Stable) prepared on PR #95, 2026-10-26; released after the themes commit and green CI (owner GO 17:46). Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
+| **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). Wave 1 of the coverage map is on branch `claude/project-thread-c32nav` (PR, waiting for the owner's GO MERGE). Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
 | **Tags** | `mtps-v0.4.0-beta.3`, `mtps-v0.1.0`; Trainer `v2.0.0` back to `v1.1.0` (full list in archive). |
 | **Branch** | `main` is the default branch and holds released code. Work on feature branches, merged through PRs only with the owner's GO. |
 | **Tests** | See "Tests in the cloud container" below for current counts. |
@@ -16,7 +16,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 
 ## Next session: CLOUD session (owner, 2026-10-26), read first
 **MT PLC Studio** (`mtps/`, separate from the PLC Trainer at the repo root):
-- Status: PR #95 (branch `claude/project-thread-c32nav`) holds 0.4.0: Studio 5000 right-click menus, one-row chassis + RTB door, Local:n:C tags + Edit Tags grid, RSLinx window, Cross Reference / Find All / branch menu, ladder drag / inline edit / online edit zones / force / Run look, New Project declares only, Logix Emulate Create, staged comm, responsive + perf. Themes thread commits last, then one merge + Stable. Next: COVERAGE MAP artifact (HAVE / PARTIAL / MISSING vs the three products).
+- Status: 0.4.0 Stable is released. The MT PLC STUDIO COVERAGE MAP (https://claude.ai/artifact/HQZrqJC2PwnYvWZDmU1DHT) lists every Studio 5000 / RSLinx / Logix Emulate feature as HAVE / PARTIAL / MISSING in waves W1-W4; the owner GOes one wave at a time. Wave 1 (owner GO 2026-10-26 23:18) is done on `claude/project-thread-c32nav`: menus (Close, Save prompt, Recent, Select All, Properties, Replace, Find Previous, Select Recent Path, Go To Faults), New Tag fields, Select Data Type with 3-D arrays, Edit Tags cells, AB module type names, status flags, 20-pin RTB, BSL/BSR/FFL/FFU/LFL/LFU/SQO/SQI/SQL, Emulate speed of time / Single Scan / chassis menu, RSLinx Device Properties / driver Configure / Change Mode, cleared memory on a cancelled download, faster taps. Next: owner GO MERGE (and a release GO), then Wave 2 on its own GO.
 - **Before any change in `mtps/`, read the skill `.claude/skills/allen-bradley/`.** Its `references/app-mapping.md` shows where each Studio 5000 / RSLinx / Logix Emulate concept lives in the app, and lists the known differences still open.
 - The owner's golden reference is Studio 5000 Logix Designer, RSLinx Classic and Logix Emulate. Research first (the Rockwell manuals are listed in the skill's `references/sources.md`). The owner was angry about unresearched changes: "hindi mo iresearch, hindi mo aralin… puro changes tyo d2".
 - Owner rules that also live in local memory (a cloud session cannot see it, so they are copied here):
@@ -33,11 +33,11 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
   - In the cloud, work from the docs and the skill only.
 - **Tests in the cloud container** (one per file, same env as `CLAUDE.md`):
   `NODE_PATH=/opt/node-tools/node_modules CHROMIUM_PATH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome | head -1) node tests/<file>` (the folder may be `chrome-linux64`)
-  - `mtps.test.js`: 316
-  - `mtps-ref.test.js`: 67
-  - `mtps-ui.test.js`: 412
+  - `mtps.test.js`: 381
+  - `mtps-ref.test.js`: 124
+  - `mtps-ui.test.js`: 639 (includes `tests/mtps-ui-menus.js`)
   - `e2e.test.js`: 884
-  - `npm run audit` (`tests/mtps-audit-run.js`): 45
+  - `npm run audit` (`tests/mtps-audit-run.js`): 53
 - **Release chain:**
   1. Bump the version in `mtps/js/app.js`, `mtps/sw.js`, `desktop-mtps/package.json` and `mobile-mtps/package.json`.
   2. Update `CHANGELOG.md`.
