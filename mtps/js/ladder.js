@@ -74,6 +74,7 @@
     const LM = Math.round(Math.max(30, CW * 0.36)), cols = Math.max(3, Math.floor((o.W - LM - 8) / CW)), RR = LM + cols * CW;
     const fName = `${S + 1}px Arial`, fDesc = `${S}px Arial`, descLines = o.descLines || 2;
     let y = 8, out = '', taps = '';
+    const parts = [];   // each rung's drawing, in a <g data-rg> of its own: a redraw can replace only the rungs that changed
     const nodes = [], dashes = [], dk = nkey(o.drop);
     const node = (n, x, y) => { if (o.nodeOk && o.nodeOk(n)) nodes.push(Object.assign({}, n, { x, y })); };
     const tagOf = a => (o.tag ? o.tag(String(a || '').split(/[.[]/)[0]) : null);
@@ -122,6 +123,7 @@
       return { end: c, rows };
     }
     rungs.forEach((R, ri) => {
+      const o0 = out.length;
       const elems = R.elems || [];
       const dirty = new Set(R.dx || []), seen = {};
       const lock = !!R.ro;
@@ -257,6 +259,7 @@
       taps = `<rect class="tap rung" data-ri="${ri}" x="${LM}" y="${rungTop - 4}" width="${RR - LM}" height="${rungBot - rungTop + 4}"/>`
         + `<rect class="tap" data-ri="${ri}" data-rn="1" x="0" y="${rungTop - 4}" width="${LM}" height="${rungBot - rungTop + 4}"/>` + taps;
       y += 10;
+      parts.push(`<g data-rg="${ri}">${out.slice(o0)}</g>`); out = out.slice(0, o0);
     });
     // the power rails run unbroken from the first rung down to (End), as in the reference editor
     out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="4" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="4" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;
@@ -271,7 +274,8 @@
     y += 44;
     const W = Math.max(o.W, RR + 8);
     const cls = 'lad' + (o.live ? ' online' : '') + (o.run ? ' run' : '');
-    return { svg: `<svg class="${cls}" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}" style="font-size:${S}px">${out}${taps}</svg>`, height: y, cols, nodes };
+    const top = `<svg class="${cls}" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}" style="font-size:${S}px">`, tail = `${out}${taps}</svg>`;
+    return { svg: top + parts.join('') + tail, head: top, parts, tail, height: y, cols, nodes };
   }
   function glyph(e, x, cy, w, on, S) {
     const cx = x + w / 2, g = 7, k = e.t;

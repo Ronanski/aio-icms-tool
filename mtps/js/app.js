@@ -953,12 +953,36 @@
     if (dt && S.descEd) S.descEd.value = dt.value;
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
-    app.className = document.body.className = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
-    app.innerHTML = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    const cls = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
+    if (app.className !== cls) app.className = cls;
+    if (document.body.className !== cls) document.body.className = cls;
+    const html = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    // the ladder stays in place when the new frame has it too: the rest of the screen is brought up to date around it
+    // and the ladder gets only its changes (a tap in a 200-rung routine does not rebuild and lay out the whole SVG)
+    let kept = false;
+    if (lw && app.contains(lw)) { const tpl = document.createElement('div'); tpl.innerHTML = html; kept = !!tpl.querySelector('#ladwrap') && morph(app, tpl, lw); }
+    if (!kept) app.innerHTML = html;
     const nl = $('#ladwrap');
-    if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
+    if (nl) { renderLadder(); if (st && !kept) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
+  }
+  /* bring the live element a up to the parsed element b: a node that differs is replaced by the new one, except the
+     ladder (lw) and the elements around it, which keep their place and take the new attributes. false: the two do not
+     line up (then the caller writes the whole frame). */
+  function morph(a, b, lw) {
+    const ac = [...a.childNodes], bc = [...b.childNodes];
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) {
+      const x = ac[i], y = bc[i];
+      if (x.nodeType === 1 && (x === lw || x.contains(lw))) {
+        if (y.nodeType !== 1 || y.tagName !== x.tagName || (x === lw) !== (y.id === 'ladwrap')) return false;
+        for (const at of [...x.attributes]) if (!y.hasAttribute(at.name)) x.removeAttribute(at.name);
+        for (const at of [...y.attributes]) if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+        if (x !== lw && !morph(x, y, lw)) return false;
+      } else if (!x.isEqualNode(y)) x.replaceWith(y);
+    }
+    return true;
   }
   const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
   const modeCls = () => (!S.online ? '' : ctl.fault ? ' fault' : ctl.mode === 'run' || ctl.mode === 'remrun' ? ' run' : '');
@@ -1058,7 +1082,7 @@
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
-    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
+    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who" title="Who Active" aria-label="Who Active">${ic('search')}<span>Who Active</span></button></div>${body}<nav class="pnav">${nav}</nav>`;
   }
   function controllerPage() {
     const on = S.online;
@@ -1205,8 +1229,30 @@
       live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
       sel: S.sel, selRung: S.sel ? null : S.selRung, selAll: selAllOn(), tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
-    w.innerHTML = res.svg;
+    ladPatch(w, res);
     S.ladNodes = res.nodes || null;
+  }
+  /* write the ladder: when the SVG in place was drawn from the same frame (same size and classes, same taps and rails,
+     same number of rungs), only the rungs whose drawing changed are replaced (a tap that moves the selection touches
+     one or two rungs, not the 200 of a big routine); otherwise the whole SVG is written */
+  let ladLast = null;
+  function ladPatch(w, res) {
+    const svg = w.firstElementChild, L0 = ladLast;
+    ladLast = { head: res.head, tail: res.tail, parts: res.parts, svg: null };
+    if (svg && L0 && L0.svg === svg && w.childElementCount === 1 && L0.head === res.head && L0.tail === res.tail && L0.parts.length === res.parts.length) {
+      const gs = svg.children;
+      let ok = true;
+      for (let i = 0; i < res.parts.length && ok; i++) {
+        if (L0.parts[i] === res.parts[i]) continue;
+        const g = gs[i];
+        if (!g || g.getAttribute('data-rg') !== String(i)) { ok = false; break; }
+        const tmp = document.createElement('div'); tmp.innerHTML = '<svg>' + res.parts[i] + '</svg>';
+        g.replaceWith(tmp.firstChild.firstChild);
+      }
+      if (ok) { ladLast.svg = svg; return; }
+    }
+    w.innerHTML = res.svg;
+    ladLast.svg = w.firstElementChild;
   }
   let ro = null, lastW = 0;
   function watchLadder(w) {
@@ -3013,14 +3059,14 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   const RLAVAIL = ['vbp', 'emulate'];
   const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
     ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
-    ['View', [['Toolbar'], ['Status Bar'], '-', ['Options…']]],
+    ['View', [['Toolbar', 'tb'], ['Status Bar', 'sb'], '-', ['Options…']]],
     ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
-    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode'], ['Set Time']]],
+    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode…', 'chmode'], ['Set Time']]],
     ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
     ['Security', [['Network Security…'], ['Change Password…']]],
     ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
     ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
-  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null };
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true };
   const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
   function rlTree() {
@@ -3079,25 +3125,74 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="rlcdl"><fieldset><legend>Available Driver Types:</legend><div class="rlts"><select class="inp" id="rldt">${RLTYPES.map(([k, n]) => `<option value="${k}"${k === rlS.dtype ? ' selected' : ''}>${esc(n)}${RLAVAIL.includes(k) ? '' : ' (not in this version)'}</option>`).join('')}</select><button class="btn" data-rladd="1">Add New…</button></div></fieldset>
         <fieldset class="rlcfg"><legend>Configured Drivers:</legend><div class="rltabw"><table class="rltab"><thead><tr><th>Name and Description</th><th>Status</th></tr></thead><tbody>${drivers.map((x, i) => `<tr class="${i === rlS.dsel ? 'on' : ''}" data-rlrow="${i}"><td><span class="mono">${esc(x.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === x.type) || [, , , x.type])[3])}</span></td><td class="${x.run ? 'run' : ''}">${x.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers. Pick a type, then Add New…</td></tr>'}</tbody></table></div></fieldset>
         <p class="help">${t && RLAVAIL.includes(t[0]) ? '' : 'That driver type reaches real hardware: it is not in this version. '}Without a running driver, Who Active finds nothing and the project cannot go online.</p></div>
-      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" disabled>Configure…</button><button class="btn" disabled>Startup…</button>
+      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" data-rlcfg="1"${d ? '' : ' disabled'}>Configure…</button><button class="btn" disabled>Startup…</button>
         <button class="btn" data-rlstart="1"${d && !d.run ? '' : ' disabled'}>Start</button><button class="btn" data-rlstop="1"${d && d.run ? '' : ' disabled'}>Stop</button><button class="btn" data-rldel="1"${d ? '' : ' disabled'}>Delete</button></div></div></div>`;
+  }
+  /* RSWho: right-click a device (RSLinx Classic GR001: Station Diagnostics, Configure DDE Topic and the other services
+     of that device; Upload EDS file from device; Remove for a device with a red X). Device Properties shows what the
+     emulated module reports: vendor, product type and code, revision, serial number, product name. */
+  const RLPTYPE = { cpu: ['Programmable Logic Controller', 14], di: ['General Purpose Discrete I/O', 7], do: ['General Purpose Discrete I/O', 7], ai: ['Analog I/O', 10], ao: ['Analog I/O', 10] };
+  const rlSerial = (r, m) => { let h = 2166136261; for (const ch of r.name + ':' + m.slot + ':' + m.type) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return (h >>> 0).toString(16).toUpperCase().padStart(8, '0'); };
+  function rlDevice(m) {
+    const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
+    return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
+      ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
+      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']]);
+  }
+  function rlCtxHTML(root) {
+    const c = rlS.ctx, n = rlFind(root, c.k);
+    if (!n || !n.m) return '';
+    const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+  }
+  /* Configure… of a driver. Virtual Backplane: the Configure Virtual Backplane window, Slot Number (the slot of the
+     RSLinx Classic module in the virtual chassis, slot 0 by default; LGEM5K-GR016M chapter 6). Emulate Ethernet: the
+     station mapping of an Ethernet devices driver, one station per emulated controller with an IP address. */
+  function rlCfgHTML(md) {
+    const d = drivers.find(x => x.name === md.name);
+    if (!d) return '';
+    const bf = `<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div><div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
+    if (d.type === 'vbp') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Configure Virtual Backplane"><div class="bh">Configure Virtual Backplane (${esc(d.name)})</div><div class="bb">
+      <div class="frow"><label for="rlslot">Slot Number</label><input class="inp num" id="rlslot" type="number" min="0" max="${(racks[0] ? racks[0].size : 8) - 1}" step="1" value="${esc(md.v != null ? md.v : d.slot || 0)}"></div>
+      <p class="help">The slot of the RSLinx Classic module in the virtual chassis (${esc(racks[0] ? racks[0].name : 'Chassis')}). An emulated controller can be in any other slot.</p>${bf}`;
+    const st = [];
+    racks.forEach(r => r.controllers().forEach(m => { if (m.ip && !st.some(x => x[1] === m.ip)) st.push([st.length, m.ip, m.name]); }));
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Configure driver"><div class="bh">Configure driver: ${esc(d.name)}</div><div class="bb">
+      <div class="lbl">Station Mapping</div><div class="rltabw"><table class="rltab" id="rlmap"><thead><tr><th>Station</th><th>Host Name</th></tr></thead><tbody>${st.map(([n, ip, nm]) => `<tr><td>${n}</td><td class="mono">${esc(ip)} <span class="muted">${esc(nm)}</span></td></tr>`).join('') || '<tr><td colspan="2" class="muted">No emulated controller has an IP address.</td></tr>'}</tbody></table></div>
+      <p class="help">The host names are the IP addresses of the emulated controllers (Emulator > Controller > IP Address).</p>${bf}`;
   }
   function rlModalHTML() {
     const md = rlS.modal;
+    if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'mode') {
+      const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, cur = c && { prog: 'remprog', run: 'remrun' }[c.mode] || (c && c.mode);
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Change Mode"><div class="bh">Change Mode</div><div class="bb">${c ? `<p style="margin-top:0"><b>${esc(n.l)}</b><br>Current mode: ${esc(ctlMode(c))} · key switch ${esc(c.key)}</p>
+        ${[['remrun', 'Run'], ['remprog', 'Program'], ['remtest', 'Test']].map(([m, l]) => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="rlmd" value="${m}"${m === (md.v || cur) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+        <p class="help">Software changes the mode only while the key switch is in REM (Remote).</p>` : '<p class="help">Select a controller in RSWho.</p>'}<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok"${c ? '' : ' disabled'}>OK</button></div></div></div>`;
+    }
+    if (md.k === 'props') {
+      const n = rlFind(rlTree(), md.key);
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
+    }
     if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
       <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
     return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="RSLinx Classic"><div class="bh">RSLinx Classic</div><div class="bb"><p style="margin:0">Delete the driver <b class="mono">${esc(md.name)}</b>? Who Active, Go Online and Download can no longer use it.</p></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn danger" data-rlpx="ok">Delete</button></div></div></div>`;
   }
+  /* the RSWho status while it browses, as in the RSLinx Classic figure (LINX-GR001, RSWho): "Browsing - node
+     10.224.69.105 found", the address of the node found last (its label up to the comma) */
+  const browseSt = label => { const a = label ? String(label).split(',')[0].trim() : ''; return a ? `Browsing - node ${a} found` : 'Browsing - node found'; };
   function rslinx(view) {
-    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null;
+    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null; rlS.ctx = null;
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
     let treeKey = '', lim = Infinity, btimer = 0;
     const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
     const quit = () => { clearInterval(timer); stopBrowse(); };
     const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
-    const bstat = root => (lim < rlCount(root) ? 'Browsing - node found' : rlS.auto ? 'Browsing - done' : 'Not browsing');
+    const bstat = root => (lim < rlCount(root) ? browseSt(order(root)[lim - 1].l) : rlS.auto ? 'Browsing - done' : 'Not browsing');
     const box = el.querySelector('#rl');
     const draw = () => {
       const root = rlTree();
@@ -3105,12 +3200,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const sel = rlFind(root, rlS.sel);
       treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
       box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
-        <div class="rltb"><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
+        <div class="rltb"${rlS.tb ? '' : ' hidden'}><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
         <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
           <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
-        <div class="rlst"><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
-        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}
-        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}><span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+        <div class="rlst"${rlS.sb ? '' : ' hidden'}><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
+        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}${rlS.ctx ? rlCtxHTML(root) : ''}
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' ? `<span class="ck">${rlS[it[1]] ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
       if (rlS.menu) {
         const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
         p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
@@ -3151,7 +3246,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     // quietly: only a change redraws it, and it is not browsed again
     const timer = setInterval(() => {
       if (!el.isConnected) { quit(); return; }
-      if (!rlS.auto || rlS.menu || rlS.modal || lim !== Infinity) return;
+      if (!rlS.auto || rlS.menu || rlS.modal || rlS.ctx || lim !== Infinity) return;
       if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
     }, 1000);
     const changed = () => { saveDrivers(); relink(); render(); };
@@ -3165,18 +3260,69 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     };
     const modalAct = ok => {
       const md = rlS.modal;
-      if (!ok) { rlS.modal = null; draw(); return; }
+      if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
+      if (md.k === 'mode') {
+        // the same controller code as Studio's Run / Program / Test Mode (Controller.setMode, REM key only)
+        const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, b = box.querySelector('[name="rlmd"]:checked');
+        if (!c || !b) { rlS.modal = null; draw(); return; }
+        if (!c.powered) { md.err = 'The device does not answer.'; draw(); return; }
+        if (!c.setMode(b.value)) { md.v = b.value; md.err = c.key !== 'REM' ? 'The key switch does not allow that mode.' : 'The controller holds no project: download first.'; draw(); return; }
+        saveChassis(); rlS.modal = null; live(true); render(); draw(); return;
+      }
+      if (md.k === 'cfg') {
+        const d = drivers.find(x => x.name === md.name), i = box.querySelector('#rlslot');
+        if (d && i) {
+          const v = i.value.trim(), n = +v, max = (racks[0] ? racks[0].size : 8) - 1, m = racks[0] && racks[0].module(n);
+          const err = !/^\d+$/.test(v) || n > max ? `Enter a slot number from 0 to ${max}.` : m && n !== (d.slot || 0) ? `Slot ${n} holds [${n}] ${m.ctl ? 'PLC-CPU' : m.type} ${m.name}: pick a free slot.` : '';
+          if (err) { md.v = v; md.err = err; draw(); return; }
+          d.slot = n; saveDrivers();
+        }
+        rlS.modal = null; draw(); return;
+      }
       const i = drivers.findIndex(d => d.name === md.name);
       if (i >= 0) drivers.splice(i, 1);
       rlS.dsel = Math.min(rlS.dsel, drivers.length - 1); if (rlS.dsel < 0) rlS.dsel = 0;
       rlS.modal = null; changed(); draw();
     };
+    // right-click (long-press on touch) a device in the tree or the right pane: its menu
+    const ctxAt = (k, cx, cy) => {
+      const b = box.getBoundingClientRect();
+      rlS.ctx = { k, x: Math.max(4, Math.min(cx - b.left, b.width - 230)), y: Math.max(4, Math.min(cy - b.top, b.height - 220)) };
+      rlS.sel = k; draw();
+    };
+    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && n.m ? k : null; };
+    box.addEventListener('contextmenu', ev => { const k = devAt(ev.target); if (!k || rlS.modal || rlS.view !== 'rswho') return; ev.preventDefault(); rlS.menu = ''; ctxAt(k, ev.clientX, ev.clientY); });
+    let rlLp = null;
+    box.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'mouse') return;
+      const k = devAt(ev.target); if (!k || rlS.modal) return;
+      const cx = ev.clientX, cy = ev.clientY;
+      rlLp = { cx, cy, t: setTimeout(() => { rlLp = null; ctxAt(k, cx, cy); box.dataset.lp = String(performance.now()); box.dataset.lpx = cx + ',' + cy; }, 550) };
+    });
+    ['pointerup', 'pointercancel', 'pointermove'].forEach(n => box.addEventListener(n, ev => { if (rlLp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - rlLp.cx, ev.clientY - rlLp.cy) > 10)) { clearTimeout(rlLp.t); rlLp = null; } }));
     box.addEventListener('click', ev => {
       const t = ev.target;
       let x;
+      if (rlS.ctx) {
+        // the click that ends a long-press leaves the menu open
+        if (box.dataset.lp && performance.now() - +box.dataset.lp < 400) { const [lx, ly] = (box.dataset.lpx || '').split(',').map(Number); if (!t.closest('[data-rlci]') || Math.hypot(ev.clientX - lx, ev.clientY - ly) < 12) return; }
+        const it = t.closest('[data-rlci]'), k = rlS.ctx.k;
+        if (!it && t.closest('.rlctx')) return;
+        rlS.ctx = null;
+        if (it) rlS.modal = { k: 'props', key: k };
+        draw();
+        return;
+      }
       if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
-      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { quit(); closeLayer(); return; } rlS.view = a; draw(); return; }
+      if ((x = t.closest('[data-rlmi]'))) {
+        const a = x.dataset.rlmi; rlS.menu = '';
+        if (a === 'exit') { quit(); closeLayer(); return; }
+        // View > Toolbar / Status Bar: show or hide them (kept while the app runs)
+        if (a === 'tb' || a === 'sb') { rlS[a] = !rlS[a]; draw(); return; }
+        if (a === 'chmode') { const n = rlFind(rlTree(), rlS.sel); if (n && n.m && n.m.ctl) { rlS.view = 'rswho'; rlS.modal = { k: 'mode', key: rlS.sel }; } else toast('Select a controller in RSWho first.', 'err'); draw(); return; }
+        rlS.view = a; draw(); return;
+      }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if (rlS.modal) return;
@@ -3197,13 +3343,15 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const d = drivers[rlS.dsel];
       if (t.closest('[data-rlstart]') && d) { d.run = true; changed(); draw(); return; }
       if (t.closest('[data-rlstop]') && d) { d.run = false; changed(); draw(); return; }
-      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); }
+      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); return; }
+      if (t.closest('[data-rlcfg]') && d) { rlS.modal = { k: 'cfg', name: d.name }; draw(); }
     });
     box.addEventListener('change', ev => {
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
     layerKey = ev => {
+      if (ev.key === 'Escape' && rlS.ctx) { ev.preventDefault(); rlS.ctx = null; draw(); return; }
       if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
       if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
     };
@@ -3884,7 +4032,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         const wasRun = ctl.running;
         if (wasRun) ctl.setMode('remprog');
         const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p));
-        let r = null;
+        let r = null, cleared = false;
+        // "Before a project is downloaded, the memory of the controller is cleared" (v37 help, Download dialog box)
+        x.st[0].run = () => { if (ctl === to) { to.clearMemory(); cleared = true; saveChassis(); } };
         // the controller takes the project at Verifying: from there the transfer cannot be cancelled
         x.st.push({ t: 'Verifying…', w: 2, fixed: true, run: () => {
           if (ctl !== to) { toast('The controller stopped answering: the download failed.', 'err'); return false; }
@@ -3896,7 +4046,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           saveChassis();
         } });
         setTimeout(() => transfer({ title: 'Downloading', kind: 'download', ms: x.ms, sub: `To ${curPath()}`, steps: x.st, doneText: 'Download complete',
-          cancelled: () => { linked = null; toast('Download cancelled. The project in the controller was not changed.'); },
+          cancelled: () => {
+            linked = null;
+            if (!cleared) { toast('Download cancelled. The project in the controller was not changed.'); return; }
+            if (S.online) { S.online = false; commLed(); }
+            render(); live(true);
+            toast('Download cancelled. The controller memory was cleared before the download: the controller holds no project now.', 'err');
+          },
           done: () => {
             online();
             if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
@@ -4076,7 +4232,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       buttons: [{ l: 'Close', run: stopAll }, { l: 'Emulator…', run: () => { stopAll(); setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
         { l: 'Upload…', run: () => { stopAll(); return via(upload)(); } }, { l: 'Download…', run: () => { stopAll(); return via(download)(); } }, { l: 'Go Online', pri: true, run: () => { stopAll(); return via(goOnline)(); } }] });
     const draw = () => {
-      const all = list(), h = rows(all), st = shown < all.length ? 'Browsing - node found' : auto ? 'Browsing - done' : 'Not browsing';
+      const all = list(), h = rows(all), st = shown < all.length ? browseSt(shown > 0 && all[shown - 1].h.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/g, '')) : auto ? 'Browsing - done' : 'Not browsing';
       if (h !== last) { el.querySelector('#wa-rows').innerHTML = h; last = h; }
       if (st !== lastSt) { el.querySelector('#wa-st').textContent = st; lastSt = st; }
     };
@@ -4164,7 +4320,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function dockBody() {
     const ri = Math.max(0, racks.indexOf(chassis));
     const cs = chassis.controllers();
-    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
+    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}${c.single ? ' · Single Scan' : ''}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
   }
   /* the emulator panel: on the right in landscape and at the bottom in portrait, unless it was moved; it can be
      folded to a thin bar (like the organizer) and opened again from there */
@@ -4177,7 +4333,53 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
       <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `${innerWidth > innerHeight ? `<button class="ib" data-dkat="${where === 'side' ? 'bottom' : 'right'}" title="${where === 'side' ? 'Move the panel under the ladder' : 'Move the panel to the right of the ladder'}">${ic(where === 'side' ? 'dockb' : 'dockr')}</button>` : ''}<button class="ib" data-dkmin="1" title="Fold the emulator panel">${ic(where === 'side' ? 'right' : 'down')}</button>`}</div>
-      <div class="dockb" id="iob">${dockBody()}</div></div>`;
+      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div></div>`;
+  }
+  /* the Chassis Monitor menu bar (Logix Emulate, LGEM5K-GR016M chapters 3-5): Slot > Create Module / Remove Module /
+     Properties, View, Options, All Modules > Run / Program, Help; the right-click menus stay as they are */
+  const EMUMENUS = ['File', 'Slot', 'View', 'Options', 'All Modules', 'Help'];
+  const emuMenuBar = where => `<div class="emb" role="menubar">${EMUMENUS.map(n => `<button type="button" data-emb="${where}:${n}">${n}</button>`).join('')}</div>`;
+  function emuMenu(el) {
+    const [where, name] = el.dataset.emb.split(':'), doc = el.ownerDocument, was = emuOpen();
+    const ri = where === 'dock' ? Math.max(0, racks.indexOf(chassis)) : Math.min(emuSel.ri || 0, racks.length - 1), r = racks[ri];
+    const used = [...r.mods.keys()].sort((a, b) => a - b), free = Array.from({ length: r.size }, (_, s) => s).filter(s => !r.module(s));
+    const cur = emuSel.k === 'm' && emuSel.ri === ri && r.module(emuSel.slot) ? emuSel.slot : null;
+    const P = S.prefs, tog = k => () => { P[k] = !P[k]; savePrefs(); chassisLive(true); render(); backToEmu(was); };
+    const items = {
+      File: [{ l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
+      Slot: [{ l: 'Create Module…', i: 'plus', dis: !free.length, run: () => insertCard(ri, free[0]) }, { l: 'Remove Module…', i: 'trash', dis: !used.length, run: () => removeModuleDlg(ri, cur, was) }, '-',
+        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
+      View: [{ l: 'Compact', ck: !!P.emuCompact, run: tog('emuCompact') }, { l: 'Hide Slots 9-16', ck: false, dis: true }],
+      Options: [{ l: 'Clear Configuration on Remove', ck: !!P.clearOnRemove, run: tog('clearOnRemove') }, { l: 'Always On Top', ck: false, dis: true }, { l: 'Auto Refresh Rate', dis: true }],
+      'All Modules': [{ l: 'Run…', dis: !r.controllers().length, run: () => allModes(ri, 'RUN', was) }, { l: 'Program…', dis: !r.controllers().length, run: () => allModes(ri, 'PROG', was) }],
+      Help: [{ l: 'Help Topics', i: 'help', run: () => run('tips') }, { l: 'About MT PLC Studio', i: 'info', run: () => run('about') }] }[name];
+    openMenu(items, doc === document ? el : { x: 40, y: 80 }, name);
+    if (doc !== document) window.focus();
+  }
+  /* Slot > Remove Module: pick the slot, then a prompt confirms the removal (cannot be undone) */
+  function removeModuleDlg(ri, cur, was) {
+    const r = racks[ri], used = [...r.mods.keys()].sort((a, b) => a - b);
+    dialog({ title: 'Remove Module', size: '', focus: true,
+      body: `<div class="frow"><label>Slot</label><select class="inp" id="rmm-s">${used.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}: ${esc(r.module(s).type)} ${esc(r.module(s).name)}</option>`).join('')}</select></div>`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const s = +e2.querySelector('#rmm-s').value, m = r.module(s);
+        if (!m) return;
+        setTimeout(() => {
+          if (m.ctl) { removeCpu(ri, s, was); return; }
+          dialog({ title: 'Remove Module', size: '', body: `<p>Remove <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from the virtual chassis ${esc(r.name)}? This cannot be undone.</p>`,
+            buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', danger: true, run: () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); backToEmu(was); } }] });
+        }, 0);
+      } }] });
+  }
+  /* All Modules > Run / Program: every emulated controller of the chassis is ticked; clear the ones to leave as they are */
+  function allModes(ri, k, was) {
+    const r = racks[ri], cs = r.controllers(), t = k === 'RUN' ? 'Run' : 'Program';
+    dialog({ title: `${t} Mode`, size: '',
+      body: `<p style="margin-top:0">Put these emulated controllers in ${t} mode:</p>${cs.map(m => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" data-amod="${m.slot}" checked><span>Slot ${m.slot}: ${esc(m.name)}</span></label>`).join('')}`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        e2.querySelectorAll('[data-amod]').forEach(b => { if (b.checked) r.controller(+b.dataset.amod).setKey(k); });
+        saveChassis(); chassisLive(true); live(true); render(); backToEmu(was);
+      } }] });
   }
   /* ---------- Emulator dashboard (spec section 15), laid out like a PC emulator's dashboard ----------
      Devices pane: the chassis and their cards. Details: the Controller pane (name, description, IP address, power),
@@ -4213,7 +4415,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (m.ctl) {
       const c = m.ctl, run = c.powered && c.running, fs = c.forceState();
       const disp = !c.powered ? '' : c.fault ? 'FLT' : { prog: 'PROG', run: 'RUN', remprog: 'PROG', remrun: 'RUN', remtest: 'TEST' }[c.mode];
-      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}">
+      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}" data-ccpu="${id}">
         <div class="mf"><div class="mcat">PLC-CPU</div><div class="mdisp">${disp}</div>
           <div class="mleds">${led(run, 'RUN')}${led(c.powered && fs !== 'none', 'FORCE', fs === 'enabled' ? 'a' : 'a blink')}${led(c.powered && c.M, 'I/O', c.ioOk() ? 'g' : 'r blink')}${led(c.powered, 'OK', c.fault ? 'r blink' : 'g')}</div>
           <div class="mname">${esc(m.name)}</div><div class="mip">${esc(m.ip || 'no IP')}</div>
@@ -4325,6 +4527,73 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (!m) return;
     openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
   }
+  /* Logix Emulate: right-click (or long-press) an emulated controller: its mode, Configure Emulation, Remove
+     (LGEM5K-GR016M chapters 4 and 5) */
+  const emuOpen = () => !!document.querySelector('#layer #emubody');
+  const backToEmu = was => { if (was) setTimeout(() => { if (!emuOpen() && !$('#layer .dlg, #layer .menu')) chassisMonitor(); }, 0); };
+  function cpuMenu(id, x, y) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s), was = emuOpen();
+    if (!m || !m.ctl) return;
+    const c = m.ctl, key = k => () => { c.setKey(k); saveChassis(); chassisLive(true); live(true); render(); backToEmu(was); };
+    openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') },
+      { l: 'Single Scan', ck: c.single, run: () => { c.singleScan(!c.single); asked.delete(c); chassisLive(true); live(true); render(); backToEmu(was); } }, '-',
+      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, '-',
+      { l: 'Remove', i: 'trash', run: () => { chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })); } }], { x, y }, `[${s}] PLC-CPU ${m.name}`);
+  }
+  /* Single Scan: when the one scan is done, a prompt asks to run the controller continuously or to scan once more */
+  const asked = new WeakSet();
+  function singleAsk() {
+    for (const r of racks) for (const m of r.controllers()) {
+      const c = m.ctl;
+      if (!c.held) { asked.delete(c); continue; }
+      if (asked.has(c)) continue;
+      asked.add(c);
+      const was = emuOpen();
+      dialog({ title: 'Single Scan', size: '', modal: true,
+        body: `<p>The single scan of <b>[${m.slot}] ${esc(m.name)}</b> is complete. Run the emulated controller continuously, or perform a single scan again?</p>`,
+        buttons: [{ l: 'Run Continuously', run: () => { c.runContinuous(); asked.delete(c); chassisLive(true); live(true); backToEmu(was); } },
+          { l: 'Single Scan', pri: true, run: () => { c.scanAgain(); asked.delete(c); live(true); backToEmu(was); } }] });
+      return;
+    }
+  }
+  /* Remove (an emulated controller): cannot be undone; the controller's configuration stays in place unless Clear
+     module configuration is ticked (ticked at first with Options > Clear Configuration on Remove) */
+  function removeCpu(ri, s, was) {
+    const r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    dialog({ title: 'Remove Module', size: '',
+      body: `<p style="margin-top:0">Remove <b>[${s}] PLC-CPU ${esc(m.name)}</b> from the virtual chassis ${esc(r.name)}? This cannot be undone.</p>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="rm-clr"${S.prefs.clearOnRemove ? ' checked' : ''}><span>Clear module configuration</span></label>
+        <p class="help">Not ticked: the configuration${m.ctl.name ? ` and the controller image (${esc(m.ctl.name)})` : ''} stay in place, and a controller created later in slot ${s} can use them. Ticked: both are deleted.</p>`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', danger: true, run: e2 => {
+        r.remove(s, !e2.querySelector('#rm-clr').checked); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); backToEmu(was);
+      } }] });
+  }
+  /* Configure Emulation: the Speed of Time area (slider in 1 % steps or the % box, Confirm Time % Change, 100% NOW,
+     0% NOW; the last value set shows on the left). A change takes effect at once; 0 % stops execution. */
+  function configEmulation(id, was) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    const c = m.ctl;
+    const el = dialog({ title: 'Configure Emulation', size: 'md', onClose: () => backToEmu(was),
+      body: `<p class="help" style="margin-top:0">[${s}] PLC-CPU <b>${esc(m.name)}</b> · ${esc(r.name)}</p>
+        <fieldset class="sotf"><legend>Speed of Time</legend><input type="range" id="sot-r" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time">
+          <div class="sotrow"><span>Set: <b id="sot-cur">${c.sot}</b> %</span><span class="grow"></span><input class="inp num" id="sot-v" type="number" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time percent"><span>%</span></div>
+          <div class="sotrow"><button class="btn" data-sot="0">0% NOW</button><button class="btn" data-sot="100">100% NOW</button><span class="grow"></span><button class="btn pri" data-sot="ok">Confirm Time % Change</button></div></fieldset>
+        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>`,
+      buttons: [{ l: 'Close', run: () => backToEmu(was) }] });
+    const q = k => el.querySelector(k);
+    const show = () => { q('#sot-cur').textContent = c.sot; q('#sot-r').value = c.sot; q('#sot-v').value = c.sot; };
+    q('#sot-r').oninput = () => { q('#sot-v').value = q('#sot-r').value; };
+    q('#sot-v').oninput = () => { q('#sot-r').value = q('#sot-v').value; };
+    el.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-sot]'); if (!b) return;
+      const ok = b.dataset.sot === 'ok', v = ok ? +q('#sot-v').value : +b.dataset.sot;
+      if ((ok && q('#sot-v').value === '') || !(v >= 0 && v <= 100)) { toast('Speed of time: 0 to 100 %.', 'err'); return; }
+      r.setController(s, { sot: Math.round(v) }); saveChassis(); chassisLive(true); live(true);
+      show(); toast(`Speed of time: ${c.sot} %.`, 'ok');
+    });
+  }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -4353,6 +4622,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
       <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
       ${kv('Revision', '1.0')}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      <div class="frow"><label>Speed of Time</label><span>${c.sot} % <button class="btn" data-ecfg="${id}">Configure Emulation…</button></span></div>
       <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
       <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
   }
@@ -4367,7 +4637,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }));
     return rows.join('') || '<p class="help" style="padding:8px">No emulated controllers. Add one.</p>';
   }
-  const emuHTML = () => `<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
+  const emuHTML = () => `${emuMenuBar('win')}<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
     <div class="emumain" id="emumain">${detailsHTML()}</div>
     <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div>`;
   const chassisSig = () => racks.map(r => r.name + ':' + [...r.mods.values()].map(m => (m.ctl ? [m.slot, m.name, m.ip, m.ctl.powered, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.name, m.fault, JSON.stringify(m.field), JSON.stringify(r.outputs(m.slot))].join(','))).join('|')).join('#') + curPath();
@@ -4380,6 +4650,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const b = d.getElementById('emubody');
       if (!b || (!force && b.dataset.sig === sg)) return;
       b.dataset.sig = sg;
+      b.classList.toggle('compact', !!S.prefs.emuCompact);
       const a = d.activeElement, busy = a && b.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
       if (!busy) { b.innerHTML = emuHTML(); return; }
       // typing in the details: refresh the devices, the status and the rack around it
@@ -4416,10 +4687,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if ((el = t.closest('[data-cins]'))) { const [ri, s] = ids(el.dataset.cins); insertCard(ri, s); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-crem]'))) {
       const [ri, s] = ids(el.dataset.crem), r = racks[ri], m = r.module(s);
+      if (m && m.ctl) { removeCpu(ri, s, emuOpen()); if (doc !== document) window.focus(); return true; }
       confirmDlg('Delete', `Delete <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from chassis ${esc(r.name)}?${m.ctl && m.ctl.name ? ` The project <b>${esc(m.ctl.name)}</b> in it is lost.` : ''}`, 'Delete', () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); }, true);
       if (doc !== document) window.focus();
       return true;
     }
+    if ((el = t.closest('[data-emb]'))) { emuMenu(el); return true; }
+    if ((el = t.closest('[data-ecfg]'))) { configEmulation(el.dataset.ecfg, emuOpen()); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
     if ((el = t.closest('[data-epow]'))) { const [ri, s, on] = ids(el.dataset.epow); racks[ri].setController(s, { on: !!on }); saveChassis(); chassisLive(true); live(true); return true; }
@@ -4511,7 +4785,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           <div class="frow"><label>Revision</label><select class="inp" id="ci-rev"><option>1.0</option></select></div>
           <div class="frow"><label>Memory Size (KB)</label><input class="inp" id="ci-mem" type="number" min="64" step="64" value="3072"></div>
           <div class="frow"><label>IP Address</label><select class="inp" id="ci-ip"><option value="">(none)</option>${EMUIPS.map(a => `<option>${a}</option>`).join('')}</select></div>
-          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label></div>
+          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label>
+          <div id="ci-prev" class="ciprev" hidden></div></div>
         <p class="help" id="ci-h"></p>`,
       buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
         const r = racks[+e2.querySelector('#ci-r').value], s = +e2.querySelector('#ci-s').value, t = e2.querySelector('#ci-t').value;
@@ -4520,7 +4795,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
         const res = r.insert(s, t, n);
         if (!res.ok) { toast(res.msg, 'err'); return false; }
-        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
+        const pv = t === 'PLC-CPU' && e2.querySelector('#ci-prev:not([hidden])');
+        if (pv) r.useKept(s, pv.querySelector('#cp-use').checked, !!(pv.querySelector('#cp-img') && pv.querySelector('#cp-img').checked));
+        if (t === 'PLC-CPU') r.setController(s, { name: n, desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
         r.advance(0); saveChassis();
         emuSel = { k: 'm', ri: racks.indexOf(r), slot: s };
         setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0);
@@ -4532,19 +4809,38 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const cpu = q('#ci-t').value === 'PLC-CPU';
       q('#ci-cpu').hidden = !cpu;
       if (cpu && !q('#ci-ip').dataset.touched) { const used = new Set(racks.flatMap(x => x.controllers().map(m => m.ip))); q('#ci-ip').value = gatewayIp(r) ? '' : EMUIPS.find(a => !used.has(a)) || ''; }
+      prevCfg(cpu && r.kept.get(+q('#ci-s').value));
       q('#ci-h').textContent = cpu ? 'An emulated controller holds a project (Download through Who Active). Give one controller in each chassis an IP address.' : 'An I/O card brings field switches (inputs) or lamps (outputs); the project must configure the same module in the same slot.';
+    };
+    /* a controller removed from this slot left its configuration: use it, or reset it to default values (the name
+       stays); Load Saved Controller Image from Previous Instance (LGEM5K-GR016M, Create a controller, step 5) */
+    let pvAt = null;
+    const prevCfg = k => {
+      const b = q('#ci-prev');
+      if (!k) { b.hidden = true; b.innerHTML = ''; pvAt = null; return; }
+      if (pvAt === k) return;
+      pvAt = k; b.hidden = false;
+      b.innerHTML = `<p><b>Previous configuration information exists for this slot.</b></p>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="cp" id="cp-use" checked><span>Use the Configuration from the Previous Controller</span></label>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="cp" id="cp-def"><span>Reset the Configuration to Default Values</span></label>
+        ${k.project ? `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="cp-img"><span>Load Saved Controller Image from Previous Instance: <b>${esc(k.project.controller ? k.project.controller.name : k.name)}</b>${k.at ? ', last downloaded ' + esc(new Date(k.at).toLocaleString()) : ''}</span></label>
+        <p class="help">Using a previously loaded controller image may result in unexpected operation. Make sure the program is correct before running emulations.</p>` : ''}`;
+      const fill = use => { q('#ci-n').value = k.name; q('#ci-d').value = use ? k.desc || '' : ''; q('#ci-mem').value = use ? k.mem || 3072 : 3072; q('#ci-ip').value = use ? k.ip || '' : ''; q('#ci-ip').dataset.touched = '1'; };
+      b.querySelector('#cp-use').onchange = () => fill(true); b.querySelector('#cp-def').onchange = () => fill(false);
+      fill(true);
     };
     q('#ci-t').value = type0 || 'PLC-DI16-24V';
     const cfg = slot != null && S.p && S.p.rack.modules.find(x => x.slot === slot);
     if (cfg && !type0) q('#ci-t').value = cfg.type;
     q('#ci-r').onchange = () => { slot = null; sync(); };
     q('#ci-t').onchange = sync;
+    q('#ci-s').onchange = sync;
     q('#ci-ip').onchange = () => { q('#ci-ip').dataset.touched = '1'; };
     sync();
   }
   function chassisMonitor() {
     dialog({ title: 'Emulator', size: 'lg', flush: true,
-      body: `<div id="emubody" class="emu">${emuHTML()}</div>`,
+      body: `<div id="emubody" class="emu${S.prefs.emuCompact ? ' compact' : ''}">${emuHTML()}</div>`,
       buttons: (S.layout === 'phone' ? [] : [{ l: 'Open in a window', run: () => { setTimeout(popChassis, 0); } }]).concat([{ l: 'Who Active…', run: () => { setTimeout(whoActive, 0); } }, { l: 'Close', pri: true }]) });
   }
   /* the emulator in a window of its own, beside the programming software. The window starts blank (so it shares this
@@ -4625,6 +4921,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
     racks.forEach(r => r.advance(dt));
+    singleAsk();
   }
   function loop(now) {
     tick();
@@ -4823,13 +5120,14 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       // Logix Emulate: right-click an empty slot of the chassis, then Create
       const e = ev.target.closest('[data-cins]');
       if (e) { ev.preventDefault(); const [ri, s] = ids(e.dataset.cins); openMenu([{ l: 'Create…', i: 'plus', run: () => insertCard(ri, s) }], { x: ev.clientX, y: ev.clientY }, `Slot ${s}`); return; }
+      const u = ev.target.closest('[data-ccpu]'); if (u) { ev.preventDefault(); cpuMenu(u.dataset.ccpu, ev.clientX, ev.clientY); return; }
       const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY);
     });
     let lp = null;
     document.addEventListener('pointerdown', ev => {
-      const c = ev.target.closest('[data-cmod]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button')) return;
+      const c = ev.target.closest('[data-cmod],[data-ccpu]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button,.seg')) return;
       const x = ev.clientX, y = ev.clientY;
-      lp = { x, y, t: setTimeout(() => { lp = null; moduleMenu(c.dataset.cmod, x, y); }, 550) };
+      lp = { x, y, t: setTimeout(() => { lp = null; if (c.dataset.ccpu) cpuMenu(c.dataset.ccpu, x, y); else moduleMenu(c.dataset.cmod, x, y); }, 550) };
     });
     const lpEnd = ev => { if (lp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - lp.x, ev.clientY - lp.y) > 10)) { clearTimeout(lp.t); lp = null; } };
     ['pointerup', 'pointercancel', 'pointermove'].forEach(t => document.addEventListener(t, lpEnd));

@@ -460,7 +460,7 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(80);
   check('RSWho: the right pane shows the picked node\'s children (the slots of the chassis)', (await page.$$eval('#rlpane .rltile', t => t.map(x => x.textContent))).join('|').startsWith('00, PLC-CPU'));
   check('RSWho: Autobrowse is ticked, Refresh is there', (await page.$eval('#rlauto', c => c.checked)) && (await page.$('#layer [data-rlref]')) !== null);
-  await page.click('#layer [data-rlm="Station"]');
+  await page.click('#layer [data-rlm="Security"]');
   await page.waitForTimeout(60);
   check('RSLinx: the other menus list greyed-out items', await page.$$eval('#layer .rlpop .it', i => i.length > 0 && i.every(x => x.classList.contains('dis'))));
   await page.click('#layer [data-rlm="Communications"]');
@@ -468,7 +468,7 @@ function check(name, cond, info = '') {
   await page.evaluate(() => [...document.querySelectorAll('#layer .rlpop .it')].find(x => x.textContent === 'Configure Drivers…').click());
   await page.waitForTimeout(80);
   check('Communications > Configure Drivers…: Available Driver Types, Configured Drivers with Name and Description, Status', (await page.$('#layer .rlcdbox #rldt')) !== null && (await page.$$eval('#layer .rltab th', t => t.map(x => x.textContent).join(','))) === 'Name and Description,Status' && (await page.$eval('#layer .rltab tbody', b => b.textContent)).includes('Running'));
-  check('Configure Drivers: Configure… and Startup… greyed out, Start/Stop/Delete/Close there', await page.$$eval('#layer .rlbtns .btn', b => { const f = n => b.find(x => x.textContent === n); return f('Configure…').disabled && f('Startup…').disabled && !!f('Start') && !!f('Stop') && !!f('Delete') && !!f('Close'); }));
+  check('Configure Drivers: Configure… on, Startup… greyed out, Start/Stop/Delete/Close there', await page.$$eval('#layer .rlbtns .btn', b => { const f = n => b.find(x => x.textContent === n); return !f('Configure…').disabled && f('Startup…').disabled && !!f('Start') && !!f('Stop') && !!f('Delete') && !!f('Close'); }));
   const nDrv = await nDrvs();
   await page.selectOption('#rldt', 'vbp');
   await page.click('#layer [data-rladd]');
@@ -1234,7 +1234,7 @@ function check(name, cond, info = '') {
     const lag = () => cp.evaluate(() => new Promise(r => { const t = performance.now(); setTimeout(() => r(performance.now() - t), 0); }));
     // RSLinx Classic: RSWho browses node by node
     await cp.evaluate(() => MTPS.App.run('rswho')); await cp.waitForTimeout(60);
-    check('RSWho opens browsing: "Browsing - node found", a Browsing… mark on the driver, the COMM LED busy', (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - node found' && (await cp.$$('#rltree .browsing')).length > 0 && (await led()).includes('busy'));
+    check('RSWho opens browsing: "Browsing - node <address> found", a Browsing… mark on the driver, the COMM LED busy', /^Browsing - node \S+ found$/.test(await cp.$eval('#rlbst', e => e.textContent)) && (await cp.$$('#rltree .browsing')).length > 0 && (await led()).includes('busy'));
     const n0 = await cp.$$eval('#rltree .nd', n => n.length);
     await cp.waitForTimeout(700);
     const n1 = await cp.$$eval('#rltree .nd', n => n.length);
@@ -1245,12 +1245,12 @@ function check(name, cond, info = '') {
     await cp.waitForTimeout(1300);
     check('Autobrowse checks again quietly: the tree is not browsed again when nothing changed', (await cp.$eval('#rltree', e => e.innerHTML)) === h0 && (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - done');
     await cp.click('#layer [data-rlref]'); await cp.waitForTimeout(60);
-    check('Refresh browses again', (await cp.$eval('#rlbst', e => e.textContent)) === 'Browsing - node found' && (await cp.$$eval('#rltree .nd', n => n.length)) < n2);
+    check('Refresh browses again', /^Browsing - node \S+ found$/.test(await cp.$eval('#rlbst', e => e.textContent)) && (await cp.$$eval('#rltree .nd', n => n.length)) < n2);
     await cp.keyboard.press('Escape'); await cp.waitForTimeout(80);
     check('closing RSLinx mid-browse leaves the COMM LED dark (offline)', (await led()) === 'commled');
     // Who Active: browses the same way
     await cp.evaluate(() => MTPS.App.run('who')); await cp.waitForTimeout(60);
-    check('Who Active opens browsing, with Autobrowse and Refresh', (await cp.$eval('#wa-st', e => e.textContent)) === 'Browsing - node found' && (await cp.$$('#wa-rows .browsing')).length === 1 && (await cp.$eval('#wa-auto', c => c.checked)) && (await cp.$('#wa-ref')) !== null && (await cp.$$('#wa-rows [data-wa]')).length === 0);
+    check('Who Active opens browsing, with Autobrowse and Refresh', /^Browsing - node \S+ found$/.test(await cp.$eval('#wa-st', e => e.textContent)) && (await cp.$$('#wa-rows .browsing')).length === 1 && (await cp.$eval('#wa-auto', c => c.checked)) && (await cp.$('#wa-ref')) !== null && (await cp.$$('#wa-rows [data-wa]')).length === 0);
     await cp.waitForFunction(() => document.querySelector('#wa-st').textContent === 'Browsing - done', null, { timeout: 8000 }).catch(() => {});
     check('Who Active: the controller is found, "Browsing - done"', (await cp.$$eval('#wa-rows [data-wa]', r => r.map(x => x.dataset.wa))).includes('Emulate\\127.0.0.1\\Backplane\\0') && (await cp.$$('#wa-rows .browsing')).length === 0);
     // Go Online from Who Active: Connecting, then the checks, then Connected To Go Online
@@ -1294,9 +1294,16 @@ function check(name, cond, info = '') {
     await cp.click('#layer .btn.pri');
     await cp.waitForFunction(() => { const t = document.querySelector('#xft'); return t && /tags|program|routine/.test(t.textContent); }, null, { timeout: 3000 }).catch(() => {});
     await cp.click('#layer .df .btn'); await cp.waitForTimeout(100);
-    check('Cancel stops the download: the dialog closes, "Download cancelled", the controller keeps its project', (await cp.$('#layer .dlg')) === null && (await cp.$eval('#stmsg', e => e.textContent)).startsWith('Download cancelled') && await cp.evaluate(() => !MTPS.App.state.online && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5));
+    // v37 help, Download dialog box: "Before a project is downloaded, the memory of the controller is cleared"
+    check('Cancel during the transfer: the dialog closes, "Download cancelled", the controller memory was cleared (no project)', (await cp.$('#layer .dlg')) === null && (await cp.$eval('#stmsg', e => e.textContent)).startsWith('Download cancelled. The controller memory was cleared') && await cp.evaluate(() => !MTPS.App.state.online && MTPS.App.ctl.copy === null && MTPS.App.ctl.name === ''));
     await cp.waitForTimeout(2500);
-    check('nothing runs on after Cancel (no late download, the COMM LED is dark)', await cp.evaluate(() => !MTPS.App.state.online && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5 && !document.querySelector('#layer .dlg')) && (await led()) === 'commled');
+    check('nothing runs on after Cancel (no late download, the COMM LED is dark)', await cp.evaluate(() => !MTPS.App.state.online && MTPS.App.ctl.copy === null && !document.querySelector('#layer .dlg')) && (await led()) === 'commled');
+    // Cancel in the Download dialog itself (before the transfer): the controller keeps what it has
+    await cp.evaluate(() => { const p = JSON.parse(JSON.stringify(MTPS.App.state.p)); p.tasks[0].programs[0].routines[0].rungs.pop(); MTPS.App.ctl.download(p); });
+    await cp.evaluate(() => MTPS.App.run('download'));
+    await cp.waitForFunction(() => { const b = document.querySelector('#layer .dlg .dh b'); return b && b.textContent === 'Download' && !document.querySelector('#xft'); }, null, { timeout: 4000 }).catch(() => {});
+    await cp.click('#layer .df .btn:not(.pri)'); await cp.waitForTimeout(100);
+    check('Cancel in the Download dialog: nothing is transferred, the controller keeps its project', await cp.evaluate(() => MTPS.App.ctl.copy && JSON.parse(MTPS.App.ctl.copy).tasks[0].programs[0].routines[0].rungs.length === 5));
     // Esc cancels the connect step too
     await cp.evaluate(() => MTPS.App.run('online')); await cp.waitForTimeout(150);
     await cp.keyboard.press('Escape'); await cp.waitForTimeout(1500);
@@ -1341,8 +1348,9 @@ function check(name, cond, info = '') {
     await pp.waitForTimeout(150);
     const cnt = await pp.evaluate(() => new Promise(r => {
       const c = { lad: 0, dock: 0, olbar: 0 };
-      const watch = (sel, k) => { const e = document.querySelector(sel); if (!e) return null; const mo = new MutationObserver(ms => { if (ms.some(m => m.type === 'childList' && m.target === e)) c[k]++; }); mo.observe(e, { childList: true }); return mo; };
-      const mos = [watch('#ladwrap', 'lad'), watch('#iob', 'dock'), watch('#olbar', 'olbar')];
+      const watch = (sel, k, sub) => { const e = document.querySelector(sel); if (!e) return null; const mo = new MutationObserver(ms => { if (ms.some(m => m.type === 'childList' && (sub || m.target === e))) c[k]++; }); mo.observe(e, { childList: true, subtree: !!sub }); return mo; };
+      // the ladder is patched rung by rung: one redraw is one batch of changes inside #ladwrap
+      const mos = [watch('#ladwrap', 'lad', true), watch('#iob', 'dock'), watch('#olbar', 'olbar')];
       const acc0 = MTPS.App.ctl.read('Run_Timer.ACC');
       setTimeout(() => { mos.forEach(m => m && m.disconnect()); c.acc = MTPS.App.ctl.read('Run_Timer.ACC') - acc0; r(c); }, 1000);
     }));
@@ -2006,6 +2014,308 @@ function check(name, cond, info = '') {
       check(`${lay.n}: no JS errors`, !errs.length, errs.join(' | '));
       await cx.close();
     }
+  }
+  // the blocks below start from a fresh emulator (one chassis: controller in slot 0, DI16 in 1, DO16 in 2) and drivers
+  await page.evaluate(() => localStorage.clear()); await page.reload(); await page.waitForTimeout(300);
+  console.log('Logix Emulate: Speed of Time (right-click the controller, Configure Emulation)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); });
+    await page.waitForTimeout(200);
+    await page.click('#iob [data-ccpu="0:0"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    const items = await page.$$eval('#layer .it', t => t.map(x => x.textContent.trim()));
+    check('right-click the emulated controller: Program, Run, Remote, Configure Emulation…, Remove', ['Program', 'Run', 'Remote', 'Configure Emulation…', 'Remove'].every(x => items.some(y => y.endsWith(x))), items.join('|'));
+    await page.click('#layer .it:has-text("Configure Emulation")'); await page.waitForTimeout(100);
+    check('Configure Emulation opens with the Speed of Time at 100 %', (await dlgTitle()) === 'Configure Emulation' && (await page.$eval('#sot-v', i => i.value)) === '100' && (await page.$eval('#sot-cur', i => i.textContent)) === '100');
+    await page.fill('#sot-v', '50'); await page.click('[data-sot="ok"]'); await page.waitForTimeout(60);
+    check('Confirm Time % Change sets the speed of time (the last value set shows)', (await ev(() => MTPS.App.racks[0].controller(0).sot)) === 50 && (await page.$eval('#sot-cur', i => i.textContent)) === '50');
+    await page.click('[data-sot="0"]'); await page.waitForTimeout(60);
+    const s0 = await ev(() => MTPS.App.racks[0].controller(0).scans); await page.waitForTimeout(300);
+    check('0% NOW sets 0 % at once (execution stops)', (await ev(() => MTPS.App.racks[0].controller(0).sot)) === 0 && (await ev(() => MTPS.App.racks[0].controller(0).scans)) === s0);
+    await page.click('[data-sot="100"]'); await page.waitForTimeout(60);
+    check('100% NOW puts it back to real time', (await ev(() => MTPS.App.racks[0].controller(0).sot)) === 100);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await tp.waitForTimeout(300);
+    const b = await tp.$eval('#iob [data-ccpu="0:0"] .mname', e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x, y: b.y }] }); await tp.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await tp.waitForTimeout(150);
+    check('tablet (touch): a long-press on the controller opens its menu with Configure Emulation…', (await tp.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))).includes('Configure Emulation…'));
+    await tp.close();
+  }
+  console.log('Logix Emulate: Single Scan (right-click the controller)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); MTPS.App.racks[0].controller(0).setKey('REM'); MTPS.App.racks[0].controller(0).download(MTPS.App.state.p); });
+    await page.waitForTimeout(200);
+    const C = () => ev(() => { const c = MTPS.App.racks[0].controller(0); return { single: c.single, held: c.held, scans: c.scans, mode: c.mode }; });
+    await page.click('#iob [data-ccpu="0:0"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Single Scan")'); await page.waitForTimeout(80);
+    check('right-click > Single Scan sets the controller to Single Scan mode (shown in the panel)', (await C()).single && (await page.$eval('#iob .dockst', e => e.textContent)).includes('Single Scan'));
+    await page.click('#iob [data-emode="0:0:RUN"]'); await page.waitForTimeout(300);
+    let c = await C();
+    check('placed in Run: exactly one scan, then the prompt to run continuously or scan again', c.scans === 1 && c.held && (await dlgTitle()) === 'Single Scan', JSON.stringify(c));
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(300);
+    c = await C();
+    check('Single Scan again: one more scan, and the prompt again', c.scans === 2 && c.held && (await dlgTitle()) === 'Single Scan', JSON.stringify(c));
+    await page.click('#layer .df .btn:has-text("Run Continuously")'); await page.waitForTimeout(300);
+    c = await C();
+    check('Run Continuously: the controller scans on', !c.single && c.scans > 5 && (await dlgTitle()) === '', JSON.stringify(c));
+    await ev(() => { const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.setMode('remprog'); });
+  }
+  console.log('Logix Emulate: Remove a controller, keep or clear its configuration');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); const r = MTPS.App.racks[0]; r.insert(3, 'PLC-CPU', 'Spare'); r.setController(3, { ip: '127.0.0.9', desc: 'spare' }); r.controller(3).download(MTPS.App.state.p); MTPS.App.render(); });
+    await page.waitForTimeout(250);
+    await page.click('#iob [data-ccpu="0:3"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Remove")'); await page.waitForTimeout(100);
+    check('Remove on a controller: Remove Module, cannot be undone, with Clear module configuration (not ticked)', (await dlgTitle()) === 'Remove Module' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('cannot be undone') && !(await page.$eval('#rm-clr', i => i.checked)));
+    await page.click('#layer .df .btn.danger'); await page.waitForTimeout(150);
+    check('OK removes the controller and keeps its configuration in place', await ev(() => !MTPS.App.racks[0].module(3) && MTPS.App.racks[0].kept.get(3).name === 'Spare'));
+    await page.click('#iob [data-cins="0:3"]'); await page.waitForTimeout(120);
+    await page.selectOption('#ci-t', 'PLC-CPU'); await page.waitForTimeout(80);
+    check('a new controller in that slot: use the previous configuration or reset it, and load the saved image', !(await page.$eval('#ci-prev', b => b.hidden)) && (await page.$eval('#ci-n', i => i.value)) === 'Spare' && (await page.$eval('#ci-ip', i => i.value)) === '127.0.0.9' && (await page.$('#cp-img')) !== null);
+    await page.check('#cp-def'); await page.waitForTimeout(50);
+    check('Reset the Configuration to Default Values: the name stays, the rest is default', (await page.$eval('#ci-n', i => i.value)) === 'Spare' && (await page.$eval('#ci-ip', i => i.value)) === '' && (await page.$eval('#ci-d', i => i.value)) === '');
+    await page.check('#cp-use'); await page.check('#cp-img'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(250);
+    check('Use the previous configuration + Load Saved Controller Image: the controller holds the project again', await ev(() => { const m = MTPS.App.racks[0].module(3); return m && m.ip === '127.0.0.9' && m.desc === 'spare' && m.ctl.name === 'Motor_Demo' && !MTPS.App.racks[0].kept.has(3); }));
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.render(); });
+    await page.waitForTimeout(100);
+    await page.click('#iob [data-ccpu="0:3"] .mname', { button: 'right' }); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Remove")'); await page.waitForTimeout(100);
+    await page.check('#rm-clr'); await page.click('#layer .df .btn.danger'); await page.waitForTimeout(150);
+    check('Clear module configuration ticked: the controller and its configuration are gone', await ev(() => !MTPS.App.racks[0].module(3) && !MTPS.App.racks[0].kept.has(3)));
+    await page.click('#iob [data-cins="0:3"]'); await page.waitForTimeout(120);
+    await page.selectOption('#ci-t', 'PLC-CPU'); await page.waitForTimeout(80);
+    check('then a new controller there starts from defaults (no prompt)', await page.$eval('#ci-prev', b => b.hidden));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+  }
+  console.log('Logix Emulate: Chassis Monitor menu bar (File, Slot, View, Options, All Modules, Help)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); if (!MTPS.App.state.prefs.emu) MTPS.App.run('vio'); MTPS.App.state.prefs.emuMin = false; MTPS.App.render(); });
+    await page.waitForTimeout(200);
+    check('the emulator panel has the menu bar', (await page.$$eval('#dock .emb button', b => b.map(x => x.textContent).join(','))) === 'File,Slot,View,Options,All Modules,Help');
+    await page.click('#dock [data-emb="dock:Slot"]'); await page.waitForTimeout(80);
+    check('Slot: Create Module…, Remove Module…, Properties…', (await page.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))) === 'Create Module…|Remove Module…|Properties…');
+    await page.click('#layer .it:has-text("Remove Module")'); await page.waitForTimeout(100);
+    check('Slot > Remove Module: the Remove Module dialog asks for the slot', (await dlgTitle()) === 'Remove Module' && (await page.$$eval('#rmm-s option', o => o.length)) >= 3);
+    await page.selectOption('#rmm-s', '2'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(120);
+    check('OK: a prompt confirms the removal', (await dlgTitle()) === 'Remove Module' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('cannot be undone'));
+    await page.click('#layer .df .btn.danger'); await page.waitForTimeout(150);
+    check('the module in slot 2 is removed', await ev(() => !MTPS.App.racks[0].module(2)));
+    await page.click('#dock [data-emb="dock:Slot"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Create Module")'); await page.waitForTimeout(120);
+    check('Slot > Create Module: the create dialog on the first free slot', (await dlgTitle()) === 'Add Module' && (await page.$eval('#ci-s', s => s.value)) === '2');
+    await page.selectOption('#ci-t', 'PLC-DO16-24V'); await page.fill('#ci-n', 'DO_1'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(250);
+    check('the module is created in slot 2 again', await ev(() => MTPS.App.racks[0].module(2) && MTPS.App.racks[0].module(2).type === 'PLC-DO16-24V'));
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; });
+    await ev(() => MTPS.App.run('chassis')); await page.waitForTimeout(150);
+    check('the Emulator window has the same menu bar', (await page.$$eval('#layer .emb button', b => b.map(x => x.textContent).join(','))) === 'File,Slot,View,Options,All Modules,Help');
+    await page.click('#layer [data-esel="m:0:0"]'); await page.waitForTimeout(80);
+    await page.click('#layer [data-emb="win:Options"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Clear Configuration on Remove")'); await page.waitForTimeout(200);
+    check('Options > Clear Configuration on Remove (ticked), and the Emulator window comes back', (await ev(() => MTPS.App.state.prefs.clearOnRemove)) === true && (await page.$('#layer #emubody')) !== null);
+    await page.click('#layer [data-emb="win:Slot"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Remove Module")'); await page.waitForTimeout(100);
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(120);
+    check('then the Clear module configuration box is ticked at first', (await page.$eval('#rm-clr', i => i.checked)) === true);
+    await page.click('#layer .df .btn:not(.danger)'); await page.waitForTimeout(200);
+    await page.click('#layer [data-emb="win:View"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Compact")'); await page.waitForTimeout(200);
+    check('View > Compact: the Devices and Device Status panes hide', await page.$eval('#layer #emubody', b => b.classList.contains('compact') && getComputedStyle(b.querySelector('.emudev')).display === 'none'));
+    await page.click('#layer [data-emb="win:View"]'); await page.waitForTimeout(80); await page.click('#layer .it:has-text("Compact")'); await page.waitForTimeout(200);
+    await page.click('#layer [data-emb="win:All Modules"]'); await page.waitForTimeout(80);
+    await page.click('#layer .it:has-text("Program")'); await page.waitForTimeout(100);
+    check('All Modules > Program: the Program Mode dialog with every controller ticked', (await dlgTitle()) === 'Program Mode' && (await page.$$eval('#layer [data-amod]', b => b.length > 0 && b.every(x => x.checked))));
+    await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
+    check('OK: the controllers go to Program', await ev(() => MTPS.App.racks[0].controllers().every(m => m.ctl.key === 'PROG')));
+    await ev(() => { MTPS.App.racks[0].controllers().forEach(m => m.ctl.setKey('REM')); MTPS.App.state.prefs.clearOnRemove = false; document.querySelector('#layer').innerHTML = ''; });
+    for (const [w, h] of [[390, 844], [800, 1280]]) {
+      const tp = await browser.newPage({ viewport: { width: w, height: h }, hasTouch: true, isMobile: true });
+      tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+      await tp.waitForTimeout(300);
+      if (w < 768) { await tp.tap('[data-ptab="1"]'); await tp.waitForTimeout(200); }
+      const mb = await tp.$$eval('#dock .emb button', b => b.map(x => { const r = x.getBoundingClientRect(); return r.right <= innerWidth && r.height >= 32; }));
+      await tp.tap('#dock [data-emb="dock:Slot"]'); await tp.waitForTimeout(120);
+      check(`${w} px (touch): the panel menu bar fits and Slot opens its menu`, mb.length === 6 && mb.every(Boolean) && (await tp.$$eval('#layer .it', t => t.map(x => x.textContent.trim()).join('|'))).includes('Create Module…') && (await tp.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)));
+      await tp.close();
+    }
+  }
+  console.log('RSLinx Classic: RSWho right-click a device, Device Properties');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
+    const node = async (pg, s) => pg.evaluate(s => { const n = [...document.querySelectorAll('#rltree [data-rln]')].find(x => x.textContent.startsWith(s)); const r = n.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }; }, s);
+    let p = await node(page, '01, PLC-DI16-24V');
+    await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
+    const its = await page.$$eval('#layer .rlctx .it', t => t.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent));
+    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|-Station Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
+    await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
+    const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
+    let k = await kv();
+    check('Device Properties: vendor, product type, product code, revision, serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.0' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
+    await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(80);
+    p = await node(page, '00, PLC-CPU');
+    await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
+    check('a controller also lists Data Monitor and Configure New DDE/OPC Topic (greyed)', (await page.$$eval('#layer .rlctx .it.dis', t => t.map(x => x.textContent).join('|'))).includes('Data Monitor|Configure New DDE/OPC Topic'));
+    await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
+    k = await kv();
+    check('Device Properties of the controller: Programmable Logic Controller, its name and mode', k['Product Type'] === 'Programmable Logic Controller (14)' && k['Product Name'] === 'PLC-CPU Emulator' && !!k.Status, JSON.stringify(k));
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.waitForTimeout(80);
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+    await tp.waitForTimeout(300);
+    p = await node(tp, '01, PLC-DI16-24V');
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] }); await tp.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await tp.waitForTimeout(150);
+    check('tablet (touch): a long-press on a device opens its menu', (await tp.$('#layer .rlctx [data-rlci="props"]')) !== null);
+    await tp.tap('#layer .rlctx [data-rlci="props"]'); await tp.waitForTimeout(150);
+    check('tablet (touch): Device Properties opens', (await tp.$$eval('#layer .rlov2 .kv', r => r.length)) >= 6);
+    await tp.close();
+  }
+  console.log('RSLinx Classic: Configure Drivers > Configure… (Virtual Backplane, Emulate Ethernet)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
+    await page.click('#layer .rltb [data-rlv="drivers"]'); await page.waitForTimeout(100);
+    const row = n => page.evaluate(n => [...document.querySelectorAll('#layer [data-rlrow]')].find(r => r.textContent.includes(n)).click(), n);
+    await row('EMULATE-1'); await page.waitForTimeout(60);
+    await page.click('#layer [data-rlcfg]'); await page.waitForTimeout(100);
+    check('Configure… on the Emulate Ethernet driver: Station Mapping, one station per emulated controller IP', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)) === 'Configure driver: EMULATE-1' && (await page.$eval('#rlmap tbody', b => b.textContent)).includes('127.0.0.1'));
+    await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    if (!(await ev(() => [...document.querySelectorAll('#layer [data-rlrow]')].some(r => r.textContent.includes('Virtual Chassis'))))) {
+      await page.selectOption('#rldt', 'vbp'); await page.waitForTimeout(60);
+      await page.click('#layer [data-rladd]'); await page.waitForTimeout(80);
+      await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(100);
+    }
+    await row('Virtual Chassis'); await page.waitForTimeout(60);
+    await page.click('#layer [data-rlcfg]'); await page.waitForTimeout(100);
+    check('Configure… on the Virtual Backplane driver: Configure Virtual Backplane with Slot Number 0 by default', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)).startsWith('Configure Virtual Backplane') && (await page.$eval('#rlslot', i => i.value)) === '0');
+    await page.fill('#rlslot', '1'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    check('a slot that holds a module is refused with a message', (await page.$eval('#rlerr', e => e.textContent)).includes('Slot 1 holds'));
+    await page.fill('#rlslot', '9'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    check('a slot outside the chassis is refused', (await page.$eval('#rlerr', e => e.textContent)).includes('from 0 to 7'));
+    await page.fill('#rlslot', '5'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(80);
+    check('OK keeps the slot number with the driver', (await page.$('#layer .rlov2')) === null && (await ev(() => JSON.parse(localStorage.getItem('mtps.emu.drivers')).find(d => d.type === 'vbp').slot)) === 5);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+  }
+  console.log('RSLinx Classic: Station > Change Mode for the selected controller');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.download(MTPS.App.state.p); });
+    await page.waitForTimeout(150);
+    await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
+    const mode = () => ev(() => MTPS.App.racks[0].controller(0).mode);
+    await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('Workstation')).click()); await page.waitForTimeout(80);
+    await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
+    check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Data Monitor|+Change Mode…|-Set Time');
+    await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
+    check('Change Mode with no controller selected: a message, no dialog', (await page.$('#layer .rlov2')) === null);
+    await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('00, PLC-CPU')).click()); await page.waitForTimeout(80);
+    await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
+    await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
+    check('Change Mode: Run, Program, Test with the current mode picked', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)) === 'Change Mode' && (await page.$eval('[name="rlmd"]:checked', i => i.value)) === 'remprog');
+    await page.check('[name="rlmd"][value="remrun"]'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(120);
+    check('Run: the controller goes to Remote Run (the same code as Studio\'s Run Mode)', (await mode()) === 'remrun' && (await page.$('#layer .rlov2')) === null);
+    await ev(() => MTPS.App.racks[0].controller(0).setKey('PROG'));
+    await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
+    await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
+    await page.check('[name="rlmd"][value="remrun"]'); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await page.waitForTimeout(100);
+    check('key switch in PROG: refused with the key switch message', (await page.$eval('#rlerr', e => e.textContent)) === 'The key switch does not allow that mode.' && (await mode()) === 'prog');
+    await page.click('#layer .rlov2 [data-rlpx="cancel"]'); await page.waitForTimeout(60);
+    await ev(() => MTPS.App.racks[0].controller(0).setKey('REM'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+  }
+  console.log('RSLinx Classic: View > Toolbar and Status Bar, the menu bar on the phone');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+    await page.waitForTimeout(200);
+    const vis = s => page.$eval(s, e => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
+    check('View: Toolbar and Status Bar are on and ticked', (await page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|'))) === '✓Toolbar|✓Status Bar' && await vis('#layer .rltb') && await vis('#layer .rlst'));
+    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
+    check('View > Toolbar hides the toolbar', !(await vis('#layer .rltb')) && await vis('#layer .rlst'));
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
+    await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
+    check('View > Status Bar hides the status bar; the View menu shows them unticked', !(await vis('#layer .rlst')) && (await (async () => { await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); return page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|')); })()) === 'Toolbar|Status Bar');
+    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
+    check('ticked again: both show', await vis('#layer .rltb') && await vis('#layer .rlst'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(60);
+    for (const w of [360, 390, 414]) {
+      const tp = await browser.newPage({ viewport: { width: w, height: 800 }, hasTouch: true, isMobile: true });
+      tp.on('pageerror', e => errors.push(e.message));
+      await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+      await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+      await tp.waitForTimeout(300);
+      const fit = await tp.$eval('#layer .rlmb', m => ({ sw: m.scrollWidth, cw: m.clientWidth, all: [...m.children].every(b => b.getBoundingClientRect().right <= innerWidth && b.getBoundingClientRect().height >= 32) }));
+      await tp.tap('#layer [data-rlm="Help"]'); await tp.waitForTimeout(100);
+      check(`phone ${w} px (touch): every RSLinx menu shows without sideways scrolling, and Help opens`, fit.sw <= fit.cw + 1 && fit.all && (await tp.$('#layer .rlpop')) !== null, JSON.stringify(fit));
+      await tp.close();
+    }
+  }
+  console.log('Phone mode strip: Edits Present shows whole at 360-414 px');
+  for (const w of [360, 390, 414]) {
+    const tp = await browser.newPage({ viewport: { width: w, height: 800 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); const c = MTPS.App.racks[0].controller(0); c.setKey('REM'); c.download(MTPS.App.state.p); MTPS.App.run('online'); });
+    await tp.waitForTimeout(400);
+    await tp.evaluate(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.run('rstart'); });
+    await tp.waitForTimeout(300);
+    const r = await tp.evaluate(() => { const s = document.querySelector('.strip'); return { fit: s.scrollWidth <= s.clientWidth + 1, boxes: [...s.querySelectorAll('.sbox')].map(b => [b.textContent.trim(), b.scrollWidth <= b.clientWidth + 1]), who: (() => { const b = s.querySelector('.whob').getBoundingClientRect(); return b.right <= innerWidth && b.width >= 38 && b.height >= 34; })() }; });
+    check(`phone ${w} px: the strip fits; Rem Prog, No Forces and Edits Present show whole; Who Active is there`, r.fit && r.boxes.length === 3 && r.boxes.every(b => b[1]) && r.boxes[2][0] === 'Edits Present' && r.who, JSON.stringify(r));
+    if (w === 360) { await tp.tap('.strip .whob'); await tp.waitForTimeout(200); check('phone 360 px: a tap on the Who Active icon opens Who Active', (await tp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '')) === 'Who Active'); }
+    await tp.close();
+  }
+  console.log('Tap speed: a tap in a 200-rung routine (tablet, touch, CPU 4x slower)');
+  {
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => {
+      document.querySelector('#layer').innerHTML = '';
+      const p = MTPS.App.example(), R = p.tasks[0].programs[0].routines[0], base = R.rungs.slice();
+      while (R.rungs.length < 200) R.rungs.push(JSON.parse(JSON.stringify(base[R.rungs.length % base.length])));
+      MTPS.App.openProject(p);
+    });
+    await tp.waitForTimeout(800);
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await tp.evaluate(() => { window._svg = document.querySelector('#ladwrap svg'); document.addEventListener('pointerdown', () => { window._t0 = performance.now(); }, true); });
+    const ms = [];
+    for (let k = 0; k < 5; k++) {
+      const b = await tp.$eval(`#ladwrap rect.tap.rung[data-ri="${k % 2 ? 3 : 1}"]`, r => { const x = r.getBoundingClientRect(); return { x: x.x + 20, y: x.y + 10 }; });
+      const done = tp.evaluate(ri => new Promise(r => { const f = () => { if (MTPS.App.state.selRung === ri) requestAnimationFrame(() => setTimeout(() => r(performance.now() - window._t0), 0)); else setTimeout(f, 1); }; f(); }), k % 2 ? 3 : 1);
+      await tp.touchscreen.tap(b.x, b.y);
+      ms.push(Math.round(await done)); await tp.waitForTimeout(300);
+    }
+    ms.sort((a, b) => a - b);
+    check('a tap selects the rung and the screen answers fast (median under 250 ms at 4x slower CPU)', ms[2] < 250, ms.join(', '));
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    const same = await tp.evaluate(() => {
+      const w = document.querySelector('#ladwrap'), kept = w.querySelector('svg') === window._svg, a = w.innerHTML;
+      w.appendChild(document.createElement('i')); MTPS.App.render();
+      return { kept, same: document.querySelector('#ladwrap').innerHTML === a, sel: MTPS.App.state.selRung, rsel: document.querySelectorAll('#ladwrap rect.rsel').length };
+    });
+    check('the ladder is patched in place (same SVG, only the changed rungs), and draws exactly as a full redraw', same.kept && same.same && same.sel === 1 && same.rsel === 1, JSON.stringify(same));
+    await tp.close();
   }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 

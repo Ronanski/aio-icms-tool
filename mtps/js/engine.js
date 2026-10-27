@@ -817,6 +817,8 @@
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
+      this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
+      this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -830,6 +832,11 @@
       if (!was && RUN(m) && this.M) this.prescan();
       this.emit('mode');
     }
+    /* Single Scan (Logix Emulate only, not on a physical controller): in Run the logic runs through once, then waits
+       until it is asked to scan again or to run continuously */
+    singleScan(on) { this.single = !!on; this.held = false; this.emit('mode'); }
+    scanAgain() { if (!this.single) return false; this.held = false; this.emit('mode'); return true; }
+    runContinuous() { this.single = false; this.held = false; this.emit('mode'); }
     setMode(m) {
       if (this.key !== 'REM' || !['remprog', 'remrun', 'remtest'].includes(m) || (m !== 'remprog' && !this.M)) return false;
       this.go(m);
@@ -867,7 +874,7 @@
     }
     /* Program → Run: OTE bits off, TON reset, one-shot storage set so a true input does not fire at start */
     prescan() {
-      this.first = true;
+      this.first = true; this.held = false;
       const walk = arr => {
         for (const e of arr) {
           if (!e) continue;
@@ -905,13 +912,22 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
-      this.copy = JSON.stringify(project);
+      this.copy = JSON.stringify(project); this.dlAt = Date.now();
       this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
       this.emit('download');
       this.emit('mode');
       return res;
+    }
+    /* a download clears the controller memory before the project goes in (v37 help, Download dialog box): a download
+       cancelled after that leaves the controller empty (no name, no project) */
+    clearMemory() {
+      this.M = null; this.copy = null; this.name = ''; this.dlAt = null;
+      this.S = { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 };
+      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
+      this.mode = this.key === 'PROG' ? 'prog' : this.key === 'RUN' ? 'run' : 'remprog';
+      this.emit('download'); this.emit('mode');
     }
     /* power: off keeps the project; on starts again like a real controller (RUN key: Run, PROG: Program,
        REM: the mode it had), with the current fault cleared and a prescan before Run */
@@ -986,12 +1002,19 @@
       const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
     }
+    /* speed of time (LGEM5K-GR016: 0-100 %, takes effect at once; 60 % makes 1 s take about 1.67 s) */
+    setSpeed(p) { p = Math.round(Number(p)); if (!(p >= 0 && p <= 100)) return false; this.sot = p; this.emit('speed'); return true; }
     /* the controller's own clock: fixed scans of `period` ms, catching up after a slow frame (at most 1 s) */
     advance(ms) {
       if (!this.powered) return 0;
+      ms *= this.sot / 100;
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
-      while (this.acc >= this.period) { this.acc -= this.period; this.scan(this.period); n++; }
+      while (this.acc >= this.period) {
+        if (this.single && this.held) { this.acc = 0; break; }
+        this.acc -= this.period; this.scan(this.period); n++;
+        if (this.single && this.running) { this.held = true; this.acc = 0; this.emit('single'); }
+      }
       return n;
     }
     inputs() {
@@ -1454,7 +1477,7 @@
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU';
   class Chassis {
-    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
+    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; this.kept = new Map(); }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
     static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
@@ -1470,7 +1493,25 @@
       this.emit('insert');
       return { ok: true, module: m };
     }
-    remove(slot) { const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok; }
+    /* Remove Module (cannot be undone). A controller's configuration stays in place unless it is cleared (Clear module
+       configuration): a controller created later in that slot can use it, and load the saved controller image. */
+    remove(slot, keep) {
+      const m = this.mods.get(slot);
+      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
+      const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok;
+    }
+    /* a controller created in a slot whose configuration was kept: use it (else defaults, the name stays), and load
+       the saved controller image when asked */
+    useKept(slot, useConfig, loadImage) {
+      const k = this.kept.get(slot), m = this.mods.get(slot);
+      if (!k || !m || !m.ctl) return false;
+      this.kept.delete(slot);
+      m.name = k.name;
+      if (useConfig) this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot });
+      if (loadImage && k.project) { const key = m.ctl.key; m.ctl.key = 'REM'; m.ctl.download(k.project); if (k.at) m.ctl.dlAt = k.at; m.ctl.key = key; if (key === 'PROG') m.ctl.go('prog'); }
+      this.emit('controller');
+      return true;
+    }
     /* another chassis size (4 or 8 slots); refused while a module sits in a slot that would go */
     resize(n) {
       n = Math.floor(n);
@@ -1492,6 +1533,7 @@
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
       if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
+      if (o.sot != null) m.ctl.setSpeed(o.sot);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
       return true;
@@ -1526,13 +1568,15 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
-        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined,
-        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
+        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })),
+        kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
     }
     static from(o) {
       // an old chassis (7, 10 or 12 slots) becomes 8 slots when its modules fit, else it keeps its size
       const ch = new Chassis(o && o.size > 0 ? fitRack(Math.min(12, Math.max(4, Math.floor(o.size))), ((o && o.mods) || []).map(x => x.slot)) : 8, (o && o.name) || 'Chassis');
       ch.desc = (o && o.desc) || '';
+      ((o && o.kept) || []).forEach(k => { if (k && k.slot >= 0) { const { slot, ...rest } = k; ch.kept.set(slot, rest); } });
       ((o && o.mods) || []).forEach(x => {
         const r = ch.insert(x.slot, x.type, x.name);
         if (!r.ok) return;
@@ -1542,6 +1586,7 @@
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
+          if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }

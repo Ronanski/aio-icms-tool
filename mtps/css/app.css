@@ -1134,3 +1134,33 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
   .spin { animation: none; border-top-color: var(--border-strong); }
   .prog.det i { transition: none; }
 }
+/* Logix Emulate: Configure Emulation (Speed of Time) */
+.sotf { margin: 0 0 10px; padding: 6px 10px 10px; border: 1px solid var(--border); border-radius: var(--r); min-width: 0; }
+.sotf input[type=range] { width: 100%; }
+.sotrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.sotrow .num { width: 72px; }
+.ciprev { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+.ciprev p { margin: 4px 0; }
+/* Logix Emulate Chassis Monitor menu bar (Emulator window and panel) */
+.emb { display: flex; flex-wrap: wrap; gap: 2px; padding: 1px 6px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; grid-column: 1 / -1; }
+.emb button { height: 24px; padding: 0 9px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.emb button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.tab .emb button, .phone .emb button { height: 32px; }
+.emu { grid-template-rows: auto minmax(0, 1fr) minmax(92px, auto); }
+.emu.compact { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+.emu.compact .emudev, .emu.compact .emustat { display: none; }
+.rlctx { min-width: 220px; }
+/* RSLinx menu bar on the phone: the menus wrap onto a second row instead of scrolling sideways */
+.phone .rlmb { flex-wrap: wrap; overflow-x: visible; padding: 2px 4px; }
+.phone .rlmb button { height: 32px; padding: 0 8px; }
+/* phone mode strip (360-414 px): Who Active as its icon, no dropdown arrows, tighter boxes, so the mode, forces and
+   edits boxes show their whole text ("Edits Present") */
+@media (max-width: 440px) {
+  .phone .strip { gap: 4px; padding: 0 6px; }
+  .phone .strip .sbox { padding: 0 7px; gap: 4px; flex: none; }
+  .phone .strip .sbox svg.i { display: none; }
+  .phone .strip .whob { padding: 0; width: 40px; justify-content: center; }
+  .phone .strip .whob span { display: none; }
+  .phone .strip .warn { padding: 0 8px; }
+}
+@media (max-width: 380px) { .phone .strip .sbox { font-size: 12px; padding: 0 6px; } .phone .strip { gap: 3px; } }

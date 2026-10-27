@@ -826,5 +826,62 @@ console.log('File/Shift and Sequencer instructions');
   eq('SQI / SQO pair: step 1 mismatched (rung false), then input 1 matches: the sequence steps to 2 (.DN at .LEN)', [c.read('Ctl.POS'), c.read('Do'), c.read('Ctl.DN')], [2, 2, 1]);
 }
 
+console.log('Logix Emulate: speed of time (LGEM5K-GR016, Configure Emulation)');
+{
+  const p = proj({ tags: [T('En', 'BOOL', { value: 1 }), T('T1', 'TIMER')], rungs: ['XIC(En)TON(T1,5000,0);'] });
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun');
+  const run = ms => { for (let k = 0; k < ms / 20; k++) c.advance(20); };
+  run(1000);
+  check('speed of time 100 %: a timer counts in real time', c.read('T1.ACC') >= 980 && c.read('T1.ACC') <= 1010, c.read('T1.ACC'));
+  check('speed of time: 0-100 %, other values refused', c.setSpeed(50) && !c.setSpeed(101) && !c.setSpeed(-1) && c.sot === 50);
+  const a0 = c.read('T1.ACC'), s0 = c.scans; run(1000);
+  check('speed of time 50 %: 1 s of real time is 0.5 s for the timer and half the scans', Math.abs(c.read('T1.ACC') - a0 - 500) <= 20 && Math.abs(c.scans - s0 - 50) <= 2, c.read('T1.ACC') - a0);
+  c.setSpeed(0); const a1 = c.read('T1.ACC'), s1 = c.scans; run(1000);
+  check('speed of time 0 % stops execution: no scan, the timer holds', c.read('T1.ACC') === a1 && c.scans === s1);
+  const ch = new MTPS.Chassis(8); ch.insert(0, 'PLC-CPU', 'Emu'); ch.setController(0, { sot: 60 });
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch)));
+  check('the speed of time is kept with the chassis', back.controller(0).sot === 60 && MTPS.Chassis.from(JSON.parse(JSON.stringify(new MTPS.Chassis(4)))).size === 4);
+}
+
+console.log('Logix Emulate: Single Scan mode (LGEM5K-GR016, chapter 5)');
+{
+  const p = proj({ tags: [T('N', 'DINT')], rungs: ['ADD(N,1,N);'] });
+  const c = new MTPS.Controller(); c.download(p);
+  c.singleScan(true); c.setMode('remrun');
+  for (let k = 0; k < 20; k++) c.advance(20);
+  check('Single Scan: placed in Run, the logic runs through exactly once, then waits', c.read('N') === 1 && c.scans === 1 && c.held && c.running);
+  check('Single Scan again: one more scan per request', c.scanAgain() && (c.advance(50), c.advance(50), c.read('N') === 2) && c.held);
+  c.setMode('remprog'); c.setMode('remrun'); c.advance(100);
+  check('Program then Run again: a new single scan', c.read('N') === 3 && c.held);
+  c.runContinuous(); for (let k = 0; k < 5; k++) c.advance(20);
+  check('Run continuously: back to normal scans', !c.single && !c.held && c.read('N') === 13, c.read('N'));
+  check('Single Scan again does nothing outside Single Scan mode', !c.scanAgain());
+}
+
+console.log('Logix Emulate: Remove Module keeps or clears a controller configuration (LGEM5K-GR016, chapter 4)');
+{
+  const p = proj({ tags: [T('N', 'DINT', { value: 7 })], rungs: ['NOP();'] });
+  const ch = new MTPS.Chassis(8); ch.insert(2, 'PLC-CPU', 'Line1'); ch.setController(2, { ip: '127.0.0.2', mem: 2048, sot: 40, desc: 'd' });
+  ch.controller(2).download(p);
+  check('remove, keeping the configuration: the slot is empty, its configuration stays', ch.remove(2, true) && !ch.module(2) && ch.kept.get(2).name === 'Line1' && ch.kept.get(2).project.tags[0].value === 7 && ch.kept.get(2).at > 0);
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch)));
+  check('the kept configuration is saved with the chassis', back.kept.get(2) && back.kept.get(2).sot === 40);
+  ch.insert(2, 'PLC-CPU', 'Other');
+  check('a new controller there uses the previous configuration and loads the saved image', ch.useKept(2, true, true) && ch.module(2).name === 'Line1' && ch.module(2).ip === '127.0.0.2' && ch.module(2).mem === 2048 && ch.controller(2).sot === 40 && ch.controller(2).name === 'Test' && ch.controller(2).read('N') === 7 && !ch.kept.has(2));
+  ch.remove(2, true); ch.insert(2, 'PLC-CPU', 'Other');
+  check('reset to default values: the name stays, the rest is default and the controller is empty', ch.useKept(2, false, false) && ch.module(2).name === 'Line1' && ch.module(2).ip === '' && ch.controller(2).sot === 100 && !ch.controller(2).copy);
+  ch.remove(2, false);
+  check('remove with Clear module configuration: nothing is kept', !ch.kept.has(2) && !ch.module(2));
+}
+
+console.log('Download clears the controller memory first (v37 help, Download dialog box)');
+{
+  const p = proj({ tags: [T('N', 'DINT', { value: 3 })], rungs: ['NOP();'] });
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun');
+  c.clearMemory();
+  check('cleared memory: no name, no project, Remote Program, nothing to upload', !c.M && c.copy === null && c.name === '' && c.mode === 'remprog' && c.upload() === null && !c.holds(p));
+  check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
