@@ -152,7 +152,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.init != null && !m.dim ? m.init : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.init: its default (FBD EnableIn)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +160,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name] === undefined ? m.init : s[m.name]);
     return o;
   }
 
@@ -790,7 +790,8 @@
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
-        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map() });
+        // a Function Block Diagram routine (Type FBD) keeps its sheets; fbd.js compiles and runs it
+        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), fbd: r.type === 'FBD' ? r : null });
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
@@ -824,6 +825,12 @@
         out.lines.push(text);
       };
       const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      if (R.fbd) {
+        // FBD errors name the sheet and the element: "Error: Sheet 1, ADD_01: ..."
+        const fr = (list, kind) => (sh, id, what, msg) => { if (!want) return; const text = `${kind}: Sheet ${sh + 1}${what ? ', ' + what : ''}: ${dot(msg)}`; list.push({ program: P.name, routine: R.name, sheet: sh, el: id, msg: dot(msg), text }); out.lines.push(text); };
+        if (MTPS.FBD) MTPS.FBD.compile(M, P, R, fr(out.errors, 'Error'), fr(out.warnings, 'Warning')); else fr(out.errors, 'Error')(0, null, '', 'Function Block Diagram routines are not available');
+        continue;
+      }
       R.src.forEach((src, n) => {
         const text = String(src && (src.t != null ? src.t : src.text) || '');
         const rung = { n, text, c: (src && src.c) || '', elems: [] };
@@ -1455,7 +1462,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
-      for (const P of this.M.programs) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
+      for (const P of this.M.programs) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.fx) MTPS.FBD.prescan(this, R); }
     }
 
     /* ---------- project ---------- */
@@ -1617,6 +1624,7 @@
     /* a routine: rungs in order; JMP goes to its LBL rung, RET and TND end the routine. The MCR override (every rung
        false) is toggled by an MCR with rung-condition-in false, and is reset when the routine ends. */
     routine(R) {
+      if (R.fbd) { if (R.fx) MTPS.FBD.exec(this, R); return; }
       const rungs = R.rungs, mcr0 = this.mcr;
       let jumps = 0;
       this.mcr = false;
@@ -2284,6 +2292,8 @@
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
   MTPS.GSVOBJ = GSVOBJ;
+  // for the other languages (fbd.js): tag references, a number into a type, the controller's faults, a constant
+  MTPS.X = { ref, store, Fault, Const, isInt, isReal, dot };
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

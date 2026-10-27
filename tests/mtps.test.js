@@ -1497,5 +1497,97 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
+console.log('Function Block Diagram routines (1756-PM009, 1756-RM018A)');
+{
+  require('../mtps/js/fbd.js');
+  const F = MTPS.FBD;
+  // an FBD main routine: els / wires on sheet 1 (and more sheets), the block tags in the program
+  const fproj = (sheets, o = {}) => { const p = proj(o); p.tasks[0].programs[0].routines[0] = { name: 'MainRoutine', type: 'FBD', rungs: [], sheets: sheets.map(s => ({ desc: '', els: s.els, wires: s.wires || [] })) }; return p; };
+  const B = (id, t, tag, x = 0, y = 0) => ({ id, k: 'BLK', t, tag, x, y });
+  const W = (a, ap, b, bp, ada) => ({ a, ap, b, bp, ...(ada ? { ada: 1 } : {}) });
+  const frun = (sheets, o) => { const c = new MTPS.Controller(); const r = c.download(fproj(sheets, o)); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  check('the FBD data types are predefined with the members of RM018A', ['FBD_MATH', 'FBD_COMPARE', 'FBD_BOOLEAN_AND', 'FBD_LOGICAL'].every(t => MTPS.dataTypes({}).predefined.includes(t)) &&
+    MTPS.PREDEF.FBD_MATH.map(m => m.name).join(' ') === 'EnableIn SourceA SourceB EnableOut Dest');
+  // IREF A + IREF 2.5 → ADD → OREF Sum ; GRT(Sum, 10) → OREF Big
+  const tags = [T('A', 'REAL'), T('Sum', 'REAL'), T('Big', 'BOOL'), T('Run', 'BOOL'), T('Done', 'BOOL'), T('Acc', 'DINT'), T('Up', 'BOOL'), T('Dn', 'BOOL'), T('Rst', 'BOOL'), T('Cnt', 'DINT')];
+  // the block tags at controller scope here (read and written without a program name)
+  const ptags = [], btags = [T('ADD_01', 'FBD_MATH'), T('GRT_01', 'FBD_COMPARE'), T('BAND_01', 'FBD_BOOLEAN_AND'), T('OSRI_01', 'FBD_ONESHOT'), T('MUL_01', 'FBD_MATH'), T('SUB_01', 'FBD_MATH')];
+  tags.push(...btags);
+  const s1 = { els: [{ id: 1, k: 'IREF', op: 'A' }, { id: 2, k: 'IREF', op: '2.5' }, B(3, 'ADD', 'ADD_01'), { id: 4, k: 'OREF', op: 'Sum' }, { id: 5, k: 'IREF', op: '10' }, B(6, 'GRT', 'GRT_01'), { id: 7, k: 'OREF', op: 'Big' }],
+    wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceB'), W(3, 'Dest', 4, 'In'), W(3, 'Dest', 6, 'SourceA'), W(5, 'Out', 6, 'SourceB'), W(6, 'Dest', 7, 'In')] };
+  const v0 = MTPS.verify(fproj([s1], { tags, ptags }));
+  check('a wired FBD routine verifies with no errors', v0.errors.length === 0, v0.lines.join(' | '));
+  const c = frun([s1], { tags, ptags });
+  c.write('A', 4); c.scan(10);
+  check('IREF → ADD → OREF: Sum = A + 2.5 (FBD_MATH, REAL)', c.read('Sum') === 6.5 && c.read('ADD_01.Dest') === 6.5 && c.read('ADD_01.SourceA') === 4);
+  check('a wired input is copied into the block tag; GRT 6.5 > 10 is false', c.read('Big') === 0 && c.read('GRT_01.EnableOut') === 1);
+  c.write('A', 9); c.scan(10);
+  check('the data flow orders the blocks: ADD runs before GRT in the same scan (Big at once)', c.read('Big') === 1);
+  c.write('ADD_01.EnableIn', 0); c.write('A', 0); c.scan(10);
+  check('EnableIn cleared: the block does not run and its outputs are not updated (EnableOut 0)', c.read('ADD_01.Dest') === 11.5 && c.read('ADD_01.EnableOut') === 0);
+  // execution order on a feedback loop: MUL → SUB → MUL needs Assume Data Available on one wire
+  const loop = ada => [{ els: [{ id: 1, k: 'IREF', op: 'A' }, B(2, 'MUL', 'MUL_01'), B(3, 'SUB', 'SUB_01'), { id: 4, k: 'OREF', op: 'Sum' }],
+    wires: [W(1, 'Out', 2, 'SourceA'), W(3, 'Dest', 2, 'SourceB', ada === 'fb' || ada === 'all'), W(2, 'Dest', 3, 'SourceA', ada === 'all'), W(3, 'Dest', 4, 'In')] }];
+  const vl = MTPS.verify(fproj(loop(''), { tags, ptags }));
+  check('a loop without Assume Data Available is an error (unresolved loop)', vl.errors.length === 2 && vl.errors.every(e => /Unresolved loop/.test(e.msg) && e.sheet === 0 && (e.el === 2 || e.el === 3)), vl.lines.join(' | '));
+  check('FBD errors name the sheet and the block', /^Error: Sheet 1, (MUL MUL_01|SUB SUB_01): Unresolved loop/.test(vl.errors[0].text), vl.errors[0].text);
+  check('with the feedback wire marked Assume Data Available the loop verifies', MTPS.verify(fproj(loop('fb'), { tags, ptags })).errors.length === 0);
+  check('every wire of the loop marked: the loop cannot be resolved', MTPS.verify(fproj(loop('all'), { tags, ptags })).errors.some(e => /all of its wires use Assume Data Available/.test(e.msg)));
+  const cl = frun(loop('fb'), { tags, ptags });
+  cl.write('MUL_01.SourceB', 0); cl.write('SUB_01.SourceB', -1); cl.write('A', 2); cl.scan(10);
+  check('the marked wire gives last scan\'s value: MUL uses SUB.Dest of the previous scan (one scan delay)', cl.read('MUL_01.Dest') === 0 && cl.read('Sum') === 1);
+  cl.scan(10);
+  check('… and the new value on the next scan', cl.read('MUL_01.Dest') === 2 && cl.read('Sum') === 3);
+  const two = [{ els: [B(1, 'ADD', 'ADD_01'), B(2, 'SUB', 'SUB_01')], wires: [W(1, 'Dest', 2, 'SourceA', true), W(1, 'Dest', 2, 'SourceB')] }];
+  check('two wires between the same two blocks with different indicators are an error', MTPS.verify(fproj(two, { tags, ptags })).errors.some(e => /same data flow indicator/.test(e.msg)));
+  // IREF latching (PM009 Data latching): an IREF and an OREF of the same tag
+  const lat = [{ els: [{ id: 1, k: 'IREF', op: 'A' }, B(2, 'ADD', 'ADD_01'), { id: 3, k: 'OREF', op: 'A' }, { id: 4, k: 'IREF', op: 'A' }, B(5, 'SUB', 'SUB_01'), { id: 6, k: 'OREF', op: 'Sum' }],
+    wires: [W(1, 'Out', 2, 'SourceA'), W(2, 'Dest', 3, 'In'), W(2, 'Dest', 5, 'SourceB'), W(4, 'Out', 5, 'SourceA'), W(5, 'Dest', 6, 'In')] }];
+  const cla = frun(lat, { tags, ptags });
+  cla.write('ADD_01.SourceB', 10); cla.write('A', 25); cla.scan(10);
+  check('IREF values are latched at the start of the routine: the OREF writing A does not change the IREF of A in that scan', cla.read('A') === 35 && cla.read('Sum') === -10);
+  // Boolean blocks, one-shot, connectors across sheets
+  const sA = { els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'IREF', op: 'Up' }, B(3, 'BAND', 'BAND_01'), { id: 4, k: 'OCON', name: 'Both' }], wires: [W(1, 'Out', 3, 'In1'), W(2, 'Out', 3, 'In2'), W(3, 'Out', 4, 'In')] };
+  const sB = { els: [{ id: 5, k: 'ICON', name: 'Both' }, B(6, 'OSRI', 'OSRI_01'), { id: 7, k: 'OREF', op: 'Done' }, { id: 8, k: 'ICON', name: 'Both' }, { id: 9, k: 'OREF', op: 'Big' }], wires: [W(5, 'Out', 6, 'InputBit'), W(6, 'OutputBit', 7, 'In'), W(8, 'Out', 9, 'In')] };
+  const cb = frun([sA, sB], { tags, ptags });
+  check('BAND: In3..In8 are set on download (an unwired input does not block the AND)', cb.read('BAND_01.In8') === 1 && cb.read('BAND_01.EnableIn') === 1);
+  cb.write('Run', 1); cb.write('Up', 1); cb.scan(10);
+  check('an OCON on sheet 1 feeds ICONs on sheet 2; several ICONs read one OCON', cb.read('Big') === 1);
+  check('OSRI: the first scan needs a false-to-true InputBit', cb.read('Done') === 0);
+  cb.write('Up', 0); cb.scan(10); cb.write('Up', 1); cb.scan(10);
+  check('OSRI: OutputBit is set for one execution on the rising InputBit', cb.read('Done') === 1);
+  cb.scan(10);
+  check('… and cleared on the next', cb.read('Done') === 0);
+  // Verify errors (PM009 rules)
+  const verr = (sheets, re) => { const v = MTPS.verify(fproj(sheets, { tags, ptags })); return v.errors.some(e => re.test(e.msg)) ? true : v.lines.join(' | '); };
+  const ok = (name, r) => check(name, r === true, r);
+  ok('an OCON without an ICON of the same name is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OCON', name: 'X1' }], wires: [W(1, 'Out', 2, 'In')] }], /needs at least one ICON/));
+  ok('two OCONs with one name are an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OCON', name: 'X1' }, { id: 3, k: 'OCON', name: 'X1' }, { id: 4, k: 'ICON', name: 'X1' }], wires: [W(1, 'Out', 2, 'In'), W(1, 'Out', 3, 'In')] }], /unique name/));
+  ok('an ICON with no OCON of its name is an error', verr([{ els: [{ id: 1, k: 'ICON', name: 'Nope' }] }], /No OCON named 'Nope'/));
+  ok('an IREF of an undefined tag is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Ghost' }, { id: 2, k: 'OREF', op: 'Big' }], wires: [W(1, 'Out', 2, 'In')] }], /Undefined tag 'Ghost'/));
+  ok('an OREF with a constant is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OREF', op: '5' }], wires: [W(1, 'Out', 2, 'In')] }], /needs a tag, not a constant/));
+  ok('an OREF without an input wire is an error', verr([{ els: [{ id: 2, k: 'OREF', op: 'Big' }] }], /has no input wire/));
+  ok('a block whose tag is of another type is an error', verr([{ els: [B(1, 'ADD', 'GRT_01')] }], /ADD needs a FBD_MATH/));
+  ok('a block with an undefined tag is an error', verr([{ els: [B(1, 'ADD', 'NoSuchTag')] }], /Undefined tag 'NoSuchTag'/));
+  ok('two wires into one input pin are an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'A' }, { id: 2, k: 'IREF', op: 'A' }, B(3, 'ADD', 'ADD_01')], wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceA')] }], /more than one wire/));
+  ok('an IREF of a structure is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'GRT_01' }, B(2, 'ADD', 'ADD_01')], wires: [W(1, 'Out', 2, 'SourceA')] }], /an IREF needs a BOOL/));
+  check('an unwired IREF is a warning', MTPS.verify(fproj([{ els: [{ id: 1, k: 'IREF', op: 'A' }] }], { tags, ptags })).warnings.some(w => /not wired/.test(w.msg)));
+  check('a download with an FBD error is refused', !new MTPS.Controller().download(fproj(loop(''), { tags, ptags })).ok);
+  // JSR to an FBD routine from a ladder routine
+  const pj = fproj([s1], { tags, ptags }); const pg = pj.tasks[0].programs[0];
+  pg.routines[0].name = 'Calc'; pg.routines.unshift({ name: 'MainRoutine', rungs: [{ t: 'XIC(Run)JSR(Calc,0);' }] });
+  const cj = new MTPS.Controller(); cj.download(pj); cj.setMode('remrun'); cj.write('A', 1); cj.scan(10);
+  check('JSR runs an FBD routine only when called', cj.read('Sum') === 0);
+  cj.write('Run', 1); cj.scan(10);
+  check('… and the FBD routine runs from the JSR', cj.read('Sum') === 3.5);
+  // live values for the editor
+  const lv = F.liveOf(c, 'MainProgram', 'MainRoutine');
+  check('the live values of an FBD routine: IREF value, block pins, OREF value', lv && lv[1].Out === 0 && lv[3].Dest === 11.5 && lv[4].In === 11.5, JSON.stringify(lv));
+  // DIV by 0 in FBD: 1.#INF and S:V (minor fault)
+  const cd = frun([{ els: [{ id: 1, k: 'IREF', op: '1' }, { id: 2, k: 'IREF', op: '0' }, B(3, 'DIV', 'ADD_01'), { id: 4, k: 'OREF', op: 'Sum' }], wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceB'), W(3, 'Dest', 4, 'In')] }], { tags, ptags });
+  cd.scan(10);
+  check('DIV by zero in FBD: Dest is infinite (1.#INF), S:V and a minor fault', cd.read('Sum') === Infinity && cd.read('S:V') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
