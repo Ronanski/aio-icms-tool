@@ -881,6 +881,7 @@
     nextres: { l: 'Next Result', k: 'F4', i: 'down', run: () => nextResult(1), on: () => !S.noProj },
     prevres: { l: 'Previous Result', k: 'Shift+F4', i: 'up', run: () => nextResult(-1), on: () => !S.noProj },
     goto: { l: 'Go To…', k: 'Ctrl+G', i: 'goto', run: cmdGoto },
+    browse: { l: 'Browse Logic…', i: 'tree', run: () => browseLogic() },
     xref: { l: 'Cross Reference', k: 'Ctrl+E', i: 'xref', run: () => xref() },
     verifyr: { l: 'Verify Routine', i: 'checkr', run: () => verifyCmd(true) },
     verifyc: { l: 'Verify Controller', i: 'check', run: () => verifyCmd(false) },
@@ -929,7 +930,7 @@
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
-    ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
+    ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
@@ -1147,7 +1148,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
@@ -2814,6 +2815,70 @@
       reverify(); render();
       say(done.length < hits.length ? `${done.length} of ${hits.length} replaced (an instruction name that is not valid was left).` : `${done.length} occurrence(s) replaced. See Search Results.`, done.length < hits.length);
     };
+  }
+  /* Search > Browse Logic (help v37, Browse Logic dialog box): Find, the Logic tree (programs, + shows their routines,
+     then the rungs; a double-click on a rung opens it in the editor), the Description of the selected logic, Go To.
+     Find keeps the components whose name (or rung text) has the text, with what holds them. */
+  function browseLogic() {
+    const open = new Set(['g:' + S.prog, 'r:' + S.prog + '/' + S.routine]);
+    let cur = 'r:' + S.prog + '/' + S.routine;
+    const nodes = () => {
+      const f = U((el.querySelector('#bl-f') || {}).value || '').trim(), out = [];
+      allProgs().forEach(g => {
+        const gk = 'g:' + g.name, rs = g.routines.map(r => {
+          const rk = 'r:' + g.name + '/' + r.name, rgs = r.rungs.map((rg, ri) => ({ k: 'n:' + g.name + '/' + r.name + '/' + ri, l: `Rung ${ri}`, t: rg.t, d: rg.c || '', hit: !!f && U(rg.t).includes(f) }));
+          return { k: rk, l: r.name, d: r.desc || (r.name === g.main ? 'Main routine' : ''), hit: !f || U(r.name).includes(f), rgs };
+        });
+        const gHit = !f || U(g.name).includes(f);
+        if (f && !gHit && !rs.some(r => r.hit || r.rgs.some(x => x.hit))) return;
+        out.push({ k: gk, l: g.name, d: g.desc || '', lv: 0, kids: rs.length });
+        if (!open.has(gk) && !f) return;
+        rs.forEach(r => {
+          if (f && !gHit && !r.hit && !r.rgs.some(x => x.hit)) return;
+          out.push({ k: r.k, l: r.l, d: r.d, lv: 1, kids: r.rgs.length });
+          if (open.has(r.k) || (f && r.rgs.some(x => x.hit))) r.rgs.forEach(x => { if (!f || x.hit || r.hit || gHit) out.push({ k: x.k, l: x.l, t: x.t, d: x.d, lv: 2, kids: 0 }); });
+        });
+      });
+      return out;
+    };
+    const el = dialog({ title: 'Browse Logic', size: 'md',
+      body: `<div class="frow"><label for="bl-f">Find:</label><input class="inp mono" id="bl-f" autocomplete="off" spellcheck="false"></div>
+        <label>Logic:</label><div class="gwl bltree" id="bl-t"></div>
+        <label>Description:</label><div class="bldesc" id="bl-d"></div>`,
+      buttons: [{ l: 'Close' }, { l: 'Go To', pri: true, run: () => go() }] });
+    const q = x => el.querySelector(x);
+    const draw = () => {
+      const ns = nodes();
+      if (ns.length && !ns.some(n => n.k === cur)) cur = ns[0].k;
+      q('#bl-t').innerHTML = ns.map(n => `<div class="row${n.k === cur ? ' on' : ''}" data-bl="${esc(n.k)}" style="padding-left:${8 + n.lv * 18}px">${n.kids ? `<span class="blx" data-blx="${esc(n.k)}">${open.has(n.k) ? '−' : '+'}</span>` : '<span class="blx"></span>'}${esc(n.l)}${n.t != null ? ` <span class="mono sub">${esc(n.t || '(empty)')}</span>` : ''}</div>`).join('') || '<div class="empty">No logic matches.</div>';
+      shown = ns; mark();
+    };
+    // the selection only: the rows stay (a double-click needs the row it started on)
+    let shown = [];
+    const mark = () => {
+      el.querySelectorAll('#bl-t .row').forEach(r => r.classList.toggle('on', r.dataset.bl === cur));
+      const c = shown.find(n => n.k === cur); q('#bl-d').textContent = c ? c.d || '' : '';
+      const on = q('#bl-t .row.on'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+    };
+    // Go To: the routine (its first rung) or the rung, in the ladder editor
+    function go() {
+      const k = cur, [g, r, ri] = k.slice(2).split('/');
+      if (k[0] === 'g') { const pg = allProgs().find(x => x.name === g); S.prog = g; S.routine = pg.main || pg.routines[0].name; }
+      else { S.prog = g; S.routine = r; }
+      S.view = 'ladder'; S.sel = null; S.selAll = null; S.selRung = ri != null ? +ri : 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder';
+      setTimeout(() => { reverify(); render(); scrollToSel(); }, 0);
+    }
+    q('#bl-t').addEventListener('click', ev => {
+      const x = ev.target.closest('[data-blx]'); if (x) { const k = x.dataset.blx; if (open.has(k)) open.delete(k); else open.add(k); cur = k; draw(); return; }
+      const r = ev.target.closest('[data-bl]'); if (r) { cur = r.dataset.bl; mark(); }
+    });
+    q('#bl-t').addEventListener('dblclick', ev => {
+      const r = ev.target.closest('[data-bl]'); if (!r) return;
+      cur = r.dataset.bl;
+      if (cur[0] === "n") { go(); closeLayer(); } else { if (open.has(cur)) open.delete(cur); else open.add(cur); draw(); }
+    });
+    q('#bl-f').addEventListener('input', draw);
+    draw();
   }
   /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
      in the tag editor) and the rung or the tag to go to */

@@ -270,4 +270,48 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('tablet (touch): Use Wildcards, Run_* finds Run_Timer', /Rung 2, TON, Operand 0/.test(await tp.$eval('#layer #rp-m', e => e.textContent)), await tp.$eval('#layer #rp-m', e => e.textContent));
     await tctx.close();
   }
+  if (want('browse')) {
+    console.log('Search > Browse Logic (help v37: Browse Logic dialog box)');
+    await fresh(); await ev(() => { const A = MTPS.App, p = A.example(); p.tasks[0].programs[0].desc = 'The motor line'; p.tasks[0].programs[0].routines.push({ name: 'Aux', desc: 'Lamps', rungs: [{ t: 'XIC(Motor_Run)OTE(Run_Lamp);', c: 'Lamp test' }] }); p.tasks[0].programs.push({ name: 'P2', main: 'Main2', routines: [{ name: 'Main2', rungs: [{ t: 'NOP();' }] }], tags: [] }); A.openProject(p, true); A.render(); });
+    const rows = (pg = page) => pg.$$eval('#bl-t .row', r => r.map(x => x.textContent.trim()));
+    const st = () => ev(() => ({ g: MTPS.App.state.prog, r: MTPS.App.state.routine, ri: MTPS.App.state.selRung, open: !!document.querySelector('#layer .dlg') }));
+    const sm = (await menu('Search')).map(x => x[0]);
+    check('Search menu: Browse Logic… after Go To…', sm.indexOf('Browse Logic…') === sm.indexOf('Go To…') + 1, sm.join('|'));
+    await pick('Browse Logic…');
+    check('Browse Logic: Find, Logic, Description, Go To', (await dlgTitle()) === 'Browse Logic' && (await page.$$eval('#layer .db label', l => l.map(x => x.textContent).join('|'))) === 'Find:|Logic:|Description:' && (await page.$$eval('#layer .df .btn', b => b.map(x => x.textContent))).includes('Go To'));
+    const r0 = await rows();
+    check('the tree: the programs, the current routine open with its rungs', r0[0] === '−MainProgram' && r0.includes('−MainRoutine') && r0.includes('+Aux') && r0.includes('+P2') && r0.some(x => /^Rung 4 XIC\(Motor_Run\)ONS/.test(x)), r0.join('|'));
+    check('Description: the selected routine', (await page.$eval('#bl-d', d => d.textContent)) === 'Main routine');
+    await page.click('#bl-t [data-blx="r:MainProgram/Aux"]'); await wait(60);
+    check('+ opens Aux and shows its rung', (await rows()).some(x => /^Rung 0 XIC\(Motor_Run\)OTE\(Run_Lamp\)/.test(x)) && (await page.$eval('#bl-d', d => d.textContent)) === 'Lamps');
+    await page.click('#bl-t [data-bl="n:MainProgram/Aux/0"]'); await wait(60);
+    check('a rung: its comment in Description', (await page.$eval('#bl-d', d => d.textContent)) === 'Lamp test');
+    await page.click('#bl-t [data-bl="g:MainProgram"]'); await wait(60);
+    check('a program: its description', (await page.$eval('#bl-d', d => d.textContent)) === 'The motor line');
+    await page.fill('#bl-f', 'ton'); await wait(60);
+    const r1 = await rows();
+    check('Find "ton": only the rung with TON, with its program and routine', r1.length === 3 && /^Rung 2 XIC\(Motor_Run\)TON/.test(r1[2]), r1.join('|'));
+    await page.fill('#bl-f', 'main2'); await wait(60);
+    check('Find a routine name: P2 and Main2', (await rows()).join('|') === '+P2|+Main2', (await rows()).join('|'));
+    await page.fill('#bl-f', ''); await wait(60);
+    await page.dblclick('#bl-t [data-bl="n:MainProgram/MainRoutine/3"]'); await wait(200);
+    const s1 = await st();
+    check('double-click a rung: the dialog closes, the rung is selected in the editor', !s1.open && s1.r === 'MainRoutine' && s1.ri === 3, JSON.stringify(s1));
+    await menu('Search', 'Browse Logic…');
+    await page.click('#bl-t [data-blx="r:MainProgram/Aux"]'); await page.click('#bl-t [data-bl="n:MainProgram/Aux/0"]');
+    await clickBtn('Go To'); await wait(200);
+    const s2 = await st();
+    check('Go To: opens Aux at rung 0', !s2.open && s2.r === 'Aux' && s2.ri === 0, JSON.stringify(s2));
+    // phone (touch): More > Browse Logic…, tap a program, Go To
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const pp = await pctx.newPage();
+    await pp.goto(URL); await pp.waitForTimeout(300); await pp.keyboard.press('Escape');
+    await pp.evaluate(() => { const A = MTPS.App, p = A.example(); p.tasks[0].programs.push({ name: 'P2', main: 'Main2', routines: [{ name: 'Main2', rungs: [{ t: 'NOP();' }] }], tags: [] }); A.openProject(p); });
+    await pp.waitForTimeout(150);
+    await pp.tap('[data-go="more"]'); await pp.waitForTimeout(150); await pp.tap('.page [data-cmd="browse"]'); await pp.waitForTimeout(150);
+    await pp.tap('#bl-t [data-bl="g:P2"]'); await pp.waitForTimeout(80);
+    await clickBtn('Go To', pp, true); await pp.waitForTimeout(200);
+    check('phone (touch): tap P2, Go To opens its main routine', await pp.evaluate(() => MTPS.App.state.prog === 'P2' && MTPS.App.state.routine === 'Main2' && MTPS.App.state.area === 'ladder'));
+    await pctx.close();
+  }
 };

@@ -950,6 +950,13 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .gwl .row { padding: 3px 8px; cursor: pointer; }
 .tab .gwl .row, .phone .gwl .row { padding: 12px; }
 .gwl .row.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+/* Browse Logic: the Logic tree and the Description pane */
+.bltree { height: 260px; overflow: auto; margin-bottom: 8px; }
+.bltree .row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bltree .sub { color: var(--muted); font-weight: 400; }
+.blx { display: inline-block; width: 16px; text-align: center; color: var(--muted); }
+.tab .blx, .phone .blx { width: 28px; }
+.bldesc { border: 1px solid var(--border-strong); background: var(--surface); min-height: 48px; padding: 6px 8px; white-space: pre-wrap; }
 .ale1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .ale1 .inp { flex: 1; min-width: 120px; width: auto; }
 .alew { display: flex; gap: 8px; min-height: 0; }
