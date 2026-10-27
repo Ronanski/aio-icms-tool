@@ -2309,11 +2309,11 @@
       body: `<div class="frow"><label>Name</label><input class="inp mono" id="tn" value="${esc(t0.name)}" autocomplete="off" spellcheck="false"${edit0 ? ' readonly' : ''}></div>
         <div class="frow"><label>Description</label><input class="inp" id="td" value="${esc(t0.desc || '')}"></div>
         <div class="frow"><label>Type</label><select class="inp" id="tk">${PCX.typeOpts(t0)}</select></div>
-        ${PCX.tagRows()}
         <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><span class="afor"><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="btn" id="tab" type="button" title="Browse tags">${ic('down')}</button></span></div>
         <div class="asg abrw" id="asg" hidden></div>
         <div class="frow" id="rat"${t0.alias ? '' : ' hidden'}><label>Data Type</label><span class="mono" id="tat"></span></div>
         <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label for="tt">Data Type</label><span class="afor"><input class="inp mono" id="tt" value="${esc(tyDims(t0.type || 'BOOL', t0.dim))}" list="ttl" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Data Type"><button class="btn" id="ttb" type="button" title="Select Data Type (with the array dimensions)" aria-label="Select Data Type">…</button></span><datalist id="ttl">${types.map(t => `<option value="${t}">`).join('')}</datalist></div>
+        ${PCX.tagRows()}
         <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
         <div class="frow"><label>External Access</label><select class="inp" id="tea">${ACCESS.map(a => `<option${a === accessOf(t0) ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
         <div class="frow"><label>Style</label><select class="inp" id="tsty"></select></div>
