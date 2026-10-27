@@ -118,7 +118,7 @@
     Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
-    'File/Misc': ['FAL', 'FSC', 'COP', 'FLL'],
+    'File/Misc': ['FAL', 'FSC', 'COP', 'CPS', 'FLL', 'AVE', 'SRT', 'STD', 'SIZE'],
     'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     Sequencer: ['SQI', 'SQO', 'SQL'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
@@ -1306,7 +1306,7 @@
   }
   const pfx = (p, q, strict) => !!p && p.length >= q.length + (strict ? 1 : 0) && q.every((v, i) => p[i] === v);
   const sameP = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
-  const NOTAG = /^(routine|label|imm|expr|order|fmode|gclass|ginst|gattr)$/;
+  const NOTAG = /^(routine|label|imm|expr|order|fmode|adim|gclass|ginst|gattr)$/;
   /* is a node a valid drop point for what is dragged (white square)? */
   function nodeOk(n) {
     const d = S.drag; if (!d) return false;
@@ -1565,7 +1565,7 @@
   const kb = k => (S.layout === 'desktop' ? k : '');
   function tagItems(e, oi, onName) {
     const kind = (((INSTR[e.t] || {}).args || [])[oi] || '').replace('?', ''), a = e.a[oi];
-    if (!kind || /^(routine|label|imm|expr|order|fmode|gclass|ginst|gattr)$/.test(kind)) return [];
+    if (!kind || /^(routine|label|imm|expr|order|fmode|adim|gclass|ginst|gattr)$/.test(kind)) return [];
     if (a === '?' || a === '') return [{ l: 'New Tag…', k: kb('Ctrl+W'), i: 'newtag', run: () => newTag({ kind }), dis: !editable() }, '-'];
     if (!isTagText(a)) return [];
     const base = String(a).split(/[.[]/)[0], tg = tagFor(base);
@@ -1719,14 +1719,16 @@
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
     control: ['CONTROL'], darr: ['DINT'], real: ['REAL'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
+    aelem: ['SINT', 'INT', 'DINT', 'REAL'], aelemw: ['SINT', 'INT', 'DINT', 'REAL'], rdest: ['REAL'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
-  const ARRK = ['elem', 'elemw', 'darr', 'farr'];
+  const ARRK = ['elem', 'elemw', 'darr', 'farr', 'aelem', 'aelemw'];
   /* the name operands that are picked from a list, as the reference editor offers them (Mode of FAL / FSC, the class,
      instance and attribute of GSV / SSV); PCTX is the instruction being edited ({ mn, ops }) */
   let PCTX = null;
   const PICKS = {
     fmode: { title: 'Modes: ALL, INC, or a number of elements per scan', list: () => [['ALL', 'All the elements in one scan'], ['INC', 'One element each false-to-true rung'], ['1', 'A number: that many elements each scan']].map(([name, desc]) => ({ name, type: '', desc })) },
+    adim: { title: 'Dimension to vary (the order is array[0,1,2])', list: () => [['0', 'The first dimension'], ['1', 'The second dimension'], ['2', 'The third dimension']].map(([name, desc]) => ({ name, type: '', desc })) },
   };
   const PICKK = Object.keys(PICKS);
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
@@ -1864,7 +1866,9 @@
     if (kind === 'imm' || kind === 'order') return kind === 'order' ? ['REVERSE', 'WORD', 'HIGH/LOW'].map(n => ({ name: n, type: '', desc: '' })) : [];
     const types = KIND_TYPES[kind];
     let list = candidates();
-    if (ARRK.includes(kind)) list = list.filter(c => /\[\d+\]$/.test(c.name) && (!types || types.includes(c.type)));
+    if (ARRK.includes(kind)) list = list.filter(c => /\[[\d,]+\]$/.test(c.name) && (!types || types.includes(c.type)));
+    // SIZE: an array, or an element of one
+    else if (kind === 'sarr') list = list.filter(c => c.dim || /\[[\d,]+\]$/.test(c.name));
     else if (types) list = list.filter(c => types.includes(c.type) && !c.dim);
     if (q) list = list.filter(c => U(c.name).includes(q)).sort((a, b) => (U(a.name).startsWith(q) ? 0 : 1) - (U(b.name).startsWith(q) ? 0 : 1));
     return list.slice(0, 120);
@@ -2023,7 +2027,7 @@
      A small combo box over the operand (or the mnemonic) with a tag drop-down (Alt+Down, or the arrow button).
      Enter accepts and goes on to the next operand, Tab accepts, Esc, scrolling or a click elsewhere drops the edit.
      A new mnemonic (morph) keeps the operands that fit it: TON(Tmr1,5000,0) to XIC keeps Tmr1. */
-  const SEL_KIND = /^(routine|label|order|fmode|gclass|ginst|gattr)$/;
+  const SEL_KIND = /^(routine|label|order|fmode|adim|gclass|ginst|gattr)$/;
   function fitsKind(v, k, was) {
     if (v == null || v === '' || v === '?') return true;
     if (k === 'expr' || k === 'num') return true;
@@ -2851,7 +2855,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = w.querySelector(`rect.tap[data-rn][data-ri="${ri}"]`);
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
-  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest'];
+  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest', 'aelemw', 'rdest'];
   /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
      wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
      Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a

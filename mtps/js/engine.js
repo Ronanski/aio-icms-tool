@@ -814,6 +814,8 @@
     LN: ['Source', 'Dest'], LOG: ['Source', 'Dest'], XPY: ['Source X', 'Source Y', 'Dest'],
     DEG: ['Source', 'Dest'], RAD: ['Source', 'Dest'], TOD: ['Source', 'Dest'], FRD: ['Source', 'Dest'], TRN: ['Source', 'Dest'],
     FAL: ['Control', 'Length', 'Position', 'Mode', 'Dest', 'Expression'], FSC: ['Control', 'Length', 'Position', 'Mode', 'Expression'],
+    AVE: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'], STD: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'],
+    SRT: ['Array', 'Dim. To Vary', 'Control', 'Length', 'Position'], SIZE: ['Source', 'Dim. To Vary', 'Size'], CPS: ['Source', 'Dest', 'Length'],
   });
   Object.assign(INSTR, {
     // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
@@ -829,6 +831,11 @@
     // File/Misc (chapter 8): Length and Position are the .LEN and .POS of the CONTROL (pseudo-operands)
     FAL: I('box', 'File/Misc', 'File Arith/Logical', 'control imm imm fmode dest expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
     FSC: I('box', 'File/Misc', 'File Search/Compare', 'control imm imm fmode expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
+    AVE: I('box', 'File/Misc', 'Average File', 'aelem adim dest control imm imm', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    STD: I('box', 'File/Misc', 'Standard Deviation', 'aelem adim rdest control imm imm', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SRT: I('box', 'File/Misc', 'Sort File', 'aelemw adim control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    SIZE: I('box', 'File/Misc', 'Size In Elements', 'sarr adim dest', { out: true }),
+    CPS: I('box', 'File/Misc', 'Synchronous Copy File', 'elem elemw imm', { out: true }),
   });
   /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
      integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
@@ -919,6 +926,86 @@
     e.v = true; return true;
   }
   XEL.FAL = fileOp; XEL.FSC = fileOp;
+
+  /* AVE, STD, SRT and SIZE (RM018A chapter 8) work along one dimension (Dim. To Vary: 0, 1 or 2, array[0,1,2]) of an
+     array from the element given: aelem / aelemw is one element of a SINT, INT, DINT or REAL array; sarr (SIZE) an
+     array or an element of one, of any type */
+  XNAME.adim = s => { const c = parseNumber(s); return c && !c.real && c.v >= 0 && c.v <= 2 ? new Const(c.v) : 'Dimension to vary must be 0, 1 or 2'; };
+  XKIND.aelem = r => (!arrEl(r) ? 'Operand must be an array element, e.g. Data[0]' : isNum(r.type) ? r : BAD_TYPE);
+  XKIND.aelemw = (r, writable) => (!arrEl(r) ? 'Operand must be an array element, e.g. Data[0]' : isNum(r.type) ? writable() : BAD_TYPE);
+  XKIND.sarr = (r, writable, one) => (r.bit < 0 && (!one || arrEl(r)) ? r : 'Source must be an array or an element of one');
+  XKIND.rdest = (r, writable, one) => (r.type === 'REAL' && one ? writable() : BAD_TYPE);
+  /* the elements along dimension d from the operand's element: n = how many there are up to the end of that dimension,
+     g(j) / s(j, v) = the j-th one (major fault 4/20 when the array has no dimension d) */
+  function dimFile(r, d, t) {
+    const F = file(r), st = r.steps[r.steps.length - 1], lens = st.lens || [st.len];
+    if (d >= lens.length) throw new Fault(4, 20, `${t}: Dimension to vary ${d} is more than the dimensions of the array (${lens.length})`);
+    const k0 = PK;
+    let stride = 1;
+    for (let k = d + 1; k < lens.length; k++) stride *= lens[k];
+    // PK is the element's place in the whole array (row-major): its subscript in dimension d
+    return { n: lens[d] - Math.floor(k0 / stride) % lens[d], g: j => F.g(j * stride), s: (j, v) => F.s(j * stride, v) };
+  }
+  /* AVE (mean) and STD (sample standard deviation, N - 1): on a true rung with .DN and .ER clear, all .LEN elements
+     (internally a FAL in ALL mode), then .DN; reading past the end of the dimension or an overflow sets .ER (.POS at that
+     element) and stops. Rung-condition-in false: AVE clears .EN .ER .DN .POS when .DN is set and .ER clear (AVE flow
+     chart); STD always clears them. .LEN < 0 or .POS < 0: major fault 4/21 */
+  function statOp(e, x, p) {
+    const c = x[3].obj(), std = e.t === 'STD';
+    if (!p) { if (std || (c.DN && !c.ER)) { c.EN = c.ER = c.DN = 0; c.POS = 0; } e.v = false; return false; }
+    c.EN = 1;
+    if (!c.DN && !c.ER) {
+      if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+      const F = dimFile(x[0], x[1].c, e.t), n = c.LEN, v = [];
+      for (let j = 0; j < n; j++) {
+        c.POS = j;
+        if (j >= F.n) { c.ER = 1; e.v = true; return true; }
+        v.push(F.g(j));
+      }
+      if (n > 0) {
+        const m = v.reduce((a, b) => a + b, 0) / n;
+        const r = std ? Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / (n - 1)) : m;
+        this.put(x[2], isFinite(r) ? r : 0, !isFinite(r));
+        if (this.S.V) { c.ER = 1; e.v = true; return true; }
+      }
+      c.POS = n; c.DN = 1;
+    }
+    e.v = true; return true;
+  }
+  XEL.AVE = statOp; XEL.STD = statOp;
+  XPRE.AVE = x => { const c = x[3].obj(); c.EN = c.DN = 0; if (!c.ER) c.EU = c.EM = c.UL = c.IN = c.FD = 0; };
+  XPRE.STD = x => { const c = x[3].obj(); c.EN = c.DN = c.ER = 0; };
+  /* SRT: on a false-to-true rung (.EN clear), the .LEN elements along the dimension into ascending order, then .DN
+     (.POS is left at the last element, as the manual's example shows). Rung false: .EN and .DN cleared. .LEN < 0 or
+     .POS < 0: .ER and major fault 4/21; a dimension or a length past the end of the array: major fault 4/20 */
+  XEL.SRT = function (e, x, p) {
+    const c = x[2].obj();
+    if (!p) { c.EN = c.DN = 0; e.v = false; return false; }
+    if (!c.EN && !c.ER) {
+      c.EN = 1;
+      if (c.LEN < 0 || c.POS < 0) { c.ER = 1; throw new Fault(4, 21, 'SRT: .LEN or .POS is less than 0'); }
+      const F = dimFile(x[0], x[1].c, 'SRT');
+      if (c.LEN > F.n) throw new Fault(4, 20, `SRT: Length ${c.LEN} goes past the end of the array (${F.n} elements from the one given)`);
+      const v = [];
+      for (let j = 0; j < c.LEN; j++) v.push(F.g(j));
+      v.sort((a, b) => a - b).forEach((y, j) => F.s(j, y));
+      c.POS = Math.max(0, c.LEN - 1); c.DN = 1;
+    }
+    e.v = true; return true;
+  };
+  /* SIZE: the number of elements of dimension Dim. To Vary of the array (all of that dimension, whatever element is
+     given); no math status flags */
+  XEL.SIZE = function (e, x, p) {
+    if (p) {
+      const r = x[0], d = x[1].c, st = r.steps[r.steps.length - 1], lens = r.dim ? r.dims : st.lens || [st.len];
+      if (d >= lens.length) throw new Fault(4, 20, `SIZE: Dimension to vary ${d} is more than the dimensions of the array (${lens.length})`);
+      x[2].set(lens[d]);
+    }
+    e.v = p; return p;
+  };
+  /* CPS: COP that the I/O updates cannot interrupt; the simulator scan is never interrupted, so it copies as COP */
+  XCHK.CPS = (x, bad) => { if (x[0].type !== x[1].type && !(isNum(x[0].type) && isNum(x[1].type))) bad(BAD_TYPE, 1); };
+  XEL.CPS = function (e, x, p) { this.el({ t: 'COP', x }, p); e.v = p; return p; };
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

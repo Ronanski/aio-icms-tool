@@ -16,18 +16,25 @@ module.exports = async function w2c({ browser, URL, check }) {
     ['Math Conversions', 'DEG', ['One', 'R9']], ['Math Conversions', 'RAD', ['Hund', 'R10']], ['Math Conversions', 'TOD', ['N22', 'D2']],
     ['Math Conversions', 'FRD', ['D2', 'D3']], ['Math Conversions', 'TRN', ['F57', 'D4']],
     ['File/Misc', 'FAL', ['C1', '5', '0', 'ALL', 'Arr2[C1.POS]', 'Arr[C1.POS]*2']], ['File/Misc', 'FSC', ['C2', '5', '0', 'ALL', 'Arr[C2.POS]>=3']],
+    ['File/Misc', 'AVE', ['Grid[0,1]', '0', 'Av', 'C3', '4', '0']], ['File/Misc', 'STD', ['Grid[0,4]', '0', 'Sd', 'C4', '4', '0']],
+    ['File/Misc', 'SRT', ['Gs[2,0]', '1', 'C5', '5', '0']], ['File/Misc', 'SIZE', ['Grid', '1', 'Sz']], ['File/Misc', 'CPS', ['Arr[0]', 'Dst[0]', '3']],
   ];
-  // the Mode operand of FAL / FSC is picked from its list (ALL, INC, a number)
-  const PICK = { FAL: 3, FSC: 3 };
+  // the operands picked from their list: the Mode of FAL / FSC (ALL, INC, a number), Dim. To Vary (0, 1, 2)
+  const MODES = 'ALL,INC,1', DIMS = '0,1,2';
+  const PICK = { FAL: [3, MODES], FSC: [3, MODES], AVE: [1, DIMS], STD: [1, DIMS], SRT: [1, DIMS], SIZE: [1, DIMS] };
   // the values in Run (the manual's own examples where it gives one)
   const WANT = { R1: Math.sin(0.5), R2: Math.cos(0.5), R3: Math.tan(0.5), R4: Math.asin(0.5), R5: Math.acos(0.5), R6: Math.atan(1), R7: 1.609438, R8: 2, D1: 1024,
-    R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5, 'Arr2[0]': 2, 'Arr2[4]': 10, 'C1.DN': 1, 'C1.POS': 5, 'C2.FD': 1, 'C2.IN': 1, 'C2.POS': 2 };
+    R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5, 'Arr2[0]': 2, 'Arr2[4]': 10, 'C1.DN': 1, 'C1.POS': 5, 'C2.FD': 1, 'C2.IN': 1, 'C2.POS': 2,
+    Av: 12, Sd: 6.454972, 'Gs[2,0]': 6, 'Gs[2,4]': 10, 'C5.DN': 1, Sz: 5, 'Dst[2]': 3 };
   const project = () => {
     const A = MTPS.App, p = A.blank('Wave2C'), T = (name, type, value, dim) => p.tags.push(Object.assign({ name, type }, value != null ? { value } : {}, dim ? { dim } : {}));
     T('Ang', 'REAL', 0.5); T('Half', 'REAL', 0.5); T('One', 'REAL', 1); T('Five', 'REAL', 5); T('Hund', 'REAL', 100); T('Two', 'DINT', 2);
     for (let k = 1; k <= 10; k++) T('R' + k, 'REAL');
     T('D1', 'DINT'); T('N22', 'DINT', 22); T('D2', 'DINT'); T('D3', 'DINT'); T('D4', 'DINT'); T('F57', 'REAL', 5.7);
     T('Arr', 'DINT', [1, 2, 3, 4, 5], 5); T('Arr2', 'DINT', null, 5); T('C1', 'CONTROL'); T('C2', 'CONTROL');
+    const grid = Array.from({ length: 20 }, (_, k) => 20 - k);
+    T('Grid', 'DINT', grid, [4, 5]); T('Gs', 'DINT', grid, [4, 5]); T('Av', 'DINT'); T('Sd', 'REAL'); T('Sz', 'DINT'); T('Dst', 'DINT', null, 3);
+    T('C3', 'CONTROL'); T('C4', 'CONTROL'); T('C5', 'CONTROL');
     A.openProject(p);
   };
   const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 800, height: 1280 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
@@ -62,10 +69,10 @@ module.exports = async function w2c({ browser, URL, check }) {
       if (!want.every(w => labels.some(l => l.startsWith(w)))) bad.push(`${mn}: operand prompts ${labels.join('/')}`);
       for (let i = 0; i < ops.length; i++) {
         await tp(`#layer [data-op="${i}"]`);
-        if (PICK[mn] === i) {
+        if (PICK[mn] && PICK[mn][0] === i) {
           await pg.fill(`#layer [data-op="${i}"]`, ''); await pg.waitForTimeout(80);
           const picks = await pg.$$eval('#layer #sg [data-pick]', l => l.map(x => x.dataset.pick).join(','));
-          if (picks !== 'ALL,INC,1') bad.push(`${mn}: Mode list ${picks}`);
+          if (picks !== PICK[mn][1]) bad.push(`${mn}: list of ${want[i]} ${picks}`);
           if (await pg.$(`#layer #sg [data-pick="${ops[i]}"]`)) await tp(`#layer #sg [data-pick="${ops[i]}"]`);
           await pg.waitForTimeout(80);
           const v = await pg.$eval(`#layer [data-op="${i}"]`, x => x.value);
@@ -110,6 +117,12 @@ module.exports = async function w2c({ browser, URL, check }) {
       await pg.click('#layer [data-ih="FAL"]'); await pg.waitForTimeout(80);
       const fa = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
       check('Instruction Help for FAL: the modes ALL / INC, .POS and .ER', fa.includes('(FAL)') && fa.includes('INC') && fa.includes('.POS') && fa.includes('.ER'), fa.slice(0, 200));
+      await pg.click('#layer [data-ih="AVE"]'); await pg.waitForTimeout(80);
+      const av = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for AVE: Dim. To Vary, the manual examples (11.5, 12), the AVE flow chart rules and fault 4/21', av.includes('(AVE)') && av.includes('Dim. To Vary') && av.includes('11.5') && av.includes('dint_ave = 12') && av.includes('code 21'), av.slice(0, 200));
+      await pg.click('#layer [data-ih="SRT"]'); await pg.waitForTimeout(80);
+      const sr = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for SRT: ascending order, transitional, fault 4/20', sr.includes('(SRT)') && sr.includes('ascending') && sr.includes('transitional') && sr.includes('code 20'));
       await pg.screenshot({ path: `${SHOTS}/after-help-desktop.png` }).catch(() => {});
       await pg.keyboard.press('Escape');
     } else await pg.screenshot({ path: `${SHOTS}/after-ladder-${lay.n}.png` }).catch(() => {});

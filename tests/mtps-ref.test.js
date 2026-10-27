@@ -486,5 +486,33 @@ console.log('FAL and FSC: the examples of 1756-RM018A (chapter 8)');
   check('FSC Example 1: clear the IN bit to search the rest of the array (the next one is element 8)', s.read('control.POS') === 8 && s.read('control.IN') === 1);
 }
 
+console.log('AVE, SRT, STD, SIZE and CPS: the examples of 1756-RM018A (chapter 8)');
+{
+  // DINT_array, which is DINT[4,5], holds 20 down to 1 (row 0: 20 19 18 17 16, …, row 3: 5 4 3 2 1)
+  const grid = () => Array.from({ length: 20 }, (_, k) => 20 - k);
+  const c = run({ tags: [T('DINT_array', 'DINT', { dim: [4, 5], value: grid() }), T('dint_ave', 'DINT'), T('dint_ave2', 'DINT'), T('real_std', 'REAL'), T('real_std2', 'REAL'),
+    T('control', 'CONTROL'), T('control2', 'CONTROL'), T('control_1', 'CONTROL'), T('control_2', 'CONTROL'), T('array_a', 'DINT', { dim: 10 }), T('array_a_size', 'DINT')],
+    rungs: ['AVE(DINT_array[0,1],0,dint_ave,control,4,0);', 'AVE(DINT_array[3,0],1,dint_ave2,control2,5,0);',
+      'STD(DINT_array[0,4],0,real_std,control_1,4,0);', 'STD(DINT_array[0,0],1,real_std2,control_2,5,0);', 'SIZE(array_a,0,array_a_size);'] });
+  scans(c, 1);
+  check('AVE Example 1: dimension 0 from [0,1], Length 4: (19 + 14 + 9 + 4) / 4 = 11.5, dint_ave = 12', c.read('dint_ave') === 12 && c.read('control.DN') === 1);
+  check('AVE Example 2: dimension 1 from [3,0], Length 5: (5 + 4 + 3 + 2 + 1) / 5 = 3', c.read('dint_ave2') === 3);
+  near('STD Example 1: dimension 0 from [0,4], Length 4 (16, 11, 6, 1): 6.454972', c.read('real_std'), 6.454972);
+  near('STD Example 2: dimension 1 from [0,0], Length 5 (20 … 16): sqrt(10 / 4) = 1.581139', c.read('real_std2'), 1.581139);
+  check('SIZE Example 1: dimension 0 of array_a has 10 elements', c.read('array_a_size') === 10);
+  const s = run({ tags: [T('DINT_array', 'DINT', { dim: [4, 5], value: grid() }), T('control_1', 'CONTROL'), T('sort1', 'BOOL')],
+    rungs: ['XIC(sort1)SRT(DINT_array[0,2],0,control_1,4,0);'] });
+  s.write('sort1', 1); scans(s, 1);
+  eq('SRT Example 1: column 2 (18 13 8 3) sorted ascending: 3 8 13 18; .DN set, Position 3', [[0, 1, 2, 3].map(r => s.read(`DINT_array[${r},2]`)), s.read('control_1.DN'), s.read('control_1.POS')], [[3, 8, 13, 18], 1, 3]);
+  check('SRT Example 1: the other columns are not changed', s.read('DINT_array[0,1]') === 19 && s.read('DINT_array[3,3]') === 2);
+  const s2 = run({ tags: [T('DINT_array', 'DINT', { dim: [4, 5], value: grid() }), T('control_1', 'CONTROL')], rungs: ['SRT(DINT_array[2,0],1,control_1,5,0);'] });
+  scans(s2, 1);
+  eq('SRT Example 2: row 2 (10 9 8 7 6) sorted ascending: 6 7 8 9 10', [0, 1, 2, 3, 4].map(k => s2.read(`DINT_array[2,${k}]`)), [6, 7, 8, 9, 10]);
+  const p = run({ tags: [T('project_data', 'DINT', { dim: 100, value: Array.from({ length: 100 }, (_, k) => k) }), T('produced_array', 'DINT', { dim: 100 })],
+    rungs: ['CPS(project_data[0],produced_array[0],100);'] });
+  scans(p, 1);
+  check('CPS Example: project_data[0] … [99] copied into produced_array', p.read('produced_array[99]') === 99 && p.read('produced_array[1]') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

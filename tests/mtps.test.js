@@ -983,5 +983,83 @@ console.log('Wave 2 (C): FAL and FSC (1756-RM003 / -RM018A chapter 8)');
   eq('FSC: nothing more found: .DN set, .FD cleared, .POS = .LEN', [s.read('Ctl.DN'), s.read('Ctl.FD'), s.read('Ctl.POS')], [1, 0, 6]);
 }
 
+console.log('Wave 2 (C): AVE SRT STD SIZE CPS (1756-RM003 / -RM018A chapter 8)');
+{
+  const near = (name, got, want) => check(name, Math.abs(got - want) < 1e-4, `got ${got}, want ${want}`);
+  const INS = MTPS.INSTR;
+  check('AVE STD SRT SIZE CPS are in File/Misc with the reference operands', ['AVE', 'STD', 'SRT', 'SIZE', 'CPS'].every(m => INS[m].grp === 'File/Misc') &&
+    MTPS.OPN.AVE.join() === 'Array,Dim. To Vary,Dest,Control,Length,Position' && MTPS.OPN.SRT.join() === 'Array,Dim. To Vary,Control,Length,Position' && MTPS.OPN.SIZE.join() === 'Source,Dim. To Vary,Size' &&
+    INS.AVE.live[4] === 'LEN' && INS.SRT.live[4] === 'POS' && INS.SRT.bits.join() === 'EN,DN');
+  const tags = [T('En', 'BOOL'), T('A', 'DINT', { dim: 6, value: [6, 2, 5, 1, 4, 3] }), T('R', 'REAL', { dim: 4, value: [1.5, 2.5, 3.5, 4.5] }), T('M', 'INT', { dim: [2, 3, 4] }),
+    T('Ctl', 'CONTROL'), T('Ctl2', 'CONTROL'), T('Ctl3', 'CONTROL'), T('D', 'DINT'), T('Rd', 'REAL'), T('Sm', 'SINT'), T('Tm', 'TIMER', { dim: 3 })];
+  const V = r => MTPS.verify(proj({ tags, rungs: [r] })).errors.length;
+  check('verify: Dim. To Vary is 0, 1 or 2; Array is an element of a number array; STD Dest is REAL', V('AVE(A[0],0,D,Ctl,6,0);') === 0 && V('AVE(A[0],3,D,Ctl,6,0);') === 1 && V('AVE(A,0,D,Ctl,6,0);') === 1 &&
+    V('AVE(D,0,D,Ctl,6,0);') === 1 && V('STD(A[0],0,D,Ctl,6,0);') === 1 && V('STD(A[0],0,Rd,Ctl,6,0);') === 0 && V('SRT(Tm[0],0,Ctl,3,0);') === 1);
+  check('verify: SIZE takes a whole array or an element of any type; CPS checks the types as COP', V('SIZE(Tm,0,D);') === 0 && V('SIZE(M[0,0,0],2,Rd);') === 0 && V('SIZE(D,0,D);') === 1 && V('CPS(A[0],Tm[0],1);') === 1 && V('CPS(A[0],R[0],2);') === 0);
+  // AVE
+  const a = run({ tags, rungs: ['XIC(En)AVE(A[0],0,D,Ctl,6,0);'] });
+  a.write('En', 1); a.scan(10);
+  eq('AVE: the mean of all .LEN elements in one scan (21 / 6 = 3.5 rounds to 4), .EN .DN set', [a.read('D'), a.read('Ctl.EN'), a.read('Ctl.DN'), a.read('Ctl.POS')], [4, 1, 1, 6]);
+  a.write('A[0]', 60); a.scan(10);
+  check('AVE: with .DN set it does not calculate again', a.read('D') === 4);
+  a.write('En', 0); a.scan(10);
+  eq('AVE: rung false with .DN set: .EN .DN .POS cleared', [a.read('Ctl.EN'), a.read('Ctl.DN'), a.read('Ctl.POS')], [0, 0, 0]);
+  a.write('En', 1); a.scan(10);
+  check('AVE: the next true rung calculates again (75 / 6 = 12.5 rounds to even: 12)', a.read('D') === 12, a.read('D'));
+  const ar = run({ tags, rungs: ['AVE(R[1],0,Rd,Ctl,3,0);'] });
+  ar.scan(10);
+  near('AVE of a REAL array into a REAL (2.5 + 3.5 + 4.5) / 3', ar.read('Rd'), 3.5);
+  const pe = run({ tags, rungs: ['AVE(A[4],0,D,Ctl,3,0);'] });
+  pe.scan(10);
+  eq('AVE: reading past the end of the array sets .ER and stops, .POS at that element', [pe.read('Ctl.ER'), pe.read('Ctl.DN'), pe.read('Ctl.POS'), pe.read('D')], [1, 0, 2, 0]);
+  const ao = run({ tags: [...tags, T('Big', 'DINT', { dim: 2, value: [1000, 1000] })], rungs: ['AVE(Big[0],0,Sm,Ctl,2,0);'] });
+  ao.scan(10);
+  check('AVE: a result too large for Dest sets .ER and S:V (minor fault 4/4)', ao.read('Ctl.ER') === 1 && ao.S.V === 1 && ao.minors.some(m => m.type === 4 && m.code === 4));
+  const md = run({ tags: [...tags, T('G', 'DINT', { dim: [2, 3, 4], value: Array.from({ length: 24 }, (_, k) => k) })], rungs: ['AVE(G[0,1,0],2,D,Ctl,4,0);', 'AVE(G[0,0,2],1,Sm,Ctl2,3,0);', 'AVE(G[0,2,3],0,Rd,Ctl3,2,0);'] });
+  // G[0,1,k] = 4..7 (mean 5.5 -> 6); G[0,j,2] = 2, 6, 10 (mean 6); G[i,2,3] = 11, 23 (mean 17)
+  md.scan(10);
+  eq('AVE along each dimension of a DINT[2,3,4]', [md.read('D'), md.read('Sm'), md.read('Rd')], [6, 6, 17]);
+  const f = run({ tags, rungs: ['AVE(A[0],1,D,Ctl,6,0);'] });
+  f.scan(10);
+  check('AVE: Dim. To Vary more than the dimensions of the array: major fault 4/20', f.fault && f.fault.type === 4 && f.fault.code === 20);
+  const f2 = run({ tags, rungs: ['AVE(A[0],0,D,Ctl,-2,0);'] });
+  f2.scan(10);
+  check('AVE: .LEN < 0: major fault 4/21', f2.fault && f2.fault.type === 4 && f2.fault.code === 21);
+  // STD
+  const d = run({ tags, rungs: ['XIC(En)STD(A[0],0,Rd,Ctl,6,0);'] });
+  d.write('En', 1); d.scan(10);
+  near('STD: the sample standard deviation (N - 1) of 6 2 5 1 4 3', d.read('Rd'), Math.sqrt(17.5 / 5));
+  d.write('En', 0); d.scan(10);
+  eq('STD: rung false clears .EN .ER .DN .POS', [d.read('Ctl.EN'), d.read('Ctl.DN'), d.read('Ctl.POS')], [0, 0, 0]);
+  // SRT
+  const s = run({ tags, rungs: ['XIC(En)SRT(A[1],0,Ctl,4,0);', 'XIC(En)SRT(R[0],0,Ctl2,4,0);'] });
+  s.write('A[0]', 6); s.write('En', 1); s.scan(10);
+  eq('SRT: Length elements from the one given into ascending order (A[0] and A[5] not changed)', s.read('A'), [6, 1, 2, 4, 5, 3]);
+  s.write('A[1]', 9); s.scan(10);
+  check('SRT is transitional: a rung that stays true does not sort again', s.read('A[1]') === 9);
+  s.write('En', 0); s.scan(10);
+  check('SRT: rung false clears .EN and .DN', s.read('Ctl.EN') === 0 && s.read('Ctl.DN') === 0);
+  s.write('En', 1); s.scan(10);
+  eq('SRT: the next false-to-true rung sorts again', s.read('A').slice(1, 5), [2, 4, 5, 9]);
+  const sl = run({ tags, rungs: ['SRT(A[3],0,Ctl,4,0);'] });
+  sl.scan(10);
+  check('SRT: a Length past the end of the array: major fault 4/20', sl.fault && sl.fault.type === 4 && sl.fault.code === 20);
+  const sn = run({ tags, rungs: ['SRT(A[0],0,Ctl,-1,0);'] });
+  sn.scan(10);
+  check('SRT: .LEN < 0: .ER set and major fault 4/21', sn.fault && sn.fault.code === 21 && sn.read('Ctl.ER') === 1);
+  // SIZE, CPS
+  const z = run({ tags: [...tags, T('Z0', 'DINT'), T('Z1', 'INT'), T('Z2', 'REAL'), T('Zt', 'DINT')], rungs: ['SIZE(M,0,Z0);', 'SIZE(M[1,2,3],1,Z1);', 'SIZE(M[0,0,0],2,Z2);', 'SIZE(Tm[1],0,Zt);'] });
+  z.scan(10);
+  eq('SIZE: each dimension of an INT[2,3,4] (whole array or any element), and an array of TIMERs', [z.read('Z0'), z.read('Z1'), z.read('Z2'), z.read('Zt')], [2, 3, 4, 3]);
+  const zf = run({ tags: [...tags, T('Z0', 'DINT')], rungs: ['SIZE(A,1,Z0);'] });
+  zf.scan(10);
+  check('SIZE: Dim. To Vary more than the dimensions: major fault 4/20', zf.fault && zf.fault.code === 20);
+  const cp = run({ tags, rungs: ['XIC(En)CPS(A[0],R[0],2);'] });
+  cp.scan(10);
+  check('CPS: nothing while the rung is false', cp.read('R[0]') === 1.5);
+  cp.write('En', 1); cp.scan(10);
+  check('CPS: the bytes of A[0] A[1] into R[0] R[1], like COP', cp.read('R[2]') === 3.5 && cp.read('R[0]') !== 1.5);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
