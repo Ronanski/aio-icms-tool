@@ -1203,3 +1203,4 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .rldms .grow { overflow: hidden; text-overflow: ellipsis; }
 .rldmb { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .tab .rldm select.inp, .phone .rldm select.inp { height: 40px; }
+.rlck2 { grid-template-columns: auto 1fr; }

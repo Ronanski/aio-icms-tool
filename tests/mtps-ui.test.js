@@ -462,7 +462,10 @@ function check(name, cond, info = '') {
   check('RSWho: Autobrowse is ticked, Refresh is there', (await page.$eval('#rlauto', c => c.checked)) && (await page.$('#layer [data-rlref]')) !== null);
   await page.click('#layer [data-rlm="Security"]');
   await page.waitForTimeout(60);
-  check('RSLinx: the other menus list greyed-out items', await page.$$eval('#layer .rlpop .it', i => i.length > 0 && i.every(x => x.classList.contains('dis'))));
+  check('RSLinx: Security lists Set Security User… and Show Security Access…', (await page.$$eval('#layer .rlpop .it', i => i.map(x => x.textContent).join('|'))) === 'Set Security User…|Show Security Access…');
+  await page.click('#layer .rlpop [data-rlmi^="na:sec"] >> nth=0'); await page.waitForTimeout(60);
+  check('RSLinx: Set Security User… says it is not available in emulation', (await page.$eval('#layer .rlov2 .bb', b => b.textContent)).includes('not available in emulation'));
+  await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(60);
   await page.click('#layer [data-rlm="Communications"]');
   await page.waitForTimeout(60);
   await page.evaluate(() => [...document.querySelectorAll('#layer .rlpop .it')].find(x => x.textContent === 'Configure Drivers…').click());
@@ -2159,7 +2162,7 @@ function check(name, cond, info = '') {
     let p = await node(page, '01, PLC-DI16-24V');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
     const its = await page.$$eval('#layer .rlctx .it', t => t.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent));
-    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|+Module Statistics|+Station Diagnostics|+Driver Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
+    check('right-click an I/O module in RSWho: Device Properties, Module Statistics, Station and Driver Diagnostics, Upload EDS file from device; Remove greyed (it answers)', its.join('|') === '+Device Properties|+Module Statistics|+Station Diagnostics|+Driver Diagnostics|+Upload EDS file from device|-Remove', its.join('|'));
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
     let k = await kv();
@@ -2241,21 +2244,22 @@ function check(name, cond, info = '') {
     await ev(() => MTPS.App.racks[0].controller(0).setKey('REM'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
   }
-  console.log('RSLinx Classic: View > Toolbar and Status Bar, the menu bar on the phone');
+  console.log('RSLinx Classic: View > Options (toolbar and status bar), the menu bar on the phone');
   {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
     await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
     await page.waitForTimeout(200);
     const vis = s => page.$eval(s, e => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
     await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
-    check('View: Toolbar and Status Bar are on and ticked', (await page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|'))) === '✓Toolbar|✓Status Bar' && await vis('#layer .rltb') && await vis('#layer .rlst'));
-    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
-    check('View > Toolbar hides the toolbar', !(await vis('#layer .rltb')) && await vis('#layer .rlst'));
+    check('View: RSWho, Event Log…, Options…; the toolbar and the status bar show', (await page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|'))) === 'RSWho|Event Log…|Options…' && await vis('#layer .rltb') && await vis('#layer .rlst'));
+    const opts = async (id) => { await page.click('#layer .rlpop [data-rlmi="opts"]'); await page.waitForTimeout(60); await page.click(id); await page.click('#layer [data-rldx="optok"]'); await page.waitForTimeout(60); };
+    await opts('#rlo-tb');
+    check('View > Options…, General: Show Toolbar off hides the toolbar', !(await vis('#layer .rltb')) && await vis('#layer .rlst'));
     await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
-    await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
-    check('View > Status Bar hides the status bar; the View menu shows them unticked', !(await vis('#layer .rlst')) && (await (async () => { await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); return page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|')); })()) === 'Toolbar|Status Bar');
-    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
-    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
+    await opts('#rlo-sb');
+    check('Show Status Bar off hides the status bar; Options shows both unticked', !(await vis('#layer .rlst')) && (await (async () => { await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await page.click('#layer .rlpop [data-rlmi="opts"]'); await page.waitForTimeout(60); const r = await page.$$eval('#rlo-sb, #rlo-tb', i => i.map(x => x.checked).join(',')); await page.click('#layer .rlov2 [data-rlpx="cancel"]'); return r; })()) === 'false,false');
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await opts('#rlo-tb');
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await opts('#rlo-sb');
     check('ticked again: both show', await vis('#layer .rltb') && await vis('#layer .rlst'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
     for (const w of [360, 390, 414]) {

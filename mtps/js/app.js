@@ -3178,27 +3178,50 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     ['emulate', 'Emulate Ethernet (emulated controllers by IP)', 'EMU500-', 'A-B Ethernet, emulated controllers'],
     ['ethip', 'EtherNet/IP Driver', 'AB_ETHIP-', 'A-B Ethernet'], ['eth', 'Ethernet devices', 'AB_ETH-', 'A-B Ethernet'], ['df1', 'RS-232 DF1 devices', 'AB_DF1-', 'DF1']];
   const RLAVAIL = ['vbp', 'emulate'];
-  const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
-    ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
-    ['View', [['Toolbar', 'tb'], ['Status Bar', 'sb'], '-', ['Options…']]],
-    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag'], '-', ['Configure Gateway…']]],
+  /* the menus of RSLinx Classic (RSLinx Classic help, the menu reference). What cannot work without real hardware,
+     Windows DDE/OPC clients or FactoryTalk security opens a note that says so (na:<key>, RLNA) */
+  const RLMENUS = [['File', [['Open Project…', 'na:open'], ['Select Default Project…', 'na:defproj'], ['Compact Harmony…', 'na:harmony'], '-', ['Exit', 'exit']]],
+    ['Edit', [['Copy DDE/OPC Link to the Clipboard', 'na:copylink']]],
+    ['View', [['RSWho', 'rswho'], ['Event Log…', 'evlog'], '-', ['Options…', 'opts']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…', 'na:shortcuts'], ['Configure Client Application(s)…', 'na:clients'], ['Configure CIP Options…', 'na:cipopts'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag']]],
     ['Station', [['Diagnostics', 'stdiag', () => !!rlSelDev()], '-', ['Freeze', 'frz', () => !!(rlS.modal && rlS.modal.st && !rlS.modal.snap)], ['Unfreeze', 'unfrz', () => !!(rlS.modal && rlS.modal.st && rlS.modal.snap)], ['Reset Diagnostic Counters', 'rst', () => !!(rlS.modal && rlS.modal.st)], '-',
       ['Data Monitor', 'dmon', () => !!rlSelCpu()], ['Change Mode…', 'chmode'], ['Set Time…', 'settime', () => !!rlSelCpu()]]],
-    ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
-    ['Security', [['Network Security…'], ['Change Password…']]],
-    ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
-    ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
-  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true };
+    ['DDE/OPC', [['Topic Configuration…', 'na:dde.1'], ['Alias Topic Configuration…', 'na:dde.2'], ['Active Topics/Items…', 'na:dde.3'], ['Communication Events…', 'na:dde.4'], ['Optimized Packets…', 'na:dde.5'], ['Server Diagnostics…', 'na:dde.6'], ['DDE Client Diagnostics…', 'na:dde.7'], ['OPC Group Diagnostics…', 'na:dde.8'], '-', ['Update ControlLogix Tag Info', 'na:dde.9'], '-', ['Options…', 'na:dde.10']]],
+    ['Security', [['Set Security User…', 'na:sec.11'], ['Show Security Access…', 'na:sec.12']]],
+    ['Window', [['Cascade', 'wcas'], ['Tile', 'wtile'], ['Arrange Icons', 'warr'], ['Close All', 'wclose']]],
+    ['Help', [['RSLinx Classic Help', 'na:help'], ['Release Notes', 'na:notes'], ['Quick Start', 'na:quick'], '-', ['About RSLinx Classic…', 'about']]]];
+  const RLNA = {
+    open: 'Open Project opens an RSLinx Classic project (the drivers, topics and settings saved as a file). In emulation the drivers are kept with MT PLC Studio: Configure Drivers holds them.',
+    defproj: 'Select Default Project picks the RSLinx Classic project loaded at startup. In emulation the drivers are kept with MT PLC Studio.',
+    harmony: 'Compact Harmony compacts the Harmony files of the RSWho browse. The emulated browse keeps no Harmony files.',
+    copylink: 'Copy DDE/OPC Link to the Clipboard copies a link for a DDE/OPC client (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation.',
+    shortcuts: 'Configure Shortcuts names the paths that DDE/OPC topics and FactoryTalk applications use. There are no DDE/OPC clients in emulation: the project path is set in Who Active.',
+    clients: 'Configure Client Application(s) sets up the client programs of RSLinx Classic on this computer. They are not part of the emulation.',
+    cipopts: 'Configure CIP Options sets the CIP connection options of RSLinx Classic. The emulation uses fixed values.',
+    dde: 'The DDE/OPC server of RSLinx Classic serves controller data to Windows programs (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation: use Data Monitor, or the Watch and Monitor Tags windows of the programming software.',
+    sec: 'RSLinx Classic security comes from FactoryTalk Security on a Windows network. It is not part of the emulation: everyone has full access.',
+    help: 'The RSLinx Classic help is not part of the emulation. The help of MT PLC Studio (F1) explains these windows.',
+    notes: 'The release notes of RSLinx Classic are not part of the emulation. Help > About RSLinx Classic shows the version.',
+    quick: 'The Quick Start of RSLinx Classic is not part of the emulation. In short: Communications > Configure Drivers, add a driver, then RSWho.',
+    eds: 'Upload EDS file from device reads the EDS file a device holds. The emulated modules are known to RSLinx already: there is nothing to upload.',
+    topic: 'Configure New DDE/OPC Topic makes a DDE/OPC topic for this controller. There are no DDE/OPC clients in emulation: use Data Monitor.' };
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true, gone: new Set(), bg: [] };
   // the device / the controller picked in RSWho (the Station menu works on it)
   const rlSelDev = () => { const n = rlFind(rlTree(), rlS.sel); return n && n.m ? n : null; };
   const rlSelCpu = () => { const n = rlSelDev(); return n && n.m.ctl ? n : null; };
   const rlMiOn = it => !!it[1] && (!it[2] || it[2]());
+  // the Window menu ends with the open child windows; the one in front is ticked
+  const rlWinItems = () => {
+    const ws = (rlS.nochild ? [] : [['RSWho - 1', 'wsel:rw']]).concat(rlS.modal && rlS.modal.live ? [[rlS.modal.title || rlLiveTitle(rlS.modal), 'wsel:m']] : [], (rlS.bg || []).map((m, i) => [m.title || rlLiveTitle(m), 'wsel:' + i]));
+    return RLMENUS.find(m => m[0] === 'Window')[1].concat(ws.length ? ['-'] : [], ws.map(([l, a], i) => [`${i + 1} ${l}`, a, null, a === (rlS.modal && rlS.modal.live ? 'wsel:m' : 'wsel:rw')]));
+  };
+  const rlLiveTitle = md => ({ drvdiag: md.name ? `Driver Diagnostics - ${md.name}` : 'Driver Diagnostics', cipdiag: 'CIP Diagnostics', mstat: 'Module Statistics', dmon: 'Data Monitor', settime: 'Set Time' })[md.k] || 'RSLinx Classic';
   const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
   function rlTree() {
     const pad = n => (n < 10 ? '0' + n : n);
     const slots = (r, k, pathFn) => Array.from({ length: r.size }, (_, n) => {
-      const m = r.module(n); if (!m) return null;
+      const m = r.module(n); if (!m || rlS.gone.has(k + '/s' + n)) return null;
       const c = m.ctl;
       return { k: k + '/s' + n, l: `${pad(n)}, ${c ? 'PLC-CPU' : m.type} ${m.name}`, i: c ? 'chip' : 'io', dim: c && !c.powered, path: c ? pathFn(n) : null, m, kids: [] };
     }).filter(Boolean);
@@ -3297,7 +3320,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (n && !n.m && /^d:[^/]+$/.test(n.k)) return rlDrvCtx(c);
     if (!n || !n.m) return '';
     const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
-    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}${it('Module Statistics', 'mstat')}<hr>${it('Station Diagnostics', 'stdiag')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor', 'dmon') + it('Set Time…', 'settime') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}${it('Module Statistics', 'mstat')}<hr>${it('Station Diagnostics', 'stdiag')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor', 'dmon') + it('Set Time…', 'settime') + it('Configure New DDE/OPC Topic', 'na:topic') : ''}${it('Upload EDS file from device', 'na:eds')}<hr>${it('Remove', n.dim ? 'remove' : '')}</div>`;
   }
   // right-click a driver in RSWho: Driver Diagnostics
   const rlDrvCtx = c => `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px"><div class="it" data-rlci="drvdiag"><span>Driver Diagnostics</span></div></div>`;
@@ -3391,9 +3414,30 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <button class="btn" data-rldx="stnow">Set to Workstation Time</button>` : '<p class="help">The device does not answer.</p>'}<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="stok"${c && c.powered ? '' : ' disabled'}>OK</button></div></div></div>`;
   }
+  // a note, a question or an About box in the RSLinx Classic window
+  const rlNote = (title, body, btns) => `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="${esc(title)}"><div class="bh">${esc(title)}</div><div class="bb">${body}</div><div class="bf">${btns || '<button class="btn pri" data-rlpx="cancel">OK</button>'}</div></div></div>`;
+  function rlMiscHTML(md) {
+    if (md.k === 'note') return rlNote(md.t, `<p style="margin-top:0"><b>${esc(md.t)}</b> is not available in emulation.</p><p class="help" style="margin-bottom:0">${esc(md.x)}</p>`);
+    if (md.k === 'remove') return rlNote('RSLinx Classic', `<p style="margin:0">Are you sure you want to remove this node?</p><p class="help" style="margin-bottom:0">${esc(md.l)}. It comes back with the next browse if it answers again.</p>`, '<button class="btn" data-rlpx="cancel">No</button><button class="btn pri" data-rldx="rmok">Yes</button>');
+    if (md.k === 'about') return rlNote('About RSLinx Classic', `<p style="margin-top:0"><b>RSLinx Classic</b>, as emulated by MT PLC Studio ${esc(VERSION)}</p>${kv('Drivers', 'Virtual Backplane, Emulate Ethernet')}${kv('Configured', String(drivers.length))}${kv('Running', String(drivers.filter(d => d.run).length))}<p class="help" style="margin-bottom:0">Not the Rockwell Automation product: a practice copy of its windows for the emulated controllers.</p>`);
+    if (md.k === 'evlog') {
+      const ev = []; drivers.forEach(d => (rlStat.d[d.name] ? rlStat.d[d.name].ev : []).forEach(e => ev.push(Object.assign({ d: d.name }, e))));
+      ev.sort((a, b) => b.t - a.t);
+      return rlNote('Open Event Viewer', `<p style="margin-top:0">RSLinx Classic writes its events to the Windows Event Viewer (the Application log). The emulation has no Event Viewer; these are the events of this session:</p>
+        <div class="rltabw"><table class="rltab rldtab rlwide"><thead><tr><th>Time</th><th>Driver</th><th>Event</th></tr></thead><tbody>${ev.slice(0, 100).map(e => `<tr><td class="mono">${esc(new Date(e.t).toLocaleTimeString())}</td><td class="mono">${esc(e.d)}</td><td>${esc(`Node ${e.node}: ${e.err}`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No events.</td></tr>'}</tbody></table></div>`);
+    }
+    if (md.k === 'opts') {
+      const gen = `<label class="frow rlck2"><input type="checkbox" id="rlo-sb"${md.sb ? ' checked' : ''}><span>Show Status Bar</span></label><label class="frow rlck2"><input type="checkbox" id="rlo-tb"${md.tb ? ' checked' : ''}><span>Show Toolbar</span></label>`;
+      const dde = `<p class="help" style="margin:0">${esc(RLNA.dde)}</p>`;
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Options"><div class="bh">Options</div>${rlTabs(md, [['gen', 'General'], ['dde', 'DDE/OPC']])}<div class="bb">${md.tab === 'dde' ? dde : gen}</div>
+        <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="optok">OK</button></div></div></div>`;
+    }
+    return '';
+  }
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    const misc = rlMiscHTML(md); if (misc) return misc;
     if (md.k === 'dmon') return rlDmHTML(md);
     if (md.k === 'settime') return rlStHTML(md);
     if (md.k === 'drvdiag' || md.k === 'cipdiag') return rlDiagHTML(md);
@@ -3435,11 +3479,11 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
       box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
         <div class="rltb"${rlS.tb ? '' : ' hidden'}><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
-        <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
+        <div class="rlchild"${rlS.nochild ? ' hidden' : ''}><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
           <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
         <div class="rlst"${rlS.sb ? '' : ' hidden'}><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
         ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}${rlS.ctx ? rlCtxHTML(root) : ''}
-        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${rlMiOn(it) ? '' : ' dis'}"${rlMiOn(it) ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' ? `<span class="ck">${rlS[it[1]] ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${(rlS.menu === 'Window' ? rlWinItems() : RLMENUS.find(m => m[0] === rlS.menu)[1]).map(it => (it === '-' ? '<hr>' : `<div class="it${rlMiOn(it) ? '' : ' dis'}"${rlMiOn(it) ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' || it.length > 3 ? `<span class="ck">${(it.length > 3 ? it[3] : rlS[it[1]]) ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
       if (rlS.menu) {
         const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
         p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
@@ -3483,6 +3527,22 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const rlAct = a => {
       if (a === 'drvdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: null, sel: (drivers[0] || {}).name, tab: 'gen', live: true }; draw(); return true; }
       if (a === 'cipdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'cipdiag', tab: 'disp', live: true }; draw(); return true; }
+      if (a.startsWith('na:')) {
+        const it = RLMENUS.flatMap(m => m[1]).find(x => x !== '-' && x[1] === a);
+        rlS.modal = { k: 'note', t: it ? it[0].replace(/…$/, '') : 'RSLinx Classic', x: RLNA[a.slice(3).split('.')[0]] }; draw(); return true;
+      }
+      if (a === 'about' || a === 'evlog') { rlS.modal = { k: a }; draw(); return true; }
+      if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb }; draw(); return true; }
+      // Window: one child window shows at a time here, so Cascade, Tile and Arrange Icons leave it as it is
+      if (a === 'wcas' || a === 'wtile' || a === 'warr') { draw(); return true; }
+      if (a === 'wclose') { rlS.modal = null; rlS.bg = []; rlS.nochild = true; draw(); return true; }
+      if (a.startsWith('wsel:')) {
+        const w = a.slice(5), cur = rlS.modal && rlS.modal.live ? rlS.modal : null;
+        if (w === 'rw') { if (cur) rlS.bg.push(cur); rlS.modal = null; }
+        else if (w !== 'm') { const m = rlS.bg.splice(+w, 1)[0]; if (cur) rlS.bg.push(cur); rlS.modal = m; }
+        draw(); return true;
+      }
+      if (a === 'rswho') { rlS.nochild = false; rlS.view = 'rswho'; if (rlS.modal && rlS.modal.live) { rlS.bg.push(rlS.modal); rlS.modal = null; } draw(); return true; }
       // Station Diagnostics: the counters of the station's driver, with Station > Freeze, Unfreeze and Reset Diagnostic
       // Counters (Reset keeps the last four counters of an Ethernet driver, the connection counts)
       if (a === 'stdiag') { const n = rlSelDev(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: drvOfKey(n.k), title: `Station Diagnostics - ${n.l}`, tab: 'gen', live: true, st: true }; } draw(); return true; }
@@ -3502,6 +3562,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const rlCtxAct = (a, k) => {
       if (a === 'drvdiag') { rlS.modal = { k: 'drvdiag', name: drvOfKey(k), tab: 'gen', live: true }; return; }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: k, tab: 'gen', live: true }; return; }
+      if (a.startsWith('na:')) { rlS.modal = { k: 'note', t: { eds: 'Upload EDS file from device', topic: 'Configure New DDE/OPC Topic' }[a.slice(3)] || 'RSLinx Classic', x: RLNA[a.slice(3)] }; return; }
+      if (a === 'remove') { const n = rlFind(rlTree(), k); rlS.modal = { k: 'remove', key: k, l: n ? n.l : '' }; return; }
       if (a === 'stdiag' || a === 'dmon' || a === 'settime') { rlS.sel = k; rlAct(a); return; }
       rlS.modal = { k: 'props', key: k };
     };
@@ -3509,6 +3571,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const md = rlS.modal;
       if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
+      if (a === 'rmok') { rlS.gone.add(md.key); if (rlS.sel === md.key) rlS.sel = 'ws'; rlS.modal = null; draw(); }
+      if (a === 'optok') { const sb = box.querySelector('#rlo-sb'), tb = box.querySelector('#rlo-tb'); if (sb) rlS.sb = sb.checked; if (tb) rlS.tb = tb.checked; rlS.modal = null; draw(); }
       if (md.k === 'dmon') {
         md.gm = null;
         if (a === 'dmstop') md.stop = true;
@@ -3571,6 +3635,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     };
     const browse = () => {
       stopBrowse();
+      rlS.gone.clear();
       if (fastComm()) { lim = Infinity; order(rlTree()).forEach(rlAsk); drawTree(); return; }
       lim = 2; busyComm(1); drawTree();
       btimer = setTimeout(step, jitter(150, 300));
@@ -3706,6 +3771,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const b = box.getBoundingClientRect(); md.gm = { x: Math.max(4, Math.min(ev.clientX - b.left, b.width - 200)), y: Math.max(4, Math.min(ev.clientY - b.top, b.height - 170)) }; draw();
     }, true);
     box.addEventListener('change', ev => {
+      if ((ev.target.id === 'rlo-sb' || ev.target.id === 'rlo-tb') && rlS.modal && rlS.modal.k === 'opts') { rlS.modal[ev.target.id.slice(4)] = ev.target.checked; return; }
       if (ev.target.dataset.rlrx && rlS.modal && rlS.modal.k === 'dmon') { rlS.modal.rx[+ev.target.dataset.rlrx] = ev.target.value; draw(); return; }
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }

@@ -113,7 +113,7 @@ module.exports = async function w2E({ browser, page, URL, check }) {
     await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.state.prefs.emuMin = false; MTPS.App.state.prefs.emuCompact = false; MTPS.App.render(); });
     await wait(200);
     const st = (s = '#emst-dock') => page.$eval(s, b => b.textContent).catch(() => '');
-    check('the emulator panel has a status bar: Ready, the chassis, the slots used, the controllers running', /^Ready/.test(await st()) && /of 8 slots used/.test(await st()) && /controller.* running/.test(await st()) , await st());
+    check('the emulator panel has a status bar: Ready (or the module picked), the chassis, the slots used, the controllers running', /^(Ready|Slot \d+: )/.test(await st()) && /of 8 slots used/.test(await st()) && /controller.* running/.test(await st()) , await st());
     await page.click('#iob [data-ccpu="0:0"] .mname'); await wait(150);
     check('a click on a module shows it on the left of the status bar', /^Slot 0: PLC-CPU/.test(await st()), await st());
     await ev(() => MTPS.App.run('chassis')); await wait(200);
@@ -335,6 +335,93 @@ module.exports = async function w2E({ browser, page, URL, check }) {
     await tp.tap('#rldmf [data-rldf="Counts"]'); await tp.waitForTimeout(80);
     await tp.tap('#rldmf [data-rldf="Counts"]'); await tp.waitForTimeout(200);
     check('phone (touch): Station > Data Monitor, tap a file then tap it again: its data table, 4 rows, no sideways page scroll', (await tp.$$eval('#rldmt tbody tr', r => r.length)) === 4 && await tp.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await tp.close();
+  }
+
+  console.log('RSLinx Classic: every menu item of the RSLinx Classic help, a note for what emulation cannot do');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
+    await wait(300);
+    const items = async m => { await page.click(`#layer [data-rlm="${m}"]`); await wait(60); const r = await page.$$eval('#layer .rlpop .it', i => i.map(x => x.textContent)); await page.click(`#layer [data-rlm="${m}"]`); await wait(40); return r.join('|'); };
+    const want = {
+      File: 'Open Project…|Select Default Project…|Compact Harmony…|Exit', Edit: 'Copy DDE/OPC Link to the Clipboard', View: 'RSWho|Event Log…|Options…',
+      Communications: 'RSWho|Configure Drivers…|Configure Shortcuts…|Configure Client Application(s)…|Configure CIP Options…|Driver Diagnostics|CIP Diagnostics',
+      'DDE/OPC': 'Topic Configuration…|Alias Topic Configuration…|Active Topics/Items…|Communication Events…|Optimized Packets…|Server Diagnostics…|DDE Client Diagnostics…|OPC Group Diagnostics…|Update ControlLogix Tag Info|Options…',
+      Security: 'Set Security User…|Show Security Access…', Help: 'RSLinx Classic Help|Release Notes|Quick Start|About RSLinx Classic…' };
+    const got = {}; for (const m of Object.keys(want)) got[m] = await items(m);
+    const bad = Object.keys(want).filter(m => got[m] !== want[m]);
+    check('the File, Edit, View, Communications, DDE/OPC, Security and Help menus hold the items of the RSLinx Classic help', bad.length === 0, bad.map(m => m + ': ' + got[m]).join(' / '));
+    const w = await items('Window');
+    check('Window: Cascade, Tile, Arrange Icons, Close All, then the open windows (RSWho - 1 ticked)', w === 'Cascade|Tile|Arrange Icons|Close All|✓1 RSWho - 1', w);
+    // every item that cannot work in emulation opens a note that says so
+    const na = [];
+    for (const m of ['File', 'Edit', 'Communications', 'DDE/OPC', 'Security', 'Help']) {
+      await page.click(`#layer [data-rlm="${m}"]`); await wait(50);
+      const n = await page.$$eval('#layer .rlpop [data-rlmi^="na:"]', i => i.length);
+      await page.click(`#layer [data-rlm="${m}"]`); await wait(30);
+      for (let i = 0; i < n; i++) {
+        await page.click(`#layer [data-rlm="${m}"]`); await wait(50);
+        const l = await page.$$eval('#layer .rlpop [data-rlmi^="na:"]', (x, i) => x[i].textContent, i);
+        await page.click(`#layer .rlpop [data-rlmi^="na:"] >> nth=${i}`); await wait(50);
+        const t = await page.$eval('#layer .rlov2', b => b.textContent).catch(() => '');
+        if (!(t.includes('not available in emulation') && t.includes(l.replace(/…$/, '')))) na.push(m + ' > ' + l);
+        await page.click('#layer .rlov2 [data-rlpx]'); await wait(40);
+      }
+    }
+    check('each item emulation cannot do (DDE/OPC, security, projects, the help files) opens its note: "… is not available in emulation"', na.length === 0, na.join(', '));
+    await page.click('#layer [data-rlm="Help"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="about"]'); await wait(80);
+    check('Help > About RSLinx Classic…', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)) === 'About RSLinx Classic' && (await page.$eval('#layer .rlov2 .bb', b => b.textContent)).includes('RSLinx Classic'));
+    await page.click('#layer .rlov2 [data-rlpx]'); await wait(50);
+    await page.click('#layer [data-rlm="View"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="evlog"]'); await wait(80);
+    check('View > Event Log…: the Open Event Viewer dialog with the events of the session', (await page.$eval('#layer .rlov2 .bh', b => b.textContent)) === 'Open Event Viewer' && (await page.$$eval('#layer .rlov2 thead th', t => t.map(x => x.textContent).join(','))) === 'Time,Driver,Event');
+    await page.click('#layer .rlov2 [data-rlpx]'); await wait(50);
+    await page.click('#layer [data-rlm="View"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="opts"]'); await wait(80);
+    check('View > Options…: General and DDE/OPC tabs', (await page.$$eval('#layer .rlov2 [data-rltab]', t => t.map(x => x.textContent).join(','))) === 'General,DDE/OPC');
+    await page.click('#layer .rlov2 [data-rlpx="cancel"]'); await wait(50);
+    // the Window menu lists the diagnostic windows and brings one to the front
+    await page.click('#layer [data-rlm="Communications"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="cipdiag"]'); await wait(100);
+    let ww = await items('Window');
+    check('a diagnostic window opens: the Window menu lists it, ticked', ww.endsWith('1 RSWho - 1|✓2 CIP Diagnostics'), ww);
+    await page.click('#layer [data-rlm="Window"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="wsel:rw"]'); await wait(80);
+    ww = await items('Window');
+    check('Window > 1 RSWho - 1 brings RSWho to the front; CIP Diagnostics stays in the list', (await page.$('#layer .rldg')) === null && ww.endsWith('✓1 RSWho - 1|2 CIP Diagnostics'), ww);
+    await page.click('#layer [data-rlm="Window"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="wsel:0"]'); await wait(80);
+    check('Window > 2 CIP Diagnostics brings it back', (await page.$eval('#layer .rldg .bh', b => b.textContent).catch(() => '')) === 'CIP Diagnostics');
+    await page.click('#layer [data-rlm="Window"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="wclose"]'); await wait(80);
+    check('Window > Close All closes every child window, RSWho too', (await page.$('#layer .rldg')) === null && await page.$eval('#layer .rlchild', c => c.hidden) && (await items('Window')) === 'Cascade|Tile|Arrange Icons|Close All');
+    await page.click('#layer [data-rlm="Communications"]'); await wait(50); await page.click('#layer .rlpop [data-rlmi="rswho"]'); await wait(100);
+    check('Communications > RSWho opens it again', !(await page.$eval('#layer .rlchild', c => c.hidden)));
+    // Remove a node that does not answer (a red X): the Virtual Backplane shows the controller turned off
+    await page.click('#layer .rltb [data-rlv="drivers"]'); await wait(80);
+    if (!(await ev(() => [...document.querySelectorAll('#layer [data-rlrow]')].some(r => r.textContent.includes('Virtual Chassis'))))) {
+      await page.selectOption('#rldt', 'vbp'); await wait(50); await page.click('#layer [data-rladd]'); await wait(80); await page.click('#layer .rlov2 [data-rlpx="ok"]'); await wait(100);
+    }
+    await page.click('#layer [data-rlclose]'); await wait(80);
+    await ev(() => MTPS.App.racks[0].controller(0).power(false)); await wait(1200);
+    const off = await page.evaluate(() => { const n = [...document.querySelectorAll('#rltree [data-rln]')].find(x => x.textContent.startsWith('00, PLC-CPU') && x.textContent.includes('off')); if (!n) return null; const r = n.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2, k: n.dataset.rln }; });
+    check('Virtual Backplane: the controller turned off shows as not answering', !!off);
+    if (off) {
+      await page.mouse.click(off.x, off.y, { button: 'right' }); await wait(100);
+      check('right-click it: Remove is on', await page.$eval('#layer .rlctx [data-rlci="remove"]', x => !x.classList.contains('dis')).catch(() => false));
+      await page.click('#layer .rlctx [data-rlci="remove"]'); await wait(80);
+      check('Remove asks: Are you sure you want to remove this node?', (await page.$eval('#layer .rlov2 .bb', b => b.textContent)).includes('Are you sure you want to remove this node?'));
+      await page.click('#layer [data-rldx="rmok"]'); await wait(100);
+      check('Yes: the node is gone from RSWho', !(await page.$(`#rltree [data-rln="${off.k}"]`)));
+      await page.click('#layer [data-rlref]'); await wait(150);
+      check('the next browse (Refresh) finds it again', !!(await page.$(`#rltree [data-rln="${off.k}"]`)));
+    }
+    await ev(() => MTPS.App.racks[0].controller(0).power(true)); await wait(1200);
+    const io = await page.evaluate(() => { const n = [...document.querySelectorAll('#rltree [data-rln]')].find(x => x.textContent.startsWith('01, PLC-DI16')); const r = n.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }; });
+    await page.mouse.click(io.x, io.y, { button: 'right' }); await wait(100);
+    check('a device that answers: Remove greyed', await page.$eval('#layer .rlctx', m => [...m.querySelectorAll('.it')].find(x => x.textContent === 'Remove').classList.contains('dis')));
+    await page.click('#layer .rlctx [data-rlci="na:eds"]'); await wait(80);
+    check('Upload EDS file from device: a note (the emulated modules are known already)', (await page.$eval('#layer .rlov2 .bb', b => b.textContent)).includes('nothing to upload'));
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await wait(80);
+    const tp = await touchPage(390, 844, () => MTPS.App.run('rswho'));
+    await tp.tap('#layer [data-rlm="DDE/OPC"]'); await tp.waitForTimeout(100);
+    await tp.tap('#layer .rlpop [data-rlmi^="na:dde"] >> nth=0'); await tp.waitForTimeout(100);
+    check('phone (touch): DDE/OPC > Topic Configuration… opens its note, inside the screen', (await tp.$eval('#layer .rlov2 .bb', b => b.textContent)).includes('not available in emulation') && await tp.evaluate(() => document.querySelector('#layer .rlov2 .rlbox').getBoundingClientRect().right <= innerWidth + 1));
     await tp.close();
   }
 
