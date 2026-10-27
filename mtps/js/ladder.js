@@ -254,6 +254,8 @@
       const selR = o.selRung === ri || !!o.selAll;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
       if (!o.noNums) out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
+      // a bookmark (Bookmark toolbar): a small mark at the left of the rung number
+      if (R.bm) out += `<path class="bmk" d="M3 ${rungTop + 2}h7v11l-3.5-3-3.5 3z"><title>Bookmark</title></path>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
       // online edit mark (Studio 5000): i the edited copy (e while it has errors), r its original; I and R once
       // accepted; D a deleted rung

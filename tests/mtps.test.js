@@ -883,5 +883,15 @@ console.log('Download clears the controller memory first (v37 help, Download dia
   check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
 }
 
+console.log('Wave 2 A: a rung bookmark is no logic (help v37, Bookmark toolbar)');
+{
+  const p = proj({ tags: [T('N', 'DINT', { value: 3 })], rungs: ['NOP();', 'NOP();'] });
+  const c = new MTPS.Controller(); c.download(p);
+  p.tasks[0].programs[0].routines[0].rungs[1].bm = 1;
+  check('a bookmark on a rung: the project still matches the controller', c.holds(p));
+  p.tasks[0].programs[0].routines[0].rungs[1].t = 'AFI();';
+  check('a changed rung does not', !c.holds(p));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

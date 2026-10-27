@@ -99,7 +99,7 @@
     check: 'M5 12.5 10 17 19 7', checkr: 'M4 6h9M4 11h9M4 16h6M14 15l3 3 5-6', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4', tags: 'M3 5h18v14H3zM3 10h18M9 5v14',
     online: 'M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0M12 12v8', more: 'M12 5.5v.01M12 12v.01M12 18.5v.01', moreh: 'M5.5 12h.01M12 12h.01M18.5 12h.01', up: 'M6 15l6-6 6 6', left: 'M15 6l-6 6 6 6',
     dockr: 'M4 5h16v14H4zM14 5v14', dockb: 'M4 5h16v14H4zM4 14h16',
-    plus: 'M12 5v14M5 12h14', back: 'M15 5l-7 7 7 7', close: 'M6 6l12 12M18 6 6 18', down: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6',
+    plus: 'M12 5v14M5 12h14', bmk: 'M7 4h10v16l-5-4-5 4z', back: 'M15 5l-7 7 7 7', close: 'M6 6l12 12M18 6 6 18', down: 'M6 9l6 6 6-6', right: 'M9 6l6 6-6 6',
     ladder: 'M5 3v18M19 3v18M5 8h4M15 8h4M9 5v6M15 5v6M5 16h14', chip: 'M7 7h10v10H7zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4',
     tree: 'M4 5h6M4 5v14M4 12h6M4 19h6M14 5h6M14 12h6M14 19h6', warn: 'M12 4l9 16H3L12 4zM12 10v4M12 17v.01', edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
     toggle: 'M8 7h8a5 5 0 0 1 0 10H8A5 5 0 0 1 8 7zM8 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z', text: 'M5 7h14M5 12h14M5 17h9', help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.01',
@@ -404,7 +404,7 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
   /* edit zones on the rungs (Studio 5000 "Edit ladder logic in run mode"): rung.z is
      i: the editable copy made by Start Pending Rung Edits, or a new rung (shown e while it has errors);
      r: the original below it, read-only; after Accept they become I (insert zone) and R (replace zone);
@@ -749,7 +749,7 @@
       return;
     }
     if (selAllOn()) {
-      const list = rungs().map(r => { const c = { ...r }; delete c.z; delete c.dx; return c; });
+      const list = rungs().map(r => { const c = { ...r }; delete c.z; delete c.dx; delete c.bm; return c; });
       S.clip = { kind: 'rungs', rungs: list };
       try { navigator.clipboard && navigator.clipboard.writeText(list.map(r => r.t).join('\n')).catch(() => {}); } catch (e) { /* ignore */ }
       if (cut) delSel(); else toast(`Copied ${list.length} rung(s)`);
@@ -760,7 +760,7 @@
       S.clip = { kind: 'el', el: JSON.parse(JSON.stringify(el)) };
       try { navigator.clipboard && navigator.clipboard.writeText(E.serializeRung([el]).replace(/;$/, '')).catch(() => {}); } catch (e) { /* ignore */ }
     } else if (S.selRung != null) {
-      S.clip = { kind: 'rung', rung: { ...rungs()[S.selRung] } }; delete S.clip.rung.z;
+      S.clip = { kind: 'rung', rung: { ...rungs()[S.selRung] } }; delete S.clip.rung.z; delete S.clip.rung.bm;
       try { navigator.clipboard && navigator.clipboard.writeText(rungs()[S.selRung].t).catch(() => {}); } catch (e) { /* ignore */ }
     } else return;
     if (cut) delSel(); else toast('Copied');
@@ -830,6 +830,11 @@
     redo: { l: 'Redo', k: 'Ctrl+Y', i: 'redo', run: redo, on: () => editable() && S.redo.length > 0 },
     cut: { l: 'Cut', k: 'Ctrl+X', i: 'cut', run: () => copySel(true), on: () => editable() && (!!S.sel || S.selRung != null) },
     copy: { l: 'Copy', k: 'Ctrl+C', i: 'copy', run: () => copySel(false), on: () => !!S.sel || S.selRung != null || tagAllOn() },
+    bmtog: { l: 'Toggle Bookmark', i: 'bmk', run: () => bookmark('tog'), on: () => S.view === 'ladder' && curSelRung() != null && !!rungs()[curSelRung()] },
+    bmnext: { l: 'Next Bookmark', i: 'down', run: () => bookmark(1), on: () => !S.noProj && bmList().length > 0 },
+    bmprev: { l: 'Previous Bookmark', i: 'up', run: () => bookmark(-1), on: () => !S.noProj && bmList().length > 0 },
+    bmall: { l: 'View All Bookmarks…', i: 'bmk', run: () => bookmarksDlg(), on: () => !S.noProj },
+    bmclear: { l: 'Clear All Bookmarks', i: 'trash', run: () => bookmark('clear'), on: () => !S.noProj && bmList().length > 0 },
     insmode: { l: 'Insert Mode', k: 'Ctrl+I', i: 'plus', run: () => { S.insMode = !S.insMode; toast(S.insMode ? 'Insert mode: a new instruction goes before the selected one.' : 'Append mode: a new instruction goes after the selected one.'); }, ck: () => !!S.insMode },
     selall: { l: 'Select All', k: 'Ctrl+A', i: 'check', run: selectAll, on: () => !S.noProj && (S.view === 'tags' || (S.view === 'ladder' && rungs().length > 0)) },
     paste: { l: 'Paste', k: 'Ctrl+V', i: 'paste', run: paste, on: () => editable() && !!S.clip },
@@ -932,7 +937,7 @@
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
-    ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
+    ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
@@ -1074,7 +1079,7 @@
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
-          ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
+          ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
           ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
@@ -1264,7 +1269,7 @@
     const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t] && INSTR[e.t].ctl != null) { try { e.bv = { ...e.x[INSTR[e.t].ctl].obj() }; } catch (err) { /* ignore */ } } };
     return rungs().map((r, i) => {
       const pr = E.parseRung(r.t), err = S.errRungs.has(i) || !!pr.err;
-      const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx };
+      const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx, bm: !!r.bm };
       if (map && map[i] >= 0) { const lr = R.rungs[map[i]]; lr.elems.forEach(e => e && tag(e)); return { ...base, elems: lr.elems.filter(Boolean) }; }
       return { ...base, elems: pr.err ? [] : pr.elems, still: !!map };
     });
@@ -1645,7 +1650,7 @@
       openMenu(tagItems(e, oi, t.op != null).concat(items), { x, y }, `Rung ${t.ri} · ${e.t} ${e.a.join(', ')}`);
       return;
     }
-    const ids = ['cut', 'copy', 'paste', '-', 'del', 'rung', 'rtext', 'comment', 'rimp', 'rexp', '-', 'rstart', 'raccept', 'rcancel', '-', 'rasm', 'rcanc', '-', 'verifyrung', '-', 'goto', '-', 'ins'];
+    const ids = ['cut', 'copy', 'paste', '-', 'del', 'rung', 'rtext', 'comment', 'rimp', 'rexp', '-', 'rstart', 'raccept', 'rcancel', '-', 'rasm', 'rcanc', '-', 'verifyrung', '-', 'goto', 'bmtog', '-', 'ins'];
     openMenu(renamed(menuItems(ids), { cut: 'Cut Rung', copy: 'Copy Rung', del: 'Delete Rung' }), { x, y }, `Rung ${t.ri}`);
   }
   function orgMenu(key, x, y) {
@@ -2887,6 +2892,34 @@
     });
     q('#bl-f').addEventListener('input', draw);
     draw();
+  }
+  /* Bookmarks (help v37, Bookmark toolbar; Deleting or Going to a Bookmark): mark a rung to come back to it. Toggle
+     (insert or remove) on the selected rung, Next and Previous through every routine in the organizer's order (they
+     wrap), View All (the Edit/Goto Bookmark dialog: the list, Goto, Delete, Close), Clear All. rung.bm is kept in the
+     project, is no logic (not an Undo step; online it leaves the project matching the controller), is not in the L5X
+     and stays behind when a rung is copied. */
+  const bmList = () => S.noProj ? [] : allProgs().flatMap(g => g.routines.flatMap(r => r.rungs.map((rg, ri) => rg.bm ? { g: g.name, r: r.name, ri, rg } : null).filter(Boolean)));
+  function bmGo(b) { S.prog = b.g; S.routine = b.r; S.view = 'ladder'; S.sel = null; S.selAll = null; S.selRung = b.ri; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); scrollToSel(); }
+  function bookmark(how) {
+    const L = bmList();
+    if (how === 'tog') { const rg = rungs()[curSelRung()]; if (!rg) return; if (rg.bm) delete rg.bm; else rg.bm = 1; S.dirty = true; render(); toast(rg.bm ? `Bookmark on rung ${curSelRung()}.` : `Bookmark removed from rung ${curSelRung()}.`); return; }
+    if (how === 'clear') { L.forEach(b => delete b.rg.bm); S.dirty = true; render(); toast(`${L.length} bookmark(s) removed.`); return; }
+    if (!L.length) { toast('No bookmarks.'); return; }
+    // the place of the caret in the same order: routine, then rung
+    const keys = allProgs().flatMap(g => g.routines.map(r => g.name + '/' + r.name)), at = [keys.indexOf(S.prog + '/' + S.routine), S.view === 'ladder' && curSelRung() != null ? curSelRung() : -0.5];
+    const k = b => [keys.indexOf(b.g + '/' + b.r), b.ri], cmp = (a, b) => a[0] - b[0] || a[1] - b[1];
+    const b = how > 0 ? L.find(x => cmp(k(x), at) > 0) || L[0] : [...L].reverse().find(x => cmp(k(x), at) < 0) || L[L.length - 1];
+    bmGo(b);
+  }
+  function bookmarksDlg() {
+    let on = 0;
+    const list = () => { const L = bmList(); return L.length ? L.map((b, i) => `<div class="row${i === on ? ' on' : ''}" data-bmi="${i}"><span class="grow"><b>${esc(b.g)} - ${esc(b.r)}</b>, Rung ${b.ri}${b.rg.c ? ` <span class="sub">${esc(b.rg.c)}</span>` : ''}</span></div>`).join('') : '<div class="empty">No bookmarks.</div>'; };
+    const el = dialog({ title: 'Edit/Goto Bookmark', size: 'md',
+      body: `<label>Bookmarks:</label><div class="gwl hlist" id="bml">${list()}</div>`,
+      buttons: [{ l: 'Goto', pri: true, run: () => { const b = bmList()[on]; if (!b) return false; setTimeout(() => bmGo(b), 0); } }, { l: 'Delete', run: e2 => { const b = bmList()[on]; if (b) { delete b.rg.bm; S.dirty = true; on = Math.max(0, Math.min(on, bmList().length - 1)); e2.querySelector('#bml').innerHTML = list(); render(); } return false; } }, { l: 'Close' }] });
+    const box = el.querySelector('#bml');
+    box.addEventListener('click', ev => { const r = ev.target.closest('[data-bmi]'); if (r) { on = +r.dataset.bmi; box.querySelectorAll('[data-bmi]').forEach(x => x.classList.toggle('on', x === r)); } });
+    box.addEventListener('dblclick', ev => { const r = ev.target.closest('[data-bmi]'); if (r) { const b = bmList()[+r.dataset.bmi]; closeLayer(); bmGo(b); } });
   }
   /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
      in the tag editor) and the rung or the tag to go to */
@@ -5620,7 +5653,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       if ((el = t.closest('[data-dkat]'))) { S.prefs.dockAt = el.dataset.dkat; S.prefs.emuMin = false; savePrefs(); render(); return; }
       if (chassisClick(t)) return;
       if ((el = t.closest('[data-ctx]'))) { const r = el.getBoundingClientRect(); ctxMenu(S.sel ? { ri: S.sel.ri, path: S.sel.path, br: S.sel.br } : curSelRung() != null ? { ri: curSelRung() } : null, r.left, r.top); return; }
-      if ((el = t.closest('[data-more]'))) { openMenu(menuItems(['rung', 'branch', 'level', '-', 'rtext', 'comment', '-', 'verifyr', 'verifyc', 'xref', 'goto', '-', 'newtag', 'tagsmon', '-', 'options']), el); return; }
+      if ((el = t.closest('[data-more]'))) { openMenu(menuItems(['rung', 'branch', 'level', '-', 'rtext', 'comment', '-', 'verifyr', 'verifyc', 'xref', 'goto', '-', 'bmtog', 'bmnext', 'bmprev', 'bmall', '-', 'newtag', 'tagsmon', '-', 'options']), el); return; }
       if ((el = t.closest('[data-routines]'))) { openMenu(curProg().routines.map(r => ({ l: r.name, ck: r.name === S.routine, run: () => openRoutine(`rt:${curProg().name}/${r.name}`) })).concat(['-', { l: 'New Routine…', run: () => newRoutine(curProg().name), dis: !editable() }]), el); return; }
       if ((el = t.closest('[data-tmode]'))) { S.tagMode = el.dataset.tmode; if (S.view === 'tags' && S.layout !== 'phone') render(); else { const p = $('#tagpage'); if (p) p.innerHTML = tagEditorBody(S.layout === 'phone'); } return; }
       if ((el = t.closest('[data-tabx]'))) { closeTab(el.dataset.tabx); return; }

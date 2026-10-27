@@ -354,6 +354,7 @@ svg.lad .al { fill: var(--lad-alias); }
 svg.lad .cm { fill: var(--lad-alias); font-size: 1.09em; }
 svg.lad .rn { fill: var(--muted); font-size: 1.09em; }
 svg.lad .rn.on { fill: #fff; }
+svg.lad .bmk { fill: var(--accent); stroke: #fff; stroke-width: .8; }
 svg.lad .w, svg.lad .rail { stroke: var(--lad-wire); stroke-width: 1; shape-rendering: crispEdges; fill: none; }
 svg.lad.online .w, svg.lad.online .rail { stroke: var(--lad-online); }
 svg.lad.run .rail { stroke: var(--lad-on); stroke-width: 3; }

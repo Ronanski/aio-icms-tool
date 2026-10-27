@@ -446,4 +446,55 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('phone (touch): Help Contents > Keyboard Shortcuts lists Ctrl+I Insert Mode and Ctrl+PageDown', await pp.$eval('#hc', c => /Ctrl\+I\s*Insert Mode/.test(c.textContent) && /Ctrl\+PageDown/.test(c.textContent)));
     await pctx.close();
   }
+  if (want('bm')) {
+    console.log('Bookmarks (help v37: Bookmark toolbar; Deleting or Going to a Bookmark)');
+    await fresh(); await ev(() => { const A = MTPS.App, p = A.example(); p.tasks[0].programs[0].routines.push({ name: 'Aux', rungs: [{ t: 'NOP();' }, { t: 'NOP();' }] }); A.openProject(p, true); A.render(); });
+    const st = () => ev(() => ({ r: MTPS.App.state.routine, ri: MTPS.App.state.selRung, bm: MTPS.App.state.p.tasks[0].programs[0].routines.map(r => r.rungs.map((x, i) => x.bm ? i : -1).filter(i => i >= 0).join(',')).join('|'), marks: document.querySelectorAll('#ladwrap svg .bmk').length }));
+    const sm = (await menu('Search')).map(x => x[0]); await page.keyboard.press('Escape');
+    check('Search menu: Bookmarks: Toggle, Next, Previous, View All, Clear All', ['#Bookmarks', 'Toggle Bookmark', 'Next Bookmark', 'Previous Bookmark', 'View All Bookmarks…', 'Clear All Bookmarks'].every((x, i) => sm[sm.indexOf('#Bookmarks') + i] === x), sm.join('|'));
+    await page.click('#ladwrap rect.tap[data-rn][data-ri="1"]'); await wait(60);
+    await page.click('.rtb [data-cmd="bmtog"]'); await wait(80);
+    check('the toolbar Toggle Bookmark: rung 1 has a bookmark and its mark', (await st()).bm === '1|' && (await st()).marks === 1, JSON.stringify(await st()));
+    check('a bookmark is no logic edit: no Undo step, the project is changed (to save)', await ev(() => MTPS.App.state.undo.length === 0 && MTPS.App.state.dirty === true));
+    await page.click('#ladwrap rect.tap[data-rn][data-ri="3"]'); await wait(60);
+    await menu('Search', 'Toggle Bookmark'); await wait(80);
+    await ev(() => { MTPS.App.state.routine = 'Aux'; MTPS.App.state.selRung = 1; MTPS.App.render(); }); await wait(60);
+    await page.click('#ladwrap rect.tap[data-rn][data-ri="1"]', { button: 'right' }); await wait(100);
+    await pick('Toggle Bookmark'); await wait(80);
+    check('the rung shortcut menu: Toggle Bookmark (Aux rung 1)', (await st()).bm === '1,3|1', (await st()).bm);
+    await page.click('.rtb [data-cmd="bmnext"]'); await wait(100);
+    let s = await st();
+    check('Next Bookmark wraps to the first one: MainRoutine rung 1', s.r === 'MainRoutine' && s.ri === 1, JSON.stringify(s));
+    await page.click('.rtb [data-cmd="bmnext"]'); await wait(100);
+    check('Next: rung 3', (await st()).ri === 3);
+    await page.click('.rtb [data-cmd="bmnext"]'); await wait(100);
+    s = await st();
+    check('Next: into the next routine (Aux rung 1)', s.r === 'Aux' && s.ri === 1, JSON.stringify(s));
+    await page.click('.rtb [data-cmd="bmprev"]'); await wait(100);
+    s = await st();
+    check('Previous: back to MainRoutine rung 3', s.r === 'MainRoutine' && s.ri === 3, JSON.stringify(s));
+    await page.click('.rtb [data-cmd="bmall"]'); await wait(120);
+    check('View All: the Edit/Goto Bookmark dialog, the list, Goto, Delete, Close', (await dlgTitle()) === 'Edit/Goto Bookmark' && (await page.$$('#bml [data-bmi]')).length === 3 && (await page.$$eval('#layer .df .btn', b => b.map(x => x.textContent).join(','))) === 'Goto,Delete,Close');
+    await page.click('#bml [data-bmi="1"]'); await clickBtn('Delete'); await wait(80);
+    check('Delete: the bookmark goes, the dialog stays', (await page.$$('#bml [data-bmi]')).length === 2 && (await st()).bm === '1|1');
+    await page.click('#bml [data-bmi="1"]'); await clickBtn('Goto'); await wait(150);
+    s = await st();
+    check('Goto: the dialog closes, Aux rung 1 selected', (await dlgTitle()) === '' && s.r === 'Aux' && s.ri === 1, JSON.stringify(s));
+    const x = await ev(() => { const A = MTPS.App; return { l5x: /bm/.test(A.toL5X(A.state.p).replace(/Bookmark/g, '')), json: JSON.stringify(A.state.p).includes('"bm":1') }; });
+    check('kept in the project, not in the L5X', x.json && !x.l5x, JSON.stringify(x));
+    await page.keyboard.press('Control+c'); await page.click('#ladwrap rect.tap[data-rn][data-ri="0"]'); await page.keyboard.press('Control+v'); await wait(100);
+    check('a copied rung leaves its bookmark behind', (await st()).bm.split('|')[1] === '2', (await st()).bm);
+    await menu('Search', 'Clear All Bookmarks'); await wait(80);
+    check('Clear All Bookmarks', (await st()).bm === '|' && (await st()).marks === 0);
+    // phone (touch): long-press a rung number, Toggle Bookmark; the More page View All
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const pp = await pctx.newPage();
+    await pp.goto(URL); await pp.waitForTimeout(300); await pp.keyboard.press('Escape');
+    await pp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await pp.waitForTimeout(150);
+    await pp.tap('#ladwrap rect.tap[data-rn][data-ri="2"]'); await pp.waitForTimeout(100);
+    await pp.tap('[data-more="ladder"]'); await pp.waitForTimeout(150);
+    await pick('Toggle Bookmark', pp, true); await pp.waitForTimeout(100);
+    check('phone (touch): More menu of the ladder, Toggle Bookmark on rung 2', await pp.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[2].bm === 1 && document.querySelectorAll('#ladwrap svg .bmk').length === 1));
+    await pctx.close();
+  }
 };
