@@ -53,3 +53,7 @@ body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
 .startpg .spx .spc svg { width: 22px; height: 22px; }
 #spl .row { align-items: flex-start; padding: 8px; cursor: pointer; }
 #spl .row.on { background: var(--accent-soft); }
+
+/* Logical Organizer: its tab beside the Controller Organizer */
+.orgtabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface-2); flex: none; }
+.orgtabs .otab { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

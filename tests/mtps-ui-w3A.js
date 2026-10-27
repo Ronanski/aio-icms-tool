@@ -228,5 +228,62 @@ module.exports = async function w3a({ browser, URL, check }) {
     await T.shot('newcomp');
   }
 
+  /* ---------- 5. View > Logical Organizer ---------- */
+  // touch: a long press on a node, which the browser turns into a contextmenu event at that point (a long press is no
+  // tap, so it does not fold the node)
+  const ctx = async (T, sel) => {
+    if (T.n === 'tablet' && !(await T.pg.$('.org.over'))) await T.hit('[data-drawer="1"]');   // the organizer drawer, open again
+    if (!T.touch) { await T.pg.click(sel, { button: 'right' }); await T.wait(150); return; }
+    await T.pg.$eval(sel, e => { const b = e.getBoundingClientRect(); e.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 20, clientY: b.top + b.height / 2 })); });
+    await T.wait(150);
+  };
+  const lnodes = T => T.pg.$$eval('[data-org^="l"], .orgtabs ~ .tree [data-org^="rt:"]', r => r.map(x => x.dataset.org));
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    await T.hit('.startpg [data-sample="Traffic_Light"]'); await T.wait(200);
+    await T.cmd('View', 'Logical Organizer');
+    if (n === 'phone') { /* the Project page shows the organizers */ }
+    check(`${n}: View > Logical Organizer shows its tab`, (await T.text('.orgtabs .otab.on')) === 'Logical Organizer');
+    let nodes = await lnodes(T);
+    check(`${n}: the logical tree: the controller, the program, Parameters and Local Tags, the routines`, ['lroot', 'lprog:MainProgram', 'lpt:MainProgram', 'rt:MainProgram/MainRoutine', 'rt:MainProgram/Cycle'].every(k => nodes.includes(k)), nodes.join(', '));
+    // a folder from the root's menu, then the program moved into it
+    await ctx(T, '[data-org="lroot"]');
+    await T.hitText('#layer .menu .it span', 'New Folder…');
+    check(`${n}: New Folder opens New Program with Use as Folder ticked, Schedule In off`, (await T.title()) === 'New Program' && await T.pg.$eval('#layer #npg-f', x => x.checked) && await T.pg.$eval('#layer #npg-s', x => x.disabled));
+    await T.pg.fill('#layer #npg-n', 'Lights'); await T.btn('OK'); await T.wait(150);
+    await ctx(T, '[data-org="lprog:MainProgram"]');
+    await T.hitText('#layer .menu .it span', 'Move To…');
+    await T.pg.selectOption('#layer #lmv', 'Lights'); await T.btn('OK'); await T.wait(150);
+    const st = await T.ev(() => ({ lg: MTPS.App.state.p.logical, tasks: MTPS.App.state.p.tasks.map(t => t.name + ':' + t.programs.map(g => g.name).join('+')) }));
+    check(`${n}: the program is under the folder, the tasks are unchanged`, st.lg.parent.MainProgram === 'Lights' && st.lg.folders[0].name === 'Lights' && st.tasks.join() === 'MainTask:MainProgram', JSON.stringify(st));
+    nodes = await lnodes(T);
+    check(`${n}: the tree shows the folder with the program in it`, nodes.indexOf('lfold:Lights') >= 0 && nodes.indexOf('lfold:Lights') < nodes.indexOf('lprog:MainProgram'));
+    // a child program of MainProgram, scheduled in MainTask
+    await ctx(T, '[data-org="lprog:MainProgram"]');
+    await T.hitText('#layer .menu .it span', 'New Program…');
+    check(`${n}: New Program from a program fills in the Parent`, (await T.pg.$eval('#layer #npg-p', x => x.value)) === 'MainProgram');
+    await T.pg.fill('#layer #npg-n', 'Walk_Signal'); await T.btn('OK'); await T.wait(150);
+    const g2 = await T.ev(() => ({ par: MTPS.App.state.p.logical.parent.Walk_Signal, inTask: MTPS.App.state.p.tasks[0].programs.some(g => g.name === 'Walk_Signal') }));
+    check(`${n}: the child program is scheduled and has its parent`, g2.par === 'MainProgram' && g2.inTask, JSON.stringify(g2));
+    // a tap on a routine opens it
+    await T.hit('[data-org="rt:MainProgram/Cycle"]'); await T.wait(150);
+    check(`${n}: a routine in the Logical Organizer opens`, (await T.ev(() => MTPS.App.state.routine)) === 'Cycle');
+    if (n === 'desktop') await T.shot('logical');
+    if (n === 'phone') await T.hit('[data-go="project"]');
+    if (n === 'tablet') await T.hit('[data-drawer="1"]');
+    // delete the folder: the program moves back to the root
+    await ctx(T, '[data-org="lfold:Lights"]');
+    await T.hitText('#layer .menu .it span', 'Delete'); await T.btn('Delete'); await T.wait(150);
+    check(`${n}: deleting a folder moves what it holds up`, (await T.ev(() => { const L0 = MTPS.App.state.p.logical; return !L0.folders.length && !L0.parent.MainProgram; })));
+    // the Controller Organizer tab is still there; View > Logical Organizer again hides the tab
+    await T.hit('.orgtabs [data-orgtab="ctl"]');
+    check(`${n}: the Controller Organizer tab shows the tasks`, !!(await T.pg.$('[data-org="task:MainTask"]')));
+    await T.cmd('View', 'Logical Organizer');
+    if (n === 'phone') await T.hit('[data-go="project"]');
+    if (n === 'tablet' && !(await T.pg.$('.org.over'))) await T.hit('[data-drawer="1"]');
+    check(`${n}: View > Logical Organizer again hides it`, !(await T.pg.$('.orgtabs')));
+    check(`${n}: no JS errors (Logical Organizer)`, !T.errs.length, T.errs.join(' | '));
+  }
+
   for (const T of opened) await T.cx.close();
 };

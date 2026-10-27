@@ -417,7 +417,7 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'info' || k === 'noDocs' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'info' || k === 'noDocs' || k === 'logical' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
   /* edit zones on the rungs (Studio 5000 "Edit ladder logic in run mode"): rung.z is
      i: the editable copy made by Start Pending Rung Edits, or a new rung (shown e while it has errors);
      r: the original below it, read-only; after Accept they become I (insert zone) and R (replace zone);
@@ -935,6 +935,7 @@
     fen: { l: 'Enable All I/O Forces', i: 'force', run: () => { ctl.enableForces(true); live(true); }, on: () => S.online && ctl.forceState() === 'disabled' },
     fdis: { l: 'Disable All I/O Forces', i: 'force', run: () => { ctl.enableForces(false); live(true); }, on: () => S.online && ctl.forceState() === 'enabled' },
     fall: { l: 'Remove All I/O Forces', i: 'close', run: () => { ctl.removeForces(); live(true); }, on: () => S.online && ctl.forceState() !== 'none' },
+    vlorg: { l: 'Logical Organizer', i: 'tree', run: () => toggleLogical(), on: () => !S.noProj, ck: () => !!S.prefs.lorg },
     vorg: { l: 'Controller Organizer', i: 'tree', run: () => { S.prefs.org = !S.prefs.org; S.drawer = !S.drawer; savePrefs(); render(); }, ck: () => S.prefs.org },
     verr: { l: 'Errors', i: 'warn', run: () => { if (S.layout === 'desktop') { S.prefs.err = !S.prefs.err; savePrefs(); } else S.errOpen = !S.errOpen; render(); }, ck: () => S.prefs.err },
     vio: { l: 'Emulator Panel', i: 'rack', run: () => { if (S.layout === 'phone' && innerWidth <= innerHeight) { S.area = 'ladder'; S.phoneEmu = !S.phoneEmu; } else { S.prefs.emu = !S.prefs.emu; savePrefs(); } render(); }, ck: () => S.prefs.emu },
@@ -965,7 +966,7 @@
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newstr', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'genrep', { hd: 'Print' }, 'prtrtn', 'prttags', 'prtmod', 'prtdt', 'prtorg', 'prtctl', 'prtall', 'prtopts', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
-    ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
+    ['View', ['vorg', 'verr', 'vwatch', 'vlorg', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
@@ -1107,7 +1108,7 @@
         <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span>${commHTML(true)}</span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
-      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>` : ''}
+      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">${orgTitle()}</div>${orgPane()}${quickViewHTML()}</aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
           ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
@@ -1119,7 +1120,7 @@
   function tablet() {
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
-    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>`;
+    const orgAside = c => `<aside class="org${c}"><div class="ph">${orgTitle()}<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div>${orgPane()}${quickViewHTML()}</aside>`;
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>${esc(ctlLabel(S.p))}</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
@@ -1164,7 +1165,7 @@
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
-    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)"><div class="tree">${treeHTML()}</div>${quickViewHTML()}</div>`;
+    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)">${orgPane()}${quickViewHTML()}</div>`;
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
@@ -1187,7 +1188,7 @@
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}${b('newprog')}${b('newtask')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
-      <div class="card">${b('samples', 'Sample Projects…')}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
+      <div class="card">${b('samples', 'Sample Projects…')}${b('vlorg')}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -3491,35 +3492,133 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     // New Task on the Tasks folder, New Program on a task (help v37: Create a Task, New Component > Program)
     if (key === 'tasks') items.unshift({ l: 'New Task…', i: 'task', run: () => newTaskDlg(), dis: !editable() || !offline() }, '-');
     if (key.startsWith('task:')) items.unshift({ l: 'New Program…', i: 'prog', run: () => newProgramDlg(key.slice(5)), dis: !editable() }, '-');
+    if (/^(lroot|lfold:|lprog:|lpt:)/.test(key)) logMenu(key, items);
   }
-  /* File > New Component > Program (help v37: New program dialog box settings): Name, Description, Schedule In (the
-     task selected in the organizer fills it in), Inhibit Program. The program gets a MainRoutine as its main routine
-     (here a program always holds a routine). Class and Synchronize Redundancy Data are for Safety and redundancy
-     controllers only, so they are not shown. */
+  /* File > New Component > Program (help v37: New program dialog box settings): Name, Description, Parent (a program
+     or folder of the logical model, or <none>), Use as Folder (a folder of the Logical Organizer, not scheduled: Schedule
+     In and Inhibit Program are off), Schedule In (the task selected in the organizer fills it in), Inhibit Program. The
+     program gets a MainRoutine as its main routine (here a program always holds a routine). Class and Synchronize
+     Redundancy Data are for Safety and redundancy controllers only, so they are not shown. */
   const freeName = (base, used) => { let n = base, k = 1; while (used.has(U(n))) n = base + ++k; return n; };
-  function newProgramDlg(task) {
+  function newProgramDlg(task, parent, asFolder) {
     const ts = S.p.tasks.filter(t => !HANDLERS[t.type]), sel = S.orgSel || '';
     const t0 = task || (sel.startsWith('task:') ? sel.slice(5) : (S.p.tasks.find(t => t.programs.some(g => g.name === orgProg())) || ts[0]).name);
-    const n = freeName('Program', new Set(allProgs().map(g => U(g.name))));
-    dialog({ title: 'New Program', size: 'md', focus: true,
+    const used = new Set(allProgs().map(g => U(g.name)).concat(logi().folders.map(x => U(x.name))));
+    const n = freeName(asFolder ? 'Folder' : 'Program', used);
+    const parents = logi().folders.map(x => x.name).concat(logProgs().map(g => g.name));
+    const el = dialog({ title: 'New Program', size: 'md', focus: true,
       body: `<div class="frow"><label for="npg-n">Name</label><input class="inp" id="npg-n" value="${esc(n)}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label for="npg-d">Description</label><textarea class="inp" id="npg-d" rows="2"></textarea></div>
+        <div class="frow"><label for="npg-p">Parent</label><select class="inp" id="npg-p"><option value="">&lt;none&gt;</option>${parents.map(x => `<option${x === parent ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+        <label class="ck"><input type="checkbox" id="npg-f"${asFolder ? ' checked' : ''}> Use as Folder</label>
         <div class="frow"><label for="npg-s">Schedule In</label><select class="inp" id="npg-s">${ts.map(t => `<option${t.name === t0 ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
         <label class="ck"><input type="checkbox" id="npg-i"> Inhibit Program</label>
-        <p class="help">The program gets a MainRoutine (its main routine). Add more routines with New Routine.</p><div class="errtx" id="npg-e"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        const q = s => el.querySelector(s), v = q('#npg-n').value.trim(), d = q('#npg-d').value.trim(), er = x => { q('#npg-e').textContent = x; return false; };
+        <p class="help">The program gets a MainRoutine (its main routine). Add more routines with New Routine. A folder only groups programs in the Logical Organizer.</p><div class="errtx" id="npg-e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
+        const q = x => el2.querySelector(x), v = q('#npg-n').value.trim(), d = q('#npg-d').value.trim(), par = q('#npg-p').value, fold = q('#npg-f').checked, er = x => { q('#npg-e').textContent = x; return false; };
         if (!E.validName(v)) return er('Name: letters, digits and _ (starting with a letter or _), up to 40 characters, no __ and no _ at the end.');
-        if (allProgs().some(g => U(g.name) === U(v))) return er(`A program named ${v} exists.`);
+        if (used.has(U(v))) return er(`A program or folder named ${v} exists.`);
+        if (fold) {
+          edit(() => { const L0 = logEdit(), x = { name: v }; if (d) x.desc = d; L0.folders.push(x); if (par) L0.parent[v] = par; S.orgSel = 'lfold:' + v; });
+          toast(`Folder ${v} added to the Logical Organizer.`, 'ok');
+          return;
+        }
         const T = S.p.tasks.find(t => t.name === q('#npg-s').value);
         edit(() => {
           const g = { name: v, main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
           if (d) g.desc = d; if (q('#npg-i').checked) g.inhibit = true;
           T.programs.push(g); S.orgSel = 'prog:' + v;
+          if (par) logEdit().parent[v] = par;
           const c = new Set(S.prefs.collapsed); c.delete('tasks'); c.delete('task:' + T.name); S.prefs.collapsed = [...c]; savePrefs();
         });
         toast(`Program ${v} scheduled in ${T.name}.`, 'ok');
       } }] });
+    const sync = () => { const f2 = el.querySelector('#npg-f').checked; el.querySelector('#npg-s').disabled = f2; el.querySelector('#npg-i').disabled = f2; };
+    el.querySelector('#npg-f').addEventListener('change', sync); sync();
+  }
+  /* ---------- View > Logical Organizer (help v37: Logical Organizer, Use the Logical Organizer, Move items in the
+     Logical Organizer): the programs in a tree of folders and parent programs, apart from the tasks that run them. The
+     root is the controller; each program holds Parameters and Local Tags, its routines and its child programs. The
+     fault and power-up handlers are not in it. Folders and parents are kept in the project (p.logical: folders [{name,
+     desc}], parent {program or folder: its parent}); a parent that is gone puts the item back under the root. Moving an
+     item never changes the tasks. Not written to L5X. ---------- */
+  const logi = () => { const L0 = (S.p && S.p.logical) || {}; return { folders: Array.isArray(L0.folders) ? L0.folders : [], parent: L0.parent && typeof L0.parent === 'object' ? L0.parent : {} }; };
+  const logEdit = () => { const L0 = logi(); S.p.logical = L0; return L0; };
+  const logProgs = () => S.p.tasks.filter(t => !HANDLERS[t.type]).flatMap(t => t.programs);
+  const logItems = () => logi().folders.map(x => ({ k: 'f', name: x.name })).concat(logProgs().map(g => ({ k: 'p', name: g.name, g })));
+  function logParent(name) { const p = logi().parent[name]; return p && logItems().some(x => x.name === p && x.name !== name) ? p : ''; }
+  const logKids = parent => logItems().filter(x => logParent(x.name) === parent);
+  // the item and everything under it (a move cannot go into its own branch)
+  function logBranch(name) { const out = new Set([name]); let more = true; while (more) { more = false; logItems().forEach(x => { if (!out.has(x.name) && out.has(logParent(x.name))) { out.add(x.name); more = true; } }); } return out; }
+  function logicalTreeHTML() {
+    if (S.noProj) return '<div class="empty">No project open: New Project or Open Project.</div>';
+    const col = new Set(S.prefs.collapsed);
+    let h = '';
+    const node = (key, lvl, txt, icon, kids, on) => {
+      const has = !!kids, open = has && !col.has(key);
+      h += `<div class="nd${on ? ' on' : ''}" data-org="${esc(key)}" style="padding-left:${4 + lvl * 16}px"><span class="tw" data-tw="${esc(key)}">${has ? ic(open ? 'down' : 'right') : ''}</span>${ic(icon, 'i ti')}<span class="ell">${esc(txt)}</span></div>`;
+      if (has && open) kids();
+    };
+    const walk = (parent, lvl, seen) => logKids(parent).forEach(x => {
+      if (seen.has(x.name)) return;
+      const s2 = new Set(seen).add(x.name);
+      if (x.k === 'f') node('lfold:' + x.name, lvl, x.name, 'folder', logKids(x.name).length ? () => walk(x.name, lvl + 1, s2) : null);
+      else node('lprog:' + x.name, lvl, x.name, 'prog', () => { node('lpt:' + x.name, lvl + 1, 'Parameters and Local Tags', 'tag'); x.g.routines.forEach(r => node('rt:' + x.name + '/' + r.name, lvl + 1, r.name, 'ladder', null, x.name === S.prog && r.name === S.routine)); walk(x.name, lvl + 1, s2); });
+    });
+    node('lroot', 0, 'Controller ' + S.p.controller.name, 'chip', () => walk('', 1, new Set()));
+    return h;
+  }
+  // the organizer pane: the Controller Organizer, and the Logical Organizer in a tab beside it while it is shown
+  const orgTitle = () => (S.prefs.lorg && S.orgTab === 'log' ? 'Logical Organizer' : 'Controller Organizer');
+  const orgPane = () => (S.prefs.lorg ? `<div class="otabs orgtabs"><button class="otab${S.orgTab !== 'log' ? ' on' : ''}" data-orgtab="ctl">Controller Organizer</button><button class="otab${S.orgTab === 'log' ? ' on' : ''}" data-orgtab="log">Logical Organizer</button></div>` : '')
+    + `<div class="tree">${S.prefs.lorg && S.orgTab === 'log' ? logicalTreeHTML() : treeHTML()}</div>`;
+  function toggleLogical() {
+    S.prefs.lorg = !S.prefs.lorg; S.orgTab = S.prefs.lorg ? 'log' : 'ctl';
+    if (S.prefs.lorg) { if (S.layout === 'desktop') S.prefs.org = true; else if (S.layout === 'tablet') S.drawer = true; else S.area = 'project'; }
+    savePrefs(); render();
+  }
+  // a tap on a node of the Logical Organizer: double-tap a program for its properties, the tags for Monitor Tags
+  function logTap(k, dbl) {
+    if (!/^(lprog|lpt|lfold|lroot)/.test(k)) return false;
+    if (k.startsWith('lpt:')) { tagEditor('mon', k.slice(4)); return true; }
+    if (dbl && k.startsWith('lprog:')) { const c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); progProps(k.slice(6)); return true; }
+    if (dbl && k === 'lroot') { controllerProps(); return true; }
+    return false;
+  }
+  // Move To: under the root, a folder or a program that is not in the item's own branch
+  function logMoveDlg(name) {
+    const br = logBranch(name), to = logItems().filter(x => !br.has(x.name)), cur = logParent(name);
+    dialog({ title: `Move ${name}`, size: 'sm',
+      body: `<div class="frow"><label for="lmv">Move under</label><select class="inp" id="lmv"><option value="">Controller ${esc(S.p.controller.name)}</option>${to.map(x => `<option value="${esc(x.name)}"${x.name === cur ? ' selected' : ''}>${esc(x.name)}${x.k === 'f' ? ' (folder)' : ''}</option>`).join('')}</select></div><p class="help">The tasks do not change: the program runs as before.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { const v = el.querySelector('#lmv').value; edit(() => { const L0 = logEdit(); if (v) L0.parent[name] = v; else delete L0.parent[name]; }); } }] });
+  }
+  function logRenameFolder(name) {
+    prompt1('Rename Folder', 'Name', name, v => {
+      if (!E.validName(v)) return 'Name: letters, digits and _ (starting with a letter or _), up to 40 characters.';
+      if (U(v) !== U(name) && (allProgs().some(g => U(g.name) === U(v)) || logi().folders.some(x => U(x.name) === U(v)))) return `A program or folder named ${v} exists.`;
+      edit(() => { const L0 = logEdit(); L0.folders.find(x => x.name === name).name = v; Object.keys(L0.parent).forEach(k => { if (L0.parent[k] === name) L0.parent[k] = v; }); if (L0.parent[name] != null) { L0.parent[v] = L0.parent[name]; delete L0.parent[name]; } });
+      return '';
+    });
+  }
+  // Delete a folder: what it holds moves up to the folder's parent
+  function logDeleteFolder(name) {
+    confirmDlg('Delete Folder', `Delete the folder <b>${esc(name)}</b>? What it holds moves up one level.`, 'Delete', () => edit(() => {
+      const L0 = logEdit(), up = logParent(name);
+      Object.keys(L0.parent).forEach(k => { if (L0.parent[k] === name) { if (up) L0.parent[k] = up; else delete L0.parent[k]; } });
+      L0.folders = L0.folders.filter(x => x.name !== name); delete L0.parent[name];
+    }), true);
+  }
+  // the right-click menu of a node of the Logical Organizer
+  function logMenu(key, items) {
+    const ed = !editable();
+    if (key === 'lroot') items.push({ l: 'New Program…', i: 'prog', run: () => newProgramDlg(null, ''), dis: ed }, { l: 'New Folder…', i: 'folder', run: () => newProgramDlg(null, '', true), dis: ed }, '-', { l: 'Properties…', run: () => controllerProps() });
+    else if (key.startsWith('lfold:')) { const n = key.slice(6); items.push({ l: 'New Program…', i: 'prog', run: () => newProgramDlg(null, n), dis: ed }, { l: 'New Folder…', i: 'folder', run: () => newProgramDlg(null, n, true), dis: ed }, '-', { l: 'Move To…', run: () => logMoveDlg(n), dis: ed }, { l: 'Rename…', run: () => logRenameFolder(n), dis: ed }, { l: 'Delete', i: 'trash', run: () => logDeleteFolder(n), dis: ed }); }
+    else if (key.startsWith('lprog:')) {
+      const n = key.slice(6);
+      items.push({ l: 'New Routine…', i: 'ladder', run: () => newRoutine(n), dis: ed }, { l: 'New Program…', i: 'prog', run: () => newProgramDlg(null, n), dis: ed }, '-', { l: 'Move To…', run: () => logMoveDlg(n), dis: ed },
+        { l: 'Find in Controller Organizer', i: 'tree', run: () => { S.orgTab = 'ctl'; S.orgSel = 'prog:' + n; const c = new Set(S.prefs.collapsed); c.delete('tasks'); S.p.tasks.forEach(t => { if (t.programs.some(g => g.name === n)) c.delete('task:' + t.name); }); c.delete('prog:' + n); S.prefs.collapsed = [...c]; savePrefs(); render(); const el = $(`[data-org="prog:${n}"]`); if (el) { el.classList.add('on'); el.scrollIntoView({ block: 'nearest' }); } } },
+        '-', { l: 'Properties…', run: () => progProps(n) });
+    } else if (key.startsWith('lpt:')) items.push({ l: 'Monitor Tags', run: () => tagEditor('mon', key.slice(4)) }, { l: 'Edit Tags', run: () => tagEditor('edit', key.slice(4)) });
   }
   /* File > New Component > Task (help v37: Create a Task): Name, Description, Type (Continuous, Periodic, Event),
      Period, Priority, Watchdog, Disable automatic output processing, Inhibit task. A project allows only one continuous
@@ -7477,6 +7576,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
         S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
+        if (logTap(k, dbl)) return;
         if (dbl && dtOpen(k)) return;
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
@@ -7495,6 +7595,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
+      if ((el = t.closest('[data-orgtab]'))) { S.orgTab = el.dataset.orgtab; render(); return; }
       if ((el = t.closest('[data-sample]'))) { const n = el.dataset.sample; saveChanges(() => openSample(n)); return; }
       if ((el = t.closest('[data-recent]'))) { const f = el.dataset.recent; saveChanges(() => loadFile(f)); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
