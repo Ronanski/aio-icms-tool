@@ -5,6 +5,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 ## Savepoint
 | | |
 |---|---|
+| **Now (2026-10-27 11:45)** | Wave 4 DROPPED by the owner (never merged). PR #100 (merged, Beta beta.6a73ebe): a "?" operand is set by a second tap on touch, the emulator I/O button shows one module (DO = lamps), the tag browser labels module tags, the * mark moved off the alias line. Proven on the live Beta at tablet size (screenshots in project files `mtps-proof/`). Engine audit started: 42 Logix rule checks (timers, counters, one-shots, prescan, rung logic, MCR, JMP, math) all match; added to `tests/mtps.test.js`. `tests/mtps-ui-sealin.js`: the owner's tablet flow by touch (seal-in, TON, CTU, OTL/OTU, RES, forces). Next: the file explorer (.mtp save, delete, folder). No Stable without a new literal GO STABLE. |
 | **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). 0.5.0 Stable (Wave 1 of the coverage map, PR #96) released 2026-10-27 on owner GO. Wave 2 (owner GO 2026-10-27 01:29) merged to `main` as PR #97 (a324dca) on 2026-10-27, live on Beta and Wave 3 (owner GO 2026-10-27 04:15) merged on 2026-10-27 the same way, both live on Beta; Stable is still 0.5.0. Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
 | **Tags** | `mtps-v0.4.0-beta.3`, `mtps-v0.1.0`; Trainer `v2.0.0` back to `v1.1.0` (full list in archive). |
 | **Branch** | `main` is the default branch and holds released code. Work on feature branches, merged through PRs only with the owner's GO. |
