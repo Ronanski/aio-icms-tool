@@ -41,7 +41,7 @@ module.exports = async function w3B({ browser, page, URL, check }) {
     await page.click('.nd[data-org="task:MainTask"]', { button: 'right' }); await wait(120);
     check('right-click MainTask: New Program… (on), Properties…', (await items()).some(([l, d]) => l === 'New Program…' && !d) && (await items()).some(([l]) => l === 'Properties…'));
     await pick('New Program…');
-    check('New Program: Name, Description, Parent <none>, Use as Folder, Schedule In = MainTask, Inhibit Program', (await dlgTitle()) === 'New Program' && (await page.$eval('#np-s', s => s.value)) === 'MainTask' && (await page.$eval('#np-par', s => s.disabled && s.value === '<none>')) && !!(await page.$('#np-fold')) && !!(await page.$('#np-i')) && !!(await page.$('#np-d')));
+    check('New Program: Name, Description, Parent <none>, Use as Folder, Schedule In = MainTask, Inhibit Program', (await dlgTitle()) === 'New Program' && (await page.$eval('#np-s', s => s.value)) === 'MainTask' && (await page.$eval('#np-par', s => !s.disabled && s.value === '' && s.options[0].textContent === '<none>')) && !!(await page.$('#np-fold')) && !!(await page.$('#np-i')) && !!(await page.$('#np-d')));
     check('Schedule In lists <none>, the tasks and the two handlers', (await page.$$eval('#np-s option', o => o.map(x => x.textContent).join('|'))) === '<none>|MainTask|Controller Fault Handler|Power-Up Handler');
     await shot('after-new-program');
     await page.fill('#np-n', 'MainProgram'); await clickBtn('OK');
