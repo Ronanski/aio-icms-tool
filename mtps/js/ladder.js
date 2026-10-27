@@ -74,6 +74,8 @@
     const LM = Math.round(Math.max(30, CW * 0.36)), cols = Math.max(3, Math.floor((o.W - LM - 8) / CW)), RR = LM + cols * CW;
     const fName = `${S + 1}px Arial`, fDesc = `${S}px Arial`, descLines = o.descLines || 2;
     let y = 8, out = '', taps = '';
+    // the routine's description above the first rung (Options: Show Routine Description)
+    if (o.rdesc) { wrapWords(o.rdesc, RR - LM - 16, fDesc, 4).forEach(t => { out += `<text class="cm rdsc" x="${LM + 8}" y="${y + LH}">${esc(t)}</text>`; y += LH + 2; }); y += 8; }
     const parts = [];   // each rung's drawing, in a <g data-rg> of its own: a redraw can replace only the rungs that changed
     const nodes = [], dashes = [], dk = nkey(o.drop);
     const node = (n, x, y) => { if (o.nodeOk && o.nodeOk(n)) nodes.push(Object.assign({}, n, { x, y })); };
@@ -81,14 +83,15 @@
     const head = e => {
       if (!e.a || !e.a.length) return { lines: [], h: 4 };
       const a = e.a[0], lines = [], tag = tagOf(a);
-      const dsc = o.desc ? o.desc(a) : tag && tag.desc;
+      // noDesc, noAlias: Options > Ladder Editor > Display (Show Main Operand Description, Show Tag Alias Information)
+      const dsc = o.noDesc ? '' : o.desc ? o.desc(a) : tag && tag.desc;
       if (isBox(e)) {
         if (dsc) wrapWords(dsc, 2 * CW - 16, fDesc, descLines).forEach(t => lines.push(['ds', t]));
         return lines.length ? { lines, h: lines.length * LH + 12 } : { lines: [], h: 4 };
       }
       if (dsc) wrapWords(dsc, CW - 8, fDesc, descLines).forEach(t => lines.push(['ds', t]));
       wrapName(a, CW - 8, fName, 2).forEach(t => lines.push(['nm', t]));
-      if (tag && tag.alias && !/[.[]/.test(a)) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
+      if (tag && tag.alias && !o.noAlias && !/[.[]/.test(a)) wrapName('<' + tag.alias + '>', CW - 6, fDesc, 2).forEach(t => lines.push(['al', t]));
       return { lines, h: lines.length * LH + 6 };
     };
     const opsOf = e => {
@@ -100,7 +103,7 @@
           if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && i > 0) { const s = e.x[0].obj(); v = i === 1 ? s.PRE : s.ACC; }
           // Length / Position of a file or sequencer instruction show the live .LEN / .POS of its CONTROL
           else if (INSTR[e.t] && INSTR[e.t].live && INSTR[e.t].live[i]) { try { v = e.x[INSTR[e.t].ctl].obj()[INSTR[e.t].live[i]]; } catch (err) { v = a; } }
-          else if (x && typeof x.get === 'function' && x.at && !x.dim && MTPS.ATOMIC.includes(x.type)) { try { val = x.get(); if (x.type === 'REAL') val = +val.toPrecision(6); } catch (err) { val = '?'; } }
+          else if (x && typeof x.get === 'function' && x.at && !x.dim && MTPS.ATOMIC.includes(x.type)) { try { val = x.get(); if (x.type === 'REAL' || x.type === 'LREAL') val = +val.toPrecision(6); } catch (err) { val = '?'; } }
         }
         return [names[i] || '', v, val];
       });
@@ -135,8 +138,8 @@
       let used = 0;
       ins.forEach(e => { const w = widthOf(e); if (used + w > cols && lines[lines.length - 1].length) { lines.push([]); used = 0; } lines[lines.length - 1].push(e); used += w; });
       if (used + outW > cols && lines[lines.length - 1].length) lines.push([]);
-      if (R.c) {
-        const cl = wrapWords(R.c, RR - LM - 16, `${S + 1}px Arial`, 4);
+      if (R.c && !o.noCm) {
+        const cl = wrapWords(R.c, RR - LM - 16, `${S + 1}px Arial`, o.cmLines || 4);
         cl.forEach((t, i) => { out += `<text class="cm" x="${(LM + RR) / 2}" y="${y + LH + i * (LH + 2)}" text-anchor="middle">${esc(t)}</text>`; });
         y += cl.length * (LH + 2) + 6;
       }
@@ -182,7 +185,7 @@
             else if (b.ends[k] < b.col + b.w) out += `<line class="w" x1="${X(b.ends[k])}" y1="${ys[k] + .5}" x2="${x2}" y2="${ys[k] + .5}"/>`;
           });
           out += `<line class="w" x1="${x1 + .5}" y1="${ys[0]}" x2="${x1 + .5}" y2="${ys[ys.length - 1]}"/><line class="w" x1="${x2 + .5}" y1="${ys[0]}" x2="${x2 + .5}" y2="${ys[ys.length - 1]}"/>`;
-          const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, b.path);
+          const isSel = (o.sel && o.sel.ri === ri && same(o.sel.path, b.path)) || o.selIns === ri;
           if (isSel) out += `<rect class="sel" x="${x1 - 3}" y="${ys[0] - 10}" width="${x2 - x1 + 6}" height="${ys[ys.length - 1] - ys[0] + 20}" rx="3" fill="none"/>`;
           // the branch rails are hit targets of their own, above the instructions (added after them):
           // the left rail selects the branch (add a level), the right rail the whole branch
@@ -201,7 +204,8 @@
         if (last && !lock) node({ ri, end: true }, X(startOut) - 2, wy);
         all.forEach(it => {
           const e = it.e, x = X(it.col), w = (isBox(e) ? boxCells(e) : 1) * CW, cy = rowY[it.row], cx = x + w / 2, h = head(e);
-          const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, it.path);
+          // selIns: Select All with the caret on an instruction selects every instruction of the rung
+          const isSel = (o.sel && o.sel.ri === ri && same(o.sel.path, it.path)) || o.selIns === ri;
           if (isSel) out += `<rect class="sel" x="${x + 2.5}" y="${cy - h.h - 6.5}" width="${w - 5}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 26)}" rx="3"/>`;
           if (!lock) { node({ ri, path: it.path, after: false }, x, cy); node({ ri, path: it.path, after: true }, x + w, cy); }
           if (o.lifted && o.lifted.ri === ri && same(o.lifted.path, it.path)) out += `<rect class="lift" x="${x + 1.5}" y="${cy - h.h - 7.5}" width="${w - 3}" height="${h.h + (isBox(e) ? boxH(e) + 6 : 28)}" rx="4"/>`;
@@ -233,7 +237,7 @@
             let yy = cy - 9 + 17 + LH + 2;
             opsOf(e).forEach(([n, , val], i) => {
               const hgt = (val !== null ? 2 : 1) * (LH + 3);
-              if (isSel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
+              if (isSel && o.sel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
               const d = o.desc && e.a[i] ? o.desc(e.a[i]) : '';
               taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="${i}" x="${L}" y="${yy - LH - 1}" width="${Rt - L}" height="${hgt}">${d ? `<title>${esc(n + ': ' + d)}</title>` : ''}</rect>`;
               if (!lock) node({ ri, path: it.path, op: i }, L - 2, yy - LH / 2 + 1);
@@ -249,7 +253,9 @@
       if (R.dash) dashes.push([rungTop - 4, rungBot]);
       const selR = o.selRung === ri || !!o.selAll;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
-      out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
+      if (!o.noNums) out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
+      // a bookmark (Bookmark toolbar): a small mark at the left of the rung number
+      if (R.bm) out += `<path class="bmk" d="M3 ${rungTop + 2}h7v11l-3.5-3-3.5 3z"><title>Bookmark</title></path>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
       // online edit mark (Studio 5000): i the edited copy (e while it has errors), r its original; I and R once
       // accepted; D a deleted rung

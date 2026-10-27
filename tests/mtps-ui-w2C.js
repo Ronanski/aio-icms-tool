@@ -1,0 +1,146 @@
+/* MT PLC Studio UI tests, Wave 2 (C): the trigonometric, advanced math, math conversion, file/misc, GSV/SSV and PID
+   instructions of 1756-RM003 (now 1756-RM018A) added as a user adds them (the toolbar tab and its button on the
+   desktop with the mouse and on the tablet by touch, the + / Add Ladder Element box on the phone), with their operands
+   typed in the operand box; then verify, go online, run and the values; and their Instruction Help page.
+   Called from mtps-ui.test.js. */
+'use strict';
+const fs = require('fs');
+const SHOTS = '/tmp/claude-0/shots-w2/C';
+module.exports = async function w2c({ browser, URL, check }) {
+  try { fs.mkdirSync(SHOTS, { recursive: true }); } catch (e) { /* ignore */ }
+  // [toolbar tab, mnemonic, operands]
+  const ADD = [
+    ['Trig Functions', 'SIN', ['Ang', 'R1']], ['Trig Functions', 'COS', ['Ang', 'R2']], ['Trig Functions', 'TAN', ['Ang', 'R3']],
+    ['Trig Functions', 'ASN', ['Half', 'R4']], ['Trig Functions', 'ACS', ['Half', 'R5']], ['Trig Functions', 'ATN', ['One', 'R6']],
+    ['Advanced Math', 'LN', ['Five', 'R7']], ['Advanced Math', 'LOG', ['Hund', 'R8']], ['Advanced Math', 'XPY', ['Two', '10', 'D1']],
+    ['Math Conversions', 'DEG', ['One', 'R9']], ['Math Conversions', 'RAD', ['Hund', 'R10']], ['Math Conversions', 'TOD', ['N22', 'D2']],
+    ['Math Conversions', 'FRD', ['D2', 'D3']], ['Math Conversions', 'TRN', ['F57', 'D4']],
+    ['File/Misc', 'FAL', ['C1', '5', '0', 'ALL', 'Arr2[C1.POS]', 'Arr[C1.POS]*2']], ['File/Misc', 'FSC', ['C2', '5', '0', 'ALL', 'Arr[C2.POS]>=3']],
+    ['File/Misc', 'AVE', ['Grid[0,1]', '0', 'Av', 'C3', '4', '0']], ['File/Misc', 'STD', ['Grid[0,4]', '0', 'Sd', 'C4', '4', '0']],
+    ['File/Misc', 'SRT', ['Gs[2,0]', '1', 'C5', '5', '0']], ['File/Misc', 'SIZE', ['Grid', '1', 'Sz']], ['File/Misc', 'CPS', ['Arr[0]', 'Dst[0]', '3']],
+    ['Input/Output', 'GSV', ['WallClockTime', '', 'DateTime', 'Now[0]']], ['Input/Output', 'SSV', ['Module', 'DI_1', 'Mode', 'M1']], ['Input/Output', 'GSV', ['Module', 'DI_1', 'Mode', 'Md']],
+    ['Special', 'PID', ['Tpid', 'Lvl', '0', 'Vlv', '0', '0', '0']],
+  ];
+  // the operands picked from their list: the Mode of FAL / FSC (ALL, INC, a number), Dim. To Vary (0, 1, 2)
+  const MODES = 'ALL,INC,1', DIMS = '0,1,2';
+  const PICK = { FAL: [[3, MODES]], FSC: [[3, MODES]], AVE: [[1, DIMS]], STD: [[1, DIMS]], SRT: [[1, DIMS]], SIZE: [[1, DIMS]] };
+  // GSV / SSV: the class, the instance and the attribute lists follow what is typed before them (SSV: settable only)
+  const CLASSES = 'WallClockTime,Controller,Task,Program,Module,FaultLog';
+  const PICKN = { 'GSV,WallClockTime': [[0, CLASSES], [2, 'ApplyDST,CSTOffset,CurrentValue,DateTime,DSTAdjustment,LocalDateTime']], 'SSV,Module': [[0, CLASSES], [1, 'DI_1,DO_1'], [2, 'Mode']], 'GSV,Module': [[1, 'DI_1,DO_1'], [2, 'EntryStatus,FaultCode,FaultInfo,ForceStatus,LEDStatus,Mode']] };
+  // the values in Run (the manual's own examples where it gives one)
+  const WANT = { R1: Math.sin(0.5), R2: Math.cos(0.5), R3: Math.tan(0.5), R4: Math.asin(0.5), R5: Math.acos(0.5), R6: Math.atan(1), R7: 1.609438, R8: 2, D1: 1024,
+    R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5, 'Arr2[0]': 2, 'Arr2[4]': 10, 'C1.DN': 1, 'C1.POS': 5, 'C2.FD': 1, 'C2.IN': 1, 'C2.POS': 2,
+    Av: 12, Sd: 6.454972, 'Gs[2,0]': 6, 'Gs[2,4]': 10, 'C5.DN': 1, Sz: 5, 'Dst[2]': 3,
+    'Now[0]': new Date().getUTCFullYear(), Md: 1, Vlv: 20, 'Tpid.EN': 1, 'Tpid.PV': 40 };
+  const project = () => {
+    const A = MTPS.App, p = A.blank('Wave2C'), T = (name, type, value, dim) => p.tags.push(Object.assign({ name, type }, value != null ? { value } : {}, dim ? { dim } : {}));
+    T('Ang', 'REAL', 0.5); T('Half', 'REAL', 0.5); T('One', 'REAL', 1); T('Five', 'REAL', 5); T('Hund', 'REAL', 100); T('Two', 'DINT', 2);
+    for (let k = 1; k <= 10; k++) T('R' + k, 'REAL');
+    T('D1', 'DINT'); T('N22', 'DINT', 22); T('D2', 'DINT'); T('D3', 'DINT'); T('D4', 'DINT'); T('F57', 'REAL', 5.7);
+    T('Arr', 'DINT', [1, 2, 3, 4, 5], 5); T('Arr2', 'DINT', null, 5); T('C1', 'CONTROL'); T('C2', 'CONTROL');
+    const grid = Array.from({ length: 20 }, (_, k) => 20 - k);
+    T('Grid', 'DINT', grid, [4, 5]); T('Gs', 'DINT', grid, [4, 5]); T('Av', 'DINT'); T('Sd', 'REAL'); T('Sz', 'DINT'); T('Dst', 'DINT', null, 3);
+    T('Now', 'DINT', null, 7); T('Tpid', 'PID', { UPD: 1, MAXS: 100, SP: 50, KP: 2 }); T('Lvl', 'REAL', 40); T('Vlv', 'REAL'); T('M1', 'INT', 1); T('Md', 'INT');
+    T('C3', 'CONTROL'); T('C4', 'CONTROL'); T('C5', 'CONTROL');
+    A.openProject(p);
+  };
+  const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 800, height: 1280 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
+  for (const lay of LAYS) {
+    const cx = await browser.newContext({ viewport: lay.vp, isMobile: !!lay.touch, hasTouch: !!lay.touch });
+    await cx.route('https://ronanski.github.io/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ version: '0.0.1', build: 'test', notes: '' }) }));
+    const pg = await cx.newPage(), errs = [];
+    pg.on('pageerror', e => errs.push(e.message));
+    await pg.goto(URL); await pg.evaluate(() => localStorage.clear()); await pg.reload(); await pg.waitForTimeout(300);
+    const tp = sel => (lay.touch ? pg.tap(sel) : pg.click(sel));
+    await pg.evaluate(project);
+    await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
+    const bad = [];
+    for (const [tab, mn, ops] of ADD) {
+      await pg.evaluate(() => { const S = MTPS.App.state, rr = S.p.tasks[0].programs[0].routines[0].rungs; if (rr[rr.length - 1].t) rr.push({ t: '' }); S.sel = null; S.selRung = rr.length - 1; MTPS.App.render(); });
+      const ri = await pg.evaluate(() => MTPS.App.state.selRung);
+      if (lay.n === 'desktop') {
+        if (!(await pg.$(`[data-tab="${tab}"]`))) { bad.push(`no toolbar tab ${tab}`); continue; }
+        await tp(`[data-tab="${tab}"]`); await pg.waitForTimeout(100);
+        await tp(`.gbtn[data-mn="${mn}"]`);
+      } else {
+        // the phone's + button, or the tablet's All… button (portrait shows the Favorites row only): Add Ladder
+        // Element, the group folder, then the instruction (a second tap adds it)
+        await tp(lay.n === 'phone' ? '.fab' : '.gbtn.more'); await pg.waitForTimeout(150);
+        if (!(await pg.$(`#layer [data-pk="${mn}"]`))) await tp(`#layer [data-pgrp="${tab}"]`);
+        await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`); await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`);
+      }
+      await pg.waitForTimeout(250);
+      if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
+      const labels = await pg.$$eval('#layer .frow label', l => l.map(x => x.textContent));
+      const want = await pg.evaluate(m => MTPS.OPN[m], mn);
+      if (!want.every(w => labels.some(l => l.startsWith(w)))) bad.push(`${mn}: operand prompts ${labels.join('/')}`);
+      for (let i = 0; i < ops.length; i++) {
+        await tp(`#layer [data-op="${i}"]`);
+        const pk = (PICKN[mn + ',' + ops[0]] || PICK[mn] || []).find(q => q[0] === i);
+        if (pk && ops[i]) {
+          await pg.fill(`#layer [data-op="${i}"]`, ''); await pg.waitForTimeout(80);
+          const picks = await pg.$$eval('#layer #sg [data-pick]', l => l.map(x => x.dataset.pick).join(','));
+          if (picks !== pk[1]) bad.push(`${mn}: list of ${want[i]} ${picks}`);
+          if (await pg.$(`#layer #sg [data-pick="${ops[i]}"]`)) await tp(`#layer #sg [data-pick="${ops[i]}"]`);
+          await pg.waitForTimeout(80);
+          const v = await pg.$eval(`#layer [data-op="${i}"]`, x => x.value);
+          if (v !== ops[i]) { bad.push(`${mn}: picking ${ops[i]} gave "${v}"`); await pg.fill(`#layer [data-op="${i}"]`, ops[i]); }
+        } else await pg.fill(`#layer [data-op="${i}"]`, ops[i]);
+      }
+      await tp('#layer .df .btn.pri'); await pg.waitForTimeout(200);
+      if (await pg.$('#layer .dlg')) { bad.push(`${mn}: the operand box stayed open`); await pg.keyboard.press('Escape'); await pg.waitForTimeout(80); }
+      const t = await pg.evaluate(i => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[i].t, ri);
+      if (t !== `${mn}(${ops.join(',')});`) bad.push(`${mn}: rung "${t}"`);
+    }
+    check(`${lay.n}: ${ADD.map(a => a[1]).join(' ')} added from the ${lay.n === 'desktop' ? 'toolbar tabs' : 'Add Ladder Element box (' + (lay.n === 'phone' ? '+' : 'All…') + ')'} with their operand prompts`, !bad.length, bad.join(' | '));
+    const ver = await pg.evaluate(() => { MTPS.App.run('verifyc'); return MTPS.App.state.verify.errors.map(e => e.text); });
+    check(`${lay.n}: the rungs verify without errors`, !ver.length, ver.join(' | '));
+    // online through the dialogs, then Run from the mode menu
+    await pg.evaluate(() => MTPS.App.run('online'));
+    for (let k = 0; k < 8 && !(await pg.evaluate(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) {
+      await pg.waitForTimeout(150);
+      const b = await pg.$('#layer .dlg .btn.pri'); if (b && !(await pg.$('#layer .dlg .prog'))) await (lay.touch ? b.tap() : b.click()); else await pg.waitForTimeout(500);
+    }
+    await pg.evaluate(() => MTPS.App.run('runm')); await pg.waitForTimeout(150);
+    { const b = await pg.$('#layer .dlg .btn.pri'); if (b) { await (lay.touch ? b.tap() : b.click()); await pg.waitForTimeout(200); } }
+    await pg.waitForTimeout(300);
+    const got = await pg.evaluate(ks => ks.map(k => MTPS.App.ctl.read(k)), Object.keys(WANT));
+    const off = Object.keys(WANT).filter((k, i) => !(Math.abs(got[i] - WANT[k]) < 1e-5));
+    check(`${lay.n}: online in Run, the results are the reference values`, !off.length && (await pg.evaluate(() => MTPS.App.ctl.mode)) === 'remrun', off.map(k => `${k}=${got[Object.keys(WANT).indexOf(k)]}`).join(' '));
+    if (lay.n === 'desktop') {
+      await pg.screenshot({ path: `${SHOTS}/after-ladder-desktop.png` }).catch(() => {});
+      const svg = await pg.$eval('#ladwrap svg', s => s.textContent).catch(() => '');
+      check('desktop: the SIN box shows its live Dest value online', svg.includes('SIN') && svg.includes('0.479426'), svg.slice(0, 200));
+      const tabs = await pg.$$eval('.itabs [data-tab]', x => x.map(y => y.dataset.tab).join(','));
+      check('desktop: the toolbar has the Input/Output (after Timer/Counter), Special, Trig Functions, Advanced Math and Math Conversions tabs', /Timer\/Counter,Input\/Output,/.test(tabs) && /Special,Trig Functions,Advanced Math,Math Conversions/.test(tabs), tabs);
+      await pg.evaluate(() => MTPS.App.select({ ri: 0, path: [0] })); await pg.keyboard.press('F1'); await pg.waitForTimeout(150);
+      const ih = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for SIN: Trigonometric Instructions, radians, the manual example and the status flags', ih.includes('Sine (SIN)') && ih.includes('Trigonometric Instructions') && ih.includes('radians') && ih.includes('0.70710677') && ih.includes('S:Z'), ih.slice(0, 300));
+      await pg.click('#layer [data-ih="XPY"]'); await pg.waitForTimeout(80);
+      const xp = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for XPY: Advanced Math Instructions, Source X / Source Y, EXPT in v36', xp.includes('X To The Power Of Y (XPY)') && xp.includes('Advanced Math Instructions') && xp.includes('Source X') && xp.includes('EXPT'));
+      await pg.click('#layer [data-ih="TOD"]'); await pg.waitForTimeout(80);
+      const td = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for TOD: Math Conversion Instructions, 0 to 99,999,999, all 9s, TO_BCD in v36', td.includes('Convert To BCD (TOD)') && td.includes('Math Conversion Instructions') && td.includes('99,999,999') && td.includes('16#9999') && td.includes('TO_BCD'));
+      await pg.click('#layer [data-ih="FAL"]'); await pg.waitForTimeout(80);
+      const fa = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for FAL: the modes ALL / INC, .POS and .ER', fa.includes('(FAL)') && fa.includes('INC') && fa.includes('.POS') && fa.includes('.ER'), fa.slice(0, 200));
+      await pg.click('#layer [data-ih="AVE"]'); await pg.waitForTimeout(80);
+      const av = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for AVE: Dim. To Vary, the manual examples (11.5, 12), the AVE flow chart rules and fault 4/21', av.includes('(AVE)') && av.includes('Dim. To Vary') && av.includes('11.5') && av.includes('dint_ave = 12') && av.includes('code 21'), av.slice(0, 200));
+      await pg.click('#layer [data-ih="SRT"]'); await pg.waitForTimeout(80);
+      const sr = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for SRT: ascending order, transitional, fault 4/20', sr.includes('(SRT)') && sr.includes('ascending') && sr.includes('transitional') && sr.includes('code 20'));
+      await pg.click('#layer [data-ih="GSV"]'); await pg.waitForTimeout(80);
+      const gs = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for GSV: Input/Output Instructions, the objects covered, the lower 8 bits rule, minor fault 4/7', gs.includes('(GSV)') && gs.includes('Input/Output Instructions') && gs.includes('WallClockTime') && gs.includes('MajorFaultRecord') && gs.includes('lower 8 bits') && gs.includes('code 7'), gs.slice(0, 200));
+      await pg.click('#layer [data-ih="PID"]'); await pg.waitForTimeout(80);
+      const pd = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for PID: Special Instructions, independent / dependent gains, .UPD, the modes, the .CTL bits, faults 4/35 4/36', pd.includes('(PID)') && pd.includes('Special Instructions') && pd.includes('independent gains') && pd.includes('dependent gains') && pd.includes('.UPD') && pd.includes('.SWM') && pd.includes('.EN 31') && pd.includes('code 35') && pd.includes('code 36'), pd.slice(0, 200));
+      await pg.screenshot({ path: `${SHOTS}/after-help-desktop.png` }).catch(() => {});
+      await pg.keyboard.press('Escape');
+    } else await pg.screenshot({ path: `${SHOTS}/after-ladder-${lay.n}.png` }).catch(() => {});
+    check(`${lay.n}: no JS errors (Wave 2 C)`, !errs.length, errs.join(' | '));
+    await cx.close();
+  }
+};

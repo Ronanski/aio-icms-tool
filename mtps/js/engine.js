@@ -4,10 +4,16 @@
   'use strict';
 
   /* ---------- Data types ---------- */
-  const ATOMIC = { BOOL: 1, SINT: 8, INT: 16, DINT: 32, REAL: 32 };
-  const HALF = { SINT: 128, INT: 32768, DINT: 2147483648 };
-  const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT';
-  const isNum = t => isInt(t) || t === 'REAL';
+  /* LINT (8-byte integer) and LREAL (8-byte float) as on a 5580 controller (v37 help: Elementary data types). A LINT
+     is kept as a JavaScript number: exact up to 2^53, wrapped to 64 bits past that */
+  const ATOMIC = { BOOL: 1, SINT: 8, INT: 16, DINT: 32, LINT: 64, REAL: 32, LREAL: 64 };
+  const HALF = { SINT: 128, INT: 32768, DINT: 2147483648, LINT: 9223372036854775808 };
+  const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT' || t === 'LINT';
+  const isReal = t => t === 'REAL' || t === 'LREAL';
+  const isNum = t => isInt(t) || isReal(t);
+  // 64-bit integer arithmetic for a LINT result: BigInt in, a number out
+  const B64 = v => BigInt.asIntN(64, typeof v === 'bigint' ? v : BigInt(Math.trunc(Number(v) || 0)));
+  const N64 = b => Number(BigInt.asIntN(64, b));
   const U = s => String(s).toUpperCase();
   const members = s => s.split(' ').map(x => { const k = x.indexOf(':'); return { name: x.slice(0, k), type: x.slice(k + 1) }; });
   const CH4 = t => [0, 1, 2, 3].map(k => `Ch${k}Data:${t}`).join(' ');
@@ -15,7 +21,12 @@
     TIMER: members('PRE:DINT ACC:DINT EN:BOOL TT:BOOL DN:BOOL'),
     COUNTER: members('PRE:DINT ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL'),
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
+    // the string type of the controller (1756-PM004): LEN, the number of characters, and DATA, 82 of them as SINTs
+    STRING: [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }],
   };
+  /* a string type of the project (Data Types > Strings > New String Type): { name, family: 'string', len } has the
+     members of STRING with DATA[len]; Maximum Characters is 1 to 65535 (v37 help: Using user-defined data types) */
+  const strMembers = n => [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: n }];
   /* the module-defined data types, named as Studio 5000 names them (help: 1756 discrete / analog module-defined data
      types): the digital cards are 1756-IB16 / -IA16 (AB:1756_DI) and 1756-OB16E / -OW16I (AB:1756_DO); the analog input
      card is a 1756-IF8 in differential float mode (4 channels: AB:1756_IF4_Float), the analog output card a 1756-OF4
@@ -30,11 +41,12 @@
     // the configuration tags (Local:<slot>:C), as in the module profiles: AB:1756_DI:C:0 (help 1756-IB16: the filter
     // times of four groups of 8 points, as the type is shared with the 32-point modules, and change of state),
     // AB:1756_DO:C:0 (help 1756-OB16I / -OW16I), and the floating point analog ones (1756-UM009, Floating Point
-    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel
+    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel; an output
+    // channel has ConfigBits (INT, the channel's individual configuration bits) before HoldForInit (1756-UM009G)
     'AB:1756_DI:C:0': members(['OffOn', 'OnOff'].map(d => ['0_7', '8_15', '16_23', '24_31'].map(g => `Filter${d}_${g}:SINT`).join(' ')).join(' ') + ' COSOnOffEn:DINT COSOffOnEn:DINT'),
     'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
     'AB:1756_NII_Struct:C:0': members('AlarmDisable:BOOL ProcessAlarmLatch:BOOL RateAlarmLatch:BOOL DigitalFilter:INT RateAlarmLimit:INT LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL LAlarmLimit:REAL HAlarmLimit:REAL LLAlarmLimit:REAL HHAlarmLimit:REAL AlarmDeadband:REAL CalBias:REAL'),
-    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
+    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL ConfigBits:INT HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
     'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NII_Struct:C:0`).join(' ')),
     'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NIO_Struct:C:0`).join(' ')),
   };
@@ -50,6 +62,20 @@
     'PLC-ENET': { kind: 'enet' },
   };
   const IODIRS = ['I', 'O', 'C', 'S'];
+  /* Electronic Keying (help: Module Properties - General for 1756; Module Faults 16#0100 - 16#02ff). Product Type as
+     the L5X writes it: 7 discrete I/O, 14 controller (1756-RM014); 10 for analog is not confirmed by a publication.
+     Revision major.minor: major 0 to 127, minor 0 to 255 (default 1). RPI of a 1756 I/O module: 0.2 to 750 ms
+     (1756-UM058 for the digital modules; the same limits are used for analog). */
+  const PTYPE = { di: 7, do: 7, ai: 10, ao: 10, cpu: 14 };
+  const KEYING = { exact: 'Exact Match', compat: 'Compatible Module', off: 'Disable Keying' };
+  const REV0 = '1.1', RPI = [0.2, 750];
+  const revOf = r => { const m = /^(\d+)\.(\d+)$/.exec(String(r == null ? REV0 : r)); return m ? [+m[1], +m[2]] : [1, 1]; };
+  const KEYTEXT = {
+    '16#0109': 'Connection Request Error: Invalid connection size. The connection size is inconsistent with that expected (with Disable Keying, the card in this slot is another kind of module).',
+    '16#0114': 'Electronic Keying Mismatch: Electronic keying product code and/or vendor ID mismatch. The Product Code of the module in the slot does not match the module of the I/O configuration.',
+    '16#0115': 'Electronic Keying Mismatch: Electronic Keying product type mismatch. The Product Type of the module in the slot does not match the module of the I/O configuration.',
+    '16#0116': 'Electronic Keying Mismatch: Major and/or Minor revision invalid or incorrect. The revision of the module in the slot does not match the revision of the I/O configuration (Exact Match or Compatible Module).',
+  };
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
   const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
   /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
@@ -82,12 +108,16 @@
   function typeTable(project, err) {
     const t = new Map(), e = err || (() => {});
     const add = (name, mem, kind) => t.set(U(name), { name, kind, members: mem.map(m => ({ ...m })), map: new Map() });
-    for (const n in PREDEF) add(n, PREDEF[n], 'predefined');
+    for (const n in PREDEF) add(n, PREDEF[n], n === 'STRING' ? 'string' : 'predefined');
     for (const n in MODTYPES) add(n, MODTYPES[n], 'module');
     for (const d of (project && project.dataTypes) || []) {
       if (!validName(d.name)) { e(`Invalid data type name '${d.name}'`); continue; }
       if (t.has(U(d.name)) || ATOMIC[U(d.name)]) { e(`Data type '${d.name}' is defined more than once`); continue; }
-      add(d.name, d.members || [], 'user');
+      if (d.family === 'string') {
+        const n = Math.floor(+d.len);
+        if (!(n >= 1 && n <= 65535)) { e(`String type '${d.name}': Maximum Characters must be 1 to 65535`); continue; }
+        add(d.name, strMembers(n), 'string');
+      } else add(d.name, d.members || [], 'user');
     }
     for (const d of t.values()) {
       d.members = d.members.filter(m => {
@@ -122,7 +152,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) o[m.name] = make(types, m.type, m.dim);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -130,7 +160,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
     return o;
   }
 
@@ -140,12 +170,13 @@
   function store(type, v) {
     OV = false;
     if (type === 'REAL') { const f = Math.fround(v); if (!isFinite(f) && isFinite(v)) OV = true; return f; }
+    if (type === 'LREAL') return typeof v === 'number' ? v : Number(v) || 0;
     if (type === 'BOOL') return v ? 1 : 0;
     const h = HALF[type];
     if (typeof v !== 'number' || v !== v) { OV = true; return 0; }
     if (!isFinite(v)) { OV = true; return v > 0 ? h - 1 : -h; }
     let n = Number.isInteger(v) ? v : roundEven(v);
-    if (n >= h || n < -h) { const m = h * 2; n = ((n % m) + m) % m; if (n >= h) n -= m; OV = true; }
+    if (n >= h || n < -h) { if (type === 'LINT') n = N64(BigInt(n)); else { const m = h * 2; n = ((n % m) + m) % m; if (n >= h) n -= m; } OV = true; }
     return n === 0 ? 0 : n;
   }
 
@@ -179,10 +210,13 @@
         i++;
         // operands split at commas outside ( ) and [ ] (CPT expressions, array subscripts)
         const a = [];
-        let cur = '', depth = 0;
+        let cur = '', depth = 0, q = false;
         for (;;) {
           const ch = s[i];
           if (ch === undefined) fail(`${m[0]}: ) is missing`);
+          // a quoted string ('Trace:%d', the Format of BPT / TPT) keeps its commas and brackets
+          if (ch === "'") q = !q;
+          if (q) { cur += ch; i++; continue; }
           if (depth === 0 && (ch === ',' || ch === ')')) { a.push(cur.trim()); cur = ''; i++; if (ch === ')') break; continue; }
           if (ch === '(' || ch === '[') depth++; else if (ch === ')' || ch === ']') depth--;
           cur += ch; i++;
@@ -264,6 +298,7 @@
     LFL: ['Source', 'LIFO', 'Control', 'Length', 'Position'], LFU: ['LIFO', 'Dest', 'Control', 'Length', 'Position'],
     SQI: ['Array', 'Mask', 'Source', 'Control', 'Length', 'Position'], SQO: ['Array', 'Mask', 'Dest', 'Control', 'Length', 'Position'],
     SQL: ['Array', 'Source', 'Control', 'Length', 'Position'],
+    BPT: ['Format'].concat(Array(8).fill('Trace This')), TPT: ['Format'].concat(Array(8).fill('Trace This')),
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -290,11 +325,12 @@
       }
       PP = p; PK = k;
     }
-    get() { this.at(); const v = PP[PK]; return this.bit < 0 ? v : (v >> this.bit) & 1; }
+    get() { this.at(); const v = PP[PK]; return this.bit < 0 ? v : this.ptype === 'LINT' ? Number((B64(v) >> BigInt(this.bit)) & 1n) : (v >> this.bit) & 1; }
     set(v) {
       this.at();
       if (this.bit < 0) { PP[PK] = store(this.type, v); return; }
       const x = PP[PK];
+      if (this.ptype === 'LINT') { const m = 1n << BigInt(this.bit); PP[PK] = N64(v ? B64(x) | m : B64(x) & ~m); OV = false; return; }
       PP[PK] = store(this.ptype, v ? x | (1 << this.bit) : x & ~(1 << this.bit));
       OV = false;
     }
@@ -305,9 +341,9 @@
     r.at(); const a = PP, k0 = PK;
     return Array.isArray(a) ? { n: a.length - k0, g: k => a[k0 + k], s: (k, v) => { a[k0 + k] = v; } } : { n: 1, g: () => a[k0], s: (k, v) => { a[k0] = v; } };
   }
-  const BYTES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
-  const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else dv.setFloat32(o, v, true); };
-  const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : dv.getFloat32(o, true));
+  const BYTES = { SINT: 1, INT: 2, DINT: 4, LINT: 8, REAL: 4, LREAL: 8 };
+  const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else if (t === 'LINT') dv.setBigInt64(o, B64(v), true); else if (t === 'LREAL') dv.setFloat64(o, v, true); else dv.setFloat32(o, v, true); };
+  const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : t === 'LINT' ? Number(dv.getBigInt64(o, true)) : t === 'LREAL' ? dv.getFloat64(o, true) : dv.getFloat32(o, true));
   // an operand that names one element of an array (Bits[0], Fifo[Ix]): the instructions that walk an array need it
   const arrEl = r => r.bit < 0 && !r.dim && r.steps.length > 0 && !!r.steps[r.steps.length - 1].len;
   // a value as a FIFO / LIFO moves it: a number, or a copy of a structure; zero keeps the shape (a structure of 0s)
@@ -370,6 +406,7 @@
       }
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
       if (!mm) return `Undefined tag '${text}'`;
+      if (mm.of) { steps.push({ m: mm.of }); bit = mm.bit; ptype = 'DINT'; type = 'BOOL'; if (norm) norm += '.' + mm.name; continue; }
       steps.push({ m: mm.name });
       type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
       if (norm) norm += '.' + mm.name;
@@ -384,8 +421,11 @@
   /* ---------- CPT / CMP expressions ---------- */
   /* + - * / MOD ** AND OR XOR NOT, = <> < <= > >=, ( ), SQR ABS NEG SIN COS LN LOG → { get(), type } or an error text.
      Integers only: / and MOD truncate as in the controller; any REAL operand or a float function gives a REAL. */
-  const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10 };
-  const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG'];
+  const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10,
+    // the trigonometric functions and their v36+ names (1756-RM003 / -RM018A, FAL and CPT order of operation)
+    TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, ASIN: Math.asin, ACOS: Math.acos, ATAN: Math.atan, DEG: v => v * 180 / Math.PI, RAD: v => v * Math.PI / 180,
+    TRN: Math.trunc, TRUNC: Math.trunc, TOD: v => toBCD(v, 'DINT').v, TO_BCD: v => toBCD(v, 'DINT').v, FRD: v => fromBCD(v, 'DINT'), BCD_TO: v => fromBCD(v, 'DINT') };
+  const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG', 'TAN', 'ASN', 'ACS', 'ATN', 'ASIN', 'ACOS', 'ATAN', 'DEG', 'RAD'];
   const LEVELS = [['OR'], ['XOR'], ['AND'], ['=', '<>', '<', '<=', '>', '>='], ['+', '-'], ['*', '/', 'MOD']];
   function compileExpr(M, prog, src) {
     const s = String(src), toks = [];
@@ -416,12 +456,12 @@
           p++;
           const a = expr(0), f = FUNCS[u], g = a.get;
           close();
-          return node(() => f(g()), REALF.includes(u) || a.type === 'REAL');
+          return node(() => f(g()), REALF.includes(u) || isReal(a.type));
         }
         const r = ref(M, prog, t.s);
         if (typeof r === 'string') throw r;
         if ((!isNum(r.type) && r.type !== 'BOOL') || r.dim) throw `'${t.s}' is not a number`;
-        return node(() => r.get(), r.type === 'REAL');
+        return node(() => r.get(), isReal(r.type));
       }
       throw `Invalid expression near '${t.s}'`;
     }
@@ -430,16 +470,16 @@
       if (!is(toks[p], '**')) return a;
       p++;
       const b = unary(), A = a.get, B = b.get;
-      return node(() => Math.pow(A(), B()), a.type === 'REAL' || b.type === 'REAL');
+      return node(() => Math.pow(A(), B()), isReal(a.type) || isReal(b.type));
     }
     function unary() {
-      if (is(toks[p], '-')) { p++; const a = unary(), A = a.get; return node(() => -A(), a.type === 'REAL'); }
+      if (is(toks[p], '-')) { p++; const a = unary(), A = a.get; return node(() => -A(), isReal(a.type)); }
       if (is(toks[p], '+')) { p++; return unary(); }
       if (is(toks[p], 'NOT')) { p++; const a = unary(), A = a.get; return node(() => ~i32(A()), false); }
       return power();
     }
     function bin(op, a, b) {
-      const real = a.type === 'REAL' || b.type === 'REAL', A = a.get, B = b.get;
+      const real = isReal(a.type) || isReal(b.type), A = a.get, B = b.get;
       switch (op) {
         case '+': return node(() => A() + B(), real);
         case '-': return node(() => A() - B(), real);
@@ -544,23 +584,33 @@
     AFI: I('contact', 'Program Control', 'Always False', ''),
     NOP: I('box', 'Program Control', 'No Operation', ''),
     TND: I('box', 'Program Control', 'Temporary End', '', { out: true }),
+    // Logix Emulate only (LGEM5K-GR016M chapter 9, the Debug tab): Format, then the tags to trace (here up to 8)
+    BPT: I('box', 'Debug', 'Breakpoint', 'fmt trace' + ' trace?'.repeat(7), { out: true }),
+    TPT: I('box', 'Debug', 'Tracepoint', 'fmt trace' + ' trace?'.repeat(7), { out: true }),
   };
   const BAD_TYPE = 'Invalid data type. Argument must match parameter data type';
-  const BITS = t => (t === 'REAL' ? 0 : ATOMIC[t] || 32);
+  const BITS = t => (isReal(t) ? 0 : ATOMIC[t] || 32);
 
   function operand(M, P, kind, text) {
     const s = String(text == null ? '' : text).trim();
-    if (s === '' || s === '?') return 'Missing operand';
+    if ((s === '' && kind !== 'ginst') || s === '?') return 'Missing operand';   // GSV / SSV: an object with no instance has an empty Instance Name
     switch (kind) {
       case 'imm': { const c = parseNumber(s); return c ? new Const(c.v, c.real) : 'Immediate value expected'; }
       case 'label': return validName(s) ? { label: U(s) } : `Invalid label name '${s}'`;
       case 'routine': return P.routines.get(U(s)) || `Undefined routine '${s}'`;
       case 'order': return ['REVERSE', 'WORD', 'HIGH/LOW'].includes(U(s)) ? { order: U(s) } : 'Order mode must be REVERSE, WORD or HIGH/LOW';
       case 'expr': return compileExpr(M, P, s);
+      // the Format of BPT / TPT: 'heading:text %f' (82 characters at most); Logix Emulate takes a STRING tag
+      case 'fmt': {
+        if (/^'.*'$/.test(s)) { const f = s.slice(1, -1); return f.length > 82 ? 'The format string can contain only 82 characters' : { fmt: f }; }
+        const r = ref(M, P, s);
+        return typeof r !== 'string' && r.type === 'STRING' ? r : `Format must be a string, e.g. 'Trace:Value = %d' (a STRING tag is required)`;
+      }
     }
+    if (XNAME[kind]) return XNAME[kind](s, M, P);
     const c = parseNumber(s);
     if (c) {
-      if (kind === 'num' || kind === 'fsrc' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
+      if (kind === 'num' || kind === 'fsrc' || kind === 'real' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
       return kind === 'int' ? BAD_TYPE : 'Immediate value not allowed';
     }
     const r = ref(M, P, s);
@@ -580,6 +630,7 @@
       case 'fsrc': return one && r.bit < 0 && r.type !== 'BOOL' ? r : BAD_TYPE;
       case 'fdst': return one && r.bit < 0 && r.type !== 'BOOL' ? writable() : BAD_TYPE;
       case 'ddest': return r.type === 'DINT' && one ? writable() : BAD_TYPE;
+      case 'trace': return !one || !ATOMIC[r.type] ? 'Tag structures are not traceable: trace a member (e.g. Timer1.ACC)' : r;
       case 'num': return isNum(r.type) && one ? r : BAD_TYPE;
       case 'int': return isInt(r.type) && one ? r : BAD_TYPE;
       case 'dest': return isNum(r.type) && one ? writable() : BAD_TYPE;
@@ -590,6 +641,7 @@
         return kind === 'elemw' ? writable() : r;
       }
     }
+    if (XKIND[kind]) return XKIND[kind](r, writable, one);
     return r;
   }
 
@@ -634,11 +686,17 @@
         if (isNum(arr.type) ? !isNum(o.type) : o.type !== arr.type) bad(BAD_TYPE, ld ? 0 : 1);
         break;
       }
+      case 'BPT': case 'TPT': {
+        const n = x[0].fmt != null ? (x[0].fmt.replace(/%%/g, '').match(/%[-+ #0]*\d*(\.\d+)?[doxXeEfgG]/g) || []).length : null;
+        if (n != null && n !== x.length - 1) W(`The format has ${n} type indicator(s) for ${x.length - 1} traced tag(s): one % type is required for each tag`, e.t, 0);
+        break;
+      }
       case 'LBL':
         if (!first) bad('LBL must be the first instruction of the rung', 0);
         if (R.labels.has(x[0].label)) bad(`Label '${e.a[0]}' is defined more than once`, 0); else R.labels.set(x[0].label, n);
         break;
       case 'JMP': jumps.push({ label: x[0].label, text: e.a[0], n }); break;
+      default: if (XCHK[e.t]) XCHK[e.t](x, bad, e, M, P);
     }
     if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && ok) {
       // the preset and accum of the rung text are written into the tag
@@ -687,7 +745,8 @@
       if (m.slot === cslot) { ctlErr(`Module '${m.name}': slot ${m.slot} holds the controller`); continue; }
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
-      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
+      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20, key: KEYING[m.key] ? m.key : 'compat', rev: m.rev || REV0 };
+      if (mod.rpi < RPI[0] || mod.rpi > RPI[1]) ctlErr(`Module '${m.name}': RPI ${mod.rpi} ms is not in the range ${RPI[0]} to ${RPI[1]} ms`);
       for (const dir of IODIRS) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
@@ -715,11 +774,19 @@
     };
     addTags(pj.tags, null);
 
+    // the tasks, for GSV / SSV (Task object); each program knows its task
+    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit }));
     const progNames = new Set();
-    for (const task of pj.tasks || []) for (const pg of task.programs || []) {
+    let tk = 0;
+    for (const task of pj.tasks || []) for (const pg of (tk++, task.programs || [])) {
       if (!validName(pg.name) || progNames.has(U(pg.name))) { ctlErr(`Invalid or repeated program name '${pg.name}'`); continue; }
       progNames.add(U(pg.name));
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit) };
+      // the Controller Fault Handler and the Power-Up Handler (1756-PM014) hold one program each, never scheduled in a task
+      const hd = task.type === 'fault' || task.type === 'powerup' ? task.type : null;
+      // the task's watchdog (Task Properties > Configuration: 1 to 2,000,000 ms, 500 by default; 1756-PM005)
+      const wd = Math.floor(+task.watchdog) >= 1 ? Math.min(2000000, Math.floor(+task.watchdog)) : 500;
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd };
+      if (hd) { const k = hd === 'fault' ? 'cfh' : 'puh'; if (M[k]) ctlErr(`Only one program can be in the ${hd === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler'} ('${M[k].name}' is)`); else M[k] = P; }
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
@@ -727,7 +794,11 @@
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
+      // the program's fault routine (Program Properties > Configuration > Fault): runs on an instruction fault in the program
+      P.faultR = P.routines.get(U(pg.fault || '')) || null;
+      if (pg.fault && !P.faultR) ctlErr(`Program '${pg.name}': the fault routine '${pg.fault}' does not exist`);
       M.programs.push(P);
+      P.task = M.tasks[pj.tasks.indexOf(task)];
     }
 
     // aliases point at a tag, a member or a bit that exists; they take its data type
@@ -779,13 +850,43 @@
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {
     const t = typeTable(project), of = k => [...t.values()].filter(d => d.kind === k).map(d => d.name);
-    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
+    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user'), strings: of('string'), addOnDefined: of('addon') };
+  }
+  /* the size of a data type in bytes, as a Logix controller lays a structure out (general knowledge, not quoted): the
+     members in order, each on its own boundary (SINT 1, INT 2, DINT and REAL 4, LINT and LREAL 8 bytes); BOOL members in a row share a
+     hidden SINT, 8 to a byte; a BOOL array takes whole DINTs (32 bits); a structure is 4-byte aligned (8 with a LINT or LREAL) and its size
+     a multiple of 4. TIMER, COUNTER and CONTROL come out at 12 bytes, as on the controller. */
+  const SIZES = { SINT: 1, INT: 2, DINT: 4, REAL: 4, LINT: 8, LREAL: 8 };
+  function layout(types, name, memo) {
+    const u = U(name);
+    if (SIZES[u]) return { size: SIZES[u], align: SIZES[u] };
+    if (u === 'BOOL') return { size: 1, align: 1 };
+    if (memo.has(u)) return memo.get(u);
+    const d = types.get(u);
+    memo.set(u, { size: 0, align: 4 });
+    let off = 0, al = 4, bits = 8;
+    for (const m of d ? d.members : []) {
+      const t = U(m.type);
+      if (t === 'BOOL' && !(m.dim > 0)) { if (bits >= 8) { off += 1; bits = 0; } bits++; continue; }
+      bits = 8;
+      const e = t === 'BOOL' ? { size: 4, align: 4 } : layout(types, t, memo), n = t === 'BOOL' ? Math.ceil(m.dim / 32) : m.dim > 0 ? m.dim : 1;
+      off = Math.ceil(off / e.align) * e.align + e.size * n;
+      al = Math.max(al, e.align);
+    }
+    const r = { size: Math.ceil(off / al) * al, align: al };
+    memo.set(u, r);
+    return r;
+  }
+  function typeSize(project, name) {
+    const t = typeTable(project), u = U(name);
+    if (!ATOMIC[u] && !t.has(u)) return null;
+    return layout(t, u, new Map()).size;
   }
 
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
      nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'style' || k === 'watch' || k === 'trends' || k === 'info' || k === 'noDocs' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* the .EM / .DN of a FIFO or LIFO from its .POS and .LEN (RM003 flow charts, Prescan and false): .LEN <= 0 or
      .POS < 0 set both; else .EM while .POS = 0 and .DN while .POS >= .LEN */
@@ -797,9 +898,436 @@
   // a sequencer Mask: a SINT or INT is zero extended to a DINT (RM003, SQI Mask)
   const maskOf = r => { const v = i32(r.get()); return r.type === 'SINT' ? v & 0xFF : r.type === 'INT' ? v & 0xFFFF : v; };
 
+  /* ---------- Logix Emulate trace format (LGEM5K-GR016M chapter 9: heading:(text)%(type), C printf types) ---------- */
+  const e3 = (v, k, up) => { if (!isFinite(v)) return String(v); const t = v.toExponential(k).split('e'), x = +t[1]; const r = t[0] + 'e' + (x < 0 ? '-' : '+') + String(Math.abs(x)).padStart(3, '0'); return up ? r.toUpperCase() : r; };
+  function traceFmt(fmt, vals) {
+    const f = String(fmt == null ? '' : fmt), c = f.indexOf(':'), head = c >= 0 ? f.slice(0, c) : f, body = c >= 0 ? f.slice(c + 1) : '';
+    let k = 0;
+    const text = body.replace(/%%|%([-+ #0]*)(\d*)(?:\.(\d+))?([doxXeEfgG])/g, (all, fl, w, pr, t) => {
+      if (all === '%%') return '%';
+      const v = Number(vals[k++]) || 0, p = pr != null && pr !== '' ? +pr : 6, n = Math.trunc(v), u = n >>> 0;
+      let o;
+      switch (t) {
+        case 'd': o = String(n); break;
+        case 'o': o = u.toString(8); break;
+        case 'x': o = u.toString(16); break;
+        case 'X': o = u.toString(16).toUpperCase(); break;
+        case 'e': case 'E': o = e3(v, p, t === 'E'); break;
+        case 'f': o = v.toFixed(p); break;
+        default: {
+          // %g / %G: %e or %f, whichever is shorter (6 significant digits), trailing zeros dropped
+          const P = p || 1, x = v === 0 ? 0 : Math.floor(Math.log10(Math.abs(v)));
+          const strip = q => q.replace(/(\.\d*?)0+(?=$|e)/, '$1').replace(/\.(?=$|e)/, '');
+          o = x < -4 || x >= P ? strip(e3(v, P - 1)) : strip(v.toFixed(Math.max(0, P - 1 - x)));
+          if (t === 'G') o = o.toUpperCase();
+        }
+      }
+      if (/\+/.test(fl) && v >= 0 && 'deEfgG'.includes(t)) o = '+' + o;
+      return w && o.length < +w ? (/-/.test(fl) ? o.padEnd(+w) : o.padStart(+w, /0/.test(fl) ? '0' : ' ')) : o;
+    });
+    return { head: head.trim(), text };
+  }
+  // a breakpoint stops the program where it is: the rest of the scan does not run until it is acknowledged
+  class Halt {}
+
+  const EMU0 = { ver: '1.0', startup: 'last', psave: 10, psaveOn: false, linx: true, dwell: 10, cpu: 0, com0: '' };
+  /* ---------- Wave 2 instructions (1756-RM003, now 1756-RM018A-EN-P Sep 2025): trigonometric, advanced math, math
+     conversion, file/misc, GSV/SSV and PID. The ladder mnemonics are the classic ones the app uses (EQU, SQR …): in
+     Logix Designer v36 ASN, ACS, ATN, XPY, TOD, FRD and TRN were renamed ASIN, ACOS, ATAN, EXPT, TO_BCD, BCD_TO, TRUNC.
+     XKIND checks a new operand kind, XNAME a name operand, XCHK an instruction at verify, XPRE its prescan, XEL its
+     execution (this = the Controller). */
+  const XKIND = {}, XNAME = {}, XCHK = {}, XPRE = {}, XEL = {};
+  Object.assign(OPN, {
+    SIN: ['Source', 'Dest'], COS: ['Source', 'Dest'], TAN: ['Source', 'Dest'], ASN: ['Source', 'Dest'], ACS: ['Source', 'Dest'], ATN: ['Source', 'Dest'],
+    LN: ['Source', 'Dest'], LOG: ['Source', 'Dest'], XPY: ['Source X', 'Source Y', 'Dest'],
+    DEG: ['Source', 'Dest'], RAD: ['Source', 'Dest'], TOD: ['Source', 'Dest'], FRD: ['Source', 'Dest'], TRN: ['Source', 'Dest'],
+    FAL: ['Control', 'Length', 'Position', 'Mode', 'Dest', 'Expression'], FSC: ['Control', 'Length', 'Position', 'Mode', 'Expression'],
+    AVE: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'], STD: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'],
+    SRT: ['Array', 'Dim. To Vary', 'Control', 'Length', 'Position'], SIZE: ['Source', 'Dim. To Vary', 'Size'], CPS: ['Source', 'Dest', 'Length'],
+    GSV: ['Class Name', 'Instance Name', 'Attribute Name', 'Dest'], SSV: ['Class Name', 'Instance Name', 'Attribute Name', 'Source'],
+  });
+  Object.assign(INSTR, {
+    // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
+    SIN: I('box', 'Trig Functions', 'Sine', 'num dest', { out: true }), COS: I('box', 'Trig Functions', 'Cosine', 'num dest', { out: true }),
+    TAN: I('box', 'Trig Functions', 'Tangent', 'num dest', { out: true }), ASN: I('box', 'Trig Functions', 'Arc Sine', 'num dest', { out: true }),
+    ACS: I('box', 'Trig Functions', 'Arc Cosine', 'num dest', { out: true }), ATN: I('box', 'Trig Functions', 'Arc Tangent', 'num dest', { out: true }),
+    LN: I('box', 'Advanced Math', 'Natural Log', 'num dest', { out: true }), LOG: I('box', 'Advanced Math', 'Log Base 10', 'num dest', { out: true }),
+    XPY: I('box', 'Advanced Math', 'X To The Power Of Y', 'num num dest', { out: true }),
+    // Math Conversion (chapter 16)
+    DEG: I('box', 'Math Conversions', 'Degrees', 'num dest', { out: true }), RAD: I('box', 'Math Conversions', 'Radians', 'num dest', { out: true }),
+    TOD: I('box', 'Math Conversions', 'Convert To BCD', 'int idest', { out: true }), FRD: I('box', 'Math Conversions', 'Convert To Integer', 'int idest', { out: true }),
+    TRN: I('box', 'Math Conversions', 'Truncate', 'real dest', { out: true }),
+    // File/Misc (chapter 8): Length and Position are the .LEN and .POS of the CONTROL (pseudo-operands)
+    FAL: I('box', 'File/Misc', 'File Arith/Logical', 'control imm imm fmode dest expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
+    FSC: I('box', 'File/Misc', 'File Search/Compare', 'control imm imm fmode expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
+    AVE: I('box', 'File/Misc', 'Average File', 'aelem adim dest control imm imm', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    STD: I('box', 'File/Misc', 'Standard Deviation', 'aelem adim rdest control imm imm', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SRT: I('box', 'File/Misc', 'Sort File', 'aelemw adim control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    SIZE: I('box', 'File/Misc', 'Size In Elements', 'sarr adim dest', { out: true }),
+    CPS: I('box', 'File/Misc', 'Synchronous Copy File', 'elem elemw imm', { out: true }),
+    // Input/Output (chapter 4): controller data stored in objects
+    GSV: I('box', 'Input/Output', 'Get System Value', 'gclass ginst gattr gdest', { out: true }), SSV: I('box', 'Input/Output', 'Set System Value', 'gclass ginst gattr gsrc', { out: true }),
+  });
+  /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
+     integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
+     a fractional Y are a minor fault (S:V, type 4 code 4); ASN and ACS outside -1…1 give NAN (RM018A) */
+  const MATH1 = { SIN: Math.sin, COS: Math.cos, TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, LN: Math.log, LOG: Math.log10 };
+  for (const t in MATH1) XEL[t] = function (e, x, p) { if (p) { const r = MATH1[t](x[0].get()); this.put(x[1], r, (t === 'LN' || t === 'LOG') && !isFinite(r)); } e.v = p; return p; };
+  XEL.XPY = function (e, x, p) { if (p) { const r = Math.pow(x[0].get(), x[1].get()); this.put(x[2], r, !isFinite(r)); } e.v = p; return p; };
+  // DEG: Source * 180 / pi; RAD: Source * pi / 180 (RM018A: 57.29578 and 0.017453292)
+  XEL.DEG = function (e, x, p) { if (p) this.put(x[1], x[0].get() * 180 / Math.PI); e.v = p; return p; };
+  XEL.RAD = function (e, x, p) { if (p) this.put(x[1], x[0].get() * Math.PI / 180); e.v = p; return p; };
+  // TRN: a REAL Source (immediate or tag) without its fractional part, not rounded
+  XKIND.real = r => (r.type === 'REAL' && !r.dim ? r : BAD_TYPE);
+  XEL.TRN = function (e, x, p) { if (p) this.put(x[1], Math.trunc(x[0].get())); e.v = p; return p; };
+  /* TOD (TO_BCD): 0 to 99,999,999 in 4-bit BCD digits. A negative Source gives 0, a Source too large for Dest (more
+     than 99,999,999; 9,999 for an INT, 99 for a SINT) all 9s; both set S:V (minor fault type 4, code 4). FRD (BCD_TO):
+     Dest = the sum of each 4-bit digit of the Source times its power of 10, a digit over 9 kept as it is
+     (16#1234_567E gives 12345684); a SINT or INT Source gives its 8 or 16 bits */
+  const NIB = { SINT: 2, INT: 4, DINT: 8 };
+  function toBCD(v, type) {
+    v = Math.trunc(v);
+    const n = NIB[type] || 8, max = Math.pow(10, n) - 1, all9 = parseInt('9'.repeat(n), 16);
+    if (v < 0) return { v: 0, ov: true };
+    if (v > max) return { v: all9 | 0, ov: true };
+    let r = 0;
+    for (let k = 0; v > 0; k++, v = Math.floor(v / 10)) r += (v % 10) * Math.pow(16, k);
+    return { v: r | 0, ov: false };
+  }
+  function fromBCD(v, type) {
+    let u = i32(v) >>> 0, r = 0;
+    const n = NIB[type] || 8;
+    for (let k = 0; k < n; k++, u = Math.floor(u / 16)) r += (u % 16) * Math.pow(10, k);
+    return r;
+  }
+  // an unsigned bit pattern of a SINT / INT / DINT as the signed value that type stores (16#9999 in an INT: -26215)
+  const signed = (v, t) => (t === 'SINT' ? (v << 24) >> 24 : t === 'INT' ? (v << 16) >> 16 : v | 0);
+  XEL.TOD = function (e, x, p) { if (p) { const r = toBCD(x[0].get(), x[1].type); this.put(x[1], signed(r.v, x[1].type), r.ov); } e.v = p; return p; };
+  XEL.FRD = function (e, x, p) { if (p) this.put(x[1], fromBCD(x[0].get(), x[0] instanceof Const ? 'DINT' : x[0].type)); e.v = p; return p; };
+
+  /* the Mode of FAL / FSC: ALL, INC, or the number of elements per scan (1 to 2147483647) */
+  XNAME.fmode = s => { const u = U(s); if (u === 'ALL' || u === 'INC') return { mode: u }; const c = parseNumber(s); return c && !c.real && c.v >= 1 && c.v <= 2147483647 ? { mode: c.v } : 'Mode must be ALL, INC or a number of elements per scan (1 to 2147483647)'; };
+  /* FAL and FSC (RM018A chapter 8, the flow charts and the CONTROL members): .POS is the element the expression is
+     working on (write it as Array[Control.POS]); .DN is set when the last element is done (.POS = .LEN).
+     - ALL: every element on one false-to-true rung; INC: one element per false-to-true rung; a number N: N elements
+       each scan, also while the rung is false, until done.
+     - FAL: Dest = Expression for each element; an overflow sets .ER and stops (.POS stays at that element); the
+       instruction does nothing more until .ER is cleared.
+     - FSC: the first element whose Expression is true sets .FD and .IN and stops there (.POS = that element); clear
+       .IN to search on from the next element. .ER is not changed.
+     - Rung-condition-in false: nothing while .ER (or .IN) is set; .DN set: .EN .ER .DN and .POS are cleared; INC:
+       .EN is cleared.
+     - .LEN < 0 or .POS < 0: major fault type 4, code 21. */
+  function fileOp(e, x, p) {
+    const fsc = e.t === 'FSC', c = x[0].obj(), mode = x[3].mode, ex = fsc ? x[4] : x[5];
+    const step = k => {
+      let i = fsc && c.FD ? c.POS + 1 : c.POS;
+      c.EN = 1; if (fsc) c.FD = 0;
+      for (let m = 0; m < k && i < c.LEN; m++, i++) {
+        c.POS = i;
+        DIV0 = false;
+        const v = ex.get();
+        if (fsc) {
+          if (DIV0 && !this.S.V) { this.S.V = this.S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero) in the FSC expression'); }
+          if (v !== 0) { c.FD = c.IN = 1; return; }
+        } else {
+          this.put(x[4], v, DIV0);
+          if (this.S.V) { c.ER = 1; return; }
+        }
+      }
+      c.POS = i;
+      if (c.POS >= c.LEN) { c.POS = c.LEN; c.DN = 1; if (!p) c.EN = 0; }
+    };
+    if (!p) {
+      if (!(c.ER || (fsc && c.IN))) {
+        if (c.DN) { c.EN = c.ER = c.DN = 0; c.POS = 0; }
+        else if (mode === 'INC') c.EN = 0;
+        else if (mode !== 'ALL' && c.EN) {
+          if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+          step(mode);
+        }
+      }
+      e.v = false; return false;
+    }
+    if (!(c.ER || (fsc && c.IN) || c.DN)) {
+      if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+      if (c.LEN === 0) { c.DN = c.EN = 1; if (fsc) c.FD = 0; }
+      else if (!(mode === 'INC' && c.EN)) step(mode === 'ALL' ? Infinity : mode === 'INC' ? 1 : mode);
+    }
+    e.v = true; return true;
+  }
+  XEL.FAL = fileOp; XEL.FSC = fileOp;
+
+  /* AVE, STD, SRT and SIZE (RM018A chapter 8) work along one dimension (Dim. To Vary: 0, 1 or 2, array[0,1,2]) of an
+     array from the element given: aelem / aelemw is one element of a SINT, INT, DINT or REAL array; sarr (SIZE) an
+     array or an element of one, of any type */
+  XNAME.adim = s => { const c = parseNumber(s); return c && !c.real && c.v >= 0 && c.v <= 2 ? new Const(c.v) : 'Dimension to vary must be 0, 1 or 2'; };
+  XKIND.aelem = r => (!arrEl(r) ? 'Operand must be an array element, e.g. Data[0]' : isNum(r.type) ? r : BAD_TYPE);
+  XKIND.aelemw = (r, writable) => (!arrEl(r) ? 'Operand must be an array element, e.g. Data[0]' : isNum(r.type) ? writable() : BAD_TYPE);
+  XKIND.sarr = (r, writable, one) => (r.bit < 0 && (!one || arrEl(r)) ? r : 'Source must be an array or an element of one');
+  XKIND.rdest = (r, writable, one) => (r.type === 'REAL' && one ? writable() : BAD_TYPE);
+  /* the elements along dimension d from the operand's element: n = how many there are up to the end of that dimension,
+     g(j) / s(j, v) = the j-th one (major fault 4/20 when the array has no dimension d) */
+  function dimFile(r, d, t) {
+    const F = file(r), st = r.steps[r.steps.length - 1], lens = st.lens || [st.len];
+    if (d >= lens.length) throw new Fault(4, 20, `${t}: Dimension to vary ${d} is more than the dimensions of the array (${lens.length})`);
+    const k0 = PK;
+    let stride = 1;
+    for (let k = d + 1; k < lens.length; k++) stride *= lens[k];
+    // PK is the element's place in the whole array (row-major): its subscript in dimension d
+    return { n: lens[d] - Math.floor(k0 / stride) % lens[d], g: j => F.g(j * stride), s: (j, v) => F.s(j * stride, v) };
+  }
+  /* AVE (mean) and STD (sample standard deviation, N - 1): on a true rung with .DN and .ER clear, all .LEN elements
+     (internally a FAL in ALL mode), then .DN; reading past the end of the dimension or an overflow sets .ER (.POS at that
+     element) and stops. Rung-condition-in false: AVE clears .EN .ER .DN .POS when .DN is set and .ER clear (AVE flow
+     chart); STD always clears them. .LEN < 0 or .POS < 0: major fault 4/21 */
+  function statOp(e, x, p) {
+    const c = x[3].obj(), std = e.t === 'STD';
+    if (!p) { if (std || (c.DN && !c.ER)) { c.EN = c.ER = c.DN = 0; c.POS = 0; } e.v = false; return false; }
+    c.EN = 1;
+    if (!c.DN && !c.ER) {
+      if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+      const F = dimFile(x[0], x[1].c, e.t), n = c.LEN, v = [];
+      for (let j = 0; j < n; j++) {
+        c.POS = j;
+        if (j >= F.n) { c.ER = 1; e.v = true; return true; }
+        v.push(F.g(j));
+      }
+      if (n > 0) {
+        const m = v.reduce((a, b) => a + b, 0) / n;
+        const r = std ? Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / (n - 1)) : m;
+        this.put(x[2], isFinite(r) ? r : 0, !isFinite(r));
+        if (this.S.V) { c.ER = 1; e.v = true; return true; }
+      }
+      c.POS = n; c.DN = 1;
+    }
+    e.v = true; return true;
+  }
+  XEL.AVE = statOp; XEL.STD = statOp;
+  XPRE.AVE = x => { const c = x[3].obj(); c.EN = c.DN = 0; if (!c.ER) c.EU = c.EM = c.UL = c.IN = c.FD = 0; };
+  XPRE.STD = x => { const c = x[3].obj(); c.EN = c.DN = c.ER = 0; };
+  /* SRT: on a false-to-true rung (.EN clear), the .LEN elements along the dimension into ascending order, then .DN
+     (.POS is left at the last element, as the manual's example shows). Rung false: .EN and .DN cleared. .LEN < 0 or
+     .POS < 0: .ER and major fault 4/21; a dimension or a length past the end of the array: major fault 4/20 */
+  XEL.SRT = function (e, x, p) {
+    const c = x[2].obj();
+    if (!p) { c.EN = c.DN = 0; e.v = false; return false; }
+    if (!c.EN && !c.ER) {
+      c.EN = 1;
+      if (c.LEN < 0 || c.POS < 0) { c.ER = 1; throw new Fault(4, 21, 'SRT: .LEN or .POS is less than 0'); }
+      const F = dimFile(x[0], x[1].c, 'SRT');
+      if (c.LEN > F.n) throw new Fault(4, 20, `SRT: Length ${c.LEN} goes past the end of the array (${F.n} elements from the one given)`);
+      const v = [];
+      for (let j = 0; j < c.LEN; j++) v.push(F.g(j));
+      v.sort((a, b) => a - b).forEach((y, j) => F.s(j, y));
+      c.POS = Math.max(0, c.LEN - 1); c.DN = 1;
+    }
+    e.v = true; return true;
+  };
+  /* SIZE: the number of elements of dimension Dim. To Vary of the array (all of that dimension, whatever element is
+     given); no math status flags */
+  XEL.SIZE = function (e, x, p) {
+    if (p) {
+      const r = x[0], d = x[1].c, st = r.steps[r.steps.length - 1], lens = r.dim ? r.dims : st.lens || [st.len];
+      if (d >= lens.length) throw new Fault(4, 20, `SIZE: Dimension to vary ${d} is more than the dimensions of the array (${lens.length})`);
+      x[2].set(lens[d]);
+    }
+    e.v = p; return p;
+  };
+  /* CPS: COP that the I/O updates cannot interrupt; the simulator scan is never interrupted, so it copies as COP */
+  XCHK.CPS = (x, bad) => { if (x[0].type !== x[1].type && !(isNum(x[0].type) && isNum(x[1].type))) bad(BAD_TYPE, 1); };
+  XEL.CPS = function (e, x, p) { this.el({ t: 'COP', x }, p); e.v = p; return p; };
+
+  /* ---------- GSV / SSV (RM018A chapter 4, GSV/SSV Objects): the objects and attributes the simulator has.
+     Each attribute: [data type, number of elements, SSV allowed, get(c, o) → values, set(c, o, values)]; o is the
+     instance (a program, a task or a module, or null for an object with no instance). The data moves as bytes: only
+     the attribute's size is copied (a SINT attribute into a DINT Dest changes its low 8 bits); a Dest or Source that is
+     too small is a minor fault (4/7 GSV, 4/6 SSV) and nothing is copied. */
+  const US32 = 4294967296;
+  const lohi = v => { v = Math.floor(v); const hi = Math.floor(v / US32); return [i32(v - hi * US32), i32(hi)]; };
+  const fromLohi = a => (a[1] | 0) * US32 + (a[0] >>> 0);
+  const wct = c => Date.now() * 1000 + (c.wcOff || 0);                  // WallClockTime CurrentValue, µs since 1970
+  const cst = c => (Date.now() - (c.cst0 || (c.cst0 = Date.now()))) * 1000;   // CST: µs since the controller started
+  const dt7 = (us, local) => {
+    const d = new Date(Math.floor(us / 1000)), L = local ? ['getFullYear', 'getMonth', 'getDate', 'getHours', 'getMinutes', 'getSeconds'] : ['getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCHours', 'getUTCMinutes', 'getUTCSeconds'];
+    const v = L.map(f => d[f]()); v[1]++;
+    return [...v, Math.floor(us) % 1000000];
+  };
+  const setDt7 = (c, a, local) => {
+    const ms = local ? new Date(a[0], a[1] - 1, a[2], a[3], a[4], a[5]).getTime() : Date.UTC(a[0], a[1] - 1, a[2], a[3], a[4], a[5]);
+    if (isFinite(ms)) c.wcOff = ms * 1000 + (a[6] || 0) - Date.now() * 1000;
+  };
+  const FLOG = c => c.flog || (c.flog = { MajorEvents: 0, MinorEvents: 0, MajorFaultBits: 0, MinorFaultBits: 0 });
+  // a fault record, DINT[11]: Timestamp (LINT, µs since 1970), Type (INT) and Code (INT), Info (DINT[8])
+  const frec = (c, type, code) => [...lohi(wct(c)), (type & 0xFFFF) | (code << 16), 0, 0, 0, 0, 0, 0, 0, 0];
+  // every fault: the FaultLog counters and bits, and the fault record of the program that was running
+  function faultRec(c, major, type, code) {
+    const f = FLOG(c), P = c.curP;
+    if (major) { f.MajorEvents = (f.MajorEvents + 1) & 0x7FFF; f.MajorFaultBits |= 1 << type; if (P) P.majRec = frec(c, type, code); }
+    else { f.MinorEvents = (f.MinorEvents + 1) & 0x7FFF; f.MinorFaultBits |= 1 << type; if (P) P.minRec = frec(c, type, code); }
+  }
+  const keep = (k, d) => (c, o) => [(o || c)[k] != null ? (o || c)[k] : d];
+  const store1 = k => (c, o, a) => { (o || c)[k] = a[0]; };
+  const MODST = (c, m) => { const s = c.moduleStatus(m.slot); return s.state === 'Running' ? 0x4000 : s.state === 'Inhibited' ? 0x6000 : 0x1000; };
+  const GSVOBJ = {
+    WallClockTime: { inst: null, attrs: {
+      ApplyDST: ['SINT', 1, true, keep('applyDST', 0), store1('applyDST')], CSTOffset: ['DINT', 2, true, c => lohi(wct(c) - cst(c)), (c, o, a) => { c.wcOff = fromLohi(a) + cst(c) - Date.now() * 1000; }],
+      CurrentValue: ['DINT', 2, true, c => lohi(wct(c)), (c, o, a) => { c.wcOff = fromLohi(a) - Date.now() * 1000; }], DateTime: ['DINT', 7, true, c => dt7(wct(c)), (c, o, a) => setDt7(c, a)],
+      DSTAdjustment: ['INT', 1, true, keep('dstAdj', 0), store1('dstAdj')], LocalDateTime: ['DINT', 7, true, c => dt7(wct(c), true), (c, o, a) => setDt7(c, a, true)] } },
+    Controller: { inst: null, attrs: {
+      TimeSlice: ['INT', 1, true, keep('timeSlice', 20), (c, o, a) => { if (a[0] >= 10 && a[0] <= 90 && c.key !== 'RUN') c.timeSlice = a[0]; }], ShareUnusedTimeSlice: ['INT', 1, true, keep('shareUnused', 1), store1('shareUnused')],
+      RedundancyEnabled: ['SINT', 1, false, () => [0]] } },
+    Task: { inst: 'task', attrs: {
+      DisableUpdateOutputs: ['DINT', 1, false, (c, t) => [t.noOutputs ? 1 : 0]], InhibitTask: ['DINT', 1, true, (c, t) => [t.inhibit ? 1 : 0], (c, t, a) => { t.inhibit = !!a[0]; c.M.programs.forEach(P => { if (P.task === t) { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; } }); }],
+      Instance: ['DINT', 1, false, (c, t) => [t.k]], LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
+      OverlapCount: ['DINT', 1, true, keep('overlap', 0), store1('overlap')], StartTime: ['DINT', 2, true, (c, t) => lohi(t.start || 0), (c, t, a) => { t.start = fromLohi(a); }],
+      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }] } },
+    Program: { inst: 'program', attrs: {
+      DisableFlag: ['SINT', 1, true, (c, P) => [P.inhibit ? 1 : 0], (c, P, a) => { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; }],
+      LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
+      MajorFaultRecord: ['DINT', 11, true, (c, P) => P.majRec || Array(11).fill(0), (c, P, a) => { P.majRec = a; }], MinorFaultRecord: ['DINT', 11, true, (c, P) => P.minRec || Array(11).fill(0), (c, P, a) => { P.minRec = a; }] } },
+    Module: { inst: 'module', attrs: {
+      EntryStatus: ['INT', 1, false, (c, m) => [MODST(c, m)]], FaultCode: ['INT', 1, false, (c, m) => { const s = c.moduleStatus(m.slot); return [s.state === 'Faulted' && s.code ? parseInt(s.code.slice(3), 16) : 0]; }],
+      FaultInfo: ['DINT', 1, false, () => [0]], ForceStatus: ['INT', 1, false, c => [(c.forces.size ? 1 : 0) | (c.forcesOn ? 2 : 0)]],
+      LEDStatus: ['INT', 1, false, c => { const ms = [...c.M.mods.values()], run = ms.filter(m => MODST(c, m) === 0x4000).length; return [!ms.length ? 0 : !run ? 1 : run < ms.length ? 2 : 3]; }, null, true],
+      Mode: ['INT', 1, true, (c, m) => [(m.majorOnFail ? 1 : 0) | (m.inhibit ? 4 : 0)], (c, m, a) => { m.majorOnFail = !!(a[0] & 1); m.inhibit = !!(a[0] & 4); c.emit('io'); }] } },
+    FaultLog: { inst: null, attrs: {
+      MajorEvents: ['INT', 1, true, c => [FLOG(c).MajorEvents], (c, o, a) => { FLOG(c).MajorEvents = a[0]; }], MinorEvents: ['INT', 1, true, c => [FLOG(c).MinorEvents], (c, o, a) => { FLOG(c).MinorEvents = a[0]; }],
+      MajorFaultBits: ['DINT', 1, true, c => [FLOG(c).MajorFaultBits], (c, o, a) => { FLOG(c).MajorFaultBits = a[0]; }], MinorFaultBits: ['DINT', 1, true, c => [FLOG(c).MinorFaultBits], (c, o, a) => { FLOG(c).MinorFaultBits = a[0]; }] } },
+  };
+  const findU = (o, s) => Object.keys(o).find(k => U(k) === U(s));
+  XNAME.gclass = s => { const k = findU(GSVOBJ, s); return k ? { cls: k } : `'${s}' is not an object class GSV / SSV can access (${Object.keys(GSVOBJ).join(', ')})`; };
+  XNAME.ginst = s => ({ inst: s });
+  XNAME.gattr = s => (validName(s) ? { attr: s } : `Invalid attribute name '${s}'`);
+  XKIND.gdest = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) ? writable() : BAD_TYPE);
+  XKIND.gsrc = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) ? r : BAD_TYPE);
+  // the instance of a class: THIS is the program (task) the instruction is in; a module by its name
+  const gsvInst = (c, x, M, P) => {
+    const O = GSVOBJ[x[0].cls], n = x[1].inst, u = U(n);
+    if (O.inst === 'program') return u === 'THIS' ? P : M.programs.find(p => U(p.name) === u);
+    if (O.inst === 'task') return u === 'THIS' ? P && P.task : (M.tasks || []).find(t => U(t.name) === u);
+    if (O.inst === 'module') return [...M.mods.values()].find(m => m.name && U(m.name) === u);
+    return null;
+  };
+  function gsvCheck(x, bad, e, M, P) {
+    const O = GSVOBJ[x[0].cls], a = findU(O.attrs, x[2].attr), ssv = e.t === 'SSV';
+    if (!a) return bad(`'${x[2].attr}' is not an attribute of the ${x[0].cls} object`, 2);
+    if (ssv && !O.attrs[a][2]) return bad(`The ${a} attribute of the ${x[0].cls} object cannot be set (GSV only)`, 2);
+    x[2].attr = a;
+    if (O.inst && !O.attrs[a][5] && !gsvInst(null, x, M, P)) bad(x[1].inst === '' ? `The ${x[0].cls} object needs an instance name` : `'${x[1].inst}' is not a ${O.inst} of this controller`, 1);
+  }
+  XCHK.GSV = gsvCheck; XCHK.SSV = gsvCheck;
+  /* the attribute's bytes into the Dest (GSV) or from the Source (SSV), from the element given to the end of its array */
+  function gsvMove(c, e, x, p) {
+    if (!p) return;
+    const O = GSVOBJ[x[0].cls], A = O.attrs[x[2].attr], [at, an] = A, ab = BYTES[at] * an, ssv = e.t === 'SSV';
+    const o = O.inst && !A[5] ? gsvInst(c, x, c.M, c.curP) : null;
+    if (O.inst && !A[5] && !o) { c.minorFault(4, 5, `${e.t}: there is no ${O.inst} '${x[1].inst}' (invalid object address)`); return; }
+    const r = x[3], F = file(r), db = BYTES[r.type], n = Math.ceil(ab / db);
+    if (F.n * db < ab) { c.minorFault(4, ssv ? 6 : 7, ssv ? `SSV: the Source is too small for ${x[0].cls}.${x[2].attr} (${an} ${at}): not enough information supplied` : `GSV: the Dest is too small to hold ${x[0].cls}.${x[2].attr} (${an} ${at})`); return; }
+    const dv = new DataView(new ArrayBuffer(n * db + 8));
+    for (let k = 0; k < n; k++) putBytes(dv, k * db, r.type, F.g(k));
+    if (ssv) { const v = []; for (let k = 0; k < an; k++) v.push(getBytes(dv, k * BYTES[at], at)); A[4](c, o, v); return; }
+    A[3](c, o).forEach((v, k) => putBytes(dv, k * BYTES[at], at, at === 'REAL' ? v : i32(v)));
+    for (let k = 0; k < n; k++) F.s(k, getBytes(dv, k * db, r.type));
+  }
+  XEL.GSV = function (e, x, p) { gsvMove(this, e, x, p); e.v = p; return p; };
+  XEL.SSV = XEL.GSV;
+  // the program being scanned (THIS, its fault records) and its scan time in µs; its task's StartTime
+  const msNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); return msNow(); }
+  function progEnd(P, p0) { P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+
+  /* ---------- PID (RM018A chapter 13, Special): the PID structure; .EN … .PVHA are bits of .CTL (bit 31 down to 7) ---------- */
+  const PIDBITS = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
+  PREDEF.PID = [{ name: 'CTL', type: 'DINT' }, ...Object.keys(PIDBITS).map(name => ({ name, type: 'BOOL', of: 'CTL', bit: PIDBITS[name] })),
+    ...members('SP:REAL KP:REAL KI:REAL KD:REAL BIAS:REAL MAXS:REAL MINS:REAL DB:REAL SO:REAL MAXO:REAL MINO:REAL UPD:REAL PV:REAL ERR:REAL OUT:REAL PVH:REAL PVL:REAL DVP:REAL DVN:REAL PVDB:REAL DVDB:REAL MAXI:REAL MINI:REAL TIE:REAL MAXCV:REAL MINCV:REAL MINTIE:REAL MAXTIE:REAL'),
+    { name: 'DATA', type: 'REAL', dim: 17 }];
+  Object.assign(OPN, { PID: ['PID', 'Process Variable', 'Tieback', 'Control Variable', 'PID Master Loop', 'Inhold Bit', 'Inhold Value'] });
+  INSTR.PID = I('box', 'Special', 'Proportional Integral Derivative', 'pid num num dest pidm bit0 num', { out: true });
+  XKIND.pid = (r, writable, one) => (r.type === 'PID' && one ? writable() : BAD_TYPE);
+  // the optional operands: 0 when not used
+  const orZero = (want, s, M, P) => { if (s === '0') return { none: true }; const r = ref(M, P, s); return typeof r === 'string' ? r : r.type === want && !r.dim ? r : BAD_TYPE; };
+  XNAME.pidm = (s, M, P) => orZero('PID', s, M, P);
+  XNAME.bit0 = (s, M, P) => orZero('BOOL', s, M, P);
+  XPRE.PID = x => { const s = x[0].obj(); s.CTL &= ~((1 << 31) | (1 << 15)); };
+  /* the loop (the positional equations of 1756-RM003; RM018A shows them as pictures):
+     error E = SP - PV (.CA = 0) or PV - SP (.CA = 1), as a % of the PV span (.MAXS - .MINS; none when they are equal)
+     independent gains: CV = KP·E + KI·∫E dt + KD·dE/dt + BIAS            (KI in 1/s, KD in s)
+     dependent gains:   CV = Kc·(E + 1/(60·Ti)·∫E dt + 60·Td·dE/dt) + BIAS   (Kc = KP, Ti = KI min/repeat, Td = KD min)
+     dt is .UPD (s): the instruction must run once each update time (a periodic task or a timer). The derivative is of
+     the error (.DOE = 1) or of the PV (.DOE = 0, no kick on a setpoint change), smoothed unless .NDF. Output limits
+     .MINO / .MAXO (equal: reset to 0 / 100) set .OLL / .OLH and freeze the integral (anti-reset windup). Manual (.MO,
+     the tieback) overrides software manual (.SWM, .SO); both back-calculate the integral (or .BIAS when KI = 0 and
+     .NOBC is clear) for a bumpless return to auto. Inhold bit set: CV = Inhold value, the loop re-initializes. */
+  XEL.PID = function (e, x, p) {
+    const s = x[0].obj(), b = n => (s.CTL >>> PIDBITS[n]) & 1, setb = (n, v) => { s.CTL = v ? s.CTL | (1 << PIDBITS[n]) : s.CTL & ~(1 << PIDBITS[n]); };
+    if (!p) { setb('EN', 0); e.v = false; return false; }
+    setb('EN', 1);
+    if (!(s.UPD > 0)) { this.minorFault(4, 35, 'PID: the loop update time (.UPD) is 0 or less'); e.v = true; return true; }
+    if (s.MAXO === s.MINO) { s.MAXO = 100; s.MINO = 0; }
+    const R = v => Math.fround(v), dt = s.UPD, span = s.MAXS - s.MINS, pct = span ? 100 / span : 1;
+    const pvIn = x[1].get(), PV = s.MAXI !== s.MINI ? (pvIn - s.MINI) * span / (s.MAXI - s.MINI) + s.MINS : pvIn;
+    s.PV = R(PV);
+    const M = x[4].none ? null : x[4].obj();
+    if (b('CL') && !b('CT') && M) s.SP = R(span ? M.OUT * span / 100 + s.MINS : M.OUT);
+    const manual = b('MO') || b('SWM');
+    if (manual && b('PVT')) s.SP = s.PV;
+    let SP = s.SP;
+    if (span && (SP > Math.max(s.MAXS, s.MINS) || SP < Math.min(s.MAXS, s.MINS))) { setb('SPOR', 1); this.minorFault(4, 36, 'PID: the setpoint is out of range (.MINS to .MAXS)'); SP = s.DATA[4]; } else { setb('SPOR', 0); s.DATA[4] = R(SP); }
+    const sg = b('CA') ? -1 : 1, E = sg * (SP - PV), init = !b('INI');
+    if (init) { s.DATA[2] = R(PV); s.DATA[3] = R(E); s.DATA[1] = 0; }
+    // deadband: inside .DB the error is 0 (.EWD); without .NOZC only after the error has crossed zero
+    let Eu = E;
+    if (s.DB > 0 && Math.abs(E) <= s.DB) { if (b('NOZC') || b('EWD') || E === 0 || Math.sign(E) !== Math.sign(s.DATA[3])) { setb('EWD', 1); Eu = 0; } }
+    else setb('EWD', 0);
+    s.ERR = R(E);
+    const dep = b('PE'), kp = s.KP, ki = dep ? (s.KI > 0 ? s.KP / (60 * s.KI) : 0) : s.KI, kd = dep ? s.KP * s.KD * 60 : s.KD;
+    const Ep = Eu * pct, Pt = kp * Ep;
+    const dRaw = (b('DOE') ? (E - s.DATA[3]) : -sg * (PV - s.DATA[2])) * pct / dt;
+    // derivative smoothing: a first order low pass filter (time constant kd / 16 s) unless .NDF
+    const tau = kd / 16, dF = b('NDF') || !(tau > 0) ? dRaw : s.DATA[1] + (dRaw - s.DATA[1]) * dt / (dt + tau);
+    const Dt = kd * dF;
+    let integ = s.DATA[0], out;
+    const hold = !x[5].none && x[5].get() === 1;
+    const lim = v => { setb('OLH', v > s.MAXO ? 1 : 0); setb('OLL', v < s.MINO ? 1 : 0); return Math.min(s.MAXO, Math.max(s.MINO, v)); };
+    const cvPct = cv => (s.MAXCV !== s.MINCV ? (cv - s.MINCV) * 100 / (s.MAXCV - s.MINCV) : cv);
+    if (hold || manual) {
+      if (hold) out = cvPct(x[6].get());
+      else if (b('MO')) { const t = x[2].get(); s.TIE = R(t); out = s.MAXTIE !== s.MINTIE ? (t - s.MINTIE) * 100 / (s.MAXTIE - s.MINTIE) : t; }
+      else out = s.SO;
+      out = lim(out);
+      // bumpless back to auto: the integral (or the bias) that gives this output
+      if (ki) integ = out - Pt - Dt - s.BIAS; else if (!b('NOBC')) s.BIAS = R(out - Pt - Dt);
+    } else {
+      const In = integ + ki * Ep * dt;
+      out = Pt + In + Dt + s.BIAS;
+      const o = lim(out);
+      // anti-reset windup: past a limit the integral grows only up to what gives that limit, then stays frozen
+      integ = o === out ? In : out > s.MAXO ? Math.max(integ, Math.min(In, s.MAXO - Pt - Dt - s.BIAS)) : Math.min(integ, Math.max(In, s.MINO - Pt - Dt - s.BIAS));
+      out = o;
+      s.SO = R(out);
+    }
+    s.OUT = R(out); s.DATA[0] = R(integ); s.DATA[1] = R(dF); s.DATA[2] = R(PV); s.DATA[3] = R(E);
+    const cv = hold ? x[6].get() : s.MAXCV !== s.MINCV ? out * (s.MAXCV - s.MINCV) / 100 + s.MINCV : out;
+    x[3].set(cv); s.DATA[14] = R(cv);
+    // alarms with their deadbands (a PV alarm when .PVH > .PVL; a deviation alarm when its limit is not 0)
+    if (s.PVH > s.PVL) {
+      setb('PVHA', PV > s.PVH || (b('PVHA') && PV > s.PVH - s.PVDB) ? 1 : 0);
+      setb('PVLA', PV < s.PVL || (b('PVLA') && PV < s.PVL + s.PVDB) ? 1 : 0);
+    } else { setb('PVHA', 0); setb('PVLA', 0); }
+    setb('DVPA', s.DVP && (E > s.DVP || (b('DVPA') && E > s.DVP - s.DVDB)) ? 1 : 0);
+    setb('DVNA', s.DVN && (E < s.DVN || (b('DVNA') && E < s.DVN + s.DVDB)) ? 1 : 0);
+    setb('INI', 1);
+    e.v = true; return true;
+  };
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // the longest the emulator lets one task run before its watchdog fault, so the app keeps answering (ms)
+  const WDCAP = 5000;
   class Controller {
     constructor() {
       this.key = 'REM';            // PROG | REM | RUN
@@ -816,9 +1344,29 @@
       this.pulled = new Set();     // slots whose card is taken out (a simulated module fault)
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
+      this.curP = null; this.inHandler = false; this.ioCleared = new Set();   // fault handling (1756-PM014)
+      this.wdT0 = 0; this.wdMs = 0; this.wdN = 0; this.wdHit = false; this.wdTask = '';   // task watchdog
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
       this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
       this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
+      // Logix Emulate breakpoints and tracepoints: the traces (by title), the triggered breakpoint, the trace settings
+      // of Configure Emulation, and the emulated time (ms) since the last change to Run (the Absolute time stamp)
+      this.traces = new Map(); this.bp = null; this.tcfg = { ignore: false, ts: 'None', show: true }; this.clock = 0; this.runAt = 0;
+      // the emulated controller's own settings (Logix Emulate, Create a controller: General and System screens)
+      this.emu = Object.assign({}, EMU0);
+    }
+    /* General / System settings: Startup Mode (Remote Program or Last Controller State), Periodic Save, Use RSLinx
+       Classic, Continuous Task Dwell Time (0-100 ms between the end of the continuous task and its next start: the scan
+       period here), CPU Affinity, Channel 0 Serial Port */
+    setEmu(o) {
+      const e = Object.assign({}, this.emu, o);
+      if (!['remprog', 'last'].includes(e.startup)) return 'Startup Mode: Remote Program or Last Controller State.';
+      if (!(Number.isInteger(+e.dwell) && +e.dwell >= 0 && +e.dwell <= 100)) return 'Continuous Task Dwell Time: 0 to 100 milliseconds.';
+      if (!(Number.isInteger(+e.psave) && +e.psave >= 1 && +e.psave <= 1440)) return 'Periodic Save Interval: 1 to 1440 minutes.';
+      e.dwell = +e.dwell; e.psave = +e.psave; e.cpu = Math.max(0, Math.floor(+e.cpu || 0)); e.psaveOn = !!e.psaveOn; e.linx = e.linx !== false;
+      this.emu = e; this.period = Math.max(1, e.dwell);
+      this.emit('config');
+      return '';
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -829,6 +1377,8 @@
       if (m === this.mode) return;
       const was = RUN(this.mode);
       this.mode = m;
+      if (!was && RUN(m)) this.runAt = this.clock;
+      if (!RUN(m)) this.bp = null;
       if (!was && RUN(m) && this.M) this.prescan();
       this.emit('mode');
     }
@@ -851,12 +1401,14 @@
       this.emit('key');
     }
     majorFault(type, code, text) {
+      faultRec(this, true, type, code);
       this.fault = { type, code, text, at: Date.now() };
       this.majors.unshift(this.fault);
       this.majors.length = Math.min(this.majors.length, 10);
       this.emit('fault');
     }
     minorFault(type, code, text) {
+      faultRec(this, false, type, code);
       const last = this.minors[0];
       if (last && last.type === type && last.code === code && last.text === text) { last.count++; last.at = Date.now(); return; }
       this.minors.unshift({ type, code, text, at: Date.now(), count: 1 });
@@ -898,6 +1450,7 @@
               // .EN set: a rung that is true at the change to Run does not step on the first scan (it stays at .POS)
               case 'SQO': x[3].obj().EN = 1; break;
               case 'SQL': x[2].obj().EN = 1; break;
+              default: if (XPRE[e.t]) XPRE[e.t].call(this, x, e);
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -912,8 +1465,10 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
-      this.copy = JSON.stringify(project); this.dlAt = Date.now();
-      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
+      this.copy = JSON.stringify(project); this.dlAt = Date.now(); this.ioCleared.clear();
+      // Download Project Documentation and Extended Properties (Controller Properties > Project)
+      this.docs = !project.noDocs;
+      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear(); this.bp = null;
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
       this.emit('download');
@@ -935,16 +1490,26 @@
       on = !!on;
       if (on === this.powered) return;
       if (!on) { this.wasRun = RUN(this.mode) && !this.fault; this.powered = false; this.emit('power'); return; }
-      this.powered = true; this.fault = null; this.acc = 0; this.first = true;
-      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M ? 'remrun' : 'remprog';
+      this.powered = true; this.fault = null; this.acc = 0; this.first = true; this.bp = null;
+      // Startup Mode Remote Program: in REM the controller always starts in Remote Program
+      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M && this.emu.startup !== 'remprog' ? 'remrun' : 'remprog';
       this.mode = to;
       if (RUN(to) && this.M) this.prescan();
+      /* power lost in Run, back in Run or Remote Run: with a Power-Up Handler program the controller powers up with
+         major fault type 1 code 1, and that program runs; it clears the fault to resume (an empty handler leaves the
+         controller faulted). Without one, the controller goes back to Run (1756-PM014, help: Power-Up Handler). */
+      if ((to === 'run' || to === 'remrun') && this.M && this.wasRun && this.M.puh) {
+        const f = new Fault(1, 1, 'The controller powered up in Run mode after a power loss (Power-Up Handler)');
+        if (!this.handle(this.M.puh, f)) this.majorFault(f.type, f.code, f.message);
+      }
       this.emit('power'); this.emit('mode');
     }
     /* online edit (Accept Edits): the new logic replaces the old without a Download. The mode, the forces and the
        values of the tags that keep their name and type stay; new tags start from their start value. */
     edit(project) {
       if (!this.M) return { ok: false, errors: [], warnings: [], lines: ['The controller is empty: Download first.'] };
+      // LGEM5K-GR016M: while a breakpoint is triggered the project is not editable
+      if (this.bp) return { ok: false, errors: [], warnings: [], lines: ['Failed to accept the edits: the controller is not in the correct mode (a breakpoint is triggered; acknowledge it to continue).'] };
       const p = JSON.parse(JSON.stringify(project)), kept = [];
       const keep = (list, prog) => (list || []).forEach(t => {
         if (t.alias) return;
@@ -983,24 +1548,34 @@
       if (!this.M) return;
       this.dt = Math.round(dt);
       this.inputs();
-      if (!this.running) return;
+      if (!this.running || this.bp) return;
+      this.clock += this.dt;
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
-      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
-      } catch (e) {
-        if (!(e instanceof Fault)) throw e;
-        this.majorFault(e.type, e.code, e.message);
+      let tk = -1;
+      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) {
+        // the watchdog timer starts when the task starts and stops when all of its programs have run
+        if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task ? P.task.name : ''; this.wdHit = false; }
+        this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); this.wdCheck();
       }
+      } catch (e) {
+        if (e instanceof Halt) { this.d = 0; this.mcr = false; }
+        else if (!(e instanceof Fault)) throw e;
+        // a fault that no fault routine cleared goes to the Controller Fault Handler; not cleared there, the controller faults
+        else if (e.tried || !this.handle(this.M.cfh, e)) this.majorFault(e.type, e.code, e.message);
+      }
+      this.curP = null; this.wdMs = 0;
       this.S.FS = 0;
       this.first = false;
       this.scans++;
       // scan times in microseconds (Task Properties, Monitor)
       const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
+      this.curP = null; for (const t of this.M.tasks || []) { t.us = us; t.maxUs = Math.max(t.maxUs || 0, us); }
     }
     /* speed of time (LGEM5K-GR016: 0-100 %, takes effect at once; 60 % makes 1 s take about 1.67 s) */
     setSpeed(p) { p = Math.round(Number(p)); if (!(p >= 0 && p <= 100)) return false; this.sot = p; this.emit('speed'); return true; }
@@ -1011,7 +1586,7 @@
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
       while (this.acc >= this.period) {
-        if (this.single && this.held) { this.acc = 0; break; }
+        if ((this.single && this.held) || this.bp) { this.acc = 0; break; }
         this.acc -= this.period; this.scan(this.period); n++;
         if (this.single && this.running) { this.held = true; this.acc = 0; this.emit('single'); }
       }
@@ -1025,9 +1600,14 @@
         if (this.pulled.has(m.slot)) {
           // no connection: Fault is set, the input data holds and can be overwritten (as on an emulated controller)
           if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = -1;
-          if (m.majorOnFail && this.running) this.majorFault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+          // a fault the Controller Fault Handler cleared is not raised again until the connection comes back
+          if (m.majorOnFail && this.running && !this.ioCleared.has(m.slot)) {
+            const f = new Fault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+            if (this.handle(this.M.cfh, f)) this.ioCleared.add(m.slot); else this.majorFault(f.type, f.code, f.message);
+          }
           continue;
         }
+        this.ioCleared.delete(m.slot);
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
         else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
@@ -1041,12 +1621,13 @@
       let jumps = 0;
       this.mcr = false;
       for (let i = 0; i < rungs.length;) {
+        if ((++this.wdN & 255) === 0) this.wdCheck();
         this.seq(rungs[i].elems, !this.mcr);
         if (this.tnd || this.ret) { this.tnd = this.ret = false; break; }
         if (this.jmp !== null) {
           const to = R.labels.get(this.jmp);
           this.jmp = null;
-          if (++jumps > 100000) throw new Fault(6, 1, 'Watchdog timeout: the task did not finish in time');
+          if ((++jumps & 255) === 0) this.wdCheck();
           i = to;
           continue;
         }
@@ -1054,11 +1635,64 @@
       }
       this.mcr = mcr0;
     }
+    /* the task watchdog (1756-PM005, Adjust the System Watchdog Time): a task that runs longer than its watchdog time is a
+       major fault type 6 code 1. The Controller Fault Handler can clear it once; the same watchdog fault a second time
+       in the same scan faults the controller anyway. */
+    wdCheck() {
+      if (this.inHandler || !this.wdMs || now() - this.wdT0 <= this.wdMs) return;
+      const f = new Fault(6, 1, `Task watchdog expired: task '${this.wdTask}' did not complete in its watchdog time (${this.wdSet} ms)`);
+      if (!this.wdHit && this.M && this.handle(this.M.cfh, f)) { this.wdHit = true; this.wdT0 = now(); return; }
+      f.tried = true;
+      throw f;
+    }
     // a true JMP, RET or TND leaves the rung at once: the rest of it is not scanned
     get leave() { return this.jmp !== null || this.ret || this.tnd; }
+    /* an instruction that faults is skipped: when a fault routine clears the fault, execution goes on with the next
+       instruction (1756-PM014, Recover from a major fault) */
     seq(arr, p) {
-      for (let k = 0; k < arr.length; k++) { p = this.el(arr[k], p); if (this.leave) break; }
+      for (let k = 0; k < arr.length; k++) {
+        try { p = this.el(arr[k], p); } catch (e) { if (!(e instanceof Fault) || !this.recover(e)) throw e; }
+        if (this.leave) break;
+      }
       return p;
+    }
+    /* an instruction fault (type 4), at the instruction that faulted (tried once): the fault routine of the program
+       runs; when it does not clear the fault, the Controller Fault Handler (1756-PM014, Write a routine to clear the fault) */
+    recover(e) {
+      if (e.tried || e.type !== 4 || !this.M) return false;
+      e.tried = true;
+      const P = this.curP;
+      return (!!P && !!P.faultR && this.handle(P, e, P.faultR)) || this.handle(this.M.cfh, e);
+    }
+    /* run a fault-handling routine for fault e: the program's MajorFaultRecord holds the fault while it runs, and the
+       fault is cleared when the routine leaves Type and Code at 0 (GSV / SSV MajorFaultRecord). A fault inside the
+       routine leaves the fault as it was. */
+    handle(P, e, R = P && P.main) {
+      if (!P || !R || this.inHandler) return false;
+      const us = Date.now() * 1000, keep = [this.curP, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS];
+      P.mfr = { Time_Low: (us % 4294967296) | 0, Time_High: Math.floor(us / 4294967296), Type: e.type, Code: e.code, Info: [0, 0, 0, 0, 0, 0, 0, 0] };
+      this.inHandler = true; this.curP = P; this.jmp = null; this.ret = this.tnd = this.mcr = false; this.d = 0;
+      let ok = true;
+      try { this.routine(R); } catch (x) { if (!(x instanceof Fault)) throw x; ok = false; } finally {
+        this.inHandler = false;
+        [this.curP, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS] = keep;
+      }
+      return ok && P.mfr.Type === 0 && P.mfr.Code === 0;
+    }
+    /* the MajorFaultRecord attribute of a Program object (1756-PM014: DINT[11], the layout of FAULTRECORD:
+       Time_Low, Time_High, Type and Code (two INTs in one DINT), Info[8]), as GSV reads it and SSV writes it.
+       prog: a program name, or THIS for the program that runs now. */
+    progOf(prog) { return !this.M ? null : U(prog) === 'THIS' ? this.curP : this.M.programs.find(P => U(P.name) === U(prog)) || null; }
+    majorFaultRecord(prog) {
+      const P = this.progOf(prog); if (!P) return null;
+      const r = P.mfr || { Time_Low: 0, Time_High: 0, Type: 0, Code: 0, Info: [0, 0, 0, 0, 0, 0, 0, 0] };
+      return [r.Time_Low, r.Time_High, (r.Type & 0xFFFF) | (r.Code << 16)].concat(r.Info);
+    }
+    setMajorFaultRecord(prog, a) {
+      const P = this.progOf(prog); if (!P || !Array.isArray(a)) return false;
+      const d = k => i32(a[k] || 0);
+      P.mfr = { Time_Low: d(0), Time_High: d(1), Type: (d(2) << 16) >> 16, Code: d(2) >> 16, Info: [3, 4, 5, 6, 7, 8, 9, 10].map(d) };
+      return true;
     }
     el(e, p) {
       if (e.t === 'BR') {
@@ -1108,7 +1742,7 @@
         case 'ADD': case 'SUB': case 'MUL': case 'DIV': case 'MOD': if (p) this.arith(e.t, x[0], x[1], x[2]); e.v = p; return p;
         case 'SQR': case 'NEG': case 'ABS': {
           if (p) {
-            const a = x[0].get(), real = x[0].type === 'REAL' || x[1].type === 'REAL';
+            const a = x[0].get(), real = isReal(x[0].type) || isReal(x[1].type);
             const r = e.t === 'NEG' ? -a : e.t === 'ABS' ? Math.abs(a) : Math.sqrt(Math.abs(a));
             this.put(x[1], real ? r : Math.trunc(r));
           }
@@ -1119,10 +1753,8 @@
         // MVM does not affect the math status flags on a 5580 controller (reference manual 1756-RM003)
         case 'MVM': if (p) { const m = i32(x[1].get()); x[2].set((i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
         case 'CLR': if (p) this.put(x[0], 0); e.v = p; return p;
-        case 'AND': if (p) this.put(x[2], i32(x[0].get()) & i32(x[1].get())); e.v = p; return p;
-        case 'OR': if (p) this.put(x[2], i32(x[0].get()) | i32(x[1].get())); e.v = p; return p;
-        case 'XOR': if (p) this.put(x[2], i32(x[0].get()) ^ i32(x[1].get())); e.v = p; return p;
-        case 'NOT': if (p) this.put(x[1], ~i32(x[0].get())); e.v = p; return p;
+        case 'AND': case 'OR': case 'XOR': if (p) { if (x.some(r => r.type === 'LINT')) { const a = B64(x[0].get()), b = B64(x[1].get()); this.put(x[2], N64(e.t === 'AND' ? a & b : e.t === 'OR' ? a | b : a ^ b)); } else { const a = i32(x[0].get()), b = i32(x[1].get()); this.put(x[2], e.t === 'AND' ? a & b : e.t === 'OR' ? a | b : a ^ b); } } e.v = p; return p;
+        case 'NOT': if (p) this.put(x[1], x.some(r => r.type === 'LINT') ? N64(~B64(x[0].get())) : ~i32(x[0].get())); e.v = p; return p;
         case 'BTD': {
           if (p) {
             const s = i32(x[0].get()), sb = x[1].c, db = x[3].c, n = x[4].c;
@@ -1190,9 +1822,10 @@
         case 'RET': if (p) this.ret = true; e.v = p; return p;
         case 'JMP': if (p) this.jmp = x[0].label; e.v = p; return p;
         case 'TND': if (p) this.tnd = true; e.v = p; return p;
+        case 'BPT': case 'TPT': if (p) this.trace(e); e.v = p; return p;
         case 'MCR': if (!p) this.mcr = !this.mcr; e.v = p; return p;
         case 'AFI': e.v = false; return false;
-        default: e.v = p; return p;   // LBL, SBR, NOP
+        default: if (XEL[e.t]) return XEL[e.t].call(this, e, x, p); e.v = p; return p;   // LBL, SBR, NOP
       }
     }
     /* math status from the stored value: S:V overflow (or divide by zero, also a minor fault: S:MINOR), S:Z zero,
@@ -1206,8 +1839,18 @@
       if (S.V && !was) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
     }
     arith(op, A, B, D) {
-      const a = A.get(), b = B.get(), real = A.type === 'REAL' || B.type === 'REAL' || D.type === 'REAL';
+      const a = A.get(), b = B.get(), real = isReal(A.type) || isReal(B.type) || isReal(D.type);
       let r, ov = false, c;
+      // integer math with a LINT: 64 bits (BigInt), the overflow and the carry of a 64-bit result
+      if (!real && (A.type === 'LINT' || B.type === 'LINT' || D.type === 'LINT')) {
+        const x = B64(a), y = B64(b), M = 1n << 64n, ux = BigInt.asUintN(64, x), uy = BigInt.asUintN(64, y);
+        let w;
+        if (op === 'ADD') { w = x + y; c = ux + uy >= M; } else if (op === 'SUB') { w = x - y; c = ux < uy; } else if (op === 'MUL') w = x * y;
+        else if (y === 0n) { w = op === 'DIV' ? x : x; ov = true; } else w = op === 'DIV' ? x / y : x % y;
+        if (D.type === 'LINT') { if (BigInt.asIntN(64, w) !== w) ov = true; r = N64(w); } else r = Number(w);
+        this.put(D, r, ov, op === 'ADD' || op === 'SUB' ? c : undefined);
+        return;
+      }
       switch (op) {
         case 'ADD': r = a + b; c = !real && (a >>> 0) + (b >>> 0) > 0xFFFFFFFF; break;
         case 'SUB': r = a - b; c = !real && (a >>> 0) < (b >>> 0); break;
@@ -1317,6 +1960,26 @@
     }
     /* ACC = ACC + (now - last scan), from the scan after the timer is enabled. Setting DN pauses a TON / RTO, clearing
        it pauses a TOF (reference help). */
+    /* a true BPT / TPT: one trace entry (its values in the Format), into the trace of that title; a BPT then stops the
+       program (LGEM5K-GR016M chapter 9). Ignore If No Value Changed skips an entry whose values did not change. */
+    trace(e) {
+      const x = e.x, vals = x.slice(1).map(r => r.get());
+      let fmt = x[0].fmt;
+      if (fmt == null) { try { const o = x[0].obj(); fmt = String.fromCharCode(...(o.DATA || []).slice(0, o.LEN).map(c => c & 255)); } catch (err) { fmt = ''; } }
+      const f = traceFmt(fmt, vals), title = (e.t === 'BPT' ? 'B:' : 'T:') + f.head;
+      let tr = this.traces.get(title);
+      if (!tr) { tr = { kind: e.t, head: f.head || (e.t === 'BPT' ? 'Breakpoint' : 'Tracepoint'), slot: this.slot, tags: e.a.slice(1), list: [], last: null, lastAt: null, n: 0 }; this.traces.set(title, tr); }
+      const key = JSON.stringify(vals);
+      if (!(this.tcfg.ignore && tr.last === key)) {
+        const at = this.clock - this.runAt, ts = this.tcfg.ts, t = ts === 'Absolute' ? at : ts === 'Delta' ? (tr.lastAt == null ? 0 : at - tr.lastAt) : null;
+        tr.list.push({ t, ts, text: f.text, vals, at }); if (tr.list.length > 500) tr.list.shift();
+        tr.last = key; tr.lastAt = at; tr.n++; this.tseq = (this.tseq || 0) + 1;
+        this.emit('trace');
+      }
+      if (e.t === 'BPT') { this.bp = { title, head: tr.head, text: f.text, tags: e.a.slice(1), vals, at: Date.now() }; this.emit('breakpoint'); throw new Halt(); }
+    }
+    /* acknowledging the breakpoint prompt: the program runs on (and stops again if the condition is still true) */
+    resume() { if (!this.bp) return false; this.bp = null; this.emit('mode'); return true; }
     timer(t, s, p) {
       const dt = this.dt;
       if (p && (s.PRE < 0 || s.ACC < 0)) throw new Fault(4, 34, `Timer ${t}: a negative .PRE or .ACC`);
@@ -1421,8 +2084,8 @@
       if (m.inhibit) return { state: 'Inhibited', code: null, text: 'The module is inhibited: no connection, its inputs hold and its outputs are off.' };
       if (this.pulled.has(slot)) {
         const code = this.codes.get(slot);
-        if (code === '16#0116') return { state: 'Faulted', code, text: 'Electronic keying mismatch: the card in this slot is not the module of the I/O configuration.' };
-        return { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+        if (KEYTEXT[code]) return { state: 'Faulted', code, text: KEYTEXT[code] };
+        return { state: 'Faulted', code: '16#0204', text: 'Connection Request Error: Connection request timed out. The module does not answer: it is missing from the backplane or faulted.' };
       }
       return { state: 'Running', code: null, text: '' };
     }
@@ -1473,9 +2136,10 @@
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
-     module fault when the slot is empty (16#0204) or holds another module (16#0116). An output card follows the
+     module fault when the slot is empty (16#0204) or fails the Electronic Keying (16#0114, 16#0115, 16#0116; 16#0109
+     with Disable Keying and another kind of card). An output card follows the
      controller that owns it: the first one, by slot, whose project configures it. */
-  const CPU = 'PLC-CPU';
+  const CPU = 'PLC-CPU', TCFG0 = JSON.stringify(new Controller().tcfg);
   class Chassis {
     constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; this.kept = new Map(); }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
@@ -1488,6 +2152,7 @@
       if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
+      if (kind !== 'cpu') m.rev = REV0;
       if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
@@ -1497,7 +2162,7 @@
        configuration): a controller created later in that slot can use it, and load the saved controller image. */
     remove(slot, keep) {
       const m = this.mods.get(slot);
-      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
+      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, emu: m.ctl.emu, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
       const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok;
     }
     /* a controller created in a slot whose configuration was kept: use it (else defaults, the name stays), and load
@@ -1507,7 +2172,7 @@
       if (!k || !m || !m.ctl) return false;
       this.kept.delete(slot);
       m.name = k.name;
-      if (useConfig) this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot });
+      if (useConfig) { this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot }); if (k.emu) m.ctl.setEmu(k.emu); }
       if (loadImage && k.project) { const key = m.ctl.key; m.ctl.key = 'REM'; m.ctl.download(k.project); if (k.at) m.ctl.dlAt = k.at; m.ctl.key = key; if (key === 'PROG') m.ctl.go('prog'); }
       this.emit('controller');
       return true;
@@ -1539,11 +2204,23 @@
       return true;
     }
     setFault(slot, on) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu') return false; m.fault = !!on; this.emit('fault'); return true; }
-    /* the code a controller gets for a slot of its I/O configuration */
-    codeFor(slot, type) { const m = this.mods.get(slot); return !m || m.fault ? '16#0204' : m.type !== type ? '16#0116' : null; }
+    /* the firmware revision (major.minor) of an I/O card, to try the Electronic Keying */
+    setRevision(slot, rev) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu' || !/^\d{1,3}\.\d{1,3}$/.test(String(rev))) return false; m.rev = String(rev); this.emit('fault'); return true; }
+    /* the code a controller gets for a slot of its I/O configuration (want: the configured module, or its type).
+       Exact Match: type and revision the same. Compatible Module: the same type and major revision, the card's minor
+       revision equal or higher. Disable Keying: no check, but another kind of card cannot take the connection. */
+    codeFor(slot, want) {
+      const w = typeof want === 'string' ? { type: want } : want, m = this.mods.get(slot);
+      if (!m || m.fault) return '16#0204';
+      const a = m.kind, b = (MODULES[w.type] || {}).kind, key = KEYING[w.key] ? w.key : 'compat';
+      if (key === 'off') return a === b ? null : '16#0109';
+      if (m.type !== w.type) return PTYPE[a] !== PTYPE[b] ? '16#0115' : '16#0114';
+      const [M1, n1] = revOf(m.rev), [M2, n2] = revOf(w.rev);
+      return M1 !== M2 || (key === 'exact' ? n1 !== n2 : n1 < n2) ? '16#0116' : null;
+    }
     exchange(c) {
       for (const m of c.M.mods.values()) {
-        const code = this.codeFor(m.slot, m.type);
+        const code = this.codeFor(m.slot, m);
         c.linkFault(m.slot, code);
         if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
       }
@@ -1555,7 +2232,7 @@
     owner(slot) {
       const m = this.mods.get(slot);
       if (!m) return null;
-      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm.type); });
+      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm); });
       return o ? o.ctl : null;
     }
     /* what an output card drives: bits of a discrete card, channel values of an analog card (off without an owner) */
@@ -1567,9 +2244,10 @@
     }
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
-      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
+      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field, rev: m.rev && m.rev !== REV0 ? m.rev : undefined,
         ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
-        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })),
+        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
+        tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
     }
     static from(o) {
@@ -1582,11 +2260,14 @@
         if (!r.ok) return;
         const m = r.module;
         if (x.fault && m.kind !== 'cpu') m.fault = true;
+        if (x.rev && m.kind !== 'cpu') ch.setRevision(x.slot, x.rev);
         if (m.kind === 'di') m.field = Number(x.field) | 0;
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
           if (x.sot != null) m.ctl.setSpeed(x.sot);
+          if (x.tcfg) Object.assign(m.ctl.tcfg, x.tcfg);
+          if (x.emu) m.ctl.setEmu(x.emu);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }
@@ -1600,8 +2281,9 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
+  MTPS.GSVOBJ = GSVOBJ;
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

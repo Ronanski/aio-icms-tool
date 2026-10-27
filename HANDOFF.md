@@ -5,7 +5,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 ## Savepoint
 | | |
 |---|---|
-| **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). 0.5.0 Stable (Wave 1 of the coverage map, PR #96) released 2026-10-27 on owner GO. Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
+| **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). 0.5.0 Stable (Wave 1 of the coverage map, PR #96) released 2026-10-27 on owner GO. Wave 2 (owner GO 2026-10-27 01:29) is in a PR on `claude/project-thread-c32nav`, not merged or released. Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
 | **Tags** | `mtps-v0.4.0-beta.3`, `mtps-v0.1.0`; Trainer `v2.0.0` back to `v1.1.0` (full list in archive). |
 | **Branch** | `main` is the default branch and holds released code. Work on feature branches, merged through PRs only with the owner's GO. |
 | **Tests** | See "Tests in the cloud container" below for current counts. |
@@ -16,7 +16,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 
 ## Next session: CLOUD session (owner, 2026-10-26), read first
 **MT PLC Studio** (`mtps/`, separate from the PLC Trainer at the repo root):
-- Status: 0.4.0 Stable is released. The MT PLC STUDIO COVERAGE MAP (https://claude.ai/artifact/HQZrqJC2PwnYvWZDmU1DHT) lists every Studio 5000 / RSLinx / Logix Emulate feature as HAVE / PARTIAL / MISSING in waves W1-W4; the owner GOes one wave at a time. Wave 1 (owner GO 2026-10-26 23:18) is done on `claude/project-thread-c32nav`: menus (Close, Save prompt, Recent, Select All, Properties, Replace, Find Previous, Select Recent Path, Go To Faults), New Tag fields, Select Data Type with 3-D arrays, Edit Tags cells, AB module type names, status flags, 20-pin RTB, BSL/BSR/FFL/FFU/LFL/LFU/SQO/SQI/SQL, Emulate speed of time / Single Scan / chassis menu, RSLinx Device Properties / driver Configure / Change Mode, cleared memory on a cancelled download, faster taps. Next: owner GO MERGE (and a release GO), then Wave 2 on its own GO.
+- Status: 0.4.0 Stable is released. The MT PLC STUDIO COVERAGE MAP (https://claude.ai/artifact/HQZrqJC2PwnYvWZDmU1DHT) lists every Studio 5000 / RSLinx / Logix Emulate feature as HAVE / PARTIAL / MISSING in waves W1-W4; the owner GOes one wave at a time. Wave 1 (owner GO 2026-10-26 23:18) is done on `claude/project-thread-c32nav`: menus (Close, Save prompt, Recent, Select All, Properties, Replace, Find Previous, Select Recent Path, Go To Faults), New Tag fields, Select Data Type with 3-D arrays, Edit Tags cells, AB module type names, status flags, 20-pin RTB, BSL/BSR/FFL/FFU/LFL/LFU/SQO/SQI/SQL, Emulate speed of time / Single Scan / chassis menu, RSLinx Device Properties / driver Configure / Change Mode, cleared memory on a cancelled download, faster taps. Wave 1 shipped as 0.5.0 Stable. Wave 2 is done in a PR: full L5X export/import, Import Component, Change Controller, Replace extras, Browse Logic, Tools > Options pages, Help > Contents, keyboard table, bookmarks, Data Type Editor, STRING/LINT/LREAL, tag filter and columns, Watch, Quick View, Trends, SIN…XPY, DEG…TRN, FAL/FSC/AVE/STD/SRT/SIZE/CPS, GSV/SSV, PID, fault handlers, fault routines, task watchdog, Go Online correlation, Project tab, Select Module Type, keying/RPI, Emulate BPT/TPT and controller properties, chassis status bar, every RSLinx menu and its diagnostics. Next: owner GO MERGE and GO BETA / GO STABLE (would be 0.6.0), then Wave 3 on its own GO.
 - **Before any change in `mtps/`, read the skill `.claude/skills/allen-bradley/`.** Its `references/app-mapping.md` shows where each Studio 5000 / RSLinx / Logix Emulate concept lives in the app, and lists the known differences still open.
 - The owner's golden reference is Studio 5000 Logix Designer, RSLinx Classic and Logix Emulate. Research first (the Rockwell manuals are listed in the skill's `references/sources.md`). The owner was angry about unresearched changes: "hindi mo iresearch, hindi mo aralin… puro changes tyo d2".
 - Owner rules that also live in local memory (a cloud session cannot see it, so they are copied here):
@@ -33,9 +33,10 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
   - In the cloud, work from the docs and the skill only.
 - **Tests in the cloud container** (one per file, same env as `CLAUDE.md`):
   `NODE_PATH=/opt/node-tools/node_modules CHROMIUM_PATH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome | head -1) node tests/<file>` (the folder may be `chrome-linux64`)
-  - `mtps.test.js`: 381
-  - `mtps-ref.test.js`: 124
-  - `mtps-ui.test.js`: 639 (includes `tests/mtps-ui-menus.js`)
+  - `mtps.test.js`: 600
+  - `mtps-ref.test.js`: 168
+  - `mtps-ui.test.js`: 1137 (includes `tests/mtps-ui-menus.js` and `tests/mtps-ui-w2A.js` … `w2E.js`)
+  - `mtps-audit.js`: 85 of 85 instructions
   - `e2e.test.js`: 884
   - `npm run audit` (`tests/mtps-audit-run.js`): 53
 - **Release chain:**

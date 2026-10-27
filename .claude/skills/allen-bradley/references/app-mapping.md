@@ -29,20 +29,24 @@ Where each reference concept lives in the app (`mtps/`), and what still differs.
 ## Known differences (open)
 
 - New Tag lacks Usage and Produced/Consumed (External Access, Style, Constant, Open Configuration since Wave 1).
-- Select Data Type with Dim 0/1/2 and 2- or 3-dimension arrays exist (Wave 1); no UDT editor yet.
+- Select Data Type with Dim 0/1/2 and 2- or 3-dimension arrays exist (Wave 1); the Data Type Editor for UDTs, STRING types and the Add-On-Defined folder exist (Wave 2). No Add-On Instruction editor.
 - Edit Tags is a grid with a blank new-tag row; Alias For, Style, External Access, Data Type and Description edit in their cells (Wave 1).
 - Branch rails move with Move Branch Rail (0.4.0).
 - `C` (configuration) tags exist (0.4.0, members from the 1756 modules); module tag types use the Studio 5000 names (`AB:1756_DI:I:0`, Wave 1); no modelled module has `S` tags.
 - No remote I/O locations (only `Local`).
 - No rack-optimized connections.
-- Electronic keying and RPI exist in Module Properties, but the connection codes are simplified.
+- Electronic Keying (Exact Match, Compatible Module, Disable Keying), revision and RPI 0.2-750 ms exist (Wave 2) with the codes 16#0114/0115/0116/0109/0204; ProductCode values are the app's own.
 - Phone: there is no instruction toolbar row. It uses the + picker.
-- Only a continuous MainTask: no periodic or event tasks, one program per task in practice.
-- Data types: BOOL, SINT, INT, DINT, REAL, TIMER, COUNTER, CONTROL. No LINT, STRING, UDT editor or Add-On Instructions.
-- Instructions missing compared with 1756-RM003 (audit 2026-10-26): GSV/SSV, BSL/BSR, FFL/FFU, LFL/LFU, SQO/SQI/SQL,
-  (BSL/BSR, FFL/FFU, LFL/LFU, SQO/SQI/SQL added in Wave 1) FAL/FSC/AVE/SRT/SIZE, MSG, PID, TRN/TOD/FRD/DEG/RAD, SIN/COS/TAN/LN/LOG/XPY, CTUD/TONR (FBD/ST only), UID/UIE, IOT,
-  string instructions. The engine has the 53 in `INSTR`.
+- Only a continuous MainTask: no periodic or event tasks, one program per task in practice. Controller Fault Handler, Power-Up Handler, program fault routines and the task watchdog (6/1) exist (Wave 2); handlers are kept as tasks of type fault / powerup in the project.
+- Data types: BOOL, SINT, INT, DINT, LINT, REAL, LREAL, STRING, TIMER, COUNTER, CONTROL, PID and UDTs (Wave 2). LINT is exact only to 2^53. No Add-On Instructions.
+- Instructions still missing compared with 1756-RM003/RM018A: MSG, CTUD/TONR (FBD/ST only), UID/UIE, IOT, string
+  instructions. Wave 1 added BSL/BSR, FFL/FFU, LFL/LFU, SQO/SQI/SQL; Wave 2 added SIN COS TAN ASN ACS ATN LN LOG XPY,
+  DEG RAD TOD FRD TRN, FAL FSC AVE STD SRT SIZE CPS, GSV/SSV (WallClockTime, Controller, Task, Program, Module,
+  FaultLog only) and PID (no tuning dialog), plus BPT/TPT for Logix Emulate. The audit configures 85 instructions.
 - RSLinx: no EtherNet/IP driver (listed as "not in this version"), so no path to a real controller.
-- Logix Emulate: speed of time, Single Scan, Remove Module keep/clear and the Chassis Monitor menu bar exist (Wave 1); no BPT/TPT yet.
-- L5X export: modules are written without revision, keying and connection data, and the controller is fixed as
-  1756-L85E v37. Not yet imported into a real Studio 5000 to prove it opens there.
+- Logix Emulate: speed of time, Single Scan, Remove Module keep/clear and the Chassis Monitor menu bar (Wave 1); BPT/TPT with trace windows, controller Module Properties (General, System, Emulator, Debug), status bar and chassis Properties (Wave 2). A breakpoint ends the scan; the next scan starts from the top.
+- L5X export carries the whole project (Wave 2): UDTs and string types, modules with keying, revision and RPI,
+  tasks, programs, fault handlers, rung edit zones. An emulated controller is written as 1756-L85E v37. Not yet
+  imported into a real Studio 5000 to prove it opens there.
+- RSLinx Classic: every menu item exists (Wave 2); Module Statistics, Driver / CIP / Station Diagnostics, Data
+  Monitor and Set Time work on the emulated network. Set Time's dialog is not in the help (layout is a guess).

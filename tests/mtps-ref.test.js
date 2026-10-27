@@ -433,5 +433,119 @@ console.log('Program control');
   check('an output branch drives both coils', c.read('O1') === 1 && c.read('O2') === 1);
 }
 
+console.log('Trigonometric and advanced math: the examples of 1756-RM018A (chapters 14, 15)');
+{
+  const ex = [['SIN', 0.7853982, 0.70710677], ['COS', 1.0471976, 0.49999997], ['TAN', 2.0943952, -1.7320505], ['ASN', 0.2, 0.20135793], ['ACS', -0.6, 2.2142975], ['ATN', 0.86, 0.710271], ['LN', 5.0, 1.609438], ['LOG', 3.4, 0.53147894]];
+  const c = run({ tags: ex.flatMap(([m, v]) => [T('S_' + m, 'REAL', { value: v }), T('D_' + m, 'REAL')]), rungs: ex.map(([m]) => `${m}(S_${m},D_${m});`) });
+  scans(c, 1);
+  ex.forEach(([m, v, want]) => near(`${m}(${v}) = ${want}`, c.read('D_' + m), want));
+  const x = run({ tags: [T('X', 'REAL', { value: 33 }), T('Y', 'REAL', { value: 4 }), T('Res', 'REAL'), T('N', 'REAL')], rungs: ['XPY(X,Y,Res);', 'ACS(2.0,N);'] });
+  scans(x, 1);
+  check('XPY(33.0, 4.0) = 1185921.0', x.read('Res') === 1185921);
+  check('ACS of a Source outside -1…1: Dest is NAN', Number.isNaN(x.read('N')));
+  check('the math status flags follow the result: TAN(2.0943952) < 0 sets S:N', (() => { const t = run({ tags: [T('R', 'REAL')], rungs: ['TAN(2.0943952,R);'] }); scans(t, 1); return t.S.N === 1 && t.S.Z === 0; })());
+}
+
+console.log('Math conversions: the examples of 1756-RM018A (chapter 16)');
+{
+  const c = run({ tags: [T('Src', 'DINT', { value: 22 }), T('Bcd', 'DINT'), T('Va', 'DINT', { value: 34 }), T('Res1', 'DINT'), T('Big', 'DINT', { value: 0x1234567E }), T('Dec', 'DINT'),
+    T('Deg_S', 'REAL', { value: 15 }), T('Deg_D', 'REAL'), T('Fv', 'REAL', { value: 789.55554 }), T('Ft', 'REAL'), T('Rad_D', 'REAL')], rungs: ['TOD(Src,Bcd);', 'FRD(Va,Res1);', 'FRD(Big,Dec);', 'DEG(Deg_S,Deg_D);', 'TRN(Fv,Ft);', 'RAD(0.0,Rad_D);'] });
+  scans(c, 1);
+  check('TOD: Source 22 gives 34 (16#22)', c.read('Bcd') === 34);
+  check('FRD: Source 34 (16#22) gives 22', c.read('Res1') === 22);
+  check('FRD: 16#1234_567E gives 12345684 (a digit over 9 is used as it is)', c.read('Dec') === 12345684);
+  near('DEG: 15.0 gives 859.4367', c.read('Deg_D'), 859.4367);
+  check('TRN: 789.55554 gives 789.0', c.read('Ft') === 789);
+  check('RAD: 0.0 gives 0.0, S:Z set', c.read('Rad_D') === 0 && c.S.Z === 1);
+}
+
+console.log('FAL and FSC: the examples of 1756-RM018A (chapter 8)');
+{
+  const ten = k => Array.from({ length: 10 }, (_, i) => i * k + 1);
+  const c = run({ tags: [T('array_1', 'DINT', { dim: 10 }), T('array_2', 'DINT', { dim: 10, value: ten(3) }), T('array_3', 'DINT', { dim: 10, value: ten(1) }), T('array_4', 'DINT', { dim: 10 }),
+    T('value_1', 'DINT', { value: 5 }), T('value_2', 'DINT'), T('control_1', 'CONTROL'), T('control_2', 'CONTROL'), T('control_3', 'CONTROL'), T('control_4', 'CONTROL'), T('control_5', 'CONTROL'), T('En', 'BOOL')],
+    rungs: ['FAL(control_1,10,0,ALL,array_1[control_1.POS],array_2[control_1.POS]);',
+      'FAL(control_2,10,0,ALL,array_4[control_2.POS],array_2[control_2.POS]/array_3[control_2.POS]);',
+      'XIC(En)FAL(control_3,10,0,INC,value_2,array_2[control_3.POS]+value_1);',
+      'FAL(control_4,10,0,ALL,array_3[control_4.POS],value_1);',
+      'FSC(control_5,10,0,ALL,array_1[control_5.POS]<>array_2[control_5.POS]);'] });
+  scans(c, 1);
+  eq('Example 1, array to array: each element of array_2 copied into the same position of array_1', c.read('array_1'), ten(3));
+  eq('Example 4, array / array to array: array_2[i] / array_3[i] (integer divide truncates)', c.read('array_4'), ten(3).map((v, i) => Math.trunc(v / (i + 1))));
+  eq('Example 2, element to array: value_1 into all 10 elements', c.read('array_3'), Array(10).fill(5));
+  c.write('En', 1); scans(c, 1);
+  check('Example 7, (element + array) to element, INC: only the current element each time it is enabled', c.read('value_2') === 6 && c.read('control_3.POS') === 1);
+  c.write('En', 0); scans(c, 1); c.write('En', 1); scans(c, 1);
+  check('Example 7: the next time, value_2 is overwritten with the next value', c.read('value_2') === 9 && c.read('control_3.POS') === 2);
+  check('FSC Example 1: all equal (array_1 is a copy of array_2): no find, .DN set', c.read('control_5.DN') === 1 && c.read('control_5.FD') === 0);
+  const s = run({ tags: [T('array_1', 'DINT', { dim: 10, value: [1, 2, 3, 9, 5, 6, 7, 8, 0, 10] }), T('array_2', 'DINT', { dim: 10, value: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), T('control', 'CONTROL')],
+    rungs: ['FSC(control,10,0,ALL,array_1[control.POS]<>array_2[control.POS]);'] });
+  scans(s, 1);
+  eq('FSC Example 1: the first element that is not equal sets FD and IN, POS holds its location', [s.read('control.FD'), s.read('control.IN'), s.read('control.POS')], [1, 1, 3]);
+  s.write('control.IN', 0); scans(s, 1);
+  check('FSC Example 1: clear the IN bit to search the rest of the array (the next one is element 8)', s.read('control.POS') === 8 && s.read('control.IN') === 1);
+}
+
+console.log('AVE, SRT, STD, SIZE and CPS: the examples of 1756-RM018A (chapter 8)');
+{
+  // DINT_array, which is DINT[4,5], holds 20 down to 1 (row 0: 20 19 18 17 16, …, row 3: 5 4 3 2 1)
+  const grid = () => Array.from({ length: 20 }, (_, k) => 20 - k);
+  const c = run({ tags: [T('DINT_array', 'DINT', { dim: [4, 5], value: grid() }), T('dint_ave', 'DINT'), T('dint_ave2', 'DINT'), T('real_std', 'REAL'), T('real_std2', 'REAL'),
+    T('control', 'CONTROL'), T('control2', 'CONTROL'), T('control_1', 'CONTROL'), T('control_2', 'CONTROL'), T('array_a', 'DINT', { dim: 10 }), T('array_a_size', 'DINT')],
+    rungs: ['AVE(DINT_array[0,1],0,dint_ave,control,4,0);', 'AVE(DINT_array[3,0],1,dint_ave2,control2,5,0);',
+      'STD(DINT_array[0,4],0,real_std,control_1,4,0);', 'STD(DINT_array[0,0],1,real_std2,control_2,5,0);', 'SIZE(array_a,0,array_a_size);'] });
+  scans(c, 1);
+  check('AVE Example 1: dimension 0 from [0,1], Length 4: (19 + 14 + 9 + 4) / 4 = 11.5, dint_ave = 12', c.read('dint_ave') === 12 && c.read('control.DN') === 1);
+  check('AVE Example 2: dimension 1 from [3,0], Length 5: (5 + 4 + 3 + 2 + 1) / 5 = 3', c.read('dint_ave2') === 3);
+  near('STD Example 1: dimension 0 from [0,4], Length 4 (16, 11, 6, 1): 6.454972', c.read('real_std'), 6.454972);
+  near('STD Example 2: dimension 1 from [0,0], Length 5 (20 … 16): sqrt(10 / 4) = 1.581139', c.read('real_std2'), 1.581139);
+  check('SIZE Example 1: dimension 0 of array_a has 10 elements', c.read('array_a_size') === 10);
+  const s = run({ tags: [T('DINT_array', 'DINT', { dim: [4, 5], value: grid() }), T('control_1', 'CONTROL'), T('sort1', 'BOOL')],
+    rungs: ['XIC(sort1)SRT(DINT_array[0,2],0,control_1,4,0);'] });
+  s.write('sort1', 1); scans(s, 1);
+  eq('SRT Example 1: column 2 (18 13 8 3) sorted ascending: 3 8 13 18; .DN set, Position 3', [[0, 1, 2, 3].map(r => s.read(`DINT_array[${r},2]`)), s.read('control_1.DN'), s.read('control_1.POS')], [[3, 8, 13, 18], 1, 3]);
+  check('SRT Example 1: the other columns are not changed', s.read('DINT_array[0,1]') === 19 && s.read('DINT_array[3,3]') === 2);
+  const s2 = run({ tags: [T('DINT_array', 'DINT', { dim: [4, 5], value: grid() }), T('control_1', 'CONTROL')], rungs: ['SRT(DINT_array[2,0],1,control_1,5,0);'] });
+  scans(s2, 1);
+  eq('SRT Example 2: row 2 (10 9 8 7 6) sorted ascending: 6 7 8 9 10', [0, 1, 2, 3, 4].map(k => s2.read(`DINT_array[2,${k}]`)), [6, 7, 8, 9, 10]);
+  const p = run({ tags: [T('project_data', 'DINT', { dim: 100, value: Array.from({ length: 100 }, (_, k) => k) }), T('produced_array', 'DINT', { dim: 100 })],
+    rungs: ['CPS(project_data[0],produced_array[0],100);'] });
+  scans(p, 1);
+  check('CPS Example: project_data[0] … [99] copied into produced_array', p.read('produced_array[99]') === 99 && p.read('produced_array[1]') === 1);
+}
+
+console.log('GSV and SSV: the example and rules of 1756-RM018A (chapter 4)');
+{
+  const src = [0, 0, 4 | (89 << 16), 0, 0, 0, 0, 0, 0, 0, 0];
+  const c = run({ tags: [T('dest1', 'DINT'), T('src', 'DINT', { dim: 11, value: src }), T('back', 'DINT', { dim: 11 }), T('Wide', 'DINT', { value: 0x12345678 }), T('small', 'DINT', { dim: 4 })],
+    rungs: ['GSV(Program,THIS,LASTSCANTIME,dest1);', 'SSV(Program,THIS,MinorFaultRecord,src[0]);', 'GSV(Program,THIS,MinorFaultRecord,back[0]);', 'GSV(WallClockTime,,ApplyDST,Wide);', 'GSV(Program,THIS,MajorFaultRecord,small[0]);'] });
+  c.scan(10); c.scan(10);
+  check('Example: GSV(Program,THIS,LASTSCANTIME,dest1) gets the last scan time of this program in µs', c.read('dest1') >= 0 && Number.isInteger(c.read('dest1')));
+  eq('Example: SSV(Program,THIS,MinorFaultRecord,src[0]) sets the record (GSV reads it back)', c.read('back'), src);
+  check('a SINT attribute into a DINT Dest: only the lower 8 bits are updated, the other 24 bits unchanged', c.read('Wide') === 0x12345600);
+  check('the MajorFaultRecord of the Program object requires a DINT[11]: a DINT[4] is too small, minor fault 4/7, Dest unchanged', c.minors.some(m => m.type === 4 && m.code === 7) && c.read('small').every(v => v === 0));
+}
+
+console.log('PID: the rules and examples of 1756-RM018A (chapter 13)');
+{
+  const bits = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
+  check('the .CTL member: the bit numbers of .EN (31) … .PVHA (7)', MTPS.PREDEF.PID.filter(m => m.of === 'CTL').every(m => bits[m.name] === m.bit) && MTPS.PREDEF.PID.filter(m => m.of).length === 21);
+  // Controlling a ratio: pid_2.SP = uncontrolled_flow × ratio (MUL), then PID(pid_2,pv_2,tieback_2,cv_2,0,0,0)
+  const c = run({ tags: [T('pid_2', 'PID'), T('pv_2', 'REAL', { value: 30 }), T('tieback_2', 'REAL'), T('cv_2', 'REAL'), T('uncontrolled_flow', 'REAL', { value: 40 }), T('ratio', 'REAL', { value: 0.5 }), T('PC_timer', 'TIMER')],
+    rungs: ['MUL(uncontrolled_flow,ratio,pid_2.SP);', 'TON(PC_timer,1000,0);', 'XIC(PC_timer.DN)PID(pid_2,pv_2,tieback_2,cv_2,0,0,0);', 'XIC(PC_timer.DN)RES(PC_timer);'] });
+  ['UPD:1', 'MAXS:100', 'KP:1', 'MAXO:0', 'MINO:0'].forEach(q => { const [n, v] = q.split(':'); c.write('pid_2.' + n, +v); });
+  for (let n = 0; n < 99; n++) c.scan(10);
+  check('the timer method: the PID runs only when PC_timer.DN is set (.UPD = the timer preset, 1 s)', c.read('pid_2.EN') === 0 && c.read('cv_2') === 0);
+  c.scan(10); c.scan(10);
+  check('Controlling a ratio: SP = 40 × 0.5 = 20, PV 30: CV = KP × (SP - PV) limited at 0 (MAXO = MINO were reset to 100 and 0)', c.read('pid_2.SP') === 20 && c.read('pid_2.MAXO') === 100 && c.read('pid_2.MINO') === 0 && c.read('cv_2') === 0 && c.read('pid_2.EN') === 1);
+  c.write('pid_2.CA', 1); for (let n = 0; n < 102; n++) c.scan(10);
+  check('E = PV - SP (direct action, .CA): CV = 10', Math.abs(c.read('cv_2') - 10) < 1e-4);
+  c.write('pid_2.SWM', 1); c.write('pid_2.SO', 25); c.write('pid_2.MO', 1); c.write('tieback_2', 70); for (let n = 0; n < 102; n++) c.scan(10);
+  check('Manual mode overrides software manual mode if both mode bits are set', Math.abs(c.read('cv_2') - 70) < 1e-4);
+  const f = run({ tags: [T('p', 'PID'), T('pv', 'REAL'), T('cv', 'REAL')], rungs: ['PID(p,pv,0,cv,0,0,0);'] });
+  f.scan(10); f.write('p.UPD', 1); f.write('p.MAXS', 100); f.write('p.SP', 101); f.scan(10);
+  check('minor faults: .UPD ≤ 0, type 4 code 35; setpoint out of range, type 4 code 36', f.minors.some(m => m.code === 35) && f.minors.some(m => m.code === 36) && f.read('p.SPOR') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -690,7 +690,7 @@ console.log('Chassis: controller and I/O cards in slots');
   ch.remove(1); ch.advance(20);
   check('an empty slot: 16#0204', c.moduleStatus(1).code === '16#0204');
   ch.insert(1, 'PLC-DO16-24V', 'Wrong'); ch.advance(20);
-  check('another module in the slot: keying mismatch 16#0116', c.moduleStatus(1).code === '16#0116');
+  check('another module of the same product type in the slot: keying mismatch 16#0114 (product code)', c.moduleStatus(1).code === '16#0114');
   ch.remove(1); ch.insert(1, 'PLC-DI16-24V', 'In'); ch.setBit(1, 0, true); ch.advance(30);
   check('the right card back: running, inputs again', c.moduleStatus(1).state === 'Running' && ch.outputs(2) === 8);
   ch.insert(5, 'PLC-CPU', 'Emu2');
@@ -881,6 +881,620 @@ console.log('Download clears the controller memory first (v37 help, Download dia
   c.clearMemory();
   check('cleared memory: no name, no project, Remote Program, nothing to upload', !c.M && c.copy === null && c.name === '' && c.mode === 'remprog' && c.upload() === null && !c.holds(p));
   check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
+}
+
+console.log('Wave 2 A: a rung bookmark is no logic (help v37, Bookmark toolbar)');
+{
+  const p = proj({ tags: [T('N', 'DINT', { value: 3 })], rungs: ['NOP();', 'NOP();'] });
+  const c = new MTPS.Controller(); c.download(p);
+  p.tasks[0].programs[0].routines[0].rungs[1].bm = 1;
+  check('a bookmark on a rung: the project still matches the controller', c.holds(p));
+  p.tasks[0].programs[0].routines[0].rungs[1].t = 'AFI();';
+  check('a changed rung does not', !c.holds(p));
+}
+
+console.log('Logix Emulate: breakpoints and tracepoints, BPT / TPT (LGEM5K-GR016M chapters 9 and 11)');
+{
+  const INS = MTPS.INSTR;
+  check('BPT and TPT are on the Debug tab, with Format and Trace This operands', INS.BPT.grp === 'Debug' && INS.TPT.grp === 'Debug' && MTPS.OPN.TPT[0] === 'Format' && MTPS.OPN.TPT[1] === 'Trace This');
+  eq('a quoted Format keeps its commas: TPT(\'Analog inputs trace:Analog inputs = %f, %f, and %f\',A1,A2,A3)', MTPS.parseRung("TPT('Analog inputs trace:Analog inputs = %f, %f, and %f',A1,A2,A3);").elems[0].a, ["'Analog inputs trace:Analog inputs = %f, %f, and %f'", 'A1', 'A2', 'A3']);
+  eq('the C print types of the manual (%d %o %x %X %e %E %f %g of 45.3202)', MTPS.traceFmt('X:%d %o %x %X %e %E %f %g', Array(8).fill(45.3202)).text, '45 55 2d 2D 4.532020e+001 4.532020E+001 45.320200 45.3202');
+  eq('the manual\'s example: My tracepoint:Tag 1 = %e and Tag 2 = %d', MTPS.traceFmt('My tracepoint:Tag 1 = %e and Tag 2 = %d', [648.8484, 443]), { head: 'My tracepoint', text: 'Tag 1 = 6.488484e+002 and Tag 2 = 443' });
+  const tags = [T('AV', 'REAL', { value: 3.5 }), T('N', 'INT', { value: 7 }), T('Go', 'BOOL'), T('T1', 'TIMER'), T('Cnt', 'DINT')];
+  check('Trace This: a whole TIMER is not traceable (a member is)', /not traceable/.test((MTPS.verify(proj({ tags, rungs: ["TPT('T:%d',T1);"] })).errors[0] || {}).msg || '') && MTPS.verify(proj({ tags, rungs: ["TPT('T:%d',T1.ACC);"] })).errors.length === 0);
+  check('Format: a string is required; 82 characters at most', MTPS.verify(proj({ tags, rungs: ['TPT(N,N);'] })).errors.length === 1 && /82 characters/.test((MTPS.verify(proj({ tags, rungs: [`TPT('${'x'.repeat(83)}',N);`] })).errors[0] || {}).msg || ''));
+  check('a Format without one % type per traced tag gives a warning', MTPS.verify(proj({ tags, rungs: ["TPT('T:%d',N,AV);"] })).warnings.some(w => /type indicator/.test(w.msg)));
+  const c = run({ tags, rungs: ["XIC(Go)TPT('Analog trace:value = %f, n = %d',AV,N);", "XIC(Go)ADD(Cnt,1,Cnt);"] });
+  c.scan(10);
+  check('TPT on a false rung writes nothing', c.traces.size === 0);
+  c.write('Go', 1); c.scan(10); c.scan(10);
+  const tr = c.traces.get('T:Analog trace');
+  check('TPT on a true rung writes a trace entry each scan, titled by the text before the colon', tr && tr.kind === 'TPT' && tr.head === 'Analog trace' && tr.list.length === 2 && tr.list[0].text === 'value = 3.500000, n = 7', JSON.stringify(tr && tr.list));
+  c.tcfg.ignore = true; c.scan(10);
+  check('Ignore If No Value Changed: an entry with the same values is not recorded', tr.list.length === 2);
+  c.write('N', 8); c.scan(10);
+  check('… and one with a changed value is', tr.list.length === 3 && tr.list[2].text.endsWith('n = 8'));
+  c.tcfg.ts = 'Delta'; c.write('N', 9); c.scan(10); c.write('N', 10); c.scan(10);
+  check('TimeStamp Delta: the time since the last trace of that window', tr.list[4].ts === 'Delta' && tr.list[4].t === 10, JSON.stringify(tr.list[4]));
+  c.tcfg.ts = 'Absolute'; c.write('N', 11); c.scan(10);
+  check('TimeStamp Absolute: ms since the controller last changed to Run', tr.list[5].t === c.clock - c.runAt && tr.list[5].t > 0);
+  const b = run({ tags, rungs: ['XIC(Go)ADD(Cnt,1,Cnt);', "XIC(Go)GRT(AV,3.02)BPT('Breakpoint:The input value is %f',AV);", 'XIC(Go)ADD(N,1,N);'] });
+  b.write('Go', 1); b.scan(10);
+  check('a true BPT stops the program there: the rungs after it do not run', b.bp && b.bp.head === 'Breakpoint' && b.bp.text === 'The input value is 3.500000' && b.read('Cnt') === 1 && b.read('N') === 7, JSON.stringify(b.bp));
+  b.advance(100);
+  check('while it is triggered the controller does not scan (it stays in Run)', b.read('Cnt') === 1 && b.mode === 'remrun' && b.running);
+  check('while it is triggered the project is not editable: "not in the correct mode"', !b.edit(proj({ tags, rungs: ['NOP();'] })).ok && /not in the correct mode/.test(b.edit(proj({ tags, rungs: ['NOP();'] })).lines[0]));
+  b.resume(); b.scan(10);
+  check('acknowledged: the program runs again, and the breakpoint triggers again while its condition holds', b.read('Cnt') === 2 && !!b.bp && b.traces.get('B:Breakpoint').list.length === 2);
+  b.resume(); b.write('AV', 1); b.scan(10);
+  check('condition changed: the scan runs to the end', !b.bp && b.read('N') === 8 && b.read('Cnt') === 3);
+  const ch = new MTPS.Chassis(8); ch.insert(1, 'PLC-CPU', 'E'); ch.controller(1).tcfg.ts = 'Delta';
+  check('the trace settings are kept with the chassis', MTPS.Chassis.from(JSON.parse(JSON.stringify(ch))).controller(1).tcfg.ts === 'Delta');
+}
+
+console.log('Logix Emulate: the emulated controller\'s General and System settings (LGEM5K-GR016M, Create a controller)');
+{
+  const c = new MTPS.Controller();
+  eq('defaults: Last Controller State, dwell 10 ms, periodic save every 10 min (off), Use RSLinx Classic', [c.emu.startup, c.emu.dwell, c.emu.psave, c.emu.psaveOn, c.emu.linx], ['last', 10, 10, false, true]);
+  check('Continuous Task Dwell Time is 0 to 100 ms', /0 to 100/.test(c.setEmu({ dwell: 101 })) && c.emu.dwell === 10 && c.setEmu({ dwell: 25 }) === '' && c.period === 25);
+  check('Startup Mode is Remote Program or Last Controller State', !!c.setEmu({ startup: 'run' }) && c.setEmu({ startup: 'remprog' }) === '');
+  const p = proj({ rungs: ['NOP();'] });
+  c.download(p); c.setMode('remrun'); c.power(false); c.power(true);
+  check('Startup Mode Remote Program: in REM the controller starts in Remote Program after power-up', c.mode === 'remprog');
+  c.setEmu({ startup: 'last' }); c.setMode('remrun'); c.power(false); c.power(true);
+  check('Last Controller State: it starts in the mode it had (Remote Run)', c.mode === 'remrun');
+  const ch = new MTPS.Chassis(8); ch.insert(1, 'PLC-CPU', 'E'); ch.controller(1).setEmu({ dwell: 5, psaveOn: true, com0: 'COM2' });
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch))).controller(1);
+  check('the settings are kept with the chassis', back.emu.dwell === 5 && back.emu.psaveOn && back.emu.com0 === 'COM2' && back.period === 5);
+  ch.remove(1, true); ch.insert(1, 'PLC-CPU', 'X'); ch.useKept(1, true, false);
+  check('…and with a kept configuration of a removed controller', ch.controller(1).emu.dwell === 5);
+}
+
+console.log('Wave 2 B: user-defined data types, size (Data Type Editor, v37 help: Using user-defined data types)');
+{
+  const pump = { name: 'Pump', members: [{ name: 'Running', type: 'BOOL' }, { name: 'Speed', type: 'REAL', style: 'Exponential' }, { name: 'Hours', type: 'DINT', desc: 'run hours', access: 'Read Only' }] };
+  const p = proj({ dataTypes: [pump, { name: 'Line', members: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'BOOL' }, { name: 'C', type: 'SINT' }, { name: 'D', type: 'INT' }, { name: 'E', type: 'BOOL', dim: 40 }, { name: 'P', type: 'Pump', dim: 2 }] }],
+    tags: [T('P1', 'Pump'), T('L1', 'Line')], rungs: ['XIC(P1.Running)MOV(5,P1.Hours)OTE(L1.E[33]);', 'MOV(P1.Hours,L1.P[1].Hours);'] });
+  eq('BOOLs share a hidden SINT, REAL and DINT 4-byte aligned: Pump is 12 bytes', MTPS.typeSize(p, 'Pump'), 12);
+  eq('TIMER, COUNTER, CONTROL are 12 bytes; DINT 4', [MTPS.typeSize(p, 'TIMER'), MTPS.typeSize(p, 'COUNTER'), MTPS.typeSize(p, 'CONTROL'), MTPS.typeSize(p, 'DINT')], [12, 12, 12, 4]);
+  eq('two BOOLs, SINT, INT, BOOL[40] (2 DINTs) and Pump[2]: 12 + 24 = 36 bytes', MTPS.typeSize(p, 'Line'), 36);
+  check('an unknown type has no size', MTPS.typeSize(p, 'Nope') === null);
+  check('a project with UDT tags verifies (members, a member array, a nested UDT array)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); c.write('P1.Running', 1);
+  scans(c, 2);
+  check('UDT members run in logic: P1.Hours = 5, L1.E[33] on, L1.P[1].Hours = 5', c.read('P1.Hours') === 5 && c.read('L1.E[33]') === 1 && c.read('L1.P[1].Hours') === 5);
+}
+
+console.log('Wave 2 B: STRING and the string types of Data Types > Strings (1756-PM004; v37 help: Using user-defined data types)');
+{
+  const p = proj({ dataTypes: [{ name: 'STR20', family: 'string', len: 20 }], tags: [T('S1', 'STRING', { value: { LEN: 2, DATA: [72, 105] } }), T('S2', 'STRING'), T('Short', 'STR20')], rungs: ['COP(S1,S2,1);', 'MOV(S1.LEN,Short.LEN)MOV(S1.DATA[0],Short.DATA[0])MOV(S1.DATA[1],Short.DATA[1]);'] });
+  const dt = MTPS.dataTypes(p);
+  check('Strings lists STRING and the project\'s string types; Add-On-Defined is empty; Predefined no longer lists STRING', dt.strings.join() === 'STRING,STR20' && dt.addOnDefined.length === 0 && !dt.predefined.includes('STRING') && dt.predefined.includes('TIMER'));
+  eq('STRING is LEN (DINT) and DATA (SINT[82])', MTPS.PREDEF.STRING, [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }]);
+  eq('sizes: STRING 88 bytes, STR20 24 bytes', [MTPS.typeSize(p, 'STRING'), MTPS.typeSize(p, 'STR20')], [88, 24]);
+  check('a project with STRING tags verifies (COP of a string, its LEN and DATA)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); scans(c, 1);
+  check('COP copies the string; LEN and DATA move into a STR20', c.read('S2.LEN') === 2 && c.read('S2.DATA[1]') === 105 && c.read('Short.LEN') === 2 && c.read('Short.DATA[0]') === 72);
+  check('a whole string is written (as the String Browser does)', c.write('S2', { LEN: 3, DATA: [65, 66, 67] }, undefined, true) && c.read('S2.LEN') === 3 && c.read('S2.DATA[2]') === 67 && c.read('S2').DATA.length === 82);
+  check('Maximum Characters must be 1 to 65535', /Maximum Characters must be 1 to 65535/.test(MTPS.verify(proj({ dataTypes: [{ name: 'S0', family: 'string', len: 0 }] })).errors.map(e => e.text).join()));
+}
+
+console.log('Wave 2 B: LINT and LREAL (v37 help: Elementary data types, LINT data types)');
+{
+  check('LINT and LREAL are atomic types', MTPS.ATOMIC.includes('LINT') && MTPS.ATOMIC.includes('LREAL'));
+  const p = proj({ tags: [T('L1', 'LINT', { value: 2147483647 }), T('L2', 'LINT'), T('L3', 'LINT'), T('R1', 'LREAL'), T('R2', 'LREAL'), T('D1', 'DINT'), T('Big', 'LINT', { value: 9007199254740990 }), T('Arr', 'LINT', { dim: 2 }), T('Rs', 'REAL'), T('Ls', 'LINT')],
+    rungs: ['ADD(L1,1,L2);', 'MUL(L1,4,L3);', 'DIV(1,3,R1);', 'CPT(R2,R1*3);', 'MOV(L2,D1);', 'OTE(L2.40);', 'AND(Big,255,Arr[0]);', 'COP(R1,Ls,1);'] });
+  check('a project with LINT and LREAL tags verifies (math, a LINT bit 40, a LINT array)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); scans(c, 1);
+  check('LINT math is 64-bit: 2147483647 + 1 = 2147483648 (then bit 40 set), x 4 = 8589934588', c.read('L2') === 2147483648 + 2 ** 40 && c.read('L3') === 8589934588);
+  check('LREAL keeps 64-bit precision: 1/3 and 1/3*3', c.read('R1') === 1 / 3 && c.read('R2') === 1);
+  check('a LINT into a DINT wraps and sets S:V', c.read('D1') === -2147483648);
+  check('bit 40 of a LINT (OTE L2.40)', c.read('L2.40') === 1 && c.read('L2.31') === 1 && c.read('L2.0') === 0);
+  check('AND on a LINT works on 64 bits', c.read('Arr[0]') === (9007199254740990 % 256));
+  check('COP of an LREAL into a LINT copies the 8 bytes', c.read('Ls') === Number(new BigInt64Array(new Float64Array([1 / 3]).buffer)[0]));
+  eq('sizes: LINT and LREAL 8 bytes; a type with one is 8-byte aligned', [MTPS.typeSize(p, 'LINT'), MTPS.typeSize(proj({ dataTypes: [{ name: 'X', members: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'LREAL' }] }] }), 'X')], [8, 16]);
+  const q = run({ tags: [T('W', 'LINT', { value: 2 ** 62 }), T('Y', 'LINT')], rungs: ['MUL(W,2,Y);'] });
+  scans(q, 1);
+  check('LINT overflow wraps to -2^63 and sets S:V (a minor fault)', q.read('Y') === -9223372036854775808 && q.read('S:V') === 1);
+}
+
+console.log('Wave 2 D: fault handling (1756-PM014: Controller Fault Handler, fault routine, Power-Up Handler, watchdog)');
+/* a handler program (Controller Fault Handler: kind 'fault', Power-Up Handler: 'powerup') holding one routine */
+const handlerTask = (kind, name, rungs, extra) => ({ name: kind === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler', type: kind, programs: [Object.assign({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] }, extra || {})] });
+/* SSV(Program, THIS, MajorFaultRecord) with Type and Code 0, run after the named routine (the GSV/SSV instructions
+   are not in this file's scope: the engine API is the same one they use) */
+const clearsIn = (c, rname) => { const r0 = c.routine; c.routine = function (R) { r0.call(this, R); if (R.name === rname) { const a = this.majorFaultRecord('THIS'); a[2] = 0; this.setMajorFaultRecord('THIS', a); } }; };
+{
+  const base = () => proj({ tags: [T('Idx', 'DINT', { value: 5 }), T('Arr', 'DINT', { dim: 3 }), T('After', 'BOOL'), T('Seen', 'BOOL'), T('Cnt', 'DINT')], rungs: ['MOV(1,Arr[Idx])OTE(After);', 'ADD(Cnt,1,Cnt);'] });
+  const p = base(); p.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);']));
+  const c = new MTPS.Controller(); check('a project with a Controller Fault Handler program downloads', c.download(p).ok); c.setMode('remrun');
+  const p0 = proj({ tags: [T('Seen', 'BOOL')], rungs: ['NOP();'] }); p0.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);']));
+  const c0 = new MTPS.Controller(); c0.download(p0); c0.setMode('remrun'); scans(c0, 3);
+  check('the Controller Fault Handler is not scanned with the tasks', c0.read('Seen') === 0 && !c0.fault);
+  scans(c, 1);
+  check('a fault the handler does not clear: the handler ran, then the controller faults (type 4 code 20)', c.read('Seen') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20);
+  const rec = c.majorFaultRecord('FaultProg');
+  check('the handler program\'s MajorFaultRecord holds the fault: DINT[11], Type and Code in DINT 2', rec.length === 11 && (rec[2] & 0xFFFF) === 4 && rec[2] >> 16 === 20 && (rec[0] !== 0 || rec[1] !== 0));
+  const c2 = new MTPS.Controller(); c2.download(p); c2.setMode('remrun'); clearsIn(c2, 'Main'); scans(c2, 2);
+  check('the handler clears the fault (Type and Code 0): no fault, the faulted instruction is skipped and the next one runs', !c2.fault && c2.read('After') === 1 && c2.read('Cnt') === 2 && c2.read('Arr').every(v => v === 0));
+  const p2 = base(); p2.tasks.push(handlerTask('fault', 'F1', ['NOP();'])); p2.tasks[1].programs.push({ name: 'F2', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'NOP();' }] }] });
+  check('Verify: only one program can be in the Controller Fault Handler', MTPS.verify(p2).errors.some(e => /Only one program can be in the Controller Fault Handler/.test(e.msg)));
+  const p3 = base(); p3.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);'])); p3.tasks[1].programs[0].routines = []; delete p3.tasks[1].programs[0].main;
+  const c3 = new MTPS.Controller(); check('a handler program without a routine verifies', c3.download(p3).ok); c3.setMode('remrun'); scans(c3, 1);
+  check('a handler program without a main routine does nothing: the controller faults', !!c3.fault && c3.fault.code === 20);
+  check('MajorFaultRecord of an unknown program: null; SSV of it is refused', c.majorFaultRecord('Nope') === null && !c.setMajorFaultRecord('Nope', []));
+  // I/O: connection lost with Major Fault On Controller set (type 3 code 16) goes to the handler once
+  const p4 = proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1', majorOnFail: true }], tags: [T('Seen', 'DINT')], rungs: ['NOP();'] });
+  p4.tasks.push(handlerTask('fault', 'FaultProg', ['ADD(Seen,1,Seen);']));
+  const c4 = new MTPS.Controller(); c4.download(p4); c4.setMode('remrun'); clearsIn(c4, 'Main'); scans(c4, 1);
+  c4.setModuleFault(1, true); scans(c4, 3);
+  check('an I/O connection fault (type 3 code 16) the handler clears: no fault, the handler ran once', !c4.fault && c4.read('Seen') === 1);
+  const c5 = new MTPS.Controller(); c5.download(p4); c5.setMode('remrun'); scans(c5, 1); c5.setModuleFault(1, true); scans(c5, 1);
+  check('not cleared: the I/O fault faults the controller (type 3 code 16), the handler ran', !!c5.fault && c5.fault.type === 3 && c5.fault.code === 16 && c5.read('Seen') === 1);
+}
+
+console.log('Wave 2 D: Power-Up Handler (1756-PM014: power up in Run after a power loss, major fault type 1 code 1)');
+{
+  const base = rungs => { const p = proj({ tags: [T('Boot', 'DINT'), T('Cnt', 'DINT')], rungs: ['ADD(Cnt,1,Cnt);'] }); if (rungs) p.tasks.push(handlerTask('powerup', 'PowerUp', rungs)); return p; };
+  const cycle = c => { c.power(false); c.power(true); };
+  const c = new MTPS.Controller(); c.download(base(['ADD(Boot,1,Boot);'])); c.setMode('remrun'); scans(c, 2); cycle(c);
+  check('power lost in Remote Run, back on: the Power-Up Handler ran; not cleared, major fault type 1 code 1', c.read('Boot') === 1 && !!c.fault && c.fault.type === 1 && c.fault.code === 1 && c.mode === 'remrun' && !c.running);
+  scans(c, 2);
+  check('faulted: the logic does not run', c.read('Cnt') === 2);
+  const rec = c.majorFaultRecord('PowerUp');
+  check('the handler program\'s MajorFaultRecord holds type 1 code 1', (rec[2] & 0xFFFF) === 1 && rec[2] >> 16 === 1);
+  c.clearFault();
+  check('Clear Faults: no fault, Remote Program (as any cleared major fault)', !c.fault && c.mode === 'remprog');
+  const c2 = new MTPS.Controller(); c2.download(base(['ADD(Boot,1,Boot);'])); c2.setMode('remrun'); clearsIn(c2, 'Main'); cycle(c2); scans(c2, 1);
+  check('the handler clears the fault: the controller resumes Run at once', c2.read('Boot') === 1 && !c2.fault && c2.running && c2.read('Cnt') === 1);
+  const c3 = new MTPS.Controller(); c3.download(base(null)); c3.setMode('remrun'); cycle(c3);
+  check('no Power-Up Handler program: the controller goes back to Run without a fault', !c3.fault && c3.running);
+  const c4 = new MTPS.Controller(); c4.download(base(['ADD(Boot,1,Boot);'])); cycle(c4);
+  check('power lost in Program mode: the handler does not run, no fault', c4.read('Boot') === 0 && !c4.fault && c4.mode === 'remprog');
+  const c5 = new MTPS.Controller(); c5.download(base(['ADD(Boot,1,Boot);'])); c5.setKey('RUN'); cycle(c5);
+  check('key switch in RUN, power lost in Run: the handler runs too', c5.read('Boot') === 1 && c5.fault && c5.fault.type === 1);
+  const c6 = new MTPS.Controller(); const p6 = base(['ADD(Boot,1,Boot);']); p6.tasks[1].programs[0].routines = []; delete p6.tasks[1].programs[0].main;
+  c6.download(p6); c6.setMode('remrun'); cycle(c6);
+  check('an empty Power-Up Handler (no routine): power up faulted, type 1 code 1 (PM014)', !!c6.fault && c6.fault.type === 1 && c6.fault.code === 1);
+  check('the Power-Up Handler is not scanned with the tasks', (() => { const x = new MTPS.Controller(); x.download(base(['ADD(Boot,1,Boot);'])); x.setMode('remrun'); scans(x, 3); return x.read('Boot') === 0; })());
+}
+
+console.log('Wave 2 D: the fault routine of a program (1756-PM014, Create a fault routine for a program)');
+{
+  const base = (fault, extra) => {
+    const p = proj({ tags: [T('Idx', 'DINT', { value: 7 }), T('Arr', 'DINT', { dim: 3 }), T('After', 'BOOL'), T('FR', 'DINT'), T('Seen', 'BOOL')],
+      rungs: ['MOV(1,Arr[Idx])OTE(After);'], routines: [{ name: 'Fault_Routine', rungs: ['ADD(FR,1,FR);'] }, { name: 'Sub', rungs: ['MOV(2,Arr[Idx]);', 'OTL(Seen);'] }] });
+    if (fault) p.tasks[0].programs[0].fault = fault;
+    if (extra) p.tasks.push(extra);
+    return p;
+  };
+  const c = new MTPS.Controller(); c.download(base('Fault_Routine')); c.setMode('remrun'); scans(c, 1);
+  check('an instruction fault in the program runs its fault routine; not cleared, the controller faults (4/20)', c.read('FR') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20);
+  const r = c.majorFaultRecord('MainProgram');
+  check('GSV Program THIS MajorFaultRecord in the fault routine: type 4 code 20 of this program', (r[2] & 0xFFFF) === 4 && r[2] >> 16 === 20);
+  const c2 = new MTPS.Controller(); c2.download(base('Fault_Routine')); c2.setMode('remrun'); clearsIn(c2, 'Fault_Routine'); scans(c2, 3);
+  check('the fault routine clears the fault: no fault, the next instruction runs, every scan', !c2.fault && c2.read('After') === 1 && c2.read('FR') === 3);
+  const p3 = base('Fault_Routine'); p3.tasks[0].programs[0].routines[0].rungs = [{ t: 'JSR(Sub,0);' }];
+  const c3 = new MTPS.Controller(); c3.download(p3); c3.setMode('remrun'); clearsIn(c3, 'Fault_Routine'); scans(c3, 1);
+  check('a fault inside a subroutine: cleared, execution goes on with the next instruction of the subroutine', !c3.fault && c3.read('Seen') === 1 && c3.read('FR') === 1);
+  const c4 = new MTPS.Controller(); c4.download(base(null)); c4.setMode('remrun'); scans(c4, 1);
+  check('no fault routine assigned: the routine is not run on a fault', c4.read('FR') === 0 && !!c4.fault);
+  const c5 = new MTPS.Controller(); c5.download(base('Fault_Routine', handlerTask('fault', 'FaultProg', ['OTL(Seen);']))); c5.setMode('remrun'); scans(c5, 1);
+  check('the fault routine does not clear it: the Controller Fault Handler runs next', c5.read('FR') === 1 && c5.read('Seen') === 1 && !!c5.fault);
+  check('a fault routine that does not exist is a Verify error', MTPS.verify(base('Nope')).errors.some(e => /the fault routine 'Nope' does not exist/.test(e.msg)));
+  check('the fault routine is not scanned unless it faults (or is called with JSR)', (() => { const p = base('Fault_Routine'); p.tags[0].value = 0; const x = new MTPS.Controller(); x.download(p); x.setMode('remrun'); scans(x, 3); return x.read('FR') === 0 && !x.fault; })());
+  // a fault in the fault routine itself: not cleared, the controller faults
+  const p6 = base('Fault_Routine'); p6.tasks[0].programs[0].routines[1].rungs = [{ t: 'MOV(3,Arr[Idx]);' }];
+  const c6 = new MTPS.Controller(); c6.download(p6); c6.setMode('remrun'); scans(c6, 1);
+  check('a fault inside the fault routine: the controller faults', !!c6.fault && c6.fault.type === 4);
+}
+
+console.log('Wave 2 D: task watchdog (1756-PM005, Adjust the System Watchdog Time: major fault type 6 code 1)');
+{
+  const loop = (wd, cond, fh) => { const p = proj({ tags: [T('N', 'DINT'), T('Seen', 'DINT')], rungs: ['LBL(L1)ADD(N,1,N);', `${cond || ''}JMP(L1);`] }); if (wd != null) p.tasks[0].watchdog = wd; if (fh) p.tasks.push(fh); return p; };
+  const time = fn => { const t = Date.now(); fn(); return Date.now() - t; };
+  const c = new MTPS.Controller(); c.download(loop(50)); c.setMode('remrun');
+  const ms = time(() => c.scan(10));
+  check('an endless loop with a 50 ms watchdog: major fault type 6 code 1 after about 50 ms', !!c.fault && c.fault.type === 6 && c.fault.code === 1 && ms >= 45 && ms < 1000, `${ms} ms ${JSON.stringify(c.fault)}`);
+  check('the fault names the task and its watchdog time', /Task watchdog expired: task 'MainTask'.*\(50 ms\)/.test(c.fault.text), c.fault.text);
+  const c2 = new MTPS.Controller(); c2.download(loop(null)); c2.setMode('remrun');
+  const ms2 = time(() => c2.scan(10));
+  check('no watchdog set: the default 500 ms', !!c2.fault && c2.fault.type === 6 && ms2 >= 480 && ms2 < 2000, `${ms2} ms`);
+  const c3 = new MTPS.Controller(); c3.download(loop(500, 'LES(N,300000)')); c3.setMode('remrun'); c3.scan(10);
+  check('a long loop that ends within the watchdog time is not a fault (300000 jumps)', !c3.fault && c3.read('N') === 300000, JSON.stringify(c3.fault));
+  const c4 = new MTPS.Controller(); c4.download(loop(30, '', handlerTask('fault', 'FaultProg', ['ADD(Seen,1,Seen);']))); c4.setMode('remrun'); clearsIn(c4, 'Main');
+  const ms4 = time(() => c4.scan(10));
+  check('the Controller Fault Handler clears the watchdog fault once; the same fault again in that scan faults the controller', c4.read('Seen') === 1 && !!c4.fault && c4.fault.type === 6 && ms4 >= 55, `${ms4} ms Seen ${c4.read('Seen')}`);
+  const p5 = loop(1, 'LES(N,3)'); const c5 = new MTPS.Controller(); c5.download(p5); c5.setMode('remrun'); scans(c5, 5);
+  check('a short task with a 1 ms watchdog runs without a fault', !c5.fault);
+}
+
+console.log('Wave 2 D: Electronic Keying and RPI (help: Module Properties - General for 1756; Module Faults 16#0100 - 16#02ff; 1756-UM058)');
+{
+  const mk = (m, card, rev) => { const ch = new MTPS.Chassis(8); ch.insert(0, 'PLC-CPU', 'E'); const c = ch.controller(0); ch.insert(1, card || 'PLC-DI16-24V', 'X'); if (rev) ch.setRevision(1, rev);
+    c.download(proj({ modules: [Object.assign({ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, m)], tags: [T('Q', 'BOOL')], rungs: ['XIC(Local:1:I.Data.0)OTE(Q);'] })); c.setMode('remrun'); ch.setBit(1, 0, true); ch.advance(30); return { ch, c, st: c.moduleStatus(1) }; };
+  let r = mk({});
+  check('default Compatible Module, revision 1.1 against a 1.1 card: Running, inputs flow', r.st.state === 'Running' && r.c.read('Q') === 1);
+  check('Compatible Module, a card with a higher minor revision (1.2): Running', mk({}, null, '1.2').st.state === 'Running');
+  r = mk({ rev: '1.2' });
+  check('Compatible Module, the card\'s minor revision lower (1.1 < 1.2): 16#0116 Major and/or Minor revision', r.st.code === '16#0116' && /^Electronic Keying Mismatch: Major and\/or Minor revision invalid or incorrect/.test(r.st.text) && r.c.read('Q') === 0, JSON.stringify(r.st));
+  check('Compatible Module, another major revision (2.1): 16#0116', mk({}, null, '2.1').st.code === '16#0116');
+  check('Exact Match, minor 1.2 against 1.1: 16#0116', mk({ key: 'exact' }, null, '1.2').st.code === '16#0116');
+  check('Exact Match, the same revision: Running', mk({ key: 'exact', rev: '1.2' }, null, '1.2').st.state === 'Running');
+  r = mk({}, 'PLC-DI16-120V');
+  check('another catalog number of the same product type: 16#0114 product code mismatch', r.st.code === '16#0114' && /product code and\/or vendor ID mismatch/.test(r.st.text));
+  r = mk({}, 'PLC-AI4');
+  check('an analog card for a digital module: 16#0115 product type mismatch', r.st.code === '16#0115' && /product type mismatch/.test(r.st.text));
+  r = mk({ key: 'off' }, 'PLC-DI16-120V', '2.7');
+  check('Disable Keying: another catalog number and revision of the same kind of card runs, inputs flow', r.st.state === 'Running' && r.c.read('Q') === 1);
+  check('Disable Keying, a card of another kind (output card): 16#0109 invalid connection size', mk({ key: 'off' }, 'PLC-DO16-24V').st.code === '16#0109');
+  check('a missing card: 16#0204 Connection request timed out', (() => { const x = mk({}); x.ch.remove(1); x.ch.advance(20); const s = x.c.moduleStatus(1); return s.code === '16#0204' && /^Connection Request Error: Connection request timed out/.test(s.text); })());
+  const ch2 = MTPS.Chassis.from(JSON.parse(JSON.stringify(mk({}, null, '2.1').ch)));
+  check('the card revision is kept with the chassis', ch2.module(1).rev === '2.1');
+  check('setRevision refuses a controller or a bad value', !ch2.setRevision(0, '1.2') && !ch2.setRevision(1, 'x'));
+  const v = m => MTPS.verify(proj({ modules: [Object.assign({ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, m)] })).errors.map(e => e.msg || e).join(' ');
+  check('RPI 0.2 and 750 ms: no Verify error', !/RPI/.test(v({ rpi: 0.2 })) && !/RPI/.test(v({ rpi: 750 })));
+  check('RPI 0.1 or 751 ms: Verify error "not in the range 0.2 to 750 ms"', /RPI 0\.1 ms is not in the range 0\.2 to 750 ms/.test(v({ rpi: 0.1 })) && /RPI 751 ms/.test(v({ rpi: 751 })), v({ rpi: 0.1 }));
+}
+
+console.log('Wave 2 D: configuration member names (1756-UM009G Floating Point Configuration Tags; 1756-UM058)');
+{
+  const c = new MTPS.Controller(); c.download(proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO' }, { slot: 3, type: 'PLC-AI4', name: 'AI' }, { slot: 4, type: 'PLC-AO4', name: 'AO' }] }));
+  const keys = n => Object.keys(c.read(n)).join(' ');
+  check('an output channel: ConfigBits (INT) before HoldForInit, then the latches, modes, ramps and values', keys('Local:4:C.Ch0Config') === 'AlarmDisable ConfigBits HoldForInit RampAlarmLatch LimitAlarmLatch FaultMode ProgMode RampToRun RampToProg RampToFault MaxRampRate FaultValue ProgValue LowLimit HighLimit LowSignal HighSignal LowEngineering HighEngineering', keys('Local:4:C.Ch0Config'));
+  check('Local:4:C.Ch0Config.ConfigBits is an INT (0)', c.read('Local:4:C.Ch0Config.ConfigBits') === 0);
+  check('an input channel: AlarmDisable, the alarm latches, DigitalFilter, RateAlarmLimit, scaling, alarm limits, AlarmDeadband, CalBias', keys('Local:3:C.Ch0Config') === 'AlarmDisable ProcessAlarmLatch RateAlarmLatch DigitalFilter RateAlarmLimit LowSignal HighSignal LowEngineering HighEngineering LAlarmLimit HAlarmLimit LLAlarmLimit HHAlarmLimit AlarmDeadband CalBias', keys('Local:3:C.Ch0Config'));
+  check('the discrete cards: DO ProgToFaultEn FaultMode FaultValue ProgMode ProgValue; DI COSOnOffEn COSOffOnEn after the filters', keys('Local:2:C') === 'ProgToFaultEn FaultMode FaultValue ProgMode ProgValue' && / COSOnOffEn COSOffOnEn$/.test(keys('Local:1:C')) && /^FilterOffOn_0_7 /.test(keys('Local:1:C')));
+}
+
+console.log('Wave 2 (C): trigonometric and advanced math (1756-RM003 / -RM018A chapters 14, 15)');
+{
+  const INS = MTPS.INSTR;
+  check('SIN COS TAN ASN ACS ATN in Trig Functions, LN LOG XPY in Advanced Math, all outputs with Source / Dest', ['SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN'].every(m => INS[m].grp === 'Trig Functions' && INS[m].out && MTPS.OPN[m].join() === 'Source,Dest') && ['LN', 'LOG', 'XPY'].every(m => INS[m].grp === 'Advanced Math') && MTPS.OPN.XPY.join() === 'Source X,Source Y,Dest');
+  const tags = [T('En', 'BOOL'), T('A', 'REAL', { value: 0.5 }), T('R', 'REAL'), T('D', 'DINT'), T('B', 'BOOL'), T('Tm', 'TIMER')];
+  check('verify: a BOOL or a TIMER is not a math operand', MTPS.verify(proj({ tags, rungs: ['SIN(B,R);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['COS(A,Tm);'] })).errors.length === 1);
+  check('verify: an immediate Dest is refused', MTPS.verify(proj({ tags, rungs: ['TAN(A,5);'] })).errors.length === 1);
+  const c = run({ tags, rungs: ['XIC(En)SIN(A,R);', 'XIC(En)ATN(1,D);'] });
+  c.scan(10);
+  check('a false rung leaves Dest alone', c.read('R') === 0 && c.read('D') === 0);
+  c.write('En', 1); c.scan(10);
+  check('a true rung: Dest = SIN(Source); an integer Dest gets the REAL result rounded (ATN(1) = 0.785 -> 1)', Math.abs(c.read('R') - Math.sin(0.5)) < 1e-6 && c.read('D') === 1);
+  const l = run({ tags: [...tags, T('Z', 'REAL', { value: 0 })], rungs: ['LN(Z,R);'] });
+  l.scan(10);
+  check('LN of 0: a minor fault (type 4, code 4) and S:V set', l.S.V === 1 && l.minors.length === 1 && l.minors[0].type === 4 && l.minors[0].code === 4);
+  const x = run({ tags, rungs: ['XPY(-8.0,0.5,R);', 'XPY(-2,3,D);'] });
+  x.scan(10);
+  check('XPY: a negative X with a fractional Y is a minor fault; a whole Y works (-2 ** 3 = -8)', x.minors.some(m => m.code === 4) && x.read('D') === -8);
+  const e = run({ tags, rungs: ['CPT(R,TAN(A)+ASN(0.5)+ACS(0.5)+ATN(1));'] });
+  e.scan(10);
+  check('CPT knows TAN ASN ACS ATN', Math.abs(e.read('R') - (Math.tan(0.5) + Math.PI / 2 + Math.PI / 4)) < 1e-5, e.read('R'));
+}
+
+console.log('Wave 2 (C): math conversions DEG RAD TOD FRD TRN (1756-RM003 / -RM018A chapter 16)');
+{
+  const INS = MTPS.INSTR;
+  check('DEG RAD TOD FRD TRN are in Math Conversions, outputs with Source / Dest', ['DEG', 'RAD', 'TOD', 'FRD', 'TRN'].every(m => INS[m].grp === 'Math Conversions' && INS[m].out && MTPS.OPN[m].join() === 'Source,Dest'));
+  const tags = [T('R', 'REAL', { value: 2.5 }), T('D', 'DINT'), T('I', 'INT'), T('S', 'SINT'), T('Rd', 'REAL')];
+  check('verify: TOD and FRD take integers only (a REAL Source or Dest is refused)', MTPS.verify(proj({ tags, rungs: ['TOD(R,D);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['FRD(D,Rd);'] })).errors.length === 1);
+  check('verify: TRN takes a REAL Source (a DINT tag is refused, an immediate is fine)', MTPS.verify(proj({ tags, rungs: ['TRN(D,I);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['TRN(3.7,D);'] })).errors.length === 0);
+  const c = run({ tags, rungs: ['TOD(-5,D);'] });
+  c.scan(10);
+  check('TOD of a negative Source: 0, S:V and a minor fault (4/4)', c.read('D') === 0 && c.S.V === 1 && c.minors.some(m => m.type === 4 && m.code === 4));
+  const o = run({ tags, rungs: ['TOD(100000000,D);', 'TOD(10000,I);', 'TOD(100,S);'] });
+  o.scan(10);
+  eq('TOD too large for Dest: all 9s (16#9999_9999 DINT, 16#9999 INT, 16#99 SINT)', [o.read('D') >>> 0, o.read('I') & 0xFFFF, o.read('S') & 0xFF], [0x99999999, 0x9999, 0x99]);
+  const t = run({ tags, rungs: ['TRN(-2.7,D);', 'TRN(R,I);', 'RAD(180,Rd);'] });
+  t.scan(10);
+  eq('TRN does not round (-2.7 -> -2, 2.5 -> 2); RAD(180) = pi', [t.read('D'), t.read('I'), +t.read('Rd').toFixed(5)], [-2, 2, 3.14159]);
+  const e = run({ tags, rungs: ['CPT(D,FRD(16#22)+TOD(12)+TRN(R));'] });
+  e.scan(10);
+  check('CPT knows FRD, TOD and TRN', e.read('D') === 22 + 0x12 + 2, e.read('D'));
+}
+
+console.log('Wave 2 (C): FAL and FSC (1756-RM003 / -RM018A chapter 8)');
+{
+  const INS = MTPS.INSTR;
+  check('FAL and FSC: File/Misc, CONTROL first, Length / Position show .LEN / .POS, EN DN ER', INS.FAL.grp === 'File/Misc' && INS.FSC.grp === 'File/Misc' && INS.FAL.bits.join() === 'EN,DN,ER' && INS.FAL.ctl === 0 && INS.FAL.live[1] === 'LEN' && INS.FSC.live[2] === 'POS' && MTPS.OPN.FAL.join() === 'Control,Length,Position,Mode,Dest,Expression' && MTPS.OPN.FSC.join() === 'Control,Length,Position,Mode,Expression');
+  const tags = [T('En', 'BOOL'), T('A', 'DINT', { dim: 6, value: [1, 2, 3, 4, 5, 6] }), T('B', 'DINT', { dim: 6 }), T('Ctl', 'CONTROL'), T('Sm', 'SINT', { dim: 6 }), T('W', 'DINT', { value: 4 })];
+  check('verify: Mode is ALL, INC or a number of elements per scan', MTPS.verify(proj({ tags, rungs: ['FAL(Ctl,6,0,ALL,B[Ctl.POS],A[Ctl.POS]);', 'FAL(Ctl,6,0,inc,B[Ctl.POS],A[Ctl.POS]);', 'FAL(Ctl,6,0,2,B[Ctl.POS],A[Ctl.POS]);'] })).errors.length === 0 &&
+    MTPS.verify(proj({ tags, rungs: ['FAL(Ctl,6,0,SOME,B[Ctl.POS],A[Ctl.POS]);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['FSC(Ctl,6,0,0,A[Ctl.POS]=W);'] })).errors.length === 1);
+  check('the Length and Position of the rung are written into the CONTROL at download', (() => { const c = run({ tags, rungs: ['XIC(En)FAL(Ctl,6,2,ALL,B[Ctl.POS],A[Ctl.POS]);'] }); return c.read('Ctl.LEN') === 6 && c.read('Ctl.POS') === 2; })());
+  // ALL
+  const a = run({ tags, rungs: ['XIC(En)FAL(Ctl,6,0,ALL,B[Ctl.POS],A[Ctl.POS]*10);'] });
+  a.write('En', 1); a.scan(10);
+  eq('ALL: every element in one scan, .DN and .EN set, .POS = .LEN', [a.read('B'), a.read('Ctl.DN'), a.read('Ctl.EN'), a.read('Ctl.POS')], [[10, 20, 30, 40, 50, 60], 1, 1, 6]);
+  a.write('A[0]', 7); a.scan(10);
+  check('ALL: a rung that stays true does not run it again', a.read('B[0]') === 10);
+  a.write('En', 0); a.scan(10);
+  eq('ALL: a false rung clears .EN .DN and .POS', [a.read('Ctl.EN'), a.read('Ctl.DN'), a.read('Ctl.POS')], [0, 0, 0]);
+  a.write('En', 1); a.scan(10);
+  check('ALL: the next false-to-true rung runs it again', a.read('B[0]') === 70);
+  // INC
+  const i = run({ tags, rungs: ['XIC(En)FAL(Ctl,3,0,INC,B[Ctl.POS],A[Ctl.POS]);'] });
+  const pulse = () => { i.write('En', 1); i.scan(10); i.scan(10); i.write('En', 0); i.scan(10); };
+  pulse();
+  eq('INC: one element per false-to-true rung (a rung held true does not step), a false rung clears .EN', [i.read('B'), i.read('Ctl.POS'), i.read('Ctl.EN')], [[1, 0, 0, 0, 0, 0], 1, 0]);
+  i.write('En', 1); i.scan(10); i.write('En', 0); i.scan(10); i.write('En', 1); i.scan(10);
+  eq('INC: after the last element .DN is set (.POS = .LEN)', [i.read('B'), i.read('Ctl.POS'), i.read('Ctl.DN')], [[1, 2, 3, 0, 0, 0], 3, 1]);
+  i.write('En', 0); i.scan(10);
+  check('INC: the false rung after .DN clears .DN and .POS', i.read('Ctl.DN') === 0 && i.read('Ctl.POS') === 0);
+  // numerical
+  const n = run({ tags, rungs: ['XIC(En)FAL(Ctl,6,0,2,B[Ctl.POS],A[Ctl.POS]+100);'] });
+  n.write('En', 1); n.scan(10);
+  eq('numerical mode 2: two elements in the first scan', [n.read('B').slice(0, 3), n.read('Ctl.POS'), n.read('Ctl.DN')], [[101, 102, 0], 2, 0]);
+  n.write('En', 0); n.scan(10); n.scan(10);
+  eq('numerical mode: it goes on while the rung is false, then .DN set and .EN cleared', [n.read('B'), n.read('Ctl.DN'), n.read('Ctl.EN')], [[101, 102, 103, 104, 105, 106], 1, 0]);
+  // overflow
+  const o = run({ tags, rungs: ['FAL(Ctl,6,0,ALL,Sm[Ctl.POS],A[Ctl.POS]*40);'] });
+  o.scan(10);
+  eq('an overflow sets .ER and stops at that element (S:V, minor fault)', [o.read('Sm').slice(0, 5), o.read('Ctl.ER'), o.read('Ctl.POS'), o.read('Ctl.DN'), o.S.V], [[40, 80, 120, -96, 0], 1, 3, 0, 1]);
+  o.scan(10);
+  check('.ER set: the instruction does nothing more', o.read('Sm[4]') === 0 && o.read('Ctl.POS') === 3);
+  o.write('Ctl.ER', 0); o.write('A[3]', 1); o.scan(10);
+  check('.ER cleared by the program: it goes on from that element', o.read('Sm[3]') === 40 && o.read('Ctl.ER') === 1 && o.read('Ctl.POS') === 4);
+  const f = run({ tags, rungs: ['FAL(Ctl,-1,0,ALL,B[Ctl.POS],A[Ctl.POS]);'] });
+  f.scan(10);
+  check('.LEN < 0: major fault type 4, code 21', f.fault && f.fault.type === 4 && f.fault.code === 21);
+  // FSC
+  const s = run({ tags: [...tags, T('Fd', 'BOOL')], rungs: ['XIC(En)FSC(Ctl,6,0,ALL,A[Ctl.POS]>=W);', 'XIC(Ctl.FD)OTE(Fd);'] });
+  s.write('En', 1); s.scan(10);
+  eq('FSC: the first true comparison sets .FD and .IN, .POS is its element', [s.read('Ctl.FD'), s.read('Ctl.IN'), s.read('Ctl.POS'), s.read('Ctl.DN'), s.read('Fd')], [1, 1, 3, 0, 1]);
+  s.scan(10);
+  check('FSC: .IN set, the search waits', s.read('Ctl.POS') === 3);
+  s.write('Ctl.IN', 0); s.scan(10);
+  eq('FSC: .IN cleared, the search goes on from the next element', [s.read('Ctl.POS'), s.read('Ctl.FD'), s.read('Ctl.IN')], [4, 1, 1]);
+  s.write('Ctl.IN', 0); s.write('W', 100); s.scan(10);
+  eq('FSC: nothing more found: .DN set, .FD cleared, .POS = .LEN', [s.read('Ctl.DN'), s.read('Ctl.FD'), s.read('Ctl.POS')], [1, 0, 6]);
+}
+
+console.log('Wave 2 (C): AVE SRT STD SIZE CPS (1756-RM003 / -RM018A chapter 8)');
+{
+  const near = (name, got, want) => check(name, Math.abs(got - want) < 1e-4, `got ${got}, want ${want}`);
+  const INS = MTPS.INSTR;
+  check('AVE STD SRT SIZE CPS are in File/Misc with the reference operands', ['AVE', 'STD', 'SRT', 'SIZE', 'CPS'].every(m => INS[m].grp === 'File/Misc') &&
+    MTPS.OPN.AVE.join() === 'Array,Dim. To Vary,Dest,Control,Length,Position' && MTPS.OPN.SRT.join() === 'Array,Dim. To Vary,Control,Length,Position' && MTPS.OPN.SIZE.join() === 'Source,Dim. To Vary,Size' &&
+    INS.AVE.live[4] === 'LEN' && INS.SRT.live[4] === 'POS' && INS.SRT.bits.join() === 'EN,DN');
+  const tags = [T('En', 'BOOL'), T('A', 'DINT', { dim: 6, value: [6, 2, 5, 1, 4, 3] }), T('R', 'REAL', { dim: 4, value: [1.5, 2.5, 3.5, 4.5] }), T('M', 'INT', { dim: [2, 3, 4] }),
+    T('Ctl', 'CONTROL'), T('Ctl2', 'CONTROL'), T('Ctl3', 'CONTROL'), T('D', 'DINT'), T('Rd', 'REAL'), T('Sm', 'SINT'), T('Tm', 'TIMER', { dim: 3 })];
+  const V = r => MTPS.verify(proj({ tags, rungs: [r] })).errors.length;
+  check('verify: Dim. To Vary is 0, 1 or 2; Array is an element of a number array; STD Dest is REAL', V('AVE(A[0],0,D,Ctl,6,0);') === 0 && V('AVE(A[0],3,D,Ctl,6,0);') === 1 && V('AVE(A,0,D,Ctl,6,0);') === 1 &&
+    V('AVE(D,0,D,Ctl,6,0);') === 1 && V('STD(A[0],0,D,Ctl,6,0);') === 1 && V('STD(A[0],0,Rd,Ctl,6,0);') === 0 && V('SRT(Tm[0],0,Ctl,3,0);') === 1);
+  check('verify: SIZE takes a whole array or an element of any type; CPS checks the types as COP', V('SIZE(Tm,0,D);') === 0 && V('SIZE(M[0,0,0],2,Rd);') === 0 && V('SIZE(D,0,D);') === 1 && V('CPS(A[0],Tm[0],1);') === 1 && V('CPS(A[0],R[0],2);') === 0);
+  // AVE
+  const a = run({ tags, rungs: ['XIC(En)AVE(A[0],0,D,Ctl,6,0);'] });
+  a.write('En', 1); a.scan(10);
+  eq('AVE: the mean of all .LEN elements in one scan (21 / 6 = 3.5 rounds to 4), .EN .DN set', [a.read('D'), a.read('Ctl.EN'), a.read('Ctl.DN'), a.read('Ctl.POS')], [4, 1, 1, 6]);
+  a.write('A[0]', 60); a.scan(10);
+  check('AVE: with .DN set it does not calculate again', a.read('D') === 4);
+  a.write('En', 0); a.scan(10);
+  eq('AVE: rung false with .DN set: .EN .DN .POS cleared', [a.read('Ctl.EN'), a.read('Ctl.DN'), a.read('Ctl.POS')], [0, 0, 0]);
+  a.write('En', 1); a.scan(10);
+  check('AVE: the next true rung calculates again (75 / 6 = 12.5 rounds to even: 12)', a.read('D') === 12, a.read('D'));
+  const ar = run({ tags, rungs: ['AVE(R[1],0,Rd,Ctl,3,0);'] });
+  ar.scan(10);
+  near('AVE of a REAL array into a REAL (2.5 + 3.5 + 4.5) / 3', ar.read('Rd'), 3.5);
+  const pe = run({ tags, rungs: ['AVE(A[4],0,D,Ctl,3,0);'] });
+  pe.scan(10);
+  eq('AVE: reading past the end of the array sets .ER and stops, .POS at that element', [pe.read('Ctl.ER'), pe.read('Ctl.DN'), pe.read('Ctl.POS'), pe.read('D')], [1, 0, 2, 0]);
+  const ao = run({ tags: [...tags, T('Big', 'DINT', { dim: 2, value: [1000, 1000] })], rungs: ['AVE(Big[0],0,Sm,Ctl,2,0);'] });
+  ao.scan(10);
+  check('AVE: a result too large for Dest sets .ER and S:V (minor fault 4/4)', ao.read('Ctl.ER') === 1 && ao.S.V === 1 && ao.minors.some(m => m.type === 4 && m.code === 4));
+  const md = run({ tags: [...tags, T('G', 'DINT', { dim: [2, 3, 4], value: Array.from({ length: 24 }, (_, k) => k) })], rungs: ['AVE(G[0,1,0],2,D,Ctl,4,0);', 'AVE(G[0,0,2],1,Sm,Ctl2,3,0);', 'AVE(G[0,2,3],0,Rd,Ctl3,2,0);'] });
+  // G[0,1,k] = 4..7 (mean 5.5 -> 6); G[0,j,2] = 2, 6, 10 (mean 6); G[i,2,3] = 11, 23 (mean 17)
+  md.scan(10);
+  eq('AVE along each dimension of a DINT[2,3,4]', [md.read('D'), md.read('Sm'), md.read('Rd')], [6, 6, 17]);
+  const f = run({ tags, rungs: ['AVE(A[0],1,D,Ctl,6,0);'] });
+  f.scan(10);
+  check('AVE: Dim. To Vary more than the dimensions of the array: major fault 4/20', f.fault && f.fault.type === 4 && f.fault.code === 20);
+  const f2 = run({ tags, rungs: ['AVE(A[0],0,D,Ctl,-2,0);'] });
+  f2.scan(10);
+  check('AVE: .LEN < 0: major fault 4/21', f2.fault && f2.fault.type === 4 && f2.fault.code === 21);
+  // STD
+  const d = run({ tags, rungs: ['XIC(En)STD(A[0],0,Rd,Ctl,6,0);'] });
+  d.write('En', 1); d.scan(10);
+  near('STD: the sample standard deviation (N - 1) of 6 2 5 1 4 3', d.read('Rd'), Math.sqrt(17.5 / 5));
+  d.write('En', 0); d.scan(10);
+  eq('STD: rung false clears .EN .ER .DN .POS', [d.read('Ctl.EN'), d.read('Ctl.DN'), d.read('Ctl.POS')], [0, 0, 0]);
+  // SRT
+  const s = run({ tags, rungs: ['XIC(En)SRT(A[1],0,Ctl,4,0);', 'XIC(En)SRT(R[0],0,Ctl2,4,0);'] });
+  s.write('A[0]', 6); s.write('En', 1); s.scan(10);
+  eq('SRT: Length elements from the one given into ascending order (A[0] and A[5] not changed)', s.read('A'), [6, 1, 2, 4, 5, 3]);
+  s.write('A[1]', 9); s.scan(10);
+  check('SRT is transitional: a rung that stays true does not sort again', s.read('A[1]') === 9);
+  s.write('En', 0); s.scan(10);
+  check('SRT: rung false clears .EN and .DN', s.read('Ctl.EN') === 0 && s.read('Ctl.DN') === 0);
+  s.write('En', 1); s.scan(10);
+  eq('SRT: the next false-to-true rung sorts again', s.read('A').slice(1, 5), [2, 4, 5, 9]);
+  const sl = run({ tags, rungs: ['SRT(A[3],0,Ctl,4,0);'] });
+  sl.scan(10);
+  check('SRT: a Length past the end of the array: major fault 4/20', sl.fault && sl.fault.type === 4 && sl.fault.code === 20);
+  const sn = run({ tags, rungs: ['SRT(A[0],0,Ctl,-1,0);'] });
+  sn.scan(10);
+  check('SRT: .LEN < 0: .ER set and major fault 4/21', sn.fault && sn.fault.code === 21 && sn.read('Ctl.ER') === 1);
+  // SIZE, CPS
+  const z = run({ tags: [...tags, T('Z0', 'DINT'), T('Z1', 'INT'), T('Z2', 'REAL'), T('Zt', 'DINT')], rungs: ['SIZE(M,0,Z0);', 'SIZE(M[1,2,3],1,Z1);', 'SIZE(M[0,0,0],2,Z2);', 'SIZE(Tm[1],0,Zt);'] });
+  z.scan(10);
+  eq('SIZE: each dimension of an INT[2,3,4] (whole array or any element), and an array of TIMERs', [z.read('Z0'), z.read('Z1'), z.read('Z2'), z.read('Zt')], [2, 3, 4, 3]);
+  const zf = run({ tags: [...tags, T('Z0', 'DINT')], rungs: ['SIZE(A,1,Z0);'] });
+  zf.scan(10);
+  check('SIZE: Dim. To Vary more than the dimensions: major fault 4/20', zf.fault && zf.fault.code === 20);
+  const cp = run({ tags, rungs: ['XIC(En)CPS(A[0],R[0],2);'] });
+  cp.scan(10);
+  check('CPS: nothing while the rung is false', cp.read('R[0]') === 1.5);
+  cp.write('En', 1); cp.scan(10);
+  check('CPS: the bytes of A[0] A[1] into R[0] R[1], like COP', cp.read('R[2]') === 3.5 && cp.read('R[0]') !== 1.5);
+}
+
+console.log('Wave 2 (C): GSV and SSV (1756-RM003 / -RM018A chapter 4, GSV/SSV Objects)');
+{
+  const INS = MTPS.INSTR, G = MTPS.GSVOBJ;
+  check('GSV and SSV are in Input/Output with Class Name, Instance Name, Attribute Name, Dest / Source', INS.GSV.grp === 'Input/Output' && INS.SSV.grp === 'Input/Output' && MTPS.OPN.GSV.join() === 'Class Name,Instance Name,Attribute Name,Dest' && MTPS.OPN.SSV[3] === 'Source');
+  check('the objects: WallClockTime, Controller, Task, Program, Module, FaultLog', Object.keys(G).join() === 'WallClockTime,Controller,Task,Program,Module,FaultLog' && G.Program.attrs.MajorFaultRecord[0] === 'DINT' && G.Program.attrs.MajorFaultRecord[1] === 11 && G.WallClockTime.attrs.LocalDateTime[1] === 7);
+  const tags = [T('En', 'BOOL'), T('D', 'DINT'), T('I', 'INT'), T('Sm', 'SINT'), T('R', 'REAL'), T('Dt', 'DINT', { dim: 7 }), T('Cv', 'DINT', { dim: 2 }), T('Rec', 'DINT', { dim: 11 }), T('Short', 'DINT', { dim: 6 }), T('Bits', 'BOOL')];
+  const V = r => MTPS.verify(proj({ tags, rungs: [r] })).errors.map(x => x.msg);
+  check('verify: names are not case sensitive; an object with no instance takes an empty Instance Name', !V('GSV(wallclocktime,,localdatetime,Dt[0]);').length && !V('GSV(Program,THIS,LastScanTime,D);').length && !V('GSV(Task,MainTask,Watchdog,D);').length && !V('GSV(Module,DI_1,EntryStatus,I);').length);
+  check('verify: an unknown class, an attribute of another object, a Program or Module that does not exist', V('GSV(Clock,,X,D);').length === 1 && V('GSV(Program,THIS,TimeSlice,D);').length === 1 && V('GSV(Program,Nope,LastScanTime,D);').length === 1 && V('GSV(Module,,EntryStatus,I);').length === 1);
+  check('verify: SSV only of the attributes that can be set; a BOOL Dest is refused', V('SSV(Module,DI_1,EntryStatus,I);').length === 1 && V('SSV(Module,DI_1,Mode,I);').length === 0 && V('GSV(Program,THIS,LastScanTime,Bits);').length === 1);
+  check('verify: Module LEDStatus needs no instance', !V('GSV(Module,,LEDStatus,I);').length);
+  // WallClockTime
+  const w = run({ tags, rungs: ['GSV(WallClockTime,,DateTime,Dt[0]);', 'GSV(WallClockTime,,CurrentValue,Cv[0]);'] });
+  w.scan(10);
+  const now = new Date();
+  check('GSV WallClockTime DateTime: DINT[7] year, month, day, hour, minute, second, µs (UTC)', w.read('Dt[0]') === now.getUTCFullYear() && w.read('Dt[1]') === now.getUTCMonth() + 1 && w.read('Dt[6]') >= 0 && w.read('Dt[6]') < 1000000);
+  check('GSV WallClockTime CurrentValue: µs since 1970 in DINT[2] (low, high)', Math.abs(((w.read('Cv[1]') * 4294967296 + (w.read('Cv[0]') >>> 0)) / 1000) - Date.now()) < 5000);
+  const ws = run({ tags: [...tags, T('Set', 'DINT', { dim: 7, value: [2030, 6, 15, 12, 30, 0, 0] }), T('Go', 'BOOL')], rungs: ['XIC(Go)SSV(WallClockTime,,DateTime,Set[0]);', 'GSV(WallClockTime,,DateTime,Dt[0]);'] });
+  ws.write('Go', 1); ws.scan(10); ws.write('Go', 0); ws.scan(10);
+  eq('SSV WallClockTime DateTime sets the clock (GSV reads it back)', [ws.read('Dt[0]'), ws.read('Dt[1]'), ws.read('Dt[2]'), ws.read('Dt[3]'), ws.read('Dt[4]')], [2030, 6, 15, 12, 30]);
+  // Program and Task
+  const pg = run({ tags, rungs: ['GSV(Program,THIS,LastScanTime,D);', 'GSV(Task,THIS,Watchdog,R);', 'GSV(Controller,,TimeSlice,I);', 'GSV(Task,MainTask,Instance,Sm);'] });
+  pg.scan(10); pg.scan(10);
+  check('GSV Program LastScanTime (µs), Task Watchdog (500 ms = 500000 µs, the bytes into a REAL), Controller TimeSlice 20 %', pg.read('D') >= 0 && new Float32Array(new Int32Array([500000]).buffer)[0] === pg.read('R') && pg.read('I') === 20 && pg.read('Sm') === 0);
+  const dp = proj({ tags: [...tags, T('One', 'SINT', { value: 1 }), T('Cnt', 'DINT')], rungs: ['XIC(En)SSV(Program,Other,DisableFlag,One);'] });
+  dp.tasks[0].programs.push({ name: 'Other', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'ADD(Cnt,1,Cnt);' }] }] });
+  const dis = new MTPS.Controller(); dis.download(dp); dis.setMode('remrun');
+  dis.scan(10);
+  dis.write('En', 1); dis.scan(10); dis.scan(10);
+  check('SSV Program DisableFlag 1 stops the other program', dis.read('Cnt') === 1);
+  // the fault records and the fault log
+  const f = run({ tags: [...tags, T('Big', 'DINT', { value: 2147483647 }), T('MinE', 'INT'), T('Bits2', 'DINT')], rungs: ['ADD(Big,1,D);', 'GSV(Program,THIS,MinorFaultRecord,Rec[0]);', 'GSV(FaultLog,,MinorEvents,MinE);', 'GSV(FaultLog,,MinorFaultBits,Bits2);'] });
+  f.scan(10);
+  eq('GSV Program MinorFaultRecord: the overflow of this scan (type 4 code 4 in DINT[2]); FaultLog MinorEvents, MinorFaultBits bit 4', [f.read('Rec[2]') & 0xFFFF, f.read('Rec[2]') >> 16, f.read('MinE'), f.read('Bits2')], [4, 4, 1, 16]);
+  check('the record has a timestamp (µs since 1970)', Math.abs(((f.read('Rec[1]') * 4294967296 + (f.read('Rec[0]') >>> 0)) / 1000) - Date.now()) < 5000);
+  // sizes
+  const s = run({ tags, rungs: ['GSV(Program,THIS,MajorFaultRecord,Short[0]);', 'GSV(WallClockTime,,ApplyDST,D);'] });
+  s.write('D', -1); s.scan(10);
+  check('GSV into a Dest too small (DINT[6] for DINT[11]): minor fault 4/7, Dest unchanged', s.minors.some(m => m.type === 4 && m.code === 7) && s.read('Short').every(v => v === 0));
+  check('only the attribute\'s size is copied: a SINT attribute (ApplyDST 0) into a DINT changes its low 8 bits', s.read('D') === -256);
+  const ss = run({ tags, rungs: ['SSV(WallClockTime,,CurrentValue,D);'] });
+  ss.scan(10);
+  check('SSV from a Source too small: minor fault 4/6 (not enough information supplied)', ss.minors.some(m => m.type === 4 && m.code === 6));
+  // Module
+  const m = run({ tags: [...tags, T('Led', 'INT')], rungs: ['GSV(Module,DI_1,EntryStatus,I);', 'GSV(Module,DI_1,FaultCode,D);', 'GSV(Module,,LEDStatus,Led);', 'GSV(Module,,LEDStatus,Sm);'] });
+  m.scan(10);
+  check('GSV Module EntryStatus 16#4000 Running, LEDStatus 3 (all running); an INT attribute into a SINT is too small (4/7)', m.read('I') === 0x4000 && m.read('D') === 0 && m.read('Led') === 3 && m.read('Sm') === 0 && m.minors.some(x => x.code === 7));
+  m.setModuleFault(1, true); m.scan(10);
+  check('a faulted module: EntryStatus 16#1000, FaultCode 16#0204, LEDStatus 2', m.read('I') === 0x1000 && m.read('D') === 0x0204 && m.read('Led') === 2);
+  const mi = run({ tags: [...tags, T('Four', 'INT', { value: 4 })], rungs: ['XIC(En)SSV(Module,DI_1,Mode,Four);', 'GSV(Module,DI_1,EntryStatus,I);'] });
+  mi.write('En', 1); mi.scan(10); mi.scan(10);
+  check('SSV Module Mode bit 2 inhibits the module: EntryStatus 16#6000', mi.read('I') === 0x6000 && mi.moduleStatus(1).state === 'Inhibited');
+  check('GSV / SSV do nothing on a false rung', (() => { const c = run({ tags, rungs: ['XIC(En)GSV(Controller,,TimeSlice,I);'] }); c.scan(10); return c.read('I') === 0; })());
+}
+
+console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
+{
+  const near = (name, got, want, tol = 1e-3) => check(name, Math.abs(got - want) < tol, `got ${got}, want ${want}`);
+  const INS = MTPS.INSTR;
+  check('PID: Special, the seven operands of the reference', INS.PID.grp === 'Special' && MTPS.OPN.PID.join() === 'PID,Process Variable,Tieback,Control Variable,PID Master Loop,Inhold Bit,Inhold Value');
+  const mem = MTPS.PREDEF.PID.map(m => m.name);
+  check('the PID structure: .CTL, its bits .EN (31) … .PVHA (7), the REAL members and .DATA[17]', mem[0] === 'CTL' && ['EN', 'CT', 'CL', 'PVT', 'DOE', 'SWM', 'CA', 'MO', 'PE', 'NDF', 'NOBC', 'NOZC', 'INI', 'SPOR', 'OLL', 'OLH', 'EWD', 'DVNA', 'DVPA', 'PVLA', 'PVHA'].every(b => mem.includes(b)) &&
+    ['SP', 'KP', 'KI', 'KD', 'BIAS', 'MAXS', 'MINS', 'DB', 'SO', 'MAXO', 'MINO', 'UPD', 'PV', 'ERR', 'OUT', 'PVH', 'PVL', 'DVP', 'DVN', 'PVDB', 'DVDB', 'MAXI', 'MINI', 'TIE', 'MAXCV', 'MINCV', 'MINTIE', 'MAXTIE'].every(b => mem.includes(b)) && MTPS.PREDEF.PID.find(m => m.name === 'DATA').dim === 17);
+  const tags = [T('En', 'BOOL'), T('Loop', 'PID'), T('Mst', 'PID'), T('Pv', 'REAL'), T('Cv', 'REAL'), T('Ci', 'DINT'), T('Tie', 'REAL'), T('Hold', 'BOOL'), T('Hv', 'REAL'), T('Bad', 'DINT')];
+  const V = r => MTPS.verify(proj({ tags, rungs: [r] })).errors.length;
+  check('verify: a PID tag first; Tieback, Master, Inhold bit and value take 0 when not used', !V('PID(Loop,Pv,0,Cv,0,0,0);') && !V('PID(Loop,Pv,Tie,Cv,Mst,Hold,Hv);') && V('PID(Bad,Pv,0,Cv,0,0,0);') === 1 && V('PID(Loop,Pv,0,Cv,Bad,0,0);') === 1 && V('PID(Loop,Pv,0,Cv,0,Pv,0);') === 1);
+  const c = run({ tags, rungs: ['XIC(En)PID(Loop,Pv,0,Cv,0,0,0);', 'XIC(Loop.EN)OTE(Bad.0);'] });
+  check('.EN, .PE … are the bits of .CTL (.EN is bit 31)', (() => { c.write('Loop.CTL', 1 << 23); return c.read('Loop.PE') === 1 && c.read('Loop.EN') === 0; })());
+  c.write('Loop.CTL', 0);
+  // independent, proportional only: span 0..100, SP 60, PV 50, KP 2: CV = 2 × 10 = 20
+  ['UPD:1', 'MAXS:100', 'MINS:0', 'SP:60', 'KP:2'].forEach(k => { const [m, v] = k.split(':'); c.write('Loop.' + m, +v); });
+  c.write('Pv', 50); c.write('En', 1); c.scan(10);
+  eq('P only, independent gains: E = SP - PV = 10 %, CV = KP × E = 20; .EN set, .INI set, .ERR, .PV', [c.read('Cv'), c.read('Loop.EN'), c.read('Loop.INI'), c.read('Loop.ERR'), c.read('Loop.PV'), c.read('Bad.0')], [20, 1, 1, 10, 50, 1]);
+  c.write('Loop.CA', 1); c.scan(10);
+  check('.CA = 1 (E = PV - SP): the output goes to 0 (limited at .MINO, .OLL)', c.read('Cv') === 0 && c.read('Loop.OLL') === 1);
+  c.write('Loop.CA', 0);
+  // integral: KI 0.5 /s, UPD 1 s: each execution adds 0.5 × 10 = 5
+  c.write('Loop.KP', 0); c.write('Loop.KI', 0.5); c.scan(10); c.scan(10);
+  near('integral, independent: KI × E × UPD each execution (5 then 10)', c.read('Cv'), 10);
+  c.write('En', 0); c.scan(10);
+  check('rung false: .EN cleared, the output held', c.read('Loop.EN') === 0 && Math.abs(c.read('Cv') - 10) < 1e-3);
+  // dependent: Kc 2, Ti 1 min: KI = Kc / (60 Ti) per second
+  const d = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:60', 'KP:2', 'KI:1', 'PE:1', 'NDF:1'].forEach(k => { const [m, v] = k.split(':'); d.write('Loop.' + m, +v); });
+  d.write('Pv', 50); d.scan(10); d.scan(10);
+  near('dependent gains (ISA): Kc·(E + 1/(60·Ti)·∫E dt): 2 × (10 + 20 / 60) after two updates', d.read('Cv'), 2 * (10 + 20 / 60));
+  // derivative of PV, no kick on a setpoint change
+  const k = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:0.5', 'MAXS:100', 'SP:50', 'KD:1', 'NDF:1'].forEach(q => { const [m, v] = q.split(':'); k.write('Loop.' + m, +v); });
+  k.write('Pv', 40); k.scan(10); k.write('Loop.SP', 70); k.scan(10);
+  check('derivative of PV (.DOE = 0): a setpoint change gives no derivative kick', Math.abs(k.read('Cv')) < 1e-6);
+  k.write('Pv', 41); k.scan(10);
+  near('derivative of PV: -KD × dPV/dt = -1 × 1 / 0.5 = -2 % (limited at 0 by .MINO)', k.read('Loop.OUT'), 0);
+  k.write('Loop.DOE', 1); k.write('Loop.MINO', -100); k.write('Loop.MAXO', 100); k.write('Loop.SP', 80); k.scan(10);
+  near('derivative of error (.DOE = 1): KD × dE/dt = 1 × (39 - 29) / 0.5 = 20 %', k.read('Cv'), 20);
+  // limits and anti-reset windup
+  const w = run({ tags, rungs: ['XIC(En)PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:100', 'KI:10', 'MAXO:80', 'MINO:5'].forEach(q => { const [m, v] = q.split(':'); w.write('Loop.' + m, +v); });
+  w.write('En', 1); for (let n = 0; n < 5; n++) w.scan(10);
+  eq('CV high limit .MAXO: the output stays at 80, .OLH set', [w.read('Cv'), w.read('Loop.OLH')], [80, 1]);
+  near('anti-reset windup: the integral stops at the value that gives the limit (80), not 5 × 1000', w.read('Loop.DATA[0]'), 80, 1e-3);
+  w.write('Pv', 100); w.scan(10);
+  check('… so the output leaves the limit as soon as the error changes sign', w.read('Cv') <= 80 && w.read('Loop.OLH') === 0);
+  const z = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  z.write('Loop.UPD', 1); z.scan(10);
+  check('.MAXO = .MINO: reset to 100 and 0', z.read('Loop.MAXO') === 100 && z.read('Loop.MINO') === 0);
+  // manual modes, bumpless transfer
+  const m = run({ tags, rungs: ['PID(Loop,Pv,Tie,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'KI:0.1', 'SO:35', 'SWM:1'].forEach(q => { const [n, v] = q.split(':'); m.write('Loop.' + n, +v); });
+  m.write('Pv', 50); m.scan(10);
+  check('software manual (.SWM): CV = .SO', Math.abs(m.read('Cv') - 35) < 1e-4);
+  m.write('Tie', 62); m.write('Loop.MO', 1); m.scan(10);
+  check('manual (.MO) overrides .SWM: CV = the tieback (.TIE)', Math.abs(m.read('Cv') - 62) < 1e-4 && m.read('Loop.TIE') === 62);
+  m.write('Loop.MO', 0); m.write('Loop.SWM', 0); m.scan(10);
+  check('back to auto: bumpless (the back-calculated integral keeps the output at 62; E = 0)', Math.abs(m.read('Cv') - 62) < 1e-4);
+  const nb = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'SO:40', 'SWM:1'].forEach(q => { const [n, v] = q.split(':'); nb.write('Loop.' + n, +v); });
+  nb.write('Pv', 50); nb.scan(10);
+  check('KI = 0: the .BIAS is back-calculated in manual (bumpless without integral)', Math.abs(nb.read('Loop.BIAS') - 40) < 1e-4);
+  nb.write('Loop.SWM', 0); nb.write('Loop.NOBC', 1); nb.write('Loop.BIAS', 0); nb.write('Loop.SWM', 1); nb.scan(10);
+  check('.NOBC: no bias calculation', nb.read('Loop.BIAS') === 0);
+  // scaling
+  const s = run({ tags: [...tags, T('Raw', 'DINT')], rungs: ['PID(Loop,Raw,0,Ci,0,0,0);'] });
+  ['UPD:1', 'MAXI:4095', 'MINI:0', 'MAXS:200', 'MINS:0', 'SP:100', 'KP:1', 'MAXCV:4095', 'MINCV:0', 'BIAS:50'].forEach(q => { const [n, v] = q.split(':'); s.write('Loop.' + n, +v); });
+  s.write('Raw', 1023.75); s.scan(10);
+  // PV = 1024 × 200 / 4095 = 50.01 EU; E = 49.99 EU = 24.99 %; OUT = 74.99 %; CV = 0.7499 × 4095
+  near('scaling: PV from .MINI/.MAXI to .MINS/.MAXS, error in % of span, CV from % to .MINCV/.MAXCV', s.read('Loop.PV'), 1024 * 200 / 4095, 1e-3);
+  check('… an integer CV is rounded', s.read('Ci') === Math.round((50 + (100 - 1024 * 200 / 4095) / 2) * 4095 / 100));
+  // setpoint out of range, UPD
+  const r = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  r.write('Loop.UPD', 1); r.write('Loop.MAXS', 100); r.write('Loop.SP', 20); r.write('Loop.KP', 1); r.scan(10);
+  r.write('Loop.SP', 150); r.scan(10);
+  check('setpoint out of range: .SPOR, minor fault 4/36, the last valid setpoint is used', r.read('Loop.SPOR') === 1 && r.minors.some(q => q.type === 4 && q.code === 36) && Math.abs(r.read('Cv') - 20) < 1e-4);
+  const u = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  u.scan(10);
+  check('.UPD 0 or less: minor fault 4/35, the loop does not run', u.minors.some(q => q.type === 4 && q.code === 35) && u.read('Loop.INI') === 0);
+  // deadband
+  const db = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'DB:2', 'MINO:-100', 'MAXO:100', 'NOZC:1'].forEach(q => { const [n, v] = q.split(':'); db.write('Loop.' + n, +v); });
+  db.write('Pv', 49); db.scan(10);
+  check('deadband (.NOZC): an error within .DB is 0, .EWD set', db.read('Cv') === 0 && db.read('Loop.EWD') === 1);
+  db.write('Loop.NOZC', 0); db.write('Loop.EWD', 0); db.write('Pv', 48.5); db.scan(10);
+  check('zero crossing: entering the deadband from one side, the error is used until it crosses zero', Math.abs(db.read('Cv') - 1.5) < 1e-4 && db.read('Loop.EWD') === 0);
+  db.write('Pv', 50.5); db.scan(10);
+  check('… once it has crossed zero, the error within .DB is 0 (.EWD)', db.read('Cv') === 0 && db.read('Loop.EWD') === 1);
+  // alarms
+  const al = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'PVH:80', 'PVL:20', 'PVDB:5', 'DVP:10', 'DVN:-10', 'DVDB:2'].forEach(q => { const [n, v] = q.split(':'); al.write('Loop.' + n, +v); });
+  const pv = v => { al.write('Pv', v); al.scan(10); };
+  pv(85); const hi = al.read('Loop.PVHA'), dvn = al.read('Loop.DVNA');
+  pv(77); const held = al.read('Loop.PVHA');
+  pv(74); const clr = al.read('Loop.PVHA');
+  pv(15);
+  eq('alarms: .PVHA above .PVH, held within .PVDB, cleared below .PVH - .PVDB; .PVLA; deviation .DVNA (E = SP - PV < .DVN) / .DVPA', [hi, dvn, held, clr, al.read('Loop.PVLA'), al.read('Loop.DVPA')], [1, 1, 1, 0, 1, 1]);
+  // cascade and inhold
+  const cc = run({ tags: [...tags, T('Pv2', 'REAL'), T('Cv2', 'REAL')], rungs: ['PID(Mst,Pv2,0,Cv2,0,0,0);', 'PID(Loop,Pv,0,Cv,Mst,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:2'].forEach(q => { const [n, v] = q.split(':'); cc.write('Mst.' + n, +v); });
+  ['UPD:1', 'MAXS:200', 'MINS:100', 'CL:1'].forEach(q => { const [n, v] = q.split(':'); cc.write('Loop.' + n, +v); });
+  cc.write('Pv2', 40); cc.write('Pv', 150); cc.scan(10);
+  near('cascade (.CL, slave .CT = 0): the slave setpoint is the master output (20 %) in the slave units (120)', cc.read('Loop.SP'), 120);
+  const ih = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,Hold,Hv);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'KI:0.1'].forEach(q => { const [n, v] = q.split(':'); ih.write('Loop.' + n, +v); });
+  ih.write('Hold', 1); ih.write('Hv', 33); ih.write('Pv', 50); ih.scan(10);
+  check('Inhold bit set: CV = Inhold value', ih.read('Cv') === 33);
+  ih.write('Hold', 0); ih.scan(10);
+  check('… then a bumpless restart from that value', Math.abs(ih.read('Cv') - 33) < 1e-4);
+  // prescan
+  const pr = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  pr.write('Loop.UPD', 1); pr.scan(10); pr.setMode('remprog'); pr.setMode('remrun');
+  check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

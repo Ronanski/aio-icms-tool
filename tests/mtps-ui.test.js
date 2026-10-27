@@ -153,7 +153,7 @@ function check(name, cond, info = '') {
   console.log('Online, I/O panel, forces');
   await ev(() => MTPS.App.run('online'));
   await page.waitForTimeout(100);
-  check('Go Online with an empty controller: Connected To Go Online, "contains no project", no Upload', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('contains no project') && !(await page.$$eval('#layer .btn', b => b.map(x => x.textContent.trim()))).includes('Upload…'));
+  check('Go Online with an empty controller: Connected To Go Online, "There is no project loaded in the controller.", no Upload', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('There is no project loaded in the controller.') && !(await page.$$eval('#layer .btn', b => b.map(x => x.textContent.trim()))).includes('Upload…'));
   await page.click('#layer .btn.pri');
   await page.waitForTimeout(120);
   check('Download… opens the Download dialog with the path', (await dlgTitle()) === 'Download' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('Emulate\\127.0.0.1\\Backplane\\0'));
@@ -388,7 +388,7 @@ function check(name, cond, info = '') {
   check('an output card pulled from the chassis: module fault 16#0204, I/O not responding', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0204' && !MTPS.App.ctl.ioOk()));
   await ev(() => MTPS.App.chassis.insert(2, 'PLC-DI16-24V', 'Wrong'));
   await page.waitForTimeout(120);
-  check('the wrong card in the slot: keying mismatch 16#0116', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0116'));
+  check('the wrong card in the slot (an input card for an output module): keying mismatch 16#0114', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0114'));
   await ev(() => { MTPS.App.chassis.remove(2); MTPS.App.chassis.insert(2, 'PLC-DO16-24V', 'DO_1'); });
   await page.waitForTimeout(120);
   check('the right card back: running', await ev(() => MTPS.App.ctl.moduleStatus(2).state === 'Running'));
@@ -462,7 +462,10 @@ function check(name, cond, info = '') {
   check('RSWho: Autobrowse is ticked, Refresh is there', (await page.$eval('#rlauto', c => c.checked)) && (await page.$('#layer [data-rlref]')) !== null);
   await page.click('#layer [data-rlm="Security"]');
   await page.waitForTimeout(60);
-  check('RSLinx: the other menus list greyed-out items', await page.$$eval('#layer .rlpop .it', i => i.length > 0 && i.every(x => x.classList.contains('dis'))));
+  check('RSLinx: Security lists Set Security User… and Show Security Access…', (await page.$$eval('#layer .rlpop .it', i => i.map(x => x.textContent).join('|'))) === 'Set Security User…|Show Security Access…');
+  await page.click('#layer .rlpop [data-rlmi^="na:sec"] >> nth=0'); await page.waitForTimeout(60);
+  check('RSLinx: Set Security User… says it is not available in emulation', (await page.$eval('#layer .rlov2 .bb', b => b.textContent)).includes('not available in emulation'));
+  await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(60);
   await page.click('#layer [data-rlm="Communications"]');
   await page.waitForTimeout(60);
   await page.evaluate(() => [...document.querySelectorAll('#layer .rlpop .it')].find(x => x.textContent === 'Configure Drivers…').click());
@@ -974,9 +977,9 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   await ev(() => { const p = MTPS.App.blank('Motor_SealIn'); p.controller.slot = 2; p.rack.modules = []; MTPS.App.openProject(p); });
   await page.waitForTimeout(150);
-  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.selectOption('#layer #mt', type); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
+  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.fill('#layer #smt-q', type); await page.click(`#layer tr[data-smt="${type}"]`); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
   await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150);
-  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer #mt option', o => o.map(x => x.value))).some(v => /GENERIC|SIM/.test(v)) && !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'));
+  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer tr[data-smt]', o => o.map(x => x.dataset.smt))).some(v => /GENERIC|SIM/.test(v)) && (await (async () => { await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); return !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'); })()));
   await page.keyboard.press('Escape');
   await newMod('PLC-DI16-24V', 3, 'DI_3'); await newMod('PLC-DO16-24V', 4, 'DO_4');
   check('the I/O configuration: DI16 in slot 3, DO16 in slot 4', await ev(() => MTPS.App.state.p.rack.modules.map(m => m.slot + m.type).join(',') === '3PLC-DI16-24V,4PLC-DO16-24V'));
@@ -1121,7 +1124,7 @@ function check(name, cond, info = '') {
 
     await ev(() => MTPS.App.select({ ri: 2 })); await page.keyboard.press('x'); await page.waitForTimeout(100);
     check('Quick Keys off: a letter on a selected rung inserts nothing', (await R())[2] === 'XIC(Stop)OTE(Stop);' && (await ev(() => document.querySelector('#layer').children.length)) === 0);
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="ladd"]');
     check('Tools > Options: Ladder Editor > Enable Quick Keys, off by default', (await page.$eval('#layer .dlg', d => d.textContent)).includes('Ladder Editor') && (await page.$eval('#oqk', c => !c.checked)));
     await page.check('#oqk'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
     check('the Quick Keys option is kept', await ev(() => MTPS.App.state.prefs.quickKeys === true));
@@ -1157,8 +1160,8 @@ function check(name, cond, info = '') {
     await page.keyboard.press('Shift+F10'); await page.waitForTimeout(100);
     check('Shift+F10: the context menu of the selection', (await page.$$eval('#layer .menu .it', i => i.map(x => x.textContent.trim()))).some(t => t.startsWith('Cut Instruction')));
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+i'); await page.waitForTimeout(100);
-    check('Ctrl+I: Add Ladder Element (insert after the selection)', (await dlgTitle()) === 'Add Ladder Element');
+    await page.keyboard.press('Alt+Insert'); await page.waitForTimeout(100);
+    check('Alt+Insert: Add Ladder Element (help v37 keyboard table; Ctrl+I is insert / append mode)', (await dlgTitle()) === 'Add Ladder Element');
     await page.keyboard.press('Escape');
     await ev(() => { MTPS.App.state.prefs.org = false; MTPS.App.state.prefs.err = false; MTPS.App.render(); });
     await page.keyboard.press('Alt+0'); await page.waitForTimeout(80);
@@ -1689,18 +1692,18 @@ function check(name, cond, info = '') {
     const led = () => ev(() => { const l = document.createElement('i'); l.className = 'led y'; document.querySelector('#app').appendChild(l); const c = getComputedStyle(l).backgroundColor; l.remove(); return c; });
     check('the first start: Classic, following the device (Light here)', JSON.stringify(await html()) === '["classic","light"]', JSON.stringify(await html()));
     const led0 = await led();
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="look"]');
     check('Options: 4 theme cards and Light, Dark, Follow the device', (await page.$$eval('#layer [data-th]', b => b.map(x => x.dataset.th).join(','))) === 'classic,controlroom,workbench,tonal' && (await page.$$eval('#layer [data-thm]', b => b.map(x => x.textContent).join(','))) === 'Light,Dark,Follow the device');
     await page.click('#layer [data-th="workbench"]'); await page.click('#layer [data-thm="dark"]'); await page.waitForTimeout(80);
     check('a theme shows at once, before OK', JSON.stringify(await html()) === '["workbench","dark"]' && (await page.$eval('.dmenu', m => getComputedStyle(m).backgroundColor)) === 'rgb(0, 0, 0)');
     await page.click('#layer .df .btn:not(.pri)'); await page.waitForTimeout(80);
     check('Cancel puts the theme before back', JSON.stringify(await html()) === '["classic","light"]');
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="look"]');
     await page.click('#layer [data-th="tonal"]'); await page.click('#layer [data-thm="dark"]'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
     check('OK keeps it and saves it (Tonal Touch, Dark)', JSON.stringify(await html()) === '["tonal","dark"]' && await ev(() => { const p = JSON.parse(localStorage.getItem('mtps.prefs') || Object.keys(localStorage).filter(k => k.includes('prefs')).map(k => localStorage.getItem(k))[0]); return p.theme === 'tonal' && p.mode === 'dark'; }));
     check('the module LEDs keep their colour in every theme', led0 === 'rgb(242, 178, 0)' && (await led()) === led0, `${led0} / ${await led()}`);
     check('Tonal Touch, Dark: the ladder canvas is dark', (await ev(() => getComputedStyle(document.documentElement).getPropertyValue('--lad-bg').trim())) === '#0D0E13');
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="look"]');
     await page.click('#layer [data-th="classic"]'); await page.click('#layer [data-thm="light"]'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
     check('back to Classic, Light', JSON.stringify(await html()) === '["classic","light"]');
     const old = await browser.newPage();
@@ -2159,15 +2162,15 @@ function check(name, cond, info = '') {
     let p = await node(page, '01, PLC-DI16-24V');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
     const its = await page.$$eval('#layer .rlctx .it', t => t.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent));
-    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|-Station Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
+    check('right-click an I/O module in RSWho: Device Properties, Module Statistics, Station and Driver Diagnostics, Upload EDS file from device; Remove greyed (it answers)', its.join('|') === '+Device Properties|+Module Statistics|+Station Diagnostics|+Driver Diagnostics|+Upload EDS file from device|-Remove', its.join('|'));
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
     let k = await kv();
-    check('Device Properties: vendor, product type, product code, revision, serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.0' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
+    check('Device Properties: vendor, product type, product code, revision (the card: 1.1), serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.1' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
     await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(80);
     p = await node(page, '00, PLC-CPU');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
-    check('a controller also lists Data Monitor and Configure New DDE/OPC Topic (greyed)', (await page.$$eval('#layer .rlctx .it.dis', t => t.map(x => x.textContent).join('|'))).includes('Data Monitor|Configure New DDE/OPC Topic'));
+    check('a controller also lists Data Monitor, Set Time… and Configure New DDE/OPC Topic', (await page.$$eval('#layer .rlctx .it', t => t.map(x => x.textContent).join('|'))).includes('Data Monitor|Set Time…|Configure New DDE/OPC Topic'));
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     k = await kv();
     check('Device Properties of the controller: Programmable Logic Controller, its name and mode', k['Product Type'] === 'Programmable Logic Controller (14)' && k['Product Name'] === 'PLC-CPU Emulator' && !!k.Status, JSON.stringify(k));
@@ -2223,7 +2226,7 @@ function check(name, cond, info = '') {
     const mode = () => ev(() => MTPS.App.racks[0].controller(0).mode);
     await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('Workstation')).click()); await page.waitForTimeout(80);
     await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
-    check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Data Monitor|+Change Mode…|-Set Time');
+    check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Freeze|-Unfreeze|-Reset Diagnostic Counters|-Data Monitor|+Change Mode…|-Set Time…');
     await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
     check('Change Mode with no controller selected: a message, no dialog', (await page.$('#layer .rlov2')) === null);
     await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('00, PLC-CPU')).click()); await page.waitForTimeout(80);
@@ -2241,21 +2244,22 @@ function check(name, cond, info = '') {
     await ev(() => MTPS.App.racks[0].controller(0).setKey('REM'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
   }
-  console.log('RSLinx Classic: View > Toolbar and Status Bar, the menu bar on the phone');
+  console.log('RSLinx Classic: View > Options (toolbar and status bar), the menu bar on the phone');
   {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
     await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.run('rswho'); });
     await page.waitForTimeout(200);
     const vis = s => page.$eval(s, e => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
     await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
-    check('View: Toolbar and Status Bar are on and ticked', (await page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|'))) === '✓Toolbar|✓Status Bar' && await vis('#layer .rltb') && await vis('#layer .rlst'));
-    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
-    check('View > Toolbar hides the toolbar', !(await vis('#layer .rltb')) && await vis('#layer .rlst'));
+    check('View: RSWho, Event Log…, Options…; the toolbar and the status bar show', (await page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|'))) === 'RSWho|Event Log…|Options…' && await vis('#layer .rltb') && await vis('#layer .rlst'));
+    const opts = async (id) => { await page.click('#layer .rlpop [data-rlmi="opts"]'); await page.waitForTimeout(60); await page.click(id); await page.click('#layer [data-rldx="optok"]'); await page.waitForTimeout(60); };
+    await opts('#rlo-tb');
+    check('View > Options…, General: Show Toolbar off hides the toolbar', !(await vis('#layer .rltb')) && await vis('#layer .rlst'));
     await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60);
-    await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
-    check('View > Status Bar hides the status bar; the View menu shows them unticked', !(await vis('#layer .rlst')) && (await (async () => { await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); return page.$$eval('#layer .rlpop [data-rlmi]', i => i.map(x => x.textContent).join('|')); })()) === 'Toolbar|Status Bar');
-    await page.click('#layer .rlpop [data-rlmi="tb"]'); await page.waitForTimeout(60);
-    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await page.click('#layer .rlpop [data-rlmi="sb"]'); await page.waitForTimeout(60);
+    await opts('#rlo-sb');
+    check('Show Status Bar off hides the status bar; Options shows both unticked', !(await vis('#layer .rlst')) && (await (async () => { await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await page.click('#layer .rlpop [data-rlmi="opts"]'); await page.waitForTimeout(60); const r = await page.$$eval('#rlo-sb, #rlo-tb', i => i.map(x => x.checked).join(',')); await page.click('#layer .rlov2 [data-rlpx="cancel"]'); return r; })()) === 'false,false');
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await opts('#rlo-tb');
+    await page.click('#layer [data-rlm="View"]'); await page.waitForTimeout(60); await opts('#rlo-sb');
     check('ticked again: both show', await vis('#layer .rltb') && await vis('#layer .rlst'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(60);
     for (const w of [360, 390, 414]) {
@@ -2317,6 +2321,11 @@ function check(name, cond, info = '') {
     check('the ladder is patched in place (same SVG, only the changed rungs), and draws exactly as a full redraw', same.kept && same.same && same.sel === 1 && same.rsel === 1, JSON.stringify(same));
     await tp.close();
   }
+  await require('./mtps-ui-w2A')({ browser, page, URL, check });
+  await require('./mtps-ui-w2E')({ browser, page, URL, check });
+  await require('./mtps-ui-w2B')({ browser, page, URL, check });
+  await require('./mtps-ui-w2D')({ browser, page, URL, check });
+  await require('./mtps-ui-w2C')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
