@@ -141,4 +141,43 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('phone (touch): More > Import Component… > Data Type…', (await pp.evaluate(() => MTPS.App.state.p.dataTypes.map(d => d.name).join(','))) === 'Motor,Line');
     await pctx.close();
   }
+  if (want('cc')) {
+    console.log('Change Controller (help v37: Controller Properties General tab, Change Controller; Confirm controller type change)');
+    await fresh(); await ev(() => { MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.render(); });
+    const rungs0 = await ev(() => JSON.stringify(MTPS.App.state.p.tasks));
+    await menu('Edit', 'Controller Properties…');
+    check('General tab: Vendor, Type, Revision and a Change Controller… button', /VendorMT PLC Studio/.test(await dlgText()) && /TypePLC-CPU Emulated controller/.test(await dlgText()) && /Revision1\.0/.test(await dlgText()) && (await page.$('#cp-cc')) !== null);
+    await page.click('#cp-cc'); await wait(150);
+    check('Change Controller: From and To, with the type and the revision', (await dlgTitle()) === 'Change Controller' && /FromTo/.test(await dlgText()) && (await page.$$eval('#cc-t option', o => o.map(x => x.value))).includes('1756-L85E'));
+    await page.selectOption('#cc-t', '1756-L85E'); await wait(60);
+    check('the revisions follow the type (1756-L85E: 33 to 37)', (await page.$$eval('#cc-r option', o => o.map(x => x.value).join(','))) === '33,34,35,36,37');
+    await page.selectOption('#cc-r', '36'); await clickBtn('OK'); await wait(150);
+    check('OK asks to confirm the type change, with what it does (Yes / No)', (await dlgTitle()) === 'Confirm Controller Type Change' && /logic, the tags/.test(await dlgText()));
+    await clickBtn('Yes'); await wait(150);
+    const st = await ev(() => ({ c: MTPS.App.state.p.controller, t: document.title, tasks: JSON.stringify(MTPS.App.state.p.tasks), x: MTPS.App.toL5X(MTPS.App.state.p), dirty: MTPS.App.state.dirty }));
+    check('Yes: the project is a 1756-L85E, revision 36; the logic is kept', st.c.type === '1756-L85E' && st.c.rev === '36' && st.tasks === rungs0 && st.dirty === true && /\[1756-L85E 36\]/.test(st.t), st.t);
+    check('the L5X export says ProcessorType 1756-L85E, MajorRev 36', /ProcessorType="1756-L85E" MajorRev="36"/.test(st.x) && !/MT PLC Studio: PLC-CPU/.test(st.x));
+    check('an L5X of a 1756-L85E opens as a 1756-L85E', await ev(x => { const q = MTPS.App.fromL5X(x, true); return q.controller.type === '1756-L85E' && q.controller.rev === '36'; }, st.x));
+    check('an L5X of a PLC-CPU project opens as PLC-CPU', await ev(() => MTPS.App.fromL5X(MTPS.App.toL5X(MTPS.App.example()), true).controller.type === 'PLC-CPU'));
+    await page.click('.dtb [data-cmd="download"]'); await wait(300);
+    check('Download of a 1756-L85E project to the emulator: Failed to download, the type does not match', (await dlgTitle()) === 'Download' && /Failed to download/.test(await dlgText()) && /1756-L85E 36/.test(await dlgText()));
+    await clickBtn('Controller Properties…'); await wait(200);
+    await page.click('#cp-cc'); await wait(150);
+    await page.selectOption('#cc-t', 'PLC-CPU'); await clickBtn('OK'); await wait(150); await clickBtn('Yes'); await wait(150);
+    check('changed back to PLC-CPU 1.0', await ev(() => MTPS.App.state.p.controller.type === 'PLC-CPU' && MTPS.App.state.p.controller.rev === '1.0'));
+    await page.click('.dtb [data-cmd="download"]'); await wait(300);
+    check('then Download goes on as before', (await dlgTitle()) === 'Download' && /Download to the controller/.test(await dlgText()));
+    await page.keyboard.press('Escape'); await wait(80);
+    // phone (touch): Project > Controller > Change Controller…
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const pp = await pctx.newPage();
+    await pp.goto(URL); await pp.waitForTimeout(300); await pp.keyboard.press('Escape');
+    await pp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await pp.waitForTimeout(150);
+    await pp.tap('[data-go="project"]'); await pp.waitForTimeout(150); await pp.tap('[data-org="ctl"]'); await pp.waitForTimeout(200);
+    if ((await dlgTitle(pp)) !== 'Controller Properties - Motor_Demo') { await pp.tap('[data-org="ctl"]'); await pp.waitForTimeout(200); }
+    await pp.tap('#cp-cc'); await pp.waitForTimeout(150);
+    await pp.selectOption('#cc-t', '1756-L71'); await clickBtn('OK', pp, true); await pp.waitForTimeout(150); await clickBtn('Yes', pp, true);
+    check('phone (touch): Change Controller to a 1756-L71', await pp.evaluate(() => MTPS.App.state.p.controller.type === '1756-L71' && MTPS.App.state.p.controller.rev === '33'));
+    await pctx.close();
+  }
 };

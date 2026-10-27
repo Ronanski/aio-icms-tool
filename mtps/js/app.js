@@ -127,6 +127,17 @@
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
 
   /* ---------- projects ---------- */
+  /* the controller types of Change Controller: the emulated controller of this app, and the ControlLogix controllers a
+     project is moved to (the emulator workflow: change the type to the real controller, then re-alias the I/O). Only
+     PLC-CPU can be downloaded to the emulator; the others are for the L5X export to Studio 5000. [type, description,
+     revisions (major)] */
+  const CTYPES = [['PLC-CPU', 'Emulated controller', ['1.0']],
+    ...['1756-L81E', '1756-L82E', '1756-L83E', '1756-L84E', '1756-L85E'].map(t => [t, 'ControlLogix 5580 Controller', ['33', '34', '35', '36', '37']]),
+    ...['1756-L71', '1756-L72', '1756-L73', '1756-L74', '1756-L75'].map(t => [t, 'ControlLogix 5570 Controller', ['30', '31', '32', '33']])];
+  const ctype = t => CTYPES.find(x => x[0] === t) || CTYPES[0];
+  const emuCtl = p => !p || !p.controller.type || p.controller.type === 'PLC-CPU';
+  // "PLC-CPU 1.0", "1756-L85E 37": the project's controller
+  const ctlLabel = p => { const c = p && p.controller, t = ctype(c && c.type); return t[0] + ' ' + (c && t[2].includes(String(c.rev)) ? c.rev : t[2][t[2].length - 1]); };
   const ctlSlot = () => (S.p && Number.isInteger(S.p.controller.slot) ? S.p.controller.slot : 0);
   function blank(name) {
     return {
@@ -771,7 +782,7 @@
     if (!S.p) return;
     if (S.noProj) { document.title = 'MT PLC Studio'; return; }
     // connected to an emulated controller, the title bars say so (as the reference software does)
-    document.title = `MT PLC Studio - ${S.file && S.file.name ? S.file.name.replace(/\.mtp$/i, '') : S.p.controller.name}${S.dirty ? '*' : ''} [PLC-CPU 1.0]${S.online ? ' [Emulator]' : ''}`;
+    document.title = `MT PLC Studio - ${S.file && S.file.name ? S.file.name.replace(/\.mtp$/i, '') : S.p.controller.name}${S.dirty ? '*' : ''} [${ctlLabel(S.p)}]${S.online ? ' [Emulator]' : ''}`;
   }
 
   /* ---------- commands (menus, toolbars, keyboard and touch use the same list) ---------- */
@@ -1044,7 +1055,7 @@
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
     const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>`;
-    return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small>`}</span>
+    return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>${esc(ctlLabel(S.p))}</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
         <span class="vsep"></span><button class="btn" data-cmd="rswho" title="RSLinx Classic: RSWho and Configure Drivers">${ic('net')}RSLinx</button><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
@@ -1137,7 +1148,7 @@
       add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
     });
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
-      add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] PLC-CPU ${S.p.controller.name}`, 'chip');
+      add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] ${ctype(S.p.controller.type)[0]} ${S.p.controller.name}`, 'chip');
       [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
     }));
     return h;
@@ -3574,13 +3585,14 @@ ${only ? rtn(only.routine, 'Target') : g.routines.map(r => rtn(r)).join('\n')}
   }
   function toL5X(p) {
     const { x, dsc, tag, udt, order, mod, prog } = l5xKit(p);
+    const emu = emuCtl(p), pt = emu ? '1756-L85E' : ctype(p.controller.type)[0], mj = emu ? '37' : ctlLabel(p).split(' ')[1], mn = emu ? '11' : '0';
     const progs = p.tasks.flatMap(t => t.programs), cslot = Number.isInteger(p.controller.slot) ? p.controller.slot : 0;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
-<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="1756-L85E" MajorRev="37" MinorRev="11">
+${emu ? '<!--MT PLC Studio: PLC-CPU 1.0-->\n' : ''}<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="${pt}" MajorRev="${mj}" MinorRev="${mn}">
 ${dsc(p.controller.desc)}<DataTypes>${order.map(udt).join('\n')}</DataTypes>
 <Modules>
-<Module Name="Local" CatalogNumber="1756-L85E" Vendor="1" ParentModule="Local" ParentModPortId="1"><Ports><Port Id="1" Address="${cslot}" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
+<Module Name="Local" CatalogNumber="${pt}" Vendor="1" ParentModule="Local" ParentModPortId="1"><Ports><Port Id="1" Address="${cslot}" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
 ${p.rack.modules.map(mod).join('\n')}
 </Modules>
 <Tags>
@@ -3620,6 +3632,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
     const name = (c.getAttribute('Name') || 'Imported').replace(/[^A-Za-z0-9_]/g, '_').replace(/^([^A-Za-z_])/, '_$1').slice(0, 40);
     const p = blank(name);
     if (desc(c)) p.controller.desc = desc(c);
+    // a Studio 5000 project keeps its controller type (Change Controller to PLC-CPU to run it on the emulator)
+    const pt = CTYPES.find(x => x[0] === U(c.getAttribute('ProcessorType') || ''));
+    if (pt && pt[0] !== 'PLC-CPU' && !/MT PLC Studio: PLC-CPU/.test(t)) { p.controller.type = pt[0]; const mr = c.getAttribute('MajorRev'); p.controller.rev = pt[2].includes(mr) ? mr : pt[2][pt[2].length - 1]; }
     const tagsOf = el => (el ? kids(el, 'Tag') : []).map(g => {
       const n = g.getAttribute('Name'), ds = desc(g);
       if (g.getAttribute('TagType') === 'Alias') return ds ? { name: n, alias: g.getAttribute('AliasFor'), desc: ds } : { name: n, alias: g.getAttribute('AliasFor') };
@@ -4009,11 +4024,35 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         edit(() => { if (n !== r.name) { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + n : k)); if (g.main === rn) g.main = n; if (S.routine === rn && S.prog === gn) S.routine = n; r.name = n; } if (d) r.desc = d; else delete r.desc; });
       } }] });
   }
+  /* Change Controller (Controller Properties > General > Change Controller…, help v37): the type and the revision,
+     From and To; then the confirmation of the type change (Yes / No). The logic, tags and I/O configuration stay. */
+  function changeController() {
+    const c = S.p.controller, from = ctype(c.type), fromRev = ctlLabel(S.p).split(' ')[1];
+    const revs = t => ctype(t)[2].map(r => `<option${r === (t === c.type ? fromRev : ctype(t)[2][ctype(t)[2].length - 1]) ? ' selected' : ''}>${r}</option>`).join('');
+    const el = dialog({ title: 'Change Controller', size: 'md',
+      body: `<table class="iht"><thead><tr><th></th><th>From</th><th>To</th></tr></thead><tbody>
+          <tr><td>Type</td><td class="mono">${esc(from[0])} ${esc(from[1])}</td><td><select class="inp" id="cc-t">${CTYPES.map(([t, d]) => `<option value="${t}"${t === from[0] ? ' selected' : ''}>${t} ${esc(d)}</option>`).join('')}</select></td></tr>
+          <tr><td>Revision</td><td class="mono">${esc(fromRev)}</td><td><select class="inp" id="cc-r">${revs(from[0])}</select></td></tr></tbody></table>
+        <p class="help" id="cc-h"></p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: e2 => {
+        const t = e2.querySelector('#cc-t').value, r = e2.querySelector('#cc-r').value;
+        if (t === from[0] && r === fromRev) return;
+        if (t === from[0]) { edit(() => { c.rev = r; }); render(); toast(`Revision changed to ${r}.`, 'ok'); return; }
+        setTimeout(() => confirmDlg('Confirm Controller Type Change', `Change the controller from <b>${esc(from[0])}</b> to <b>${esc(t)}</b>, revision ${esc(r)}?</p>
+          <ul><li>The logic, the tags, the data types and the I/O configuration are kept.</li>
+          <li>${t === 'PLC-CPU' ? 'The project can be downloaded to the emulated controller again.' : `A ${esc(t)} project cannot be downloaded to the emulated controller (PLC-CPU): export it to L5X for Studio 5000, or change the type back.`}</li>
+          <li>Check the I/O configuration and the aliases of the I/O points for the real modules.</li></ul><p>`, 'Yes', () => { edit(() => { c.type = t; c.rev = r; }); render(); toast(`Controller changed to ${t} ${r}.`, 'ok'); }), 0);
+      } }] });
+    const sel = el.querySelector('#cc-t'), help = () => { el.querySelector('#cc-h').textContent = sel.value === 'PLC-CPU' ? 'PLC-CPU runs on the emulator of this app.' : `${ctype(sel.value)[1]}: for the L5X export to Studio 5000. The emulator runs PLC-CPU projects only.`; };
+    sel.onchange = () => { el.querySelector('#cc-r').innerHTML = revs(sel.value); help(); };
+    help();
+  }
   function controllerProps(tab) {
     const on = S.online && ctl.M, dis = offline() ? '' : ' disabled';
     const general = `<div class="frow"><label>Name</label><input class="inp" id="cp-n" value="${esc(S.p.controller.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="cp-d" value="${esc(S.p.controller.desc || '')}"${dis}></div>
-      ${kv('Type', 'PLC-CPU (emulated controller)')}${kv('Revision', '1.0')}${kv('Chassis', `PLC-RACK${S.p.rack.size}`)}
+      ${kv('Vendor', emuCtl(S.p) ? 'MT PLC Studio' : 'Allen-Bradley')}${kv('Type', `${esc(ctype(S.p.controller.type)[0])} ${esc(ctype(S.p.controller.type)[1])}`)}${kv('Revision', esc(ctlLabel(S.p).split(' ')[1]))}
+      <div class="brow" style="margin-top:0"><button class="btn" id="cp-cc"${dis}>Change Controller…</button></div>${kv('Chassis', `PLC-RACK${S.p.rack.size}`)}
       <div class="frow"><label>Slot</label><select class="inp" id="cp-s"${dis}>${Array.from({ length: S.p.rack.size }, (_, i) => i).filter(i => i === ctlSlot() || !S.p.rack.modules.some(m => m.slot === i)).map(i => `<option${i === ctlSlot() ? ' selected' : ''}>${i}</option>`).join('')}</select></div>${kv('Path', esc(curPath()))}
       <p class="help">The name is also the project name.</p>`;
     const offMsg = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
@@ -4043,7 +4082,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       } }],
       mount: el => {
         bindTabs(el);
-        const cm = el.querySelector('#cp-cm'), cn = el.querySelector('#cp-cn');
+        const cm = el.querySelector('#cp-cm'), cn = el.querySelector('#cp-cn'), cc = el.querySelector('#cp-cc');
+        if (cc) cc.onclick = () => { if (offline()) changeController(); };
         if (cm) cm.onclick = () => { ctl.clearFault(); live(true); render(); controllerProps('maj'); };
         if (cn) cn.onclick = () => { ctl.clearMinors(); controllerProps('min'); };
       } });
@@ -4256,6 +4296,11 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (tx && tx.slot !== ctlSlot()) {
       dialog({ title: 'Download', body: `<p><b>Failed to download.</b> The controller of the project is in slot <b>${ctlSlot()}</b>, but the controller at the path <b class="mono">${esc(curPath())}</b> is in slot <b>${tx.slot}</b>.</p><p class="help">Change the slot in Controller Properties, or pick the controller in slot ${ctlSlot()} in Who Active.</p>`,
         buttons: [{ l: 'Close' }, { l: 'Controller Properties…', run: () => { setTimeout(() => controllerProps(), 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
+      return;
+    }
+    if (!emuCtl(S.p)) {
+      dialog({ title: 'Download', body: `<p><b>Failed to download.</b> The project is for a <b>${esc(ctlLabel(S.p))}</b> controller, but the controller at the path <b class="mono">${esc(curPath())}</b> is a <b>PLC-CPU 1.0</b>.</p><p class="help">The controller type and revision of the project must match the controller. Change Controller in Controller Properties to PLC-CPU to download to the emulator.</p>`,
+        buttons: [{ l: 'Close' }, { l: 'Controller Properties…', pri: true, run: () => { setTimeout(() => controllerProps(), 0); } }] });
       return;
     }
     dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Slot', ctlSlot())}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
