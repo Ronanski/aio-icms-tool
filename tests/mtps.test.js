@@ -1525,5 +1525,49 @@ console.log('Map PLC/SLC Messages: verify (1756-RM094, Map Tags)');
   check('a mapped tag that was deleted shows an error', /PLC\/SLC mapping: file 12 to 'Gone'/.test(errs(pm({ files: [{ file: 12, tag: 'Gone' }] }))[0] || ''));
 }
 
+console.log('Produced and consumed tags between two emulated controllers in the chassis (LGEM5K-GR016M ch. 10, 1756-PM011)');
+{
+  const pj = (name, slot, o) => { const p = proj({ modules: [], tags: o.tags, rungs: o.rungs }); p.controller.name = name; p.controller.slot = slot; p.rack.size = 8; if (o.ctls) p.rack.ctls = o.ctls; return p; };
+  const ch = new MTPS.Chassis(8);
+  ch.insert(0, 'PLC-CPU', 'Line_A'); ch.insert(2, 'PLC-CPU', 'Line_B');
+  const A = ch.controller(0), B = ch.controller(2);
+  const ra = A.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] }));
+  const rb = B.download(pj('Line_B', 2, { tags: [T('Count_In', 'DINT', { cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 50 } }), T('Pair_In', 'REAL', { dim: 2, cons: { producer: 'Line_A', remote: 'Pair_Out', rpi: 50 } }), T('Copy', 'DINT')], rungs: ['MOV(Count_In,Copy);'], ctls: [{ slot: 0, name: 'Line_A' }] }));
+  check('the producer (slot 0) and the consumer (slot 2, Line_A in its I/O configuration) download', ra.ok && rb.ok, ra.lines.concat(rb.lines).join(' | '));
+  A.setMode('remrun'); B.setMode('remrun');
+  A.write('Count_Out', 5); A.write('Pair_Out[1]', 2.5); ch.advance(10);
+  check('the consumed tags take the produced values when the connection opens', B.read('Count_In') === 5 && B.read('Pair_In[1]') === 2.5);
+  const cs = B.pcState('Count_In');
+  check('Status: Connected to Producer and Producer in Run Mode', cs.conn === true && cs.run === true && cs.code === null);
+  ch.advance(10);
+  check('the consumer\'s logic uses the consumed value (MOV to Copy)', B.read('Copy') === 5);
+  A.write('Count_Out', 7); ch.advance(20);
+  const mid = B.read('Count_In'); ch.advance(30);
+  check('the data moves once every RPI (50 ms): not after 20 ms, then after 50 ms', mid === 5 && B.read('Count_In') === 7, `${mid} ${B.read('Count_In')}`);
+  A.setMode('remprog'); A.write('Count_Out', 9); ch.advance(60);
+  check('a producer in Program mode still sends its data; Producer in Run Mode goes off (no fault)', B.read('Count_In') === 9 && B.pcState('Count_In').run === false && B.pcState('Count_In').conn === true && B.ioOk());
+  A.setMode('remrun');
+  ch.setController(0, { on: false }); ch.advance(60);
+  check('producer turned off: connection fault 16#0204 on the producer module, I/O not responding', B.pcState('Count_In').code === '16#0204' && B.peerStatus(0).state === 'Faulted' && B.peerStatus(0).code === '16#0204' && !B.ioOk());
+  check('… the consumed tag keeps its last value', B.read('Count_In') === 9);
+  ch.setController(0, { on: true }); ch.advance(60);
+  check('producer back on: the connection is made again', B.pcState('Count_In').conn === true && B.ioOk() && B.peerStatus(0).state === 'Running');
+  ch.remove(0); ch.advance(60);
+  check('producer removed from the chassis: 16#0204', B.peerStatus(0).code === '16#0204');
+  // a producer without the tag, another data type, Max Consumers
+  ch.insert(0, 'PLC-CPU', 'Line_A'); const A2 = ch.controller(0); ch.advance(10);
+  check('a controller with no project in the producer slot: 16#0117 (no produced tag of that name)', B.peerStatus(0).code === '16#0117');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT'), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); ch.advance(60);
+  check('the Remote Data tag is not produced: 16#0117, and the other tag of that producer stops too (PM011)', B.pcState('Count_In').code === '16#0117' && B.pcState('Pair_In').code === '16#0117');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'REAL', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); ch.advance(60);
+  check('another data type (REAL produced, DINT consumed): 16#0109', B.pcState('Count_In').code === '16#0109');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); A2.setMode('remrun');
+  ch.insert(3, 'PLC-CPU', 'Line_C'); const C = ch.controller(3);
+  C.download(pj('Line_C', 3, { tags: [T('Count_In', 'DINT', { cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 20 } })], ctls: [{ slot: 0, name: 'Line_A' }] })); A2.write('Count_Out', 11); ch.advance(60);
+  check('Max Consumers 1: the first consumer (slot 2) connects, the second (slot 3) gets 16#011A', B.pcState('Count_In').conn && B.read('Count_In') === 11 && C.pcState('Count_In').code === '16#011A');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 2 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); A2.write('Count_Out', 12); ch.advance(60);
+  check('… with Max Consumers 2 both consume', B.read('Count_In') === 12 && C.read('Count_In') === 12 && C.pcState('Count_In').conn);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

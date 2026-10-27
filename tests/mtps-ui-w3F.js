@@ -129,6 +129,45 @@ module.exports = async function w3F({ browser, page, URL, check }) {
     check(`${nm}: tapping OK and Create makes the consumed tag`, await tp.evaluate(() => { const t = MTPS.App.state.p.tags.find(x => x.name === 'From_A'); return !!t && t.cons.producer === 'Line_A' && t.cons.remote === 'Count_Out'; }));
     await c2.close();
   }
+  console.log('Wave 3 F: produced / consumed tags between two emulated controllers, online (LGEM5K-GR016M ch. 10)');
+  await fresh();
+  // the producing controller in slot 3 of the chassis, with its own project (another engineer's), in Run
+  await ev(() => {
+    const r = MTPS.App.racks[0]; r.insert(3, 'PLC-CPU', 'Line_A'); r.setController(3, { on: true });
+    const pa = MTPS.App.blank('Line_A'); pa.controller.slot = 3; pa.rack.modules = []; pa.tags = [{ name: 'Count_Out', type: 'DINT', prod: { max: 1 } }]; pa.tasks[0].programs[0].routines[0].rungs = [{ t: 'NOP();' }];
+    const c = r.controller(3); c.download(pa); c.setMode('remrun'); c.write('Count_Out', 42);
+  });
+  await ev(() => { const p = MTPS.App.blank('Line_B'); p.rack.ctls = [{ slot: 3, name: 'Line_A' }]; p.tags = [{ name: 'Count_In', type: 'DINT', cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 20 } }, { name: 'Copy', type: 'DINT' }]; p.tasks[0].programs[0].routines[0].rungs = [{ t: 'MOV(Count_In,Copy);' }]; MTPS.App.openProject(p, true); MTPS.App.render(); });
+  await wait(150);
+  await ev(() => MTPS.App.run('online'));
+  for (let k = 0; k < 8 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) { await wait(150); const b = await page.$('#layer .dlg .btn.pri'); if (b && !(await page.$('#layer .dlg .prog'))) await b.click(); else await wait(500); }
+  await page.click('.dmenu [data-menu="Communications"]'); await wait(120); await pick('Run Mode'); await wait(150);
+  for (let k = 0; k < 3; k++) { const b = await page.$('#layer .dlg .btn.pri'); if (b) { await b.click(); await wait(150); } }
+  await wait(200);
+  check('online in Run: the consumed tag holds the producer\'s value and the logic uses it', await ev(() => MTPS.App.state.online && MTPS.App.ctl.read('Count_In') === 42 && MTPS.App.ctl.read('Copy') === 42), await ev(() => [MTPS.App.state.online, MTPS.App.ctl.mode, MTPS.App.ctl.read('Count_In')].join()));
+  await ev(() => MTPS.App.racks[0].controller(3).write('Count_Out', 43)); await wait(200);
+  check('a new produced value comes in at the RPI', await ev(() => MTPS.App.ctl.read('Count_In') === 43));
+  await ev(() => MTPS.App.run('tagsedit')); await wait(150);
+  await page.click('#tagrows tr[data-tag="Count_In"] td.nm'); await wait(150);
+  await page.click('#tpcb'); await wait(120); await page.click('#layer .pcdlg [data-dt="st"]'); await wait(60);
+  check('Consumed Tag Connection > Status online: Connected to Producer (Line_A) and Producer in Run Mode are on', (await page.$$eval('#layer .pcdlg .pcled .led.g', l => l.length)) === 2 && /Connected to Producer: Line_A/.test(await page.$eval('#layer .pcdlg', d => d.textContent)));
+  check('online, Remote Data cannot be changed (offline only)', await page.$eval('#pc-r', i => i.disabled));
+  await shot('consumed-status-online');
+  await page.keyboard.press('Escape'); await wait(60); await page.keyboard.press('Escape'); await wait(80);
+  await ev(() => MTPS.App.racks[0].controller(3).setKey('PROG')); await wait(200);
+  check('producer in Program: no fault, the I/O indicator stays OK', await ev(() => MTPS.App.ctl.ioOk() && MTPS.App.ctl.pcState('Count_In').run === false && MTPS.App.ctl.pcState('Count_In').conn === true));
+  await ev(() => MTPS.App.racks[0].setController(3, { on: false })); await wait(250);
+  check('producer turned off: I/O Not Responding on the consumer', /I\/O Not Responding/.test(await page.$eval('#olbar', e => e.textContent).catch(() => '')) || await ev(() => !MTPS.App.ctl.ioOk()));
+  await ev(() => MTPS.App.render()); await wait(80);
+  check('the producer module in the I/O Configuration shows the fault', (await page.$eval('.nd[data-org="pcm:3"]', n => n.textContent)).includes('⚠'));
+  await page.click('.nd[data-org="pcm:3"]'); await wait(150);
+  check('its Module Properties open on Connection: (Code 16#0204) Connection request timed out', /Module Fault.*16#0204.*timed out/.test(await page.$eval('#layer .dlg .db', d => d.textContent)), await page.$eval('#layer .dlg .db', d => d.textContent).catch(() => ''));
+  await shot('producer-module-fault');
+  await page.keyboard.press('Escape'); await wait(80);
+  await ev(() => MTPS.App.racks[0].setController(3, { on: true })); await wait(250);
+  check('producer back on: the connection is made again', await ev(() => MTPS.App.ctl.ioOk() && MTPS.App.ctl.pcState('Count_In').conn));
+  await ev(() => MTPS.App.run('offline')); await wait(100);
+
   console.log('Wave 3 F: Logic > Produced Tags and Map PLC/SLC Messages (v37 help, Logic menu; 1756-RM094 Map Tags)');
   await fresh();
   await ev(() => { const p = MTPS.App.blank('Line_C'); p.tags = [{ name: 'Out_A', type: 'DINT', prod: { max: 1 } }, { name: 'Out_B', type: 'REAL', dim: 4, prod: { max: 3 } }, { name: 'N7', type: 'INT', dim: 20 }, { name: 'F8', type: 'REAL', dim: 10 }, { name: 'Single', type: 'DINT' }]; MTPS.App.openProject(p, true); MTPS.App.render(); });
