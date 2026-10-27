@@ -402,4 +402,51 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
     await pp.context().close();
   }
+
+  /* ---------- 7. Quick View ---------- */
+  console.log('Wave 2 B: the Quick View pane (v37 help: Controller Organizer)');
+  await fresh();
+  const qv = (pg = page) => pg.$eval('#qview', e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '');
+  check('the Quick View pane is below the Controller Organizer tree', await ev(() => { const q = document.querySelector('.org #qview'), t = document.querySelector('.org .tree'); return !!q && q.getBoundingClientRect().top >= t.getBoundingClientRect().bottom - 1; }));
+  await page.click('.org [data-org="rt:MainProgram/MainRoutine"]'); await wait(150);
+  const nr = await ev(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.length);
+  check('a routine: its type, program and rungs', (await qv()) === `Quick View MainRoutine Type Ladder Diagram routine Program MainProgram Main Routine Yes Rungs ${nr}`, await qv());
+  await page.click('.org [data-org="mod:1"]'); await wait(150);
+  check('a module: its type, slot', /^Quick View DI_1 Type PLC-DI16-24V Slot 1 Inhibited No/.test(await qv()), await qv());
+  await page.keyboard.press('Escape'); await wait(120);
+  await ev(() => { MTPS.App.state.p.dataTypes.push({ name: 'Motor', desc: 'A motor', members: [{ name: 'Run', type: 'BOOL' }, { name: 'Speed', type: 'REAL' }] }); MTPS.App.render(); });
+  if (!(await page.$('.org [data-org="dt:user"]'))) { await page.click('.org [data-org="dts"]'); await wait(150); }
+  await page.click('.org [data-org="dt:user"]'); await wait(150);
+  check('a folder: its data types', (await qv()) === 'Quick View User-Defined Type Folder Data types 1', await qv());
+  if (!(await page.$('.org [data-org="dt:u:Motor"]'))) { await page.click('.org [data-org="dt:user"]'); await wait(150); }
+  await page.click('.org [data-org="dt:u:Motor"]'); await wait(150);
+  check('a user-defined data type: description, members and size', (await qv()) === 'Quick View Motor Type User-Defined data type Description A motor Members 2 Size 8 bytes', await qv());
+  if (!(await page.$('.org [data-org="dt:p:TIMER"]'))) { await page.click('.org [data-org="dt:pre"]'); await wait(150); }
+  await page.click('.org [data-org="dt:p:TIMER"]'); await wait(150);
+  check('a predefined data type: TIMER (PRE, ACC, EN, TT, DN), 12 bytes', (await qv()) === 'Quick View TIMER Type Predefined data type Members 5 Size 12 bytes', await qv());
+  await shot('7-quick-view');
+  await page.click('#qview [data-qv]'); await wait(120);
+  check('a click on its header folds it (kept in the preferences)', (await qv()) === 'Quick View' && await ev(() => JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /pref/i.test(k))) || '{}').qv === false));
+  await page.click('#qview [data-qv]'); await wait(120);
+  check('a second click opens it again', (await qv()).startsWith('Quick View TIMER'));
+  {
+    const tp = await touchPage(800, 1280);
+    await fresh(tp);
+    await tp.tap('[data-drawer="1"]'); await wait(200, tp);
+    await tp.tap('.org [data-org="task:MainTask"]'); await wait(200, tp);
+    check('tablet (touch): the organizer drawer has Quick View; a task: Continuous', /^Quick View MainTask Type Continuous task Watchdog 500 ms Programs 1/.test(await qv(tp)), await qv(tp));
+    await shot('7-quick-view-tablet', tp);
+    check('tablet: no JS errors', tp._errs.length === 0, tp._errs.join(' | '));
+    await tp.context().close();
+  }
+  {
+    const pp = await touchPage(390, 844);
+    await fresh(pp);
+    await pp.tap('[data-go="project"]'); await wait(200, pp);
+    await pp.tap('[data-org="ctl"]'); await wait(200, pp);
+    check('phone (touch): the Project page has Quick View; the controller', /^Quick View Motor_Demo Type PLC-CPU/.test(await qv(pp)) && /Mode Offline/.test(await qv(pp)) && (await ev(() => document.documentElement.scrollWidth <= innerWidth + 1, null, pp)), await qv(pp));
+    await shot('7-quick-view-phone', pp);
+    check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
+    await pp.context().close();
+  }
 };

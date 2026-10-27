@@ -1188,3 +1188,12 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .tab .wtbl td, .phone .wtbl td { height: 40px; }
 .derr:has(.wtbl) { height: 240px; }
 .msgp.open .msgb:has(.wtbl) { height: 300px; }
+.qv { flex: none; max-height: 40%; overflow: auto; border-top: 1px solid var(--border-strong); background: var(--surface); }
+.qvh { width: 100%; height: 26px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface-2); font: inherit; font-weight: 600; color: inherit; cursor: pointer; text-align: left; position: sticky; top: 0; }
+.qvh svg { width: 12px; height: 12px; }
+.qvb { padding: 4px 10px 6px; font-size: 12px; }
+.qvb .qvn { font-weight: 600; padding: 2px 0 4px; overflow-wrap: anywhere; }
+.qvb .kv { padding: 3px 0; }
+.qvb .kv .v { overflow-wrap: anywhere; min-width: 0; }
+.tab .qvh, .phone .qvh { height: 44px; }
+.phone .qv { max-height: none; }

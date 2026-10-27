@@ -1024,7 +1024,7 @@
         <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span>${commHTML(true)}</span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
-      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
+      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}</div>
           ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
@@ -1036,7 +1036,7 @@
   function tablet() {
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
-    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>`;
+    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>`;
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>PLC-CPU 1.0</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
@@ -1081,7 +1081,7 @@
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
-    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)"><div class="tree">${treeHTML()}</div></div>`;
+    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)"><div class="tree">${treeHTML()}</div>${quickViewHTML()}</div>`;
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
@@ -4110,6 +4110,55 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (ev.target.id === 'wadd') { ev.preventDefault(); ev.stopPropagation(); wAdd(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
     else if (ev.target.id === 'wname') { ev.preventDefault(); ev.stopPropagation(); wName(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
   }, true);
+
+  /* ---------- the Quick View pane below the Controller Organizer (v37 help, Controller Organizer: "provides summary
+     information about the selected item"): the type, the description and a few details of the item last clicked in
+     the organizer. Its header folds it (kept in the preferences). The rows shown are this app's choice. ---------- */
+  function qvRows(k) {
+    const P = S.p, n = (a, w) => `${a} ${w}${a === 1 ? '' : 's'}`, prog = g => allProgs().find(x => x.name === g);
+    const TT = { BOOL: 'Boolean', SINT: '8-bit integer', INT: '16-bit integer', DINT: '32-bit integer', LINT: '64-bit integer', REAL: '32-bit float', LREAL: '64-bit float' };
+    if (k === 'ctl') return [P.controller.name, [['Type', P.controller.type || 'PLC-CPU'], ['Revision', P.controller.rev || ''], ['Slot', ctlSlot()], ['Description', P.controller.desc || ''], ['Mode', modeText()]]];
+    if (k === 'ctags') return ['Controller Tags', [['Type', 'Tags of the controller scope'], ['Tags', P.tags.length]]];
+    if (k === 'tasks') return ['Tasks', [['Type', 'Folder'], ['Tasks', P.tasks.length]]];
+    if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', 'Continuous task'], ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
+    if (k.startsWith('prog:')) { const g = prog(k.slice(5)); return g && [g.name, [['Type', 'Program'], ['Description', g.desc || ''], ['Main Routine', g.main || '<none>'], ['Routines', g.routines.length], ['Tags', g.tags.length]]]; }
+    if (k.startsWith('ptags:')) { const g = prog(k.slice(6)); return g && ['Program Tags', [['Type', 'Tags of the program scope'], ['Program', g.name], ['Tags', g.tags.length]]]; }
+    if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
+    if (k === 'dts' || k === 'dt:user' || k === 'dt:str' || k === 'dt:aod' || k === 'dt:pre' || k === 'dt:mod') {
+      const d = E.dataTypes(P), L = { dts: ['Data Types', null], 'dt:user': ['User-Defined', d.userDefined], 'dt:str': ['Strings', d.strings], 'dt:aod': ['Add-On-Defined', d.addOnDefined || []], 'dt:pre': ['Predefined', d.predefined], 'dt:mod': ['Module-Defined', d.moduleDefined] }[k];
+      return [L[0], [['Type', 'Folder']].concat(L[1] ? [['Data types', L[1].length]] : [])];
+    }
+    if (/^dt:[uspam]:/.test(k)) {
+      const nm = k.slice(5), c = k[3], ud = (P.dataTypes || []).find(x => U(x.name) === U(nm)), ms = membersOf(nm) || [];
+      const kind = { u: 'User-Defined data type', s: 'String data type', a: 'Add-On-Defined data type', p: TT[nm] ? 'Predefined atomic data type' : 'Predefined data type', m: 'Module-Defined data type' }[c];
+      const r = [['Type', kind], ['Description', (ud && ud.desc) || TT[nm] || '']];
+      if (c === 's' || nm === 'STRING') r.push(['Maximum Characters', c === 's' && ud ? ud.len : 82]);
+      else if (ms.length) r.push(['Members', ms.length]);
+      r.push(['Size', sizeText(nm) || '']);
+      return [nm, r];
+    }
+    if (k === 'io') return ['I/O Configuration', [['Type', 'Folder'], ['Modules', P.rack.modules.length + 1]]];
+    if (k === 'bp') return [`Backplane, PLC-RACK${P.rack.size}`, [['Type', 'Chassis'], ['Size', n(P.rack.size, 'slot')]]];
+    if (k.startsWith('mod:')) {
+      const s = +k.slice(4);
+      if (s === ctlSlot()) return [P.controller.name, [['Type', 'PLC-CPU controller'], ['Slot', s], ['Revision', P.controller.rev || '']]];
+      const m = P.rack.modules.find(x => x.slot === s);
+      return m && [m.name, [['Type', m.type], ['Description', m.desc || ''], ['Slot', s], ['Inhibited', m.inhibit ? 'Yes' : 'No']].concat(S.online && ctl.M ? [['Status', ctl.moduleStatus(s).state]] : [])];
+    }
+    return null;
+  }
+  function quickViewHTML() {
+    if (S.noProj) return '';
+    const open = S.prefs.qv !== false, q = open && qvRows(S.orgSel || '');
+    const body = !open ? '' : q ? `<div class="qvb"><div class="qvn">${esc(q[0])}</div>${q[1].filter(x => x[1] !== '' && x[1] != null).map(([a, b]) => kv(esc(a), esc(String(b)))).join('')}</div>` : '<div class="qvb muted">Select an item in the Controller Organizer.</div>';
+    return `<div class="qv" id="qview"><button class="qvh" type="button" data-qv="1" aria-expanded="${open}">${ic(open ? 'down' : 'right')}<span>Quick View</span></button>${body}</div>`;
+  }
+  const qvRefresh = () => document.querySelectorAll('#qview').forEach(x => { x.outerHTML = quickViewHTML(); });
+  document.addEventListener('click', ev => {
+    const t = ev.target; if (!t.closest || !S.p) return;
+    if (t.closest('[data-qv]')) { S.prefs.qv = S.prefs.qv === false; savePrefs(); qvRefresh(); return; }
+    if (t.closest('[data-org]')) qvRefresh();
+  });
 
   /* ---------- the Tag Editor command bar: Show and the filter; the columns ----------
      v37 help, Tag Editor command bar settings: Scope; Show (All Tags, Configure… = the Define Tag Filter dialog,
