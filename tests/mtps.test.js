@@ -3,6 +3,7 @@
    Usage: node tests/mtps.test.js */
 'use strict';
 const MTPS = require('../mtps/js/engine.js');
+require('../mtps/js/sfc.js');
 
 let failed = 0, passed = 0;
 function check(name, cond, info = '') {
@@ -1495,6 +1496,994 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   const pr = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
   pr.write('Loop.UPD', 1); pr.scan(10); pr.setMode('remprog'); pr.setMode('remrun');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
+}
+
+console.log('FBD / ST timers and counter: TONR, TOFR, RTOR, CTUD (1756-RM018A chapter 3)');
+{
+  const F = MTPS.FBDI, c = { clock: 0 };
+  const tm = o => Object.assign({ EnableIn: 1, TimerEnable: 0, PRE: 0, Reset: 0, EnableOut: 0, ACC: 0, EN: 0, TT: 0, DN: 0, Status: 0 }, o);
+  const go = (f, s, n, dt = 10) => { for (let k = 0; k < n; k++) { c.clock += dt; f(c, s); } };
+  const a = tm({ PRE: 50, TimerEnable: 1 });
+  go(F.TONR, a, 1);
+  eq('TONR: first enabled scan sets EN and TT, ACC 0', [a.EN, a.TT, a.DN, a.ACC, a.EnableOut], [1, 1, 0, 0, 1]);
+  go(F.TONR, a, 3);
+  eq('… ACC = ACC + (current time - last time scanned)', a.ACC, 30);
+  go(F.TONR, a, 4);
+  eq('… DN when ACC reaches PRE, TT cleared, ACC stays at PRE', [a.DN, a.TT, a.ACC], [1, 0, 50]);
+  a.TimerEnable = 0; go(F.TONR, a, 1);
+  eq('TONR is not retentive: TimerEnable cleared resets ACC, EN, TT, DN', [a.EN, a.TT, a.DN, a.ACC], [0, 0, 0, 0]);
+  a.TimerEnable = 1; go(F.TONR, a, 3); a.Reset = 1; go(F.TONR, a, 2);
+  eq('Reset clears EN, TT, DN and ACC while TimerEnable stays set', [a.EN, a.TT, a.DN, a.ACC], [0, 0, 0, 0]);
+  a.Reset = 0; go(F.TONR, a, 2);
+  eq('… and the timer starts again when Reset clears', [a.EN, a.ACC], [1, 10]);
+  const sk = tm({ PRE: 1000, TimerEnable: 1 }); go(F.TONR, sk, 1); c.clock += 300; F.TONR(c, sk);
+  eq('a timer not scanned for 300 ms gets the whole time on its next scan', sk.ACC, 300);
+  const bad = tm({ PRE: -1, TimerEnable: 1 }); go(F.TONR, bad, 2);
+  eq('a negative PRE sets Status.PresetInv and .InstructFault; the timer does not run', [bad.Status & 3, bad.EN, bad.ACC], [3, 0, 0]);
+  const r = tm({ PRE: 100, TimerEnable: 1 }); go(F.RTOR, r, 4);
+  r.TimerEnable = 0; go(F.RTOR, r, 3);
+  eq('RTOR keeps ACC while TimerEnable is cleared (EN and TT cleared)', [r.ACC, r.EN, r.TT], [30, 0, 0]);
+  r.TimerEnable = 1; go(F.RTOR, r, 8);
+  eq('… and goes on from there to DN', [r.ACC, r.DN], [100, 1]);
+  r.TimerEnable = 0; go(F.RTOR, r, 1); r.Reset = 1; go(F.RTOR, r, 1);
+  eq('… DN stays while disabled; only Reset clears ACC', [r.ACC, r.DN], [0, 0]);
+  const f = tm({ PRE: 40, TimerEnable: 1 }); go(F.TOFR, f, 1);
+  eq('TOFR: TimerEnable set gives EN and DN, ACC 0', [f.EN, f.DN, f.TT, f.ACC], [1, 1, 0, 0]);
+  f.TimerEnable = 0; go(F.TOFR, f, 2);
+  eq('… cleared: TT while it times the off delay, DN still set', [f.EN, f.TT, f.DN, f.ACC], [0, 1, 1, 10]);
+  go(F.TOFR, f, 4);
+  eq('… DN and TT cleared when ACC reaches PRE', [f.TT, f.DN, f.ACC], [0, 0, 40]);
+  f.TimerEnable = 1; go(F.TOFR, f, 1); f.Reset = 1; go(F.TOFR, f, 1);
+  eq('TOFR Reset: EN, TT, DN cleared and ACC = PRE (not as RES of a TOF)', [f.EN, f.TT, f.DN, f.ACC], [0, 0, 0, 40]);
+  f.Reset = 0; f.TimerEnable = 0; go(F.TOFR, f, 3);
+  check('… with TimerEnable cleared it does not time again after Reset', f.TT === 0 && f.DN === 0);
+  const k = { EnableIn: 1, CUEnable: 0, CDEnable: 0, PRE: 2, Reset: 0, EnableOut: 0, ACC: 0, CU: 0, CD: 0, DN: 0, OV: 0, UN: 0 };
+  MTPS.fbdPrescan('CTUD', k);
+  k.CUEnable = 1; F.CTUD(c, k);
+  eq('CTUD after prescan: a CUEnable already set does not count (a 0-to-1 change is needed)', k.ACC, 0);
+  k.CUEnable = 0; F.CTUD(c, k); k.CUEnable = 1; F.CTUD(c, k); F.CTUD(c, k);
+  eq('… CUEnable cleared to set counts up once, CU follows CUEnable', [k.ACC, k.CU], [1, 1]);
+  k.CUEnable = 0; F.CTUD(c, k); k.CUEnable = 1; F.CTUD(c, k);
+  eq('… DN when ACC >= PRE', [k.ACC, k.DN], [2, 1]);
+  k.CUEnable = 0; k.CDEnable = 1; F.CTUD(c, k);
+  eq('CDEnable cleared to set counts down', [k.ACC, k.CD, k.DN], [1, 1, 0]);
+  k.CUEnable = 1; k.CDEnable = 0; F.CTUD(c, k); k.CUEnable = 0; F.CTUD(c, k); k.CUEnable = 1; k.CDEnable = 1; F.CTUD(c, k);
+  eq('both toggled in one scan: up, then down', k.ACC, 2);
+  k.ACC = 2147483647; k.CUEnable = 0; k.CDEnable = 0; F.CTUD(c, k); k.CUEnable = 1; F.CTUD(c, k);
+  eq('past 2,147,483,647: rolls over to -2,147,483,648 with OV', [k.ACC, k.OV], [-2147483648, 1]);
+  k.CDEnable = 0; F.CTUD(c, k); k.CDEnable = 1; F.CTUD(c, k);
+  eq('… and below -2,147,483,648 back to 2,147,483,647 with UN', [k.ACC, k.UN], [2147483647, 1]);
+  k.Reset = 1; F.CTUD(c, k);
+  eq('Reset clears CU, CD, DN, OV, UN and ACC', [k.ACC, k.CU, k.CD, k.DN, k.OV, k.UN], [0, 0, 0, 0, 0, 0]);
+  k.Reset = 0; F.CTUD(c, k);
+  eq('… and the last CUEnable / CDEnable: a set input counts on the next scan', k.ACC, 0);
+  // the data types
+  const ft = run({ tags: [T('Tm', 'FBD_TIMER'), T('Ct', 'FBD_COUNTER')], rungs: ['NOP();'] });
+  eq('FBD_TIMER / FBD_COUNTER tags: EnableIn starts set, the rest 0', [ft.read('Tm.EnableIn'), ft.read('Tm.PRE'), ft.read('Ct.EnableIn'), ft.read('Ct.ACC')], [1, 0, 1, 0]);
+  ft.write('Tm.Status', 2);
+  eq('.PresetInv is bit 1 of .Status, .InstructFault bit 0', [ft.read('Tm.PresetInv'), ft.read('Tm.InstructFault')], [1, 0]);
+  check('FBD_TIMER and FBD_COUNTER are predefined data types', MTPS.dataTypes(proj()).predefined.includes('FBD_TIMER') && MTPS.dataTypes(proj()).predefined.includes('FBD_COUNTER'));
+  check('TONR, TOFR, RTOR and CTUD are not ladder instructions', !['TONR', 'TOFR', 'RTOR', 'CTUD'].some(m => MTPS.INSTR[m]) && MTPS.verify(proj({ tags: [T('Tm', 'FBD_TIMER')], rungs: ['TONR(Tm);'] })).errors.length === 1);
+}
+
+console.log('Structured Text routines (1756-PM007L): language, verify and execution');
+{
+  require('../mtps/js/st.js');
+  const stp = (st, o = {}) => { const q = proj(o); const g = q.tasks[0].programs[0]; g.routines[0] = { name: 'MainRoutine', type: 'ST', st, rungs: [] }; (o.more || []).forEach(r => g.routines.push(r)); if (o.wd) q.tasks[0].watchdog = o.wd; return q; };
+  const D = n => T(n, 'DINT'), B = n => T(n, 'BOOL'), Rl = n => T(n, 'REAL');
+  const strun = (st, o) => { const c = new MTPS.Controller(), r = c.download(stp(st, o)); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const tags = [D('A'), D('Bv'), D('Cv'), D('I'), D('J'), D('K'), D('N'), Rl('R'), Rl('R2'), B('X'), B('Y'), B('Z'), T('Arr', 'DINT', { dim: 10 }), T('Tm', 'FBD_TIMER'), T('Ct', 'FBD_COUNTER'), T('S1', 'STRING'), T('S2', 'STRING')];
+  const v0 = MTPS.verify(stp('A := 1;', { tags }));
+  check('an ST routine (type ST) verifies', v0.errors.length === 0 && v0.lines[0] === "Verifying routine 'MainRoutine' of program 'MainProgram'...");
+  const ve = MTPS.verify(stp('A := 1;\nIF X THEN\n  Bv := Nope + 1;\nEND_IF;', { tags }));
+  eq('an error names the line and column: Error: Line n, Column m: …', ve.errors.map(e => e.text), ["Error: Line 3, Column 9: Undefined tag 'Nope'."]);
+  eq('… and is kept with its line for the editor', [ve.errors[0].line, ve.errors[0].col, ve.errors[0].routine], [3, 9, 'MainRoutine']);
+  const vm = MTPS.verify(stp('A := 1\nBv := 2;', { tags }));
+  eq("a missing ';' is reported after the token before it, and the next line still verifies", vm.errors.map(e => e.text), ["Error: Line 1, Column 7: ';' expected."]);
+  const errs = st => MTPS.verify(stp(st, { tags })).errors.map(e => e.msg);
+  eq('ladder-only instructions are not available in ST, with what to use instead', errs('ADD(A,Bv,Cv);\nTON(Tm,0,0);'), ['ADD is not available in structured text: use the + operator.', 'TON is not available in structured text: use TONR.']);
+  eq('an instruction cannot be used in an expression; a function cannot be a statement', errs('A := TONR(Tm);\nABS(A);'), ['TONR is an instruction: an instruction is a statement of its own, it cannot be used in an expression.', 'ABS is a function: use it in an expression, e.g. Result := ABS(Value);.']);
+  eq("'=' is not an assignment; EXIT only in a loop; IF needs a BOOL expression; END_IF is required", errs('A = 1;\nEXIT;\nIF A THEN Bv := 1; END_IF;\nIF X THEN Bv := 2;'), ["Use := to assign a value ('=' compares).", 'EXIT can be used only in a FOR, WHILE or REPEAT loop.', 'A BOOL expression is expected (a BOOL tag, a comparison or a logical operation).', 'END_IF is missing for this IF.']);
+  eq('type checks: a string into a number, a structure assigned, a REAL subscript, a REAL FOR count', errs("A := 'x';\nTm := 1;\nArr[R] := 1;\nFOR R := 1 TO 2 DO END_FOR;"), ['A string cannot be assigned to a number.', "'Tm' is a structure: assign a BOOL, SINT, INT, DINT, REAL or string tag (or a member or element).", 'Array subscript must be an integer expression.', 'The FOR count must be a SINT, INT or DINT tag.']);
+  eq('TONR needs an FBD_TIMER, CTUD an FBD_COUNTER', errs('TONR(A);\nCTUD(Tm);'), ['TONR needs a FBD_TIMER tag.', 'CTUD needs a FBD_COUNTER tag.']);
+  check('a routine with an error is not downloaded', !new MTPS.Controller().download(stp('A := ;', { tags })).ok);
+  check('GOTO is reserved, an unclosed comment is an error', errs('GOTO x;').length === 1 && /comment is not closed/.test(errs('A := 1; (* open')[0]));
+  // expressions and the order of execution
+  const ex = strun(`A := 2 + 3 * 4;      // 14
+Bv := (2 + 3) * 4;    (* 20 *)
+Cv := -2 ** 2;        /* ** before negate: -4 */
+I := 7 / 2; J := -7 MOD 3; K := 16#0F AND 2#1010;
+R := 7 / 2.0; R2 := SQRT(16) + ABS(-1.5) + TRUNC(2.7) + DEG(RAD(90));
+X := NOT Y AND 1 < 2 OR 3 >= 4;
+Z := 5 > 3 & 2 <> 2 XOR Tru;`, { tags: tags.concat([B('Tru')]) });
+  ex.write('Tru', 1); ex.scan(10);
+  eq('* before +, parentheses, ** before negate, comments', [ex.read('A'), ex.read('Bv'), ex.read('Cv')], [14, 20, -4]);
+  eq('integer / truncates, MOD keeps the sign of the dividend, AND of integers is bitwise', [ex.read('I'), ex.read('J'), ex.read('K')], [3, -1, 10]);
+  eq('a REAL operand gives a REAL; SQRT ABS TRUNC DEG RAD', [ex.read('R'), ex.read('R2')], [3.5, 97.5]);
+  eq('NOT before AND before OR; & is AND; relational before logical; XOR', [ex.read('X'), ex.read('Z')], [1, 1]);
+  const tr = strun('R := SIN(0.5) + COS(0.5) + TAN(0.5) + ASIN(0.5) + ACOS(0.5) + ATAN(0.5) + LN(2.0) + LOG(100.0);', { tags });
+  tr.scan(10);
+  check('SIN COS TAN ASIN ACOS ATAN LN LOG', Math.abs(tr.read('R') - Math.fround(Math.sin(.5) + Math.cos(.5) + Math.tan(.5) + Math.asin(.5) + Math.acos(.5) + Math.atan(.5) + Math.log(2) + 2)) < 1e-5);
+  const dz = strun('A := 5 / Bv;', { tags });
+  dz.scan(10);
+  check('integer divide by 0: 0 and S:V (a minor fault)', dz.read('A') === 0 && dz.minors.length === 1);
+  // constructs
+  const ct = strun(`IF A > 10 THEN Bv := 1; ELSIF A > 5 THEN Bv := 2; ELSIF A > 0 THEN Bv := 3; ELSE Bv := 4; END_IF;
+CASE A OF
+  1: Cv := 10;
+  2, 3: Cv := 20;
+  4..6, 8: Cv := 30;
+  -3..-1: Cv := 40;
+ELSE Cv := 99;
+END_CASE;`, { tags });
+  const ifc = v => { ct.write('A', v); ct.scan(10); return [ct.read('Bv'), ct.read('Cv')]; };
+  eq('IF / ELSIF / ELSE: the first true branch; CASE: values, lists, ranges, negative ranges, ELSE', [ifc(11), ifc(6), ifc(1), ifc(0), ifc(3), ifc(5), ifc(8), ifc(-2), ifc(7)], [[1, 99], [2, 30], [3, 10], [4, 99], [3, 20], [3, 30], [2, 30], [4, 40], [2, 99]]);
+  const lp = strun(`N := 0;
+FOR I := 0 TO 9 DO Arr[I] := I * I; END_FOR;
+FOR J := 10 TO 1 BY -3 DO N := N + J; END_FOR;
+FOR K := 0 TO 100 DO IF K = 4 THEN EXIT; END_IF; END_FOR;
+A := 0; WHILE A < 50 DO A := A + 7; END_WHILE;
+Bv := 100; REPEAT Bv := Bv + 1; UNTIL Bv > 0 END_REPEAT;
+Cv := 0; WHILE Cv < 1 DO Cv := Cv + 1; END_WHILE;`, { tags });
+  lp.scan(10);
+  eq('FOR … TO … DO (count left one past the final value), BY a negative step, EXIT', [lp.read('Arr'), lp.read('I'), lp.read('N'), lp.read('K')], [[0, 1, 4, 9, 16, 25, 36, 49, 64, 81], 10, 10 + 7 + 4 + 1, 4]);
+  eq('WHILE tests first, REPEAT runs at least once', [lp.read('A'), lp.read('Bv'), lp.read('Cv')], [56, 101, 1]);
+  const sub = strun('Arr[I + 1] := 5; Arr[Arr[1]] := 6;', { tags });
+  sub.write('I', 2); sub.write('Arr[1]', 7); sub.scan(10);
+  eq('subscripts are expressions', [sub.read('Arr[3]'), sub.read('Arr[7]')], [5, 6]);
+  sub.write('I', 9); sub.scan(10);
+  check('a subscript out of range at run time: major fault 4/20', !!sub.fault && sub.fault.type === 4 && sub.fault.code === 20);
+  const wd = strun('WHILE 1 = 1 DO A := A + 1; END_WHILE;', { tags, wd: 20 });
+  wd.scan(10);
+  check('a loop that runs past the task watchdog: major fault 6/1', !!wd.fault && wd.fault.type === 6 && wd.fault.code === 1);
+  // non-retentive assignment and prescan
+  const nr = strun('IF X THEN Y [:=] 1; A [:=] 5; Bv := 7; END_IF;', { tags });
+  nr.write('X', 1); nr.scan(10); nr.write('X', 0); nr.setMode('remprog'); nr.setMode('remrun');
+  eq('[:=] tags are cleared when the controller enters Run; := tags keep their value', [nr.read('Y'), nr.read('A'), nr.read('Bv')], [0, 0, 7]);
+  // instructions in ST
+  const fb = strun('Tm.PRE := 50; Tm.TimerEnable := X; TONR(Tm);\nCt.CUEnable := Y; Ct.PRE := 2; CTUD(Ct);', { tags });
+  fb.write('X', 1); scans(fb, 7);
+  eq('TONR called from ST each scan: ACC, DN; EnableIn and EnableOut set', [fb.read('Tm.ACC'), fb.read('Tm.DN'), fb.read('Tm.EnableIn'), fb.read('Tm.EnableOut')], [50, 1, 1, 1]);
+  [1, 0, 1, 0, 1].forEach(v => { fb.write('Y', v); fb.scan(10); });
+  eq('CTUD from ST counts the clear-to-set changes of CUEnable', [fb.read('Ct.ACC'), fb.read('Ct.DN')], [3, 1]);
+  fb.setMode('remprog'); fb.setMode('remrun');
+  eq('prescan of the ST routine: TONR EN, TT, DN and ACC cleared', [fb.read('Tm.ACC'), fb.read('Tm.DN'), fb.read('Tm.EN')], [0, 0, 0]);
+  const js = strun('A := A + 1; JSR(Sub); IF A > 2 THEN RET(); END_IF; Bv := Bv + 1;', { tags, more: [{ name: 'Sub', rungs: [{ t: 'ADD(Cv,1,Cv);' }] }] });
+  scans(js, 4);
+  eq('JSR from ST to a ladder routine; RET() leaves the routine', [js.read('A'), js.read('Cv'), js.read('Bv')], [4, 4, 2]);
+  const q2 = proj({ tags, rungs: ['XIC(X)JSR(StSub,0);'] });
+  q2.tasks[0].programs[0].routines.push({ name: 'StSub', type: 'ST', st: 'N := N + 10; SIZE(Arr, 0, K); COP(Arr[0], Arr[5], 2); SWPB(16#11223344, REVERSE, J);', rungs: [] });
+  const c2 = new MTPS.Controller(); check('a ladder JSR to an ST routine verifies', c2.download(q2).ok);
+  c2.setMode('remrun'); c2.write('Arr[0]', 3); c2.write('Arr[1]', 4); c2.write('X', 1); scans(c2, 2);
+  eq('… and runs it; SIZE, COP and SWPB in ST', [c2.read('N'), c2.read('K'), c2.read('Arr[5]'), c2.read('Arr[6]'), c2.read('J')], [20, 10, 3, 4, 0x44332211]);
+  const sg = strun("S1 := 'Pump $'A$' on$N'; S2 := S1; X := S1 = S2; Y := S1 < 'Q'; S2.DATA[0] := 66;", { tags });
+  sg.scan(10);
+  eq("strings: a literal with $' and $N, string := string, = and < compare", [sg.read('S1.LEN'), sg.read('S1.DATA[5]'), sg.read('S1.DATA[11]'), sg.read('X'), sg.read('Y'), sg.read('S2.DATA[0]')], [12, 39, 10, 1, 1, 66]);
+  check('not case sensitive (keywords, tags)', MTPS.verify(stp('if x then a := abs(-1); end_if;', { tags })).errors.length === 0);
+  const pt = MTPS.ST.paths('Arr[I + 1].0 := Tm.ACC; // A\nTONR(Tm);');
+  eq('the tags of the text, for the monitor', pt.map(x => x.text), ['Arr[I+1].0', 'Tm.ACC', 'Tm']);
+  const ed = strun('A := A + 1;', { tags });
+  scans(ed, 3);
+  const er = ed.edit(stp('A := A + 100;', { tags })); ed.scan(10);
+  check('an online edit of an ST routine (Accept Edits) runs the new text, the tags keep their values', er.ok && ed.read('A') === 103);
+}
+
+console.log('Produced and consumed tags: verify (1756-PM011, v37 help Tag Editor columns)');
+{
+  const pj = (tags, ctls, ptags) => { const p = proj({ tags, ptags, modules: [] }); p.rack.size = 8; p.controller.slot = 2; p.rack.ctls = ctls === undefined ? [{ slot: 0, name: 'Line_A' }] : ctls; return p; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('a consumed DINT with its producer in the I/O configuration and a produced DINT verify', errs(pj([T('In_A', 'DINT', { cons: { producer: 'Line_A', remote: 'Out_A', rpi: 20 } }), T('Out_B', 'DINT', { prod: { max: 1 } })])).length === 0);
+  eq('a produced tag of less than 32 bits does not verify', errs(pj([T('P1', 'INT', { prod: { max: 1 } })])), ["Tag 'P1': the tag is produced, but the data type is less than 32 bits in size."]);
+  check('a produced SINT[4] (32 bits) and a produced user-defined type verify', errs(Object.assign(pj([T('P4', 'SINT', { dim: 4, prod: { max: 1 } }), T('PU', 'Pair', { prod: { max: 1 } })]), { dataTypes: [{ name: 'Pair', members: [{ name: 'A', type: 'DINT' }, { name: 'B', type: 'REAL' }] }] })).length === 0);
+  eq('Max Consumers is 1 to 255', errs(pj([T('P2', 'DINT', { prod: { max: 256 } })])), ["Tag 'P2': Max Consumers must be 1 to 255."]);
+  eq('a standard produced / consumed tag is at most 500 bytes', errs(pj([T('Big', 'DINT', { dim: 126, prod: { max: 1 } })])), ["Tag 'Big': a produced tag is at most 500 bytes (504 bytes)."]);
+  check('… 125 DINTs (500 bytes) are fine', errs(pj([T('Big', 'DINT', { dim: 125, prod: { max: 1 } })])).length === 0);
+  eq('produced and consumed tags are controller tags only', errs(pj([], undefined, [T('Q', 'DINT', { prod: { max: 1 } })])), ["Tag 'Q' in program 'MainProgram': a produced tag must be a controller tag."]);
+  eq('the producer must be a controller of the I/O configuration', errs(pj([T('C1', 'DINT', { cons: { producer: 'Nobody', remote: 'X', rpi: 20 } })])), ["Tag 'C1': the producer 'Nobody' is not a controller in the I/O configuration."]);
+  eq('the RPI of a consumed tag is 0.196 to 536870.911 ms (ControlLogix)', errs(pj([T('C2', 'DINT', { cons: { producer: 'Line_A', remote: 'X', rpi: 0.1 } })])), ["Tag 'C2': RPI 0.1 ms is not in the range 0.196 to 536870.911 ms."]);
+  eq('Remote Data is a tag name', errs(pj([T('C3', 'DINT', { cons: { producer: 'Line_A', remote: '1x', rpi: 20 } })])), ["Tag 'C3': Remote Data '1x' is not a tag name."]);
+  eq('the producer needs a free slot (not the controller\'s)', errs(pj([], [{ slot: 2, name: 'Line_A' }])), ["Controller 'Line_A': slot 2 is not a free slot of the 8-slot rack."]);
+  const c = new MTPS.Controller(); c.download(pj([T('In_A', 'DINT', { cons: { producer: 'Line_A', remote: 'Out_A', rpi: 20 } })]));
+  check('the model knows the producers (by slot) and the consumed tags', c.M.peers.get(0).name === 'Line_A' && c.M.cons.length === 1 && c.M.cons[0].remote === 'Out_A' && c.M.cons[0].slot === 0);
+}
+
+console.log('Map PLC/SLC Messages: verify (1756-RM094, Map Tags)');
+{
+  const pm = map => Object.assign(proj({ tags: [T('N7', 'INT', { dim: 10 }), T('L9', 'DINT', { dim: 4 }), T('One', 'DINT'), T('Tm', 'TIMER', { dim: 2 })] }), { plcMap: map });
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('files 3 to 999 mapped to controller arrays of INT, DINT or REAL verify', errs(pm({ files: [{ file: 7, tag: 'N7' }, { file: 9, tag: 'L9' }], plc2: 'N7' })).length === 0);
+  check('file 2 (the Status file of a PLC-5), a tag that is not an array and an array of TIMER do not', errs(pm({ files: [{ file: 2, tag: 'N7' }, { file: 10, tag: 'One' }, { file: 11, tag: 'Tm' }] })).length === 3);
+  check('a mapped tag that was deleted shows an error', /PLC\/SLC mapping: file 12 to 'Gone'/.test(errs(pm({ files: [{ file: 12, tag: 'Gone' }] }))[0] || ''));
+}
+
+console.log('Produced and consumed tags between two emulated controllers in the chassis (LGEM5K-GR016M ch. 10, 1756-PM011)');
+{
+  const pj = (name, slot, o) => { const p = proj({ modules: [], tags: o.tags, rungs: o.rungs }); p.controller.name = name; p.controller.slot = slot; p.rack.size = 8; if (o.ctls) p.rack.ctls = o.ctls; return p; };
+  const ch = new MTPS.Chassis(8);
+  ch.insert(0, 'PLC-CPU', 'Line_A'); ch.insert(2, 'PLC-CPU', 'Line_B');
+  const A = ch.controller(0), B = ch.controller(2);
+  const ra = A.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] }));
+  const rb = B.download(pj('Line_B', 2, { tags: [T('Count_In', 'DINT', { cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 50 } }), T('Pair_In', 'REAL', { dim: 2, cons: { producer: 'Line_A', remote: 'Pair_Out', rpi: 50 } }), T('Copy', 'DINT')], rungs: ['MOV(Count_In,Copy);'], ctls: [{ slot: 0, name: 'Line_A' }] }));
+  check('the producer (slot 0) and the consumer (slot 2, Line_A in its I/O configuration) download', ra.ok && rb.ok, ra.lines.concat(rb.lines).join(' | '));
+  A.setMode('remrun'); B.setMode('remrun');
+  A.write('Count_Out', 5); A.write('Pair_Out[1]', 2.5); ch.advance(10);
+  check('the consumed tags take the produced values when the connection opens', B.read('Count_In') === 5 && B.read('Pair_In[1]') === 2.5);
+  const cs = B.pcState('Count_In');
+  check('Status: Connected to Producer and Producer in Run Mode', cs.conn === true && cs.run === true && cs.code === null);
+  ch.advance(10);
+  check('the consumer\'s logic uses the consumed value (MOV to Copy)', B.read('Copy') === 5);
+  A.write('Count_Out', 7); ch.advance(20);
+  const mid = B.read('Count_In'); ch.advance(30);
+  check('the data moves once every RPI (50 ms): not after 20 ms, then after 50 ms', mid === 5 && B.read('Count_In') === 7, `${mid} ${B.read('Count_In')}`);
+  A.setMode('remprog'); A.write('Count_Out', 9); ch.advance(60);
+  check('a producer in Program mode still sends its data; Producer in Run Mode goes off (no fault)', B.read('Count_In') === 9 && B.pcState('Count_In').run === false && B.pcState('Count_In').conn === true && B.ioOk());
+  A.setMode('remrun');
+  ch.setController(0, { on: false }); ch.advance(60);
+  check('producer turned off: connection fault 16#0204 on the producer module, I/O not responding', B.pcState('Count_In').code === '16#0204' && B.peerStatus(0).state === 'Faulted' && B.peerStatus(0).code === '16#0204' && !B.ioOk());
+  check('… the consumed tag keeps its last value', B.read('Count_In') === 9);
+  ch.setController(0, { on: true }); ch.advance(60);
+  check('producer back on: the connection is made again', B.pcState('Count_In').conn === true && B.ioOk() && B.peerStatus(0).state === 'Running');
+  ch.remove(0); ch.advance(60);
+  check('producer removed from the chassis: 16#0204', B.peerStatus(0).code === '16#0204');
+  // a producer without the tag, another data type, Max Consumers
+  ch.insert(0, 'PLC-CPU', 'Line_A'); const A2 = ch.controller(0); ch.advance(10);
+  check('a controller with no project in the producer slot: 16#0117 (no produced tag of that name)', B.peerStatus(0).code === '16#0117');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT'), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); ch.advance(60);
+  check('the Remote Data tag is not produced: 16#0117, and the other tag of that producer stops too (PM011)', B.pcState('Count_In').code === '16#0117' && B.pcState('Pair_In').code === '16#0117');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'REAL', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); ch.advance(60);
+  check('another data type (REAL produced, DINT consumed): 16#0109', B.pcState('Count_In').code === '16#0109');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); A2.setMode('remrun');
+  ch.insert(3, 'PLC-CPU', 'Line_C'); const C = ch.controller(3);
+  C.download(pj('Line_C', 3, { tags: [T('Count_In', 'DINT', { cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 20 } })], ctls: [{ slot: 0, name: 'Line_A' }] })); A2.write('Count_Out', 11); ch.advance(60);
+  check('Max Consumers 1: the first consumer (slot 2) connects, the second (slot 3) gets 16#011A', B.pcState('Count_In').conn && B.read('Count_In') === 11 && C.pcState('Count_In').code === '16#011A');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 2 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); A2.write('Count_Out', 12); ch.advance(60);
+  check('… with Max Consumers 2 both consume', B.read('Count_In') === 12 && C.read('Count_In') === 12 && C.pcState('Count_In').conn);
+}
+
+console.log('Logix Echo controller in the chassis (9310-GR001D, Add an emulated controller)');
+{
+  const ch = new MTPS.Chassis(8, 'Echo_Rack');
+  ch.insert(1, 'PLC-CPU', 'Echo_L85'); ch.setController(1, { ip: '127.0.0.2', mask: '255.255.255.0', on: false, echo: { type: 'ControlLogix 5580', rev: '37' } });
+  const m = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch.toJSON()))).module(1);
+  check('the Echo type, firmware revision and subnet mask are kept with the chassis (and the power switch)', m.echo.type === 'ControlLogix 5580' && m.echo.rev === '37' && m.mask === '255.255.255.0' && m.ip === '127.0.0.2' && !m.ctl.powered);
+  const m2 = new MTPS.Chassis(8); m2.insert(0, 'PLC-CPU', 'E');
+  check('a Logix Emulate controller has none', m2.module(0).echo === undefined && m2.toJSON().mods[0].echo === undefined);
+}
+
+console.log('Sequential Function Chart routines (1756-PM006, v37 help): verify, steps, transitions, branches, actions, SFC Execution');
+{
+  /* a project whose main routine is an SFC: els / ln as the chart, the tags of its elements from the chart; o.tags:
+     more program tags, o.sub: ladder routines, o.cfg: Controller Properties > SFC Execution */
+  const sfcProj = (els, ln, o = {}) => {
+    const ch = { els, ln, pri: o.pri };
+    const tags = MTPS.SFC.tagsOf(ch).map(([name, type]) => ({ name, type })).concat(o.tags || []);
+    return { format: 'mt-plc-studio', version: 1, controller: { name: 'Test', type: 'PLC-CPU', rev: '1.0', sfc: o.cfg },
+      rack: { size: 8, modules: [] }, dataTypes: [], tags,
+      tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: o.main || 'Chart', tags: [],
+        routines: [{ name: 'Chart', type: 'SFC', rungs: [], sfc: ch }, ...(o.sub || []).map(r => ({ name: r.name, rungs: r.rungs.map(t => ({ t })) }))] }] }] };
+  };
+  const st = (n, x, y, more) => ({ id: n, k: 'step', n: 'Step_' + String(n).padStart(3, '0'), x, y, acts: [], ...more });
+  const tr = (n, c, x, y) => ({ id: 100 + n, k: 'tran', n: 'Tran_' + String(n).padStart(3, '0'), x, y, c });
+  const go = (p, n = 1) => { const c = new MTPS.Controller(); const r = c.download(p); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); scans(c, n); return c; };
+  // a sequence: Step_000 (initial) → Tran_000 (Go) → Step_001 → Tran_001 (Back) → wired back to Step_000
+  const seq = (acts0 = [], acts1 = [], o = {}) => sfcProj([st(0, 100, 50, { init: true, acts: acts0 }), tr(0, 'Go', 100, 120), st(1, 100, 190, { acts: acts1, pre: o.pre, al: o.al, lh: o.lh, ll: o.ll }), tr(1, 'Back', 100, 260)],
+    [[0, 100], [100, 1], [1, 101], [101, 0]], { tags: [T('Go', 'BOOL'), T('Back', 'BOOL'), T('M', 'DINT'), T('F', 'DINT'), T('K', 'DINT'), T('B1', 'BOOL')].concat(o.tags || []), cfg: o.cfg, sub: o.sub });
+
+  // types and verify
+  check('SFC_STEP, SFC_ACTION and SFC_STOP are predefined data types (their BOOLs are bits of Status)', ['SFC_STEP', 'SFC_ACTION', 'SFC_STOP'].every(n => MTPS.dataTypes({}).predefined.includes(n)) && MTPS.PREDEF.SFC_STEP.find(m => m.name === 'X').bit === 31 && MTPS.PREDEF.SFC_ACTION.find(m => m.name === 'Q').bit === 30);
+  const ok = MTPS.verify(seq());
+  check('a chart with an initial step, transitions with BOOL expressions and wires verifies', ok.errors.length === 0, ok.lines.join(' | '));
+  check('verify lists the SFC routine like a ladder routine', ok.lines.includes("Verifying routine 'Chart' of program 'MainProgram'..."));
+  const bad = MTPS.verify(sfcProj([st(0, 100, 50), tr(0, 'Go AND', 100, 120), st(1, 100, 190)], [[0, 100], [100, 1]], { tags: [T('Go', 'BOOL')] }));
+  const txt = bad.errors.map(e => e.text).join(' | ');
+  check('verify: no initial step, a condition that is not complete, a step without a transition', /no initial step/.test(txt) && /Tran_000: The expression ends too early/.test(txt) && /Step_001: The step is not followed by a transition/.test(txt), txt);
+  const nt = sfcProj([st(0, 100, 50, { init: true }), tr(0, 'Go', 100, 120)], [[0, 100], [100, 0]]); nt.tags = [];
+  check('verify: an element needs its backing tag (SFC_STEP for a step, BOOL for a transition)', /Undefined tag 'Step_000'/.test(MTPS.verify(nt).errors.map(e => e.text).join()));
+  check('verify: a transition must be a BOOL expression', /must be a BOOL expression/.test(MTPS.verify(sfcProj([st(0, 1, 1, { init: true }), tr(0, 'M + 1', 1, 2)], [[0, 100], [100, 0]], { tags: [T('M', 'DINT')] })).errors.map(e => e.text).join()));
+
+  // a sequence and the SFC_STEP members
+  const c = go(seq([{ n: 'Action_000', q: 'N', b: 'F := Step_000.FS; K := K + 1;' }]), 1);
+  check('the initial step is active after the download and Run: .X on, .Count 1; its N action runs', c.read('Step_000.X') === 1 && c.read('Step_000.Count') === 1 && c.read('K') === 1);
+  check('.FS is on while the step runs its first scan, then off', c.read('F') === 1 && c.read('Step_000.FS') === 0);
+  scans(c, 1);
+  check('.SA on after the first scan; .FS read in the action is 0 now', c.read('Step_000.SA') === 1 && c.read('F') === 0);
+  c.write('Go', 1); scans(c, 1);
+  check('a true transition: its BOOL tag is 1; the step stays active until its last scan on the next scan', c.read('Tran_000') === 1 && c.read('Step_000.X') === 1 && c.read('Step_001.X') === 0);
+  scans(c, 1);
+  check('next scan: the last scan of Step_000, then Step_001 is active (.X), Step_000 off and its .TMax set', c.read('Step_000.X') === 0 && c.read('Step_001.X') === 1 && c.read('Step_000.TMax') >= 20);
+  c.write('Go', 0); scans(c, 3);
+  check('.T counts in milliseconds while the step is active', c.read('Step_001.T') === 30, c.read('Step_001.T'));
+  c.write('Back', 1); scans(c, 2); c.write('Back', 0);
+  check('the wire back to Step_000 (a loop): Step_000 active again, .Count 2', c.read('Step_000.X') === 1 && c.read('Step_000.Count') === 2 && c.read('Step_001.X') === 0);
+  const ck = c.read('Step_001.T'); scans(c, 3);
+  check('an inactive step keeps its .T', c.read('Step_001.T') === ck);
+
+  // preset and alarms
+  const pa = go(seq([], [], { pre: 50, al: true, lh: 80, ll: 200 }), 1);
+  pa.write('Go', 1); scans(pa, 2); pa.write('Go', 0); scans(pa, 4);
+  const dn0 = pa.read('Step_001.DN'); scans(pa, 2);
+  check('.DN turns on when .T reaches .PRE (the Preset of Step Properties)', dn0 === 0 && pa.read('Step_001.DN') === 1 && pa.read('Step_001.PRE') === 50);
+  scans(pa, 3);
+  check('.AlarmHigh turns on at .LimitHigh (with .AlarmEn)', pa.read('Step_001.AlarmHigh') === 1 && pa.read('Step_001.AlarmEn') === 1);
+  pa.write('Back', 1); scans(pa, 2); pa.write('Back', 0);
+  check('.AlarmLow: the step went off before .LimitLow; .DN stays on until the step is active again', pa.read('Step_001.AlarmLow') === 1 && pa.read('Step_001.DN') === 1 && pa.read('Step_001.X') === 0);
+
+  // selection branch and simultaneous branch
+  const sel = sfcProj([st(0, 150, 50, { init: true }), tr(0, 'A', 100, 120), tr(1, 'B', 200, 120), st(1, 100, 190), st(2, 200, 190), tr(2, 'FALSE', 100, 260), tr(3, 'FALSE', 200, 260)],
+    [[0, 100], [0, 101], [100, 1], [101, 2], [1, 102], [2, 103], [102, 0], [103, 0]], { tags: [T('A', 'BOOL'), T('B', 'BOOL')] });
+  const s1 = go(sel, 1); s1.write('A', 1); s1.write('B', 1); scans(s1, 2);
+  check('selection branch: both transitions true, the left path is taken (checked left to right)', s1.read('Step_001.X') === 1 && s1.read('Step_002.X') === 0);
+  sel.tasks[0].programs[0].routines[0].sfc.pri = { 0: [101, 100] };
+  const s2 = go(sel, 1); s2.write('A', 1); s2.write('B', 1); scans(s2, 2);
+  check('Set Sequence Priorities: the path set first is checked first', s2.read('Step_002.X') === 1 && s2.read('Step_001.X') === 0);
+  const sim = sfcProj([st(0, 150, 50, { init: true }), tr(0, 'Go', 150, 120), st(1, 100, 190), st(2, 200, 190), tr(1, 'A', 200, 260), st(3, 200, 330), tr(2, 'Done', 150, 400)],
+    [[0, 100], [100, 1], [100, 2], [2, 101], [101, 3], [1, 102], [3, 102], [102, 0]], { tags: [T('Go', 'BOOL'), T('A', 'BOOL'), T('Done', 'BOOL')] });
+  const sm = go(sim, 1); sm.write('Go', 1); sm.write('Done', 1); scans(sm, 2);
+  check('simultaneous branch: both paths are active at once', sm.read('Step_001.X') === 1 && sm.read('Step_002.X') === 1);
+  scans(sm, 3);
+  check('the transition that ends the branch waits for the last step of every path (Step_003 not yet reached)', sm.read('Step_001.X') === 1 && sm.read('Step_000.X') === 0);
+  sm.write('A', 1); scans(sm, 3);
+  check('… then it is checked and the chart leaves the branch', sm.read('Step_000.X') === 1 && sm.read('Step_001.X') === 0 && sm.read('Step_003.X') === 0);
+
+  // qualifiers
+  const q = (qq, pre, b = 'K := K + 1;') => ({ n: 'Action_' + qq, q: qq, pre, b });
+  const qc = go(seq([q('P1'), { n: 'Action_P0', q: 'P0', b: 'F := F + 1;' }]), 3);
+  check('P1 runs once on the step\'s first scan; P0 not yet', qc.read('K') === 1 && qc.read('F') === 0);
+  qc.write('Go', 1); scans(qc, 2);
+  check('P0 runs once on the last scan of the step', qc.read('F') === 1 && qc.read('K') === 1);
+  const lc = go(seq([q('L', 30)]), 6);
+  check('L (Time Limited): active only until .PRE of the action', lc.read('K') === 3 && lc.read('Action_L.A') === 0 && lc.read('Action_L.PRE') === 30, lc.read('K'));
+  const dc = go(seq([q('D', 30)]), 6);
+  check('D (Time Delayed): active once the step has been active for .PRE', dc.read('K') === 3 && dc.read('Action_D.Q') === 1 && dc.read('Action_D.Count') === 1, dc.read('K'));
+  const sr = go(seq([{ n: 'Fan', q: 'S', b: 'K := K + 1;' }], [{ n: 'Fan', q: 'R' }]), 2);
+  sr.write('Go', 1); scans(sr, 2); sr.write('Go', 0);
+  check('S (Stored): the action stays active after its step is left', sr.read('Step_000.X') === 0 && sr.read('Fan.A') === 1 && sr.read('K') >= 3);
+  scans(sr, 2);
+  check('R (Reset) in the next step turns the stored action off', sr.read('Fan.A') === 0 && sr.read('Fan.Q') === 0);
+  const bo = go(seq([{ n: 'Action_B', q: 'N', bool: true }]), 2);
+  check('a Boolean action only sets its bits (Q, A)', bo.read('Action_B.Q') === 1 && bo.read('Action_B.A') === 1);
+  bo.write('Go', 1); scans(bo, 3);
+  check('… and they go off after the action', bo.read('Action_B.Q') === 0 && bo.read('Action_B.A') === 0);
+
+  // Last Scan of Active Steps
+  const lastScan = last => { const l2 = go(seq([{ n: 'Action_N', q: 'N', b: 'IF Step_000.LS THEN F := 7; END_IF; M [:=] 5; B1 := 1;' }], [], { cfg: { last } }), 2); l2.write('Go', 1); scans(l2, 3); return [l2.read('M'), l2.read('F'), l2.read('B1')]; };
+  eq("Don't scan (default): the action is not scanned again: data keeps its values", lastScan('dontscan'), [5, 0, 1]);
+  eq("Programmatic reset: one more scan with the step's .LS on", lastScan('programmatic'), [5, 7, 1]);
+  eq('Automatic reset: a postscan, the [:=] (non-retentive) tag is cleared, := keeps its value', lastScan('auto'), [0, 0, 1]);
+  const js = go(seq([{ n: 'Action_J', q: 'N', b: 'JSR(Sub);' }], [], { cfg: { last: 'auto' }, sub: [{ name: 'Sub', rungs: ['XIC(Go)OTE(B1);'] }] }), 1);
+  js.write('Go', 1); scans(js, 1);
+  check('an action calls a ladder routine with JSR', js.read('B1') === 1);
+  scans(js, 2);
+  check('Automatic reset postscans the called routine: its OTE goes off', js.read('B1') === 0 && js.read('Step_001.X') === 1);
+
+  // Execution Control
+  const chain = cfg => sfcProj([st(0, 1, 1, { init: true }), tr(0, 'TRUE', 1, 2), st(1, 1, 3), tr(1, 'TRUE', 1, 4), st(2, 1, 5), tr(2, 'Stay', 1, 6), st(3, 1, 7), tr(3, 'FALSE', 1, 8)],
+    [[0, 100], [100, 1], [1, 101], [101, 2], [2, 102], [102, 3], [3, 103], [103, 0]], { tags: [T('Stay', 'BOOL')], cfg });
+  const one = go(chain(), 2);
+  check('Execute current active steps only: one step further each scan', one.read('Step_001.X') === 1);
+  const all = go(chain({ exec: 'untilFalse' }), 1);
+  check('Execute until FALSE transition: in one scan the chart goes on to the step whose transition is false', all.read('Step_002.X') === 1 && all.read('Step_001.Count') === 1);
+
+  // Restart Position
+  const rp = restart => { const r = go(seq([], [], { cfg: { restart } }), 1); r.write('Go', 1); scans(r, 2); r.write('Go', 0); r.setMode('remprog'); r.setMode('remrun'); scans(r, 1); return [r.read('Step_000.X'), r.read('Step_001.X'), r.read('Step_000.Count')]; };
+  eq('Restart at most recently executed step (default): Program → Run goes on at Step_001', rp('recent'), [0, 1, 1]);
+  eq('Restart at initial step: back at the initial step, the counts cleared', rp('initial'), [1, 0, 1]);
+
+  // stop, SFC as a subroutine, online edit, major fault
+  const sp = go(sfcProj([st(0, 1, 1, { init: true }), tr(0, 'Go', 1, 2), { id: 50, k: 'stop', n: 'Stop_000', x: 1, y: 3 }], [[0, 100], [100, 50]], { tags: [T('Go', 'BOOL')] }), 1);
+  sp.write('Go', 1); scans(sp, 3);
+  check('a stop: its .X turns on and the chart stops (no step active)', sp.read('Stop_000.X') === 1 && sp.read('Step_000.X') === 0 && sp.read('Stop_000.Count') === 1);
+  const sb = sfcProj([st(0, 1, 1, { init: true, acts: [{ n: 'Action_000', q: 'N', b: 'K := K + 1;' }] }), tr(0, 'FALSE', 1, 2)], [[0, 100], [100, 0]], { tags: [T('K', 'DINT'), T('Call', 'BOOL')], main: 'Main', sub: [{ name: 'Main', rungs: ['XIC(Call)JSR(Chart);'] }] });
+  const sc = go(sb, 3);
+  check('an SFC called by JSR runs only while it is called', sc.read('K') === 0);
+  sc.write('Call', 1); scans(sc, 3);
+  check('… then one pass each time the JSR executes', sc.read('K') === 3 && sc.read('Step_000.X') === 1);
+  const oe = seq([{ n: 'Action_000', q: 'N', b: 'K := K + 1;' }]);
+  const ec = go(oe, 1); ec.write('Go', 1); scans(ec, 2); ec.write('Go', 0);
+  oe.tasks[0].programs[0].routines[0].sfc.els[0].acts[0].b = 'K := K + 10;';
+  const er = ec.edit(oe); scans(ec, 1);
+  check('an online edit of an action keeps the active step (Maintain active SFC step)', er.ok && ec.read('Step_001.X') === 1 && ec.read('Step_000.X') === 0);
+  oe.tasks[0].programs[0].routines[0].sfc.ln.push([0, 101]);
+  ec.edit(oe); scans(ec, 1);
+  check('an edit of the wiring starts the chart again at its initial step', ec.read('Step_000.X') === 1 && ec.read('Step_001.X') === 0);
+  const mf = go(seq(), 1);
+  mf.write('Go', 1); scans(mf, 2); mf.write('Go', 0);
+  mf.majorFault(4, 20, 'test'); mf.clearFault(); mf.setMode('remrun'); scans(mf, 1);
+  check('after a major fault is cleared the chart restarts at the initial step', mf.read('Step_000.X') === 1 && mf.read('Step_001.X') === 0);
+  check('the SFC settings default to the reference (current active steps, most recent step, Don\'t scan)', JSON.stringify(MTPS.SFC.cfgOf(undefined)) === JSON.stringify({ exec: 'current', restart: 'recent', last: 'dontscan' }));
+}
+
+console.log('Function Block Diagram routines (1756-PM009, 1756-RM018A)');
+{
+  require('../mtps/js/fbd.js');
+  const F = MTPS.FBD;
+  // an FBD main routine: els / wires on sheet 1 (and more sheets), the block tags in the program
+  const fproj = (sheets, o = {}) => { const p = proj(o); p.tasks[0].programs[0].routines[0] = { name: 'MainRoutine', type: 'FBD', rungs: [], sheets: sheets.map(s => ({ desc: '', els: s.els, wires: s.wires || [] })) }; return p; };
+  const B = (id, t, tag, x = 0, y = 0) => ({ id, k: 'BLK', t, tag, x, y });
+  const W = (a, ap, b, bp, ada) => ({ a, ap, b, bp, ...(ada ? { ada: 1 } : {}) });
+  const frun = (sheets, o) => { const c = new MTPS.Controller(); const r = c.download(fproj(sheets, o)); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  check('the FBD data types are predefined with the members of RM018A', ['FBD_TIMER', 'FBD_COUNTER', 'FBD_MATH', 'FBD_COMPARE', 'FBD_BOOLEAN_AND', 'FBD_LOGICAL'].every(t => MTPS.dataTypes({}).predefined.includes(t)) &&
+    MTPS.PREDEF.FBD_TIMER.map(m => m.name).join(' ') === 'EnableIn TimerEnable PRE Reset EnableOut ACC EN TT DN Status InstructFault PresetInv' &&
+    MTPS.PREDEF.FBD_COUNTER.map(m => m.name).join(' ') === 'EnableIn CUEnable CDEnable PRE Reset EnableOut ACC CU CD DN OV UN');
+  // IREF A + IREF 2.5 → ADD → OREF Sum ; GRT(Sum, 10) → OREF Big
+  const tags = [T('A', 'REAL'), T('Sum', 'REAL'), T('Big', 'BOOL'), T('Run', 'BOOL'), T('Done', 'BOOL'), T('Acc', 'DINT'), T('Up', 'BOOL'), T('Dn', 'BOOL'), T('Rst', 'BOOL'), T('Cnt', 'DINT')];
+  // the block tags at controller scope here (read and written without a program name)
+  const ptags = [], btags = [T('ADD_01', 'FBD_MATH'), T('GRT_01', 'FBD_COMPARE'), T('TONR_01', 'FBD_TIMER'), T('TOFR_01', 'FBD_TIMER'), T('RTOR_01', 'FBD_TIMER'), T('CTUD_01', 'FBD_COUNTER'), T('BAND_01', 'FBD_BOOLEAN_AND'), T('OSRI_01', 'FBD_ONESHOT'), T('MUL_01', 'FBD_MATH'), T('SUB_01', 'FBD_MATH')];
+  tags.push(...btags);
+  const s1 = { els: [{ id: 1, k: 'IREF', op: 'A' }, { id: 2, k: 'IREF', op: '2.5' }, B(3, 'ADD', 'ADD_01'), { id: 4, k: 'OREF', op: 'Sum' }, { id: 5, k: 'IREF', op: '10' }, B(6, 'GRT', 'GRT_01'), { id: 7, k: 'OREF', op: 'Big' }],
+    wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceB'), W(3, 'Dest', 4, 'In'), W(3, 'Dest', 6, 'SourceA'), W(5, 'Out', 6, 'SourceB'), W(6, 'Dest', 7, 'In')] };
+  const v0 = MTPS.verify(fproj([s1], { tags, ptags }));
+  check('a wired FBD routine verifies with no errors', v0.errors.length === 0, v0.lines.join(' | '));
+  const c = frun([s1], { tags, ptags });
+  c.write('A', 4); c.scan(10);
+  check('IREF → ADD → OREF: Sum = A + 2.5 (FBD_MATH, REAL)', c.read('Sum') === 6.5 && c.read('ADD_01.Dest') === 6.5 && c.read('ADD_01.SourceA') === 4);
+  check('a wired input is copied into the block tag; GRT 6.5 > 10 is false', c.read('Big') === 0 && c.read('GRT_01.EnableOut') === 1);
+  c.write('A', 9); c.scan(10);
+  check('the data flow orders the blocks: ADD runs before GRT in the same scan (Big at once)', c.read('Big') === 1);
+  c.write('ADD_01.EnableIn', 0); c.write('A', 0); c.scan(10);
+  check('EnableIn cleared: the block does not run and its outputs are not updated (EnableOut 0)', c.read('ADD_01.Dest') === 11.5 && c.read('ADD_01.EnableOut') === 0);
+  // execution order on a feedback loop: MUL → SUB → MUL needs Assume Data Available on one wire
+  const loop = ada => [{ els: [{ id: 1, k: 'IREF', op: 'A' }, B(2, 'MUL', 'MUL_01'), B(3, 'SUB', 'SUB_01'), { id: 4, k: 'OREF', op: 'Sum' }],
+    wires: [W(1, 'Out', 2, 'SourceA'), W(3, 'Dest', 2, 'SourceB', ada === 'fb' || ada === 'all'), W(2, 'Dest', 3, 'SourceA', ada === 'all'), W(3, 'Dest', 4, 'In')] }];
+  const vl = MTPS.verify(fproj(loop(''), { tags, ptags }));
+  check('a loop without Assume Data Available is an error (unresolved loop)', vl.errors.length === 2 && vl.errors.every(e => /Unresolved loop/.test(e.msg) && e.sheet === 0 && (e.el === 2 || e.el === 3)), vl.lines.join(' | '));
+  check('FBD errors name the sheet and the block', /^Error: Sheet 1, (MUL MUL_01|SUB SUB_01): Unresolved loop/.test(vl.errors[0].text), vl.errors[0].text);
+  check('with the feedback wire marked Assume Data Available the loop verifies', MTPS.verify(fproj(loop('fb'), { tags, ptags })).errors.length === 0);
+  check('every wire of the loop marked: the loop cannot be resolved', MTPS.verify(fproj(loop('all'), { tags, ptags })).errors.some(e => /all of its wires use Assume Data Available/.test(e.msg)));
+  const cl = frun(loop('fb'), { tags, ptags });
+  cl.write('MUL_01.SourceB', 0); cl.write('SUB_01.SourceB', -1); cl.write('A', 2); cl.scan(10);
+  check('the marked wire gives last scan\'s value: MUL uses SUB.Dest of the previous scan (one scan delay)', cl.read('MUL_01.Dest') === 0 && cl.read('Sum') === 1);
+  cl.scan(10);
+  check('… and the new value on the next scan', cl.read('MUL_01.Dest') === 2 && cl.read('Sum') === 3);
+  const two = [{ els: [B(1, 'ADD', 'ADD_01'), B(2, 'SUB', 'SUB_01')], wires: [W(1, 'Dest', 2, 'SourceA', true), W(1, 'Dest', 2, 'SourceB')] }];
+  check('two wires between the same two blocks with different indicators are an error', MTPS.verify(fproj(two, { tags, ptags })).errors.some(e => /same data flow indicator/.test(e.msg)));
+  // IREF latching (PM009 Data latching): an IREF and an OREF of the same tag
+  const lat = [{ els: [{ id: 1, k: 'IREF', op: 'A' }, B(2, 'ADD', 'ADD_01'), { id: 3, k: 'OREF', op: 'A' }, { id: 4, k: 'IREF', op: 'A' }, B(5, 'SUB', 'SUB_01'), { id: 6, k: 'OREF', op: 'Sum' }],
+    wires: [W(1, 'Out', 2, 'SourceA'), W(2, 'Dest', 3, 'In'), W(2, 'Dest', 5, 'SourceB'), W(4, 'Out', 5, 'SourceA'), W(5, 'Dest', 6, 'In')] }];
+  const cla = frun(lat, { tags, ptags });
+  cla.write('ADD_01.SourceB', 10); cla.write('A', 25); cla.scan(10);
+  check('IREF values are latched at the start of the routine: the OREF writing A does not change the IREF of A in that scan', cla.read('A') === 35 && cla.read('Sum') === -10);
+  // timers and counters (FBD_TIMER, FBD_COUNTER)
+  const tm = (t, tag) => [{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'IREF', op: 'Rst' }, B(3, t, tag), { id: 4, k: 'OREF', op: 'Done' }, { id: 5, k: 'OREF', op: 'Acc' }],
+    wires: [W(1, 'Out', 3, 'TimerEnable'), W(2, 'Out', 3, 'Reset'), W(3, 'DN', 4, 'In'), W(3, 'ACC', 5, 'In')] }];
+  const ct = frun(tm('TONR', 'TONR_01'), { tags, ptags });
+  ct.write('TONR_01.PRE', 50); ct.write('Run', 1); scans(ct, 3);
+  check('TONR: TimerEnable set, ACC counts in ms, EN and TT on, DN off', ct.read('TONR_01.EN') === 1 && ct.read('TONR_01.TT') === 1 && ct.read('Acc') === 20 && ct.read('Done') === 0);
+  scans(ct, 5);
+  check('TONR: DN at ACC = PRE (TT off)', ct.read('Done') === 1 && ct.read('Acc') === 50 && ct.read('TONR_01.TT') === 0);
+  ct.write('Run', 0); ct.scan(10);
+  check('TONR: TimerEnable cleared resets it (not retentive)', ct.read('Acc') === 0 && ct.read('Done') === 0 && ct.read('TONR_01.EN') === 0);
+  ct.write('Run', 1); scans(ct, 3); ct.write('Rst', 1); ct.scan(10);
+  check('TONR: Reset clears EN, TT, DN and sets ACC = 0', ct.read('Acc') === 0 && ct.read('TONR_01.EN') === 0 && ct.read('TONR_01.TT') === 0);
+  ct.write('Rst', 0); scans(ct, 3);
+  check('TONR: TimerEnable still set when Reset clears: it times again', ct.read('Acc') === 20 && ct.read('TONR_01.EN') === 1);
+  ct.write('TONR_01.PRE', -1); ct.scan(10);
+  check('TONR: a PRE below 0 sets Status.InstructFault and .PresetInv and the timer does not run', ct.read('TONR_01.InstructFault') === 1 && ct.read('TONR_01.PresetInv') === 1 && ct.read('TONR_01.Status') === 3 && ct.read('Acc') === 20);
+  const cr = frun(tm('RTOR', 'RTOR_01'), { tags, ptags });
+  cr.write('RTOR_01.PRE', 100); cr.write('Run', 1); scans(cr, 4); cr.write('Run', 0); cr.scan(10);
+  check('RTOR: TimerEnable cleared keeps ACC (retentive), EN and TT off', cr.read('Acc') === 30 && cr.read('RTOR_01.EN') === 0 && cr.read('RTOR_01.TT') === 0);
+  cr.write('Run', 1); scans(cr, 9);
+  check('RTOR: timing goes on from the kept ACC to DN', cr.read('Acc') === 100 && cr.read('Done') === 1);
+  cr.write('Run', 0); cr.scan(10);
+  check('RTOR: DN stays with TimerEnable off', cr.read('Done') === 1 && cr.read('Acc') === 100);
+  cr.write('Rst', 1); cr.scan(10);
+  check('RTOR: only Reset clears it (ACC 0, DN off)', cr.read('Acc') === 0 && cr.read('Done') === 0);
+  const cf = frun(tm('TOFR', 'TOFR_01'), { tags, ptags });
+  cf.write('TOFR_01.PRE', 30); cf.write('Run', 1); cf.scan(10);
+  check('TOFR: TimerEnable set: EN and DN on, ACC 0', cf.read('TOFR_01.EN') === 1 && cf.read('Done') === 1 && cf.read('Acc') === 0);
+  cf.write('Run', 0); scans(cf, 3);
+  check('TOFR: TimerEnable cleared: TT on while it times, DN still on', cf.read('TOFR_01.TT') === 1 && cf.read('Done') === 1 && cf.read('Acc') === 20);
+  scans(cf, 2);
+  check('TOFR: at ACC = PRE DN clears (off delay done)', cf.read('Done') === 0 && cf.read('Acc') === 30 && cf.read('TOFR_01.TT') === 0);
+  cf.write('Run', 1); cf.scan(10); cf.write('Rst', 1); cf.scan(10);
+  check('TOFR: Reset clears EN, TT, DN and sets ACC = PRE', cf.read('Acc') === 30 && cf.read('Done') === 0 && cf.read('TOFR_01.EN') === 0);
+  const cu = frun([{ els: [{ id: 1, k: 'IREF', op: 'Up' }, { id: 2, k: 'IREF', op: 'Dn' }, { id: 3, k: 'IREF', op: 'Rst' }, B(4, 'CTUD', 'CTUD_01'), { id: 5, k: 'OREF', op: 'Cnt' }, { id: 6, k: 'OREF', op: 'Done' }],
+    wires: [W(1, 'Out', 4, 'CUEnable'), W(2, 'Out', 4, 'CDEnable'), W(3, 'Out', 4, 'Reset'), W(4, 'ACC', 5, 'In'), W(4, 'DN', 6, 'In')] }], { tags, ptags });
+  cu.write('CTUD_01.PRE', 2); cu.write('Up', 1); cu.scan(10);
+  check('CTUD: a CUEnable already set at the first scan does not count (needs a 0 → 1 transition)', cu.read('Cnt') === 0 && cu.read('CTUD_01.CU') === 1);
+  const pulse = (n, k = 1) => { for (let i = 0; i < k; i++) { cu.write(n, 0); cu.scan(10); cu.write(n, 1); cu.scan(10); } };
+  pulse('Up', 2);
+  check('CTUD: counts up on each false-to-true CUEnable; DN at ACC >= PRE', cu.read('Cnt') === 2 && cu.read('Done') === 1);
+  cu.write('Dn', 1); cu.scan(10);
+  check('CTUD: counts down on a false-to-true CDEnable', cu.read('Cnt') === 1 && cu.read('Done') === 0);
+  cu.write('Up', 0); cu.write('Dn', 0); cu.scan(10); cu.write('Up', 1); cu.write('Dn', 1); cu.scan(10);
+  check('CTUD: both in one scan: up, then down (ACC unchanged)', cu.read('Cnt') === 1);
+  cu.write('CTUD_01.ACC', 2147483647); cu.write('Up', 0); cu.scan(10); cu.write('Up', 1); cu.scan(10);
+  check('CTUD: past 2,147,483,647 ACC rolls over to -2,147,483,648 and OV is set', cu.read('Cnt') === -2147483648 && cu.read('CTUD_01.OV') === 1);
+  cu.write('Rst', 1); cu.scan(10);
+  check('CTUD: Reset clears CU, CD, DN, OV, UN and ACC', cu.read('Cnt') === 0 && cu.read('CTUD_01.OV') === 0 && cu.read('CTUD_01.CU') === 0 && cu.read('CTUD_01.DN') === 0);
+  // Boolean blocks, one-shot, connectors across sheets
+  const sA = { els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'IREF', op: 'Up' }, B(3, 'BAND', 'BAND_01'), { id: 4, k: 'OCON', name: 'Both' }], wires: [W(1, 'Out', 3, 'In1'), W(2, 'Out', 3, 'In2'), W(3, 'Out', 4, 'In')] };
+  const sB = { els: [{ id: 5, k: 'ICON', name: 'Both' }, B(6, 'OSRI', 'OSRI_01'), { id: 7, k: 'OREF', op: 'Done' }, { id: 8, k: 'ICON', name: 'Both' }, { id: 9, k: 'OREF', op: 'Big' }], wires: [W(5, 'Out', 6, 'InputBit'), W(6, 'OutputBit', 7, 'In'), W(8, 'Out', 9, 'In')] };
+  const cb = frun([sA, sB], { tags, ptags });
+  check('BAND: In3..In8 are set on download (an unwired input does not block the AND)', cb.read('BAND_01.In8') === 1 && cb.read('BAND_01.EnableIn') === 1);
+  cb.write('Run', 1); cb.write('Up', 1); cb.scan(10);
+  check('an OCON on sheet 1 feeds ICONs on sheet 2; several ICONs read one OCON', cb.read('Big') === 1);
+  check('OSRI: the first scan needs a false-to-true InputBit', cb.read('Done') === 0);
+  cb.write('Up', 0); cb.scan(10); cb.write('Up', 1); cb.scan(10);
+  check('OSRI: OutputBit is set for one execution on the rising InputBit', cb.read('Done') === 1);
+  cb.scan(10);
+  check('… and cleared on the next', cb.read('Done') === 0);
+  // Verify errors (PM009 rules)
+  const verr = (sheets, re) => { const v = MTPS.verify(fproj(sheets, { tags, ptags })); return v.errors.some(e => re.test(e.msg)) ? true : v.lines.join(' | '); };
+  const ok = (name, r) => check(name, r === true, r);
+  ok('an OCON without an ICON of the same name is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OCON', name: 'X1' }], wires: [W(1, 'Out', 2, 'In')] }], /needs at least one ICON/));
+  ok('two OCONs with one name are an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OCON', name: 'X1' }, { id: 3, k: 'OCON', name: 'X1' }, { id: 4, k: 'ICON', name: 'X1' }], wires: [W(1, 'Out', 2, 'In'), W(1, 'Out', 3, 'In')] }], /unique name/));
+  ok('an ICON with no OCON of its name is an error', verr([{ els: [{ id: 1, k: 'ICON', name: 'Nope' }] }], /No OCON named 'Nope'/));
+  ok('an IREF of an undefined tag is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Ghost' }, { id: 2, k: 'OREF', op: 'Big' }], wires: [W(1, 'Out', 2, 'In')] }], /Undefined tag 'Ghost'/));
+  ok('an OREF with a constant is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OREF', op: '5' }], wires: [W(1, 'Out', 2, 'In')] }], /needs a tag, not a constant/));
+  ok('an OREF without an input wire is an error', verr([{ els: [{ id: 2, k: 'OREF', op: 'Big' }] }], /has no input wire/));
+  ok('a block whose tag is of another type is an error', verr([{ els: [B(1, 'TONR', 'CTUD_01')] }], /TONR needs a FBD_TIMER/));
+  ok('a block with an undefined tag is an error', verr([{ els: [B(1, 'ADD', 'NoSuchTag')] }], /Undefined tag 'NoSuchTag'/));
+  ok('two wires into one input pin are an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'A' }, { id: 2, k: 'IREF', op: 'A' }, B(3, 'ADD', 'ADD_01')], wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceA')] }], /more than one wire/));
+  ok('an IREF of a structure is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'GRT_01' }, B(2, 'ADD', 'ADD_01')], wires: [W(1, 'Out', 2, 'SourceA')] }], /an IREF needs a BOOL/));
+  check('an unwired IREF is a warning', MTPS.verify(fproj([{ els: [{ id: 1, k: 'IREF', op: 'A' }] }], { tags, ptags })).warnings.some(w => /not wired/.test(w.msg)));
+  check('a download with an FBD error is refused', !new MTPS.Controller().download(fproj(loop(''), { tags, ptags })).ok);
+  // JSR to an FBD routine from a ladder routine
+  const pj = fproj([s1], { tags, ptags }); const pg = pj.tasks[0].programs[0];
+  pg.routines[0].name = 'Calc'; pg.routines.unshift({ name: 'MainRoutine', rungs: [{ t: 'XIC(Run)JSR(Calc,0);' }] });
+  const cj = new MTPS.Controller(); cj.download(pj); cj.setMode('remrun'); cj.write('A', 1); cj.scan(10);
+  check('JSR runs an FBD routine only when called', cj.read('Sum') === 0);
+  cj.write('Run', 1); cj.scan(10);
+  check('… and the FBD routine runs from the JSR', cj.read('Sum') === 3.5);
+  // live values for the editor
+  const lv = F.liveOf(c, 'MainProgram', 'MainRoutine');
+  check('the live values of an FBD routine: IREF value, block pins, OREF value', lv && lv[1].Out === 0 && lv[3].Dest === 11.5 && lv[4].In === 11.5, JSON.stringify(lv));
+  // DIV by 0 in FBD: 1.#INF and S:V (minor fault)
+  const cd = frun([{ els: [{ id: 1, k: 'IREF', op: '1' }, { id: 2, k: 'IREF', op: '0' }, B(3, 'DIV', 'ADD_01'), { id: 4, k: 'OREF', op: 'Sum' }], wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceB'), W(3, 'Dest', 4, 'In')] }], { tags, ptags });
+  cd.scan(10);
+  check('DIV by zero in FBD: Dest is infinite (1.#INF), S:V and a minor fault', cd.read('Sum') === Infinity && cd.read('S:V') === 1);
+  // prescan: Program → Run restarts the first-scan rules
+  ct.write('Rst', 0); ct.write('TONR_01.PRE', 1000); ct.write('Run', 1); scans(ct, 3); ct.setMode('remprog'); ct.setMode('remrun'); ct.scan(10);
+  check('Program → Run: TONR starts as on a first scan (ACC 0, EN TT DN cleared, then times)', ct.read('Acc') === 0 && ct.read('TONR_01.EN') === 1);
+}
+
+console.log('Wave 3 B: Unscheduled Programs (v37 help: Create a program, Unschedule a program/phase)');
+{
+  const unsched = (rungs, extra) => ({ name: 'Unscheduled Programs', type: 'unscheduled', programs: [Object.assign({ name: 'Spare', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] }, extra || {})] });
+  const p = proj({ tags: [T('Cnt', 'DINT'), T('Spare_Ran', 'DINT'), T('Q', 'BOOL')], rungs: ['ADD(Cnt,1,Cnt);'] });
+  p.tasks.push(unsched(['ADD(Spare_Ran,1,Spare_Ran);', 'OTE(Q);']));
+  const c = new MTPS.Controller(); check('a project with an unscheduled program downloads', c.download(p).ok);
+  c.write('Q', 1); c.setMode('remrun'); scans(c, 5);
+  check('the scheduled program runs; the unscheduled one never does', c.read('Cnt') === 5 && c.read('Spare_Ran') === 0);
+  check('an unscheduled program is not prescanned (its OTE keeps its value)', c.read('Q') === 1);
+  const bad = proj({ rungs: ['NOP();'] }); bad.tasks.push(unsched(['ADD(Nope,1,Nope);']));
+  check('an unscheduled program is still verified', MTPS.verify(bad).errors.some(e => e.program === 'Spare'));
+  const e2 = proj({ rungs: ['NOP();'] }); e2.tasks.push(unsched([], { routines: [] })); delete e2.tasks[1].programs[0].main;
+  check('an unscheduled program with no routine verifies', MTPS.verify(e2).errors.length === 0);
+}
+
+console.log('Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v37 help: Create a Task)');
+{
+  // a project with more tasks: each one a program with one routine of rung text
+  const prog = (name, rungs) => ({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] });
+  const multi = (tags, cont, tasks) => {
+    const p = proj({ tags, rungs: cont });
+    tasks.forEach((t, k) => { const o = Object.assign({ name: 'T' + k }, t, { programs: [prog('P' + k, t.rungs)] }); delete o.rungs; p.tasks.push(o); });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const D = (n, x) => T(n, 'DINT', x);
+  const loop = n => ['MOV(0,I);', 'LBL(Lp)ADD(I,1,I);', `LES(I,${n})JMP(Lp);`];
+  // periodic: runs every Period of emulated time, the first time at once
+  let c = go(multi([D('Cnt'), D('F'), D('S')], ['ADD(Cnt,1,Cnt);'], [{ type: 'periodic', period: 5, priority: 5, rungs: ['ADD(F,1,F);'] }, { type: 'periodic', period: 100, priority: 10, rungs: ['ADD(S,1,S);'] }]));
+  scans(c, 10);
+  eq('a 5 ms periodic task runs 20 times in 100 ms; the continuous task once a scan', [c.read('F'), c.read('Cnt')], [20, 10]);
+  eq('a 100 ms periodic task runs once in 100 ms', c.read('S'), 1);
+  scans(c, 1); eq('… and again after its period', c.read('S'), 2);
+  // priority: tasks due at the same time run the highest priority (lowest number) first
+  c = go(multi([D('Ord')], ['NOP();'], [{ type: 'periodic', period: 50, priority: 8, rungs: ['MUL(Ord,10,Ord)ADD(Ord,1,Ord);'] }, { type: 'periodic', period: 50, priority: 3, rungs: ['MUL(Ord,10,Ord)ADD(Ord,2,Ord);'] }]));
+  scans(c, 1); eq('priority 3 runs before priority 8', c.read('Ord'), 21);
+  // preemption: a periodic task interrupts a long continuous scan between two rungs
+  c = go(multi([D('I'), D('Mid'), D('Runs')], loop(400000), [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,400000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 1);
+  check('a periodic task interrupts the continuous task in the middle of its scan', c.read('Mid') > 0 && c.read('Runs') > 2, `Mid ${c.read('Mid')} Runs ${c.read('Runs')}`);
+  // overlap: a periodic task that runs longer than its period
+  c = go(multi([D('I'), D('Ov'), D('St')], ['GSV(Task,Slow,OverlapCount,Ov)GSV(Task,Slow,Status,St);'], [{ name: 'Slow', type: 'periodic', period: 0.5, priority: 2, rungs: loop(200000) }]));
+  scans(c, 3);
+  check('a periodic task that runs past its period counts overlaps (OverlapCount, Status bit 2), the controller keeps running', c.read('Ov') > 0 && (c.read('St') & 4) === 4 && c.mode === 'remrun', `Ov ${c.read('Ov')} St ${c.read('St')}`);
+  check('… and logs the minor fault type 6 code 2 (task overlap)', c.minors.some(f => f.type === 6 && f.code === 2));
+  // inhibit
+  c = go(multi([D('F')], ['NOP();'], [{ type: 'periodic', period: 5, inhibit: true, rungs: ['ADD(F,1,F);'] }]));
+  scans(c, 5); eq('an inhibited periodic task does not run', c.read('F'), 0);
+  // timers in a periodic task count the time between its runs
+  c = go(multi([T('Tm', 'TIMER')], ['NOP();'], [{ type: 'periodic', period: 50, rungs: ['TON(Tm,1000,0);'] }]));
+  scans(c, 30); eq('a TON in a 50 ms periodic task times emulated time', c.read('Tm.ACC'), 250);
+  // event task: a change of state of a digital input module (Module Input Data State Change)
+  c = go(multi([D('E'), D('Cnt')], ['ADD(Cnt,1,Cnt);'], [{ type: 'event', trigger: 'input', tag: 'Local:1:I', priority: 4, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('an input event task does not run while its inputs do not change', c.read('E'), 0);
+  c.setInputs(1, 1); scans(c, 3); eq('a change of an input runs it once', c.read('E'), 1);
+  c.setInputs(1, 0); scans(c, 1); c.setInputs(1, 3); scans(c, 1); eq('… each change once', c.read('E'), 3);
+  // event task timeout: Execute Task If No Event Occurs Within
+  c = go(multi([D('E'), D('St')], ['GSV(Task,T0,Status,St);'], [{ type: 'event', trigger: 'event', timeoutOn: true, timeout: 20, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 10); check('with no event, the timeout runs an event task each timeout (Status bit 1)', c.read('E') >= 4 && c.read('E') <= 5 && (c.read('St') & 2) === 2, `E ${c.read('E')} St ${c.read('St')}`);
+  c = go(multi([D('E')], ['NOP();'], [{ type: 'event', trigger: 'event', rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 10); eq('an event task with no trigger and no timeout never runs', c.read('E'), 0);
+  // GSV TASK attributes of 1756-RM018A
+  c = go(multi([D('R'), T('Pr', 'INT'), D('Mx', { dim: [2] }), D('Mn', { dim: [2] })], ['GSV(Task,T0,Rate,R)GSV(Task,T0,Priority,Pr)GSV(Task,T0,MaxInterval,Mx[0])GSV(Task,T0,MinInterval,Mn[0]);'], [{ type: 'periodic', period: 20, priority: 7, rungs: ['NOP();'] }]));
+  scans(c, 10);
+  eq('GSV TASK Rate (µs), Priority, Max/MinInterval (µs)', [c.read('R'), c.read('Pr'), c.read('Mx[0]'), c.read('Mn[0]')], [20000, 7, 20000, 20000]);
+  // after Program mode and Run again, the tasks start over
+  c = go(multi([D('S')], ['NOP();'], [{ type: 'periodic', period: 1000, rungs: ['ADD(S,1,S);'] }]));
+  scans(c, 3); c.setMode('remprog'); c.setMode('remrun'); scans(c, 1);
+  eq('Program then Run: a periodic task is due at once again', c.read('S'), 2);
+  // verify
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  check('only one task can be continuous', /Only one task can be continuous/.test(errs(multi([], ['NOP();'], [{ type: 'continuous', rungs: ['NOP();'] }]))));
+  check('a priority outside 1 to 15 is an error', /Priority 0 is not in the range 1 to 15/.test(errs(multi([], ['NOP();'], [{ type: 'periodic', priority: 0, rungs: ['NOP();'] }]))));
+  check('a period over 2,000 s is an error', /Period 3000000 ms/.test(errs(multi([], ['NOP();'], [{ type: 'periodic', period: 3000000, rungs: ['NOP();'] }]))));
+  check('an input event needs an input module tag', /needs the input tag of an input module/.test(errs(multi([], ['NOP();'], [{ type: 'event', trigger: 'input', tag: 'Local:2:I', rungs: ['NOP();'] }]))));
+  check('at most 32 tasks', /supports 32 tasks/.test(errs(multi([], ['NOP();'], Array.from({ length: 32 }, () => ({ type: 'periodic', rungs: ['NOP();'] }))))));
+  // a project without a periodic or event task keeps the plain scan
+  check('a project with only the continuous task does not take the timed path', !go(proj({ rungs: ['NOP();'] })).M.timed);
+}
+
+console.log('Wave 3 B: program parameters, Input / Output / InOut / Public and direct access (1756-PM021)');
+{
+  // MainProgram (in the proj helper) and B, both in MainTask; B runs after MainProgram
+  const two = (mainTags, mainRungs, bTags, bRungs, ctags) => {
+    const p = proj({ tags: ctags || [], ptags: mainTags, rungs: mainRungs });
+    p.tasks[0].programs.push({ name: 'B', main: 'Main', tags: bTags, routines: [{ name: 'Main', rungs: bRungs.map(t => ({ t })) }] });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  const D = (n, x) => T(n, 'DINT', x);
+  // Output -> Input: the Input of B is copied from the published Output before B runs
+  let c = go(two([D('Out', { usage: 'Output', conn: ['\\B.In'] })], ['ADD(Out,1,Out);'], [D('In', { usage: 'Input' }), D('Seen')], ['MOV(In,Seen);']));
+  scans(c, 3);
+  eq('Output -> Input: B sees the Output of MainProgram of the same scan', [c.read('Out', 'MainProgram'), c.read('Seen', 'B')], [3, 3]);
+  // Input from a controller tag, by value: a write to the tag during the program does not change it
+  c = go(two([D('In', { usage: 'Input', conn: ['Level'] }), D('A'), D('Bv')], ['MOV(In,A);', 'MOV(99,Level);', 'MOV(In,Bv);'], [], ['NOP();'], [D('Level', { value: 7 })]));
+  scans(c, 1);
+  eq('Input from a controller tag: copied before the scan, passed by value', [c.read('A', 'MainProgram'), c.read('Bv', 'MainProgram')], [7, 7]);
+  scans(c, 1); eq('… and refreshed before the next scan', c.read('A', 'MainProgram'), 99);
+  // Output to controller tags: fan-out, written when the program completes
+  c = go(two([D('Out', { usage: 'Output', conn: ['T1', 'T2'] })], ['MOV(5,Out);', 'MOV(T1,Mid);'], [], ['NOP();'], [D('T1'), D('T2'), D('Mid')]));
+  scans(c, 1);
+  eq('Output to two controller tags at the end of the program (not during it)', [c.read('T1'), c.read('T2'), c.read('Mid')], [5, 5, 0]);
+  // InOut: by reference
+  c = go(two([D('Io', { usage: 'InOut', conn: ['Shared'] })], ['ADD(Io,1,Io);', 'MOV(Io,Copy);'], [], ['NOP();'], [D('Shared', { value: 10 }), D('Copy')]));
+  scans(c, 1);
+  eq('InOut: a reference to the controller tag (read and written at once)', [c.read('Shared'), c.read('Copy')], [11, 11]);
+  // Public and direct access
+  c = go(two([D('Pub', { usage: 'Public' }), D('OutP', { usage: 'Output' }), D('Loc')], ['ADD(Pub,1,Pub);', 'MOV(Pub,OutP);'], [D('X'), D('Y')], ['MOV(\\MainProgram.Pub,X);', 'ADD(\\MainProgram.OutP,100,Y);']));
+  scans(c, 2);
+  eq('direct access \\Program.Parameter: a Public and an Output parameter of another program', [c.read('X', 'B'), c.read('Y', 'B')], [2, 102]);
+  c = go(two([D('Pub', { usage: 'Public' })], ['NOP();'], [], ['MOV(42,\\MainProgram.Pub);']));
+  scans(c, 1); eq('direct access writes a Public parameter', c.read('Pub', 'MainProgram'), 42);
+  c = go(two([D('Pub', { usage: 'Public' }), D('R')], ['CPT(R,\\B.Q*2);'], [D('Q', { usage: 'Public', value: 4 })], ['NOP();']));
+  scans(c, 1); eq('direct access in a CPT expression', c.read('R', 'MainProgram'), 8);
+  // structures pass by value too
+  c = go(two([T('Ot', 'TIMER', { usage: 'Output', conn: ['\\B.It'] })], ['MOV(1234,Ot.PRE);'], [T('It', 'TIMER', { usage: 'Input' }), D('P')], ['MOV(It.PRE,P);']));
+  scans(c, 1); eq('a TIMER Output to a TIMER Input: copied member by member', c.read('P', 'B'), 1234);
+  // the rules of the connections (verify)
+  check('direct access to a local tag is an error', /local tag of program 'MainProgram'/.test(errs(two([D('Loc')], ['NOP();'], [D('X')], ['MOV(\\MainProgram.Loc,X);']))));
+  check('an Input takes one source connection', /more than one source connection/.test(errs(two([D('In', { usage: 'Input', conn: ['A1', 'A2'] })], ['NOP();'], [], ['NOP();'], [D('A1'), D('A2')]))));
+  check('a Public parameter cannot connect to a controller tag', /Public parameter cannot connect to a controller tag/.test(errs(two([D('Pub', { usage: 'Public', conn: ['A1'] })], ['NOP();'], [], ['NOP();'], [D('A1')]))));
+  check('two parameters of the same usage do not connect (Output - Output)', /cannot connect to another Output parameter/.test(errs(two([D('O1', { usage: 'Output', conn: ['\\B.O2'] })], ['NOP();'], [D('O2', { usage: 'Output' })], ['NOP();']))));
+  check('the data types of a connection must match', /data types do not match \(DINT and REAL\)/.test(errs(two([D('Out', { usage: 'Output', conn: ['\\B.In'] })], ['NOP();'], [T('In', 'REAL', { usage: 'Input' })], ['NOP();']))));
+  check('an InOut needs exactly one connection', /needs exactly one connection/.test(errs(two([D('Io', { usage: 'InOut' })], ['NOP();'], [], ['NOP();']))));
+  check('an InOut connects to an Output only when it is Constant', /only when it is Constant/.test(errs(two([D('Io', { usage: 'InOut', conn: ['\\B.O'] })], ['NOP();'], [D('O', { usage: 'Output' })], ['NOP();']))));
+  check('a connection to a tag that does not exist is an error', /connection 'Nope'/.test(errs(two([D('In', { usage: 'Input', conn: ['Nope'] })], ['NOP();'], [], ['NOP();']))));
+  check('a project without parameters has no parameter copies', go(proj({ rungs: ['NOP();'] })).M.programs.every(P => !P.pin && !P.pout));
+}
+
+console.log('Wave 3 B: UID, UIE, EVENT, IOT (1756-RM018A chapters 11 and 4)');
+{
+  const prog = (name, rungs) => ({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] });
+  const multi = (tags, cont, tasks) => {
+    const p = proj({ tags, rungs: cont });
+    tasks.forEach((t, k) => { const o = Object.assign({ name: 'T' + k }, t, { programs: [prog('P' + k, t.rungs)] }); delete o.rungs; p.tasks.push(o); });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  const D = n => T(n, 'DINT');
+  eq('the four instructions: Program Control and Input/Output', ['UID', 'UIE', 'EVENT', 'IOT'].map(m => MTPS.INSTR[m].grp), ['Program Control', 'Program Control', 'Program Control', 'Input/Output']);
+  // EVENT: one run of the event task each time it executes; Status bit 0
+  let c = go(multi([D('E'), D('St'), T('Go', 'BOOL'), T('Os', 'BOOL')], ['XIC(Go)ONS(Os)EVENT(Shut_Down);', 'GSV(Task,Shut_Down,Status,St);'], [{ name: 'Shut_Down', type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('EVENT: the event task does not run before it executes', c.read('E'), 0);
+  c.write('Go', 1); scans(c, 3);
+  check('EVENT on a true rung (with ONS): the task runs once; Status bit 0 is set', c.read('E') === 1 && (c.read('St') & 1) === 1, `E ${c.read('E')} St ${c.read('St')}`);
+  // an EVENT each scan on a task of a lower priority than ... the event task runs each scan
+  c = go(multi([D('E')], ['EVENT(T0);'], [{ type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 5); eq('EVENT each scan: the event task runs each scan', c.read('E'), 5);
+  // a second trigger while it waits or runs: an overlap, not a second run
+  c = go(multi([D('E'), D('Ov')], ['NOP();'], [{ type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }, { type: 'periodic', period: 10, priority: 15, rungs: ['EVENT(T0)EVENT(T0)GSV(Task,T0,OverlapCount,Ov);'] }]));
+  // T1 (priority 15) is below T0 (5): T0 interrupts at the next rung, so two EVENTs in one rung overlap
+  scans(c, 3);
+  check('two EVENTs before the task can run: one run, one overlap counted', c.read('E') === 3 && c.read('Ov') >= 2, `E ${c.read('E')} Ov ${c.read('Ov')}`);
+  c = go(multi([D('E'), D('S')], ['EVENT(T0);', 'ADD(S,1,S);'], [{ type: 'periodic', period: 1000, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('EVENT on a task that is not an event task: it is not run', c.read('E'), 1);
+  check('EVENT names a task that exists', /Undefined task 'Nope'/.test(errs(multi([], ['EVENT(Nope);'], []))));
+  // UID / UIE: no interruption between them
+  c = go(multi([D('I'), D('Mid'), D('Runs')], ['MOV(0,I);', 'UID();', 'LBL(Lp)ADD(I,1,I);', 'LES(I,300000)JMP(Lp);', 'UIE();'], [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,300000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 2);
+  check('UID … UIE: the 1 ms task does not interrupt the rungs between them; it runs after UIE', c.read('Mid') === 0 && c.read('Runs') > 0, `Mid ${c.read('Mid')} Runs ${c.read('Runs')}`);
+  c = go(multi([D('I'), D('Mid'), D('Runs')], ['MOV(0,I);', 'UID();', 'UID();', 'UIE();', 'LBL(Lp)ADD(I,1,I);', 'LES(I,300000)JMP(Lp);', 'UIE();'], [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,300000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 1); eq('UID / UIE nest: two UID need two UIE', c.read('Mid'), 0);
+  // IOT
+  c = go(multi([], ['IOT(Local:2:O);'], []));
+  scans(c, 4); eq('IOT on the output tag of an output module: each true rung sends the outputs', c.iots, 4);
+  check('IOT takes only the output tag of an I/O module', /output tag of an I\/O module/.test(errs(multi([], ['IOT(Local:1:I);'], []))) && /output tag of an I\/O module/.test(errs(multi([], ['IOT(Local:2:O.Data);'], []))));
+  check('UID and UIE take no operands; EVENT takes one', !errs(multi([], ['UID();', 'UIE();'], [])) && !!errs(multi([], ['UID(MainTask);'], [])));
+}
+
+console.log('Wave 3 B: Controller Properties > SFC Execution settings (help v37; 1756-PM006)');
+{
+  eq('the defaults: Execute current active steps only, Restart at most recently executed step, Don\'t scan', MTPS.sfcOf({}), { exec: 'current', restart: 'recent', last: 'dontscan' });
+  const p = proj({ rungs: ['NOP();'] }); p.controller.sfc = { exec: 'untilFalse', restart: 'initial', last: 'auto' };
+  const c = new MTPS.Controller(); c.download(p);
+  eq('the settings of the project reach the SFC routines (sfc.js)', MTPS.SFC.cfgOf(c.M.sfcCfg), { exec: 'untilFalse', restart: 'initial', last: 'auto' });
+  eq('an unknown value takes the default', MTPS.sfcOf({ sfc: { exec: 'x', last: 'programmatic' } }), { exec: 'current', restart: 'recent', last: 'programmatic' });
+}
+
+console.log('Wave 3 E: ASCII string and conversion instructions (1756-RM018A chapters 17, 18)');
+{
+  const sv = t => ({ LEN: t.length, DATA: [...t].map(c => c.charCodeAt(0)) });
+  const txt = (c, n) => { const o = c.read(n); return String.fromCharCode(...o.DATA.slice(0, o.LEN).map(x => x & 255)); };
+  const dts = [{ name: 'S5', family: 'string', len: 5 }];
+  const st = (name, t, type = 'STRING') => T(name, type, t == null ? {} : { value: sv(t) });
+  const sr = (tags, rr) => run({ dataTypes: dts, tags, rungs: rr });
+  const c1 = sr([st('A', 'Hello'), st('B', ' World'), st('D'), st('E'), T('N', 'DINT'), st('Bar', 'ABC123456789XYZ')],
+    ['CONCAT(A,B,D);', 'MID(D,5,7,E);', 'FIND(D,B,1,N);']);
+  c1.scan(10);
+  eq('CONCAT: Source A then Source B into Dest', txt(c1, 'D'), 'Hello World');
+  eq('MID(Source,Qty,Start,Dest): 5 characters from position 7', txt(c1, 'E'), 'World');
+  eq('FIND: the position of Search in Source (1-based)', c1.read('N'), 6);
+  check('… Source A is unchanged', txt(c1, 'A') === 'Hello' && c1.read('D').LEN === 11);
+  const c2 = sr([st('A', 'AB'), st('B', 'CD'), st('D'), st('X', 'ABCDEF'), st('Y'), st('Z', 'abc-XYZ 9'), st('U'), st('L'), T('N', 'DINT', { value: 7 })],
+    ['INSERT(A,B,2,D);', 'DELETE(X,2,3,Y);', 'UPPER(Z,U);', 'LOWER(Z,L);', 'FIND(X,B,4,N);']);
+  c2.scan(10);
+  eq('INSERT: Source B at position Start of Source A', txt(c2, 'D'), 'ACDB');
+  eq('DELETE(Source,Qty,Start,Dest): 2 characters from position 3', txt(c2, 'Y'), 'ABEF');
+  eq('UPPER / LOWER change only the letters', [txt(c2, 'U'), txt(c2, 'L')], ['ABC-XYZ 9', 'abc-xyz 9']);
+  eq('FIND past the Search string: Result 0', c2.read('N'), 0);
+  // conversions
+  const c3 = sr([st('S1', '$-123/45'), st('S2', 'x 98.25 kg'), st('S3', 'none'), T('D1', 'DINT', { value: 5 }), T('I1', 'INT'), T('R1', 'REAL'), T('R2', 'REAL', { value: -2.5 }), T('D2', 'DINT', { value: -42 }), st('O1'), st('O2'), st('O3'), T('R3', 'REAL', { value: 7.6 })],
+    ['STOD(S1,D1);', 'STOR(S2,R1);', 'STOD(S3,I1);', 'DTOS(D2,O1);', 'RTOS(R2,O2);', 'DTOS(R3,O3);']);
+  c3.scan(10);
+  eq('STOD: skips non-numeric characters, keeps the minus sign, stops at the delimiter', c3.read('D1'), -123);
+  eq('STOR: the first group of digits with its decimal point', c3.read('R1'), 98.25);
+  check('STOD: no digits gives 0 (Dest is cleared first)', c3.read('I1') === 0);
+  eq('DTOS / RTOS: the value as text; a REAL into DTOS is converted to a DINT first', [txt(c3, 'O1'), txt(c3, 'O2'), txt(c3, 'O3')], ['-42', '-2.5', '8']);
+  // faults
+  const fl = (rr, tags) => { const c = sr(tags, rr); c.scan(10); return c.fault ? c.fault.type + '/' + c.fault.code : null; };
+  eq('CONCAT longer than the Dest DATA size: fault 4/51', fl(['CONCAT(A,B,D);'], [st('A', 'abc'), st('B', 'def'), st('D', null, 'S5')]), '4/51');
+  eq('MID result larger than Dest: fault 4/52', fl(['MID(A,6,1,D);'], [st('A', 'abcdefgh'), st('D', null, 'S5')]), '4/52');
+  eq('MID Start + Quantity past the length + 1: fault 4/56', fl(['MID(A,3,4,D);'], [st('A', 'abcd'), st('D')]), '4/56');
+  eq('FIND in an empty Source: fault 4/56', fl(['FIND(A,B,1,N);'], [st('A', ''), st('B', 'x'), T('N', 'DINT')]), '4/56');
+  eq('STOD beyond the limits of an INT Dest: fault 4/53', fl(['STOD(A,I);'], [st('A', '99999'), T('I', 'INT')]), '4/53');
+  const big = sr([st('A', 'abc'), st('D')], ['MOV(90,A.LEN);', 'UPPER(A,D);', 'CONCAT(A,A,D);']); big.scan(10);
+  eq('a LEN past the DATA size: fault 4/51 (UPPER has no string fault)', big.fault && big.fault.type + '/' + big.fault.code, '4/51');
+  const nf = sr([st('A', 'ab'), st('D'), T('B', 'BOOL')], ['XIC(B)CONCAT(A,A,D);']); nf.scan(10);
+  eq('a false rung does nothing', nf.read('D').LEN, 0);
+  // verify
+  const v = MTPS.verify(proj({ tags: [st('A', 'x'), T('N', 'DINT'), T('R', 'REAL')], rungs: ['CONCAT(A,N,A);', 'RTOS(N,A);', 'STOD(A,R);', 'MID(A,1,1,N);', 'DTOS(5,A);'] }));
+  eq('verify: string operands must be string tags, RTOS a REAL, STOD an integer Dest, DTOS a tag', v.errors.map(e => e.rung), [0, 1, 2, 3, 4]);
+}
+
+console.log('Wave 3 E: MSG, CIP Data Table Read / Write (1756-RM018A chapter 4, 1756-PM012)');
+{
+  const B = (c, n) => ['EN', 'EW', 'ST', 'DN', 'ER'].filter(b => c.read(n + '.' + b)).join(' ');
+  const cfg = (o, value) => T(o.name || 'Msg', 'MESSAGE', { msg: o.msg, value });
+  // to itself: THIS
+  const c = run({ modules: [], tags: [T('Src', 'DINT', { dim: 5, value: [1, 2, 3, 4, 5] }), T('Dst', 'DINT', { dim: 5 }), T('Go', 'BOOL'),
+    cfg({ msg: { type: 'read', src: 'Src[1]', n: 3, dst: 'Dst[0]', path: 'THIS' } })], rungs: ['XIC(Go)MSG(Msg);'] });
+  c.scan(10);
+  eq('rung false: no bits', B(c, 'Msg'), '');
+  c.write('Go', 1); c.scan(10);
+  eq('rung true: .EN and .EW set (the message is queued)', B(c, 'Msg'), 'EN EW');
+  c.scan(10);
+  eq('next scan: the message is sent, .ST set and .EW cleared', B(c, 'Msg'), 'EN ST');
+  c.scan(10);
+  eq('then done: .DN set, .ST cleared', B(c, 'Msg'), 'EN DN');
+  eq('CIP Data Table Read to THIS: Src[1..3] into Dst[0..2], .DN_LEN 3', [c.read('Dst'), c.read('Msg.DN_LEN'), c.read('Msg.REQ_LEN')], [[2, 3, 4, 0, 0], 3, 3]);
+  c.scan(10);
+  eq('rung still true: .EN stays, no new message', B(c, 'Msg'), 'EN DN');
+  c.write('Msg.DN', 0); c.scan(10);
+  eq('a write to .DN is ignored (the controller keeps its own bits)', B(c, 'Msg'), 'EN DN');
+  c.write('Go', 0); c.scan(10);
+  eq('rung false with .DN set: .EN clears, .DN stays', B(c, 'Msg'), 'DN');
+  c.write('Src[1]', 20); c.write('Go', 1); c.scan(10);
+  eq('false to true again: .DN cleared, .EN .EW set', B(c, 'Msg'), 'EN EW');
+  c.write('Go', 0); c.scan(10); c.scan(10);
+  eq('the transfer goes on with the rung false, then .EN clears', [B(c, 'Msg'), c.read('Dst[0]')], ['DN', 20]);
+  c.setMode('remprog'); c.setMode('remrun');
+  eq('prescan clears .DN (.EW .ST .DN .ER)', B(c, 'Msg'), '');
+  eq('.EN_CC set by Cache Connections, .UnconnectedTimeout 30 s by default (in microseconds)', [c.read('Msg.EN_CC'), c.read('Msg.UnconnectedTimeout')], [1, 30000000]);
+
+  // between two controllers in a chassis: slot 0 and slot 2 (slot 1 holds an input card)
+  const ch = new MTPS.Chassis(8);
+  ch.insert(0, 'PLC-CPU', 'Ctl_A'); ch.insert(1, 'PLC-DI16-24V'); ch.insert(2, 'PLC-CPU', 'Ctl_B');
+  const A = ch.controller(0), Bc = ch.controller(2);
+  const pa = proj({ modules: [], tags: [T('Out', 'REAL', { dim: 2, value: [1.5, -2.25] }), T('In', 'REAL', { dim: 2 }), T('Go', 'BOOL'), T('Mine', 'INT'),
+    cfg({ name: 'Wr', msg: { type: 'write', src: 'Out[0]', n: 2, dst: 'Program:MainProgram.Rx[0]', path: '1,2' } }),
+    cfg({ name: 'Rd', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[1]', path: '1, 2' } }),
+    cfg({ name: 'E1', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '1,5' } }),
+    cfg({ name: 'E2', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '1,1' } }),
+    cfg({ name: 'E3', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '2,10' } }),
+    cfg({ name: 'E4', msg: { type: 'read', src: 'Nothing', n: 1, dst: 'In[0]', path: '1,2' } }),
+    cfg({ name: 'E5', msg: { type: 'read', src: 'Tx', n: 1, dst: 'Mine', path: '1,2' } }),
+    cfg({ name: 'E6', msg: { type: 'read', src: 'Tx', n: 3, dst: 'In[0]', path: '1,2' } }),
+    cfg({ name: 'E8', msg: { type: 'write', src: 'Go', n: 1, dst: 'Flag', path: '1,2' } }),
+    T('E7', 'MESSAGE')],
+    rungs: ['XIC(Go)MSG(Wr);', 'XIC(Go)MSG(Rd);', 'XIC(Go)MSG(E1);', 'XIC(Go)MSG(E2);', 'XIC(Go)MSG(E3);', 'XIC(Go)MSG(E4);', 'XIC(Go)MSG(E5);', 'XIC(Go)MSG(E6);', 'XIC(Go)MSG(E7);', 'XIC(Go)MSG(E8);'] });
+  const pb = proj({ modules: [], tags: [T('Tx', 'REAL', { value: 9.75 }), T('Flag', 'BOOL')], ptags: [T('Rx', 'REAL', { dim: 4 })], rungs: ['NOP();'] });
+  pb.controller.name = 'Ctl_B'; pb.controller.slot = 2; pb.rack.size = 8; pa.rack.size = 8;
+  check('both controllers take their projects', A.download(pa).ok && Bc.download(pb).ok);
+  A.setMode('remrun'); Bc.setMode('remrun');
+  eq('the configuration is in the tag: .Path $01$02, .RemoteElement', [A.read('Wr.Path').DATA.slice(0, A.read('Wr.Path').LEN), String.fromCharCode(...A.read('Wr.RemoteElement').DATA.slice(0, A.read('Wr.RemoteElement').LEN))], [[1, 2], 'Program:MainProgram.Rx[0]']);
+  A.write('Go', 1); scans(A, 3);
+  eq('CIP Data Table Write over the backplane (path 1,2) into a program tag of the other controller', [B(A, 'Wr'), Bc.read('Rx', 'MainProgram').slice(0, 2)], ['EN DN', [1.5, -2.25]]);
+  eq('CIP Data Table Read from the other controller', [B(A, 'Rd'), A.read('In[1]')], ['EN DN', 9.75]);
+  const er = n => [A.read(n + '.ER'), A.read(n + '.ERR'), A.read(n + '.EXERR')];
+  eq('path to an empty slot: .ER, 16#0001 extended 16#0312 (link address not available)', er('E1'), [1, 0x0001, 0x0312]);
+  eq('path to an I/O card: 16#0008 (service unsupported)', er('E2'), [1, 0x0008, 0]);
+  eq('a port other than the backplane: 16#0001 extended 16#0311 (port not available)', er('E3'), [1, 0x0001, 0x0311]);
+  eq('a remote tag that does not exist: 16#0005 (destination unknown)', er('E4'), [1, 0x0005, 0]);
+  eq('REAL into an INT: 16#00FF extended 16#2107 (type invalid)', er('E5'), [1, 0x00FF, 0x2107]);
+  eq('more elements than the tag holds: 16#00FF extended 16#2105 (out of range)', er('E6'), [1, 0x00FF, 0x2105]);
+  eq('a BOOL is not a supported data type (1756-PM012): 16#00FF extended 16#2107', er('E8'), [1, 0x00FF, 0x2107]);
+  eq('a message never configured: .ER at once, 16#00FD (message uninitialized)', er('E7'), [1, 0x00FD, 0]);
+  check('MTPS.MSG.text gives the description', MTPS.MSG.text(0x0001, 0x0312) === 'Connection failure: link address not available');
+  // the other controller is off: no answer until .UnconnectedTimeout
+  A.write('Go', 0); scans(A, 1);
+  A.write('Rd.UnconnectedTimeout', 50000); Bc.power(false);
+  A.write('Go', 1); scans(A, 3);
+  check('no answer: the message waits (.ST)', B(A, 'Rd') === 'EN ST');
+  scans(A, 5);
+  eq('after .UnconnectedTimeout (50 ms): 16#0001 extended 16#0204', er('Rd'), [1, 0x0001, 0x0204]);
+  Bc.power(true);
+  // .TO stops a message
+  A.write('Go', 0); scans(A, 1); A.write('Go', 1); scans(A, 1); A.write('Wr.TO', 1); scans(A, 1);
+  eq('.TO set by the user: the message stops with .ER (16#00FE, message timeout)', er('Wr'), [1, 0x00FE, 0]);
+  // online: a changed configuration takes effect at once and the controller still holds the project
+  const pa2 = JSON.parse(JSON.stringify(pa)); pa2.tags.find(t => t.name === 'E1').msg.path = '1,2';
+  A.write('Wr.TO', 0);
+  check('setMsg online: the controller still holds the (changed) project', A.setMsg('E1', null, pa2.tags.find(t => t.name === 'E1').msg) && A.holds(pa2));
+  A.write('Go', 0); scans(A, 1); A.write('Go', 1); scans(A, 3);
+  eq('… and the message uses the new path', [B(A, 'E1'), A.read('In[0]')], ['EN DN', 9.75]);
+  // verify
+  const v = MTPS.verify(proj({ tags: [T('D', 'DINT'), T('M', 'MESSAGE', { dim: 2 })], rungs: ['MSG(D);', 'MSG(M[0]);'] }));
+  eq('verify: the operand must be a MESSAGE tag (not another type, not an array element)', v.errors.map(e => e.rung), [0, 1]);
+}
+
+console.log('Wave 3 E: Add-On Instructions (1756-PM010)');
+{
+  // Motor_Ctl: Start / Stop in, Run out (required), Fault a visible BOOL Output, Count a local, Cfg an InOut
+  const aoi = (o = {}) => Object.assign({ name: 'Motor_Ctl', desc: 'Start / stop with seal-in', rev: '1.0', type: 'Ladder Diagram',
+    params: [{ name: 'Start', usage: 'Input', type: 'BOOL', req: true }, { name: 'Stop', usage: 'Input', type: 'BOOL', req: true, def: 1 },
+      { name: 'Run', usage: 'Output', type: 'BOOL', req: true }, { name: 'Fault', usage: 'Output', type: 'BOOL', vis: true },
+      { name: 'Cfg', usage: 'InOut', type: 'DINT', dim: 2 }, { name: 'Gain', usage: 'Input', type: 'REAL', def: 2.5, vis: true }],
+    locals: [{ name: 'Starts', type: 'DINT' }, { name: 'Tmr', type: 'TIMER' }, { name: 'Ons', type: 'BOOL' }],
+    routines: [{ name: 'Logic', rungs: [{ t: '[XIC(Start),XIC(Run)]XIC(Stop)OTE(Run);' }, { t: 'XIC(Start)ONS(Ons)ADD(Starts,1,Starts);' }, { t: 'MOV(Starts,Cfg[1]);' }, { t: 'XIC(Run)TON(Tmr,40,0);' }, { t: 'XIC(Tmr.DN)OTE(Fault);' }] }] }, o);
+  const ap = (o = {}) => { const p = proj({ modules: [], tags: [T('M1', 'Motor_Ctl'), T('Pb', 'BOOL'), T('Sb', 'BOOL', { value: 1 }), T('Lamp', 'BOOL'), T('Arr', 'DINT', { dim: 2 }), T('Go', 'BOOL', { value: 1 }), T('Out2', 'BOOL')].concat(o.tags || []), rungs: o.rungs || ['XIC(Go)MOTOR_CTL(M1,Pb,Sb,Lamp,Arr)OTE(Out2);'] }); p.aois = o.aois || [aoi()]; return p; };
+  eq('Data Types > Add-On-Defined lists the data type of the Add-On Instruction', MTPS.dataTypes(ap()).addOnDefined, ['Motor_Ctl']);
+  const v0 = MTPS.verify(ap());
+  eq('the project verifies, with the logic routine of the Add-On Instruction', [v0.errors.map(e => e.text), v0.lines.some(l => /Verifying routine 'Logic' of Add-On Instruction 'Motor_Ctl'/.test(l))], [[], true]);
+  const c = new MTPS.Controller(); check('download', c.download(ap()).ok); c.setMode('remrun');
+  eq('a new instance tag: EnableIn 1, the parameter defaults (Stop 1, Gain 2.5)', [c.read('M1.EnableIn'), c.read('M1.Stop'), c.read('M1.Gain'), c.read('M1.EnableOut')], [1, 1, 2.5, 0]);
+  check('local tags are hidden members: not reachable from outside', c.read('M1.Starts') === undefined && typeof c.refOf('M1.Starts') === 'string');
+  c.scan(10);
+  eq('rung true: the logic runs, EnableOut set, the rung goes on (Out2 on), Run not yet', [c.read('M1.EnableOut'), c.read('Out2'), c.read('Lamp')], [1, 1, 0]);
+  c.write('Pb', 1); c.scan(10);
+  eq('required Input in (Start), the logic seals in, the required Output out (Lamp)', [c.read('M1.Start'), c.read('M1.Run'), c.read('Lamp')], [1, 1, 1]);
+  eq('the InOut is passed by reference: Cfg[1] = Starts writes Arr[1] of the caller', c.read('Arr'), [0, 1]);
+  c.write('Pb', 0); scans(c, 2);
+  eq('a one-shot in the logic counts once; the seal-in holds', [c.read('Arr[1]'), c.read('Lamp')], [1, 1]);
+  scans(c, 5);
+  eq('a TON in the logic times with its local TIMER (the rung Preset 40 is its default): the visible Output Fault', c.read('M1.Fault'), 1);
+  c.write('Go', 0); c.write('Sb', 0); c.scan(10);
+  eq('rung false: EnableIn 0, EnableOut 0, the Inputs are passed (Stop 0) but no Output is written (Lamp stays on)', [c.read('M1.EnableIn'), c.read('M1.EnableOut'), c.read('M1.Stop'), c.read('Lamp'), c.read('Out2')], [0, 0, 0, 1, 0]);
+  c.write('Go', 1); c.scan(10);
+  eq('rung true with Stop off: the logic drops Run, Lamp off', [c.read('M1.Run'), c.read('Lamp')], [0, 0]);
+  c.write('M1.Gain', 7.5); c.scan(10);
+  check('a visible parameter that is not required is set through the tag (M1.Gain)', c.read('M1.Gain') === 7.5);
+  // two instances keep their own data
+  const c2 = run2();
+  function run2() { const x = new MTPS.Controller(); const p = ap({ tags: [T('M2', 'Motor_Ctl'), T('L2', 'BOOL'), T('A2', 'DINT', { dim: 2 })], rungs: ['MOTOR_CTL(M1,1,1,Lamp,Arr);', 'MOTOR_CTL(M2,0,1,L2,A2);'] }); x.download(p); x.setMode('remrun'); return x; }
+  c2.scan(10);
+  eq('two instances keep their own data (immediate Inputs 1 / 0); the ONS in the logic was prescanned, so no count', [c2.read('Lamp'), c2.read('L2'), c2.read('Arr[1]'), c2.read('A2[1]')], [1, 0, 0, 0]);
+  // prescan: the logic is prescanned with the required parameters passed (OTE cleared)
+  c2.setMode('remprog'); c2.write('M1.Run', 1); c2.setMode('remrun');
+  check('prescan: the logic is prescanned (its OTE Run cleared) and the required Output passed out', c2.read('M1.Run') === 0 && c2.read('Lamp') === 0);
+  // verify errors
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('an Input parameter must be BOOL, SINT, INT, DINT or REAL', errs(ap({ aois: [aoi({ params: [{ name: 'X', usage: 'Input', type: 'TIMER' }] })], rungs: ['NOP();'] })).some(m => /an Input parameter must be BOOL, SINT, INT, DINT or REAL/.test(m)));
+  check('the name must not match a built-in instruction', errs(ap({ aois: [aoi({ name: 'TON' })], rungs: ['NOP();'], tags: [] })).some(m => /must not match a built-in instruction/.test(m)));
+  const vin = MTPS.verify(ap({ aois: [aoi({ routines: [{ name: 'Logic', rungs: [{ t: 'XIC(Pb)OTE(Run);' }, { t: 'JSR(Logic);' }, { t: 'MOTOR_CTL(M1,1,1,Run,Cfg);' }] }] })] }));
+  eq('in the logic: no controller tags (Pb), no JSR, no call to itself', vin.errors.filter(e => e.program === 'aoi:Motor_Ctl').map(e => e.rung), [0, 1, 2]);
+  eq('in a call: the tag must be of the instruction\'s type; an InOut takes the same type and size', MTPS.verify(ap({ rungs: ['MOTOR_CTL(Pb,Pb,Sb,Lamp,Arr);', 'MOTOR_CTL(M1,Pb,Sb,Lamp,Pb);', 'MOTOR_CTL(M1,Pb,Sb);'] })).errors.map(e => [e.rung, e.op]), [[0, 0], [1, 4], [2, undefined]]);
+  // nesting: an Add-On Instruction that calls another
+  const inner = { name: 'Dbl', params: [{ name: 'In', usage: 'Input', type: 'DINT', req: true }, { name: 'Out', usage: 'Output', type: 'DINT', req: true }], locals: [], routines: [{ name: 'Logic', rungs: [{ t: 'MUL(In,2,Out);' }] }] };
+  const outer = { name: 'Quad', params: [{ name: 'In', usage: 'Input', type: 'DINT', req: true }, { name: 'Out', usage: 'Output', type: 'DINT', req: true }], locals: [{ name: 'D1', type: 'Dbl' }, { name: 'Mid', type: 'DINT' }], routines: [{ name: 'Logic', rungs: [{ t: 'DBL(D1,In,Mid)DBL(D1,Mid,Out);' }] }] };
+  const pn = proj({ modules: [], tags: [T('Q', 'Quad'), T('R', 'DINT')], rungs: ['QUAD(Q,5,R);'] }); pn.aois = [inner, outer];
+  const cn = new MTPS.Controller(); check('nested Add-On Instructions download', cn.download(pn).ok); cn.setMode('remrun'); cn.scan(10);
+  eq('Quad(5) through Dbl twice = 20', cn.read('R'), 20);
+  const loop = JSON.parse(JSON.stringify(pn)); loop.aois[0].locals = [{ name: 'Q2', type: 'Quad' }]; loop.aois[0].routines[0].rungs.push({ t: 'QUAD(Q2,1,Out);' });
+  check('Add-On Instructions that call each other in a circle do not verify', MTPS.verify(loop).errors.length > 0);
+  check('the instruction table has the Add-On Instruction (group Add-On, its operands, Fault as a flag on the right)', MTPS.INSTR.MOTOR_CTL && MTPS.INSTR.MOTOR_CTL.grp === 'Add-On' && MTPS.OPN.MOTOR_CTL.join() === 'Motor_Ctl,Start,Stop,Run,Cfg' && MTPS.INSTR.MOTOR_CTL.bits.join() === 'Fault' && MTPS.INSTR.MOTOR_CTL.extra.join() === 'Gain');
+}
+
+console.log('Wave 3 (A): Compare (Logix Designer Compare Tool), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const a = proj({ tags: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'DINT', value: 3 }], rungs: ['XIC(A)OTE(A);', 'NOP();', { t: 'XIC(A)NOP();', c: 'x' }] });
+  const same = R.compare(a, JSON.parse(JSON.stringify(a)));
+  check('the same project: no differences', same.same && same.rows.length === 0);
+  const b = JSON.parse(JSON.stringify(a));
+  b.tags[1].value = 4; b.tags.push({ name: 'C', type: 'REAL' }); b.tags = b.tags.filter(t => t.name !== 'A').concat([{ name: 'A', type: 'BOOL', desc: 'now with text' }]);
+  const rr = b.tasks[0].programs[0].routines[0].rungs; rr.splice(1, 0, { t: 'XIO(A)OTE(A);' }); rr[3].c = 'y';
+  b.rack.modules.pop(); b.controller.rev = '2.0';
+  const r = R.compare(a, b);
+  const find = n => r.rows.find(x => x.name === n);
+  check('a tag only on the right: st right', find('C') && find('C').st === 'right');
+  check('a changed description: st diff with the property', find('A') && find('A').st === 'diff' && find('A').d.some(d => d[0] === 'desc' && d[2] === 'now with text'));
+  check('values are not compared by default', !find('B'));
+  check('… but are with values: true', !!R.compare(a, b, { values: true }).rows.find(x => x.name === 'B'));
+  check('a module only on the left', !!r.rows.find(x => x.cat === 'I/O Configuration' && x.st === 'left'));
+  check('the controller revision differs', !!r.rows.find(x => x.cat === 'Controller' && x.d.some(d => d[0] === 'Revision')));
+  const rt = r.rows.find(x => x.cat === 'Routines');
+  eq('rungs: one inserted on the right (1), one comment changed (2 / 3)', rt.rungs.map(g => [g.st, g.a, g.b]), [['right', undefined, 1], ['diff', 2, 3]]);
+  eq('rungDiff: same rungs give nothing', R.rungDiff([{ t: 'A;' }], [{ t: 'A;' }]), []);
+  eq('rungDiff: one deleted in the middle', R.rungDiff([{ t: 'A;' }, { t: 'B;' }, { t: 'C;' }], [{ t: 'A;' }, { t: 'C;' }]).map(g => [g.st, g.a]), [['left', 1]]);
+}
+
+console.log('Wave 3 (A): the printed report (Generate Report, Print), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const p = proj({ tags: [{ name: 'Zed', type: 'BOOL' }, { name: 'Alpha', type: 'DINT', desc: 'a<b' }], ptags: [{ name: 'Mid', type: 'REAL' }], rungs: ['XIC(Zed)OTE(Zed);', 'MOV(1,Alpha);', 'NOP();'] });
+  const all = Object.fromEntries(R.REPORTS.map(x => [x[0], true]));
+  const r = R.report(p, all, {}, { now: 'T' });
+  check('every report of the Report Selection is made', ['Controller Organizer Listing', 'Controller Properties Listing', 'Tag Listing', 'Task Properties Listing', 'Program/Phase Properties Listing', 'Routine Listing: MainProgram - MainRoutine', 'Routine Properties Listing: MainProgram - MainRoutine', 'Data Type Listing', 'Module Properties Listing'].every(t => r.titles.includes(t)), r.titles.join(', '));
+  check('the table of contents comes at the end (the reference default)', r.html.indexOf('<h3>Table of Contents') > r.html.indexOf('<h3>Module Properties Listing'));
+  check('text is escaped', r.html.includes('a&lt;b') && !r.html.includes('a<b'));
+  const byName = R.report(p, { tags: true }, { sort: 'name' }, {}).html;
+  check('Tag Listing sorted by name: one list, Alpha before Mid before Zed', byName.indexOf('>Alpha<') < byName.indexOf('>Mid<') && byName.indexOf('>Mid<') < byName.indexOf('>Zed<'));
+  const byScope = R.report(p, { tags: true }, { sort: 'scope' }, {}).html;
+  check('Tag Listing sorted by scope: one list per scope', byScope.includes('Controller Tags') && byScope.includes('Program Tags: MainProgram'));
+  const unused = R.report(p, { tags: true }, { unused: false }, { used: () => new Set(['ZED']) }).html;
+  check('Include Unused Tags cleared: only the tags used in logic', unused.includes('>Zed<') && !unused.includes('>Alpha<'));
+  const rng = R.report(p, { routines: true }, { range: [1, 2] }, { ladder: (list, g, n0) => `<svg data-n0="${n0}" data-n="${list.length}"></svg>` }).html;
+  check('a range of rungs: the ladder gets the rungs and the number of the first', rng.includes('data-n0="1" data-n="2"'));
+  const sp = R.report(p, { routines: true }, { space: true, lines: 3 }, { ladder: (list, g, n0, more) => `<svg data-n0="${n0}" data-more="${!!more}"></svg>` }).html;
+  check('extra space between rungs: each rung on its own, a 3-line gap', (sp.match(/<svg/g) || []).length === 3 && (sp.match(/rptgap/g) || []).length === 2 && sp.includes('height:3.6em') && sp.includes('data-more="true"'));
+  const xr = R.report(p, { routines: true }, { xref: true }, { ops: t => (t.match(/\((\w+)/g) || []).map(x => x.slice(1)).filter(x => /^[A-Z][a-z]/.test(x)) }).html;
+  check('embedded cross reference: the tags of each rung and the rungs that use them', xr.includes('Rung 0: cross reference') && xr.includes('<td>Zed</td><td>0</td>'));
+  check('the footer text is on each report, up to 128 characters', R.report(p, { ctl: true, tags: true }, { footer: 'F'.repeat(200) }, {}).html.split('F'.repeat(128) + '<').length === 3);
+  check('a routine scope limits the routines', R.report(p, { routines: true }, {}, {}, { routines: ['Other/X'] }).count === 0);
+}
+
+console.log('Wave 3 (A): the sample projects (Help > Vendor Sample Projects), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  eq('four samples', R.SAMPLES.map(x => x.name), ['Motor_Demo', 'Traffic_Light', 'Tank_Level', 'Conveyor_Sort']);
+  R.SAMPLES.forEach(x => { const p = x.make(), v = MTPS.verify(p); check(`${x.name}: verifies with no errors and no warnings`, v.errors.length === 0 && v.warnings.length === 0, JSON.stringify(v.errors.concat(v.warnings).slice(0, 2).map(e => e.text))); });
+  check('each make() gives a new copy', R.SAMPLES[0].make() !== R.SAMPLES[0].make());
+  const tl = R.SAMPLES[1].make(), c = run({ tags: tl.tags, ptags: tl.tasks[0].programs[0].tags, rungs: tl.tasks[0].programs[0].routines[0].rungs.map(r => r.t), routines: [{ name: 'Cycle', rungs: tl.tasks[0].programs[0].routines[1].rungs.map(r => r.t) }] });
+  c.setInputs(1, 0b01); c.scan(10);
+  check('Traffic_Light runs: at 0 s north-south green and east-west red', c.read('NS_Green') === 1 && c.read('EW_Red') === 1 && c.read('NS_Red') === 0);
+  scans(c, 900);
+  check('… at 9 s north-south amber, east-west still red', c.read('NS_Amber') === 1 && c.read('NS_Green') === 0 && c.read('EW_Red') === 1);
+  scans(c, 200);
+  check('… at 11 s north-south red, east-west green', c.read('NS_Red') === 1 && c.read('EW_Green') === 1);
+  c.setInputs(1, 0b11); c.scan(10);
+  check('… the lamp test turns every lamp on', ['NS_Red', 'NS_Amber', 'NS_Green', 'EW_Red', 'EW_Amber', 'EW_Green'].every(t => c.read(t) === 1));
+}
+
+console.log('Wave 3 (A): the release notes (Help > Release Notes), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const fs = require('fs'), path = require('path');
+  const ver = (fs.readFileSync(path.join(__dirname, '../mtps/js/app.js'), 'utf8').match(/const VERSION = '([^']+)'/) || [])[1];
+  const N = R.NOTES || [];
+  check('the newest release note is this version', N.length > 0 && N[0].v === ver, `${N[0] && N[0].v} / ${ver}`);
+  check('every release note has a version, a date, a channel and notes', N.every(n => /^\d+\.\d+\.\d+(-beta\.\d+)?$/.test(n.v) && /^\d{4}-\d\d-\d\d$/.test(n.d) && (n.ch === 'Stable' || n.ch === 'Beta') && n.n.length > 0));
+  check('the release notes are newest first, each version once', N.every((n, i) => !i || N[i - 1].d >= n.d) && new Set(N.map(n => n.v)).size === N.length);
+  const log = fs.readFileSync(path.join(__dirname, '../CHANGELOG.md'), 'utf8');
+  check('every version in the release notes is in the changelog', N.every(n => log.includes(`MT PLC Studio ${n.v}`)), N.filter(n => !log.includes(`MT PLC Studio ${n.v}`)).map(n => n.v).join(', '));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

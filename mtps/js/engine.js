@@ -119,6 +119,12 @@
         add(d.name, strMembers(n), 'string');
       } else add(d.name, d.members || [], 'user');
     }
+    // the data type of each Add-On Instruction (1756-PM010, Data Type): EnableIn, EnableOut, the Input and Output
+    // parameters in their order, then the local tags as hidden members
+    for (const a of (project && project.aois) || []) {
+      if (!validName(a.name) || t.has(U(a.name)) || ATOMIC[U(a.name)]) continue;
+      add(a.name, aoiMembers(a), 'addon');
+    }
     for (const d of t.values()) {
       d.members = d.members.filter(m => {
         const c = canon(t, m.type);
@@ -131,7 +137,7 @@
     }
     // a user type that leads back to itself could never be built
     for (const d of t.values()) {
-      if (d.kind !== 'user') continue;
+      if (d.kind !== 'user' && d.kind !== 'addon') continue;
       const seen = new Set(), todo = [d];
       let loop = false;
       while (todo.length) for (const m of todo.pop().members) {
@@ -152,7 +158,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def !== undefined ? conform(types, m.type, m.dim, m.def) : m.init != null && !m.dim ? m.init : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.def: an Add-On parameter's default; m.init: a default (FBD EnableIn)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +166,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name] !== undefined ? s[m.name] : m.def !== undefined ? m.def : m.init);
     return o;
   }
 
@@ -353,6 +359,7 @@
 
   /* text → Ref, or the reason it is not one (program tags hide controller tags; aliases are followed) */
   function ref(M, prog, text, depth = 0) {
+    if (/^\s*\\/.test(text)) return directRef(M, String(text).trim(), depth);
     const p = parsePath(text);
     if (!p) return `Undefined tag '${text}'`;
     const bu = U(p.base);
@@ -362,7 +369,8 @@
       return new Ref({ root: M.S, key: f, steps: [], type: 'BOOL', dim: 0, bit: -1, ro: f !== 'V' && f !== 'MINOR', norm: 'S:' + f });
     }
     let scope = prog, rec = prog && prog.tags.get(bu);
-    if (!rec) { scope = null; rec = M.tags.get(bu); }
+    // the logic of an Add-On Instruction sees only its parameters and local tags (1756-PM010, Encapsulation)
+    if (!rec) { if (prog && prog.noCtl) return `Undefined tag '${text}'`; scope = null; rec = M.tags.get(bu); }
     if (!rec) return `Undefined tag '${text}'`;
     if (rec.alias) {
       if (depth > 8) return `Alias '${rec.name}' points back to itself`;
@@ -405,7 +413,7 @@
         continue;
       }
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
-      if (!mm) return `Undefined tag '${text}'`;
+      if (!mm || mm.hidden) return `Undefined tag '${text}'`;
       if (mm.of) { steps.push({ m: mm.of }); bit = mm.bit; ptype = 'DINT'; type = 'BOOL'; if (norm) norm += '.' + mm.name; continue; }
       steps.push({ m: mm.name });
       type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
@@ -414,8 +422,27 @@
     const io = rec.io || null;
     const force = io && steps.length === 1 && steps[0].m === 'Data' && bit >= 0 ? `${io.slot}:${io.dir}:${bit}` : null;
     // a constant tag (and its members, elements, bits and aliases) cannot be written by logic (help: Constant)
-    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
+    const out = new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
+    return scope && scope.bind ? scope.bind(out, rec) : out;
+  }
+
+  /* direct access (1756-PM021, Directly accessing program parameters): \Program.Parameter reads or writes an Input,
+     Output or Public parameter of another program. Input and Public are the parameter itself (real time); an Output is
+     its published copy, updated when its program completes. Local tags and InOut parameters cannot be reached. */
+  function directRef(M, s, depth) {
+    const m = /^\\([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(.*)$/.exec(s);
+    if (!m) return `Undefined tag '${s}'`;
+    const P2 = (M.programs || []).find(x => U(x.name) === U(m[1]));
+    if (!P2) return `Undefined program '${m[1]}' in '${s}'`;
+    const rec = P2.tags.get(U(m[2]));
+    if (!rec) return `Undefined tag '${s}'`;
+    if (!rec.usage || rec.usage === 'InOut') return `'${m[2]}' is ${rec.usage ? 'an InOut parameter' : 'a local tag'} of program '${P2.name}': direct access reaches only Input, Output and Public parameters`;
+    const r = ref(M, P2, m[2] + m[3], depth + 1);
+    if (typeof r === 'string') return r;
+    // an Output is read through its published copy (another data item than the parameter itself)
+    if (rec.usage === 'Output' && !rec.alias) { r.root = P2.pub; if (r.norm) r.norm = '\\' + r.norm; }
+    return r;
   }
 
   /* ---------- CPT / CMP expressions ---------- */
@@ -434,7 +461,7 @@
       let m;
       if (/^\s/.test(rest)) { i++; continue; }
       if ((m = /^(?:(?:2|8|16)#[0-9A-Fa-f_]+|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+)/.exec(rest))) toks.push({ k: 'num', s: m[0] });
-      else if ((m = /^[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z0-9_]+)*(?:\.[A-Za-z0-9_]+|\[[^\]]*\])*/.exec(rest))) {
+      else if ((m = /^\\?[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z0-9_]+)*(?:\.[A-Za-z0-9_]+|\[[^\]]*\])*/.exec(rest))) {
         const u = U(m[0]);
         toks.push(['MOD', 'AND', 'OR', 'XOR', 'NOT'].includes(u) ? { k: 'op', s: u } : { k: 'name', s: m[0] });
       } else if ((m = /^(\*\*|<>|<=|>=|[-+*/()=<>])/.exec(rest))) toks.push({ k: 'op', s: m[1] });
@@ -641,12 +668,13 @@
         return kind === 'elemw' ? writable() : r;
       }
     }
-    if (XKIND[kind]) return XKIND[kind](r, writable, one);
+    if (XKIND[kind]) return XKIND[kind](r, writable, one, M);
     return r;
   }
 
   /* checks one instruction and compiles its operands; E / W report an error / warning on it */
   function compileElem(M, P, R, e, n, first, E, W, jumps) {
+    if (M.aois && M.aois.has(e.t)) return aoiElem(M, P, e, E);
     const d = INSTR[e.t];
     if (!d) { E(`Unknown instruction '${e.t}'`); return null; }
     const need = d.args.filter(a => !a.endsWith('?')).length;
@@ -716,6 +744,9 @@
     return ok ? { t: e.t, a: e.a, x, v: false } : null;
   }
 
+  // the SFC Execution settings of the controller, with the defaults (Controller Properties; the names of sfc.js)
+  const sfcOf = ctl => (MTPS.SFC ? MTPS.SFC.cfgOf(ctl && ctl.sfc) : null);
+
   /* ---------- Build (verify and compile) ---------- */
   /* the whole project → { errors, warnings, lines, model }; filter { program, routine } verifies one routine */
   function build(project, filter) {
@@ -730,6 +761,8 @@
     if (!validName(ctl.name)) ctlErr(`Invalid controller name '${ctl.name || ''}'`);
     const types = typeTable(pj, ctlErr);
     const M = { name: ctl.name || '', types, tags: new Map(), vals: {}, S: { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 }, mods: new Map(), programs: [], otes: new Map() };
+    M.sfcCfg = ctl.sfc || null;   // Controller Properties > SFC Execution (sfc.js)
+    aoiBuild(M, pj, filter, out, ctlErr);
 
     const rack = pj.rack || {};
     const okSize = n => RACKS.includes(n) || OLDRACKS.includes(n);
@@ -762,20 +795,29 @@
       for (const t of list || []) {
         if (!validName(t.name)) { ctlErr(`Invalid tag name '${t.name}'${where}`); continue; }
         if (map.has(U(t.name))) { ctlErr(`Tag '${t.name}' is defined more than once${where}`); continue; }
-        if (t.alias != null && t.alias !== '') { map.set(U(t.name), { name: t.name, alias: String(t.alias).trim(), desc: t.desc || '' }); continue; }
+        const usage = P && PUSAGE.includes(t.usage) ? t.usage : null, conn = usage && Array.isArray(t.conn) ? t.conn.map(x => String(x).trim()).filter(Boolean) : [];
+        if (t.usage && !usage && U(t.usage) !== 'LOCAL') ctlErr(`Tag '${t.name}'${where}: unknown usage '${t.usage}' (Local, Input, Output, InOut or Public)`);
+        if (usage === 'InOut') {
+          if (conn.length !== 1) { ctlErr(`InOut parameter '${t.name}'${where} needs exactly one connection (it has ${conn.length})`); continue; }
+          map.set(U(t.name), { name: t.name, alias: conn[0], usage, conn, declType: t.type, constant: !!t.constant, desc: t.desc || '' }); continue;
+        }
+        if (t.alias != null && t.alias !== '') { map.set(U(t.name), { name: t.name, alias: String(t.alias).trim(), usage, conn, desc: t.desc || '' }); continue; }
         const type = canon(types, t.type);
         if (!type) { ctlErr(`Tag '${t.name}': Undefined data type '${t.type}'`); continue; }
         const dims = dimsOf(Array.isArray(t.dim) ? t.dim : t.dim > 0 ? Math.floor(t.dim) : 0);
         if (!dims) { ctlErr(`Tag '${t.name}': invalid array dimensions [${String(t.dim)}] (1 to 3 dimensions, each 1 or more)`); continue; }
         const dim = dims.reduce((x, y) => x * y, dims.length ? 1 : 0);
-        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '' });
+        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '', usage, conn, msg: t.msg || null });
         vals[t.name] = conform(types, type, dim, t.value);
       }
     };
     addTags(pj.tags, null);
 
     // the tasks, for GSV / SSV (Task object); each program knows its task
-    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit }));
+    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit,
+      // periodic: Period (ms) and Priority; event: Trigger, Tag, Priority and the timeout (1756-PM005, Create a Task)
+      period: +t.period > 0 ? +t.period : 10, pri: t.priority == null ? 10 : +t.priority, trigger: t.trigger || 'event', tag: t.tag || '', timeout: +t.timeout > 0 ? +t.timeout : 0, tmoOn: !!t.timeoutOn }));
+    taskChecks(M, ctlErr);
     const progNames = new Set();
     let tk = 0;
     for (const task of pj.tasks || []) for (const pg of (tk++, task.programs || [])) {
@@ -785,12 +827,14 @@
       const hd = task.type === 'fault' || task.type === 'powerup' ? task.type : null;
       // the task's watchdog (Task Properties > Configuration: 1 to 2,000,000 ms, 500 by default; 1756-PM005)
       const wd = Math.floor(+task.watchdog) >= 1 ? Math.min(2000000, Math.floor(+task.watchdog)) : 500;
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd };
+      // off: a program in Unscheduled Programs (no task schedules it) is verified but never runs (help: Create a program)
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd, off: task.type === 'unscheduled' };
       if (hd) { const k = hd === 'fault' ? 'cfh' : 'puh'; if (M[k]) ctlErr(`Only one program can be in the ${hd === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler'} ('${M[k].name}' is)`); else M[k] = P; }
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
-        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map() });
+        // a Function Block Diagram routine (Type FBD) keeps its sheets; fbd.js compiles and runs it
+        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null, sfc: r.type === 'SFC' ? r.sfc || {} : null, fbd: r.type === 'FBD' ? r : null });
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
@@ -801,6 +845,7 @@
       P.task = M.tasks[pj.tasks.indexOf(task)];
     }
 
+    M.tasks.forEach(t => { t.progs = M.programs.filter(P => P.task === t); });
     // aliases point at a tag, a member or a bit that exists; they take its data type
     const aliases = (map, P) => {
       for (const rec of map.values()) {
@@ -813,6 +858,8 @@
     };
     aliases(M.tags, null);
     M.programs.forEach(P => aliases(P.tags, P));
+    pcBuild(pj, M, ctlErr, size, cslot);
+    params(M, types, ctlErr);
 
     for (const P of M.programs) for (const R of P.routines.values()) {
       const want = !filter || ((!filter.program || U(filter.program) === U(P.name)) && (!filter.routine || U(filter.routine) === U(R.name)));
@@ -824,6 +871,29 @@
         out.lines.push(text);
       };
       const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      // a Structured Text routine (st.js): errors and warnings name the line and column of the text
+      if (R.st != null) {
+        const say = (kind, ln, col, msg) => {
+          if (!want) return;
+          const text = `${kind}: Line ${ln}${col ? ', Column ' + col : ''}: ${dot(msg)}`;
+          (kind === 'Error' ? out.errors : out.warnings).push({ program: P.name, routine: R.name, line: ln, col, msg: dot(msg), text });
+          out.lines.push(text);
+        };
+        if (MTPS.ST) R.stc = MTPS.ST.compile(M, P, R, say); else say('Error', 1, 0, 'Structured Text is not available');
+        continue;
+      }
+      // a Sequential Function Chart routine (sfc.js): its elements are verified and compiled there, not as rungs
+      if (R.sfc) {
+        const sr = (list, kind) => (el, msg) => { if (want) { const text = `${kind}: ${el ? el + ': ' : ''}${dot(msg)}`; list.push({ program: P.name, routine: R.name, el, msg: dot(msg), text }); out.lines.push(text); } };
+        if (MTPS.SFC) MTPS.SFC.compile(M, P, R, sr(out.errors, 'Error'), sr(out.warnings, 'Warning')); else sr(out.errors, 'Error')(null, 'Sequential Function Chart routines need sfc.js');
+        continue;
+      }
+      if (R.fbd) {
+        // FBD errors name the sheet and the element: "Error: Sheet 1, ADD_01: ..."
+        const fr = (list, kind) => (sh, id, what, msg) => { if (!want) return; const text = `${kind}: Sheet ${sh + 1}${what ? ', ' + what : ''}: ${dot(msg)}`; list.push({ program: P.name, routine: R.name, sheet: sh, el: id, msg: dot(msg), text }); out.lines.push(text); };
+        if (MTPS.FBD) MTPS.FBD.compile(M, P, R, fr(out.errors, 'Error'), fr(out.warnings, 'Warning')); else fr(out.errors, 'Error')(0, null, '', 'Function Block Diagram routines are not available');
+        continue;
+      }
       R.src.forEach((src, n) => {
         const text = String(src && (src.t != null ? src.t : src.text) || '');
         const rung = { n, text, c: (src && src.c) || '', elems: [] };
@@ -846,6 +916,58 @@
     out.lines.push(`Complete - ${out.errors.length} error(s), ${out.warnings.length} warning(s)`);
     out.model = M;
     return out;
+  }
+  /* produced and consumed tags (1756-PM011, LGEM5K-GR016M chapter 10). The project keeps the producing controllers of
+     its I/O configuration in rack.ctls [{ slot, name, desc }]; a tag has prod { max } (Produced: Max Consumers 1 to
+     255) or cons { producer, remote, rpi } (Consumed: Producer, Remote Data, RPI 0.196 to 536870.911 ms for
+     ControlLogix). Both are controller scope only; a standard produced / consumed tag is at most 500 bytes, and a
+     produced tag of less than 32 bits does not verify (v37 help, Tag Editor columns). */
+  const PCRPI = [0.196, 536870.911];
+  const PCTEXT = {
+    '16#0204': 'Connection Request Error: Connection request timed out. The producing controller does not answer: no controller in that slot, or it is turned off.',
+    '16#0117': 'Connection Request Error: Invalid produced or consumed application path. The producing controller has no produced tag of the Remote Data name (no project, no such tag, or the tag is not produced).',
+    '16#0109': 'Connection Request Error: Invalid connection size. The consumed tag does not have the data type, the array size and the layout of the produced tag.',
+    '16#011A': 'Connection Request Error: Target object out of connections. The produced tag already has its Max Consumers.',
+  };
+  // the layout of a data type, to match a consumed tag with its produced tag ("including user-defined data type layout")
+  const pcSig = (M, ty) => { const d = M.types.get(U(ty)); return d ? JSON.stringify(d.members.map(m => [U(m.name), U(m.type), m.dim || 0])) : U(ty); };
+  function pcBuild(pj, M, ctlErr, size, cslot) {
+    M.peers = new Map(); M.prods = new Map(); M.cons = [];
+    const rack = pj.rack || {}, names = new Set();
+    for (const c of rack.ctls || []) {
+      if (!validName(c.name) || names.has(U(c.name))) { ctlErr(`Invalid or repeated controller name '${c.name}' in the I/O configuration`); continue; }
+      if (!(Number.isInteger(c.slot) && c.slot >= 0 && c.slot < size) || c.slot === cslot || M.mods.has(c.slot) || M.peers.has(c.slot)) { ctlErr(`Controller '${c.name}': slot ${c.slot} is not a free slot of the ${size}-slot rack`); continue; }
+      names.add(U(c.name)); M.peers.set(c.slot, { slot: c.slot, name: c.name });
+    }
+    for (const task of pj.tasks || []) for (const pg of task.programs || []) for (const t of pg.tags || []) if (t.prod || t.cons) ctlErr(`Tag '${t.name}' in program '${pg.name}': a ${t.prod ? 'produced' : 'consumed'} tag must be a controller tag`);
+    const bytes = rec => { const l = layout(M.types, rec.type, new Map()).size; return U(rec.type) === 'BOOL' && rec.dim ? Math.ceil(rec.dim / 32) * 4 : l * Math.max(1, rec.dim || 0); };
+    for (const t of pj.tags || []) {
+      if (!t.prod && !t.cons) continue;
+      const rec = M.tags.get(U(t.name));
+      if (!rec || rec.name !== t.name) continue;
+      const what = t.prod ? 'produced' : 'consumed';
+      if (rec.alias) { ctlErr(`Tag '${t.name}': an alias tag cannot be ${what}`); continue; }
+      const n = bytes(rec);
+      if (n > 500) { ctlErr(`Tag '${t.name}': a ${what} tag is at most 500 bytes (${n} bytes)`); continue; }
+      if (t.prod) {
+        const max = Number(t.prod.max == null ? 1 : t.prod.max);
+        if (!(Number.isInteger(max) && max >= 1 && max <= 255)) { ctlErr(`Tag '${t.name}': Max Consumers must be 1 to 255`); continue; }
+        if (n < 4) { ctlErr(`Tag '${t.name}': the tag is produced, but the data type is less than 32 bits in size`); continue; }
+        rec.prod = { max }; rec.bytes = n; rec.sig = pcSig(M, rec.type); M.prods.set(U(t.name), rec);
+        continue;
+      }
+      const c = t.cons, peer = [...M.peers.values()].find(x => U(x.name) === U(c.producer || ''));
+      if (!peer) { ctlErr(`Tag '${t.name}': the producer '${c.producer || ''}' is not a controller in the I/O configuration`); continue; }
+      if (!validName(c.remote)) { ctlErr(`Tag '${t.name}': Remote Data '${c.remote || ''}' is not a tag name`); continue; }
+      const rpi = c.rpi == null ? 20 : +c.rpi;
+      if (!(rpi >= PCRPI[0] && rpi <= PCRPI[1])) { ctlErr(`Tag '${t.name}': RPI ${c.rpi} ms is not in the range ${PCRPI[0]} to ${PCRPI[1]} ms`); continue; }
+      rec.cons = { producer: peer.name, slot: peer.slot, remote: c.remote, rpi };
+      M.cons.push({ name: rec.name, u: U(rec.name), type: rec.type, dim: rec.dim, size: n, sig: pcSig(M, rec.type), slot: peer.slot, remote: c.remote, rpi });
+    }
+    // Map PLC/SLC Messages (1756-RM094, Map Tags): a file number (not 0, 1, 2) to a controller array of INT, DINT or REAL
+    const pm = pj.plcMap || {}, arr = (n, ok) => { const r = M.tags.get(U(n || '')); return !!r && !r.alias && r.dim > 0 && (!ok || ok.includes(U(r.type))); };
+    for (const x of pm.files || []) if (!(Number.isInteger(x.file) && x.file >= 3 && x.file <= 999) || !arr(x.tag, ['INT', 'DINT', 'REAL'])) ctlErr(`PLC/SLC mapping: file ${x.file} to '${x.tag}': map files 3 to 999 to a controller array tag of INT, DINT or REAL`);
+    if (pm.plc2 && !arr(pm.plc2)) ctlErr(`PLC/SLC mapping: PLC 2 Mapping '${pm.plc2}' is not a controller array tag`);
   }
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {
@@ -1181,7 +1303,13 @@
       DisableUpdateOutputs: ['DINT', 1, false, (c, t) => [t.noOutputs ? 1 : 0]], InhibitTask: ['DINT', 1, true, (c, t) => [t.inhibit ? 1 : 0], (c, t, a) => { t.inhibit = !!a[0]; c.M.programs.forEach(P => { if (P.task === t) { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; } }); }],
       Instance: ['DINT', 1, false, (c, t) => [t.k]], LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
       OverlapCount: ['DINT', 1, true, keep('overlap', 0), store1('overlap')], StartTime: ['DINT', 2, true, (c, t) => lohi(t.start || 0), (c, t, a) => { t.start = fromLohi(a); }],
-      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }] } },
+      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }],
+      // Wave 3 B (1756-RM018A, TASK object): the period (an event task: its timeout), the priority, the intervals in µs
+      Rate: ['DINT', 1, true, (c, t) => [Math.round((t.type === 'periodic' ? t.period : t.type === 'event' ? t.timeout : 0) * 1000)], (c, t, a) => { if (!(a[0] >= 100 && a[0] <= 2e9)) return; if (t.type === 'periodic') t.period = a[0] / 1000; else if (t.type === 'event') t.timeout = a[0] / 1000; }],
+      EnableTimeOut: ['DINT', 1, true, (c, t) => [t.tmoOn ? 1 : 0], (c, t, a) => { if (t.type === 'event') { t.tmoOn = !!a[0]; t.tmoAt = c.clock + t.timeout; } }],
+      Priority: ['INT', 1, true, (c, t) => [t.type === 'periodic' || t.type === 'event' ? t.pri : 0], (c, t, a) => { if (a[0] >= 1 && a[0] <= 15 && t.type !== 'continuous') t.pri = a[0]; }],
+      MaxInterval: ['DINT', 2, true, (c, t) => lohi(Math.round((t.ivMax || 0) * 1000)), (c, t, a) => { t.ivMax = fromLohi(a) / 1000; }],
+      MinInterval: ['DINT', 2, true, (c, t) => lohi(Math.round((t.ivMin || 0) * 1000)), (c, t, a) => { t.ivMin = fromLohi(a) / 1000; }] } },
     Program: { inst: 'program', attrs: {
       DisableFlag: ['SINT', 1, true, (c, P) => [P.inhibit ? 1 : 0], (c, P, a) => { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; }],
       LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
@@ -1235,8 +1363,104 @@
   XEL.SSV = XEL.GSV;
   // the program being scanned (THIS, its fault records) and its scan time in µs; its task's StartTime
   const msNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); return msNow(); }
-  function progEnd(P, p0) { P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); if (P.pin) parIn(P); return msNow(); }
+  function progEnd(P, p0) { if (P.pout) parOut(P); P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+
+  /* ---------- program parameters (1756-PM021, Connecting program parameters) ----------
+     Input: passed by value, copied from its one source before each scan of its program. Output: passed by value, its
+     published copy and the tags it connects to are written when its program completes (any number of connections).
+     InOut: a reference to its one connection, like an alias. Public: the data itself, read and written in real time by
+     the programs connected to it; it cannot connect to a controller tag. A connection joins two endpoints of the same
+     data type; two parameters of the same usage do not connect. */
+  const PUSAGE = ['Input', 'Output', 'InOut', 'Public'];
+  // a value copied in place (a structure or an array member by member), so references into it stay good
+  function into(o, k, v) {
+    if (v && typeof v === 'object' && o[k] && typeof o[k] === 'object') { for (const j of Object.keys(v)) into(o[k], j, v[j]); return; }
+    o[k] = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
+  }
+  function pcopy(a, b) {
+    if (a.bit >= 0 || b.bit >= 0 || (!a.dim && ATOMIC[a.type])) { b.set(a.get()); return; }
+    a.at(); const v = PP[PK]; b.at(); into(PP, PK, v);
+  }
+  function parIn(P) { for (const [a, b] of P.pin) pcopy(a, b); }
+  function parOut(P) { for (const k of P.pubKeys) into(P.pub, k, P.vals[k]); for (const [a, b] of P.pout) pcopy(a, b); }
+  function params(M, types, err) {
+    const id = e => (e.P ? `\\${e.P.name}.${e.rec.name}` : e.text);
+    const sameType = (a, b) => U(a.type) === U(b.type) && (a.dim || 0) === (b.dim || 0);
+    // an endpoint: { P, rec } (a parameter) or { text, r } (a controller tag)
+    const endOf = s => {
+      if (s[0] === '\\') {
+        const m = /^\\([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(s), P = m && M.programs.find(x => U(x.name) === U(m[1])), rec = P && P.tags.get(U(m[2]));
+        if (!rec) return `'${s}' is not a parameter of a program in the project`;
+        if (!rec.usage) return `'${s}' is a local tag: only a parameter can be connected`;
+        return { P, rec };
+      }
+      const r = ref(M, null, s);
+      return typeof r === 'string' ? `'${s}': ${r}` : { text: s, r };
+    };
+    const edges = new Map();
+    for (const P of M.programs) {
+      P.pub = {}; P.pin = []; P.pout = []; P.pubKeys = [];
+      for (const rec of P.tags.values()) if (rec.usage === 'Output' && !rec.alias) { P.pubKeys.push(rec.name); P.pub[rec.name] = JSON.parse(JSON.stringify(P.vals[rec.name])); }
+    }
+    for (const P of M.programs) for (const rec of P.tags.values()) {
+      if (!rec.usage) continue;
+      const me = { P, rec }, where = `Parameter '${rec.name}' of program '${P.name}'`;
+      for (const c of rec.conn || []) {
+        const o = endOf(c);
+        if (typeof o === 'string') { err(`${where}: connection ${o}`); continue; }
+        const ou = o.P ? o.rec.usage : 'controller';
+        if (o.P === P) { err(`${where}: a parameter cannot connect to its own program ('${c}')`); continue; }
+        if (ou === rec.usage) { err(`${where}: an ${rec.usage} parameter cannot connect to another ${rec.usage} parameter ('${c}')`); continue; }
+        if (rec.usage === 'InOut') {
+          if (ou === 'Input') err(`${where}: an InOut parameter cannot connect to an Input parameter ('${c}')`);
+          else if (ou === 'Output' && !rec.constant) err(`${where}: an InOut parameter connects to an Output parameter only when it is Constant ('${c}')`);
+          continue;
+        }
+        if (ou === 'InOut') continue;   // checked on the InOut side
+        if (rec.usage === 'Public' && ou === 'controller') { err(`${where}: a Public parameter cannot connect to a controller tag ('${c}'); use an alias`); continue; }
+        // the direction: the Input is the destination; an Output is the source
+        const [src, dst] = rec.usage === 'Input' || ou === 'Output' ? [o, me] : [me, o];
+        const k = id(src) + '>' + id(dst);
+        if (!edges.has(k)) edges.set(k, { src, dst, where, c });
+      }
+    }
+    const fanIn = new Map();
+    for (const { src, dst, where, c } of edges.values()) {
+      const rs = src.P ? ref(M, null, id(src)) : src.r;
+      const rd = dst.P ? ref(M, dst.P, dst.rec.name) : dst.r;
+      if (typeof rs === 'string' || typeof rd === 'string') { err(`${where}: connection '${c}': ${typeof rs === 'string' ? rs : rd}`); continue; }
+      if (!sameType(rs, rd)) { err(`${where}: connection '${c}': the data types do not match (${rs.type}${rs.dim ? `[${rs.dim}]` : ''} and ${rd.type}${rd.dim ? `[${rd.dim}]` : ''})`); continue; }
+      if (dst.P && dst.rec.usage === 'Input') {
+        const n = (fanIn.get(id(dst)) || 0) + 1; fanIn.set(id(dst), n);
+        if (n > 1) { err(`Input parameter '${dst.rec.name}' of program '${dst.P.name}' has more than one source connection (an Input parameter takes one)`); continue; }
+        dst.P.pin.push([rs, rd]);
+      } else if (src.P) src.P.pout.push([ref(M, src.P, src.rec.name), rd]);   // an Output writes a controller tag or a Public parameter
+    }
+    // an InOut parameter takes the data type of its connection
+    for (const P of M.programs) for (const rec of P.tags.values()) if (rec.usage === 'InOut' && rec.type && rec.declType && U(canon(types, rec.declType) || '') !== U(rec.type)) err(`InOut parameter '${rec.name}' of program '${P.name}': its data type ${rec.declType} does not match its connection '${rec.alias}' (${rec.type})`);
+    for (const P of M.programs) { if (!P.pin.length) P.pin = null; if (!P.pout.length && !P.pubKeys.length) P.pout = null; }
+  }
+
+  /* ---------- UID, UIE, EVENT (1756-RM018A chapter 11, Program Control) and IOT (chapter 4, Input/Output) ----------
+     UID stops tasks of a higher priority from interrupting this one (a nesting counter: each UID adds one, each UIE takes
+     one away; at 0 the task can be interrupted again); fault routines still run. EVENT triggers one run of an event task
+     (any trigger type); a task that is not an event task is not run; a trigger while the task runs or waits counts an
+     overlap. IOT sends the output data of an I/O module at once: the outputs of this controller are always current,
+     so it counts the update (the connection must be open). All four: N/A at prescan and on a false rung. */
+  Object.assign(OPN, { EVENT: ['Task'], IOT: ['Update Tag'] });
+  Object.assign(INSTR, {
+    UID: I('box', 'Program Control', 'User Interrupt Disable', '', { out: true }),
+    UIE: I('box', 'Program Control', 'User Interrupt Enable', '', { out: true }),
+    EVENT: I('box', 'Program Control', 'Trigger Event Task', 'task', { out: true }),
+    IOT: I('box', 'Input/Output', 'Immediate Output', 'iot', { out: true }),
+  });
+  XNAME.task = (s, M) => (M.tasks || []).find(t => U(t.name) === U(s) && !['fault', 'powerup', 'unscheduled'].includes(t.type)) || `Undefined task '${s}'`;
+  XKIND.iot = r => (r.io && r.io.dir === 'O' && !r.steps.length && r.bit < 0 ? r : 'Update Tag must be the output tag of an I/O module (e.g. Local:2:O)');
+  XEL.UID = function (e, x, p) { if (p) this.uid = (this.uid | 0) + 1; e.v = p; return p; };
+  XEL.UIE = function (e, x, p) { if (p && this.uid > 0) this.uid--; e.v = p; return p; };
+  XEL.EVENT = function (e, x, p) { if (p) this.trigger(x[0], 1); e.v = p; return p; };
+  XEL.IOT = function (e, x, p) { if (p && !this.pulled.has(x[0].io.slot)) this.iots = (this.iots || 0) + 1; e.v = p; return p; };
 
   /* ---------- PID (RM018A chapter 13, Special): the PID structure; .EN … .PVHA are bits of .CTL (bit 31 down to 7) ---------- */
   const PIDBITS = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
@@ -1322,6 +1546,187 @@
     e.v = true; return true;
   };
 
+  /* ---------- FBD / ST timers and counter (RM018A chapter 3: TONR, TOFR, RTOR, CTUD; not in ladder) ----------
+     FBD_TIMER: inputs EnableIn (default set), TimerEnable, PRE (ms, 0 or more), Reset; outputs EnableOut, ACC, EN, TT,
+     DN, Status (.0 InstructFault, .1 PresetInv). FBD_COUNTER: EnableIn, CUEnable, CDEnable, PRE, Reset; EnableOut,
+     ACC, CU, CD, DN, OV, UN. A timer adds the time since it was last scanned (ACC = ACC + current_time - last_time);
+     the last time and the counter's CUEnable / CDEnable of the last scan are hidden, kept per structure here. */
+  PREDEF.FBD_TIMER = [{ name: 'EnableIn', type: 'BOOL', init: 1 }, ...members('TimerEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT EN:BOOL TT:BOOL DN:BOOL Status:DINT'),
+    { name: 'InstructFault', type: 'BOOL', of: 'Status', bit: 0 }, { name: 'PresetInv', type: 'BOOL', of: 'Status', bit: 1 }];
+  PREDEF.FBD_COUNTER = [{ name: 'EnableIn', type: 'BOOL', init: 1 }, ...members('CUEnable:BOOL CDEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL')];
+  const FBH = new WeakMap(), fbh = s => FBH.get(s) || (FBH.set(s, {}), FBH.get(s));
+  /* one execution with EnableIn set (ST always executes so): c is the controller (c.clock, the time in ms), s the
+     structure. A negative PRE sets PresetInv and InstructFault and the timer does not run. */
+  function fbdTimer(t, c, s) {
+    const h = fbh(s), now = c.clock;
+    s.EnableIn = 1; s.EnableOut = 1;
+    if (s.PRE < 0) { s.Status |= 3; return; }
+    s.Status &= ~3;
+    const step = () => { if (h.last != null) s.ACC = Math.min(s.PRE, s.ACC + Math.max(0, now - h.last)); h.last = now; };
+    if (t === 'TOFR') {
+      // Reset: EN, TT and DN cleared and ACC = PRE (not as a RES of a TOF); TimerEnable cleared starts the off delay
+      if (s.Reset) { s.EN = s.TT = s.DN = 0; s.ACC = s.PRE; h.last = null; return; }
+      if (s.TimerEnable) { s.EN = 1; s.DN = 1; s.TT = 0; s.ACC = 0; h.last = null; return; }
+      if (s.EN) { s.EN = 0; h.last = now; } else if (s.DN) step();
+      if (s.DN && s.ACC >= s.PRE) s.DN = 0;
+      s.TT = s.DN; return;
+    }
+    // TONR, RTOR: Reset clears EN, TT, DN and ACC; with TimerEnable still set the timer starts again when Reset clears
+    if (s.Reset) { s.EN = s.TT = s.DN = 0; s.ACC = 0; h.last = null; return; }
+    if (!s.TimerEnable) {
+      s.EN = 0; s.TT = 0; h.last = null;
+      if (t === 'TONR') { s.DN = 0; s.ACC = 0; } else s.DN = s.ACC >= s.PRE ? 1 : 0;   // RTOR keeps ACC
+      return;
+    }
+    if (!s.EN) { s.EN = 1; h.last = now; } else step();
+    s.DN = s.ACC >= s.PRE ? 1 : 0; s.TT = s.DN ? 0 : 1;
+  }
+  /* CTUD: a clear-to-set CUEnable counts up, then a clear-to-set CDEnable counts down (both in one scan is allowed);
+     past 2,147,483,647 ACC rolls over to -2,147,483,648 with OV set (UN the other way); DN while ACC >= PRE */
+  function fbdCounter(c, s) {
+    const h = fbh(s);
+    s.EnableIn = 1; s.EnableOut = 1;
+    if (h.cu == null) { h.cu = s.CUEnable; h.cd = s.CDEnable; }
+    if (s.Reset) { h.cu = h.cd = 0; s.CU = s.CD = s.DN = s.OV = s.UN = 0; s.ACC = 0; return; }
+    s.CU = s.CUEnable ? 1 : 0; s.CD = s.CDEnable ? 1 : 0;
+    if (s.CU && !h.cu) { if (s.ACC >= 2147483647) { s.ACC = -2147483648; s.OV = 1; } else s.ACC++; }
+    if (s.CD && !h.cd) { if (s.ACC <= -2147483648) { s.ACC = 2147483647; s.UN = 1; } else s.ACC--; }
+    h.cu = s.CU; h.cd = s.CD;
+    s.DN = s.ACC >= s.PRE ? 1 : 0;
+  }
+  /* prescan (and first scan): EnableIn and EnableOut cleared; TONR: EN, TT, DN and ACC cleared; TOFR, RTOR: EN, TT
+     and DN cleared, ACC kept; CTUD: a 0-to-1 change of CUEnable or CDEnable is needed before it counts */
+  function fbdPrescan(t, s) {
+    const h = fbh(s);
+    s.EnableIn = 0; s.EnableOut = 0;
+    if (t === 'CTUD') { h.cu = h.cd = 1; return; }
+    s.EN = s.TT = s.DN = 0; h.last = null;
+    if (t === 'TONR') s.ACC = 0;
+  }
+  const FBDI = { TONR: (c, s) => fbdTimer('TONR', c, s), TOFR: (c, s) => fbdTimer('TOFR', c, s), RTOR: (c, s) => fbdTimer('RTOR', c, s), CTUD: fbdCounter };
+  const FBDT = { TONR: 'FBD_TIMER', TOFR: 'FBD_TIMER', RTOR: 'FBD_TIMER', CTUD: 'FBD_COUNTER' };
+  const FBDN = { TONR: 'Timer On Delay with Reset', TOFR: 'Timer Off Delay with Reset', RTOR: 'Retentive Timer On with Reset', CTUD: 'Count Up/Down' };
+  /* ---------- ASCII string and ASCII conversion instructions (1756-RM018A-EN-P chapters 17 and 18) ----------
+     Operands: str / strw a string tag (STRING or a string type of the project) to read / to write; Start and
+     Quantity are SINT, INT or DINT (immediate or tag); Result an integer tag. Every one executes while the rung is
+     true (nothing on a false rung or in prescan). Faults (type 4): 51 the LEN of a string is more than its DATA size
+     (also CONCAT: Source A + Source B longer than Dest), 52 the result does not fit in Dest, 53 a STOD / STOR number
+     beyond the limits of Dest, 56 the Start or Quantity is not valid. RM018A lists them under "Major/Minor Faults";
+     the app raises them as instruction faults (a fault routine can clear them), like 4/20. */
+  const isStrT = (M, t) => { const d = M.types.get(U(t)); return !!d && d.kind === 'string'; };
+  XKIND.str = (r, writable, one, M) => (one && r.bit < 0 && isStrT(M, r.type) ? r : 'Operand must be a string tag (STRING or a string type)');
+  XKIND.strw = (r, writable, one, M) => (one && r.bit < 0 && isStrT(M, r.type) ? writable() : 'Operand must be a string tag (STRING or a string type)');
+  XKIND.ntag = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) && r.type !== 'LREAL' ? r : BAD_TYPE);
+  XKIND.rtag = (r, writable, one) => (one && r.bit < 0 && r.type === 'REAL' ? r : BAD_TYPE);
+  const STRI = {
+    FIND: ['ASCII String', 'Find String', 'str str int idest', ['Source', 'Search', 'Start', 'Result']],
+    INSERT: ['ASCII String', 'Insert String', 'str str int strw', ['Source A', 'Source B', 'Start', 'Dest']],
+    MID: ['ASCII String', 'Middle String', 'str int int strw', ['Source', 'Quantity', 'Start', 'Dest']],
+    CONCAT: ['ASCII String', 'String Concatenate', 'str str strw', ['Source A', 'Source B', 'Dest']],
+    DELETE: ['ASCII String', 'String Delete', 'str int int strw', ['Source', 'Quantity', 'Start', 'Dest']],
+    DTOS: ['ASCII Conversion', 'DINT to String', 'ntag strw', ['Source', 'Dest']],
+    RTOS: ['ASCII Conversion', 'REAL to String', 'rtag strw', ['Source', 'Dest']],
+    STOD: ['ASCII Conversion', 'String to DINT', 'str idest', ['Source', 'Dest']],
+    STOR: ['ASCII Conversion', 'String to REAL', 'str rdest', ['Source', 'Dest']],
+    UPPER: ['ASCII Conversion', 'Upper Case', 'str strw', ['Source', 'Dest']],
+    LOWER: ['ASCII Conversion', 'Lower Case', 'str strw', ['Source', 'Dest']],
+  };
+  for (const k in STRI) { const [g, n, a, o] = STRI[k]; INSTR[k] = I('box', g, n, a, { out: true }); OPN[k] = o; }
+  // the characters of a string tag (codes 0-255); LEN past the DATA size is fault 4/51
+  const sGet = (r, t, lax) => {
+    const o = r.obj(), n = o.DATA.length;
+    if (!lax && (o.LEN > n || o.LEN < 0)) throw new Fault(4, 51, `${t}: the LEN value of the string tag is greater than the DATA size of the string tag`);
+    return o.DATA.slice(0, Math.max(0, Math.min(o.LEN, n))).map(c => c & 255);
+  };
+  // a result into a string tag: more characters than its DATA size is fault 4/52; the rest of DATA is cleared
+  const sPut = (r, codes, t, lax) => {
+    const o = r.obj(), n = o.DATA.length;
+    if (codes.length > n) { if (lax) codes = codes.slice(0, n); else throw new Fault(4, 52, `${t}: the output string is larger than the destination (${codes.length} characters, Dest holds ${n})`); }
+    for (let k = 0; k < n; k++) o.DATA[k] = k < codes.length ? (codes[k] << 24) >> 24 : 0;
+    o.LEN = codes.length;
+  };
+  const codesOf = s => [...String(s)].map(c => c.charCodeAt(0) & 255);
+  const bad56 = t => new Fault(4, 56, `${t}: the Start or Quantity value is invalid`);
+  // STOD / STOR: skip leading characters that are not numeric (a minus sign in front of a number counts), then the
+  // first group of digits (STOR: with its decimal point)
+  const numText = (c, real) => {
+    const s = String.fromCharCode(...c), m = (real ? /-?(?:\d+\.?\d*|\.\d+)/ : /-?\d+/).exec(s);
+    return m ? m[0] : '';
+  };
+  /* RTOS: the REAL as text. RM018A does not give the format; the app writes the shortest text that gives the REAL
+     back (up to 8 significant digits), in exponent form (1.2345678e+009) outside 1e-5 to 1e8 */
+  function realText(v) {
+    if (!isFinite(v)) return v !== v ? '1.#QNAN' : v > 0 ? '1.#INF' : '-1.#INF';
+    if (v === 0) return '0.0';
+    let p = 1, s;
+    for (; p <= 8; p++) { s = (+v.toPrecision(p)); if (Math.fround(s) === Math.fround(v)) break; }
+    const a = Math.abs(v);
+    if (a >= 1e8 || a < 1e-5) { const t = v.toExponential(Math.min(p, 8) - 1).split('e'), x = +t[1]; return t[0] + 'e' + (x < 0 ? '-' : '+') + String(Math.abs(x)).padStart(3, '0'); }
+    s = String(+v.toPrecision(Math.min(p, 8)));
+    return /[.e]/.test(s) ? s : s + '.0';
+  }
+  XEL.CONCAT = function (e, x, p) {
+    if (p) { const a = sGet(x[0], e.t), b = sGet(x[1], e.t), d = x[2].obj(); if (a.length + b.length > d.DATA.length) throw new Fault(4, 51, 'CONCAT: the sum length of Source A and Source B is greater than the DATA size of the Dest string tag'); sPut(x[2], a.concat(b), e.t); }
+    e.v = p; return p;
+  };
+  XEL.MID = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), q = Math.trunc(x[1].get()), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || !(q >= 1) || st + q > s.length + 1) throw bad56(e.t);
+      sPut(x[3], s.slice(st - 1, st - 1 + q), e.t);
+    }
+    e.v = p; return p;
+  };
+  XEL.FIND = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), f = sGet(x[1], e.t), st = Math.trunc(x[2].get());
+      if (!s.length || !(st >= 1 && st <= x[0].obj().DATA.length)) throw bad56(e.t);
+      const S = String.fromCharCode(...s), F = String.fromCharCode(...f), i = st > s.length ? -1 : S.indexOf(F, st - 1);
+      x[3].set(i < 0 ? 0 : i + 1); OV = false;
+    }
+    e.v = p; return p;
+  };
+  XEL.INSERT = function (e, x, p) {
+    if (p) {
+      const a = sGet(x[0], e.t), b = sGet(x[1], e.t), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || st > a.length + 1) throw bad56(e.t);
+      sPut(x[3], a.slice(0, st - 1).concat(b, a.slice(st - 1)), e.t);
+    }
+    e.v = p; return p;
+  };
+  XEL.DELETE = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), q = Math.trunc(x[1].get()), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || !(q >= 1) || st + q > s.length + 1) throw bad56(e.t);
+      sPut(x[3], s.slice(0, st - 1).concat(s.slice(st - 1 + q)), e.t);
+    }
+    e.v = p; return p;
+  };
+  // DTOS: a REAL Source is converted to a DINT first (rounded, as a move into a DINT)
+  XEL.DTOS = function (e, x, p) { if (p) { const v = x[0].get(); sPut(x[1], codesOf(String(isReal(x[0].type) ? store('DINT', v) : v)), e.t); OV = false; } e.v = p; return p; };
+  XEL.RTOS = function (e, x, p) { if (p) sPut(x[1], codesOf(realText(x[0].get())), e.t); e.v = p; return p; };
+  // STOD: Dest is cleared, then the number goes in (S:Z / S:N in ladder); a number beyond the type of Dest is 4/53
+  XEL.STOD = function (e, x, p) {
+    if (p) {
+      const t = numText(sGet(x[0], e.t), false), v = t ? +t : 0, h = HALF[x[1].type] || HALF.DINT;
+      x[1].set(0);
+      if (v >= h || v < -h) throw new Fault(4, 53, `STOD: the output number is beyond the limits of the destination data type (${x[1].type})`);
+      this.put(x[1], v);
+    }
+    e.v = p; return p;
+  };
+  XEL.STOR = function (e, x, p) {
+    if (p) {
+      const t = numText(sGet(x[0], e.t), true), v = t && t !== '-' ? +t : 0;
+      if (!isFinite(Math.fround(v))) throw new Fault(4, 53, 'STOR: the output number is beyond the limits of the destination data type (REAL)');
+      this.put(x[1], v);
+    }
+    e.v = p; return p;
+  };
+  // UPPER / LOWER: only the letters change ("None specific to this instruction": no string fault)
+  const caseOp = up => function (e, x, p) { if (p) sPut(x[1], sGet(x[0], e.t, true).map(c => (up ? (c >= 97 && c <= 122 ? c - 32 : c) : (c >= 65 && c <= 90 ? c + 32 : c))), e.t, true); e.v = p; return p; };
+  XEL.UPPER = caseOp(true); XEL.LOWER = caseOp(false);
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -1402,6 +1807,7 @@
     }
     majorFault(type, code, text) {
       faultRec(this, true, type, code);
+      this.sfcInit = true;   // after a major fault an SFC restarts at its initial step (1756-PM006)
       this.fault = { type, code, text, at: Date.now() };
       this.majors.unshift(this.fault);
       this.majors.length = Math.min(this.majors.length, 10);
@@ -1426,7 +1832,8 @@
     }
     /* Program → Run: OTE bits off, TON reset, one-shot storage set so a true input does not fire at start */
     prescan() {
-      this.first = true; this.held = false;
+      this.first = true; this.held = false; this.tFresh = true;
+      if (MTPS.SFC && this.M) MTPS.SFC.prescan(this);
       const walk = arr => {
         for (const e of arr) {
           if (!e) continue;
@@ -1455,7 +1862,8 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
-      for (const P of this.M.programs) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
+      this.pwalk = walk;   // the logic of an Add-On Instruction is prescanned through it (XPRE of the instruction)
+      for (const P of this.M.programs) if (!P.off) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.stc) R.stc.pre(this); if (R.fx) MTPS.FBD.prescan(this, R); }
     }
 
     /* ---------- project ---------- */
@@ -1526,6 +1934,7 @@
       Object.assign(r.model.S, this.S);
       // a program that was inhibited and is not any more gets S:FS on its next scan
       r.model.programs.forEach(P => { const o = this.M.programs.find(x => U(x.name) === U(P.name)); if (o && o.inhibit && !P.inhibit) P.fs = true; });
+      if (MTPS.SFC) MTPS.SFC.carry(this.M, r.model);
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
@@ -1549,7 +1958,9 @@
       this.dt = Math.round(dt);
       this.inputs();
       if (!this.running || this.bp) return;
+      if (this.M.timed) { this.scanTimed(dt); return; }
       this.clock += this.dt;
+      if (this.msgq && this.msgq.size) this.msgTick();
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
@@ -1557,7 +1968,7 @@
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
       let tk = -1;
-      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) {
+      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler && !P.off) {
         // the watchdog timer starts when the task starts and stops when all of its programs have run
         if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task ? P.task.name : ''; this.wdHit = false; }
         this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); this.wdCheck();
@@ -1609,7 +2020,7 @@
         }
         this.ioCleared.delete(m.slot);
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
-        if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
+        if (m.kind === 'di') { const nv = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF)); if (this.M.timed && this.running && V[m.I].Data !== nv) this.cos(m, V[m.I].Data, nv); V[m.I].Data = nv; }
         else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
       }
@@ -1617,12 +2028,16 @@
     /* a routine: rungs in order; JMP goes to its LBL rung, RET and TND end the routine. The MCR override (every rung
        false) is toggled by an MCR with rung-condition-in false, and is reset when the routine ends. */
     routine(R) {
+      if (R.stc) { R.stc.run(this); this.tnd = this.ret = false; return; }
+      if (R.sfc) { MTPS.SFC.run(this, R); return; }
+      if (R.fbd) { if (R.fx) MTPS.FBD.exec(this, R); return; }
       const rungs = R.rungs, mcr0 = this.mcr;
       let jumps = 0;
       this.mcr = false;
       for (let i = 0; i < rungs.length;) {
         if ((++this.wdN & 255) === 0) this.wdCheck();
-        this.seq(rungs[i].elems, !this.mcr);
+        if (this.pre && !this.uid) this.preempt();
+        this.seq(rungs[i].elems, !this.mcr && !this.post);   // post: a postscan (SFC automatic reset) runs every rung false
         if (this.tnd || this.ret) { this.tnd = this.ret = false; break; }
         if (this.jmp !== null) {
           const to = R.labels.get(this.jmp);
@@ -2089,8 +2504,18 @@
       }
       return { state: 'Running', code: null, text: '' };
     }
-    /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted */
-    ioOk() { return !this.M || ![...this.M.mods.values()].some(m => !m.inhibit && this.pulled.has(m.slot)); }
+    /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted, or a producer's connection */
+    ioOk() { return (!this.M || ![...this.M.mods.values()].some(m => !m.inhibit && this.pulled.has(m.slot))) && !(this.pcCodes && this.pcCodes.size); }
+    /* a producing controller of the I/O configuration, as its Module Properties (Connection tab) shows it */
+    peerStatus(slot) {
+      const p = this.M && this.M.peers && this.M.peers.get(slot);
+      if (!p) return { state: 'Not in the controller', code: null, text: 'The project in the controller has no controller in this slot. Download first.' };
+      const code = this.pcCodes && this.pcCodes.get(slot);
+      if (code) return { state: 'Faulted', code, text: PCTEXT[code] };
+      return this.M.cons.some(k => k.slot === slot) ? { state: 'Running', code: null, text: '' } : { state: 'Running', code: null, text: 'No consumed tag uses this controller: no connection.' };
+    }
+    /* a consumed tag: connected to its producer, the producer in Run mode, the fault code (Consumed Tag Connection, Status) */
+    pcState(name) { const st = this.pcSt && this.pcSt.get(U(name)); return st ? { conn: st.conn, run: st.run, code: st.code } : null; }
     /* Upload: the controller's copy of the project, with the tag values it has now */
     upload() {
       if (!this.copy) return null;
@@ -2133,6 +2558,515 @@
     forceState() { return !this.forces.size ? 'none' : this.forcesOn ? 'enabled' : 'disabled'; }
   }
 
+  /* ---------- Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v37 help: Tasks, Create a Task) ----------
+     Only a project with a periodic or an event task takes this path (M.timed): a project with just the continuous
+     task scans exactly as before. The controller runs one task at a time. A periodic task runs once each Period; an
+     event task once each trigger (an EVENT instruction, a change of the input data of its module, or no event within
+     its timeout). A task interrupts any task of a lower priority (1 is the highest, 15 the lowest; the continuous task
+     is below them all) between two rungs, or at once from an EVENT instruction, and control goes back to where the
+     interrupted task left off. Emulated time inside a scan follows the real time the logic takes (times the speed of
+     time), so a long continuous scan is interrupted each time a period passes. A trigger while the task is still
+     running or waiting to run is an overlap: the trigger is ignored, OverlapCount counts it, Status bit 2 and a minor
+     fault (type 6) are set. Tasks of the same priority do not share time in 1 ms slices here; they run in turn. */
+  const CPRI = 16, TMAX = 2000000, TTYPES = ['continuous', 'periodic', 'event'];
+  // at verify: one continuous task, at most 32 tasks, Period 0.1 ms to 2,000 s, Priority 1 to 15, an input module tag
+  function taskChecks(M, err) {
+    const user = M.tasks.filter(t => TTYPES.includes(t.type)), cont = user.filter(t => t.type === 'continuous');
+    M.tasks.forEach(t => { if (!TTYPES.includes(t.type) && !['fault', 'powerup', 'unscheduled'].includes(t.type)) err(`Task '${t.name}': unknown task type '${t.type}'`); });
+    if (cont.length > 1) err(`Only one task can be continuous (${cont.map(t => `'${t.name}'`).join(', ')} are)`);
+    if (user.length > 32) err(`The controller supports 32 tasks (the project has ${user.length})`);
+    const names = new Set();
+    for (const t of user) {
+      if (!validName(t.name) || names.has(U(t.name))) err(`Invalid or repeated task name '${t.name}'`);
+      names.add(U(t.name));
+      if (t.type === 'continuous') continue;
+      if (!(Number.isInteger(t.pri) && t.pri >= 1 && t.pri <= 15)) err(`Task '${t.name}': Priority ${t.pri} is not in the range 1 to 15`);
+      if (t.type === 'periodic' && !(t.period >= 0.1 && t.period <= TMAX)) err(`Task '${t.name}': Period ${t.period} ms is not in the range 0.1 to 2,000,000 ms`);
+      if (t.type === 'event') {
+        if (t.tmoOn && !(t.timeout >= 0.1 && t.timeout <= TMAX)) err(`Task '${t.name}': the timeout ${t.timeout} ms is not in the range 0.1 to 2,000,000 ms`);
+        if (t.trigger === 'input') {
+          const io = /^Local:(\d+):I$/i.exec(t.tag), m = io && M.mods.get(+io[1]);
+          if (!m || (m.kind !== 'di' && m.kind !== 'ai')) err(`Task '${t.name}': Module Input Data State Change needs the input tag of an input module (e.g. Local:1:I), not '${t.tag}'`);
+          else { t.slot = m.slot; if (m.kind === 'ai') t.ai = m.slot; }
+        } else if (t.trigger !== 'event') err(`Task '${t.name}': the trigger '${t.trigger}' is not supported by this controller`);
+      }
+    }
+    M.timed = user.some(t => t.type !== 'continuous');
+  }
+  Object.assign(Controller.prototype, {
+    // the emulated time now (ms), inside a scan
+    vnow() { return this.tBase + (now() - this.rBase) * this.sot / 100; },
+    // when a task is next due (-Infinity: triggered and waiting); never while it runs or is inhibited
+    dueOf(T) {
+      if (T.inhibit || T.running) return Infinity;
+      if (T.type === 'periodic') return T.next;
+      if (T.type !== 'event') return Infinity;
+      if (T.pend) return -Infinity;
+      return Math.min(T.tmoOn && T.timeout > 0 ? T.tmoAt : Infinity, T.ai != null ? T.aiNext : Infinity);
+    },
+    // the highest priority task that is due at v and above priority lvl (an inhibited task lets its triggers pass)
+    readyTask(v, lvl) {
+      let best = null;
+      for (const T of this.M.tasks) {
+        if (T.type !== 'periodic' && T.type !== 'event') continue;
+        if (T.inhibit) { if (T.type === 'periodic' && T.next <= v) T.next += (Math.floor((v - T.next) / T.period) + 1) * T.period; T.pend = 0; continue; }
+        if (T.pri < lvl && this.dueOf(T) <= v && (!best || T.pri < best.pri)) best = T;
+      }
+      return best;
+    },
+    // run every task that is due and above priority lvl, the highest first
+    dispatch(lvl) {
+      for (let n = 0; n < 10000 && this.running && !this.bp; n++) {
+        const v = this.vnow(), T = this.readyTask(v, lvl);
+        if (!T) return;
+        this.startTask(T, v);
+      }
+    },
+    // between two rungs of a running task: a task of a higher priority that is due interrupts it
+    preempt() { if (this.readyTask(this.vnow(), this.lvl)) this.dispatch(this.lvl); },
+    overlap(T, n) {
+      T.overlap = (T.overlap || 0) + n; T.status = (T.status | 0) | 4;
+      for (let k = 0; k < Math.min(n, 50); k++) this.minorFault(6, 2, `Task overlap: task '${T.name}' was triggered while it was still running`);
+    },
+    // a trigger of an event task (bits: Status bit 0 for an EVENT instruction)
+    trigger(T, bits) {
+      if (!T || T.type !== 'event' || T.inhibit || !this.running) return false;
+      if (T.running || T.pend) { this.overlap(T, 1); return false; }
+      T.pend = 1; T.status = (T.status | 0) | bits;
+      return true;
+    },
+    // a change of state of a digital input module (COS: by default every point, both ways; the module's
+    // COSOffOnEn / COSOnOffEn configuration when it is set)
+    cos(m, a, b) {
+      const C = this.M.vals[`Local:${m.slot}:C`], on = C && (C.COSOffOnEn | 0), off = C && (C.COSOnOffEn | 0), dflt = !on && !off;
+      const ch = (a ^ b) & 0xFFFF, hit = dflt ? ch : (ch & b & on) | (ch & a & off);
+      if (hit) for (const T of this.M.tasks) if (T.type === 'event' && T.trigger === 'input' && T.slot === m.slot) this.trigger(T, 0);
+    },
+    startTask(T, v) {
+      if (T.type === 'periodic') {
+        const miss = Math.floor((v - T.next) / T.period);
+        if (miss > 0) this.overlap(T, miss);
+        // it runs at its scheduled time (timers and intervals count whole periods)
+        v = T.next + miss * T.period; T.next = v + T.period;
+      } else {
+        const ai = T.ai != null && v >= T.aiNext;
+        if (!T.pend && !ai) T.status = (T.status | 0) | 2;   // Status bit 1: the timeout ran the task
+        if (ai) { const miss = Math.floor((v - T.aiNext) / T.aiRpi); if (miss > 0) this.overlap(T, miss); T.aiNext += (miss + 1) * T.aiRpi; }
+        T.pend = 0;
+      }
+      this.runTask(T, v);
+      const e = this.vnow();
+      if (T.type === 'periodic' && e >= T.next) { const k = Math.floor((e - T.next) / T.period) + 1; this.overlap(T, k); T.next += k * T.period; }
+      if (T.type === 'event') T.tmoAt = e + T.timeout;
+    },
+    /* one run of a task: its programs top to bottom, with its own watchdog; the state of the task it interrupted is
+       kept and given back. Timers in it count the time since its last run. An instruction fault that no fault routine
+       or Controller Fault Handler clears faults the controller and ends the scan. */
+    runTask(T, v) {
+      const keep = [this.curP, this.curT, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS, this.dt, this.lvl, this.uid, this.wdT0, this.wdMs, this.wdSet, this.wdTask, this.wdHit];
+      const r0 = now();
+      if (T.last != null) { const iv = v - T.last; T.ivMax = Math.max(T.ivMax || 0, iv); T.ivMin = T.ivMin == null ? iv : Math.min(T.ivMin, iv); }
+      const dt = (T.frac || 0) + (T.last != null ? v - T.last : T.type === 'periodic' ? T.period : this.dt);
+      this.dt = Math.max(0, Math.floor(dt)); T.frac = dt - this.dt;
+      T.last = v; T.start = wct(this); T.running = true;
+      this.curT = T; this.lvl = T.type === 'continuous' ? CPRI : T.pri; this.uid = 0;
+      this.wdT0 = r0; this.wdSet = Math.min(TMAX, Math.max(1, Math.floor(+T.watchdog) || 500)); this.wdMs = Math.min(this.wdSet, WDCAP); this.wdTask = T.name; this.wdHit = false;
+      this.jmp = null; this.ret = this.tnd = this.mcr = false; this.d = 0;
+      try {
+        for (const P of T.progs) if (P.main && !P.inhibit && !P.handler && !P.off) {
+          this.S.FS = P.fs0 || P.fs ? 1 : 0; P.fs0 = P.fs = false;
+          const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); this.wdCheck();
+        }
+      } catch (e) {
+        if (!(e instanceof Fault)) throw e;
+        if (e.tried || !this.handle(this.M.cfh, e)) { this.majorFault(e.type, e.code, e.message); throw new Halt(); }
+      } finally {
+        T.running = false;
+        T.us = Math.round((now() - r0) * 1000); T.maxUs = Math.max(T.maxUs || 0, T.us);
+        [this.curP, this.curT, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS, this.dt, this.lvl, this.uid, this.wdT0, this.wdMs, this.wdSet, this.wdTask, this.wdHit] = keep;
+      }
+    },
+    /* the state of the tasks when the controller goes to Run (prescan): each periodic task is due at once, each
+       program gets S:FS on its first run. After an online edit (no prescan) the tasks keep their timing. */
+    initTasks(t0) {
+      const old = this.tFresh ? null : this.tInit;
+      this.tFresh = false; this.tInit = this.M;
+      for (const T of this.M.tasks) {
+        const o = old && old.tasks.find(x => x.name === T.name && x.type === T.type);
+        if (o) { ['next', 'last', 'frac', 'overlap', 'status', 'ivMin', 'ivMax', 'us', 'maxUs', 'tmoAt', 'aiNext', 'pend'].forEach(k => { T[k] = o[k]; }); if (T.type === 'periodic' && o.period !== T.period) T.next = t0; }
+        else { T.next = t0; T.last = null; T.frac = 0; T.pend = 0; T.tmoAt = t0 + T.timeout; }
+        if (T.ai != null) { const m = this.M.mods.get(T.ai); T.aiRpi = m ? m.rpi : 20; if (!o || o.aiNext == null) T.aiNext = t0 + T.aiRpi; }
+      }
+      for (const P of this.M.programs) P.fs0 = !old;
+    },
+    // one scan of a project with periodic or event tasks: the tasks due now, the continuous task (interrupted as
+    // its time passes), then the tasks due in the rest of the scan time, each at its time
+    scanTimed(dt) {
+      const M = this.M, t0 = this.clock, tEnd = t0 + dt, r0 = now();
+      this.tBase = t0; this.rBase = r0; this.pre = true;
+      this.S.MINOR = 0; this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false; this.uid = 0; this.lvl = CPRI + 1; this.curT = null;
+      if (this.tInit !== M || this.tFresh) this.initTasks(t0);
+      try {
+        this.dispatch(CPRI + 1);
+        const C = M.tasks.find(t => t.type === 'continuous');
+        if (C && !C.inhibit && this.running && !this.bp) this.runTask(C, this.vnow());
+        for (let n = 0; n < 100000 && this.running && !this.bp; n++) {
+          let d = Infinity;
+          for (const T of M.tasks) d = Math.min(d, this.dueOf(T));
+          const v = this.vnow();
+          if (d >= tEnd && d > v) break;
+          if (d > v) { this.tBase = d; this.rBase = now(); }
+          this.dispatch(CPRI + 1);
+        }
+      } catch (e) {
+        if (e instanceof Halt) { this.d = 0; this.mcr = false; }
+        else if (!(e instanceof Fault)) throw e;
+        else if (e.tried || !this.handle(M.cfh, e)) this.majorFault(e.type, e.code, e.message);
+      }
+      const end = Math.max(tEnd, this.vnow());
+      this.pre = false; this.curP = null; this.curT = null; this.wdMs = 0; this.S.FS = 0; this.first = false; this.scans++;
+      // a scan that took longer than its time used that real time up: the next scans wait for it
+      if (end > tEnd) this.acc -= end - tEnd;
+      this.clock = end;
+      const us = Math.round((now() - r0) * 1000);
+      this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
+    },
+  });
+  /* ---------- MSG: Message (1756-RM018A chapter 4, Input/Output; 1756-PM012; v37 help: Message Configuration) ----------
+     The emulator carries CIP Data Table Read and CIP Data Table Write between the controllers of the chassis, and
+     from a controller to itself. The configuration (the Message Configuration dialog) is kept with the MESSAGE tag:
+     tag.msg = { type: 'read' | 'write', src, n, dst, path, cache }. At download the path goes into .Path, one byte per
+     number as RM018A shows it (1,2 → $01$02; THIS or an empty path: the controller itself), and the remote element
+     into .RemoteElement, so logic can change them (RM018A, MESSAGE structure). The remote element can name a program
+     tag: Program:<program>.<tag>. The status bits are the controller's own: a change to .EW .ER .DN .ST or .EN is
+     ignored (RM018A); .TO set by the user stops the message with .ER.
+     Timing (RM018A, the MSG timing diagram): rung true with .EN clear: .EN and .EW set, .DN / .ER cleared; the next
+     scan the message is sent (.ST set, .EW cleared); the scan after it, it is done (.DN, or .ER with .ERR and .EXERR)
+     and .ST is cleared. .EN clears on a false rung once .DN or .ER is set. The transfer goes on while the rung is
+     false. Prescan clears .EW .ST .DN .ER. */
+  const MSGB = { EW: 2, ER: 4, DN: 5, ST: 6, EN: 7, TO: 8, EN_CC: 9 }, MSGMASK = (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
+  PREDEF.MESSAGE = [{ name: 'FLAGS', type: 'INT' }, ...members('ERR:INT EXERR:INT REQ_LEN:INT DN_LEN:INT'),
+    ...Object.keys(MSGB).map(name => ({ name, type: 'BOOL', of: 'FLAGS', bit: MSGB[name] })),
+    ...members('ERR_SRC:SINT DestinationLink:INT DestinationNode:INT SourceLink:INT Class:INT Attribute:INT Instance:DINT LocalIndex:DINT Channel:SINT Rack:SINT Group:SINT Slot:SINT Path:STRING RemoteIndex:DINT RemoteElement:STRING UnconnectedTimeout:DINT ConnectionRate:DINT TimeoutMultiplier:SINT')];
+  // .UnconnectedTimeout 30 s and .ConnectionRate 7.5 s by default (RM018A); kept in microseconds, as Logix keeps them
+  const MSGTO = 30000000, MSGCR = 7500000;
+  /* the error codes the emulator gives (RM018A, Error Codes): [ERR, EXERR, text]. Which code a case gives is the app's
+     choice from that list: no publication says which code a CIP Data Table message gets for each of these cases */
+  const MSGERR = {
+    uninit: [0x00FD, 0, 'Message uninitialized'],
+    timeout: [0x00FE, 0, 'Message timeout'],
+    port: [0x0001, 0x0311, 'Connection failure: port not available'],
+    link: [0x0001, 0x0312, 'Connection failure: link address not available'],
+    noanswer: [0x0001, 0x0204, 'Connection failure: unconnected message timeout'],
+    service: [0x0008, 0, 'Service unsupported'],
+    ioi: [0x0004, 0, 'IOI syntax error'],
+    unknown: [0x0005, 0, 'Destination unknown, class unsupported, instance undefined or structure element undefined'],
+    range: [0x00FF, 0x2105, 'General error: address and how many out of range'],
+    type: [0x00FF, 0x2107, 'General error: type is invalid or not supported'],
+  };
+  const msgText = (err, ext) => { const k = Object.keys(MSGERR).find(n => MSGERR[n][0] === err && MSGERR[n][1] === ext); return k ? MSGERR[k][2] : ''; };
+  Object.assign(OPN, { MSG: ['Message Control'] });
+  const msgBits = o => { const f = o && o.FLAGS | 0, out = {}; for (const n in MSGB) out[n] = (f >> MSGB[n]) & 1; return out; };
+  INSTR.MSG = I('box', 'Input/Output', 'Message', 'msg', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, bvx: msgBits });
+  // a MESSAGE tag, not an element of an array or a member
+  XKIND.msg = (r, writable, one) => (r.type === 'MESSAGE' && one && r.bit < 0 && !r.steps.length ? r : BAD_TYPE);
+  // the path text → bytes: THIS or empty → [] (this controller); '1,2' → [1, 2]; null when it is not valid
+  const msgPath = t => { const s = String(t == null ? '' : t).trim(); if (!s || U(s) === 'THIS') return []; const a = s.split(',').map(x => x.trim()); return a.every(x => /^\d{1,3}$/.test(x) && +x <= 255) ? a.map(Number) : null; };
+  const strOf = o => String.fromCharCode(...o.DATA.slice(0, Math.max(0, Math.min(o.LEN, o.DATA.length))).map(c => c & 255));
+  const strSet = (o, codes) => { const n = Math.min(codes.length, o.DATA.length); for (let k = 0; k < o.DATA.length; k++) o.DATA[k] = k < n ? (codes[k] << 24) >> 24 : 0; o.LEN = n; };
+  // the configuration into the tag: .Path, .RemoteElement, .REQ_LEN, .EN_CC, and the default time outs
+  const msgInit = (o, c) => {
+    if (!(o.UnconnectedTimeout > 0)) o.UnconnectedTimeout = MSGTO;
+    if (!(o.ConnectionRate > 0)) o.ConnectionRate = MSGCR;
+    if (!c) return;
+    strSet(o.Path, msgPath(c.path) || []);
+    strSet(o.RemoteElement, codesOf(c.type === 'write' ? c.dst || '' : c.src || ''));
+    o.REQ_LEN = Math.max(1, Math.floor(+c.n) || 1);
+    o.FLAGS = c.cache === false ? o.FLAGS & ~(1 << MSGB.EN_CC) : o.FLAGS | (1 << MSGB.EN_CC);
+  };
+  const recOf = (M, P, r) => ((P && r.root === P.vals ? P.tags : M.tags).get(U(r.key)));
+  XCHK.MSG = (x, bad, e, M, P) => {
+    const r = x[0], rec = recOf(M, P, r);
+    r.rec = rec;
+    try { msgInit(r.obj(), rec && rec.msg); } catch (err) { if (!(err instanceof Fault)) throw err; }
+  };
+  // the status bits as the controller keeps them (a write to them by logic or a user is ignored)
+  const msgFlags = (c, o) => { const m = c.msgf || (c.msgf = new WeakMap()); if (!m.has(o)) m.set(o, o.FLAGS & MSGMASK); return m.get(o); };
+  const msgStore = (c, o, f) => { c.msgf.set(o, f & MSGMASK); o.FLAGS = (o.FLAGS & ~MSGMASK) | (f & MSGMASK); };
+  XPRE.MSG = function (x) { const o = x[0].obj(); if (this.msgq) this.msgq.delete(o); msgStore(this, o, msgFlags(this, o) & ~((1 << MSGB.EW) | (1 << MSGB.ST) | (1 << MSGB.DN) | (1 << MSGB.ER))); };
+  XEL.MSG = function (e, x, p) {
+    const r = x[0], o = r.obj(), q = this.msgq || (this.msgq = new Map()), B = n => 1 << MSGB[n];
+    let f = msgFlags(this, o);
+    if (!p) {
+      // .EN clears once the message is done or errored; the app also clears it when no message is under way
+      if ((f & B('EN')) && !q.has(o)) f &= ~B('EN');
+    } else if (!(f & B('EN'))) {
+      f = (f | B('EN') | B('EW')) & ~(B('DN') | B('ER') | B('ST'));
+      o.ERR = 0; o.EXERR = 0; o.DN_LEN = 0;
+      const c = r.rec && r.rec.msg;
+      if (!c) { f = (f & ~B('EW')) | B('ER'); o.ERR = MSGERR.uninit[0]; }
+      else { o.REQ_LEN = Math.max(1, Math.floor(+c.n) || 1); q.set(o, { M: this.M, P: this.curP, rec: r.rec, o, ph: 0, at: this.clock }); }
+    }
+    msgStore(this, o, f);
+    e.v = p; return p;
+  };
+  const msgType = r => r.bit < 0 && (['SINT', 'INT', 'DINT', 'LINT', 'REAL'].includes(r.type) || !ATOMIC[r.type]);
+  /* a CIP Data Table Read / Write: { n } done, or { err: [ERR, EXERR] }; null while it waits for an answer */
+  function msgDo(c, s) {
+    const o = s.o, cfg = s.rec.msg, wr = cfg.type === 'write', path = o.Path.DATA.slice(0, Math.max(0, Math.min(o.Path.LEN, o.Path.DATA.length))).map(b => b & 255);
+    const E = k => ({ err: MSGERR[k] });
+    let T = c;
+    if (path.length) {
+      if (path.length !== 2 || path[0] !== 1) return E('port');       // only the backplane (port 1) of the chassis
+      const own = c.slot != null ? c.slot : c.M.slot;
+      if (path[1] !== own) {
+        const ch = c.chassis, m = ch && path[1] < ch.size ? ch.module(path[1]) : null;
+        if (!m) return E('link');
+        if (!m.ctl) return E('service');
+        T = m.ctl;
+      }
+    }
+    if (!T.powered) return (c.clock - s.sent) * 1000 >= (o.UnconnectedTimeout > 0 ? o.UnconnectedTimeout : MSGTO) ? E('noanswer') : null;
+    if (!T.M) return E('unknown');
+    // the local element is in this controller (program tags of the program that ran the MSG first)
+    const local = String((wr ? cfg.src : cfg.dst) || ''), remote = strOf(o.RemoteElement);
+    if (!parsePath(local)) return E('ioi');
+    const L = ref(c.M, s.P, local);
+    if (typeof L === 'string') return E('ioi');
+    let rp = null, rt = remote;
+    const pm = /^Program:([A-Za-z_][A-Za-z0-9_]*)\.(.+)$/i.exec(remote.trim());
+    if (pm) { rp = T.M.programs.find(g => U(g.name) === U(pm[1])); if (!rp) return E('unknown'); rt = pm[2]; }
+    if (!parsePath(rt)) return E('ioi');
+    const R = ref(T.M, rp, rt);
+    if (typeof R === 'string') return E('unknown');
+    // 1756-PM012, Supported data types: SINT, INT, DINT, LINT, REAL and the structures; both ends the same type
+    if (U(L.type) !== U(R.type) || !msgType(L) || !msgType(R)) return E('type');
+    const n = Math.max(1, Math.floor(+cfg.n) || 1), src = wr ? L : R, dst = wr ? R : L;
+    try {
+      const a = file(src), b = file(dst);
+      if (n > a.n || n > b.n) return E('range');
+      const v = []; for (let k = 0; k < n; k++) v.push(clone(a.g(k)));
+      for (let k = 0; k < n; k++) b.s(k, v[k]);
+    } catch (err) { if (err instanceof Fault) return E('range'); throw err; }
+    return { n };
+  }
+  /* each scan, before the logic: the messages under way take their next step */
+  Controller.prototype.msgTick = function () {
+    const B = n => 1 << MSGB[n];
+    for (const [o, s] of this.msgq) {
+      if (s.M !== this.M) { this.msgq.delete(o); continue; }
+      let f = msgFlags(this, o), res = null;
+      if ((o.FLAGS >> MSGB.TO) & 1) res = { err: MSGERR.timeout };
+      else if (!s.ph) { s.ph = 1; s.sent = this.clock; f = (f & ~B('EW')) | B('ST'); msgStore(this, o, f); continue; }
+      else res = msgDo(this, s);
+      if (!res) continue;
+      f &= ~(B('ST') | B('EW'));
+      if (res.err) { f |= B('ER'); o.ERR = res.err[0]; o.EXERR = res.err[1]; } else { f |= B('DN'); o.DN_LEN = res.n; }
+      msgStore(this, o, f);
+      this.msgq.delete(o);
+    }
+  };
+  /* the Message Configuration changed while online: it takes effect at once (the controller keeps its copy) */
+  Controller.prototype.setMsg = function (name, program, cfg) {
+    if (!this.M) return false;
+    const P = program ? this.M.programs.find(g => U(g.name) === U(program)) : null, rec = (P ? P.tags : this.M.tags).get(U(name));
+    if (!rec || rec.type !== 'MESSAGE') return false;
+    rec.msg = cfg ? clone(cfg) : null;
+    try { msgInit(program ? P.vals[rec.name] : this.M.vals[rec.name], rec.msg); } catch (err) { if (!(err instanceof Fault)) throw err; }
+    if (this.copy) {
+      const p = JSON.parse(this.copy), g = program ? (p.tasks || []).flatMap(t => t.programs || []).find(x => U(x.name) === U(program)) : null;
+      const t = ((g ? g.tags : p.tags) || []).find(x => U(x.name) === U(name));
+      if (t) { if (cfg) t.msg = clone(cfg); else delete t.msg; this.copy = JSON.stringify(p); }
+    }
+    return true;
+  };
+
+  /* ---------- Add-On Instructions (1756-PM010, Add-On Instructions Programming Manual) ----------
+     project.aois = [{ name, desc, type, rev, note, vendor, params: [{ name, usage: 'Input' | 'Output' | 'InOut', type,
+     dim, req, vis, def, desc, access }], locals: [{ name, type, dim, def, desc }], routines: [{ name: 'Logic', rungs }] }].
+     Input and Output parameters are BOOL, SINT, INT, DINT or REAL, passed by value; an InOut parameter is any type,
+     passed by reference, always required and visible; a required parameter is visible. The data type of the
+     instruction holds EnableIn, EnableOut, the Input and Output parameters in their order, then the local tags as
+     hidden members. In ladder the instruction takes its tag, then one argument for each required parameter.
+     Execution (PM010, Scan modes, EnableIn and EnableOut): rung true: the required Inputs are passed in, EnableIn
+     set, EnableOut set (the logic can change it), the Logic routine runs, the required Outputs are passed out; the
+     rung out is EnableOut. Rung false: the Inputs are passed, the logic does not run and no output is written,
+     EnableOut is cleared. Prescan: the Logic routine is prescanned with the required parameters passed. The logic sees
+     only the parameters and local tags; JSR, RET and SBR cannot be used in it, nor can it call itself. The Scan Mode
+     routines (Prescan, Postscan, EnableInFalse) are not in this app. */
+  const AOI_IO = ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'], AOI_NO = ['JSR', 'RET', 'SBR'];
+  const aoiParams = a => (a.params || []).filter(x => x && x.name);
+  // EnableIn starts at 1 (the app's choice: a new instance tag executes when its rung is true)
+  function aoiMembers(a) {
+    const m = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, { name: 'EnableOut', type: 'BOOL' }];
+    for (const x of aoiParams(a)) if (x.usage !== 'InOut') m.push({ name: x.name, type: x.type || 'BOOL', def: x.def });
+    for (const x of a.locals || []) if (x && x.name) m.push({ name: x.name, type: x.type || 'BOOL', dim: x.dim > 0 ? Math.floor(x.dim) : 0, def: x.def, hidden: true });
+    return m;
+  }
+  // an InOut parameter inside the logic: a reference to the argument of the call that runs (a bit of an integer too)
+  const aoiSlot = () => ({ p: { v: 0 }, k: 'v', b: -1, t: null,
+    get v() { const x = this.p[this.k]; return this.b < 0 ? x : (x >> this.b) & 1; },
+    set v(n) { if (this.b < 0) this.p[this.k] = n; else { const x = this.p[this.k]; this.p[this.k] = store(this.t || 'DINT', n ? x | (1 << this.b) : x & ~(1 << this.b)); } } });
+  function aoiBuild(M, pj, filter, out, ctlErr) {
+    M.aois = new Map();
+    syncAOIs(pj, false);
+    const list = (pj.aois || []).filter(a => a && typeof a === 'object');
+    for (const a of list) {
+      const u = U(a.name || '');
+      if (!validName(a.name)) { ctlErr(`Invalid Add-On Instruction name '${a.name || ''}'`); continue; }
+      if ((INSTR[u] && !INSTR[u].aoi) || M.aois.has(u)) { ctlErr(`Add-On Instruction '${a.name}': the name must not match a built-in instruction or another Add-On Instruction`); continue; }
+      const d = M.types.get(u);
+      if (!d || d.kind !== 'addon') { ctlErr(`Add-On Instruction '${a.name}': the name is already used by a data type`); continue; }
+      const seen = new Set(['ENABLEIN', 'ENABLEOUT']), params = [], E = m => { ctlErr(`Add-On Instruction '${a.name}': ${m}`); ok = false; };
+      let ok = true;
+      for (const x of aoiParams(a)) {
+        const usage = ['Input', 'Output', 'InOut'].includes(x.usage) ? x.usage : null, ty = canon(M.types, x.type || 'BOOL');
+        if (!validName(x.name) || seen.has(U(x.name))) { E(`invalid or repeated parameter name '${x.name}'`); continue; }
+        seen.add(U(x.name));
+        if (!usage) { E(`parameter '${x.name}': Usage must be Input, Output or InOut`); continue; }
+        if (!ty) { E(`parameter '${x.name}': undefined data type '${x.type}'`); continue; }
+        if (usage !== 'InOut' && (!AOI_IO.includes(ty) || x.dim > 0)) { E(`parameter '${x.name}': an ${usage} parameter must be BOOL, SINT, INT, DINT or REAL (an InOut parameter can be any type)`); continue; }
+        if (U(ty) === u) { E(`parameter '${x.name}': an Add-On Instruction cannot contain itself`); continue; }
+        const req = usage === 'InOut' || !!x.req;
+        params.push({ name: x.name, usage, type: ty, dim: usage === 'InOut' && x.dim > 0 ? Math.floor(x.dim) : 0, req, vis: req || !!x.vis });
+      }
+      for (const x of a.locals || []) {
+        if (!x || !x.name) continue;
+        if (!validName(x.name) || seen.has(U(x.name))) { E(`invalid or repeated local tag name '${x.name}'`); continue; }
+        seen.add(U(x.name));
+        const ty = canon(M.types, x.type || 'BOOL');
+        if (!ty) E(`local tag '${x.name}': undefined data type '${x.type}'`);
+        else if (ty === 'MESSAGE') E(`local tag '${x.name}': a MESSAGE cannot be a local tag; use an InOut parameter`);
+      }
+      if (ok) M.aois.set(u, { name: a.name, params, H: { I: null }, slots: {}, R: null, src: a, def: d, calls: new Set() });
+    }
+    for (const A of M.aois.values()) {
+      const a = A.src, pname = 'aoi:' + a.name;
+      const P = { name: pname, aoi: A, noCtl: true, tags: new Map(), vals: {}, routines: new Map(), main: null };
+      for (const m of A.def.members) P.tags.set(U(m.name), { name: m.name, type: m.type, dim: m.dim || 0, dims: m.dim ? [m.dim] : [] });
+      for (const x of A.params) if (x.usage === 'InOut') {
+        P.tags.set(U(x.name), { name: x.name, type: x.type, dim: x.dim, dims: x.dim ? [x.dim] : [], inout: true });
+        const s = A.slots[x.name] = aoiSlot(); s.p = { v: make(M.types, x.type, x.dim) };
+      }
+      P.bind = (r, rec) => { if (rec.inout) { r.root = A.slots[rec.name]; r.key = 'v'; } else { r.steps.unshift({ m: rec.name }); r.root = A.H; r.key = 'I'; } return r; };
+      const lr = (a.routines || [])[0] || { name: 'Logic', rungs: [] }, R = { name: 'Logic', src: lr.rungs || [], rungs: [], labels: new Map() };
+      P.routines.set('LOGIC', R); P.main = R; A.R = R;
+      // compiled against a default instance: the Preset of a timer in the logic goes into the local tag's default
+      A.H.I = make(M.types, a.name, 0);
+      const want = !filter || ((!filter.program || U(filter.program) === U(pname)) && (!filter.routine || U(filter.routine) === 'LOGIC'));
+      if (want) out.lines.push(`Verifying routine 'Logic' of Add-On Instruction '${a.name}'...`);
+      const report = (lst, kind) => (n, msg, mnem, op) => {
+        if (!want) return;
+        const text = `${kind}: Rung ${n}${mnem ? ', ' + mnem : ''}${op != null ? ', Operand ' + op : ''}: ${dot(msg)}`;
+        lst.push({ program: pname, routine: 'Logic', rung: n, mnem, op, msg: dot(msg), text }); out.lines.push(text);
+      };
+      const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      R.src.forEach((src, n) => {
+        const text = String(src && (src.t != null ? src.t : src.text) || '');
+        const rung = { n, text, c: (src && src.c) || '', elems: [] };
+        R.rungs.push(rung);
+        const pr = parseRung(text);
+        if (pr.err) { err(n, pr.err); return; }
+        if (!pr.elems.length) { err(n, 'Rung has no instructions'); return; }
+        const walk = (arr, top) => arr.map((e, k) => {
+          if (e.t === 'BR') return { t: 'BR', legs: e.legs.map(l => walk(l, false)) };
+          if (AOI_NO.includes(e.t)) { err(n, `${e.t} cannot be used in an Add-On Instruction`, e.t); return null; }
+          if (e.t === U(a.name)) { err(n, 'An Add-On Instruction cannot call itself', e.t); return null; }
+          if (e.t === 'MCR' && !(top && k === arr.length - 1)) err(n, 'MCR must be the last instruction of the rung', 'MCR');
+          return compileElem(M, P, R, e, n, top && k === 0, (m, mn, op) => err(n, m, mn, op), (m, mn, op) => warn(n, m, mn, op), jumps);
+        });
+        rung.elems = walk(pr.elems, true);
+      });
+      for (const j of jumps) if (!R.labels.has(j.label)) err(j.n, `Undefined label '${j.text}'`, 'JMP', 0);
+      // the values the logic wrote into structured local tags (a timer's Preset) are their defaults
+      for (const m of A.def.members) if (m.hidden && !ATOMIC[m.type]) m.def = clone(A.H.I[m.name]);
+      A.H.I = null;
+    }
+    // Add-On Instructions that call each other in a circle could never finish
+    for (const A of M.aois.values()) {
+      const seen = new Set(), todo = [...A.calls];
+      while (todo.length) { const B = todo.pop(); if (B === A) { ctlErr(`Add-On Instruction '${A.name}' calls itself through another Add-On Instruction`); break; } if (!seen.has(B)) { seen.add(B); todo.push(...B.calls); } }
+    }
+  }
+  /* an Add-On Instruction in the logic: its tag (of its data type), then the required parameters in their order */
+  function aoiElem(M, P, e, E) {
+    const A = M.aois.get(e.t), req = A.params.filter(x => x.req);
+    if (e.a.length !== req.length + 1) { E(`Wrong number of operands (${req.length + 1} expected)`, e.t); return null; }
+    const x = [];
+    let ok = true;
+    const bad = (m, k) => { E(m, e.t, k); ok = false; };
+    const s0 = String(e.a[0]).trim();
+    if (!s0 || s0 === '?') bad('Missing operand', 0);
+    else { const r = ref(M, P, s0); if (typeof r === 'string') bad(r, 0); else if (U(r.type) !== U(A.name) || r.dim || r.bit >= 0) bad(BAD_TYPE, 0); else if (r.konst) bad(`Tag '${r.konst}' is a constant: logic cannot write to it`, 0); else x[0] = r; }
+    req.forEach((pm, i) => {
+      const k = i + 1, s = String(e.a[k] == null ? '' : e.a[k]).trim();
+      if (!s || s === '?' || s === '??') { bad('Missing operand', k); return; }
+      if (pm.usage === 'Input') { const c = parseNumber(s); if (c) { if (pm.type === 'BOOL' && c.v !== 0 && c.v !== 1) bad(BAD_TYPE, k); else x[k] = new Const(c.v, c.real); return; } }
+      const r = ref(M, P, s);
+      if (typeof r === 'string') { bad(r, k); return; }
+      if (pm.usage === 'InOut') { if (U(r.type) !== U(pm.type) || (r.dim || 0) !== pm.dim) bad(BAD_TYPE, k); else x[k] = r; return; }
+      if (r.dim || !ATOMIC[r.type] || (pm.type === 'BOOL') !== (r.type === 'BOOL')) { bad(BAD_TYPE, k); return; }
+      if (pm.usage === 'Output' && (r.ro || r.konst)) { bad(r.ro ? 'Tag is read-only' : `Tag '${r.konst}' is a constant: logic cannot write to it`, k); return; }
+      x[k] = r;
+    });
+    if (P && P.aoi) P.aoi.calls.add(A);
+    return ok ? { t: e.t, a: e.a, x, v: false, aoi: A } : null;
+  }
+  // the InOut arguments of this call; gives back what to restore after it
+  function aoiBind(A, x) {
+    const saved = [];
+    let k = 1;
+    for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'InOut') { const s = A.slots[pm.name], r = x[k]; r.at(); saved.push([s, s.p, s.k, s.b, s.t]); s.p = PP; s.k = PK; s.b = r.bit; s.t = r.ptype; } k++; }
+    return saved;
+  }
+  const aoiUnbind = saved => { for (const [s, p, k, b, t] of saved) { s.p = p; s.k = k; s.b = b; s.t = t; } };
+  const aoiIn = (A, x, inst) => { let k = 1; for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'Input') inst[pm.name] = store(pm.type, x[k].get()); k++; } };
+  const aoiOut = (A, x, inst) => { let k = 1; for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'Output') x[k].set(inst[pm.name]); k++; } OV = false; };
+  function aoiRun(e, x, p) {
+    const A = e.aoi, inst = x[0].obj(), I0 = A.H.I;
+    aoiIn(A, x, inst);
+    inst.EnableIn = p ? 1 : 0;
+    if (!p) { inst.EnableOut = 0; e.v = false; return false; }
+    const saved = aoiBind(A, x);
+    A.H.I = inst; inst.EnableOut = 1;
+    try { this.routine(A.R); } finally { A.H.I = I0; aoiUnbind(saved); }
+    aoiOut(A, x, inst);
+    e.v = inst.EnableOut === 1;
+    return e.v;
+  }
+  function aoiPre(x, e) {
+    const A = e && e.aoi;
+    if (!A || !A.R || !this.pwalk) return;
+    const inst = x[0].obj(), I0 = A.H.I;
+    aoiIn(A, x, inst);
+    const saved = aoiBind(A, x);
+    A.H.I = inst;
+    try { for (const r of A.R.rungs) this.pwalk(r.elems); } finally { A.H.I = I0; aoiUnbind(saved); }
+    aoiOut(A, x, inst);
+  }
+  /* the instruction table entries of a project's Add-On Instructions (group Add-On): the ladder box shows the tag,
+     the required parameters as operands, the other visible Input / Output parameters as values, and the visible BOOL
+     Outputs that are not required as the flags on its right. full: also drop those of Add-On Instructions that are gone */
+  const AOIREG = new Set();
+  function syncAOIs(project, full) {
+    const now = new Set();
+    for (const a of (project && project.aois) || []) {
+      if (!a || !validName(a.name)) continue;
+      const u = U(a.name);
+      if (INSTR[u] && !INSTR[u].aoi) continue;
+      const ps = aoiParams(a).filter(x => ['Input', 'Output', 'InOut'].includes(x.usage)), req = ps.filter(x => x.usage === 'InOut' || x.req);
+      const kind = x => (x.usage === 'InOut' ? 'aio' : (x.usage === 'Input' ? 'ai' : 'ao') + (AOI_IO.includes(U(x.type)) ? U(x.type) : 'DINT'));
+      const bits = ps.filter(x => x.usage === 'Output' && U(x.type) === 'BOOL' && x.vis && !x.req).map(x => x.name);
+      const extra = ps.filter(x => x.usage !== 'InOut' && x.vis && !x.req && !bits.includes(x.name)).map(x => x.name);
+      INSTR[u] = I('box', 'Add-On', a.name, ['aoi'].concat(req.map(kind)).join(' '), { out: ps.some(x => x.usage !== 'Input'), bits, ctl: 0, aoi: true, disp: a.name, extra, desc: a.desc || '',
+        bvx: o => { const r = {}; bits.forEach(b => { r[b] = o ? o[b] : 0; }); return r; } });
+      OPN[u] = [a.name].concat(req.map(x => x.name));
+      XEL[u] = aoiRun; XPRE[u] = aoiPre;
+      now.add(u); AOIREG.add(u);
+    }
+    if (full) for (const u of [...AOIREG]) if (!now.has(u)) { delete INSTR[u]; delete OPN[u]; AOIREG.delete(u); }
+  }
+
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
@@ -2153,7 +3087,7 @@
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
       if (kind !== 'cpu') m.rev = REV0;
-      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
+      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ctl.chassis = this; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
       return { ok: true, module: m };
@@ -2198,6 +3132,9 @@
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
       if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
+      // a controller added the FactoryTalk Logix Echo way (9310-GR001): its type and firmware revision, subnet mask
+      if (o.echo !== undefined) { if (o.echo && o.echo.type) m.echo = { type: String(o.echo.type), rev: String(o.echo.rev) }; else delete m.echo; }
+      if (o.mask != null) { if (o.mask) m.mask = String(o.mask); else delete m.mask; }
       if (o.sot != null) m.ctl.setSpeed(o.sot);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
@@ -2225,9 +3162,41 @@
         if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
       }
     }
-    /* time goes by: inputs into every controller, then its scans */
+    /* time goes by: inputs into every controller, its consumed tags, then its scans */
     advance(ms) {
-      for (const m of this.controllers()) { const c = m.ctl; if (!c.powered) continue; if (c.M) this.exchange(c); c.advance(ms); }
+      for (const m of this.controllers()) { const c = m.ctl; if (!c.powered) continue; if (c.M) { this.exchange(c); this.consume(c, ms); } c.advance(ms); }
+    }
+    /* produced and consumed tags between the controllers of this chassis (1756-PM011, LGEM5K-GR016M chapter 10): the
+       connection of a consumed tag to the produced tag of the controller in its producer's slot, or the code it fails
+       with: 16#0204 no controller there (or turned off), 16#0117 no produced tag of that name, 16#0109 another data
+       type or size, 16#011A more consumers than Max Consumers (the lowest slots connect first). A producer that is
+       not in Run still sends its data; Producer in Run Mode shows it. */
+    produce(c, k) {
+      const m = this.mods.get(k.slot);
+      if (!m || !m.ctl || !m.ctl.powered || m.ctl === c) return { code: '16#0204' };
+      const p = m.ctl, pt = p.M && p.M.prods && p.M.prods.get(U(k.remote));
+      if (!pt) return { code: '16#0117' };
+      if (pt.sig !== k.sig || (pt.dim || 0) !== (k.dim || 0) || pt.bytes !== k.size) return { code: '16#0109' };
+      let n = 0;
+      for (const o of this.controllers()) { if (o.slot >= c.slot) break; const q = o.ctl.powered && o.ctl.M && o.ctl.M.cons; if (q && o.ctl !== p && q.some(x => x.slot === k.slot && U(x.remote) === U(k.remote))) n++; }
+      if (n >= pt.prod.max) return { code: '16#011A' };
+      return { code: null, run: p.running, v: p.M.vals[pt.name] };
+    }
+    // each consumed tag takes the produced value once every RPI; a faulted connection stops every tag of that producer
+    consume(c, ms) {
+      const M = c.M;
+      if (c.pcM !== M) { c.pcM = M; c.pcSt = new Map(); c.pcCodes = new Map(); }
+      if (!M.cons || !M.cons.length) return;
+      const res = M.cons.map(k => this.produce(c, k)), codes = new Map();
+      M.cons.forEach((k, i) => { if (res[i].code && !codes.has(k.slot)) codes.set(k.slot, res[i].code); });
+      M.cons.forEach((k, i) => {
+        let st = c.pcSt.get(k.u); if (!st) { st = { t: Infinity }; c.pcSt.set(k.u, st); }
+        st.code = codes.get(k.slot) || null; st.conn = !st.code; st.run = !st.code && !!res[i].run;
+        if (st.code) { st.t = Infinity; return; }
+        st.t += ms;
+        if (st.t >= k.rpi) { st.t = 0; M.vals[k.name] = clone(res[i].v); }
+      });
+      if (codes.size !== c.pcCodes.size || [...codes].some(([s, x]) => c.pcCodes.get(s) !== x)) { c.pcCodes = codes; c.emit('io'); }
     }
     owner(slot) {
       const m = this.mods.get(slot);
@@ -2245,7 +3214,7 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field, rev: m.rev && m.rev !== REV0 ? m.rev : undefined,
-        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, echo: m.echo || undefined, mask: m.mask || undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
         tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
@@ -2265,6 +3234,7 @@
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
+          if (x.echo && x.echo.type) m.echo = { type: String(x.echo.type), rev: String(x.echo.rev) }; if (x.mask) m.mask = String(x.mask);
           if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (x.tcfg) Object.assign(m.ctl.tcfg, x.tcfg);
           if (x.emu) m.ctl.setEmu(x.emu);
@@ -2282,8 +3252,16 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt, FBDI, FBDT, FBDN, fbdPrescan, sfcOf });
   MTPS.GSVOBJ = GSVOBJ;
+  // the parts the Structured Text compiler (st.js) builds on
+  MTPS._k = { ref, parseNumber, compileElem, Fault, Halt, isInt, isReal, isNum, ATOMIC, XPRE, INSTR, FBDI, FBDT, fbdPrescan };
+  // for sfc.js: tag references, faults and numbers as the engine compiles them
+  MTPS.core = { ref, Fault, parseNumber, store, validName, dot, U };
+  // for the other languages (fbd.js): tag references, a number into a type, the controller's faults, a constant
+  MTPS.X = { ref, store, Fault, Const, isInt, isReal, dot };
+  MTPS.MSG = { ERR: MSGERR, BIT: MSGB, text: msgText, path: msgPath };
+  MTPS.syncAOIs = syncAOIs; MTPS.AOI_IO = AOI_IO;
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

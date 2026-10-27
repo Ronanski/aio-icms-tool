@@ -672,7 +672,7 @@ function check(name, cond, info = '') {
   const n1 = await page.$$eval('#layer .it.fold', i => i.length), v0 = await page.$$eval('#layer .it.sub', i => i.filter(x => x.offsetParent !== null).length);
   await page.click('#layer [data-fold="Communications"]');
   await page.waitForTimeout(120);
-  check('the menu is an accordion: 8 menus, a tap opens one in place', n1 === 8 && v0 === 0 && (await page.$$eval('#layer .it.sub', i => i.filter(x => x.offsetParent !== null).length)) > 5 && (await page.$('#layer .menu')) !== null);
+  check('the menu is an accordion: 9 menus (Window too), a tap opens one in place', n1 === 9 && v0 === 0 && (await page.$$eval('#layer .it.sub', i => i.filter(x => x.offsetParent !== null).length)) > 5 && (await page.$('#layer .menu')) !== null);
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1194, height: 834 });
   await page.waitForFunction(() => innerWidth === 1194, null, { timeout: 3000 }).catch(() => {});
@@ -887,7 +887,7 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   await page.dblclick('.nd[data-org="task:MainTask"]');
   await page.waitForTimeout(120);
-  check('organizer: double-click a task opens Task Properties (General, Configuration, Program Schedule, Monitor)', (await dlgTitle()) === 'Task Properties - MainTask' && (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent).join('|'))) === 'General|Configuration|Program Schedule|Monitor');
+  check('organizer: double-click a task opens Task Properties (General, Configuration, Program / Phase Schedule, Monitor)', (await dlgTitle()) === 'Task Properties - MainTask' && (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent).join('|'))) === 'General|Configuration|Program / Phase Schedule|Monitor');
   await page.keyboard.press('Escape');
   await page.click('.nd[data-org="prog:MainProgram"]', { button: 'right' });
   await page.waitForTimeout(80);
@@ -2336,6 +2336,14 @@ function check(name, cond, info = '') {
   await require('./mtps-ui-w2B')({ browser, page, URL, check });
   await require('./mtps-ui-w2D')({ browser, page, URL, check });
   await require('./mtps-ui-w2C')({ browser, page, URL, check });
+  await require('./mtps-ui-w3C')({ browser, page, URL, check });
+  await require('./mtps-ui-w3F')({ browser, page, URL, check });
+  await require('./mtps-ui-w3G')({ browser, page, URL, check });
+  await require('./mtps-ui-w3D')({ browser, page, URL, check });
+  await require('./mtps-ui-w3B')({ browser, page, URL, check });
+  await require('./mtps-ui-w3E')({ browser, page, URL, check });
+  await require('./mtps-ui-w3A')({ browser, page, URL, check });
+  await require('./mtps-ui-newtag')({ browser, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
