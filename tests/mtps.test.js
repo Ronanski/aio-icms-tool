@@ -1061,5 +1061,60 @@ console.log('Wave 2 (C): AVE SRT STD SIZE CPS (1756-RM003 / -RM018A chapter 8)')
   check('CPS: the bytes of A[0] A[1] into R[0] R[1], like COP', cp.read('R[2]') === 3.5 && cp.read('R[0]') !== 1.5);
 }
 
+console.log('Wave 2 (C): GSV and SSV (1756-RM003 / -RM018A chapter 4, GSV/SSV Objects)');
+{
+  const INS = MTPS.INSTR, G = MTPS.GSVOBJ;
+  check('GSV and SSV are in Input/Output with Class Name, Instance Name, Attribute Name, Dest / Source', INS.GSV.grp === 'Input/Output' && INS.SSV.grp === 'Input/Output' && MTPS.OPN.GSV.join() === 'Class Name,Instance Name,Attribute Name,Dest' && MTPS.OPN.SSV[3] === 'Source');
+  check('the objects: WallClockTime, Controller, Task, Program, Module, FaultLog', Object.keys(G).join() === 'WallClockTime,Controller,Task,Program,Module,FaultLog' && G.Program.attrs.MajorFaultRecord[0] === 'DINT' && G.Program.attrs.MajorFaultRecord[1] === 11 && G.WallClockTime.attrs.LocalDateTime[1] === 7);
+  const tags = [T('En', 'BOOL'), T('D', 'DINT'), T('I', 'INT'), T('Sm', 'SINT'), T('R', 'REAL'), T('Dt', 'DINT', { dim: 7 }), T('Cv', 'DINT', { dim: 2 }), T('Rec', 'DINT', { dim: 11 }), T('Short', 'DINT', { dim: 6 }), T('Bits', 'BOOL')];
+  const V = r => MTPS.verify(proj({ tags, rungs: [r] })).errors.map(x => x.msg);
+  check('verify: names are not case sensitive; an object with no instance takes an empty Instance Name', !V('GSV(wallclocktime,,localdatetime,Dt[0]);').length && !V('GSV(Program,THIS,LastScanTime,D);').length && !V('GSV(Task,MainTask,Watchdog,D);').length && !V('GSV(Module,DI_1,EntryStatus,I);').length);
+  check('verify: an unknown class, an attribute of another object, a Program or Module that does not exist', V('GSV(Clock,,X,D);').length === 1 && V('GSV(Program,THIS,TimeSlice,D);').length === 1 && V('GSV(Program,Nope,LastScanTime,D);').length === 1 && V('GSV(Module,,EntryStatus,I);').length === 1);
+  check('verify: SSV only of the attributes that can be set; a BOOL Dest is refused', V('SSV(Module,DI_1,EntryStatus,I);').length === 1 && V('SSV(Module,DI_1,Mode,I);').length === 0 && V('GSV(Program,THIS,LastScanTime,Bits);').length === 1);
+  check('verify: Module LEDStatus needs no instance', !V('GSV(Module,,LEDStatus,I);').length);
+  // WallClockTime
+  const w = run({ tags, rungs: ['GSV(WallClockTime,,DateTime,Dt[0]);', 'GSV(WallClockTime,,CurrentValue,Cv[0]);'] });
+  w.scan(10);
+  const now = new Date();
+  check('GSV WallClockTime DateTime: DINT[7] year, month, day, hour, minute, second, µs (UTC)', w.read('Dt[0]') === now.getUTCFullYear() && w.read('Dt[1]') === now.getUTCMonth() + 1 && w.read('Dt[6]') >= 0 && w.read('Dt[6]') < 1000000);
+  check('GSV WallClockTime CurrentValue: µs since 1970 in DINT[2] (low, high)', Math.abs(((w.read('Cv[1]') * 4294967296 + (w.read('Cv[0]') >>> 0)) / 1000) - Date.now()) < 5000);
+  const ws = run({ tags: [...tags, T('Set', 'DINT', { dim: 7, value: [2030, 6, 15, 12, 30, 0, 0] }), T('Go', 'BOOL')], rungs: ['XIC(Go)SSV(WallClockTime,,DateTime,Set[0]);', 'GSV(WallClockTime,,DateTime,Dt[0]);'] });
+  ws.write('Go', 1); ws.scan(10); ws.write('Go', 0); ws.scan(10);
+  eq('SSV WallClockTime DateTime sets the clock (GSV reads it back)', [ws.read('Dt[0]'), ws.read('Dt[1]'), ws.read('Dt[2]'), ws.read('Dt[3]'), ws.read('Dt[4]')], [2030, 6, 15, 12, 30]);
+  // Program and Task
+  const pg = run({ tags, rungs: ['GSV(Program,THIS,LastScanTime,D);', 'GSV(Task,THIS,Watchdog,R);', 'GSV(Controller,,TimeSlice,I);', 'GSV(Task,MainTask,Instance,Sm);'] });
+  pg.scan(10); pg.scan(10);
+  check('GSV Program LastScanTime (µs), Task Watchdog (500 ms = 500000 µs, the bytes into a REAL), Controller TimeSlice 20 %', pg.read('D') >= 0 && new Float32Array(new Int32Array([500000]).buffer)[0] === pg.read('R') && pg.read('I') === 20 && pg.read('Sm') === 0);
+  const dp = proj({ tags: [...tags, T('One', 'SINT', { value: 1 }), T('Cnt', 'DINT')], rungs: ['XIC(En)SSV(Program,Other,DisableFlag,One);'] });
+  dp.tasks[0].programs.push({ name: 'Other', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'ADD(Cnt,1,Cnt);' }] }] });
+  const dis = new MTPS.Controller(); dis.download(dp); dis.setMode('remrun');
+  dis.scan(10);
+  dis.write('En', 1); dis.scan(10); dis.scan(10);
+  check('SSV Program DisableFlag 1 stops the other program', dis.read('Cnt') === 1);
+  // the fault records and the fault log
+  const f = run({ tags: [...tags, T('Big', 'DINT', { value: 2147483647 }), T('MinE', 'INT'), T('Bits2', 'DINT')], rungs: ['ADD(Big,1,D);', 'GSV(Program,THIS,MinorFaultRecord,Rec[0]);', 'GSV(FaultLog,,MinorEvents,MinE);', 'GSV(FaultLog,,MinorFaultBits,Bits2);'] });
+  f.scan(10);
+  eq('GSV Program MinorFaultRecord: the overflow of this scan (type 4 code 4 in DINT[2]); FaultLog MinorEvents, MinorFaultBits bit 4', [f.read('Rec[2]') & 0xFFFF, f.read('Rec[2]') >> 16, f.read('MinE'), f.read('Bits2')], [4, 4, 1, 16]);
+  check('the record has a timestamp (µs since 1970)', Math.abs(((f.read('Rec[1]') * 4294967296 + (f.read('Rec[0]') >>> 0)) / 1000) - Date.now()) < 5000);
+  // sizes
+  const s = run({ tags, rungs: ['GSV(Program,THIS,MajorFaultRecord,Short[0]);', 'GSV(WallClockTime,,ApplyDST,D);'] });
+  s.write('D', -1); s.scan(10);
+  check('GSV into a Dest too small (DINT[6] for DINT[11]): minor fault 4/7, Dest unchanged', s.minors.some(m => m.type === 4 && m.code === 7) && s.read('Short').every(v => v === 0));
+  check('only the attribute\'s size is copied: a SINT attribute (ApplyDST 0) into a DINT changes its low 8 bits', s.read('D') === -256);
+  const ss = run({ tags, rungs: ['SSV(WallClockTime,,CurrentValue,D);'] });
+  ss.scan(10);
+  check('SSV from a Source too small: minor fault 4/6 (not enough information supplied)', ss.minors.some(m => m.type === 4 && m.code === 6));
+  // Module
+  const m = run({ tags: [...tags, T('Led', 'INT')], rungs: ['GSV(Module,DI_1,EntryStatus,I);', 'GSV(Module,DI_1,FaultCode,D);', 'GSV(Module,,LEDStatus,Led);', 'GSV(Module,,LEDStatus,Sm);'] });
+  m.scan(10);
+  check('GSV Module EntryStatus 16#4000 Running, LEDStatus 3 (all running); an INT attribute into a SINT is too small (4/7)', m.read('I') === 0x4000 && m.read('D') === 0 && m.read('Led') === 3 && m.read('Sm') === 0 && m.minors.some(x => x.code === 7));
+  m.setModuleFault(1, true); m.scan(10);
+  check('a faulted module: EntryStatus 16#1000, FaultCode 16#0204, LEDStatus 2', m.read('I') === 0x1000 && m.read('D') === 0x0204 && m.read('Led') === 2);
+  const mi = run({ tags: [...tags, T('Four', 'INT', { value: 4 })], rungs: ['XIC(En)SSV(Module,DI_1,Mode,Four);', 'GSV(Module,DI_1,EntryStatus,I);'] });
+  mi.write('En', 1); mi.scan(10); mi.scan(10);
+  check('SSV Module Mode bit 2 inhibits the module: EntryStatus 16#6000', mi.read('I') === 0x6000 && mi.moduleStatus(1).state === 'Inhibited');
+  check('GSV / SSV do nothing on a false rung', (() => { const c = run({ tags, rungs: ['XIC(En)GSV(Controller,,TimeSlice,I);'] }); c.scan(10); return c.read('I') === 0; })());
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

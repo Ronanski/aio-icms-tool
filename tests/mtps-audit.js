@@ -32,6 +32,7 @@ const PLAN = {
   DEG: ['R1', 'R2'], RAD: ['R1', 'R2'], TOD: ['D1', 'D3'], FRD: ['D1', 'D3'], TRN: ['R1', 'D3'],
   FAL: ['CT6', '10', '0', 'ALL', 'ARR2[CT6.POS]', 'ARR[CT6.POS] * 2'], FSC: ['CT7', '10', '0', 'INC', 'ARR[CT7.POS] = D1'],
   AVE: ['ARR[0]', '0', 'D3', 'CT8', '5', '0'], STD: ['ARR[0]', '0', 'R2', 'CT9', '5', '0'], SRT: ['ARR2[0]', '0', 'CT10', '5', '0'], SIZE: ['ARR', '0', 'D3'], CPS: ['ARR[0]', 'ARR2[0]', '5'],
+  GSV: ['WallClockTime', '', 'DateTime', 'ARR[0]'], SSV: ['Program', 'THIS', 'MaxScanTime', 'D1'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
 };
 const MNS = Object.keys(PLAN);

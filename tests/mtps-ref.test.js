@@ -514,5 +514,17 @@ console.log('AVE, SRT, STD, SIZE and CPS: the examples of 1756-RM018A (chapter 8
   check('CPS Example: project_data[0] … [99] copied into produced_array', p.read('produced_array[99]') === 99 && p.read('produced_array[1]') === 1);
 }
 
+console.log('GSV and SSV: the example and rules of 1756-RM018A (chapter 4)');
+{
+  const src = [0, 0, 4 | (89 << 16), 0, 0, 0, 0, 0, 0, 0, 0];
+  const c = run({ tags: [T('dest1', 'DINT'), T('src', 'DINT', { dim: 11, value: src }), T('back', 'DINT', { dim: 11 }), T('Wide', 'DINT', { value: 0x12345678 }), T('small', 'DINT', { dim: 4 })],
+    rungs: ['GSV(Program,THIS,LASTSCANTIME,dest1);', 'SSV(Program,THIS,MinorFaultRecord,src[0]);', 'GSV(Program,THIS,MinorFaultRecord,back[0]);', 'GSV(WallClockTime,,ApplyDST,Wide);', 'GSV(Program,THIS,MajorFaultRecord,small[0]);'] });
+  c.scan(10); c.scan(10);
+  check('Example: GSV(Program,THIS,LASTSCANTIME,dest1) gets the last scan time of this program in µs', c.read('dest1') >= 0 && Number.isInteger(c.read('dest1')));
+  eq('Example: SSV(Program,THIS,MinorFaultRecord,src[0]) sets the record (GSV reads it back)', c.read('back'), src);
+  check('a SINT attribute into a DINT Dest: only the lower 8 bits are updated, the other 24 bits unchanged', c.read('Wide') === 0x12345600);
+  check('the MajorFaultRecord of the Program object requires a DINT[11]: a DINT[4] is too small, minor fault 4/7, Dest unchanged', c.minors.some(m => m.type === 4 && m.code === 7) && c.read('small').every(v => v === 0));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

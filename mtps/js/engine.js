@@ -553,7 +553,7 @@
 
   function operand(M, P, kind, text) {
     const s = String(text == null ? '' : text).trim();
-    if (s === '' || s === '?') return 'Missing operand';
+    if ((s === '' && kind !== 'ginst') || s === '?') return 'Missing operand';   // GSV / SSV: an object with no instance has an empty Instance Name
     switch (kind) {
       case 'imm': { const c = parseNumber(s); return c ? new Const(c.v, c.real) : 'Immediate value expected'; }
       case 'label': return validName(s) ? { label: U(s) } : `Invalid label name '${s}'`;
@@ -721,6 +721,8 @@
     };
     addTags(pj.tags, null);
 
+    // the tasks, for GSV / SSV (Task object); each program knows its task
+    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit }));
     const progNames = new Set();
     for (const task of pj.tasks || []) for (const pg of task.programs || []) {
       if (!validName(pg.name) || progNames.has(U(pg.name))) { ctlErr(`Invalid or repeated program name '${pg.name}'`); continue; }
@@ -734,6 +736,7 @@
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
       M.programs.push(P);
+      P.task = M.tasks[pj.tasks.indexOf(task)];
     }
 
     // aliases point at a tag, a member or a bit that exists; they take its data type
@@ -816,6 +819,7 @@
     FAL: ['Control', 'Length', 'Position', 'Mode', 'Dest', 'Expression'], FSC: ['Control', 'Length', 'Position', 'Mode', 'Expression'],
     AVE: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'], STD: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'],
     SRT: ['Array', 'Dim. To Vary', 'Control', 'Length', 'Position'], SIZE: ['Source', 'Dim. To Vary', 'Size'], CPS: ['Source', 'Dest', 'Length'],
+    GSV: ['Class Name', 'Instance Name', 'Attribute Name', 'Dest'], SSV: ['Class Name', 'Instance Name', 'Attribute Name', 'Source'],
   });
   Object.assign(INSTR, {
     // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
@@ -836,6 +840,8 @@
     SRT: I('box', 'File/Misc', 'Sort File', 'aelemw adim control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     SIZE: I('box', 'File/Misc', 'Size In Elements', 'sarr adim dest', { out: true }),
     CPS: I('box', 'File/Misc', 'Synchronous Copy File', 'elem elemw imm', { out: true }),
+    // Input/Output (chapter 4): controller data stored in objects
+    GSV: I('box', 'Input/Output', 'Get System Value', 'gclass ginst gattr gdest', { out: true }), SSV: I('box', 'Input/Output', 'Set System Value', 'gclass ginst gattr gsrc', { out: true }),
   });
   /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
      integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
@@ -1007,6 +1013,106 @@
   XCHK.CPS = (x, bad) => { if (x[0].type !== x[1].type && !(isNum(x[0].type) && isNum(x[1].type))) bad(BAD_TYPE, 1); };
   XEL.CPS = function (e, x, p) { this.el({ t: 'COP', x }, p); e.v = p; return p; };
 
+  /* ---------- GSV / SSV (RM018A chapter 4, GSV/SSV Objects): the objects and attributes the simulator has.
+     Each attribute: [data type, number of elements, SSV allowed, get(c, o) → values, set(c, o, values)]; o is the
+     instance (a program, a task or a module, or null for an object with no instance). The data moves as bytes: only
+     the attribute's size is copied (a SINT attribute into a DINT Dest changes its low 8 bits); a Dest or Source that is
+     too small is a minor fault (4/7 GSV, 4/6 SSV) and nothing is copied. */
+  const US32 = 4294967296;
+  const lohi = v => { v = Math.floor(v); const hi = Math.floor(v / US32); return [i32(v - hi * US32), i32(hi)]; };
+  const fromLohi = a => (a[1] | 0) * US32 + (a[0] >>> 0);
+  const wct = c => Date.now() * 1000 + (c.wcOff || 0);                  // WallClockTime CurrentValue, µs since 1970
+  const cst = c => (Date.now() - (c.cst0 || (c.cst0 = Date.now()))) * 1000;   // CST: µs since the controller started
+  const dt7 = (us, local) => {
+    const d = new Date(Math.floor(us / 1000)), L = local ? ['getFullYear', 'getMonth', 'getDate', 'getHours', 'getMinutes', 'getSeconds'] : ['getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCHours', 'getUTCMinutes', 'getUTCSeconds'];
+    const v = L.map(f => d[f]()); v[1]++;
+    return [...v, Math.floor(us) % 1000000];
+  };
+  const setDt7 = (c, a, local) => {
+    const ms = local ? new Date(a[0], a[1] - 1, a[2], a[3], a[4], a[5]).getTime() : Date.UTC(a[0], a[1] - 1, a[2], a[3], a[4], a[5]);
+    if (isFinite(ms)) c.wcOff = ms * 1000 + (a[6] || 0) - Date.now() * 1000;
+  };
+  const FLOG = c => c.flog || (c.flog = { MajorEvents: 0, MinorEvents: 0, MajorFaultBits: 0, MinorFaultBits: 0 });
+  // a fault record, DINT[11]: Timestamp (LINT, µs since 1970), Type (INT) and Code (INT), Info (DINT[8])
+  const frec = (c, type, code) => [...lohi(wct(c)), (type & 0xFFFF) | (code << 16), 0, 0, 0, 0, 0, 0, 0, 0];
+  // every fault: the FaultLog counters and bits, and the fault record of the program that was running
+  function faultRec(c, major, type, code) {
+    const f = FLOG(c), P = c.curP;
+    if (major) { f.MajorEvents = (f.MajorEvents + 1) & 0x7FFF; f.MajorFaultBits |= 1 << type; if (P) P.majRec = frec(c, type, code); }
+    else { f.MinorEvents = (f.MinorEvents + 1) & 0x7FFF; f.MinorFaultBits |= 1 << type; if (P) P.minRec = frec(c, type, code); }
+  }
+  const keep = (k, d) => (c, o) => [(o || c)[k] != null ? (o || c)[k] : d];
+  const store1 = k => (c, o, a) => { (o || c)[k] = a[0]; };
+  const MODST = (c, m) => { const s = c.moduleStatus(m.slot); return s.state === 'Running' ? 0x4000 : s.state === 'Inhibited' ? 0x6000 : 0x1000; };
+  const GSVOBJ = {
+    WallClockTime: { inst: null, attrs: {
+      ApplyDST: ['SINT', 1, true, keep('applyDST', 0), store1('applyDST')], CSTOffset: ['DINT', 2, true, c => lohi(wct(c) - cst(c)), (c, o, a) => { c.wcOff = fromLohi(a) + cst(c) - Date.now() * 1000; }],
+      CurrentValue: ['DINT', 2, true, c => lohi(wct(c)), (c, o, a) => { c.wcOff = fromLohi(a) - Date.now() * 1000; }], DateTime: ['DINT', 7, true, c => dt7(wct(c)), (c, o, a) => setDt7(c, a)],
+      DSTAdjustment: ['INT', 1, true, keep('dstAdj', 0), store1('dstAdj')], LocalDateTime: ['DINT', 7, true, c => dt7(wct(c), true), (c, o, a) => setDt7(c, a, true)] } },
+    Controller: { inst: null, attrs: {
+      TimeSlice: ['INT', 1, true, keep('timeSlice', 20), (c, o, a) => { if (a[0] >= 10 && a[0] <= 90 && c.key !== 'RUN') c.timeSlice = a[0]; }], ShareUnusedTimeSlice: ['INT', 1, true, keep('shareUnused', 1), store1('shareUnused')],
+      RedundancyEnabled: ['SINT', 1, false, () => [0]] } },
+    Task: { inst: 'task', attrs: {
+      DisableUpdateOutputs: ['DINT', 1, false, (c, t) => [t.noOutputs ? 1 : 0]], InhibitTask: ['DINT', 1, true, (c, t) => [t.inhibit ? 1 : 0], (c, t, a) => { t.inhibit = !!a[0]; c.M.programs.forEach(P => { if (P.task === t) { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; } }); }],
+      Instance: ['DINT', 1, false, (c, t) => [t.k]], LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
+      OverlapCount: ['DINT', 1, true, keep('overlap', 0), store1('overlap')], StartTime: ['DINT', 2, true, (c, t) => lohi(t.start || 0), (c, t, a) => { t.start = fromLohi(a); }],
+      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }] } },
+    Program: { inst: 'program', attrs: {
+      DisableFlag: ['SINT', 1, true, (c, P) => [P.inhibit ? 1 : 0], (c, P, a) => { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; }],
+      LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
+      MajorFaultRecord: ['DINT', 11, true, (c, P) => P.majRec || Array(11).fill(0), (c, P, a) => { P.majRec = a; }], MinorFaultRecord: ['DINT', 11, true, (c, P) => P.minRec || Array(11).fill(0), (c, P, a) => { P.minRec = a; }] } },
+    Module: { inst: 'module', attrs: {
+      EntryStatus: ['INT', 1, false, (c, m) => [MODST(c, m)]], FaultCode: ['INT', 1, false, (c, m) => { const s = c.moduleStatus(m.slot); return [s.state === 'Faulted' && s.code ? parseInt(s.code.slice(3), 16) : 0]; }],
+      FaultInfo: ['DINT', 1, false, () => [0]], ForceStatus: ['INT', 1, false, c => [(c.forces.size ? 1 : 0) | (c.forcesOn ? 2 : 0)]],
+      LEDStatus: ['INT', 1, false, c => { const ms = [...c.M.mods.values()], run = ms.filter(m => MODST(c, m) === 0x4000).length; return [!ms.length ? 0 : !run ? 1 : run < ms.length ? 2 : 3]; }, null, true],
+      Mode: ['INT', 1, true, (c, m) => [(m.majorOnFail ? 1 : 0) | (m.inhibit ? 4 : 0)], (c, m, a) => { m.majorOnFail = !!(a[0] & 1); m.inhibit = !!(a[0] & 4); c.emit('io'); }] } },
+    FaultLog: { inst: null, attrs: {
+      MajorEvents: ['INT', 1, true, c => [FLOG(c).MajorEvents], (c, o, a) => { FLOG(c).MajorEvents = a[0]; }], MinorEvents: ['INT', 1, true, c => [FLOG(c).MinorEvents], (c, o, a) => { FLOG(c).MinorEvents = a[0]; }],
+      MajorFaultBits: ['DINT', 1, true, c => [FLOG(c).MajorFaultBits], (c, o, a) => { FLOG(c).MajorFaultBits = a[0]; }], MinorFaultBits: ['DINT', 1, true, c => [FLOG(c).MinorFaultBits], (c, o, a) => { FLOG(c).MinorFaultBits = a[0]; }] } },
+  };
+  const findU = (o, s) => Object.keys(o).find(k => U(k) === U(s));
+  XNAME.gclass = s => { const k = findU(GSVOBJ, s); return k ? { cls: k } : `'${s}' is not an object class GSV / SSV can access (${Object.keys(GSVOBJ).join(', ')})`; };
+  XNAME.ginst = s => ({ inst: s });
+  XNAME.gattr = s => (validName(s) ? { attr: s } : `Invalid attribute name '${s}'`);
+  XKIND.gdest = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) ? writable() : BAD_TYPE);
+  XKIND.gsrc = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) ? r : BAD_TYPE);
+  // the instance of a class: THIS is the program (task) the instruction is in; a module by its name
+  const gsvInst = (c, x, M, P) => {
+    const O = GSVOBJ[x[0].cls], n = x[1].inst, u = U(n);
+    if (O.inst === 'program') return u === 'THIS' ? P : M.programs.find(p => U(p.name) === u);
+    if (O.inst === 'task') return u === 'THIS' ? P && P.task : (M.tasks || []).find(t => U(t.name) === u);
+    if (O.inst === 'module') return [...M.mods.values()].find(m => m.name && U(m.name) === u);
+    return null;
+  };
+  function gsvCheck(x, bad, e, M, P) {
+    const O = GSVOBJ[x[0].cls], a = findU(O.attrs, x[2].attr), ssv = e.t === 'SSV';
+    if (!a) return bad(`'${x[2].attr}' is not an attribute of the ${x[0].cls} object`, 2);
+    if (ssv && !O.attrs[a][2]) return bad(`The ${a} attribute of the ${x[0].cls} object cannot be set (GSV only)`, 2);
+    x[2].attr = a;
+    if (O.inst && !O.attrs[a][5] && !gsvInst(null, x, M, P)) bad(x[1].inst === '' ? `The ${x[0].cls} object needs an instance name` : `'${x[1].inst}' is not a ${O.inst} of this controller`, 1);
+  }
+  XCHK.GSV = gsvCheck; XCHK.SSV = gsvCheck;
+  /* the attribute's bytes into the Dest (GSV) or from the Source (SSV), from the element given to the end of its array */
+  function gsvMove(c, e, x, p) {
+    if (!p) return;
+    const O = GSVOBJ[x[0].cls], A = O.attrs[x[2].attr], [at, an] = A, ab = BYTES[at] * an, ssv = e.t === 'SSV';
+    const o = O.inst && !A[5] ? gsvInst(c, x, c.M, c.curP) : null;
+    if (O.inst && !A[5] && !o) { c.minorFault(4, 5, `${e.t}: there is no ${O.inst} '${x[1].inst}' (invalid object address)`); return; }
+    const r = x[3], F = file(r), db = BYTES[r.type], n = Math.ceil(ab / db);
+    if (F.n * db < ab) { c.minorFault(4, ssv ? 6 : 7, ssv ? `SSV: the Source is too small for ${x[0].cls}.${x[2].attr} (${an} ${at}): not enough information supplied` : `GSV: the Dest is too small to hold ${x[0].cls}.${x[2].attr} (${an} ${at})`); return; }
+    const dv = new DataView(new ArrayBuffer(n * db + 8));
+    for (let k = 0; k < n; k++) putBytes(dv, k * db, r.type, F.g(k));
+    if (ssv) { const v = []; for (let k = 0; k < an; k++) v.push(getBytes(dv, k * BYTES[at], at)); A[4](c, o, v); return; }
+    A[3](c, o).forEach((v, k) => putBytes(dv, k * BYTES[at], at, at === 'REAL' ? v : i32(v)));
+    for (let k = 0; k < n; k++) F.s(k, getBytes(dv, k * db, r.type));
+  }
+  XEL.GSV = function (e, x, p) { gsvMove(this, e, x, p); e.v = p; return p; };
+  XEL.SSV = XEL.GSV;
+  // the program being scanned (THIS, its fault records) and its scan time in µs; its task's StartTime
+  const msNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); return msNow(); }
+  function progEnd(P, p0) { P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -1061,12 +1167,14 @@
       this.emit('key');
     }
     majorFault(type, code, text) {
+      faultRec(this, true, type, code);
       this.fault = { type, code, text, at: Date.now() };
       this.majors.unshift(this.fault);
       this.majors.length = Math.min(this.majors.length, 10);
       this.emit('fault');
     }
     minorFault(type, code, text) {
+      faultRec(this, false, type, code);
       const last = this.minors[0];
       if (last && last.type === type && last.code === code && last.text === text) { last.count++; last.at = Date.now(); return; }
       this.minors.unshift({ type, code, text, at: Date.now(), count: 1 });
@@ -1201,7 +1309,7 @@
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
-      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
+      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); }
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         this.majorFault(e.type, e.code, e.message);
@@ -1212,6 +1320,7 @@
       // scan times in microseconds (Task Properties, Monitor)
       const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
+      this.curP = null; for (const t of this.M.tasks || []) { t.us = us; t.maxUs = Math.max(t.maxUs || 0, us); }
     }
     /* speed of time (LGEM5K-GR016: 0-100 %, takes effect at once; 60 % makes 1 s take about 1.67 s) */
     setSpeed(p) { p = Math.round(Number(p)); if (!(p >= 0 && p <= 100)) return false; this.sot = p; this.emit('speed'); return true; }
@@ -1813,6 +1922,7 @@
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
+  MTPS.GSVOBJ = GSVOBJ;
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

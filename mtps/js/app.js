@@ -115,6 +115,7 @@
     Favorites: ['RUNG', 'BR', 'BRL', 'XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES'],
     Bit: ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'OSR', 'OSF'],
     'Timer/Counter': ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES'],
+    'Input/Output': ['GSV', 'SSV'],
     Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
@@ -1719,7 +1720,7 @@
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
     control: ['CONTROL'], darr: ['DINT'], real: ['REAL'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
-    aelem: ['SINT', 'INT', 'DINT', 'REAL'], aelemw: ['SINT', 'INT', 'DINT', 'REAL'], rdest: ['REAL'],
+    aelem: ['SINT', 'INT', 'DINT', 'REAL'], aelemw: ['SINT', 'INT', 'DINT', 'REAL'], rdest: ['REAL'], gdest: ['SINT', 'INT', 'DINT', 'REAL'], gsrc: ['SINT', 'INT', 'DINT', 'REAL'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr', 'aelem', 'aelemw'];
@@ -1728,6 +1729,18 @@
   let PCTX = null;
   const PICKS = {
     fmode: { title: 'Modes: ALL, INC, or a number of elements per scan', list: () => [['ALL', 'All the elements in one scan'], ['INC', 'One element each false-to-true rung'], ['1', 'A number: that many elements each scan']].map(([name, desc]) => ({ name, type: '', desc })) },
+    gclass: { title: 'Object classes', list: () => Object.keys(E.GSVOBJ).map(name => ({ name, type: '', desc: { WallClockTime: 'Date and time', Controller: 'Controller settings', Task: 'A task: scan times, watchdog', Program: 'A program: scan times, fault records', Module: 'An I/O module: status, fault code, mode', FaultLog: 'Fault counts and bits' }[name] || '' })) },
+    ginst: { title: 'Instance names', list: () => {
+      const O = E.GSVOBJ[Object.keys(E.GSVOBJ).find(k => PCTX && U(k) === U(PCTX.ops[0] || ''))], P = S.p;
+      if (!O || !O.inst) return [];
+      if (O.inst === 'module') return P.rack.modules.filter(m => m.name).map(m => ({ name: m.name, type: '', desc: `[${m.slot}] ${MODNAMES[m.type] || m.type}` }));
+      const all = O.inst === 'task' ? P.tasks.map(t => t.name) : P.tasks.flatMap(t => t.programs.map(g => g.name));
+      return [{ name: 'THIS', type: '', desc: `The ${O.inst} this instruction is in` }, ...all.map(name => ({ name, type: '', desc: '' }))];
+    } },
+    gattr: { title: 'Attributes', list: () => {
+      const O = E.GSVOBJ[Object.keys(E.GSVOBJ).find(k => PCTX && U(k) === U(PCTX.ops[0] || ''))];
+      return O ? Object.entries(O.attrs).filter(([, a]) => PCTX.mn !== 'SSV' || a[2]).map(([name, a]) => ({ name, type: a[0] + (a[1] > 1 ? `[${a[1]}]` : ''), desc: a[2] ? 'GSV / SSV' : 'GSV' })) : [];
+    } },
     adim: { title: 'Dimension to vary (the order is array[0,1,2])', list: () => [['0', 'The first dimension'], ['1', 'The second dimension'], ['2', 'The third dimension']].map(([name, desc]) => ({ name, type: '', desc })) },
   };
   const PICKK = Object.keys(PICKS);
@@ -1986,7 +1999,7 @@
       const m = U(el.querySelector('#mn').value.trim());
       if (!INSTR[m]) { el.querySelector('#ee').textContent = `"${m}" is not an instruction.`; return false; }
       if (TC.includes(m)) { if (!ops[2] || ops[2] === '?') ops[2] = '0'; }
-      const d = INSTR[m], a = d.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(v => v !== null);
+      const d = INSTR[m], a = d.args.map((k, i) => (ops[i] == null || (ops[i] === '' && k !== 'ginst') ? (k.endsWith('?') ? null : '?') : ops[i])).filter(v => v !== null);
       rememberTags(a.filter((v, i) => v && v !== '?' && !E.parseNumber(v) && !['imm', 'routine', 'label', 'order', 'expr', ...PICKK].includes((d.args[i] || '').replace('?', ''))));
       edit(() => {
         const els = parsed(ri), x = getEl(els, path);
@@ -2102,7 +2115,7 @@
       }
       const dd = INSTR[x2.t], ops = x2.a.slice();
       ops[op] = v;
-      const a2 = dd.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(z => z !== null);
+      const a2 = dd.args.map((k, i) => (ops[i] == null || (ops[i] === '' && k !== 'ginst') ? (k.endsWith('?') ? null : '?') : ops[i])).filter(z => z !== null);
       closeLayer();
       if (a2.join('\u0001') !== x2.a.join('\u0001')) {
         if (v && v !== '?' && isTagText(v) && !SEL_KIND.test(kind) && kind !== 'imm' && kind !== 'expr') rememberTags([v]);
@@ -2855,7 +2868,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = w.querySelector(`rect.tap[data-rn][data-ri="${ri}"]`);
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
-  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest', 'aelemw', 'rdest'];
+  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest', 'aelemw', 'rdest', 'gdest'];
   /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
      wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
      Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a
@@ -2942,7 +2955,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
-  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions'],
+  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Input/Output', 'Input/Output Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions'],
     ['Trig Functions', 'Trigonometric Instructions'], ['Advanced Math', 'Advanced Math Instructions'], ['Math Conversions', 'Math Conversion Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
