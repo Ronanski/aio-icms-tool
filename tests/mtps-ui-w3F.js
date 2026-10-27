@@ -168,6 +168,63 @@ module.exports = async function w3F({ browser, page, URL, check }) {
   check('producer back on: the connection is made again', await ev(() => MTPS.App.ctl.ioOk() && MTPS.App.ctl.pcState('Count_In').conn));
   await ev(() => MTPS.App.run('offline')); await wait(100);
 
+  console.log('Wave 3 F: FactoryTalk Logix Echo, Add Controller (9310-GR001D)');
+  await fresh();
+  await ev(() => { MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.render(); });
+  await wait(120);
+  await ev(() => MTPS.App.run('chassis')); await wait(150);
+  await page.click('#emubody [data-emu="add"]'); await wait(100);
+  const addItems = await page.$$eval('#layer .menu .it span:not(.k):not(.ck)', s => s.map(x => x.textContent));
+  check('Devices > Add keeps the Logix Emulate Add Controller… and adds Add Logix Echo Controller…', addItems.includes('Add Controller…') && addItems.indexOf('Add Logix Echo Controller…') === addItems.indexOf('Add Controller…') + 1, addItems.join(','));
+  await pick('Add Logix Echo Controller…'); await wait(150);
+  check('Add Controller (Echo): the Type list of 9310-GR001, only ControlLogix 5580 runs here', (await dlgTitle()) === 'Add Controller' && (await page.$$eval('#ea-t option', o => o.map(x => x.textContent.replace(' (not in this app)', '')).join())) === 'Compact GuardLogix 5380,CompactLogix 5380,ControlLogix 5580,GuardLogix 5580,ControlLogix 5590' && (await page.$$eval('#ea-t option:not([disabled])', o => o.map(x => x.value).join())) === 'ControlLogix 5580');
+  check('… Revision 33 to 37 (v33 and later), the next free IP address, Subnet Mask 255.255.255.0, On', (await page.$$eval('#ea-rev option', o => o.map(x => x.value).join())) === '33,34,35,36,37' && (await page.$eval('#ea-ip', s => s.value)) === '127.0.0.2' && (await page.$eval('#ea-m', i => i.value)) === '255.255.255.0' && (await page.$('[data-eaon="1"].on')) !== null);
+  await page.fill('#ea-n', 'Echo_L85'); await page.selectOption('#ea-cm', 'new'); await wait(50);
+  check('Chassis Name New: a name box, and the slots of a new chassis', !(await page.$eval('#ea-cn', i => i.hidden)) && (await page.$$eval('#ea-s option', o => o.length)) === 8);
+  await shot('echo-add-controller');
+  await clickBtn('Add');
+  check('… a new chassis needs a name', /Chassis Name/.test(await page.$eval('#ea-e', e => e.textContent)));
+  await page.fill('#ea-cn', 'Echo_Rack'); await clickBtn('Add'); await wait(200);
+  check('Add: the controller is in slot 0 of the new chassis Echo_Rack, ControlLogix 5580 revision 37, IP 127.0.0.2', await ev(() => { const r = MTPS.App.racks.find(x => x.name === 'Echo_Rack'), m = r && r.module(0); return !!m && m.ctl && m.ip === '127.0.0.2' && m.echo.type === 'ControlLogix 5580' && m.echo.rev === '37' && m.mask === '255.255.255.0' && m.ctl.powered; }));
+  check('the Controller pane shows its type and revision', /ControlLogix 5580 \(Logix Echo\)/.test(await page.$eval('#emumain', e => e.textContent).catch(() => '')) && /Revision37/.test((await page.$eval('#emumain', e => e.textContent).catch(() => '')).replace(/\s+/g, '')));
+  await page.keyboard.press('Escape'); await wait(80);
+  // a PLC-CPU project is refused; a 1756-L85E v37 project downloads without Change Controller
+  const toEcho = async () => {
+    await ev(() => MTPS.App.run('who')); await page.waitForFunction(() => document.querySelector('#wa-rows [data-wa]'), null, { timeout: 4000 }).catch(() => {}); await wait(600);
+    await page.evaluate(() => [...document.querySelectorAll('#wa-rows [data-wa]')].find(x => x.dataset.wa === 'Emulate\\127.0.0.2\\Backplane\\0').click()); await wait(60);
+    await page.evaluate(() => [...document.querySelectorAll('#layer .btn')].find(b => b.textContent.trim() === 'Download…').click()); await wait(250);
+  };
+  await toEcho();
+  check('Download of a PLC-CPU project to the Echo controller: "Failed to download", the family is needed', /Failed to download/.test(await page.$eval('#layer .dlg .db', d => d.textContent).catch(() => '')) && /ControlLogix 5580 37 \(Logix Echo\)/.test(await page.$eval('#layer .dlg .db', d => d.textContent).catch(() => '')));
+  await shot('echo-download-refused');
+  await page.keyboard.press('Escape'); await wait(80);
+  await ev(() => { const p = MTPS.App.state.p; p.controller.type = '1756-L85E'; p.controller.rev = '36'; MTPS.App.render(); });
+  await toEcho();
+  check('a 1756-L85E v36 project to a revision 37 controller: the revision must match', /revision must match/.test(await page.$eval('#layer .dlg .db', d => d.textContent).catch(() => '')));
+  await page.keyboard.press('Escape'); await wait(80);
+  await ev(() => { MTPS.App.state.p.controller.rev = '37'; MTPS.App.render(); });
+  await toEcho();
+  check('a 1756-L85E v37 project: the Download dialog names the Echo controller', (await dlgTitle()) === 'Download' && /ControlLogix 5580 37 \(Logix Echo\)/.test(await page.$eval('#layer .dlg .db', d => d.textContent)));
+  for (let k = 0; k < 6 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) { await wait(150); const b = await page.$('#layer .dlg .btn.pri'); if (b && !(await page.$('#layer .dlg .prog'))) await b.click(); else await wait(500); }
+  check('… and it downloads without Change Controller: online, the Echo controller holds Motor_Demo', await ev(() => { const r = MTPS.App.racks.find(x => x.name === 'Echo_Rack'); return MTPS.App.state.online && MTPS.App.ctl === r.controller(0) && MTPS.App.ctl.name === 'Motor_Demo'; }));
+  await ev(() => MTPS.App.run('offline')); await wait(100);
+  await page.reload(); await wait(400);
+  check('the Echo controller is kept with the emulator (type, revision, subnet mask)', await ev(() => { const r = MTPS.App.racks.find(x => x.name === 'Echo_Rack'), m = r && r.module(0); return !!m && m.echo && m.echo.rev === '37' && m.mask === '255.255.255.0'; }));
+  {
+    const c2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const tp = await c2.newPage();
+    await tp.goto(URL); await tp.evaluate(() => localStorage.clear()); await tp.reload(); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => MTPS.App.run('chassis')); await tp.waitForTimeout(150);
+    await tp.tap('#emubody [data-emu="add"]'); await tp.waitForTimeout(100);
+    await pick('Add Logix Echo Controller…', tp, true); await tp.waitForTimeout(150);
+    check('phone: Add Controller (Echo) fits the screen with its Add button', (await dlgTitle(tp)) === 'Add Controller' && (await inView('#layer .dlg .df .btn.pri', tp)));
+    await tp.fill('#ea-n', 'Echo_Phone'); await tp.tap('[data-eaon="0"]');
+    await shot('echo-add-phone', tp);
+    await clickBtn('Add', tp, true); await tp.waitForTimeout(200);
+    check('phone: a tap on Add makes the controller, turned off as chosen', await tp.evaluate(() => { const m = MTPS.App.racks[0].controllers().find(x => x.name === 'Echo_Phone'); return !!m && m.echo && !m.ctl.powered; }));
+    await c2.close();
+  }
+
   console.log('Wave 3 F: Logic > Produced Tags and Map PLC/SLC Messages (v37 help, Logic menu; 1756-RM094 Map Tags)');
   await fresh();
   await ev(() => { const p = MTPS.App.blank('Line_C'); p.tags = [{ name: 'Out_A', type: 'DINT', prod: { max: 1 } }, { name: 'Out_B', type: 'REAL', dim: 4, prod: { max: 3 } }, { name: 'N7', type: 'INT', dim: 20 }, { name: 'F8', type: 'REAL', dim: 10 }, { name: 'Single', type: 'DINT' }]; MTPS.App.openProject(p, true); MTPS.App.render(); });

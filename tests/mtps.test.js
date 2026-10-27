@@ -1569,5 +1569,15 @@ console.log('Produced and consumed tags between two emulated controllers in the 
   check('… with Max Consumers 2 both consume', B.read('Count_In') === 12 && C.read('Count_In') === 12 && C.pcState('Count_In').conn);
 }
 
+console.log('Logix Echo controller in the chassis (9310-GR001D, Add an emulated controller)');
+{
+  const ch = new MTPS.Chassis(8, 'Echo_Rack');
+  ch.insert(1, 'PLC-CPU', 'Echo_L85'); ch.setController(1, { ip: '127.0.0.2', mask: '255.255.255.0', on: false, echo: { type: 'ControlLogix 5580', rev: '37' } });
+  const m = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch.toJSON()))).module(1);
+  check('the Echo type, firmware revision and subnet mask are kept with the chassis (and the power switch)', m.echo.type === 'ControlLogix 5580' && m.echo.rev === '37' && m.mask === '255.255.255.0' && m.ip === '127.0.0.2' && !m.ctl.powered);
+  const m2 = new MTPS.Chassis(8); m2.insert(0, 'PLC-CPU', 'E');
+  check('a Logix Emulate controller has none', m2.module(0).echo === undefined && m2.toJSON().mods[0].echo === undefined);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -5980,12 +5980,15 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         buttons: [{ l: 'Close' }, { l: 'Controller Properties…', run: () => { setTimeout(() => controllerProps(), 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
       return;
     }
-    if (!emuCtl(S.p)) {
+    // a Logix Echo controller takes a project of its family at its revision (9310-GR001); else only PLC-CPU projects
+    const ek = PCX.echoCheck(S.p, tx && tx.m);
+    if (ek && !ek.ok) { dialog({ title: 'Download', body: ek.html, buttons: [{ l: 'Close' }, { l: 'Controller Properties…', pri: true, run: () => { setTimeout(() => controllerProps(), 0); } }] }); return; }
+    if (!ek && !emuCtl(S.p)) {
       dialog({ title: 'Download', body: `<p><b>Failed to download.</b> The project is for a <b>${esc(ctlLabel(S.p))}</b> controller, but the controller at the path <b class="mono">${esc(curPath())}</b> is a <b>PLC-CPU 1.0</b>.</p><p class="help">The controller type and revision of the project must match the controller. Change Controller in Controller Properties to PLC-CPU to download to the emulator.</p>`,
         buttons: [{ l: 'Close' }, { l: 'Controller Properties…', pri: true, run: () => { setTimeout(() => controllerProps(), 0); } }] });
       return;
     }
-    dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', 'PLC-CPU 1.0')}${kv('Slot', ctlSlot())}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
+    dialog({ title: 'Download', body: `<p>Download to the controller:</p>${kv('Name', esc(ctl.name || '(no project)'))}${kv('Type', ek ? esc(ek.label) : 'PLC-CPU 1.0')}${kv('Slot', ctlSlot())}${kv('Path', esc(curPath()))}${kv('Mode', MODE())}
         <p>${ctl.name ? `The project in the controller (<b>${esc(ctl.name)}</b>) will be replaced by <b>${esc(S.p.controller.name)}</b>.` : `<b>${esc(S.p.controller.name)}</b> will be downloaded.`} ${RUNM() ? 'The controller goes to Remote Program first.' : ''}</p>`,
       buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Download', pri: true, run: () => {
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
@@ -6794,13 +6797,13 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         <p class="help">An addition of this app: the field devices of a card reach the controller whose project configures the same module in this slot.</p></div><div class="emurack">${rackHTML(emuSel.ri)}</div>`;
     const c = m.ctl, id = emuSel.ri + ':' + m.slot;
     return `<div class="ph" style="background:none">Controller</div><div class="emuform">
-      ${kv('Vendor', 'MT PLC Studio')}${kv('Type', 'PLC-CPU (emulated)')}${kv('Revision', '1.0')}
+      ${kv('Vendor', 'MT PLC Studio')}${kv('Type', esc(PCX.echoType(m)))}${kv('Revision', esc(PCX.echoRev(m)))}
       <div class="frow"><label>Name</label><input class="inp" id="ec-n" value="${esc(m.name)}"></div>
       <div class="frow"><label>Description</label><input class="inp" id="ec-d" value="${esc(m.desc || '')}"></div>
       <div class="frow"><label>IP Address</label><select class="inp" id="ec-ip"><option value=""${m.ip ? '' : ' selected'}>(none)</option>${EMUIPS.map(a => `<option${a === m.ip ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
       ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
       <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
-      ${kv('Revision', '1.0')}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      ${m.mask ? kv('Subnet Mask', esc(m.mask)) : ''}${kv('Revision', esc(PCX.echoRev(m)))}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
       <div class="frow"><label>Speed of Time</label><span>${c.sot} % <button class="btn" data-ecfg="${id}">Configure Emulation…</button></span></div>
       <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
       <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
@@ -6860,7 +6863,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       return true;
     }
     if ((el = t.closest('[data-emu]'))) {
-      openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
+      openMenu([{ l: 'Add Controller…', run: () => insertCard(emuSel.ri, null, 'PLC-CPU') }, { l: 'Add Logix Echo Controller…', run: () => PCX.echoAdd(emuSel.ri, (r, s) => { emuSel = { k: 'm', ri: racks.indexOf(r), slot: s }; setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0); }) }, { l: 'Add I/O Card…', run: () => insertCard(emuSel.ri, null, 'PLC-DI16-24V') }, '-', { l: 'Add Chassis…', run: newRack }, '-', { l: 'Snapshots…', run: snapshots }], el.getBoundingClientRect && doc === document ? el : { x: 40, y: 80 });
       if (doc !== document) window.focus();
       return true;
     }
@@ -7490,7 +7493,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   });
 
   /* produced and consumed tags, Logic > Produced Tags, Map PLC/SLC Messages, Logix Echo (pc.js) */
-  const PCX = E.PCUI({ S, E, U, esc, ic, kv, dialog, over: overDlg, toast, edit, tabbed, bindTabs, confirm: confirmDlg, ctl: () => ctl });
+  const PCX = E.PCUI({ S, E, U, esc, ic, kv, dialog, over: overDlg, toast, edit, tabbed, bindTabs, confirm: confirmDlg, ctl: () => ctl, racks: () => racks, addRack, saveChassis, emuIps: EMUIPS });
 
   /* ---------- start ---------- */
   function start() {

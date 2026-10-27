@@ -203,6 +203,64 @@
     // the tag filter's Mapped (v37 help, Filter the tag list): a tag of the PLC/SLC mapping
     const mapped = t => { const m = S.p.plcMap; return !!(m && t && ((m.files || []).some(x => U(x.tag) === U(t.name)) || (m.plc2 && U(m.plc2) === U(t.name)))); };
 
-    return { kindOf, typeOpts, tagRows, tagHook, connDlg, peerRow, newPeer, peerProps, peerDelete, treeLabel, treeFlag, ctls, producedTags, mapPlc, mapped };
+    /* ---------- FactoryTalk Logix Echo, Add Controller (9310-GR001D, Add an emulated controller): Type, Name (40
+       characters), Description, Switch controller on or off, Chassis Name (New or Existing), Revision, IP Address,
+       Subnet Mask, Slot. Echo emulates v33+ controllers; of its types this app runs the ControlLogix 5580 (its
+       projects are the 1756-L8xE of Change Controller, revisions 33 to 37), the others are listed greyed out. An Echo
+       controller takes a project of its family without Change Controller, at its firmware revision. ---------- */
+    const ECHO = [['Compact GuardLogix 5380', 0], ['CompactLogix 5380', 0], ['ControlLogix 5580', 1], ['GuardLogix 5580', 0], ['ControlLogix 5590', 0]];
+    const ECHOREV = ['33', '34', '35', '36', '37'];
+    const echoType = m => (m && m.echo ? `${m.echo.type} (Logix Echo)` : 'PLC-CPU (emulated)');
+    const echoRev = m => (m && m.echo ? m.echo.rev : '1.0');
+    function echoAdd(ri, after) {
+      const racks = X.racks(), r0 = racks[ri] || racks[0];
+      const free = r => (r ? Array.from({ length: r.size }, (_, s) => s).filter(s => !r.module(s)) : [0, 1, 2, 3, 4, 5, 6, 7]);
+      const used = new Set(racks.flatMap(x => x.controllers().map(m => m.ip)));
+      const el = X.dialog({ title: 'Add Controller', size: 'md', focus: true,
+        body: `<div class="frow"><label for="ea-t">Type</label><select class="inp" id="ea-t">${ECHO.map(([t, on]) => `<option${on ? '' : ' disabled'}${t === 'ControlLogix 5580' ? ' selected' : ''}>${t}${on ? '' : ' (not in this app)'}</option>`).join('')}</select></div>
+          <div class="frow"><label for="ea-n">Name</label><input class="inp" id="ea-n" maxlength="40" value="" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+          <div class="frow"><label for="ea-d">Description</label><textarea class="inp" id="ea-d" rows="2" maxlength="10240"></textarea></div>
+          <div class="frow"><label>Controller</label><span class="seg"><span data-eaon="1" class="on">On</span><span data-eaon="0">Off</span></span></div>
+          <div class="frow"><label>Chassis Name</label><span class="afor"><select class="inp" id="ea-cm" aria-label="New or Existing"><option value="old">Existing</option><option value="new">New</option></select>
+            <select class="inp" id="ea-c" aria-label="Existing chassis">${racks.map((r, i) => `<option value="${i}"${r === r0 ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select><input class="inp" id="ea-cn" maxlength="40" placeholder="New chassis name" hidden autocomplete="off" spellcheck="false"></span></div>
+          <div class="frow"><label for="ea-rev">Revision</label><select class="inp" id="ea-rev">${ECHOREV.map(v => `<option${v === ECHOREV[ECHOREV.length - 1] ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+          <div class="frow"><label for="ea-ip">IP Address</label><select class="inp" id="ea-ip"><option value="">(none)</option>${X.emuIps.map(a => `<option${a === (X.emuIps.find(x => !used.has(x)) || '') ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+          <div class="frow"><label for="ea-m">Subnet Mask</label><input class="inp mono" id="ea-m" value="255.255.255.0" autocomplete="off" spellcheck="false"></div>
+          <div class="frow"><label for="ea-s">Slot</label><select class="inp" id="ea-s"></select></div>
+          <p class="help">One emulated controller in each chassis should have an IP address: without one, the controllers of that chassis cannot take a download. The revision is set only when the controller is added. A ControlLogix 5580 takes a 1756-L8xE project of the same revision without Change Controller.</p>
+          <div class="errtx" id="ea-e"></div>`,
+        buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
+          const q = s => e2.querySelector(s), err = m => { q('#ea-e').textContent = m; return false; };
+          const name = q('#ea-n').value.trim(), isNew = q('#ea-cm').value === 'new', cn = q('#ea-cn').value.trim(), mask = q('#ea-m').value.trim();
+          if (!E.validName(name)) return err('Name: up to 40 characters, letters, digits and _, starting with a letter or _.');
+          if (isNew && (!cn || cn.length > 40 || !/^[A-Za-z_][\w ]*$/.test(cn))) return err('Chassis Name: type a name for the new chassis (up to 40 valid characters).');
+          if (isNew && X.racks().some(r => U(r.name) === U(cn))) return err(`A chassis named ${cn} exists: select Existing, or type another name.`);
+          if (!/^(\d{1,3})(\.\d{1,3}){3}$/.test(mask) || mask.split('.').some(n => +n > 255)) return err('Subnet Mask: four numbers 0 to 255, such as 255.255.255.0.');
+          if (q('#ea-s').value === '') return err('That chassis has no free slot.');
+          const r = isNew ? X.addRack(cn) : X.racks()[+q('#ea-c').value], s = +q('#ea-s').value;
+          const res = r.insert(s, 'PLC-CPU', name); if (!res.ok) return err(res.msg);
+          r.setController(s, { name, desc: q('#ea-d').value.trim(), ip: q('#ea-ip').value, mask, on: !!q('[data-eaon].on[data-eaon="1"]'), echo: { type: q('#ea-t').value, rev: q('#ea-rev').value } });
+          r.advance(0); X.saveChassis();
+          X.toast(`[${s}] ${name}: ControlLogix 5580, revision ${q('#ea-rev').value}, in ${r.name}`);
+          if (after) after(r, s);
+        } }] });
+      const q = s => el.querySelector(s);
+      const slots = () => { const r = q('#ea-cm').value === 'new' ? null : X.racks()[+q('#ea-c').value]; q('#ea-s').innerHTML = free(r).map(s => `<option>${s}</option>`).join(''); };
+      q('#ea-cm').onchange = () => { const nw = q('#ea-cm').value === 'new'; q('#ea-c').hidden = nw; q('#ea-cn').hidden = !nw; if (nw) q('#ea-cn').focus(); slots(); };
+      q('#ea-c').onchange = slots;
+      el.addEventListener('click', e => { const b = e.target.closest('[data-eaon]'); if (b) el.querySelectorAll('[data-eaon]').forEach(x => x.classList.toggle('on', x === b)); });
+      slots();
+    }
+    /* Download to an Echo controller: null (not one, the app's own check applies) or { ok, label, html } */
+    function echoCheck(p, m) {
+      if (!m || !m.echo) return null;
+      const label = `${m.echo.type} ${m.echo.rev} (Logix Echo)`, t = p.controller.type || 'PLC-CPU', rev = String(p.controller.rev || '');
+      const fam = /^1756-L8\dE$/.test(t);
+      if (fam && rev === m.echo.rev) return { ok: true, label };
+      return { ok: false, label, html: `<p><b>Failed to download.</b> The project is for a <b>${esc(t)} ${esc(rev)}</b> controller, but the controller at the path is an emulated <b>${esc(label)}</b>.</p>
+        <p class="help">${fam ? `The firmware revision must match: change the project's revision to ${esc(m.echo.rev)} in Controller Properties (Change Controller), or add an Echo controller of revision ${esc(rev)}.` : 'A Logix Echo ControlLogix 5580 takes the projects of its family (1756-L81E to 1756-L85E, revision 33 or later): Change Controller in Controller Properties, or download to a PLC-CPU controller.'}</p>` };
+    }
+
+    return { kindOf, typeOpts, tagRows, tagHook, connDlg, peerRow, newPeer, peerProps, peerDelete, treeLabel, treeFlag, ctls, producedTags, mapPlc, mapped, echoAdd, echoCheck, echoType, echoRev };
   };
 })(typeof window !== 'undefined' ? window : globalThis);

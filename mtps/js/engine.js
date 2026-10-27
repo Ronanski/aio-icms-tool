@@ -2261,6 +2261,9 @@
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
       if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
+      // a controller added the FactoryTalk Logix Echo way (9310-GR001): its type and firmware revision, subnet mask
+      if (o.echo !== undefined) { if (o.echo && o.echo.type) m.echo = { type: String(o.echo.type), rev: String(o.echo.rev) }; else delete m.echo; }
+      if (o.mask != null) { if (o.mask) m.mask = String(o.mask); else delete m.mask; }
       if (o.sot != null) m.ctl.setSpeed(o.sot);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
@@ -2340,7 +2343,7 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field, rev: m.rev && m.rev !== REV0 ? m.rev : undefined,
-        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, echo: m.echo || undefined, mask: m.mask || undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
         tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
@@ -2360,6 +2363,7 @@
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
+          if (x.echo && x.echo.type) m.echo = { type: String(x.echo.type), rev: String(x.echo.rev) }; if (x.mask) m.mask = String(x.mask);
           if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (x.tcfg) Object.assign(m.ctl.tcfg, x.tcfg);
           if (x.emu) m.ctl.setEmu(x.emu);
