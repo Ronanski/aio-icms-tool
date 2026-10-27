@@ -945,13 +945,24 @@
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
     cmptool: { l: 'Compare Tool…', i: 'xref', run: () => compareTool(), on: () => !S.noProj },
+    // File > Generate Report, Print > …, Print Options (help v37 File menu)
+    genrep: { l: 'Generate Report…', i: 'file', run: () => genReport(), on: () => !S.noProj },
+    print: { l: 'Print…', k: 'Ctrl+P', i: 'file', run: () => printHere(), on: () => !S.noProj },
+    prtrtn: { l: 'Routine…', i: 'ladder', run: () => printDlg('routine'), on: () => !S.noProj && S.view === 'ladder' },
+    prttags: { l: 'Tags…', i: 'tags', run: () => printDlg('tags'), on: () => !S.noProj },
+    prtdt: { l: 'Data Type…', i: 'type', run: () => printDlg('dts'), on: () => !S.noProj },
+    prtmod: { l: 'Module Properties…', i: 'rack', run: () => printDlg('mods'), on: () => !S.noProj },
+    prtorg: { l: 'Controller Organizer…', i: 'tree', run: () => printDlg('org'), on: () => !S.noProj },
+    prtctl: { l: 'Controller Properties…', i: 'chip', run: () => printDlg('ctl'), on: () => !S.noProj },
+    prtall: { l: 'Entire Project…', i: 'file', run: () => printDlg('all'), on: () => !S.noProj },
+    prtopts: { l: 'Print Options…', i: 'gear', run: () => printOptions() },
     helpc: { l: 'Contents', i: 'help', run: () => helpContents() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
     tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'genrep', { hd: 'Print' }, 'prtrtn', 'prttags', 'prtmod', 'prtdt', 'prtorg', 'prtctl', 'prtall', 'prtopts', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
@@ -1174,7 +1185,7 @@
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
-      <div class="card">${b('cmptool')}</div>
+      <div class="card">${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -1700,6 +1711,7 @@
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
     else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
+    printCtx(key, items);
     if (items.length) openMenu(items, { x, y });
   }
 
@@ -3330,6 +3342,131 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const redraw = () => { el.querySelector('#cmpb').innerHTML = body(); };
     el.addEventListener('click', ev => { const r = ev.target.closest('[data-cmpr]'); if (!r) return; const i = +r.dataset.cmpr; if (st.open.has(i)) st.open.delete(i); else st.open.add(i); redraw(); });
     el.addEventListener('change', ev => { if (ev.target.id === 'cmpv') { st.values = ev.target.checked; st.open.clear(); redraw(); } });
+  }
+  /* ---------- File > Generate Report, File > Print, File > Print Options (help v37: Reports, Print a report, Generate
+     Report dialog box settings, Print dialog box settings, Print Options dialog box settings, Change General / Ladder
+     Listing / Tag Listing report preferences). The report is laid out in the page (#printout, shown only on paper)
+     and printed with the browser's print, where the printer, the copies and the pages are picked. ---------- */
+  const PRDEF = { footerOn: false, footer: '', xref: false, space: false, lines: 5, sort: 'name', unused: true };
+  const prOpts = () => Object.assign({}, PRDEF, S.prefs.print || {});
+  function tagOps(t) {
+    const pr = E.parseRung(t || ''), out = [];
+    const walk = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(walk)); else (e.a || []).forEach(a => { if (isTagText(a)) out.push(String(a)); }); };
+    if (!pr.err) pr.elems.forEach(walk);
+    return [...new Set(out)];
+  }
+  const usedTags = p => new Set(p.tasks.flatMap(t => t.programs.flatMap(g => g.routines.flatMap(r => r.rungs.flatMap(x => tagOps(x.t).map(a => U(a.split(/[.[]/)[0])))))));
+  // a routine drawn for paper: the ladder of the editor, offline, with the program's tags for the descriptions
+  function printLadder(list, g, n0, more) {
+    const was = S.prog; S.prog = g.name;
+    try {
+      const svg = L.render(list.map(r => { const pr = E.parseRung(r.t); return { c: r.c, elems: pr.err ? [] : pr.elems, err: !!pr.err }; }), { W: 1000, cell: 96, font: 11, descLines: 2, ...ladShow(), rdesc: '', tag: tagFor, desc: opDesc, n0 }).svg;
+      // a rung drawn on its own with more to follow: no (End) under it
+      return more ? svg.replace(/<text class="rn"[^>]*>\(End\)<\/text>/, '') : svg;
+    } finally { S.prog = was; }
+  }
+  function buildReport(sel, scope, range) {
+    const o = prOpts();
+    return E.Report.report(S.p, sel, { footer: o.footerOn ? o.footer : '', xref: o.xref, space: o.space, lines: o.lines, sort: o.sort, unused: o.unused, range },
+      { ladder: printLadder, ops: tagOps, used: usedTags, ctlType: ctlLabel }, scope);
+  }
+  function doPrint(rep) {
+    if (!rep.count) { toast('Nothing to print: pick a report.', 'err'); return; }
+    let d = $('#printout');
+    if (!d) { d = document.createElement('div'); d.id = 'printout'; document.body.appendChild(d); }
+    d.innerHTML = rep.html;
+    S.printed = { count: rep.count, titles: rep.titles };
+    try { window.print(); } catch (e) { toast('This device cannot print from the app.', 'err'); }
+  }
+  /* the Print dialog of one component: Print Range (All, Selection, a range of rungs for a routine), Print Options */
+  const PRKIND = { routine: 'Routine', tags: 'Tags', org: 'Controller Organizer', ctl: 'Controller Properties', dts: 'Data Type', mods: 'Module Properties', all: 'Entire Project' };
+  function printDlg(kind, key) {
+    let g = curProg(), r = curRoutine();
+    if (kind === 'routine' && key && key.startsWith('rt:')) { const [gn, rn] = key.slice(3).split('/'); g = allProgs().find(x => x.name === gn) || g; r = g.routines.find(x => x.name === rn) || r; }
+    const n = r.rungs.length, sr = kind === 'routine' && S.view === 'ladder' && g === curProg() && r === curRoutine() ? curSelRung() : null;
+    const rng = kind === 'routine' ? `<div class="grp">Print Range</div><label class="ck"><input type="radio" name="prr" value="all" checked> All</label>
+      <label class="ck"><input type="radio" name="prr" value="sel"${sr == null ? ' disabled' : ''}> Selection${sr == null ? '' : ` (rung ${sr})`}</label>
+      <label class="ck"><input type="radio" name="prr" value="rng"> Rungs <input class="inp prn" id="prf" type="number" min="0" max="${Math.max(0, n - 1)}" value="0" inputmode="numeric" aria-label="From rung"> to <input class="inp prn" id="prt" type="number" min="0" max="${Math.max(0, n - 1)}" value="${Math.max(0, n - 1)}" inputmode="numeric" aria-label="To rung"></label>` : '';
+    const what = kind === 'routine' ? `${g.name} - ${r.name}` : kind === 'tags' ? (S.tagScope ? `Program Tags: ${S.tagScope}` : 'Controller Tags') : PRKIND[kind];
+    dialog({ title: `Print - ${PRKIND[kind]}`, size: 'sm',
+      body: `<p style="margin-top:0"><b>${esc(what)}</b></p>${rng}<p class="help">The printer, the number of copies and the pages are chosen in the print dialog of this device.</p><div class="errtx" id="pre"></div>`,
+      buttons: [{ l: 'Print Options…', run: () => { setTimeout(() => printOptions(() => printDlg(kind, key)), 0); } }, { l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        let range = null;
+        if (kind === 'routine') {
+          const v = (el.querySelector('[name="prr"]:checked') || {}).value;
+          if (v === 'sel') range = [sr, sr];
+          if (v === 'rng') { const a = +el.querySelector('#prf').value, b = +el.querySelector('#prt').value; if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b >= n || a > b) { el.querySelector('#pre').textContent = `Rungs: from 0 to ${n - 1}, the first not after the last.`; return false; } range = [a, b]; }
+        }
+        const sel = kind === 'routine' ? { routines: true } : kind === 'all' ? Object.fromEntries(E.Report.REPORTS.map(x => [x[0], true])) : { [kind]: true };
+        const scope = kind === 'routine' ? { routines: [g.name + '/' + r.name] } : null;
+        setTimeout(() => doPrint(buildReport(sel, scope, range)), 0);
+      } }] });
+  }
+  /* Generate Report: Component Selection (Project > Controller, Tags, Routines > tasks > programs > routines, Data Types,
+     I/O Configuration) and Report Selection (only the reports of the components picked); Print Options, Print */
+  function genReport() {
+    const tasks = S.p.tasks;
+    const st = { comp: new Set(['ctl', 'tags', 'dts', 'io', ...tasks.flatMap(t => t.programs.flatMap(g => g.routines.map(r => 'r:' + g.name + '/' + r.name)))]), rep: new Set(['toc', 'org', 'ctl', 'tags', 'tasks', 'progs', 'routines', 'dts', 'mods']) };
+    const rts = () => [...st.comp].filter(k => k.startsWith('r:'));
+    const avail = () => { const c = st.comp, a = ['toc']; if (c.has('ctl')) a.push('org', 'ctl'); if (c.has('tags')) a.push('tags'); if (rts().length) a.push('tasks', 'progs', 'routines', 'rprops'); if (c.has('dts')) a.push('dts'); if (c.has('io')) a.push('mods'); return a; };
+    const cb = (k, l, lvl, on, part) => `<label class="ck grgrow" style="padding-left:${lvl * 18}px"><input type="checkbox" data-grc="${esc(k)}"${on ? ' checked' : ''}${part ? ' class="part"' : ''}> ${esc(l)}</label>`;
+    const comp = () => {
+      const allR = tasks.flatMap(t => t.programs.flatMap(g => g.routines.map(r => 'r:' + g.name + '/' + r.name))), onR = allR.filter(k => st.comp.has(k)).length;
+      return cb('ctl', 'Controller ' + S.p.controller.name, 0, st.comp.has('ctl')) + cb('tags', 'Tags', 0, st.comp.has('tags')) + cb('routines', 'Routines', 0, onR === allR.length, onR > 0 && onR < allR.length)
+        + tasks.map(t => `<div class="grgt">${esc(HANDLERS[t.type] || t.name)}</div>${t.programs.map(g => `<div class="grgt" style="padding-left:36px">${esc(g.name)}</div>${g.routines.map(r => cb('r:' + g.name + '/' + r.name, r.name, 3, st.comp.has('r:' + g.name + '/' + r.name))).join('')}`).join('')}`).join('')
+        + cb('dts', 'Data Types', 0, st.comp.has('dts')) + cb('io', 'I/O Configuration', 0, st.comp.has('io'));
+    };
+    const reps = () => { const a = avail(); return E.Report.REPORTS.filter(x => a.includes(x[0])).map(([k, l]) => `<label class="ck"><input type="checkbox" data-grr="${k}"${st.rep.has(k) ? ' checked' : ''}> ${esc(l)}</label>`).join(''); };
+    const el = dialog({ title: 'Generate Report', size: 'md',
+      body: `<div class="grep"><div><div class="grp">Component Selection</div><div class="grcl" id="grc">${comp()}</div></div><div><div class="grp">Report Selection</div><div class="grcl" id="grr">${reps()}</div></div></div>`,
+      buttons: [{ l: 'Print Options…', run: () => { setTimeout(() => printOptions(genReport), 0); } }, { l: 'Cancel' }, { l: 'Print', pri: true, run: () => {
+        const a = avail(), sel = Object.fromEntries([...st.rep].filter(k => a.includes(k)).map(k => [k, true]));
+        const rep = buildReport(sel, { routines: rts().map(k => k.slice(2)) });
+        setTimeout(() => doPrint(rep), 0);
+      } }] });
+    const redraw = () => { el.querySelector('#grc').innerHTML = comp(); el.querySelector('#grr').innerHTML = reps(); el.querySelectorAll('#grc input.part').forEach(x => { x.indeterminate = true; }); };
+    redraw();
+    el.addEventListener('change', ev => {
+      const c = ev.target.dataset.grc, r = ev.target.dataset.grr, on = ev.target.checked;
+      if (c === 'routines') tasks.forEach(t => t.programs.forEach(g => g.routines.forEach(x => st.comp[on ? 'add' : 'delete']('r:' + g.name + '/' + x.name))));
+      else if (c) st.comp[on ? 'add' : 'delete'](c);
+      if (r) st.rep[on ? 'add' : 'delete'](r);
+      redraw();
+    });
+  }
+  /* Print Options: the categories (General, Ladder Listing, Tag Listing); a changed category gets a *; Reset Category,
+     OK, Cancel, Apply. Kept on this device (prefs.print). */
+  function printOptions(back) {
+    const o = prOpts(), was = JSON.stringify(o), CATS = [['gen', 'General'], ['lad', 'Ladder Listing'], ['tag', 'Tag Listing']], keys = { gen: ['footerOn', 'footer'], lad: ['xref', 'space', 'lines'], tag: ['sort', 'unused'] };
+    let cat = 'gen';
+    const page = () => cat === 'gen' ? `<label class="ck"><input type="checkbox" id="po-fo"${o.footerOn ? ' checked' : ''}> Include footer text</label><input class="inp" id="po-ft" maxlength="128" value="${esc(o.footer)}" aria-label="Footer text"${o.footerOn ? '' : ' disabled'}>`
+      : cat === 'lad' ? `<label class="ck"><input type="checkbox" id="po-x"${o.xref ? ' checked' : ''}> Print embedded cross reference</label><label class="ck"><input type="checkbox" id="po-s"${o.space ? ' checked' : ''}> Print extra space between rungs</label><div class="frow"><label for="po-l">Number of lines</label><input class="inp" id="po-l" type="number" min="1" max="20" inputmode="numeric" value="${o.lines}"${o.space ? '' : ' disabled'}></div>`
+        : `<div class="frow"><label for="po-so">Sort By</label><select class="inp" id="po-so"><option value="name"${o.sort === 'name' ? ' selected' : ''}>Name</option><option value="scope"${o.sort === 'scope' ? ' selected' : ''}>Scope</option></select></div><label class="ck"><input type="checkbox" id="po-u"${o.unused ? ' checked' : ''}> Include Unused Tags, Structure Members, and Array Elements</label>`;
+    const changed = k => keys[k].some(x => JSON.stringify(o[x]) !== JSON.stringify(JSON.parse(was)[x]));
+    const side = () => CATS.map(([k, l]) => `<div class="row${k === cat ? ' on' : ''}" data-poc="${k}">${esc(l)}${changed(k) ? ' *' : ''}</div>`).join('');
+    const apply = () => { S.prefs.print = Object.assign({}, o); savePrefs(); };
+    const el = dialog({ title: 'Print Options', size: 'md',
+      body: `<div class="pogrid"><div class="gwl" id="poc">${side()}</div><div><div id="pop">${page()}</div><button class="btn" id="po-r" style="margin-top:12px">Reset Category</button></div></div>`,
+      buttons: [{ l: 'Cancel', run: () => { if (back) setTimeout(back, 0); } }, { l: 'Apply', run: () => { apply(); return false; } }, { l: 'OK', pri: true, run: () => { apply(); if (back) setTimeout(back, 0); } }] });
+    const draw = () => { el.querySelector('#poc').innerHTML = side(); el.querySelector('#pop').innerHTML = page(); };
+    el.addEventListener('click', ev => {
+      const c = ev.target.closest('[data-poc]'); if (c) { cat = c.dataset.poc; draw(); return; }
+      if (ev.target.id === 'po-r') { keys[cat].forEach(k => { o[k] = PRDEF[k]; }); draw(); }
+    });
+    el.addEventListener('change', ev => {
+      const t = ev.target;
+      if (t.id === 'po-fo') o.footerOn = t.checked; if (t.id === 'po-ft') o.footer = t.value.slice(0, 128);
+      if (t.id === 'po-x') o.xref = t.checked; if (t.id === 'po-s') o.space = t.checked; if (t.id === 'po-l') o.lines = Math.max(1, Math.min(20, Math.round(+t.value) || 5));
+      if (t.id === 'po-so') o.sort = t.value; if (t.id === 'po-u') o.unused = t.checked;
+      draw();
+    });
+  }
+  // File > Print (Ctrl+P): the component in front; a routine window prints the routine
+  const printHere = () => printDlg(S.view === 'ladder' ? 'routine' : S.view === 'tags' ? 'tags' : 'org');
+  // the organizer's right-click menu: Print for a routine, the tags, the controller, the I/O configuration
+  function printCtx(key, items) {
+    const k = key.startsWith('rt:') ? ['routine', key] : key === 'ctags' ? ['tags'] : key === 'ctl' ? ['ctl'] : key === 'io' || key === 'bp' || key.startsWith('mod:') ? ['mods'] : key === 'dts' || key === 'dt:user' ? ['dts'] : null;
+    if (k) items.push('-', { l: 'Print…', i: 'file', run: () => printDlg(k[0], k[1]) });
   }
   /* Tools > Options, as the Workstation Options dialog (help v37): the Categories list on the left (a changed
      category gets a * after its name), the page of the category, Reset Category; OK, Cancel, Apply. The pages are the
@@ -7458,6 +7595,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (tableKey(ev, k, ctrl)) { ev.preventDefault(); return; }
     const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'insmode' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
+    if (ctrl && !ev.shiftKey && k.toLowerCase() === 'p') { ev.preventDefault(); run('print'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
     if (k === 'Delete') { run('del'); return; }

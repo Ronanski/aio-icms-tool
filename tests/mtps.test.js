@@ -1521,5 +1521,30 @@ console.log('Wave 3 (A): Compare (Logix Designer Compare Tool), js/report.js');
   eq('rungDiff: one deleted in the middle', R.rungDiff([{ t: 'A;' }, { t: 'B;' }, { t: 'C;' }], [{ t: 'A;' }, { t: 'C;' }]).map(g => [g.st, g.a]), [['left', 1]]);
 }
 
+console.log('Wave 3 (A): the printed report (Generate Report, Print), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const p = proj({ tags: [{ name: 'Zed', type: 'BOOL' }, { name: 'Alpha', type: 'DINT', desc: 'a<b' }], ptags: [{ name: 'Mid', type: 'REAL' }], rungs: ['XIC(Zed)OTE(Zed);', 'MOV(1,Alpha);', 'NOP();'] });
+  const all = Object.fromEntries(R.REPORTS.map(x => [x[0], true]));
+  const r = R.report(p, all, {}, { now: 'T' });
+  check('every report of the Report Selection is made', ['Controller Organizer Listing', 'Controller Properties Listing', 'Tag Listing', 'Task Properties Listing', 'Program/Phase Properties Listing', 'Routine Listing: MainProgram - MainRoutine', 'Routine Properties Listing: MainProgram - MainRoutine', 'Data Type Listing', 'Module Properties Listing'].every(t => r.titles.includes(t)), r.titles.join(', '));
+  check('the table of contents comes at the end (the reference default)', r.html.indexOf('<h3>Table of Contents') > r.html.indexOf('<h3>Module Properties Listing'));
+  check('text is escaped', r.html.includes('a&lt;b') && !r.html.includes('a<b'));
+  const byName = R.report(p, { tags: true }, { sort: 'name' }, {}).html;
+  check('Tag Listing sorted by name: one list, Alpha before Mid before Zed', byName.indexOf('>Alpha<') < byName.indexOf('>Mid<') && byName.indexOf('>Mid<') < byName.indexOf('>Zed<'));
+  const byScope = R.report(p, { tags: true }, { sort: 'scope' }, {}).html;
+  check('Tag Listing sorted by scope: one list per scope', byScope.includes('Controller Tags') && byScope.includes('Program Tags: MainProgram'));
+  const unused = R.report(p, { tags: true }, { unused: false }, { used: () => new Set(['ZED']) }).html;
+  check('Include Unused Tags cleared: only the tags used in logic', unused.includes('>Zed<') && !unused.includes('>Alpha<'));
+  const rng = R.report(p, { routines: true }, { range: [1, 2] }, { ladder: (list, g, n0) => `<svg data-n0="${n0}" data-n="${list.length}"></svg>` }).html;
+  check('a range of rungs: the ladder gets the rungs and the number of the first', rng.includes('data-n0="1" data-n="2"'));
+  const sp = R.report(p, { routines: true }, { space: true, lines: 3 }, { ladder: (list, g, n0, more) => `<svg data-n0="${n0}" data-more="${!!more}"></svg>` }).html;
+  check('extra space between rungs: each rung on its own, a 3-line gap', (sp.match(/<svg/g) || []).length === 3 && (sp.match(/rptgap/g) || []).length === 2 && sp.includes('height:3.6em') && sp.includes('data-more="true"'));
+  const xr = R.report(p, { routines: true }, { xref: true }, { ops: t => (t.match(/\((\w+)/g) || []).map(x => x.slice(1)).filter(x => /^[A-Z][a-z]/.test(x)) }).html;
+  check('embedded cross reference: the tags of each rung and the rungs that use them', xr.includes('Rung 0: cross reference') && xr.includes('<td>Zed</td><td>0</td>'));
+  check('the footer text is on each report, up to 128 characters', R.report(p, { ctl: true, tags: true }, { footer: 'F'.repeat(200) }, {}).html.split('F'.repeat(128) + '<').length === 3);
+  check('a routine scope limits the routines', R.report(p, { routines: true }, {}, {}, { routines: ['Other/X'] }).count === 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

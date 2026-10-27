@@ -22,15 +22,16 @@ module.exports = async function w3a({ browser, URL, check }) {
     T.ev = (fn, arg) => pg.evaluate(fn, arg);
     T.hit = async sel => { if (T.touch) await pg.tap(sel); else await pg.click(sel); await pg.waitForTimeout(150); };
     // mark the first element that matches sel and has this text, then click / tap it
-    T.hitText = async (sel, text) => {
-      const ok = await pg.evaluate(([s, t]) => { document.querySelectorAll('[data-w3pick]').forEach(x => delete x.dataset.w3pick); const el = [...document.querySelectorAll(s)].find(x => !x.hidden && x.offsetParent !== null && x.textContent.trim() === t); if (el) el.dataset.w3pick = '1'; return !!el; }, [sel, text]);
+    T.hitText = async (sel, text, last) => {
+      const ok = await pg.evaluate(([s, t, z]) => { document.querySelectorAll('[data-w3pick]').forEach(x => delete x.dataset.w3pick); const all = [...document.querySelectorAll(s)].filter(x => !x.hidden && x.offsetParent !== null && x.textContent.trim() === t), el = z ? all[all.length - 1] : all[0]; if (el) el.dataset.w3pick = '1'; return !!el; }, [sel, text, last]);
       if (!ok) return false;
       await T.hit('[data-w3pick]'); return true;
     };
     // a menu command, as a user reaches it: the menu bar (desktop), the folded menu (tablet), More (phone)
-    T.cmd = async (menu, label) => {
-      if (n === 'desktop') { await T.hit(`.dmenu [data-menu="${menu}"]`); return T.hitText('#layer .menu .it span', label); }
-      if (n === 'tablet') { await T.hit('[data-allmenu]'); await T.hit(`[data-fold="${menu}"]`); return T.hitText('#layer .menu .it span', label); }
+    // last: the last item with that label (File > Print > Routine… comes after File > Import Component > Routine…)
+    T.cmd = async (menu, label, last) => {
+      if (n === 'desktop') { await T.hit(`.dmenu [data-menu="${menu}"]`); return T.hitText('#layer .menu .it span', label, last); }
+      if (n === 'tablet') { await T.hit('[data-allmenu]'); await T.hit(`[data-fold="${menu}"]`); return T.hitText('#layer .menu .it span', label, last); }
       await T.hit('[data-go="more"]'); return T.hitText('.page [data-cmd] span', label);
     };
     T.btn = label => T.hitText('#layer .dlg .df .btn', label);
@@ -76,6 +77,72 @@ module.exports = async function w3a({ browser, URL, check }) {
     check(`${n}: Compare tag values adds the value difference`, (await T.pg.$$eval('#layer [data-cmpr]', r => r.map(x => x.textContent))).some(x => /^≠Run_Timer/.test(x)));
     await T.btn('Close');
     check(`${n}: no JS errors (Compare)`, !T.errs.length, T.errs.join(' | '));
+  }
+
+  /* ---------- 2. File > Generate Report, File > Print, Print Options, Ctrl+P ---------- */
+  const stubPrint = T => T.ev(() => { window.__printed = 0; window.print = () => { window.__printed++; }; });
+  const printed = T => T.ev(() => ({ n: window.__printed, titles: (MTPS.App.state.printed || {}).titles || [], nums: [...document.querySelectorAll('#printout svg.lad text.rn')].map(t => t.textContent), html: (document.querySelector('#printout') || {}).innerHTML || '' }));
+  {
+    const T = await open('desktop');
+    await example(T); await T.wait(150); await stubPrint(T);
+    await T.cmd('File', 'Generate Report…');
+    check('desktop: File > Generate Report opens its dialog', (await T.title()) === 'Generate Report');
+    const reps = await T.pg.$$eval('#layer #grr label', l => l.map(x => x.textContent.trim()));
+    check('desktop: Report Selection lists the reports of the components', ['Table of Contents', 'Controller Organizer Listing', 'Controller Properties Listing', 'Tag Listing', 'Routine Listing', 'Data Type Listing', 'Module Properties Listing'].every(x => reps.includes(x)), reps.join(', '));
+    await T.hit('#layer [data-grc="io"]');
+    check('desktop: clearing I/O Configuration removes Module Properties Listing', !(await T.pg.$$eval('#layer #grr label', l => l.map(x => x.textContent.trim()))).includes('Module Properties Listing'));
+    await T.btn('Print'); await T.wait(200);
+    let pr = await printed(T);
+    check('desktop: Print prints the report once', pr.n === 1, JSON.stringify(pr.n));
+    check('desktop: the report holds the routine listing with its ladder, and the table of contents', pr.titles.includes('Routine Listing: MainProgram - MainRoutine') && pr.nums.includes('4') && /Table of Contents/.test(pr.html) && !pr.titles.includes('Module Properties Listing'), pr.titles.join(', '));
+    await T.pg.emulateMedia({ media: 'print' }); await T.shot('report-print'); await T.pg.emulateMedia({ media: 'screen' });
+    // Ctrl+P in the routine: Print - Routine with a range of rungs
+    await T.pg.click('#ladwrap'); await T.pg.keyboard.press('Escape'); await T.pg.keyboard.press('Control+p'); await T.wait(200);
+    check('desktop: Ctrl+P in a routine opens Print - Routine', (await T.title()) === 'Print - Routine');
+    await T.hit('#layer [name="prr"][value="rng"]');
+    await T.pg.fill('#layer #prf', '1'); await T.pg.fill('#layer #prt', '2');
+    await T.btn('OK'); await T.wait(200);
+    pr = await printed(T);
+    check('desktop: a range of rungs keeps the routine\'s rung numbers', pr.n === 2 && JSON.stringify(pr.nums.filter(x => x !== '(End)')) === '["1","2"]', JSON.stringify(pr.nums));
+    await T.pg.keyboard.press('Control+p'); await T.wait(200);
+    await T.hit('#layer [name="prr"][value="rng"]'); await T.pg.fill('#layer #prf', '3'); await T.pg.fill('#layer #prt', '1');
+    await T.btn('OK');
+    check('desktop: a range that ends before it starts is refused', /Rungs: from 0 to 4/.test(await T.text('#layer #pre')));
+    await T.btn('Cancel');
+    // Print Options: Ladder Listing > Print embedded cross reference, Tag Listing > Sort By Scope
+    await T.cmd('File', 'Print Options…');
+    check('desktop: File > Print Options opens its categories', (await T.title()) === 'Print Options' && /General/.test(await T.text('#layer #poc')) && /Ladder Listing/.test(await T.text('#layer #poc')));
+    await T.hit('#layer [data-poc="lad"]'); await T.hit('#layer #po-x');
+    check('desktop: a changed category gets a *', /Ladder Listing \*/.test(await T.text('#layer #poc')));
+    await T.hit('#layer [data-poc="tag"]'); await T.pg.selectOption('#layer #po-so', 'scope'); await T.wait(80);
+    await T.btn('OK');
+    await T.pg.keyboard.press('Control+p'); await T.wait(200); await T.btn('OK'); await T.wait(200);
+    pr = await printed(T);
+    check('desktop: embedded cross reference under each rung', /Rung 0: cross reference/.test(pr.html) && /Motor_Run/.test(pr.html));
+    await T.cmd('File', 'Tags…', true); await T.btn('OK'); await T.wait(200);
+    pr = await printed(T);
+    check('desktop: File > Print > Tags prints the Tag Listing', pr.titles.length === 1 && pr.titles[0] === 'Tag Listing' && /Controller Tags/.test(pr.html) && /Start_PB/.test(pr.html));
+    // the organizer: right-click a routine > Print…
+    await T.pg.click('[data-org="rt:MainProgram/MainRoutine"]', { button: 'right' }); await T.wait(150);
+    check('desktop: the routine\'s right-click menu has Print…', await T.hitText('#layer .menu .it span', 'Print…'));
+    check('desktop: … which opens Print - Routine', (await T.title()) === 'Print - Routine');
+    await T.btn('Cancel');
+    check('desktop: no JS errors (Print)', !T.errs.length, T.errs.join(' | '));
+  }
+  for (const n of ['tablet', 'phone']) {
+    const T = await open(n);
+    await example(T); await T.wait(150); await stubPrint(T);
+    await T.cmd('File', n === 'phone' ? 'Generate Report…' : 'Generate Report…');
+    check(`${n}: Generate Report opens by touch`, (await T.title()) === 'Generate Report');
+    await T.btn('Print'); await T.wait(200);
+    check(`${n}: Print prints the report`, (await printed(T)).n === 1);
+    if (n === 'phone') { await T.hit('[data-go="ladder"]'); await T.cmd('File', 'Print…'); }
+    else await T.cmd('File', 'Routine…', true);
+    check(`${n}: Print - Routine opens by touch`, (await T.title()) === 'Print - Routine');
+    await T.btn('OK'); await T.wait(200);
+    const pr = await printed(T);
+    check(`${n}: the routine prints`, pr.n === 2 && pr.titles[0] === 'Routine Listing: MainProgram - MainRoutine');
+    check(`${n}: no JS errors (Print)`, !T.errs.length, T.errs.join(' | '));
   }
 
   for (const T of opened) await T.cx.close();

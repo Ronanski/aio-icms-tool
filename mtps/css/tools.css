@@ -19,3 +19,30 @@
 .cmpt th:first-child, .cmpt td:first-child { width: 28%; }
 body.phone .cmpl { max-height: none; }
 .cmpt td.pre { white-space: pre-wrap; }
+
+/* Generate Report, Print, Print Options */
+.grep { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grcl { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 4px 6px; }
+.grcl .ck { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.grgt { padding: 3px 0 3px 18px; color: var(--muted); }
+.prn { width: 5.5em; display: inline-block; padding: 2px 6px; }
+.pogrid { display: grid; grid-template-columns: 150px 1fr; gap: 12px; min-height: 160px; }
+.pogrid .ck { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
+#printout { display: none; }
+@media print {
+  body > *:not(#printout) { display: none !important; }
+  #printout { display: block; color: #000; background: #fff; font: 11px Arial, sans-serif;
+    --text: #000; --muted: #333; --lad-bg: #fff; --lad-wire: #000; --lad-desc: #333; --lad-alias: #0B4A8A; --accent: #0B5CAD; --border: #999; }
+  #printout .rpts { break-before: page; }
+  #printout .rpts:first-of-type { break-before: auto; }
+  #printout .rpth { display: flex; gap: 16px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-bottom: 8px; }
+  #printout .rptlad svg.lad { width: 100%; height: auto; }
+  #printout table.rptt, #printout table.rptkv { border-collapse: collapse; width: 100%; margin: 4px 0 10px; }
+  #printout .rptt th, #printout .rptt td, #printout .rptkv th, #printout .rptkv td { border: 1px solid #999; padding: 2px 5px; text-align: left; vertical-align: top; }
+  #printout .rptkv th { width: 30%; background: #eee; }
+  #printout .rptpre { font: 10px "Courier New", monospace; white-space: pre-wrap; }
+  #printout .rptfoot { margin-top: 10px; border-top: 1px solid #999; font-size: 9px; }
+  #printout caption { text-align: left; font-weight: 700; padding-top: 4px; }
+  #printout tr, #printout svg g[data-rg] { break-inside: avoid; }
+}
