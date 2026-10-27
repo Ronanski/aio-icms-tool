@@ -27,6 +27,8 @@ const PLAN = {
   FFL: ['D1', 'ARR[0]', 'CT3', '10', '0'], FFU: ['ARR[0]', 'D3', 'CT3', '10', '0'],
   LFL: ['D1', 'ARR2[0]', 'CT4', '10', '0'], LFU: ['ARR2[0]', 'D3', 'CT4', '10', '0'],
   SQI: ['ARR[0]', '16#00FF', 'D1', 'CT5', '4', '0'], SQO: ['ARR[0]', '16#00FF', 'D3', 'CT5', '4', '0'], SQL: ['ARR2[0]', 'D1', 'CT5', '4', '0'],
+  // Wave 2 (C): trigonometric and advanced math
+  SIN: ['R1', 'R2'], COS: ['R1', 'R2'], TAN: ['R1', 'R2'], ASN: ['R1', 'R2'], ACS: ['R1', 'R2'], ATN: ['R1', 'R2'], LN: ['R1', 'R2'], LOG: ['R1', 'R2'], XPY: ['R1', 'D1', 'R2'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
 };
 const MNS = Object.keys(PLAN);

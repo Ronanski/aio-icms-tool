@@ -384,8 +384,10 @@
   /* ---------- CPT / CMP expressions ---------- */
   /* + - * / MOD ** AND OR XOR NOT, = <> < <= > >=, ( ), SQR ABS NEG SIN COS LN LOG → { get(), type } or an error text.
      Integers only: / and MOD truncate as in the controller; any REAL operand or a float function gives a REAL. */
-  const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10 };
-  const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG'];
+  const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10,
+    // the trigonometric functions and their v36+ names (1756-RM003 / -RM018A, FAL and CPT order of operation)
+    TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, ASIN: Math.asin, ACOS: Math.acos, ATAN: Math.atan, DEG: v => v * 180 / Math.PI, RAD: v => v * Math.PI / 180 };
+  const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG', 'TAN', 'ASN', 'ACS', 'ATN', 'ASIN', 'ACOS', 'ATAN', 'DEG', 'RAD'];
   const LEVELS = [['OR'], ['XOR'], ['AND'], ['=', '<>', '<', '<=', '>', '>='], ['+', '-'], ['*', '/', 'MOD']];
   function compileExpr(M, prog, src) {
     const s = String(src), toks = [];
@@ -558,6 +560,7 @@
       case 'order': return ['REVERSE', 'WORD', 'HIGH/LOW'].includes(U(s)) ? { order: U(s) } : 'Order mode must be REVERSE, WORD or HIGH/LOW';
       case 'expr': return compileExpr(M, P, s);
     }
+    if (XNAME[kind]) return XNAME[kind](s, M, P);
     const c = parseNumber(s);
     if (c) {
       if (kind === 'num' || kind === 'fsrc' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
@@ -590,6 +593,7 @@
         return kind === 'elemw' ? writable() : r;
       }
     }
+    if (XKIND[kind]) return XKIND[kind](r, writable, one);
     return r;
   }
 
@@ -639,6 +643,7 @@
         if (R.labels.has(x[0].label)) bad(`Label '${e.a[0]}' is defined more than once`, 0); else R.labels.set(x[0].label, n);
         break;
       case 'JMP': jumps.push({ label: x[0].label, text: e.a[0], n }); break;
+      default: if (XCHK[e.t]) XCHK[e.t](x, bad, e, M, P);
     }
     if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && ok) {
       // the preset and accum of the rung text are written into the tag
@@ -797,6 +802,31 @@
   // a sequencer Mask: a SINT or INT is zero extended to a DINT (RM003, SQI Mask)
   const maskOf = r => { const v = i32(r.get()); return r.type === 'SINT' ? v & 0xFF : r.type === 'INT' ? v & 0xFFFF : v; };
 
+  /* ---------- Wave 2 instructions (1756-RM003, now 1756-RM018A-EN-P Sep 2025): trigonometric, advanced math, math
+     conversion, file/misc, GSV/SSV and PID. The ladder mnemonics are the classic ones the app uses (EQU, SQR …): in
+     Logix Designer v36 ASN, ACS, ATN, XPY, TOD, FRD and TRN were renamed ASIN, ACOS, ATAN, EXPT, TO_BCD, BCD_TO, TRUNC.
+     XKIND checks a new operand kind, XNAME a name operand, XCHK an instruction at verify, XPRE its prescan, XEL its
+     execution (this = the Controller). */
+  const XKIND = {}, XNAME = {}, XCHK = {}, XPRE = {}, XEL = {};
+  Object.assign(OPN, {
+    SIN: ['Source', 'Dest'], COS: ['Source', 'Dest'], TAN: ['Source', 'Dest'], ASN: ['Source', 'Dest'], ACS: ['Source', 'Dest'], ATN: ['Source', 'Dest'],
+    LN: ['Source', 'Dest'], LOG: ['Source', 'Dest'], XPY: ['Source X', 'Source Y', 'Dest'],
+  });
+  Object.assign(INSTR, {
+    // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
+    SIN: I('box', 'Trig Functions', 'Sine', 'num dest', { out: true }), COS: I('box', 'Trig Functions', 'Cosine', 'num dest', { out: true }),
+    TAN: I('box', 'Trig Functions', 'Tangent', 'num dest', { out: true }), ASN: I('box', 'Trig Functions', 'Arc Sine', 'num dest', { out: true }),
+    ACS: I('box', 'Trig Functions', 'Arc Cosine', 'num dest', { out: true }), ATN: I('box', 'Trig Functions', 'Arc Tangent', 'num dest', { out: true }),
+    LN: I('box', 'Advanced Math', 'Natural Log', 'num dest', { out: true }), LOG: I('box', 'Advanced Math', 'Log Base 10', 'num dest', { out: true }),
+    XPY: I('box', 'Advanced Math', 'X To The Power Of Y', 'num num dest', { out: true }),
+  });
+  /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
+     integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
+     a fractional Y are a minor fault (S:V, type 4 code 4); ASN and ACS outside -1…1 give NAN (RM018A) */
+  const MATH1 = { SIN: Math.sin, COS: Math.cos, TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, LN: Math.log, LOG: Math.log10 };
+  for (const t in MATH1) XEL[t] = function (e, x, p) { if (p) { const r = MATH1[t](x[0].get()); this.put(x[1], r, (t === 'LN' || t === 'LOG') && !isFinite(r)); } e.v = p; return p; };
+  XEL.XPY = function (e, x, p) { if (p) { const r = Math.pow(x[0].get(), x[1].get()); this.put(x[2], r, !isFinite(r)); } e.v = p; return p; };
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -898,6 +928,7 @@
               // .EN set: a rung that is true at the change to Run does not step on the first scan (it stays at .POS)
               case 'SQO': x[3].obj().EN = 1; break;
               case 'SQL': x[2].obj().EN = 1; break;
+              default: if (XPRE[e.t]) XPRE[e.t].call(this, x, e);
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -1192,7 +1223,7 @@
         case 'TND': if (p) this.tnd = true; e.v = p; return p;
         case 'MCR': if (!p) this.mcr = !this.mcr; e.v = p; return p;
         case 'AFI': e.v = false; return false;
-        default: e.v = p; return p;   // LBL, SBR, NOP
+        default: if (XEL[e.t]) return XEL[e.t].call(this, e, x, p); e.v = p; return p;   // LBL, SBR, NOP
       }
     }
     /* math status from the stored value: S:V overflow (or divide by zero, also a minor fault: S:MINOR), S:Z zero,

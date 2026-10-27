@@ -125,6 +125,22 @@
     NOP: { ops: [], desc: 'No operation. A placeholder that passes the rung condition.', exec: IN('The rung-condition-out is set to true.'), flags: NOF, faults: 'None.' },
     TND: { ops: [], desc: 'Ends the current scan at this point. The rungs after it are not scanned. Use it for testing.', exec: ACT('The scan of the routine ends here.'), flags: NOF, faults: 'None.' },
   };
+  /* Wave 2 (1756-RM003, now 1756-RM018A-EN-P Sep 2025): trigonometric, advanced math, math conversion, file/misc,
+     GSV/SSV and PID. The examples in parentheses are the values in the manual's own examples. */
+  const RSET = 'Set Rung-condition-out to Rung-condition-in.';
+  const FN = (what, ex) => ({ ops: ['The value to convert. A SINT, INT or DINT is converted to REAL first.', 'Where the result goes; a REAL result is rounded into an integer Dest.'], exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', RSET], ['Rung-condition-in is true', RSET + ' ' + what], ['Postscan', 'N/A.']], flags: MATHF, ex });
+  Object.assign(R, {
+    SIN: { ...FN('Dest = the sine of Source.'), desc: 'Takes the sine of the Source (in radians) and stores the result in Dest. The result is from -1 to 1. Example from the manual: Source 0.7853982 gives 0.70710677.', faults: 'None specific to this instruction. An array subscript out of range is a major fault (type 4, code 20).' },
+    COS: { ...FN('Dest = the cosine of Source.'), desc: 'Takes the cosine of the Source (in radians) and stores the result in Dest. The result is from -1 to 1. Example from the manual: Source 1.0471976 gives 0.49999997.', faults: 'None specific to this instruction.' },
+    TAN: { ...FN('Dest = the tangent of Source.'), desc: 'Takes the tangent of the Source (in radians) and stores the result in Dest. Example from the manual: Source 2.0943952 gives -1.7320505.', faults: 'None specific to this instruction.' },
+    ASN: { ...FN('Dest = the arc sine of Source.'), desc: 'Takes the arc sine of the Source and stores the result in Dest, in radians (-π/2 to π/2). Source must be from -1 to 1; outside it Dest is set to NAN. Logix Designer v36 and later call it ASIN. Example from the manual: Source 0.2 gives 0.20135793.', faults: 'None specific to this instruction.' },
+    ACS: { ...FN('Dest = the arc cosine of Source.'), desc: 'Takes the arc cosine of the Source and stores the result in Dest, in radians (0 to π). Source must be from -1 to 1; outside it Dest is set to NAN. Logix Designer v36 and later call it ACOS. Example from the manual: Source -0.6 gives 2.2142975.', faults: 'None specific to this instruction.' },
+    ATN: { ...FN('Dest = the arc tangent of Source.'), desc: 'Takes the arc tangent of the Source and stores the result in Dest, in radians (-π/2 to π/2). Logix Designer v36 and later call it ATAN. Example from the manual: Source 0.86 gives 0.710271.', faults: 'None specific to this instruction.' },
+    LN: { ...FN('Dest = the natural log of Source.'), desc: 'Takes the natural log of the Source and stores the result in Dest. The Source must be greater than zero. Example from the manual: Source 5.0 gives 1.609438.', faults: 'Source ≤ 0: a minor fault (S:V is set; type 4, code 4).' },
+    LOG: { ...FN('Dest = the log base 10 of Source.'), desc: 'Takes the log base 10 of the Source and stores the result in Dest. The Source must be greater than zero. Example from the manual: Source 3.4 gives 0.53147894.', faults: 'Source ≤ 0: a minor fault (S:V is set; type 4, code 4).' },
+    XPY: { ops: ['The base X. A SINT, INT or DINT is converted to REAL first.', 'The exponent Y.', 'Where X to the power of Y goes.'], exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', RSET], ['Rung-condition-in is true', RSET + ' Dest = Source X to the power of Source Y.'], ['Postscan', 'N/A.']], flags: MATHF,
+      desc: 'Takes Source X to the power of Source Y and stores the result in Dest. If X is negative, Y must be a whole number. Logix Designer v36 and later call it EXPT. Example from the manual: X 33.0 and Y 4.0 give 1185921.0.', faults: 'A negative X with a fractional Y, or a result too large: a minor fault (S:V is set; type 4, code 4).' },
+  });
   // the operand types and formats, by kind of operand
   const KIND = {
     bit: ['BOOL', 'tag'], bitw: ['BOOL', 'tag'], timer: ['TIMER', 'tag'], counter: ['COUNTER', 'tag'], struct: ['TIMER, COUNTER, CONTROL', 'tag'],

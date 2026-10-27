@@ -433,5 +433,18 @@ console.log('Program control');
   check('an output branch drives both coils', c.read('O1') === 1 && c.read('O2') === 1);
 }
 
+console.log('Trigonometric and advanced math: the examples of 1756-RM018A (chapters 14, 15)');
+{
+  const ex = [['SIN', 0.7853982, 0.70710677], ['COS', 1.0471976, 0.49999997], ['TAN', 2.0943952, -1.7320505], ['ASN', 0.2, 0.20135793], ['ACS', -0.6, 2.2142975], ['ATN', 0.86, 0.710271], ['LN', 5.0, 1.609438], ['LOG', 3.4, 0.53147894]];
+  const c = run({ tags: ex.flatMap(([m, v]) => [T('S_' + m, 'REAL', { value: v }), T('D_' + m, 'REAL')]), rungs: ex.map(([m]) => `${m}(S_${m},D_${m});`) });
+  scans(c, 1);
+  ex.forEach(([m, v, want]) => near(`${m}(${v}) = ${want}`, c.read('D_' + m), want));
+  const x = run({ tags: [T('X', 'REAL', { value: 33 }), T('Y', 'REAL', { value: 4 }), T('Res', 'REAL'), T('N', 'REAL')], rungs: ['XPY(X,Y,Res);', 'ACS(2.0,N);'] });
+  scans(x, 1);
+  check('XPY(33.0, 4.0) = 1185921.0', x.read('Res') === 1185921);
+  check('ACS of a Source outside -1…1: Dest is NAN', Number.isNaN(x.read('N')));
+  check('the math status flags follow the result: TAN(2.0943952) < 0 sets S:N', (() => { const t = run({ tags: [T('R', 'REAL')], rungs: ['TAN(2.0943952,R);'] }); scans(t, 1); return t.S.N === 1 && t.S.Z === 0; })());
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

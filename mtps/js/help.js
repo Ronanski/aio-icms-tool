@@ -120,6 +120,23 @@
     NOP: { en: ['Does nothing.', 'A placeholder.', 'NOP();', 'An empty line on a form.'], tl: ['Walang ginagawa.', 'Pansamantalang lagay.', 'NOP();', 'Parang blangkong linya sa form.'] },
     TND: { en: ['Ends this scan of the routine here.', 'The rungs after it are not scanned this time. For testing.', 'XIC(Test)TND();', 'Stopping reading a book at a page for now.'], tl: ['Dito muna matatapos ang scan ng routine.', 'Hindi i-scan ang mga rung sa ilalim. Pang-test.', 'XIC(Test)TND();', 'Parang pagtigil muna sa pagbasa sa isang pahina.'] },
   };
+  // Wave 2: trigonometric, advanced math, math conversion, file/misc, GSV/SSV and PID
+  const TRIG = (what, ex, tlw, cmp, tlc) => ({ en: [`Puts the ${what} of Source into Dest.`, `While the rung is true, Dest gets the ${what} of Source. Angles are in radians (use RAD to convert degrees). The result is a REAL; an integer Dest gets it rounded.`, ex, cmp],
+    tl: [`Inilalagay sa Dest ang ${tlw} ng Source.`, `Habang TRUE ang rung, ang ${tlw} ng Source ang ilalagay sa Dest. Radians ang anggulo (gamitin ang RAD para sa degrees). REAL ang resulta; kapag integer ang Dest, iniro-round ito.`, ex, tlc] });
+  Object.assign(H, {
+    SIN: TRIG('sine', 'MOV(0.7853982,Angle)SIN(Angle,Result);', 'sine', 'The height of a point on a turning wheel.', 'Parang taas ng isang punto sa umiikot na gulong.'),
+    COS: TRIG('cosine', 'COS(Angle,Result);', 'cosine', 'How far sideways a point on a turning wheel is.', 'Parang layo pa-gilid ng punto sa umiikot na gulong.'),
+    TAN: TRIG('tangent', 'TAN(Angle,Slope);', 'tangent', 'The steepness of a ramp at that angle.', 'Parang tarik ng rampa sa anggulong iyon.'),
+    ASN: TRIG('arc sine (the angle whose sine is Source, -1 to 1)', 'ASN(0.5,Angle);', 'arc sine (ang anggulo na ang sine ay Source, -1 hanggang 1)', 'Finding the angle from the height.', 'Parang paghahanap ng anggulo mula sa taas.'),
+    ACS: TRIG('arc cosine (the angle whose cosine is Source, -1 to 1)', 'ACS(0.5,Angle);', 'arc cosine (ang anggulo na ang cosine ay Source, -1 hanggang 1)', 'Finding the angle from the sideways distance.', 'Parang paghahanap ng anggulo mula sa layo pa-gilid.'),
+    ATN: TRIG('arc tangent (the angle whose tangent is Source)', 'ATN(Slope,Angle);', 'arc tangent (ang anggulo na ang tangent ay Source)', 'Finding the angle of a ramp from its steepness.', 'Parang pagkuha ng anggulo ng rampa mula sa tarik nito.'),
+    LN: { en: ['Puts the natural log of Source into Dest.', 'While the rung is true, Dest = ln(Source). Source must be more than 0, or a minor fault is logged and S:V is set.', 'LN(5.0,Result);', 'Asking "e to what power gives this number?".'],
+      tl: ['Inilalagay sa Dest ang natural log ng Source.', 'Habang TRUE ang rung, Dest = ln(Source). Dapat higit sa 0 ang Source, kung hindi may minor fault at naka-set ang S:V.', 'LN(5.0,Result);', 'Parang tanong na "e na itataas sa ilan para maging ito?".'] },
+    LOG: { en: ['Puts the log base 10 of Source into Dest.', 'While the rung is true, Dest = log10(Source). Source must be more than 0, or a minor fault is logged and S:V is set. Handy for pH and decibel scales.', 'LOG(Concentration,Result);', 'Counting the zeros of a number.'],
+      tl: ['Inilalagay sa Dest ang log base 10 ng Source.', 'Habang TRUE ang rung, Dest = log10(Source). Dapat higit sa 0 ang Source, kung hindi may minor fault at naka-set ang S:V. Gamit sa pH at decibel.', 'LOG(Concentration,Result);', 'Parang pagbilang ng mga zero ng numero.'] },
+    XPY: { en: ['Raises Source X to the power of Source Y.', 'While the rung is true, Dest = X to the power Y. A negative X needs a whole-number Y, or a minor fault is logged.', 'XPY(33.0,4.0,Result);', 'Folding paper: each fold doubles the thickness (2 to the power of the folds).'],
+      tl: ['Itinataas ang Source X sa power na Source Y.', 'Habang TRUE ang rung, Dest = X na itinaas sa Y. Kapag negative ang X, dapat buong numero ang Y, kung hindi may minor fault.', 'XPY(33.0,4.0,Result);', 'Parang pagtupi ng papel: dumodoble ang kapal sa bawat tupi.'] },
+  });
   const TIPS = {
     en: [
       ['Select', 'Click (tap) an instruction, an operand inside an instruction, or a rung number.'],

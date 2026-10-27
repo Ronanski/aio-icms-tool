@@ -883,5 +883,28 @@ console.log('Download clears the controller memory first (v37 help, Download dia
   check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
 }
 
+console.log('Wave 2 (C): trigonometric and advanced math (1756-RM003 / -RM018A chapters 14, 15)');
+{
+  const INS = MTPS.INSTR;
+  check('SIN COS TAN ASN ACS ATN in Trig Functions, LN LOG XPY in Advanced Math, all outputs with Source / Dest', ['SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN'].every(m => INS[m].grp === 'Trig Functions' && INS[m].out && MTPS.OPN[m].join() === 'Source,Dest') && ['LN', 'LOG', 'XPY'].every(m => INS[m].grp === 'Advanced Math') && MTPS.OPN.XPY.join() === 'Source X,Source Y,Dest');
+  const tags = [T('En', 'BOOL'), T('A', 'REAL', { value: 0.5 }), T('R', 'REAL'), T('D', 'DINT'), T('B', 'BOOL'), T('Tm', 'TIMER')];
+  check('verify: a BOOL or a TIMER is not a math operand', MTPS.verify(proj({ tags, rungs: ['SIN(B,R);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['COS(A,Tm);'] })).errors.length === 1);
+  check('verify: an immediate Dest is refused', MTPS.verify(proj({ tags, rungs: ['TAN(A,5);'] })).errors.length === 1);
+  const c = run({ tags, rungs: ['XIC(En)SIN(A,R);', 'XIC(En)ATN(1,D);'] });
+  c.scan(10);
+  check('a false rung leaves Dest alone', c.read('R') === 0 && c.read('D') === 0);
+  c.write('En', 1); c.scan(10);
+  check('a true rung: Dest = SIN(Source); an integer Dest gets the REAL result rounded (ATN(1) = 0.785 -> 1)', Math.abs(c.read('R') - Math.sin(0.5)) < 1e-6 && c.read('D') === 1);
+  const l = run({ tags: [...tags, T('Z', 'REAL', { value: 0 })], rungs: ['LN(Z,R);'] });
+  l.scan(10);
+  check('LN of 0: a minor fault (type 4, code 4) and S:V set', l.S.V === 1 && l.minors.length === 1 && l.minors[0].type === 4 && l.minors[0].code === 4);
+  const x = run({ tags, rungs: ['XPY(-8.0,0.5,R);', 'XPY(-2,3,D);'] });
+  x.scan(10);
+  check('XPY: a negative X with a fractional Y is a minor fault; a whole Y works (-2 ** 3 = -8)', x.minors.some(m => m.code === 4) && x.read('D') === -8);
+  const e = run({ tags, rungs: ['CPT(R,TAN(A)+ASN(0.5)+ACS(0.5)+ATN(1));'] });
+  e.scan(10);
+  check('CPT knows TAN ASN ACS ATN', Math.abs(e.read('R') - (Math.tan(0.5) + Math.PI / 2 + Math.PI / 4)) < 1e-5, e.read('R'));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
