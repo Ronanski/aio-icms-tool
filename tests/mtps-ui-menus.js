@@ -239,7 +239,7 @@ module.exports = async function menus({ browser, page, URL, check }) {
   const lbl = await page.$$eval('#layer .dlg .frow > label, #layer .dlg .frow > span, #layer .dlg .ockb', l => l.map(x => x.textContent.trim()));
   check('Find What, Replace With, Find Where, Wrap, Match Whole Word Only, Direction, Find Within (Instructions, Instruction Operands, Rung Comments)', ['Find What:', 'Replace With:', 'Find Where:', 'Wrap', 'Match Whole Word Only', 'Up', 'Down', 'Find Within:', 'Instructions', 'Instruction Operands', 'Rung Comments'].every(x => lbl.includes(x)), lbl.join('|'));
   check('buttons Find Next, Replace, Replace All, Close; Wrap on and Down by default', (await dlgBtns()).join(',') === 'Find Next,Replace,Replace All,Close' && await page.$eval('#rp-wrap', c => c.checked) && await page.$eval('#rp-down', c => c.checked));
-  check('Find Where: the current routine or all routines', (await page.$$eval('#rp-wh option', o => o.map(x => x.textContent))).join('|') === 'Current Routine: MainRoutine|All Routines');
+  check('Find Where: the current routine or all routines', (await page.$$eval('#rp-wh option', o => o.map(x => x.textContent))).join('|') === 'Current Routine: MainRoutine|All Routines in Current Program|All Routines in Current Task|All Routines');
   await page.fill('#rp-f', 'Motor_Run'); await page.fill('#rp-w', 'Motor_On'); await page.click('#rp-whole');
   await clickBtn('Find Next');
   check('Find Next selects the first occurrence and says where', (await st()).sel && (await st()).sel.ri === 0 && /^Found: MainProgram - MainRoutine, Rung 0, XIC, Operand 0/.test(await rmsg()), await rmsg());

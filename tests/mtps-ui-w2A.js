@@ -215,4 +215,59 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('tablet (touch): Select All on an instruction selects the 5 instructions and the branch of rung 0', (await selIn(0, tp)) === 6, String(await selIn(0, tp)));
     await tctx.close();
   }
+  if (want('rep')) {
+    console.log('Replace: wildcards, Limit To, Find Where, history (help v37: Replace dialog box parameters, Limit To options)');
+    await fresh(); await ev(() => { const A = MTPS.App, p = A.example(); const g = p.tasks[0].programs[0]; g.routines.push({ name: 'Aux', rungs: [{ t: 'XIC(Motor_Run)OTE(Run_Lamp);' }] }); p.tasks[0].programs.push({ name: 'P2', routines: [{ name: 'Main2', rungs: [{ t: 'XIC(Motor_Run)OTE(Motor_Cmd);' }] }], tags: [] }); A.openProject(p, true); A.render(); });
+    const R = (g, r) => ev(([g, r]) => MTPS.App.state.p.tasks[0].programs[g].routines[r].rungs.map(x => x.t), [g, r]);
+    const rmsg = () => page.$eval('#layer #rp-e', e => e.textContent).then(async t => t || page.$eval('#layer #rp-m', e => e.textContent));
+    await menu('Search', 'Replace…');
+    check('Limit To: Text Only first, with the reference choices', (await page.$$eval('#rp-l option', o => o.map(x => x.textContent))).join('|') === 'Text Only|References to Exact Tag and Its Members|References to Tag|Forces|Edit Zones|Shorted Branches');
+    check('Find Where: Current Routine, All Routines in Current Program, in Current Task, All Routines', (await page.$$eval('#rp-wh option', o => o.map(x => x.textContent))).join('|') === 'Current Routine: MainRoutine|All Routines in Current Program|All Routines in Current Task|All Routines');
+    await page.click('#rp-wild');
+    check('Use Wildcards: Match Whole Word Only on, and greyed', await page.$eval('#rp-whole', c => c.checked && c.disabled));
+    await page.fill('#rp-f', 'Motor_**'); await page.fill('#rp-w', 'Pump_*'); await clickBtn('Find Next');
+    check('"**" in Find What: refused', /Consecutive wildcard/.test(await rmsg()), await rmsg());
+    await page.fill('#rp-f', 'Motor_*'); await page.fill('#rp-w', 'Pump_*_*'); await clickBtn('Replace All');
+    check('more wildcards in Replace With than in Find What: refused', /same number or fewer wildcard/.test(await rmsg()), await rmsg());
+    await page.fill('#rp-w', 'Pump_*'); await page.selectOption('#rp-wh', 'prog'); await clickBtn('Replace All'); await wait(150);
+    const m1 = await R(0, 0), a1 = await R(0, 1), p2 = await R(1, 0);
+    check('Motor_* to Pump_* in All Routines in Current Program: Motor_Run is Pump_Run, Motor_Cmd is Pump_Cmd', !m1.some(t => /Motor_/.test(t)) && m1[1] === 'XIC(Pump_Run)OTE(Pump_Cmd);' && a1[0] === 'XIC(Pump_Run)OTE(Run_Lamp);', JSON.stringify(m1));
+    check('the other program is left alone', p2[0] === 'XIC(Motor_Run)OTE(Motor_Cmd);');
+    check('Search Results names the scope', await ev(() => MTPS.App.state.search.lines[0] === 'Replacing "Motor_*" with "Pump_*" in All Routines in Current Program...'));
+    check('the history: Find What and Replace With pull-down lists', (await page.$$eval('#findHist option', o => o.map(x => x.value))).join() === 'Motor_*' && (await page.$$eval('#repHist option', o => o.map(x => x.value))).join() === 'Pump_*' && (await page.$eval('#rp-f', i => i.getAttribute('list'))) === 'findHist');
+    await clickBtn('Close'); await page.keyboard.press('Control+z'); await wait(120);
+    // References to Tag: a tag and its members, as references, not text
+    await menu('Search', 'Replace…');
+    check('the history is kept for the next Replace', (await page.$$eval('#findHist option', o => o.map(x => x.value)))[0] === 'Motor_*');
+    await page.click('#rp-wild');
+    await page.selectOption('#rp-l', 'ref'); await page.fill('#rp-f', 'Run_Timer'); await page.fill('#rp-w', 'Lamp_Tmr'); await page.selectOption('#rp-wh', ''); await clickBtn('Replace All'); await wait(150);
+    const m2 = await R(0, 0);
+    check('References to Tag: Run_Timer and Run_Timer.DN become Lamp_Tmr and Lamp_Tmr.DN', m2[2] === 'XIC(Motor_Run)TON(Lamp_Tmr,5000,0);' && m2[3] === 'XIC(Lamp_Tmr.DN)OTE(Run_Lamp);', JSON.stringify(m2));
+    await page.selectOption('#rp-l', 'exact'); await page.fill('#rp-f', 'Run'); await clickBtn('Find Next');
+    check('References to Exact Tag: "Run" is no reference of Motor_Run', /not found/.test(await rmsg()), await rmsg());
+    await clickBtn('Close');
+    // Edit Zones and Shorted Branches: Find What is off
+    await ev(() => { const r = MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs; r[3].z = 'i'; r[1].t = '[XIC(Motor_Run),]OTE(Motor_Cmd);'; MTPS.App.render(); });
+    await menu('Search', 'Replace…');
+    check('Limit To is remembered (References to Exact Tag)', (await page.$eval('#rp-l', s => s.value)) === 'exact');
+    await page.selectOption('#rp-l', 'zones');
+    check('Edit Zones: Find What and Replace With are off', await page.$eval('#rp-f', i => i.disabled) && await page.$eval('#rp-w', i => i.disabled));
+    await clickBtn('Find Next');
+    check('Edit Zones: Find Next goes to the rung of the edit zone', await ev(() => MTPS.App.state.selRung === 3) && /Rung 3, edit zone i/.test(await rmsg()), await rmsg());
+    await clickBtn('Replace');
+    check('Replace with a no-text Limit To: refused', /Text Only or a tag reference/.test(await rmsg()));
+    await page.selectOption('#rp-l', 'short'); await clickBtn('Find Next');
+    check('Shorted Branches: Find Next selects the branch with an empty level', await ev(() => { const s = MTPS.App.state.sel; return s && s.ri === 1 && s.br === true; }) && /Rung 1, shorted branch/.test(await rmsg()), await rmsg());
+    await page.selectOption('#rp-l', 'text'); await clickBtn('Close');
+    // tablet (touch): Search > Replace… from the folding menu, a wildcard Find Next
+    const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    const tp = await tctx.newPage();
+    await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await tp.waitForTimeout(150);
+    await tp.tap('[data-allmenu]'); await tp.waitForTimeout(150); await tp.tap('[data-fold="Search"]'); await tp.waitForTimeout(150);
+    await pick('Replace…', tp, true); await tp.waitForTimeout(150);
+    await tp.tap('#rp-wild'); await tp.fill('#rp-f', 'Run_*'); await clickBtn('Find Next', tp, true);
+    check('tablet (touch): Use Wildcards, Run_* finds Run_Timer', /Rung 2, TON, Operand 0/.test(await tp.$eval('#layer #rp-m', e => e.textContent)), await tp.$eval('#layer #rp-m', e => e.textContent));
+    await tctx.close();
+  }
 };

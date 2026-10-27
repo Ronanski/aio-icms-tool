@@ -2672,38 +2672,68 @@
      Instruction Operands, Rung Comments); Find Next, Replace (the selected occurrence, else finds the first),
      Replace All (results in Search Results). As in the reference, nothing is replaced while online. */
   const rxEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /* Find Where (help v37, Search in routines): Current Routine, All Routines in Current Program, All Routines in
+     Current Task, All Routines; Limit To (Limit To options): Text Only, References to Exact Tag and Its Members,
+     References to Tag, Forces, Edit Zones, Shorted Branches; Use Wildcards: * stands for zero or more characters
+     (Match Whole Word Only is then always on) */
+  const FWHERE = [['', 'Current Routine'], ['prog', 'All Routines in Current Program'], ['task', 'All Routines in Current Task'], ['all', 'All Routines']];
+  const LIMITS = [['text', 'Text Only'], ['exact', 'References to Exact Tag and Its Members'], ['ref', 'References to Tag'], ['forces', 'Forces'], ['zones', 'Edit Zones'], ['short', 'Shorted Branches']];
+  const noWhat = l => l === 'forces' || l === 'zones' || l === 'short';
+  function repRe(o) {
+    const whole = o.whole || o.wild, body = o.wild ? o.what.split('*').map(rxEsc).join('(.*?)') : rxEsc(o.what);
+    return whole ? new RegExp('(^|[^A-Za-z0-9_])(' + body + ')(?![A-Za-z0-9_])', 'i') : new RegExp('()(' + body + ')', 'i');
+  }
   function repHits(o) {
-    const q = U(o.what), wb = '[A-Za-z0-9_]', hits = [];
-    const re = o.whole ? new RegExp('(^|[^A-Za-z0-9_])(' + rxEsc(o.what) + ')(?!' + wb + ')', 'i') : null;
-    const has = t => (re ? re.test(String(t)) : U(String(t)).includes(q));
-    const list = o.all ? allProgs().flatMap(g => g.routines.map(r => ({ g, r }))) : [{ g: curProg(), r: curRoutine() }];
-    list.forEach(({ g, r }, gi) => r.rungs.forEach((rg, ri) => {
-      if (o.cm && rg.c && has(rg.c)) hits.push({ g: g.name, r: r.name, ri, kind: 'cm', key: [gi, ri, -1, 0] });
+    const lim = o.lim || 'text', hits = [], re = noWhat(lim) ? null : repRe(o);
+    const has = t => re.test(String(t));
+    const W = U(o.what), refOk = a => { const u = U(String(a)), sub = (x, y) => x === y || x.startsWith(y + '.') || x.startsWith(y + '['); return lim === 'exact' ? sub(u, W) : sub(u, W) || sub(W, u); };
+    const T = S.p.tasks.find(t => t.programs.includes(curProg())) || S.p.tasks[0];
+    const progs = o.where === 'all' ? allProgs() : o.where === 'task' ? T.programs : [curProg()];
+    const list = o.where === '' || o.where == null ? [{ g: curProg(), r: curRoutine() }] : progs.flatMap(g => g.routines.map(r => ({ g, r })));
+    const gi0 = allProgs().flatMap(g => g.routines.map(r => g.name + '/' + r.name));
+    list.forEach(({ g, r }) => r.rungs.forEach((rg, ri) => {
+      const gi = gi0.indexOf(g.name + '/' + r.name);
+      if (lim === 'zones') { if (rg.z) hits.push({ g: g.name, r: r.name, ri, kind: 'rung', key: [gi, ri, -1, 0] }); return; }
+      if (lim === 'text' && o.cm && rg.c && has(rg.c)) hits.push({ g: g.name, r: r.name, ri, kind: 'cm', key: [gi, ri, -1, 0] });
       const pr = E.parseRung(rg.t); if (pr.err) return;
+      if (lim === 'short') {
+        // a branch with an empty level: the rung condition passes it as a wire
+        let fi = 0; const walk = (arr, path) => arr.forEach((e, k) => { const pth = path.concat(k); if (e.t !== 'BR') { fi++; return; } if (e.legs.some(l => !l.length)) hits.push({ g: g.name, r: r.name, ri, kind: 'br', path: pth, key: [gi, ri, fi, 0], e }); e.legs.forEach((l, li) => walk(l, pth.concat(li))); });
+        walk(pr.elems, []); return;
+      }
       flat(pr.elems).forEach((path, fi) => {
         const e = getEl(pr.elems, path);
-        if (o.ins && has(e.t)) hits.push({ g: g.name, r: r.name, ri, kind: 'ins', path, key: [gi, ri, fi, 0], e });
-        if (o.ops) (e.a || []).forEach((a, oi) => { if (has(a)) hits.push({ g: g.name, r: r.name, ri, kind: 'op', path, oi, key: [gi, ri, fi, 1 + oi], e }); });
+        if (lim === 'forces') { (e.a || []).forEach((a, oi) => { if (S.online && isTagText(a) && ctl.forced(a, g.name) != null) hits.push({ g: g.name, r: r.name, ri, kind: 'op', path, oi, key: [gi, ri, fi, 1 + oi], e }); }); return; }
+        if (lim === 'text' && o.ins && has(e.t)) hits.push({ g: g.name, r: r.name, ri, kind: 'ins', path, key: [gi, ri, fi, 0], e });
+        if (lim === 'text' ? o.ops : true) (e.a || []).forEach((a, oi) => { if (lim === 'text' ? has(a) : isTagText(a) && refOk(a)) hits.push({ g: g.name, r: r.name, ri, kind: 'op', path, oi, key: [gi, ri, fi, 1 + oi], e }); });
       });
     }));
     return { hits, list, re };
   }
+  // the last 10 strings searched for and replaced with, newest first (the Find What / Replace With pull-down lists)
+  function rememberFind(k, v) { v = String(v || '').trim(); if (!v) return; S.prefs[k] = [v].concat((S.prefs[k] || []).filter(x => x !== v)).slice(0, 10); savePrefs(); }
   const keyCmp = (a, b) => { for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
   const selKey = () => JSON.stringify([S.prog, S.routine, S.sel, S.selRung]);
   function cmdReplace() {
-    const a = selOperand(), o = { what: isTagText(a) ? String(a) : S.find || '', with: S.repWith || '', all: false, wrap: true, whole: false, up: false, ins: true, ops: true, cm: true };
+    const a = selOperand(), o = { what: isTagText(a) ? String(a) : S.find || '', with: S.repWith || '', where: '', wrap: true, whole: false, wild: false, up: false, ins: true, ops: true, cm: true, lim: S.prefs.limitTo || 'text' };
+    const hl = k => `<datalist id="${k}">${(S.prefs[k] || []).map(h => `<option value="${esc(h)}">`).join('')}</datalist>`;
     const el = dialog({ title: 'Replace', size: 'md', focus: true,
-      body: `<div class="frow"><label for="rp-f">Find What:</label><input class="inp mono" id="rp-f" value="${esc(o.what)}" autocomplete="off" spellcheck="false" autofocus></div>
-        <div class="frow"><label for="rp-w">Replace With:</label><input class="inp mono" id="rp-w" value="${esc(o.with)}" autocomplete="off" spellcheck="false"></div>
-        <div class="frow"><label for="rp-wh">Find Where:</label><select class="inp" id="rp-wh"><option value="">Current Routine: ${esc(curRoutine().name)}</option><option value="all">All Routines</option></select></div>
-        <div class="frow"><span></span><div><label class="ockb"><input type="checkbox" id="rp-wrap" checked> Wrap</label><label class="ockb"><input type="checkbox" id="rp-whole"> Match Whole Word Only</label>
+      body: `<div class="frow"><label for="rp-f">Find What:</label><input class="inp mono" id="rp-f" list="findHist" value="${esc(o.what)}" autocomplete="off" spellcheck="false" autofocus>${hl('findHist')}</div>
+        <div class="frow"><label for="rp-l">Limit To:</label><select class="inp" id="rp-l">${LIMITS.map(([v, t]) => `<option value="${v}"${v === o.lim ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+        <div class="frow"><label for="rp-w">Replace With:</label><input class="inp mono" id="rp-w" list="repHist" value="${esc(o.with)}" autocomplete="off" spellcheck="false">${hl('repHist')}</div>
+        <div class="frow"><label for="rp-wh">Find Where:</label><select class="inp" id="rp-wh">${FWHERE.map(([v, t]) => `<option value="${v}">${t}${v ? '' : ': ' + esc(curRoutine().name)}</option>`).join('')}</select></div>
+        <div class="frow"><span></span><div><label class="ockb"><input type="checkbox" id="rp-wrap" checked> Wrap</label><label class="ockb"><input type="checkbox" id="rp-whole"> Match Whole Word Only</label><label class="ockb"><input type="checkbox" id="rp-wild"> Use Wildcards</label>
           <div class="ockb">Direction: <label class="ockb"><input type="radio" name="rp-dir" id="rp-up"> Up</label><label class="ockb"><input type="radio" name="rp-dir" id="rp-down" checked> Down</label></div></div></div>
         <div class="frow"><span>Find Within:</span><div><b>Ladder Diagrams</b><label class="ockb"><input type="checkbox" id="rp-ins" checked> Instructions</label><label class="ockb"><input type="checkbox" id="rp-ops" checked> Instruction Operands</label><label class="ockb"><input type="checkbox" id="rp-cm" checked> Rung Comments</label></div></div>
         <div class="errtx" id="rp-e"></div><p class="help" id="rp-m"></p>`,
       buttons: [{ l: 'Find Next', pri: true, run: () => { act('next'); return false; } }, { l: 'Replace', run: () => { act('one'); return false; } }, { l: 'Replace All', run: () => { act('all'); return false; } }, { l: 'Close' }] });
     const q = s2 => el.querySelector(s2);
     const say = (m, err) => { q('#rp-e').textContent = err ? m : ''; q('#rp-m').textContent = err ? '' : m; };
-    const read = () => { Object.assign(o, { what: q('#rp-f').value.trim(), with: q('#rp-w').value.trim(), all: q('#rp-wh').value === 'all', wrap: q('#rp-wrap').checked, whole: q('#rp-whole').checked, up: q('#rp-up').checked, ins: q('#rp-ins').checked, ops: q('#rp-ops').checked, cm: q('#rp-cm').checked }); S.find = o.what; S.repWith = o.with; };
+    const read = () => { Object.assign(o, { what: q('#rp-f').value.trim(), with: q('#rp-w').value.trim(), where: q('#rp-wh').value, wrap: q('#rp-wrap').checked, whole: q('#rp-whole').checked, wild: q('#rp-wild').checked, up: q('#rp-up').checked, ins: q('#rp-ins').checked, ops: q('#rp-ops').checked, cm: q('#rp-cm').checked, lim: q('#rp-l').value }); S.find = o.what; S.repWith = o.with; S.prefs.limitTo = o.lim; savePrefs(); };
+    // Find What is off for the Limit To choices that need no text; Use Wildcards keeps Match Whole Word Only on
+    const sync = () => { const nw = noWhat(q('#rp-l').value); q('#rp-f').disabled = nw; q('#rp-w').disabled = nw; const w = q('#rp-wild').checked; if (w) q('#rp-whole').checked = true; q('#rp-whole').disabled = w; };
+    el.addEventListener('change', ev => { if (ev.target.id === 'rp-l' || ev.target.id === 'rp-wild') sync(); });
+    sync();
     // where the search stands: the occurrence found last while it is still selected, else the selection
     const pos = list => {
       if (S.repHit && S.repHit.sk === selKey()) return S.repHit.key;
@@ -2713,37 +2743,49 @@
     };
     const show = h => {
       S.prog = h.g; S.routine = h.r; S.view = 'ladder'; if (S.layout === 'phone') S.area = 'ladder';
-      if (h.kind === 'cm') { S.sel = null; S.selRung = h.ri; } else { S.sel = { ri: h.ri, path: h.path }; if (h.kind === 'op') S.sel.op = h.oi; S.selRung = null; }
+      if (h.kind === 'cm' || h.kind === 'rung') { S.sel = null; S.selRung = h.ri; } else { S.sel = { ri: h.ri, path: h.path }; if (h.kind === 'op') S.sel.op = h.oi; if (h.kind === 'br') S.sel.br = true; S.selRung = null; }
       S.selAll = null; reverify(); render(); scrollToSel();
       S.repHit = { key: h.key, sk: selKey() };
-      say(`Found: ${h.g} - ${h.r}, Rung ${h.ri}${h.kind === 'cm' ? ', rung comment' : `, ${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+      say(`Found: ${h.g} - ${h.r}, Rung ${h.ri}${h.kind === 'cm' ? ', rung comment' : h.kind === 'rung' ? `, edit zone ${rungsOf(h).rungs[h.ri].z}` : h.kind === 'br' ? ', shorted branch' : `, ${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
     };
     const next = () => {
-      const { hits, list } = repHits(o); if (!hits.length) { say(`Search complete: "${o.what}" was not found.`, true); return null; }
+      const { hits, list } = repHits(o), wt = noWhat(o.lim) ? LIMITS.find(x => x[0] === o.lim)[1] : `"${o.what}"`;
+      if (!hits.length) { say(`Search complete: ${wt} was not found.`, true); return null; }
       const p = pos(list);
       let h = o.up ? [...hits].reverse().find(x => keyCmp(x.key, p) < 0) : hits.find(x => keyCmp(x.key, p) > 0);
       if (!h && o.wrap) h = o.up ? hits[hits.length - 1] : hits[0];
-      if (!h) { say(`Search complete: no more "${o.what}" ${o.up ? 'above' : 'below'}.`, true); return null; }
+      if (!h) { say(`Search complete: no more ${wt} ${o.up ? 'above' : 'below'}.`, true); return null; }
       show(h); return h;
     };
     // the new text of one occurrence (the matched part is replaced, every time it appears in that operand or comment)
-    const swap = (t, re) => String(t).replace(re ? new RegExp(re.source, 'gi') : new RegExp(rxEsc(o.what), 'gi'), (m0, a1, a2) => (re ? a1 + o.with : o.with));
+    const swap = (t, re) => String(t).replace(new RegExp(re.source, 'gi'), (m0, a1, a2, ...g) => {
+      if (!o.wild) return a1 + o.with;
+      const parts = o.with.split('*'), caps = g.slice(0, o.what.split('*').length - 1);
+      return a1 + parts.map((x, i) => x + (i < parts.length - 1 ? caps[i] || '' : '')).join('');
+    });
+    // a reference found by Limit To is replaced whole: the tag part becomes Replace With, its members stay
+    const swapRef = t => { const u = U(String(t)), w = U(o.what); return u === w || u.startsWith(w + '.') || u.startsWith(w + '[') ? o.with + String(t).slice(o.what.length) : o.with; };
     function apply(h, re, R) {
       const rg = R.rungs[h.ri];
       if (h.kind === 'cm') { const c = swap(rg.c, re); if (c) rg.c = c; else delete rg.c; return true; }
       const pr = E.parseRung(rg.t); if (pr.err) return false;
       const x = getEl(pr.elems, h.path); if (!x) return false;
-      if (h.kind === 'op') x.a[h.oi] = swap(x.a[h.oi], re);
+      if (h.kind === 'op') x.a[h.oi] = re ? (o.lim === 'text' ? swap(x.a[h.oi], re) : swapRef(x.a[h.oi])) : x.a[h.oi];
       else { const m = U(swap(x.t, re)); if (!INSTR[m]) return false; x.a = morphOps(x, m); x.t = m; }
       rg.t = E.serializeRung(pr.elems);
       return true;
     }
-    const routineOf = h => allProgs().find(g => g.name === h.g).routines.find(r => r.name === h.r);
+    const routineOf = h => allProgs().find(g => g.name === h.g).routines.find(r => r.name === h.r), rungsOf = routineOf;
     const act = kind => {
       read();
-      if (!o.what) { say('Type what to find.', true); return; }
-      if (!o.ins && !o.ops && !o.cm) { say('Pick at least one place in Find Within.', true); return; }
+      const nw = noWhat(o.lim);
+      if (!o.what && !nw) { say('Type what to find.', true); return; }
+      if (o.lim === 'text' && !o.ins && !o.ops && !o.cm) { say('Pick at least one place in Find Within.', true); return; }
+      if (o.wild && /\*\*/.test(o.what)) { say('Consecutive wildcard characters (**) are not permitted in Find What.', true); return; }
+      if (o.wild && o.with.split('*').length > o.what.split('*').length) { say('Replace With must contain the same number or fewer wildcard characters than Find What.', true); return; }
+      if (!nw) { rememberFind('findHist', o.what); if (kind !== 'next') rememberFind('repHist', o.with); ['findHist', 'repHist'].forEach(k => { const d = q('#' + k); if (d) d.innerHTML = (S.prefs[k] || []).map(h => `<option value="${esc(h)}">`).join(''); }); }
       if (kind === 'next') { next(); return; }
+      if (nw) { say(`Replace needs Text Only or a tag reference in Limit To.`, true); return; }
       if (S.online) { say('Cannot replace logic, tags or comments while online.', true); return; }
       if (!editable()) return;
       const { hits, re } = repHits(o);
@@ -2766,7 +2808,7 @@
       });
       S.repHit = null;
       const lines = done.map(h => `Replaced: ${h.g} - ${h.r}, Rung ${h.ri}, ${h.kind === 'cm' ? 'Rung Comment' : `${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
-      S.search = { errors: [], warnings: [], found: done.map((h, n) => ({ text: lines[n], program: h.g, routine: h.r, rung: h.ri })), lines: [`Replacing "${o.what}" with "${o.with}" in ${o.all ? S.p.controller.name : curRoutine().name}...`, ...lines, `Complete - ${done.length} occurrence(s) replaced.`] };
+      S.search = { errors: [], warnings: [], found: done.map((h, n) => ({ text: lines[n], program: h.g, routine: h.r, rung: h.ri })), lines: [`Replacing "${o.what}" with "${o.with}" in ${o.where ? FWHERE.find(x => x[0] === o.where)[1] : curRoutine().name}...`, ...lines, `Complete - ${done.length} occurrence(s) replaced.`] };
       S.outTab = 'search';
       if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true;
       reverify(); render();
