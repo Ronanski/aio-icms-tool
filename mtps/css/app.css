@@ -1293,3 +1293,8 @@ i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inlin
 .smt-fl label.muted { opacity: .55; }
 .phone .smt-f { grid-template-columns: 1fr; }
 #smt-b { overflow-x: auto; }
+/* produced and consumed tags (pc.js): the Connection dialogs over New Tag, their status indicators */
+.dlg.sdt.pcdlg { width: min(460px, calc(100% - 24px)); }
+.pcled { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.pcdlg .afor .muted, #tpc .muted { font-size: 12px; white-space: nowrap; }
+#tpc .afor { align-items: center; gap: 8px; }

@@ -813,6 +813,7 @@
     };
     aliases(M.tags, null);
     M.programs.forEach(P => aliases(P.tags, P));
+    pcBuild(pj, M, ctlErr, size, cslot);
 
     for (const P of M.programs) for (const R of P.routines.values()) {
       const want = !filter || ((!filter.program || U(filter.program) === U(P.name)) && (!filter.routine || U(filter.routine) === U(R.name)));
@@ -846,6 +847,46 @@
     out.lines.push(`Complete - ${out.errors.length} error(s), ${out.warnings.length} warning(s)`);
     out.model = M;
     return out;
+  }
+  /* produced and consumed tags (1756-PM011, LGEM5K-GR016M chapter 10). The project keeps the producing controllers of
+     its I/O configuration in rack.ctls [{ slot, name, desc }]; a tag has prod { max } (Produced: Max Consumers 1 to
+     255) or cons { producer, remote, rpi } (Consumed: Producer, Remote Data, RPI 0.196 to 536870.911 ms for
+     ControlLogix). Both are controller scope only; a standard produced / consumed tag is at most 500 bytes, and a
+     produced tag of less than 32 bits does not verify (v37 help, Tag Editor columns). */
+  const PCRPI = [0.196, 536870.911];
+  function pcBuild(pj, M, ctlErr, size, cslot) {
+    M.peers = new Map(); M.prods = new Map(); M.cons = [];
+    const rack = pj.rack || {}, names = new Set();
+    for (const c of rack.ctls || []) {
+      if (!validName(c.name) || names.has(U(c.name))) { ctlErr(`Invalid or repeated controller name '${c.name}' in the I/O configuration`); continue; }
+      if (!(Number.isInteger(c.slot) && c.slot >= 0 && c.slot < size) || c.slot === cslot || M.mods.has(c.slot) || M.peers.has(c.slot)) { ctlErr(`Controller '${c.name}': slot ${c.slot} is not a free slot of the ${size}-slot rack`); continue; }
+      names.add(U(c.name)); M.peers.set(c.slot, { slot: c.slot, name: c.name });
+    }
+    for (const task of pj.tasks || []) for (const pg of task.programs || []) for (const t of pg.tags || []) if (t.prod || t.cons) ctlErr(`Tag '${t.name}' in program '${pg.name}': a ${t.prod ? 'produced' : 'consumed'} tag must be a controller tag`);
+    const bytes = rec => { const l = layout(M.types, rec.type, new Map()).size; return U(rec.type) === 'BOOL' && rec.dim ? Math.ceil(rec.dim / 32) * 4 : l * Math.max(1, rec.dim || 0); };
+    for (const t of pj.tags || []) {
+      if (!t.prod && !t.cons) continue;
+      const rec = M.tags.get(U(t.name));
+      if (!rec || rec.name !== t.name) continue;
+      const what = t.prod ? 'produced' : 'consumed';
+      if (rec.alias) { ctlErr(`Tag '${t.name}': an alias tag cannot be ${what}`); continue; }
+      const n = bytes(rec);
+      if (n > 500) { ctlErr(`Tag '${t.name}': a ${what} tag is at most 500 bytes (${n} bytes)`); continue; }
+      if (t.prod) {
+        const max = Number(t.prod.max == null ? 1 : t.prod.max);
+        if (!(Number.isInteger(max) && max >= 1 && max <= 255)) { ctlErr(`Tag '${t.name}': Max Consumers must be 1 to 255`); continue; }
+        if (n < 4) { ctlErr(`Tag '${t.name}': the tag is produced, but the data type is less than 32 bits in size`); continue; }
+        rec.prod = { max }; M.prods.set(U(t.name), rec);
+        continue;
+      }
+      const c = t.cons, peer = [...M.peers.values()].find(x => U(x.name) === U(c.producer || ''));
+      if (!peer) { ctlErr(`Tag '${t.name}': the producer '${c.producer || ''}' is not a controller in the I/O configuration`); continue; }
+      if (!validName(c.remote)) { ctlErr(`Tag '${t.name}': Remote Data '${c.remote || ''}' is not a tag name`); continue; }
+      const rpi = c.rpi == null ? 20 : +c.rpi;
+      if (!(rpi >= PCRPI[0] && rpi <= PCRPI[1])) { ctlErr(`Tag '${t.name}': RPI ${c.rpi} ms is not in the range ${PCRPI[0]} to ${PCRPI[1]} ms`); continue; }
+      rec.cons = { producer: peer.name, slot: peer.slot, remote: c.remote, rpi };
+      M.cons.push({ name: rec.name, u: U(rec.name), type: rec.type, dim: rec.dim, size: n, slot: peer.slot, remote: c.remote, rpi });
+    }
   }
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {

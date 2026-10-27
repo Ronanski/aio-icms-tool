@@ -1497,5 +1497,24 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
+console.log('Produced and consumed tags: verify (1756-PM011, v37 help Tag Editor columns)');
+{
+  const pj = (tags, ctls, ptags) => { const p = proj({ tags, ptags, modules: [] }); p.rack.size = 8; p.controller.slot = 2; p.rack.ctls = ctls === undefined ? [{ slot: 0, name: 'Line_A' }] : ctls; return p; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('a consumed DINT with its producer in the I/O configuration and a produced DINT verify', errs(pj([T('In_A', 'DINT', { cons: { producer: 'Line_A', remote: 'Out_A', rpi: 20 } }), T('Out_B', 'DINT', { prod: { max: 1 } })])).length === 0);
+  eq('a produced tag of less than 32 bits does not verify', errs(pj([T('P1', 'INT', { prod: { max: 1 } })])), ["Tag 'P1': the tag is produced, but the data type is less than 32 bits in size."]);
+  check('a produced SINT[4] (32 bits) and a produced user-defined type verify', errs(Object.assign(pj([T('P4', 'SINT', { dim: 4, prod: { max: 1 } }), T('PU', 'Pair', { prod: { max: 1 } })]), { dataTypes: [{ name: 'Pair', members: [{ name: 'A', type: 'DINT' }, { name: 'B', type: 'REAL' }] }] })).length === 0);
+  eq('Max Consumers is 1 to 255', errs(pj([T('P2', 'DINT', { prod: { max: 256 } })])), ["Tag 'P2': Max Consumers must be 1 to 255."]);
+  eq('a standard produced / consumed tag is at most 500 bytes', errs(pj([T('Big', 'DINT', { dim: 126, prod: { max: 1 } })])), ["Tag 'Big': a produced tag is at most 500 bytes (504 bytes)."]);
+  check('… 125 DINTs (500 bytes) are fine', errs(pj([T('Big', 'DINT', { dim: 125, prod: { max: 1 } })])).length === 0);
+  eq('produced and consumed tags are controller tags only', errs(pj([], undefined, [T('Q', 'DINT', { prod: { max: 1 } })])), ["Tag 'Q' in program 'MainProgram': a produced tag must be a controller tag."]);
+  eq('the producer must be a controller of the I/O configuration', errs(pj([T('C1', 'DINT', { cons: { producer: 'Nobody', remote: 'X', rpi: 20 } })])), ["Tag 'C1': the producer 'Nobody' is not a controller in the I/O configuration."]);
+  eq('the RPI of a consumed tag is 0.196 to 536870.911 ms (ControlLogix)', errs(pj([T('C2', 'DINT', { cons: { producer: 'Line_A', remote: 'X', rpi: 0.1 } })])), ["Tag 'C2': RPI 0.1 ms is not in the range 0.196 to 536870.911 ms."]);
+  eq('Remote Data is a tag name', errs(pj([T('C3', 'DINT', { cons: { producer: 'Line_A', remote: '1x', rpi: 20 } })])), ["Tag 'C3': Remote Data '1x' is not a tag name."]);
+  eq('the producer needs a free slot (not the controller\'s)', errs(pj([], [{ slot: 2, name: 'Line_A' }])), ["Controller 'Line_A': slot 2 is not a free slot of the 8-slot rack."]);
+  const c = new MTPS.Controller(); c.download(pj([T('In_A', 'DINT', { cons: { producer: 'Line_A', remote: 'Out_A', rpi: 20 } })]));
+  check('the model knows the producers (by slot) and the consumed tags', c.M.peers.get(0).name === 'Line_A' && c.M.cons.length === 1 && c.M.cons[0].remote === 'Out_A' && c.M.cons[0].slot === 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

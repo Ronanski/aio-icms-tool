@@ -1213,6 +1213,7 @@
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
       add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] ${ctype(S.p.controller.type)[0]} ${S.p.controller.name}`, 'chip');
       [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
+      PCX.ctls().slice().sort((a, b) => a.slot - b.slot).forEach(c => add('pcm:' + c.slot, 2, PCX.treeLabel(c), 'chip', { f: PCX.treeFlag(c) }));
     }));
     return h;
   }
@@ -1695,6 +1696,7 @@
     else if (key.startsWith('ptags:')) items.push({ l: 'Monitor Tags', run: () => tagEditor('mon', key.slice(6)) }, { l: 'Edit Tags', run: () => tagEditor('edit', key.slice(6)) });
     else if (key === 'bp' || key === 'io') items.push({ l: 'New Module…', run: newModule, dis: !offline() });
     else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
+    else if (key.startsWith('pcm:')) items.push({ l: 'Properties', run: () => PCX.peerProps(+key.slice(4)) }, { l: 'Delete', run: () => PCX.peerDelete(+key.slice(4)), dis: !offline() });
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
     else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
@@ -2299,11 +2301,13 @@
     const types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
     const edit0 = o.tag;
     const t0 = edit0 || { name: o.name || '', type: defaultType(o.kind), desc: '' };
+    let pch = null;   // the Produced / Consumed part (pc.js)
     dialog({
       title: edit0 ? `Tag Properties - ${edit0.name}` : 'New Tag', focus: true,
       body: `<div class="frow"><label>Name</label><input class="inp mono" id="tn" value="${esc(t0.name)}" autocomplete="off" spellcheck="false"${edit0 ? ' readonly' : ''}></div>
         <div class="frow"><label>Description</label><input class="inp" id="td" value="${esc(t0.desc || '')}"></div>
-        <div class="frow"><label>Type</label><select class="inp" id="tk"><option value="base">Base</option><option value="alias"${t0.alias ? ' selected' : ''}>Alias</option></select></div>
+        <div class="frow"><label>Type</label><select class="inp" id="tk">${PCX.typeOpts(t0)}</select></div>
+        ${PCX.tagRows()}
         <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><span class="afor"><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="btn" id="tab" type="button" title="Browse tags">${ic('down')}</button></span></div>
         <div class="asg abrw" id="asg" hidden></div>
         <div class="frow" id="rat"${t0.alias ? '' : ' hidden'}><label>Data Type</label><span class="mono" id="tat"></span></div>
@@ -2335,6 +2339,7 @@
         el.querySelector('#ttb').onclick = () => selectDataType(el.querySelector('#tt').value, v => { el.querySelector('#tt').value = v; sync(); });
         el.querySelector('#tab').onclick = () => br.toggle();
         showType(); sync();
+        pch = PCX.tagHook(el, t0, sync);
       },
       buttons: [{ l: 'Cancel' }, { l: edit0 ? 'OK' : 'Create', pri: true, run: el => {
         const name = el.querySelector('#tn').value.trim(), scope = el.querySelector('#ts').value, alias = el.querySelector('#tk').value === 'alias';
@@ -2357,6 +2362,7 @@
           if (acc !== 'Read/Write') t.access = acc;
           if (st && st !== defStyle(t.type)) t.style = st;
           if (el.querySelector('#tcon').checked) t.constant = true;
+          const pe = pch.read(t, edit0 ? (o.list === S.p.tags ? '' : 'program') : scope); if (pe) return err(pe);
         }
         if (!t.desc) delete t.desc;
         if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type && E.dimText(t.dim) === E.dimText(edit0.dim)) t.value = edit0.value;
@@ -2435,6 +2441,21 @@
     layerKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); close(); if (cancel) cancel(); } else if (ev.key === 'Enter') { ev.preventDefault(); ok(); } };
     dims(); draw();
     setTimeout(() => { q.focus(); q.select(); }, 0);
+  }
+  /* a dialog over the dialog that opened it (as Select Data Type): o { title, body, buttons [{ l, pri, run(el) }],
+     mount(el), cancel }; a run that returns false keeps it open, Esc and the X are Cancel */
+  function overDlg(o) {
+    const l = $('#layer'), was = { key: layerKey, click: l.onclick }, scrim = document.createElement('div'), el = document.createElement('div');
+    scrim.className = 'scrim sdtscrim'; el.className = 'dlg sdt' + (o.cls ? ' ' + o.cls : ''); el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', o.title);
+    el.innerHTML = `<div class="dh"><b>${esc(o.title)}</b><button class="ib" data-ovx="1" title="Close" aria-label="Close">${ic('close')}</button></div><div class="db">${o.body}</div>
+      <div class="df">${o.buttons.map((b, n) => `<button class="btn${b.pri ? ' pri' : ''}" data-ovb="${n}">${esc(b.l)}</button>`).join('')}</div>`;
+    l.appendChild(scrim); l.appendChild(el);
+    const close = () => { scrim.remove(); el.remove(); layerKey = was.key; l.onclick = was.click; };
+    const press = n => { const b = o.buttons[n]; if (!b.run || b.run(el) !== false) { close(); if (!b.run && o.cancel) o.cancel(); } };
+    l.onclick = ev => { if (!el.contains(ev.target)) return; if (ev.target.closest('[data-ovx]')) { close(); if (o.cancel) o.cancel(); return; } const b = ev.target.closest('[data-ovb]'); if (b) press(+b.dataset.ovb); };
+    layerKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); close(); if (o.cancel) o.cancel(); } else if (ev.key === 'Enter' && ev.target.tagName !== 'TEXTAREA' && ev.target.tagName !== 'BUTTON') { const n = o.buttons.findIndex(b => b.pri); if (n >= 0) { ev.preventDefault(); press(n); } } };
+    if (o.mount) o.mount(el);
+    return el;
   }
   /* the description of an operand: the tag's own description when the operand is the tag; otherwise (an I/O address,
      a member such as Timer.DN, a bit) an operand description kept with the project, as the reference allows */
@@ -4603,6 +4624,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       if (k.startsWith('prog:')) return progProps(k.slice(5));
       if (k.startsWith('task:')) return taskProps(k.slice(5));
       if (k.startsWith('mod:') && +k.slice(4) !== ctlSlot()) return moduleProps(+k.slice(4));
+      if (k.startsWith('pcm:')) return PCX.peerProps(+k.slice(4));
       return controllerProps();
     }
     if (S.pickAt === 'tag' && S.view === 'tags' && S.tagPick) {
@@ -4697,11 +4719,11 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   const SMTCAT = { di: 'Digital', do: 'Digital', ai: 'Analog', ao: 'Analog' }, SMTVEND = 'MT PLC Studio';
   const smt = { tab: 'cat', q: '', cats: {}, vends: {}, sort: 0, dir: 1, close: true, filt: true, sel: '' };
   const smtTypes = () => Object.keys(E.MODULES).filter(t => !E.MODULES[t].emuOnly && E.MODULES[t].kind !== 'enet')
-    .map(t => ({ t, cols: [t, MODNAMES[t] || '', SMTVEND, SMTCAT[E.MODULES[t].kind] || 'Other'] }));
+    .map(t => ({ t, cols: [t, MODNAMES[t] || '', SMTVEND, SMTCAT[E.MODULES[t].kind] || 'Other'] })).concat(PCX.peerRow);
   const smtHit = (r, q) => { const terms = q.toLowerCase().split('*').map(x => x.trim()).filter(Boolean).slice(0, 4), hay = r.cols.slice(0, 3).join(' ').toLowerCase(); return terms.every(x => hay.includes(x)); };
   function newModule() {
     if (!offline()) { toast('Go offline to add a module.'); return; }
-    const used = new Set(S.p.rack.modules.map(m => m.slot).concat(ctlSlot())), free = [];
+    const used = new Set(S.p.rack.modules.map(m => m.slot).concat(ctlSlot(), PCX.ctls().map(c => c.slot))), free = [];
     for (let s = 0; s < S.p.rack.size; s++) if (!used.has(s)) free.push(s);
     if (!free.length) { toast('The rack is full.', 'err'); return; }
     const all = smtTypes(), favs = () => (S.prefs.favMods || []).filter(t => all.some(r => r.t === t));
@@ -4718,7 +4740,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         <div class="smt-f"${smt.filt ? '' : ' hidden'}><div><div class="grp">Module Type Category Filters</div>${box('cat', cats, smt.cats, new Set(hits.map(r => r.cols[3])))}</div>
         <div><div class="grp">Module Type Vendor Filters</div>${box('vend', vends, smt.vends, new Set(hits.map(r => r.cols[2])))}</div></div>`;
     };
-    const create = () => { if (!smt.sel) { toast('Select a module type.', 'err'); return false; } newModule2(smt.sel, free, smt.close ? null : newModule); return false; }; // false: New Module has replaced this layer
+    const create = () => { if (!smt.sel) { toast('Select a module type.', 'err'); return false; } (smt.sel === PCX.peerRow.t ? PCX.newPeer : newModule2.bind(null, smt.sel))(free, smt.close ? null : newModule); return false; }; // false: New Module has replaced this layer
     dialog({ title: 'Select Module Type', size: 'lg',
       body: `<div class="fchips dtabs"><span class="fchip${smt.tab === 'cat' ? ' on' : ''}" data-smttab="cat">Catalog</span><span class="fchip${smt.tab === 'fav' ? ' on' : ''}" data-smttab="fav">Favorites</span></div>
         <div class="smt-bar"><input class="inp" id="smt-q" type="search" maxlength="40" placeholder="Search" value="${esc(smt.q)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off">
@@ -5529,7 +5551,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       if (types.size && !types.has(U(baseTy(e.ty)))) return false;
       switch (f.on) {
         case 'Unused': return !e.mod && !!e.t && !used.has(U(e.t.name));
-        case 'Produced': case 'Consumed': return false;   // no produced or consumed tags in this app
+        case 'Produced': return !!(e.t && !e.member && e.t.prod);
+        case 'Consumed': return !!(e.t && !e.member && e.t.cons);
         case 'Can Be Forced': return e.mod ? /:[IO]$/.test(e.path) : !!(e.t && e.t.alias && /^Local:\d+:[IO]\./i.test(baseTagOf(e.t.alias)));
         case 'Alias': return !!(e.t && e.t.alias);
       }
@@ -7241,6 +7264,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         else if (k === 'ctags') tagEditor('mon', '');
         else if (k.startsWith('ptags:')) tagEditor('mon', k.slice(6));
         else if (k.startsWith('mod:') && k !== 'mod:0') moduleProps(+k.slice(4));
+        else if (k.startsWith('pcm:')) PCX.peerProps(+k.slice(4));
         else if (k === 'ctl') controllerProps();
         else if (k === 'bp') newModule();
         return;
@@ -7461,6 +7485,9 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const b = ev.target.closest('[data-up]'); if (!b) return;
     if (b.dataset.up === 'go') { saveProject(); window.MTPSUpdater.apply(upInfo); } else { window.MTPSUpdater.skip(upInfo); upInfo = null; render(); }
   });
+
+  /* produced and consumed tags, Logic > Produced Tags, Map PLC/SLC Messages, Logix Echo (pc.js) */
+  const PCX = E.PCUI({ S, E, U, esc, kv, dialog, over: overDlg, toast, edit, tabbed, bindTabs, confirm: confirmDlg, ctl: () => ctl });
 
   /* ---------- start ---------- */
   function start() {
