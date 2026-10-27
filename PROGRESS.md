@@ -41,8 +41,11 @@
 - [x] Wave 1 of the coverage map (2026-10-27, PR): menus, tags, module tags, status flags, RTB pins, shift / FIFO / LIFO / sequencer, Emulate and RSLinx items, phone strip, tap speed
 - [x] Wave 2 of the coverage map (2026-10-27, PR #97 merged, on Beta): full L5X, Import Component, Change Controller, Options, Help, bookmarks, UDT / STRING / LINT / LREAL, Watch, Quick View, Trends, trig / conversion / file instructions, GSV/SSV, PID, fault handlers, watchdog, correlation, module catalog and keying, Emulate BPT/TPT, RSLinx diagnostics
 - [x] Wave 3 of the coverage map (2026-10-27, merged, on Beta): Structured Text, Function Block Diagram and SFC routines, periodic and event tasks, New Program / New Task, program parameters, UID / UIE / EVENT / IOT, Add-On Instructions, string instructions, MSG, produced / consumed tags, Logix Echo, Compare Tool, Generate Report / Print, sample projects, Logical Organizer, Window menu, About, RSLinx Options and Configure Shortcuts
-- [ ] Wave 4 of the coverage map (owner GO 2026-10-27 04:15), then one Stable release
-- [ ] PARTIAL leftovers after Wave 4 (no L5X format change, no engine audit: owner 04:20)
+- [x] ~~Wave 4 of the coverage map~~: DROPPED by the owner 2026-10-27 11:02 (nothing of it was merged)
+- [x] Ladder by touch fixes found in a tablet seal-in click-through (#100)
+- [ ] Core engine first: ladder editing and emulation perfect on tablet and desktop (seal-in, TON, CTU, OTL/OTU, branch, forces, DI/DO)
+- [ ] Engine accuracy audit against the Rockwell manuals (owner 2026-10-27 11:02)
+- [ ] Stable release: only on a new literal GO STABLE
 - [ ] Owner feedback on 0.4.0-beta.3 (tablet): tag browser, hold-to-drag, tap-again edit, portrait toolbar / Errors, start page
 - [ ] New Tag: External Access, Style, Constant, Produced / Consumed; Select Data Type with 2- and 3-dimension arrays
 - [ ] Tag Editor as a spreadsheet (editable Alias For cell with the tag browser); drag branch ends; C / S I/O tags; phone instruction row
