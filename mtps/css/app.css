@@ -1293,3 +1293,10 @@ i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inlin
 .smt-fl label.muted { opacity: .55; }
 .phone .smt-f { grid-template-columns: 1fr; }
 #smt-b { overflow-x: auto; }
+/* Task Properties > Program Schedule: Unscheduled and Scheduled lists (tasks.js) */
+.tpsch { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: start; }
+.tpsch .tplist { border: 1px solid var(--border); border-radius: var(--r-sm); min-height: 120px; max-height: 220px; overflow: auto; background: var(--surface); }
+.tpsch .tpbtn { display: flex; flex-direction: column; gap: 8px; padding-top: 34px; }
+.phone .tpsch { grid-template-columns: 1fr; }
+.phone .tpsch .tpbtn { flex-direction: row; padding-top: 0; }
+.phone .tpsch .tpbtn .btn { flex: 1; }

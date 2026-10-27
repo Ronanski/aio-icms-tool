@@ -1497,5 +1497,20 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
+console.log('Wave 3 B: Unscheduled Programs (v37 help: Create a program, Unschedule a program/phase)');
+{
+  const unsched = (rungs, extra) => ({ name: 'Unscheduled Programs', type: 'unscheduled', programs: [Object.assign({ name: 'Spare', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] }, extra || {})] });
+  const p = proj({ tags: [T('Cnt', 'DINT'), T('Spare_Ran', 'DINT'), T('Q', 'BOOL')], rungs: ['ADD(Cnt,1,Cnt);'] });
+  p.tasks.push(unsched(['ADD(Spare_Ran,1,Spare_Ran);', 'OTE(Q);']));
+  const c = new MTPS.Controller(); check('a project with an unscheduled program downloads', c.download(p).ok);
+  c.write('Q', 1); c.setMode('remrun'); scans(c, 5);
+  check('the scheduled program runs; the unscheduled one never does', c.read('Cnt') === 5 && c.read('Spare_Ran') === 0);
+  check('an unscheduled program is not prescanned (its OTE keeps its value)', c.read('Q') === 1);
+  const bad = proj({ rungs: ['NOP();'] }); bad.tasks.push(unsched(['ADD(Nope,1,Nope);']));
+  check('an unscheduled program is still verified', MTPS.verify(bad).errors.some(e => e.program === 'Spare'));
+  const e2 = proj({ rungs: ['NOP();'] }); e2.tasks.push(unsched([], { routines: [] })); delete e2.tasks[1].programs[0].main;
+  check('an unscheduled program with no routine verifies', MTPS.verify(e2).errors.length === 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

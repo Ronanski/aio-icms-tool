@@ -785,7 +785,8 @@
       const hd = task.type === 'fault' || task.type === 'powerup' ? task.type : null;
       // the task's watchdog (Task Properties > Configuration: 1 to 2,000,000 ms, 500 by default; 1756-PM005)
       const wd = Math.floor(+task.watchdog) >= 1 ? Math.min(2000000, Math.floor(+task.watchdog)) : 500;
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd };
+      // off: a program in Unscheduled Programs (no task schedules it) is verified but never runs (help: Create a program)
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd, off: task.type === 'unscheduled' };
       if (hd) { const k = hd === 'fault' ? 'cfh' : 'puh'; if (M[k]) ctlErr(`Only one program can be in the ${hd === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler'} ('${M[k].name}' is)`); else M[k] = P; }
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
@@ -1455,7 +1456,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
-      for (const P of this.M.programs) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
+      for (const P of this.M.programs) if (!P.off) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
     }
 
     /* ---------- project ---------- */
@@ -1557,7 +1558,7 @@
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
       let tk = -1;
-      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) {
+      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler && !P.off) {
         // the watchdog timer starts when the task starts and stops when all of its programs have run
         if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task ? P.task.name : ''; this.wdHit = false; }
         this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); this.wdCheck();
