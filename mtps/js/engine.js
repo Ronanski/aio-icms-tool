@@ -152,7 +152,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) o[m.name] = make(types, m.type, m.dim);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +160,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
     return o;
   }
 
@@ -406,6 +406,7 @@
       }
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
       if (!mm) return `Undefined tag '${text}'`;
+      if (mm.of) { steps.push({ m: mm.of }); bit = mm.bit; ptype = 'DINT'; type = 'BOOL'; if (norm) norm += '.' + mm.name; continue; }
       steps.push({ m: mm.name });
       type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
       if (norm) norm += '.' + mm.name;
@@ -420,8 +421,11 @@
   /* ---------- CPT / CMP expressions ---------- */
   /* + - * / MOD ** AND OR XOR NOT, = <> < <= > >=, ( ), SQR ABS NEG SIN COS LN LOG → { get(), type } or an error text.
      Integers only: / and MOD truncate as in the controller; any REAL operand or a float function gives a REAL. */
-  const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10 };
-  const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG'];
+  const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10,
+    // the trigonometric functions and their v36+ names (1756-RM003 / -RM018A, FAL and CPT order of operation)
+    TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, ASIN: Math.asin, ACOS: Math.acos, ATAN: Math.atan, DEG: v => v * 180 / Math.PI, RAD: v => v * Math.PI / 180,
+    TRN: Math.trunc, TRUNC: Math.trunc, TOD: v => toBCD(v, 'DINT').v, TO_BCD: v => toBCD(v, 'DINT').v, FRD: v => fromBCD(v, 'DINT'), BCD_TO: v => fromBCD(v, 'DINT') };
+  const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG', 'TAN', 'ASN', 'ACS', 'ATN', 'ASIN', 'ACOS', 'ATAN', 'DEG', 'RAD'];
   const LEVELS = [['OR'], ['XOR'], ['AND'], ['=', '<>', '<', '<=', '>', '>='], ['+', '-'], ['*', '/', 'MOD']];
   function compileExpr(M, prog, src) {
     const s = String(src), toks = [];
@@ -589,7 +593,7 @@
 
   function operand(M, P, kind, text) {
     const s = String(text == null ? '' : text).trim();
-    if (s === '' || s === '?') return 'Missing operand';
+    if ((s === '' && kind !== 'ginst') || s === '?') return 'Missing operand';   // GSV / SSV: an object with no instance has an empty Instance Name
     switch (kind) {
       case 'imm': { const c = parseNumber(s); return c ? new Const(c.v, c.real) : 'Immediate value expected'; }
       case 'label': return validName(s) ? { label: U(s) } : `Invalid label name '${s}'`;
@@ -603,9 +607,10 @@
         return typeof r !== 'string' && r.type === 'STRING' ? r : `Format must be a string, e.g. 'Trace:Value = %d' (a STRING tag is required)`;
       }
     }
+    if (XNAME[kind]) return XNAME[kind](s, M, P);
     const c = parseNumber(s);
     if (c) {
-      if (kind === 'num' || kind === 'fsrc' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
+      if (kind === 'num' || kind === 'fsrc' || kind === 'real' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
       return kind === 'int' ? BAD_TYPE : 'Immediate value not allowed';
     }
     const r = ref(M, P, s);
@@ -636,6 +641,7 @@
         return kind === 'elemw' ? writable() : r;
       }
     }
+    if (XKIND[kind]) return XKIND[kind](r, writable, one);
     return r;
   }
 
@@ -690,6 +696,7 @@
         if (R.labels.has(x[0].label)) bad(`Label '${e.a[0]}' is defined more than once`, 0); else R.labels.set(x[0].label, n);
         break;
       case 'JMP': jumps.push({ label: x[0].label, text: e.a[0], n }); break;
+      default: if (XCHK[e.t]) XCHK[e.t](x, bad, e, M, P);
     }
     if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && ok) {
       // the preset and accum of the rung text are written into the tag
@@ -767,6 +774,8 @@
     };
     addTags(pj.tags, null);
 
+    // the tasks, for GSV / SSV (Task object); each program knows its task
+    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit }));
     const progNames = new Set();
     let tk = 0;
     for (const task of pj.tasks || []) for (const pg of (tk++, task.programs || [])) {
@@ -789,6 +798,7 @@
       P.faultR = P.routines.get(U(pg.fault || '')) || null;
       if (pg.fault && !P.faultR) ctlErr(`Program '${pg.name}': the fault routine '${pg.fault}' does not exist`);
       M.programs.push(P);
+      P.task = M.tasks[pj.tasks.indexOf(task)];
     }
 
     // aliases point at a tag, a member or a bit that exists; they take its data type
@@ -921,6 +931,397 @@
   class Halt {}
 
   const EMU0 = { ver: '1.0', startup: 'last', psave: 10, psaveOn: false, linx: true, dwell: 10, cpu: 0, com0: '' };
+  /* ---------- Wave 2 instructions (1756-RM003, now 1756-RM018A-EN-P Sep 2025): trigonometric, advanced math, math
+     conversion, file/misc, GSV/SSV and PID. The ladder mnemonics are the classic ones the app uses (EQU, SQR …): in
+     Logix Designer v36 ASN, ACS, ATN, XPY, TOD, FRD and TRN were renamed ASIN, ACOS, ATAN, EXPT, TO_BCD, BCD_TO, TRUNC.
+     XKIND checks a new operand kind, XNAME a name operand, XCHK an instruction at verify, XPRE its prescan, XEL its
+     execution (this = the Controller). */
+  const XKIND = {}, XNAME = {}, XCHK = {}, XPRE = {}, XEL = {};
+  Object.assign(OPN, {
+    SIN: ['Source', 'Dest'], COS: ['Source', 'Dest'], TAN: ['Source', 'Dest'], ASN: ['Source', 'Dest'], ACS: ['Source', 'Dest'], ATN: ['Source', 'Dest'],
+    LN: ['Source', 'Dest'], LOG: ['Source', 'Dest'], XPY: ['Source X', 'Source Y', 'Dest'],
+    DEG: ['Source', 'Dest'], RAD: ['Source', 'Dest'], TOD: ['Source', 'Dest'], FRD: ['Source', 'Dest'], TRN: ['Source', 'Dest'],
+    FAL: ['Control', 'Length', 'Position', 'Mode', 'Dest', 'Expression'], FSC: ['Control', 'Length', 'Position', 'Mode', 'Expression'],
+    AVE: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'], STD: ['Array', 'Dim. To Vary', 'Dest', 'Control', 'Length', 'Position'],
+    SRT: ['Array', 'Dim. To Vary', 'Control', 'Length', 'Position'], SIZE: ['Source', 'Dim. To Vary', 'Size'], CPS: ['Source', 'Dest', 'Length'],
+    GSV: ['Class Name', 'Instance Name', 'Attribute Name', 'Dest'], SSV: ['Class Name', 'Instance Name', 'Attribute Name', 'Source'],
+  });
+  Object.assign(INSTR, {
+    // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
+    SIN: I('box', 'Trig Functions', 'Sine', 'num dest', { out: true }), COS: I('box', 'Trig Functions', 'Cosine', 'num dest', { out: true }),
+    TAN: I('box', 'Trig Functions', 'Tangent', 'num dest', { out: true }), ASN: I('box', 'Trig Functions', 'Arc Sine', 'num dest', { out: true }),
+    ACS: I('box', 'Trig Functions', 'Arc Cosine', 'num dest', { out: true }), ATN: I('box', 'Trig Functions', 'Arc Tangent', 'num dest', { out: true }),
+    LN: I('box', 'Advanced Math', 'Natural Log', 'num dest', { out: true }), LOG: I('box', 'Advanced Math', 'Log Base 10', 'num dest', { out: true }),
+    XPY: I('box', 'Advanced Math', 'X To The Power Of Y', 'num num dest', { out: true }),
+    // Math Conversion (chapter 16)
+    DEG: I('box', 'Math Conversions', 'Degrees', 'num dest', { out: true }), RAD: I('box', 'Math Conversions', 'Radians', 'num dest', { out: true }),
+    TOD: I('box', 'Math Conversions', 'Convert To BCD', 'int idest', { out: true }), FRD: I('box', 'Math Conversions', 'Convert To Integer', 'int idest', { out: true }),
+    TRN: I('box', 'Math Conversions', 'Truncate', 'real dest', { out: true }),
+    // File/Misc (chapter 8): Length and Position are the .LEN and .POS of the CONTROL (pseudo-operands)
+    FAL: I('box', 'File/Misc', 'File Arith/Logical', 'control imm imm fmode dest expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
+    FSC: I('box', 'File/Misc', 'File Search/Compare', 'control imm imm fmode expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
+    AVE: I('box', 'File/Misc', 'Average File', 'aelem adim dest control imm imm', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    STD: I('box', 'File/Misc', 'Standard Deviation', 'aelem adim rdest control imm imm', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SRT: I('box', 'File/Misc', 'Sort File', 'aelemw adim control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    SIZE: I('box', 'File/Misc', 'Size In Elements', 'sarr adim dest', { out: true }),
+    CPS: I('box', 'File/Misc', 'Synchronous Copy File', 'elem elemw imm', { out: true }),
+    // Input/Output (chapter 4): controller data stored in objects
+    GSV: I('box', 'Input/Output', 'Get System Value', 'gclass ginst gattr gdest', { out: true }), SSV: I('box', 'Input/Output', 'Set System Value', 'gclass ginst gattr gsrc', { out: true }),
+  });
+  /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
+     integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
+     a fractional Y are a minor fault (S:V, type 4 code 4); ASN and ACS outside -1…1 give NAN (RM018A) */
+  const MATH1 = { SIN: Math.sin, COS: Math.cos, TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, LN: Math.log, LOG: Math.log10 };
+  for (const t in MATH1) XEL[t] = function (e, x, p) { if (p) { const r = MATH1[t](x[0].get()); this.put(x[1], r, (t === 'LN' || t === 'LOG') && !isFinite(r)); } e.v = p; return p; };
+  XEL.XPY = function (e, x, p) { if (p) { const r = Math.pow(x[0].get(), x[1].get()); this.put(x[2], r, !isFinite(r)); } e.v = p; return p; };
+  // DEG: Source * 180 / pi; RAD: Source * pi / 180 (RM018A: 57.29578 and 0.017453292)
+  XEL.DEG = function (e, x, p) { if (p) this.put(x[1], x[0].get() * 180 / Math.PI); e.v = p; return p; };
+  XEL.RAD = function (e, x, p) { if (p) this.put(x[1], x[0].get() * Math.PI / 180); e.v = p; return p; };
+  // TRN: a REAL Source (immediate or tag) without its fractional part, not rounded
+  XKIND.real = r => (r.type === 'REAL' && !r.dim ? r : BAD_TYPE);
+  XEL.TRN = function (e, x, p) { if (p) this.put(x[1], Math.trunc(x[0].get())); e.v = p; return p; };
+  /* TOD (TO_BCD): 0 to 99,999,999 in 4-bit BCD digits. A negative Source gives 0, a Source too large for Dest (more
+     than 99,999,999; 9,999 for an INT, 99 for a SINT) all 9s; both set S:V (minor fault type 4, code 4). FRD (BCD_TO):
+     Dest = the sum of each 4-bit digit of the Source times its power of 10, a digit over 9 kept as it is
+     (16#1234_567E gives 12345684); a SINT or INT Source gives its 8 or 16 bits */
+  const NIB = { SINT: 2, INT: 4, DINT: 8 };
+  function toBCD(v, type) {
+    v = Math.trunc(v);
+    const n = NIB[type] || 8, max = Math.pow(10, n) - 1, all9 = parseInt('9'.repeat(n), 16);
+    if (v < 0) return { v: 0, ov: true };
+    if (v > max) return { v: all9 | 0, ov: true };
+    let r = 0;
+    for (let k = 0; v > 0; k++, v = Math.floor(v / 10)) r += (v % 10) * Math.pow(16, k);
+    return { v: r | 0, ov: false };
+  }
+  function fromBCD(v, type) {
+    let u = i32(v) >>> 0, r = 0;
+    const n = NIB[type] || 8;
+    for (let k = 0; k < n; k++, u = Math.floor(u / 16)) r += (u % 16) * Math.pow(10, k);
+    return r;
+  }
+  // an unsigned bit pattern of a SINT / INT / DINT as the signed value that type stores (16#9999 in an INT: -26215)
+  const signed = (v, t) => (t === 'SINT' ? (v << 24) >> 24 : t === 'INT' ? (v << 16) >> 16 : v | 0);
+  XEL.TOD = function (e, x, p) { if (p) { const r = toBCD(x[0].get(), x[1].type); this.put(x[1], signed(r.v, x[1].type), r.ov); } e.v = p; return p; };
+  XEL.FRD = function (e, x, p) { if (p) this.put(x[1], fromBCD(x[0].get(), x[0] instanceof Const ? 'DINT' : x[0].type)); e.v = p; return p; };
+
+  /* the Mode of FAL / FSC: ALL, INC, or the number of elements per scan (1 to 2147483647) */
+  XNAME.fmode = s => { const u = U(s); if (u === 'ALL' || u === 'INC') return { mode: u }; const c = parseNumber(s); return c && !c.real && c.v >= 1 && c.v <= 2147483647 ? { mode: c.v } : 'Mode must be ALL, INC or a number of elements per scan (1 to 2147483647)'; };
+  /* FAL and FSC (RM018A chapter 8, the flow charts and the CONTROL members): .POS is the element the expression is
+     working on (write it as Array[Control.POS]); .DN is set when the last element is done (.POS = .LEN).
+     - ALL: every element on one false-to-true rung; INC: one element per false-to-true rung; a number N: N elements
+       each scan, also while the rung is false, until done.
+     - FAL: Dest = Expression for each element; an overflow sets .ER and stops (.POS stays at that element); the
+       instruction does nothing more until .ER is cleared.
+     - FSC: the first element whose Expression is true sets .FD and .IN and stops there (.POS = that element); clear
+       .IN to search on from the next element. .ER is not changed.
+     - Rung-condition-in false: nothing while .ER (or .IN) is set; .DN set: .EN .ER .DN and .POS are cleared; INC:
+       .EN is cleared.
+     - .LEN < 0 or .POS < 0: major fault type 4, code 21. */
+  function fileOp(e, x, p) {
+    const fsc = e.t === 'FSC', c = x[0].obj(), mode = x[3].mode, ex = fsc ? x[4] : x[5];
+    const step = k => {
+      let i = fsc && c.FD ? c.POS + 1 : c.POS;
+      c.EN = 1; if (fsc) c.FD = 0;
+      for (let m = 0; m < k && i < c.LEN; m++, i++) {
+        c.POS = i;
+        DIV0 = false;
+        const v = ex.get();
+        if (fsc) {
+          if (DIV0 && !this.S.V) { this.S.V = this.S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero) in the FSC expression'); }
+          if (v !== 0) { c.FD = c.IN = 1; return; }
+        } else {
+          this.put(x[4], v, DIV0);
+          if (this.S.V) { c.ER = 1; return; }
+        }
+      }
+      c.POS = i;
+      if (c.POS >= c.LEN) { c.POS = c.LEN; c.DN = 1; if (!p) c.EN = 0; }
+    };
+    if (!p) {
+      if (!(c.ER || (fsc && c.IN))) {
+        if (c.DN) { c.EN = c.ER = c.DN = 0; c.POS = 0; }
+        else if (mode === 'INC') c.EN = 0;
+        else if (mode !== 'ALL' && c.EN) {
+          if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+          step(mode);
+        }
+      }
+      e.v = false; return false;
+    }
+    if (!(c.ER || (fsc && c.IN) || c.DN)) {
+      if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+      if (c.LEN === 0) { c.DN = c.EN = 1; if (fsc) c.FD = 0; }
+      else if (!(mode === 'INC' && c.EN)) step(mode === 'ALL' ? Infinity : mode === 'INC' ? 1 : mode);
+    }
+    e.v = true; return true;
+  }
+  XEL.FAL = fileOp; XEL.FSC = fileOp;
+
+  /* AVE, STD, SRT and SIZE (RM018A chapter 8) work along one dimension (Dim. To Vary: 0, 1 or 2, array[0,1,2]) of an
+     array from the element given: aelem / aelemw is one element of a SINT, INT, DINT or REAL array; sarr (SIZE) an
+     array or an element of one, of any type */
+  XNAME.adim = s => { const c = parseNumber(s); return c && !c.real && c.v >= 0 && c.v <= 2 ? new Const(c.v) : 'Dimension to vary must be 0, 1 or 2'; };
+  XKIND.aelem = r => (!arrEl(r) ? 'Operand must be an array element, e.g. Data[0]' : isNum(r.type) ? r : BAD_TYPE);
+  XKIND.aelemw = (r, writable) => (!arrEl(r) ? 'Operand must be an array element, e.g. Data[0]' : isNum(r.type) ? writable() : BAD_TYPE);
+  XKIND.sarr = (r, writable, one) => (r.bit < 0 && (!one || arrEl(r)) ? r : 'Source must be an array or an element of one');
+  XKIND.rdest = (r, writable, one) => (r.type === 'REAL' && one ? writable() : BAD_TYPE);
+  /* the elements along dimension d from the operand's element: n = how many there are up to the end of that dimension,
+     g(j) / s(j, v) = the j-th one (major fault 4/20 when the array has no dimension d) */
+  function dimFile(r, d, t) {
+    const F = file(r), st = r.steps[r.steps.length - 1], lens = st.lens || [st.len];
+    if (d >= lens.length) throw new Fault(4, 20, `${t}: Dimension to vary ${d} is more than the dimensions of the array (${lens.length})`);
+    const k0 = PK;
+    let stride = 1;
+    for (let k = d + 1; k < lens.length; k++) stride *= lens[k];
+    // PK is the element's place in the whole array (row-major): its subscript in dimension d
+    return { n: lens[d] - Math.floor(k0 / stride) % lens[d], g: j => F.g(j * stride), s: (j, v) => F.s(j * stride, v) };
+  }
+  /* AVE (mean) and STD (sample standard deviation, N - 1): on a true rung with .DN and .ER clear, all .LEN elements
+     (internally a FAL in ALL mode), then .DN; reading past the end of the dimension or an overflow sets .ER (.POS at that
+     element) and stops. Rung-condition-in false: AVE clears .EN .ER .DN .POS when .DN is set and .ER clear (AVE flow
+     chart); STD always clears them. .LEN < 0 or .POS < 0: major fault 4/21 */
+  function statOp(e, x, p) {
+    const c = x[3].obj(), std = e.t === 'STD';
+    if (!p) { if (std || (c.DN && !c.ER)) { c.EN = c.ER = c.DN = 0; c.POS = 0; } e.v = false; return false; }
+    c.EN = 1;
+    if (!c.DN && !c.ER) {
+      if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+      const F = dimFile(x[0], x[1].c, e.t), n = c.LEN, v = [];
+      for (let j = 0; j < n; j++) {
+        c.POS = j;
+        if (j >= F.n) { c.ER = 1; e.v = true; return true; }
+        v.push(F.g(j));
+      }
+      if (n > 0) {
+        const m = v.reduce((a, b) => a + b, 0) / n;
+        const r = std ? Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / (n - 1)) : m;
+        this.put(x[2], isFinite(r) ? r : 0, !isFinite(r));
+        if (this.S.V) { c.ER = 1; e.v = true; return true; }
+      }
+      c.POS = n; c.DN = 1;
+    }
+    e.v = true; return true;
+  }
+  XEL.AVE = statOp; XEL.STD = statOp;
+  XPRE.AVE = x => { const c = x[3].obj(); c.EN = c.DN = 0; if (!c.ER) c.EU = c.EM = c.UL = c.IN = c.FD = 0; };
+  XPRE.STD = x => { const c = x[3].obj(); c.EN = c.DN = c.ER = 0; };
+  /* SRT: on a false-to-true rung (.EN clear), the .LEN elements along the dimension into ascending order, then .DN
+     (.POS is left at the last element, as the manual's example shows). Rung false: .EN and .DN cleared. .LEN < 0 or
+     .POS < 0: .ER and major fault 4/21; a dimension or a length past the end of the array: major fault 4/20 */
+  XEL.SRT = function (e, x, p) {
+    const c = x[2].obj();
+    if (!p) { c.EN = c.DN = 0; e.v = false; return false; }
+    if (!c.EN && !c.ER) {
+      c.EN = 1;
+      if (c.LEN < 0 || c.POS < 0) { c.ER = 1; throw new Fault(4, 21, 'SRT: .LEN or .POS is less than 0'); }
+      const F = dimFile(x[0], x[1].c, 'SRT');
+      if (c.LEN > F.n) throw new Fault(4, 20, `SRT: Length ${c.LEN} goes past the end of the array (${F.n} elements from the one given)`);
+      const v = [];
+      for (let j = 0; j < c.LEN; j++) v.push(F.g(j));
+      v.sort((a, b) => a - b).forEach((y, j) => F.s(j, y));
+      c.POS = Math.max(0, c.LEN - 1); c.DN = 1;
+    }
+    e.v = true; return true;
+  };
+  /* SIZE: the number of elements of dimension Dim. To Vary of the array (all of that dimension, whatever element is
+     given); no math status flags */
+  XEL.SIZE = function (e, x, p) {
+    if (p) {
+      const r = x[0], d = x[1].c, st = r.steps[r.steps.length - 1], lens = r.dim ? r.dims : st.lens || [st.len];
+      if (d >= lens.length) throw new Fault(4, 20, `SIZE: Dimension to vary ${d} is more than the dimensions of the array (${lens.length})`);
+      x[2].set(lens[d]);
+    }
+    e.v = p; return p;
+  };
+  /* CPS: COP that the I/O updates cannot interrupt; the simulator scan is never interrupted, so it copies as COP */
+  XCHK.CPS = (x, bad) => { if (x[0].type !== x[1].type && !(isNum(x[0].type) && isNum(x[1].type))) bad(BAD_TYPE, 1); };
+  XEL.CPS = function (e, x, p) { this.el({ t: 'COP', x }, p); e.v = p; return p; };
+
+  /* ---------- GSV / SSV (RM018A chapter 4, GSV/SSV Objects): the objects and attributes the simulator has.
+     Each attribute: [data type, number of elements, SSV allowed, get(c, o) → values, set(c, o, values)]; o is the
+     instance (a program, a task or a module, or null for an object with no instance). The data moves as bytes: only
+     the attribute's size is copied (a SINT attribute into a DINT Dest changes its low 8 bits); a Dest or Source that is
+     too small is a minor fault (4/7 GSV, 4/6 SSV) and nothing is copied. */
+  const US32 = 4294967296;
+  const lohi = v => { v = Math.floor(v); const hi = Math.floor(v / US32); return [i32(v - hi * US32), i32(hi)]; };
+  const fromLohi = a => (a[1] | 0) * US32 + (a[0] >>> 0);
+  const wct = c => Date.now() * 1000 + (c.wcOff || 0);                  // WallClockTime CurrentValue, µs since 1970
+  const cst = c => (Date.now() - (c.cst0 || (c.cst0 = Date.now()))) * 1000;   // CST: µs since the controller started
+  const dt7 = (us, local) => {
+    const d = new Date(Math.floor(us / 1000)), L = local ? ['getFullYear', 'getMonth', 'getDate', 'getHours', 'getMinutes', 'getSeconds'] : ['getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCHours', 'getUTCMinutes', 'getUTCSeconds'];
+    const v = L.map(f => d[f]()); v[1]++;
+    return [...v, Math.floor(us) % 1000000];
+  };
+  const setDt7 = (c, a, local) => {
+    const ms = local ? new Date(a[0], a[1] - 1, a[2], a[3], a[4], a[5]).getTime() : Date.UTC(a[0], a[1] - 1, a[2], a[3], a[4], a[5]);
+    if (isFinite(ms)) c.wcOff = ms * 1000 + (a[6] || 0) - Date.now() * 1000;
+  };
+  const FLOG = c => c.flog || (c.flog = { MajorEvents: 0, MinorEvents: 0, MajorFaultBits: 0, MinorFaultBits: 0 });
+  // a fault record, DINT[11]: Timestamp (LINT, µs since 1970), Type (INT) and Code (INT), Info (DINT[8])
+  const frec = (c, type, code) => [...lohi(wct(c)), (type & 0xFFFF) | (code << 16), 0, 0, 0, 0, 0, 0, 0, 0];
+  // every fault: the FaultLog counters and bits, and the fault record of the program that was running
+  function faultRec(c, major, type, code) {
+    const f = FLOG(c), P = c.curP;
+    if (major) { f.MajorEvents = (f.MajorEvents + 1) & 0x7FFF; f.MajorFaultBits |= 1 << type; if (P) P.majRec = frec(c, type, code); }
+    else { f.MinorEvents = (f.MinorEvents + 1) & 0x7FFF; f.MinorFaultBits |= 1 << type; if (P) P.minRec = frec(c, type, code); }
+  }
+  const keep = (k, d) => (c, o) => [(o || c)[k] != null ? (o || c)[k] : d];
+  const store1 = k => (c, o, a) => { (o || c)[k] = a[0]; };
+  const MODST = (c, m) => { const s = c.moduleStatus(m.slot); return s.state === 'Running' ? 0x4000 : s.state === 'Inhibited' ? 0x6000 : 0x1000; };
+  const GSVOBJ = {
+    WallClockTime: { inst: null, attrs: {
+      ApplyDST: ['SINT', 1, true, keep('applyDST', 0), store1('applyDST')], CSTOffset: ['DINT', 2, true, c => lohi(wct(c) - cst(c)), (c, o, a) => { c.wcOff = fromLohi(a) + cst(c) - Date.now() * 1000; }],
+      CurrentValue: ['DINT', 2, true, c => lohi(wct(c)), (c, o, a) => { c.wcOff = fromLohi(a) - Date.now() * 1000; }], DateTime: ['DINT', 7, true, c => dt7(wct(c)), (c, o, a) => setDt7(c, a)],
+      DSTAdjustment: ['INT', 1, true, keep('dstAdj', 0), store1('dstAdj')], LocalDateTime: ['DINT', 7, true, c => dt7(wct(c), true), (c, o, a) => setDt7(c, a, true)] } },
+    Controller: { inst: null, attrs: {
+      TimeSlice: ['INT', 1, true, keep('timeSlice', 20), (c, o, a) => { if (a[0] >= 10 && a[0] <= 90 && c.key !== 'RUN') c.timeSlice = a[0]; }], ShareUnusedTimeSlice: ['INT', 1, true, keep('shareUnused', 1), store1('shareUnused')],
+      RedundancyEnabled: ['SINT', 1, false, () => [0]] } },
+    Task: { inst: 'task', attrs: {
+      DisableUpdateOutputs: ['DINT', 1, false, (c, t) => [t.noOutputs ? 1 : 0]], InhibitTask: ['DINT', 1, true, (c, t) => [t.inhibit ? 1 : 0], (c, t, a) => { t.inhibit = !!a[0]; c.M.programs.forEach(P => { if (P.task === t) { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; } }); }],
+      Instance: ['DINT', 1, false, (c, t) => [t.k]], LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
+      OverlapCount: ['DINT', 1, true, keep('overlap', 0), store1('overlap')], StartTime: ['DINT', 2, true, (c, t) => lohi(t.start || 0), (c, t, a) => { t.start = fromLohi(a); }],
+      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }] } },
+    Program: { inst: 'program', attrs: {
+      DisableFlag: ['SINT', 1, true, (c, P) => [P.inhibit ? 1 : 0], (c, P, a) => { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; }],
+      LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
+      MajorFaultRecord: ['DINT', 11, true, (c, P) => P.majRec || Array(11).fill(0), (c, P, a) => { P.majRec = a; }], MinorFaultRecord: ['DINT', 11, true, (c, P) => P.minRec || Array(11).fill(0), (c, P, a) => { P.minRec = a; }] } },
+    Module: { inst: 'module', attrs: {
+      EntryStatus: ['INT', 1, false, (c, m) => [MODST(c, m)]], FaultCode: ['INT', 1, false, (c, m) => { const s = c.moduleStatus(m.slot); return [s.state === 'Faulted' && s.code ? parseInt(s.code.slice(3), 16) : 0]; }],
+      FaultInfo: ['DINT', 1, false, () => [0]], ForceStatus: ['INT', 1, false, c => [(c.forces.size ? 1 : 0) | (c.forcesOn ? 2 : 0)]],
+      LEDStatus: ['INT', 1, false, c => { const ms = [...c.M.mods.values()], run = ms.filter(m => MODST(c, m) === 0x4000).length; return [!ms.length ? 0 : !run ? 1 : run < ms.length ? 2 : 3]; }, null, true],
+      Mode: ['INT', 1, true, (c, m) => [(m.majorOnFail ? 1 : 0) | (m.inhibit ? 4 : 0)], (c, m, a) => { m.majorOnFail = !!(a[0] & 1); m.inhibit = !!(a[0] & 4); c.emit('io'); }] } },
+    FaultLog: { inst: null, attrs: {
+      MajorEvents: ['INT', 1, true, c => [FLOG(c).MajorEvents], (c, o, a) => { FLOG(c).MajorEvents = a[0]; }], MinorEvents: ['INT', 1, true, c => [FLOG(c).MinorEvents], (c, o, a) => { FLOG(c).MinorEvents = a[0]; }],
+      MajorFaultBits: ['DINT', 1, true, c => [FLOG(c).MajorFaultBits], (c, o, a) => { FLOG(c).MajorFaultBits = a[0]; }], MinorFaultBits: ['DINT', 1, true, c => [FLOG(c).MinorFaultBits], (c, o, a) => { FLOG(c).MinorFaultBits = a[0]; }] } },
+  };
+  const findU = (o, s) => Object.keys(o).find(k => U(k) === U(s));
+  XNAME.gclass = s => { const k = findU(GSVOBJ, s); return k ? { cls: k } : `'${s}' is not an object class GSV / SSV can access (${Object.keys(GSVOBJ).join(', ')})`; };
+  XNAME.ginst = s => ({ inst: s });
+  XNAME.gattr = s => (validName(s) ? { attr: s } : `Invalid attribute name '${s}'`);
+  XKIND.gdest = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) ? writable() : BAD_TYPE);
+  XKIND.gsrc = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) ? r : BAD_TYPE);
+  // the instance of a class: THIS is the program (task) the instruction is in; a module by its name
+  const gsvInst = (c, x, M, P) => {
+    const O = GSVOBJ[x[0].cls], n = x[1].inst, u = U(n);
+    if (O.inst === 'program') return u === 'THIS' ? P : M.programs.find(p => U(p.name) === u);
+    if (O.inst === 'task') return u === 'THIS' ? P && P.task : (M.tasks || []).find(t => U(t.name) === u);
+    if (O.inst === 'module') return [...M.mods.values()].find(m => m.name && U(m.name) === u);
+    return null;
+  };
+  function gsvCheck(x, bad, e, M, P) {
+    const O = GSVOBJ[x[0].cls], a = findU(O.attrs, x[2].attr), ssv = e.t === 'SSV';
+    if (!a) return bad(`'${x[2].attr}' is not an attribute of the ${x[0].cls} object`, 2);
+    if (ssv && !O.attrs[a][2]) return bad(`The ${a} attribute of the ${x[0].cls} object cannot be set (GSV only)`, 2);
+    x[2].attr = a;
+    if (O.inst && !O.attrs[a][5] && !gsvInst(null, x, M, P)) bad(x[1].inst === '' ? `The ${x[0].cls} object needs an instance name` : `'${x[1].inst}' is not a ${O.inst} of this controller`, 1);
+  }
+  XCHK.GSV = gsvCheck; XCHK.SSV = gsvCheck;
+  /* the attribute's bytes into the Dest (GSV) or from the Source (SSV), from the element given to the end of its array */
+  function gsvMove(c, e, x, p) {
+    if (!p) return;
+    const O = GSVOBJ[x[0].cls], A = O.attrs[x[2].attr], [at, an] = A, ab = BYTES[at] * an, ssv = e.t === 'SSV';
+    const o = O.inst && !A[5] ? gsvInst(c, x, c.M, c.curP) : null;
+    if (O.inst && !A[5] && !o) { c.minorFault(4, 5, `${e.t}: there is no ${O.inst} '${x[1].inst}' (invalid object address)`); return; }
+    const r = x[3], F = file(r), db = BYTES[r.type], n = Math.ceil(ab / db);
+    if (F.n * db < ab) { c.minorFault(4, ssv ? 6 : 7, ssv ? `SSV: the Source is too small for ${x[0].cls}.${x[2].attr} (${an} ${at}): not enough information supplied` : `GSV: the Dest is too small to hold ${x[0].cls}.${x[2].attr} (${an} ${at})`); return; }
+    const dv = new DataView(new ArrayBuffer(n * db + 8));
+    for (let k = 0; k < n; k++) putBytes(dv, k * db, r.type, F.g(k));
+    if (ssv) { const v = []; for (let k = 0; k < an; k++) v.push(getBytes(dv, k * BYTES[at], at)); A[4](c, o, v); return; }
+    A[3](c, o).forEach((v, k) => putBytes(dv, k * BYTES[at], at, at === 'REAL' ? v : i32(v)));
+    for (let k = 0; k < n; k++) F.s(k, getBytes(dv, k * db, r.type));
+  }
+  XEL.GSV = function (e, x, p) { gsvMove(this, e, x, p); e.v = p; return p; };
+  XEL.SSV = XEL.GSV;
+  // the program being scanned (THIS, its fault records) and its scan time in µs; its task's StartTime
+  const msNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); return msNow(); }
+  function progEnd(P, p0) { P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+
+  /* ---------- PID (RM018A chapter 13, Special): the PID structure; .EN … .PVHA are bits of .CTL (bit 31 down to 7) ---------- */
+  const PIDBITS = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
+  PREDEF.PID = [{ name: 'CTL', type: 'DINT' }, ...Object.keys(PIDBITS).map(name => ({ name, type: 'BOOL', of: 'CTL', bit: PIDBITS[name] })),
+    ...members('SP:REAL KP:REAL KI:REAL KD:REAL BIAS:REAL MAXS:REAL MINS:REAL DB:REAL SO:REAL MAXO:REAL MINO:REAL UPD:REAL PV:REAL ERR:REAL OUT:REAL PVH:REAL PVL:REAL DVP:REAL DVN:REAL PVDB:REAL DVDB:REAL MAXI:REAL MINI:REAL TIE:REAL MAXCV:REAL MINCV:REAL MINTIE:REAL MAXTIE:REAL'),
+    { name: 'DATA', type: 'REAL', dim: 17 }];
+  Object.assign(OPN, { PID: ['PID', 'Process Variable', 'Tieback', 'Control Variable', 'PID Master Loop', 'Inhold Bit', 'Inhold Value'] });
+  INSTR.PID = I('box', 'Special', 'Proportional Integral Derivative', 'pid num num dest pidm bit0 num', { out: true });
+  XKIND.pid = (r, writable, one) => (r.type === 'PID' && one ? writable() : BAD_TYPE);
+  // the optional operands: 0 when not used
+  const orZero = (want, s, M, P) => { if (s === '0') return { none: true }; const r = ref(M, P, s); return typeof r === 'string' ? r : r.type === want && !r.dim ? r : BAD_TYPE; };
+  XNAME.pidm = (s, M, P) => orZero('PID', s, M, P);
+  XNAME.bit0 = (s, M, P) => orZero('BOOL', s, M, P);
+  XPRE.PID = x => { const s = x[0].obj(); s.CTL &= ~((1 << 31) | (1 << 15)); };
+  /* the loop (the positional equations of 1756-RM003; RM018A shows them as pictures):
+     error E = SP - PV (.CA = 0) or PV - SP (.CA = 1), as a % of the PV span (.MAXS - .MINS; none when they are equal)
+     independent gains: CV = KP·E + KI·∫E dt + KD·dE/dt + BIAS            (KI in 1/s, KD in s)
+     dependent gains:   CV = Kc·(E + 1/(60·Ti)·∫E dt + 60·Td·dE/dt) + BIAS   (Kc = KP, Ti = KI min/repeat, Td = KD min)
+     dt is .UPD (s): the instruction must run once each update time (a periodic task or a timer). The derivative is of
+     the error (.DOE = 1) or of the PV (.DOE = 0, no kick on a setpoint change), smoothed unless .NDF. Output limits
+     .MINO / .MAXO (equal: reset to 0 / 100) set .OLL / .OLH and freeze the integral (anti-reset windup). Manual (.MO,
+     the tieback) overrides software manual (.SWM, .SO); both back-calculate the integral (or .BIAS when KI = 0 and
+     .NOBC is clear) for a bumpless return to auto. Inhold bit set: CV = Inhold value, the loop re-initializes. */
+  XEL.PID = function (e, x, p) {
+    const s = x[0].obj(), b = n => (s.CTL >>> PIDBITS[n]) & 1, setb = (n, v) => { s.CTL = v ? s.CTL | (1 << PIDBITS[n]) : s.CTL & ~(1 << PIDBITS[n]); };
+    if (!p) { setb('EN', 0); e.v = false; return false; }
+    setb('EN', 1);
+    if (!(s.UPD > 0)) { this.minorFault(4, 35, 'PID: the loop update time (.UPD) is 0 or less'); e.v = true; return true; }
+    if (s.MAXO === s.MINO) { s.MAXO = 100; s.MINO = 0; }
+    const R = v => Math.fround(v), dt = s.UPD, span = s.MAXS - s.MINS, pct = span ? 100 / span : 1;
+    const pvIn = x[1].get(), PV = s.MAXI !== s.MINI ? (pvIn - s.MINI) * span / (s.MAXI - s.MINI) + s.MINS : pvIn;
+    s.PV = R(PV);
+    const M = x[4].none ? null : x[4].obj();
+    if (b('CL') && !b('CT') && M) s.SP = R(span ? M.OUT * span / 100 + s.MINS : M.OUT);
+    const manual = b('MO') || b('SWM');
+    if (manual && b('PVT')) s.SP = s.PV;
+    let SP = s.SP;
+    if (span && (SP > Math.max(s.MAXS, s.MINS) || SP < Math.min(s.MAXS, s.MINS))) { setb('SPOR', 1); this.minorFault(4, 36, 'PID: the setpoint is out of range (.MINS to .MAXS)'); SP = s.DATA[4]; } else { setb('SPOR', 0); s.DATA[4] = R(SP); }
+    const sg = b('CA') ? -1 : 1, E = sg * (SP - PV), init = !b('INI');
+    if (init) { s.DATA[2] = R(PV); s.DATA[3] = R(E); s.DATA[1] = 0; }
+    // deadband: inside .DB the error is 0 (.EWD); without .NOZC only after the error has crossed zero
+    let Eu = E;
+    if (s.DB > 0 && Math.abs(E) <= s.DB) { if (b('NOZC') || b('EWD') || E === 0 || Math.sign(E) !== Math.sign(s.DATA[3])) { setb('EWD', 1); Eu = 0; } }
+    else setb('EWD', 0);
+    s.ERR = R(E);
+    const dep = b('PE'), kp = s.KP, ki = dep ? (s.KI > 0 ? s.KP / (60 * s.KI) : 0) : s.KI, kd = dep ? s.KP * s.KD * 60 : s.KD;
+    const Ep = Eu * pct, Pt = kp * Ep;
+    const dRaw = (b('DOE') ? (E - s.DATA[3]) : -sg * (PV - s.DATA[2])) * pct / dt;
+    // derivative smoothing: a first order low pass filter (time constant kd / 16 s) unless .NDF
+    const tau = kd / 16, dF = b('NDF') || !(tau > 0) ? dRaw : s.DATA[1] + (dRaw - s.DATA[1]) * dt / (dt + tau);
+    const Dt = kd * dF;
+    let integ = s.DATA[0], out;
+    const hold = !x[5].none && x[5].get() === 1;
+    const lim = v => { setb('OLH', v > s.MAXO ? 1 : 0); setb('OLL', v < s.MINO ? 1 : 0); return Math.min(s.MAXO, Math.max(s.MINO, v)); };
+    const cvPct = cv => (s.MAXCV !== s.MINCV ? (cv - s.MINCV) * 100 / (s.MAXCV - s.MINCV) : cv);
+    if (hold || manual) {
+      if (hold) out = cvPct(x[6].get());
+      else if (b('MO')) { const t = x[2].get(); s.TIE = R(t); out = s.MAXTIE !== s.MINTIE ? (t - s.MINTIE) * 100 / (s.MAXTIE - s.MINTIE) : t; }
+      else out = s.SO;
+      out = lim(out);
+      // bumpless back to auto: the integral (or the bias) that gives this output
+      if (ki) integ = out - Pt - Dt - s.BIAS; else if (!b('NOBC')) s.BIAS = R(out - Pt - Dt);
+    } else {
+      const In = integ + ki * Ep * dt;
+      out = Pt + In + Dt + s.BIAS;
+      const o = lim(out);
+      // anti-reset windup: past a limit the integral grows only up to what gives that limit, then stays frozen
+      integ = o === out ? In : out > s.MAXO ? Math.max(integ, Math.min(In, s.MAXO - Pt - Dt - s.BIAS)) : Math.min(integ, Math.max(In, s.MINO - Pt - Dt - s.BIAS));
+      out = o;
+      s.SO = R(out);
+    }
+    s.OUT = R(out); s.DATA[0] = R(integ); s.DATA[1] = R(dF); s.DATA[2] = R(PV); s.DATA[3] = R(E);
+    const cv = hold ? x[6].get() : s.MAXCV !== s.MINCV ? out * (s.MAXCV - s.MINCV) / 100 + s.MINCV : out;
+    x[3].set(cv); s.DATA[14] = R(cv);
+    // alarms with their deadbands (a PV alarm when .PVH > .PVL; a deviation alarm when its limit is not 0)
+    if (s.PVH > s.PVL) {
+      setb('PVHA', PV > s.PVH || (b('PVHA') && PV > s.PVH - s.PVDB) ? 1 : 0);
+      setb('PVLA', PV < s.PVL || (b('PVLA') && PV < s.PVL + s.PVDB) ? 1 : 0);
+    } else { setb('PVHA', 0); setb('PVLA', 0); }
+    setb('DVPA', s.DVP && (E > s.DVP || (b('DVPA') && E > s.DVP - s.DVDB)) ? 1 : 0);
+    setb('DVNA', s.DVN && (E < s.DVN || (b('DVNA') && E < s.DVN + s.DVDB)) ? 1 : 0);
+    setb('INI', 1);
+    e.v = true; return true;
+  };
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -1000,12 +1401,14 @@
       this.emit('key');
     }
     majorFault(type, code, text) {
+      faultRec(this, true, type, code);
       this.fault = { type, code, text, at: Date.now() };
       this.majors.unshift(this.fault);
       this.majors.length = Math.min(this.majors.length, 10);
       this.emit('fault');
     }
     minorFault(type, code, text) {
+      faultRec(this, false, type, code);
       const last = this.minors[0];
       if (last && last.type === type && last.code === code && last.text === text) { last.count++; last.at = Date.now(); return; }
       this.minors.unshift({ type, code, text, at: Date.now(), count: 1 });
@@ -1047,6 +1450,7 @@
               // .EN set: a rung that is true at the change to Run does not step on the first scan (it stays at .POS)
               case 'SQO': x[3].obj().EN = 1; break;
               case 'SQL': x[2].obj().EN = 1; break;
+              default: if (XPRE[e.t]) XPRE[e.t].call(this, x, e);
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -1155,8 +1559,8 @@
       let tk = -1;
       for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) {
         // the watchdog timer starts when the task starts and stops when all of its programs have run
-        if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task; this.wdHit = false; }
-        this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; this.routine(P.main); this.wdCheck();
+        if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task ? P.task.name : ''; this.wdHit = false; }
+        this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); this.wdCheck();
       }
       } catch (e) {
         if (e instanceof Halt) { this.d = 0; this.mcr = false; }
@@ -1171,6 +1575,7 @@
       // scan times in microseconds (Task Properties, Monitor)
       const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
+      this.curP = null; for (const t of this.M.tasks || []) { t.us = us; t.maxUs = Math.max(t.maxUs || 0, us); }
     }
     /* speed of time (LGEM5K-GR016: 0-100 %, takes effect at once; 60 % makes 1 s take about 1.67 s) */
     setSpeed(p) { p = Math.round(Number(p)); if (!(p >= 0 && p <= 100)) return false; this.sot = p; this.emit('speed'); return true; }
@@ -1420,7 +1825,7 @@
         case 'BPT': case 'TPT': if (p) this.trace(e); e.v = p; return p;
         case 'MCR': if (!p) this.mcr = !this.mcr; e.v = p; return p;
         case 'AFI': e.v = false; return false;
-        default: e.v = p; return p;   // LBL, SBR, NOP
+        default: if (XEL[e.t]) return XEL[e.t].call(this, e, x, p); e.v = p; return p;   // LBL, SBR, NOP
       }
     }
     /* math status from the stored value: S:V overflow (or divide by zero, also a minor fault: S:MINOR), S:Z zero,
@@ -1878,6 +2283,7 @@
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
+  MTPS.GSVOBJ = GSVOBJ;
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

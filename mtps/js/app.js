@@ -115,14 +115,19 @@
     Favorites: ['RUNG', 'BR', 'BRL', 'XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES'],
     Bit: ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'OSR', 'OSF'],
     'Timer/Counter': ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES'],
+    'Input/Output': ['GSV', 'SSV'],
     Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
-    'File/Misc': ['COP', 'FLL'],
+    'File/Misc': ['FAL', 'FSC', 'COP', 'CPS', 'FLL', 'AVE', 'SRT', 'STD', 'SIZE'],
     'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     Sequencer: ['SQI', 'SQO', 'SQL'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
     Debug: ['BPT', 'TPT'],
+    Special: ['PID'],
+    'Trig Functions': ['SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN'],
+    'Advanced Math': ['LN', 'LOG', 'XPY'],
+    'Math Conversions': ['DEG', 'RAD', 'TOD', 'FRD', 'TRN'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
@@ -1389,7 +1394,7 @@
   }
   const pfx = (p, q, strict) => !!p && p.length >= q.length + (strict ? 1 : 0) && q.every((v, i) => p[i] === v);
   const sameP = (a, b) => !!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]);
-  const NOTAG = /^(routine|label|imm|expr|order)$/;
+  const NOTAG = /^(routine|label|imm|expr|order|fmode|adim|gclass|ginst|gattr)$/;
   /* is a node a valid drop point for what is dragged (white square)? */
   function nodeOk(n) {
     const d = S.drag; if (!d) return false;
@@ -1648,7 +1653,7 @@
   const kb = k => (S.layout === 'desktop' ? k : '');
   function tagItems(e, oi, onName) {
     const kind = (((INSTR[e.t] || {}).args || [])[oi] || '').replace('?', ''), a = e.a[oi];
-    if (!kind || /^(routine|label|imm|expr|order)$/.test(kind)) return [];
+    if (!kind || /^(routine|label|imm|expr|order|fmode|adim|gclass|ginst|gattr)$/.test(kind)) return [];
     if (a === '?' || a === '') return [{ l: 'New Tag…', k: kb('Ctrl+W'), i: 'newtag', run: () => newTag({ kind }), dis: !editable() }, '-'];
     if (!isTagText(a)) return [];
     const base = String(a).split(/[.[]/)[0], tg = tagFor(base);
@@ -1807,10 +1812,31 @@
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], dest: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], int: ['SINT', 'INT', 'DINT', 'LINT'], idest: ['SINT', 'INT', 'DINT', 'LINT'], expr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL', 'BOOL'],
-    control: ['CONTROL'], darr: ['DINT'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], farr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fdst: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], ddest: ['DINT'],
+    control: ['CONTROL'], darr: ['DINT'], real: ['REAL'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], farr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fdst: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], ddest: ['DINT'],
+    aelem: ['SINT', 'INT', 'DINT', 'REAL'], aelemw: ['SINT', 'INT', 'DINT', 'REAL'], rdest: ['REAL'], gdest: ['SINT', 'INT', 'DINT', 'REAL'], gsrc: ['SINT', 'INT', 'DINT', 'REAL'], pid: ['PID'], pidm: ['PID'], bit0: ['BOOL'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
-  const ARRK = ['elem', 'elemw', 'darr', 'farr'];
+  const ARRK = ['elem', 'elemw', 'darr', 'farr', 'aelem', 'aelemw'];
+  /* the name operands that are picked from a list, as the reference editor offers them (Mode of FAL / FSC, the class,
+     instance and attribute of GSV / SSV); PCTX is the instruction being edited ({ mn, ops }) */
+  let PCTX = null;
+  const PICKS = {
+    fmode: { title: 'Modes: ALL, INC, or a number of elements per scan', list: () => [['ALL', 'All the elements in one scan'], ['INC', 'One element each false-to-true rung'], ['1', 'A number: that many elements each scan']].map(([name, desc]) => ({ name, type: '', desc })) },
+    gclass: { title: 'Object classes', list: () => Object.keys(E.GSVOBJ).map(name => ({ name, type: '', desc: { WallClockTime: 'Date and time', Controller: 'Controller settings', Task: 'A task: scan times, watchdog', Program: 'A program: scan times, fault records', Module: 'An I/O module: status, fault code, mode', FaultLog: 'Fault counts and bits' }[name] || '' })) },
+    ginst: { title: 'Instance names', list: () => {
+      const O = E.GSVOBJ[Object.keys(E.GSVOBJ).find(k => PCTX && U(k) === U(PCTX.ops[0] || ''))], P = S.p;
+      if (!O || !O.inst) return [];
+      if (O.inst === 'module') return P.rack.modules.filter(m => m.name).map(m => ({ name: m.name, type: '', desc: `[${m.slot}] ${MODNAMES[m.type] || m.type}` }));
+      const all = O.inst === 'task' ? P.tasks.filter(t => !HANDLERS[t.type]).map(t => t.name) : P.tasks.flatMap(t => t.programs.map(g => g.name));
+      return [{ name: 'THIS', type: '', desc: `The ${O.inst} this instruction is in` }, ...all.map(name => ({ name, type: '', desc: '' }))];
+    } },
+    gattr: { title: 'Attributes', list: () => {
+      const O = E.GSVOBJ[Object.keys(E.GSVOBJ).find(k => PCTX && U(k) === U(PCTX.ops[0] || ''))];
+      return O ? Object.entries(O.attrs).filter(([, a]) => PCTX.mn !== 'SSV' || a[2]).map(([name, a]) => ({ name, type: a[0] + (a[1] > 1 ? `[${a[1]}]` : ''), desc: a[2] ? 'GSV / SSV' : 'GSV' })) : [];
+    } },
+    adim: { title: 'Dimension to vary (the order is array[0,1,2])', list: () => [['0', 'The first dimension'], ['1', 'The second dimension'], ['2', 'The third dimension']].map(([name, desc]) => ({ name, type: '', desc })) },
+  };
+  const PICKK = Object.keys(PICKS);
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
   const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || (d => (d && d.family === 'string' ? strMems(d.len) : d && d.members))((S.p.dataTypes || []).find(d => U(d.name) === U(ty))) || null;
@@ -1942,10 +1968,13 @@
     const q = U(text || '').replace(/^\?$/, '');
     if (kind === 'routine') return curProg().routines.filter(r => r.name !== S.routine).map(r => ({ name: r.name, type: 'ROUTINE', desc: r.desc || (r.name === curProg().main ? 'Main routine' : '') })).filter(r => U(r.name).includes(q));
     if (kind === 'label') { const s = new Map(); rungs().forEach(r => { let m; const re = /\b(LBL|JMP)\((\w+)\)/gi; while ((m = re.exec(r.t))) { const k = U(m[2]); const o = s.get(k) || { name: m[2], lbl: false, jmp: false }; if (U(m[1]) === 'LBL') o.lbl = true; else o.jmp = true; s.set(k, o); } }); return [...s.values()].map(o => ({ name: o.name, type: 'LABEL', desc: o.lbl ? (o.jmp ? 'Label, jumped to' : 'Label') : 'Jump target, no LBL yet' })).filter(r => U(r.name).includes(q)); }
+    if (PICKS[kind]) return PICKS[kind].list().filter(c => !q || U(c.name).includes(q) || U(c.desc).includes(q));
     if (kind === 'imm' || kind === 'order') return kind === 'order' ? ['REVERSE', 'WORD', 'HIGH/LOW'].map(n => ({ name: n, type: '', desc: '' })) : [];
     const types = KIND_TYPES[kind];
     let list = candidates();
-    if (ARRK.includes(kind)) list = list.filter(c => /\[\d+\]$/.test(c.name) && (!types || types.includes(c.type)));
+    if (ARRK.includes(kind)) list = list.filter(c => /\[[\d,]+\]$/.test(c.name) && (!types || types.includes(c.type)));
+    // SIZE: an array, or an element of one
+    else if (kind === 'sarr') list = list.filter(c => c.dim || /\[[\d,]+\]$/.test(c.name));
     else if (types) list = list.filter(c => types.includes(c.type) && !c.dim);
     if (q) list = list.filter(c => U(c.name).includes(q)).sort((a, b) => (U(a.name).startsWith(q) ? 0 : 1) - (U(b.name).startsWith(q) ? 0 : 1));
     return list.slice(0, 120);
@@ -2016,10 +2045,11 @@
         st.act = -1;
         return;
       }
-      if (k === 'routine' || k === 'label' || k === 'order') {
+      if (k === 'routine' || k === 'label' || k === 'order' || PICKS[k]) {
+        PCTX = { mn, ops: [...el.querySelectorAll('[data-op]')].map(i => i.value) };
         const lst = suggest(k, text === '?' ? '' : text), all = lst.length ? lst : suggest(k, '');
         sgbar.innerHTML = '';
-        sgh.textContent = k === 'routine' ? 'Routines of this program' : k === 'label' ? 'Labels in this routine' : 'Order modes';
+        sgh.textContent = k === 'routine' ? 'Routines of this program' : k === 'label' ? 'Labels in this routine' : PICKS[k] ? PICKS[k].title : 'Order modes';
         sg.innerHTML = all.map(c => `<div class="row${U(c.name) === U(text) ? ' on' : ''}" data-pick="${esc(c.name)}"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div></div>`).join('') || `<div class="empty">${k === 'routine' ? 'No other routine: add one in the Controller Organizer (right-click the program, New Routine).' : k === 'label' ? 'No labels yet: type a name, then put LBL with the same name at the start of a rung.' : ''}</div>`;
         st.act = -1;
         return;
@@ -2029,12 +2059,12 @@
       if (exact) list = suggest(k, '');
       st.q = exact || text === '?' ? '' : text;
       if (st.scope !== 'all') list = list.filter(c => (c.scope || 'Controller') === st.scope || c.scope === 'System');
-      const tagKind = !['imm', 'routine', 'label', 'order', 'expr'].includes(k);
+      const tagKind = !['imm', 'routine', 'label', 'order', 'expr'].includes(k) && !PICKS[k];
       const pool = suggest(k, '');
       const rec = tagKind ? (S.prefs.recent || []).filter(n => pool.some(c => U(c.name) === U(n))) : [];
       const scopes = ['all', 'Controller', curProg().name];
       sgbar.innerHTML = tagKind ? `<div class="sgchips">${[['all', 'All'], ['in', 'Inputs'], ['out', 'Outputs'], ['tag', 'Tags'], ['sys', 'System']].map(([v, t]) => `<span class="chip${st.f === v ? ' on' : ''}" data-sgf="${v}">${t}</span>`).join('')}<select class="inp sgscope" data-sgs="1" aria-label="Scope">${scopes.map(v => `<option value="${esc(v)}"${st.scope === v ? ' selected' : ''}>${v === 'all' ? 'All scopes' : esc(v)}</option>`).join('')}</select></div>${rec.length ? `<div class="sgrec"><span class="muted">Recent:</span>${rec.map(n => `<span class="chip" data-pick="${esc(n)}">${esc(n)}</span>`).join('')}</div>` : ''}` : '';
-      const known = !text || text === '?' || exact || !E.validName(text) || ['imm', 'routine', 'label', 'order', 'expr'].includes(k) || E.parseNumber(text);
+      const known = !text || text === '?' || exact || !E.validName(text) || ['imm', 'routine', 'label', 'order', 'expr'].includes(k) || !!PICKS[k] || E.parseNumber(text);
       sgh.textContent = k === 'imm' ? 'A number (e.g. 5000)' : `Tags for ${names()[focus] || 'operand'}${KIND_TYPES[k] ? ' · ' + KIND_TYPES[k].join(', ') : ''}`;
       sg.innerHTML = (!known ? `<div class="row new" data-newtag="${esc(text)}">${ic('newtag')}<div class="grow"><div class="nm">New "${esc(text)}"</div><div class="sub">Create a ${defaultType(k)} tag${window.mtpsFS ? ' · Ctrl+W' : ''}</div></div></div>` : '') +
         groupedRows(list, k, mn, text, st) ||
@@ -2062,8 +2092,8 @@
       const m = U(el.querySelector('#mn').value.trim());
       if (!INSTR[m]) { el.querySelector('#ee').textContent = `"${m}" is not an instruction.`; return false; }
       if (TC.includes(m)) { if (!ops[2] || ops[2] === '?') ops[2] = '0'; }
-      const d = INSTR[m], a = d.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(v => v !== null);
-      rememberTags(a.filter((v, i) => v && v !== '?' && !E.parseNumber(v) && !['imm', 'routine', 'label', 'order', 'expr'].includes((d.args[i] || '').replace('?', ''))));
+      const d = INSTR[m], a = d.args.map((k, i) => (ops[i] == null || (ops[i] === '' && k !== 'ginst') ? (k.endsWith('?') ? null : '?') : ops[i])).filter(v => v !== null);
+      rememberTags(a.filter((v, i) => v && v !== '?' && !E.parseNumber(v) && !['imm', 'routine', 'label', 'order', 'expr', ...PICKK].includes((d.args[i] || '').replace('?', ''))));
       edit(() => {
         const els = parsed(ri), x = getEl(els, path);
         x.t = m; x.a = a;
@@ -2103,7 +2133,7 @@
      A small combo box over the operand (or the mnemonic) with a tag drop-down (Alt+Down, or the arrow button).
      Enter accepts and goes on to the next operand, Tab accepts, Esc, scrolling or a click elsewhere drops the edit.
      A new mnemonic (morph) keeps the operands that fit it: TON(Tmr1,5000,0) to XIC keeps Tmr1. */
-  const SEL_KIND = /^(routine|label|order)$/;
+  const SEL_KIND = /^(routine|label|order|fmode|adim|gclass|ginst|gattr)$/;
   function fitsKind(v, k, was) {
     if (v == null || v === '' || v === '?') return true;
     if (k === 'expr' || k === 'num') return true;
@@ -2154,6 +2184,7 @@
       const t = inp.value.trim(), q = U(t);
       if (mn) return Object.keys(INSTR).filter(k => !q || k.startsWith(q) || U(NAME(k)).includes(q)).sort((a, c) => (a.startsWith(q) ? 0 : 1) - (c.startsWith(q) ? 0 : 1) || a.localeCompare(c)).map(k => ({ name: k, type: '', desc: NAME(k) }));
       // the whole list for the operand's type while the text is the current operand, the matches while typing
+      PCTX = { mn: e.t, ops: e.a };
       const all = suggest(kind, ''), m = !q || all.some(c => U(c.name) === q) && q === U(cur) ? all : suggest(kind, t);
       return m;
     };
@@ -2177,7 +2208,7 @@
       }
       const dd = INSTR[x2.t], ops = x2.a.slice();
       ops[op] = v;
-      const a2 = dd.args.map((k, i) => (ops[i] == null || ops[i] === '' ? (k.endsWith('?') ? null : '?') : ops[i])).filter(z => z !== null);
+      const a2 = dd.args.map((k, i) => (ops[i] == null || (ops[i] === '' && k !== 'ginst') ? (k.endsWith('?') ? null : '?') : ops[i])).filter(z => z !== null);
       closeLayer();
       if (a2.join('\u0001') !== x2.a.join('\u0001')) {
         if (v && v !== '?' && isTagText(v) && !SEL_KIND.test(kind) && kind !== 'imm' && kind !== 'expr') rememberTags([v]);
@@ -3067,7 +3098,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = w.querySelector(`rect.tap[data-rn][data-ri="${ri}"]`);
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
-  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest'];
+  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest', 'aelemw', 'rdest', 'gdest', 'pid'];
   /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
      wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
      Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a
@@ -3092,7 +3123,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
           if (st.type === 'Routine') { if (x.t === 'JSR' && match(String(x.a[0]))) rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref: String(x.a[0]), base: '', dest: 'N', desc: '' }); return; }
           if (st.type === 'Label') { if ((x.t === 'JMP' || x.t === 'LBL') && match(String(x.a[0]))) rows.push({ el: x.t, g: g.name, r: r.name, ri, p, ref: String(x.a[0]), base: '', dest: 'N', desc: '' }); return; }
           x.a.forEach((a, k) => {
-            const kind = (d.args[k] || '').replace('?', ''); if (['routine', 'label', 'imm', 'order'].includes(kind)) return;
+            const kind = (d.args[k] || '').replace('?', ''); if (['routine', 'label', 'imm', 'order', ...PICKK].includes(kind)) return;
             const names = kind === 'expr' ? (String(a).match(/[A-Za-z_][\w:]*(?:\[[^\]]*\])?(?:\.\w+)*/g) || []) : [String(a)];
             names.forEach(ref => {
               const b = ref.split(/[.[]/)[0]; if (!match(b)) return;
@@ -3154,7 +3185,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
-  const HGRP = [['Debug', 'Debug Instructions (Logix Emulate)'], ['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
+  const HGRP = [['Debug', 'Debug Instructions (Logix Emulate)'], ['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Input/Output', 'Input/Output Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions'],
+    ['Special', 'Special Instructions'], ['Trig Functions', 'Trigonometric Instructions'], ['Advanced Math', 'Advanced Math Instructions'], ['Math Conversions', 'Math Conversion Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
      instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
@@ -7115,7 +7147,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     let dg = null;
     document.addEventListener('pointerdown', ev => {
       const b = ev.target.closest('.gbtn');
-      if (!b || b.disabled || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+      // the All… button (no data-mn) opens Add Ladder Element by its data-cmd: it is not an instruction to drag
+      if (!b || b.disabled || !b.dataset.mn || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
       dg = { mn: b.dataset.mn, x: ev.clientX, y: ev.clientY, on: false, id: ev.pointerId, b, touch: ev.pointerType !== 'mouse', held: ev.pointerType === 'mouse' };
       if (dg.touch) { const d = dg; d.timer = setTimeout(() => { if (dg === d) { d.held = true; b.classList.add('lift'); if (navigator.vibrate) navigator.vibrate(10); } }, 350); }
     });
