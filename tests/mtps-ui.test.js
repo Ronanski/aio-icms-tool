@@ -2163,7 +2163,7 @@ function check(name, cond, info = '') {
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
     let k = await kv();
-    check('Device Properties: vendor, product type, product code, revision, serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.0' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
+    check('Device Properties: vendor, product type, product code, revision (the card: 1.1), serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.1' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
     await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(80);
     p = await node(page, '00, PLC-CPU');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
