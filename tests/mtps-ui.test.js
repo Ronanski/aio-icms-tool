@@ -2317,6 +2317,7 @@ function check(name, cond, info = '') {
     check('the ladder is patched in place (same SVG, only the changed rungs), and draws exactly as a full redraw', same.kept && same.same && same.sel === 1 && same.rsel === 1, JSON.stringify(same));
     await tp.close();
   }
+  await require('./mtps-ui-w2A')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();
