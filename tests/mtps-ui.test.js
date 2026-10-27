@@ -2330,6 +2330,7 @@ function check(name, cond, info = '') {
     check('Stable: the same release is no update; a Beta build is not offered on Stable; a newer release is', u[1] === false && u[2] === false && u[3] === true);
     check('the hosted Beta copy: the same build is no update, another build is; an older version is never offered', u[4] === false && u[5] === true && u[6] === false, JSON.stringify(u));
   }
+  await require('./mtps-ui-update')({ browser, check });
   await require('./mtps-ui-w2A')({ browser, page, URL, check });
   await require('./mtps-ui-w2E')({ browser, page, URL, check });
   await require('./mtps-ui-w2B')({ browser, page, URL, check });
