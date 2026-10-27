@@ -730,6 +730,9 @@
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
+      // the program's fault routine (Program Properties > Configuration > Fault): runs on an instruction fault in the program
+      P.faultR = P.routines.get(U(pg.fault || '')) || null;
+      if (pg.fault && !P.faultR) ctlErr(`Program '${pg.name}': the fault routine '${pg.fault}' does not exist`);
       M.programs.push(P);
     }
 
@@ -1083,11 +1086,13 @@
       }
       return p;
     }
-    /* an instruction fault (type 4): the Controller Fault Handler runs; it is tried once, at the instruction that faulted */
+    /* an instruction fault (type 4), at the instruction that faulted (tried once): the fault routine of the program
+       runs; when it does not clear the fault, the Controller Fault Handler (1756-PM014, Write a routine to clear the fault) */
     recover(e) {
       if (e.tried || e.type !== 4 || !this.M) return false;
       e.tried = true;
-      return this.handle(this.M.cfh, e);
+      const P = this.curP;
+      return (!!P && !!P.faultR && this.handle(P, e, P.faultR)) || this.handle(this.M.cfh, e);
     }
     /* run a fault-handling routine for fault e: the program's MajorFaultRecord holds the fault while it runs, and the
        fault is cleared when the routine leaves Type and Code at 0 (GSV / SSV MajorFaultRecord). A fault inside the

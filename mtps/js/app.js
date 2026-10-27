@@ -3618,13 +3618,25 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     const k = S.orgSel || '', g = k.startsWith('prog:') ? k.slice(5) : k.startsWith('rt:') ? k.slice(3).split('/')[0] : '';
     return allProgs().some(x => x.name === g) ? g : curProg().name;
   }
+  /* New Routine (help v37; 1756-PM014, Create a fault routine for a program): Name, Description, Type, In Program,
+     Assignment (Main, Fault or none). The first routine of a program without a main routine is Main by default. */
   function newRoutine(gname) {
     const g = allProgs().find(x => x.name === gname);
-    prompt1('New Routine', 'Name', 'Routine' + (g.routines.length + 1), v => {
-      if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
-      if (g.routines.some(r => U(r.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { g.routines.push({ name: v, rungs: [{ t: '' }] }); if (!g.main) g.main = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
-    }, 'Call it from the main routine with JSR.');
+    let n = 'Routine' + (g.routines.length + 1);
+    for (let k = g.routines.length + 1; g.routines.some(r => U(r.name) === U(n)); ) n = 'Routine' + ++k;
+    dialog({ title: 'New Routine', size: 'md', focus: true,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="p1" value="${esc(n)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="nr-d" rows="2"></textarea></div>
+        <div class="frow"><label>Type</label><select class="inp" disabled><option>Ladder Diagram</option></select></div>
+        <div class="frow"><label>In Program</label><select class="inp" disabled><option>${esc(g.name)}</option></select></div>
+        <div class="frow"><label>Assignment</label><select class="inp" id="nr-a"><option value=""${g.main ? ' selected' : ''}>&lt;none&gt;</option><option value="main"${g.main ? '' : ' selected'}>Main</option><option value="fault">Fault</option></select></div>
+        <p class="help">Call a routine from the main routine with JSR. A Fault routine runs when an instruction of this program faults; it clears the fault by setting Type and Code of the program's MajorFaultRecord to 0.</p><div class="errtx" id="p1e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const v = el.querySelector('#p1').value.trim(), d = el.querySelector('#nr-d').value.trim(), as = el.querySelector('#nr-a').value, er = t => { el.querySelector('#p1e').textContent = t; return false; };
+        if (!E.validName(v)) return er('Use letters, digits and _ (up to 40).');
+        if (g.routines.some(r => U(r.name) === U(v))) return er('A routine with that name exists.');
+        edit(() => { const r = { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
+      } }] });
   }
   /* New Program in the Controller Fault Handler or Power-Up Handler folder (1756-PM014; help: the handler program cannot
      be created or changed in Remote Run or Run). The handler holds one program; its first routine becomes its main
@@ -3664,13 +3676,13 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     prompt1('Rename Routine', 'Name', rn, v => {
       if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
       if (U(v) !== U(rn) && g.routines.some(x => U(x.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + v : k)); r.name = v; if (g.main === rn) g.main = v; if (S.routine === rn) S.routine = v; });
+      edit(() => { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + v : k)); r.name = v; if (g.main === rn) g.main = v; if (g.fault === rn) g.fault = v; if (S.routine === rn) S.routine = v; });
     });
   }
   function deleteRoutine(key) {
     const [gn, rn] = key.slice(3).split('/'), g = allProgs().find(x => x.name === gn);
     if (g.main === rn) { toast('The main routine cannot be deleted.', 'err'); return; }
-    confirmDlg('Delete Routine', `Delete <b>${esc(rn)}</b> and its rungs?`, 'Delete', () => { edit(() => { g.routines = g.routines.filter(x => x.name !== rn); if (S.routine === rn) { S.routine = g.main; S.sel = null; S.selRung = 0; } }); }, true);
+    confirmDlg('Delete Routine', `Delete <b>${esc(rn)}</b> and its rungs?`, 'Delete', () => { edit(() => { g.routines = g.routines.filter(x => x.name !== rn); if (g.fault === rn) delete g.fault; if (S.routine === rn) { S.routine = g.main; S.sel = null; S.selRung = 0; } }); }, true);
   }
   function newModule() {
     if (!offline()) { toast('Go offline to add a module.'); return; }
@@ -3817,7 +3829,7 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
         if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         if (n !== r.name && g.routines.some(x => U(x.name) === U(n))) { toast('A routine with that name exists.', 'err'); return false; }
         if (n === r.name && d === (r.desc || '')) return;
-        edit(() => { if (n !== r.name) { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + n : k)); if (g.main === rn) g.main = n; if (S.routine === rn && S.prog === gn) S.routine = n; r.name = n; } if (d) r.desc = d; else delete r.desc; });
+        edit(() => { if (n !== r.name) { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + n : k)); if (g.main === rn) g.main = n; if (g.fault === rn) g.fault = n; if (S.routine === rn && S.prog === gn) S.routine = n; r.name = n; } if (d) r.desc = d; else delete r.desc; });
       } }] });
   }
   function controllerProps(tab) {

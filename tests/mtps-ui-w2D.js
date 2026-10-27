@@ -103,6 +103,35 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     await page.keyboard.press('Escape'); await wait(80);
     await ev(() => { MTPS.App.ctl.clearFault(); MTPS.App.run('offline'); }); await wait(100);
   }
+  console.log('Wave 2 D: fault routine of a program (1756-PM014; v37 help, Configure a fault routine)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    await page.click('.nd[data-org="prog:MainProgram"]', { button: 'right' }); await wait(150);
+    await pick('New Routine…');
+    check('New Routine: Name, Description, Type, In Program, Assignment (<none> / Main / Fault)', (await dlgTitle()) === 'New Routine' && (await page.$$eval('#nr-a option', o => o.map(x => x.textContent).join('|'))) === '<none>|Main|Fault' && (await page.$eval('#nr-a', s => s.value)) === '');
+    await page.fill('#p1', 'Fault_Routine'); await page.selectOption('#nr-a', 'fault');
+    await shot('fault-routine-new-routine');
+    await clickBtn('OK');
+    check('Assignment Fault: the routine is the program\'s fault routine', await ev(() => MTPS.App.state.p.tasks[0].programs[0].fault === 'Fault_Routine'));
+    await page.dblclick('.nd[data-org="prog:MainProgram"]'); await wait(200);
+    await page.click('#layer [data-dt="cfg"]'); await wait(80);
+    check('Program Properties > Configuration: Fault = Fault_Routine', (await page.$eval('#pp-f', s => s.value)) === 'Fault_Routine');
+    await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => { const p = MTPS.App.state.p; p.tags.push({ name: 'Idx', type: 'DINT', value: 9 }, { name: 'Arr', type: 'DINT', dim: 3 }, { name: 'FR', type: 'DINT' });
+      const g = p.tasks[0].programs[0]; g.routines[0].rungs.push({ t: 'MOV(1,Arr[Idx]);' }); g.routines.find(r => r.name === 'Fault_Routine').rungs = [{ t: 'ADD(FR,1,FR);' }]; MTPS.App.render(); });
+    const on = await online(); await ev(() => MTPS.App.run('runm')); await wait(300);
+    check('online in Run: the array fault runs the fault routine (FR = 1), not cleared: faulted type 4 code 20', on && await ev(() => { const c = MTPS.App.ctl; return c.read('FR') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20; }));
+    await ev(() => { MTPS.App.ctl.clearFault(); MTPS.App.run('offline'); }); await wait(100);
+    // phone, touch: the Project tab, hold the program, New Routine with Assignment Fault
+    const tp = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 390, height: 844 }); await open(tp, () => MTPS.App.openProject(MTPS.App.example()));
+    await tp.tap('.pnav [data-go="project"]'); await tp.waitForTimeout(300);
+    await hold(tp, '.nd[data-org="prog:MainProgram"]');
+    await pick('New Routine…', tp, true);
+    await tp.fill('#p1', 'FR2'); await tp.selectOption('#nr-a', 'fault'); await clickBtn('OK', tp, true);
+    check('phone (touch): New Routine with Assignment Fault', await tp.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].fault === 'FR2'));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {

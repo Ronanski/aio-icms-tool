@@ -944,5 +944,35 @@ console.log('Wave 2 D: Power-Up Handler (1756-PM014: power up in Run after a pow
   check('the Power-Up Handler is not scanned with the tasks', (() => { const x = new MTPS.Controller(); x.download(base(['ADD(Boot,1,Boot);'])); x.setMode('remrun'); scans(x, 3); return x.read('Boot') === 0; })());
 }
 
+console.log('Wave 2 D: the fault routine of a program (1756-PM014, Create a fault routine for a program)');
+{
+  const base = (fault, extra) => {
+    const p = proj({ tags: [T('Idx', 'DINT', { value: 7 }), T('Arr', 'DINT', { dim: 3 }), T('After', 'BOOL'), T('FR', 'DINT'), T('Seen', 'BOOL')],
+      rungs: ['MOV(1,Arr[Idx])OTE(After);'], routines: [{ name: 'Fault_Routine', rungs: ['ADD(FR,1,FR);'] }, { name: 'Sub', rungs: ['MOV(2,Arr[Idx]);', 'OTL(Seen);'] }] });
+    if (fault) p.tasks[0].programs[0].fault = fault;
+    if (extra) p.tasks.push(extra);
+    return p;
+  };
+  const c = new MTPS.Controller(); c.download(base('Fault_Routine')); c.setMode('remrun'); scans(c, 1);
+  check('an instruction fault in the program runs its fault routine; not cleared, the controller faults (4/20)', c.read('FR') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20);
+  const r = c.majorFaultRecord('MainProgram');
+  check('GSV Program THIS MajorFaultRecord in the fault routine: type 4 code 20 of this program', (r[2] & 0xFFFF) === 4 && r[2] >> 16 === 20);
+  const c2 = new MTPS.Controller(); c2.download(base('Fault_Routine')); c2.setMode('remrun'); clearsIn(c2, 'Fault_Routine'); scans(c2, 3);
+  check('the fault routine clears the fault: no fault, the next instruction runs, every scan', !c2.fault && c2.read('After') === 1 && c2.read('FR') === 3);
+  const p3 = base('Fault_Routine'); p3.tasks[0].programs[0].routines[0].rungs = [{ t: 'JSR(Sub,0);' }];
+  const c3 = new MTPS.Controller(); c3.download(p3); c3.setMode('remrun'); clearsIn(c3, 'Fault_Routine'); scans(c3, 1);
+  check('a fault inside a subroutine: cleared, execution goes on with the next instruction of the subroutine', !c3.fault && c3.read('Seen') === 1 && c3.read('FR') === 1);
+  const c4 = new MTPS.Controller(); c4.download(base(null)); c4.setMode('remrun'); scans(c4, 1);
+  check('no fault routine assigned: the routine is not run on a fault', c4.read('FR') === 0 && !!c4.fault);
+  const c5 = new MTPS.Controller(); c5.download(base('Fault_Routine', handlerTask('fault', 'FaultProg', ['OTL(Seen);']))); c5.setMode('remrun'); scans(c5, 1);
+  check('the fault routine does not clear it: the Controller Fault Handler runs next', c5.read('FR') === 1 && c5.read('Seen') === 1 && !!c5.fault);
+  check('a fault routine that does not exist is a Verify error', MTPS.verify(base('Nope')).errors.some(e => /the fault routine 'Nope' does not exist/.test(e.msg)));
+  check('the fault routine is not scanned unless it faults (or is called with JSR)', (() => { const p = base('Fault_Routine'); p.tags[0].value = 0; const x = new MTPS.Controller(); x.download(p); x.setMode('remrun'); scans(x, 3); return x.read('FR') === 0 && !x.fault; })());
+  // a fault in the fault routine itself: not cleared, the controller faults
+  const p6 = base('Fault_Routine'); p6.tasks[0].programs[0].routines[1].rungs = [{ t: 'MOV(3,Arr[Idx]);' }];
+  const c6 = new MTPS.Controller(); c6.download(p6); c6.setMode('remrun'); scans(c6, 1);
+  check('a fault inside the fault routine: the controller faults', !!c6.fault && c6.fault.type === 4);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
