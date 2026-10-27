@@ -1170,7 +1170,7 @@
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
         <span class="vsep"></span><button class="btn" data-cmd="rswho" title="RSLinx Classic: RSWho and Configure Drivers">${ic('net')}RSLinx</button><button class="btn" data-cmd="who">${ic('search')}Who Active</button>${land ? `<button class="btn" data-cmd="download">${ic('download')}Download</button><button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button>` : ''}
-        ${commHTML(land)}${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}${land ? 'Go Offline' : 'Offline'}</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}${land ? 'Go Online' : 'Online'}</button>`}</div>
+        ${commHTML(land)}${S.online ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}</div>
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
@@ -1796,16 +1796,21 @@
   /* ---------- layer: menus, sheets, dialogs, toasts ---------- */
   /* the menus as an accordion: tap a menu name to open its commands, tap again to fold it */
   function foldMenu(at) {
-    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-' && !x.hd).map(x => ({ ...x, grp: n })));
+    // the sub-headers (New Component, Import Component, Print) stay, as in the menu bar: "Routine…" alone says neither
+    const items = MENUS.flatMap(([n, ids]) => menuItems(ids).filter(x => x !== '-').map(x => ({ ...x, grp: n })));
     openMenu(items, at);
     const menu = $('#layer .menu'); if (!menu) return;
+    menu.querySelectorAll(':scope > .hd').forEach(h => {
+      let nx = h.nextElementSibling; while (nx && !nx.dataset.n) nx = nx.nextElementSibling;
+      if (nx) { h.classList.add('sub'); h.hidden = true; h.dataset.grp = items[+nx.dataset.n].grp; } else h.remove();
+    });
     // group the commands under their menu's header; a tap on a header folds its group open or shut in place
     MENUS.forEach(([n]) => {
       const its = [...menu.querySelectorAll('.it[data-n]')].filter(el => items[+el.dataset.n].grp === n);
       if (!its.length) return;
       const h = document.createElement('div');
       h.className = 'it fold'; h.dataset.fold = n; h.innerHTML = `${ic('right')}<span>${esc(n)}</span>`;
-      its[0].before(h);
+      [...menu.children].find(el => el.dataset.grp === n || its.includes(el)).before(h);
       its.forEach(el => { el.classList.add('sub'); el.hidden = true; el.dataset.grp = n; });
     });
     menu.addEventListener('click', ev => {
@@ -2262,6 +2267,14 @@
     S.sel = mn ? { ri, path } : { ri, path, op }; S.selRung = null;
     if (S.layout === 'phone') S.area = 'ladder';
     render();
+    // the whole instruction comes into view first (a new one at the foot of the routine), then its operand
+    // (with room for the text under it, such as RES under its coil)
+    const sr = document.querySelector('#ladwrap rect.sel'), lw = $('#ladwrap');
+    if (sr && lw) {
+      const a = sr.getBoundingClientRect(), c = lw.getBoundingClientRect(), m = 28;
+      if (a.bottom + m > c.bottom) lw.scrollTop += Math.min(a.bottom + m - c.bottom, a.top - m - c.top);
+      else if (a.top - m < c.top) lw.scrollTop -= c.top - a.top + m;
+    }
     let r = inlRect(ri, path, op);
     if (!r) return false;
     r.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -7901,7 +7914,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     document.addEventListener('keydown', ev => { if (ev.target.id !== 'tnew') return; if (ev.key === 'Enter') { ev.preventDefault(); newTagInline(ev.target); } else if (ev.key === 'Escape') ev.target.value = ''; });
     document.addEventListener('focusout', ev => { if (ev.target.id === 'tnew' && ev.target.value.trim() && ev.target.isConnected) newTagInline(ev.target); });
     addEventListener('resize', () => { const lay = pickLayout(); if (lay !== S.layout) render(); else if (S.layout === 'tablet') render(); });
-    addEventListener('beforeunload', ev => { if (S.dirty && !window.mtpsFS && !window.Capacitor) { ev.preventDefault(); ev.returnValue = ''; } });
+    addEventListener('beforeunload', ev => { if (S.dirty && !updating && !window.mtpsFS && !window.Capacitor) { ev.preventDefault(); ev.returnValue = ''; } });
     document.addEventListener('visibilitychange', () => { if (document.hidden) saveProject(); });
     bindLadder();
     bindDrag();
@@ -8040,12 +8053,34 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   document.addEventListener('input', ev => { if (ev.target.id === 'desctx' && S.descEd) S.descEd.value = ev.target.value; });
   document.addEventListener('click', ev => {
     const b = ev.target.closest('[data-up]'); if (!b) return;
-    if (b.dataset.up === 'go') { saveProject(); window.MTPSUpdater.apply(upInfo); } else { window.MTPSUpdater.skip(upInfo); upInfo = null; render(); }
+    if (b.dataset.up === 'go') { saveProject(); window.MTPSUpdater.apply(upInfo, carryProject()); } else { window.MTPSUpdater.skip(upInfo); upInfo = null; render(); }
   });
 
   /* produced and consumed tags, Logic > Produced Tags, Map PLC/SLC Messages, Logix Echo (pc.js) */
   const PCX = E.PCUI({ S, E, U, esc, ic, kv, dialog, over: overDlg, toast, edit, tabbed, bindTabs, confirm: confirmDlg, ctl: () => ctl, racks: () => racks, addRack, saveChassis, emuIps: EMUIPS });
 
+  /* Restart to update keeps the open project ("Your projects stay", Updates dialog): it is kept as it is, with its file
+     and its unsaved changes, and the new copy opens it again; so the page leaves without the browser's question */
+  let updating = false;
+  function carryProject() {
+    updating = true;
+    if (S.noProj || !S.p) { store.del('carry'); return ''; }
+    const t = JSON.stringify({ p: S.p, file: S.file, dirty: S.dirty, at: Date.now() });
+    store.set('carry', t);
+    return t;
+  }
+  function takeCarry() {
+    let t = store.get('carry', null);
+    store.del('carry');
+    const m = /^#carry=(.*)$/.exec(location.hash);
+    if (m) { try { t = decodeURIComponent(m[1]); } catch (e) { /* ignore */ } history.replaceState(null, '', location.pathname + location.search); }
+    let c = null;
+    try { c = t ? JSON.parse(t) : null; } catch (e) { return; }
+    if (!c || !validProject(c.p) || !(Date.now() - c.at < 600000)) return;
+    openProject(c.p, true);
+    S.file = c.file && c.file.path ? c.file : null; S.dirty = !!c.dirty;
+    toast(`Updated to v${VERSION}: ${c.p.controller.name} is open as before${S.dirty ? ' (not saved yet)' : ''}.`, 'ok');
+  }
   /* ---------- start ---------- */
   function start() {
     applyTheme();
@@ -8054,6 +8089,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     bind();
     openProject(blank('New_Project'), true);
     S.noProj = true; S.view = 'start'; S.selRung = null; reverify();
+    takeCarry();
     render();
     setTimeout(moveOldProjects, 500);
     if (!driverUp() && !drivers.length) setTimeout(() => setupWizard(0), 300);

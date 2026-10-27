@@ -66,7 +66,13 @@
     }
     return st;
   }
-  function apply(info) { if (servedHere(info.channel)) location.reload(); else location.href = url(info.channel); }
+  /* carry: the open project as text (app.js); the new copy opens it again. Another origin (the built-in copy of the
+     exe or APK to Pages) cannot read this one's storage, so it goes in the address (#carry=) when it is not too big */
+  function apply(info, carry) {
+    if (servedHere(info.channel)) { location.reload(); return; }
+    const u = url(info.channel), sameOrigin = location.origin === new URL(u).origin;
+    location.href = u + (carry && !sameOrigin && carry.length < 1500000 ? '#carry=' + encodeURIComponent(carry) : '');
+  }
   function dialog() {
     const esc = A.esc;
     const el = A.dialog({

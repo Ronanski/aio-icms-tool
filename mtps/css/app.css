@@ -618,6 +618,7 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .ibar .glyphs.one { flex-wrap: nowrap; overflow-x: auto; }
 .ibar .gbtn.more { font-weight: 600; }
 .menu .it.sub { padding-left: 34px; }
+.menu .hd.sub { padding-left: 34px; }
 /* a denser tablet when Compact is chosen */
 .tab.dense .gbtn { min-height: 36px; }
 .tab.dense .ib { min-width: 34px; height: 34px; }
