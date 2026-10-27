@@ -1121,7 +1121,7 @@ function check(name, cond, info = '') {
 
     await ev(() => MTPS.App.select({ ri: 2 })); await page.keyboard.press('x'); await page.waitForTimeout(100);
     check('Quick Keys off: a letter on a selected rung inserts nothing', (await R())[2] === 'XIC(Stop)OTE(Stop);' && (await ev(() => document.querySelector('#layer').children.length)) === 0);
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="ladd"]');
     check('Tools > Options: Ladder Editor > Enable Quick Keys, off by default', (await page.$eval('#layer .dlg', d => d.textContent)).includes('Ladder Editor') && (await page.$eval('#oqk', c => !c.checked)));
     await page.check('#oqk'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
     check('the Quick Keys option is kept', await ev(() => MTPS.App.state.prefs.quickKeys === true));
@@ -1157,8 +1157,8 @@ function check(name, cond, info = '') {
     await page.keyboard.press('Shift+F10'); await page.waitForTimeout(100);
     check('Shift+F10: the context menu of the selection', (await page.$$eval('#layer .menu .it', i => i.map(x => x.textContent.trim()))).some(t => t.startsWith('Cut Instruction')));
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+i'); await page.waitForTimeout(100);
-    check('Ctrl+I: Add Ladder Element (insert after the selection)', (await dlgTitle()) === 'Add Ladder Element');
+    await page.keyboard.press('Alt+Insert'); await page.waitForTimeout(100);
+    check('Alt+Insert: Add Ladder Element (help v37 keyboard table; Ctrl+I is insert / append mode)', (await dlgTitle()) === 'Add Ladder Element');
     await page.keyboard.press('Escape');
     await ev(() => { MTPS.App.state.prefs.org = false; MTPS.App.state.prefs.err = false; MTPS.App.render(); });
     await page.keyboard.press('Alt+0'); await page.waitForTimeout(80);
@@ -1689,18 +1689,18 @@ function check(name, cond, info = '') {
     const led = () => ev(() => { const l = document.createElement('i'); l.className = 'led y'; document.querySelector('#app').appendChild(l); const c = getComputedStyle(l).backgroundColor; l.remove(); return c; });
     check('the first start: Classic, following the device (Light here)', JSON.stringify(await html()) === '["classic","light"]', JSON.stringify(await html()));
     const led0 = await led();
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="look"]');
     check('Options: 4 theme cards and Light, Dark, Follow the device', (await page.$$eval('#layer [data-th]', b => b.map(x => x.dataset.th).join(','))) === 'classic,controlroom,workbench,tonal' && (await page.$$eval('#layer [data-thm]', b => b.map(x => x.textContent).join(','))) === 'Light,Dark,Follow the device');
     await page.click('#layer [data-th="workbench"]'); await page.click('#layer [data-thm="dark"]'); await page.waitForTimeout(80);
     check('a theme shows at once, before OK', JSON.stringify(await html()) === '["workbench","dark"]' && (await page.$eval('.dmenu', m => getComputedStyle(m).backgroundColor)) === 'rgb(0, 0, 0)');
     await page.click('#layer .df .btn:not(.pri)'); await page.waitForTimeout(80);
     check('Cancel puts the theme before back', JSON.stringify(await html()) === '["classic","light"]');
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="look"]');
     await page.click('#layer [data-th="tonal"]'); await page.click('#layer [data-thm="dark"]'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
     check('OK keeps it and saves it (Tonal Touch, Dark)', JSON.stringify(await html()) === '["tonal","dark"]' && await ev(() => { const p = JSON.parse(localStorage.getItem('mtps.prefs') || Object.keys(localStorage).filter(k => k.includes('prefs')).map(k => localStorage.getItem(k))[0]); return p.theme === 'tonal' && p.mode === 'dark'; }));
     check('the module LEDs keep their colour in every theme', led0 === 'rgb(242, 178, 0)' && (await led()) === led0, `${led0} / ${await led()}`);
     check('Tonal Touch, Dark: the ladder canvas is dark', (await ev(() => getComputedStyle(document.documentElement).getPropertyValue('--lad-bg').trim())) === '#0D0E13');
-    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100);
+    await ev(() => MTPS.App.run('options')); await page.waitForTimeout(100); await page.click('#layer [data-ocat="look"]');
     await page.click('#layer [data-th="classic"]'); await page.click('#layer [data-thm="light"]'); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(150);
     check('back to Classic, Light', JSON.stringify(await html()) === '["classic","light"]');
     const old = await browser.newPage();
@@ -2317,6 +2317,7 @@ function check(name, cond, info = '') {
     check('the ladder is patched in place (same SVG, only the changed rungs), and draws exactly as a full redraw', same.kept && same.same && same.sel === 1 && same.rsel === 1, JSON.stringify(same));
     await tp.close();
   }
+  await require('./mtps-ui-w2A')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

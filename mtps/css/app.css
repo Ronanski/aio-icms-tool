@@ -354,6 +354,7 @@ svg.lad .al { fill: var(--lad-alias); }
 svg.lad .cm { fill: var(--lad-alias); font-size: 1.09em; }
 svg.lad .rn { fill: var(--muted); font-size: 1.09em; }
 svg.lad .rn.on { fill: #fff; }
+svg.lad .bmk { fill: var(--accent); stroke: #fff; stroke-width: .8; }
 svg.lad .w, svg.lad .rail { stroke: var(--lad-wire); stroke-width: 1; shape-rendering: crispEdges; fill: none; }
 svg.lad.online .w, svg.lad.online .rail { stroke: var(--lad-online); }
 svg.lad.run .rail { stroke: var(--lad-on); stroke-width: 3; }
@@ -950,6 +951,33 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .gwl .row { padding: 3px 8px; cursor: pointer; }
 .tab .gwl .row, .phone .gwl .row { padding: 12px; }
 .gwl .row.on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+/* Browse Logic: the Logic tree and the Description pane */
+.bltree { height: 260px; overflow: auto; margin-bottom: 8px; }
+.bltree .row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bltree .sub { color: var(--muted); font-weight: 400; }
+.blx { display: inline-block; width: 16px; text-align: center; color: var(--muted); }
+.tab .blx, .phone .blx { width: 28px; }
+/* Help > Contents: Contents, Index and Search beside the topic */
+.hcont .ihl { display: flex; flex-direction: column; }
+.hcont .hqh { padding: 6px 8px 0; }
+.hcont .hqh label { display: block; margin-bottom: 4px; }
+.hqrow { display: flex; gap: 6px; }
+.hcont .hlist { flex: 1; overflow: auto; margin: 6px 8px 8px; min-height: 0; }
+.hcont { grid-template-columns: 250px minmax(0, 1fr); }
+.hcont .xtab { padding-left: 10px; padding-right: 10px; }
+/* the tree and list rows of Browse Logic, Options and Help: compact with a mouse, the touch size on a tablet or phone */
+.bltree .row, .hlist .row, #ocats .row { min-height: 0; gap: 0; padding-top: 3px; padding-bottom: 3px; border-bottom: 0; }
+.tab .bltree .row, .tab .hlist .row, .tab #ocats .row, .phone .bltree .row, .phone .hlist .row, .phone #ocats .row { min-height: 40px; }
+.phone .hcont .ihl, .tab .hcont .ihl { display: flex !important; height: 38vh; border-right: 0; border-bottom: 1px solid var(--border); }
+/* Tools > Options: the Categories list and the page */
+.optd { display: grid; grid-template-columns: 170px 1fr; gap: 12px; }
+.optd > div > label { display: block; margin-bottom: 4px; }
+.optd .gwl { min-height: 200px; }
+.phone .optd { grid-template-columns: 1fr; }
+.phone .optd .gwl { min-height: 0; }
+.optpg .brow { justify-content: flex-start; }
+.optpg .brow .btn { flex: 0 0 auto; width: auto; }
+.bldesc { border: 1px solid var(--border-strong); background: var(--surface); min-height: 48px; padding: 6px 8px; white-space: pre-wrap; }
 .ale1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .ale1 .inp { flex: 1; min-width: 120px; width: auto; }
 .alew { display: flex; gap: 8px; min-height: 0; }
