@@ -4988,7 +4988,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     let dg = null;
     document.addEventListener('pointerdown', ev => {
       const b = ev.target.closest('.gbtn');
-      if (!b || b.disabled || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+      // the All… button (no data-mn) opens Add Ladder Element by its data-cmd: it is not an instruction to drag
+      if (!b || b.disabled || !b.dataset.mn || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
       dg = { mn: b.dataset.mn, x: ev.clientX, y: ev.clientY, on: false, id: ev.pointerId, b, touch: ev.pointerType !== 'mouse', held: ev.pointerType === 'mouse' };
       if (dg.touch) { const d = dg; d.timer = setTimeout(() => { if (dg === d) { d.held = true; b.classList.add('lift'); if (navigator.vibrate) navigator.vibrate(10); } }, 350); }
     });
