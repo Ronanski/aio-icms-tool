@@ -182,7 +182,7 @@
             else if (b.ends[k] < b.col + b.w) out += `<line class="w" x1="${X(b.ends[k])}" y1="${ys[k] + .5}" x2="${x2}" y2="${ys[k] + .5}"/>`;
           });
           out += `<line class="w" x1="${x1 + .5}" y1="${ys[0]}" x2="${x1 + .5}" y2="${ys[ys.length - 1]}"/><line class="w" x1="${x2 + .5}" y1="${ys[0]}" x2="${x2 + .5}" y2="${ys[ys.length - 1]}"/>`;
-          const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, b.path);
+          const isSel = (o.sel && o.sel.ri === ri && same(o.sel.path, b.path)) || o.selIns === ri;
           if (isSel) out += `<rect class="sel" x="${x1 - 3}" y="${ys[0] - 10}" width="${x2 - x1 + 6}" height="${ys[ys.length - 1] - ys[0] + 20}" rx="3" fill="none"/>`;
           // the branch rails are hit targets of their own, above the instructions (added after them):
           // the left rail selects the branch (add a level), the right rail the whole branch
@@ -201,7 +201,8 @@
         if (last && !lock) node({ ri, end: true }, X(startOut) - 2, wy);
         all.forEach(it => {
           const e = it.e, x = X(it.col), w = (isBox(e) ? boxCells(e) : 1) * CW, cy = rowY[it.row], cx = x + w / 2, h = head(e);
-          const isSel = o.sel && o.sel.ri === ri && same(o.sel.path, it.path);
+          // selIns: Select All with the caret on an instruction selects every instruction of the rung
+          const isSel = (o.sel && o.sel.ri === ri && same(o.sel.path, it.path)) || o.selIns === ri;
           if (isSel) out += `<rect class="sel" x="${x + 2.5}" y="${cy - h.h - 6.5}" width="${w - 5}" height="${h.h + (isBox(e) ? boxH(e) + 4 : 26)}" rx="3"/>`;
           if (!lock) { node({ ri, path: it.path, after: false }, x, cy); node({ ri, path: it.path, after: true }, x + w, cy); }
           if (o.lifted && o.lifted.ri === ri && same(o.lifted.path, it.path)) out += `<rect class="lift" x="${x + 1.5}" y="${cy - h.h - 7.5}" width="${w - 3}" height="${h.h + (isBox(e) ? boxH(e) + 6 : 28)}" rx="4"/>`;
@@ -233,7 +234,7 @@
             let yy = cy - 9 + 17 + LH + 2;
             opsOf(e).forEach(([n, , val], i) => {
               const hgt = (val !== null ? 2 : 1) * (LH + 3);
-              if (isSel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
+              if (isSel && o.sel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
               const d = o.desc && e.a[i] ? o.desc(e.a[i]) : '';
               taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="${i}" x="${L}" y="${yy - LH - 1}" width="${Rt - L}" height="${hgt}">${d ? `<title>${esc(n + ': ' + d)}</title>` : ''}</rect>`;
               if (!lock) node({ ri, path: it.path, op: i }, L - 2, yy - LH / 2 + 1);

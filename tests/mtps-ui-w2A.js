@@ -180,4 +180,39 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('phone (touch): Change Controller to a 1756-L71', await pp.evaluate(() => MTPS.App.state.p.controller.type === '1756-L71' && MTPS.App.state.p.controller.rev === '33'));
     await pctx.close();
   }
+  if (want('selall')) {
+    console.log('Select All with the caret on an instruction (help v37, Ladder Editor: Select All command)');
+    await fresh(); await ev(() => { MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.render(); });
+    const selIn = (ri, pg = page) => pg.$$eval(`#ladwrap g[data-rg="${ri}"] rect.sel`, r => r.length);
+    await page.click('#ladwrap rect.tap[data-ri="4"][data-p="1"]:not([data-opi])'); await wait(80);
+    check('one instruction selected (ONS on rung 4)', (await selIn(4)) === 1);
+    await page.keyboard.press('Control+a'); await wait(120);
+    check('Ctrl+A: all 3 instructions of rung 4 are selected, not the rungs', (await selIn(4)) === 3 && (await selIn(0)) === 0 && (await page.$$('#ladwrap rect.rsel')).length === 0);
+    await page.keyboard.press('Control+c'); await wait(80);
+    await page.click('#ladwrap rect.tap[data-rn][data-ri="1"]'); await wait(80);
+    check('a click elsewhere ends it', (await selIn(4)) === 0);
+    await page.keyboard.press('Control+v'); await wait(120);
+    const r1 = await ev(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[1].t);
+    check('Paste on a selected rung: the three instructions at the start of rung 1', r1 === 'XIC(Motor_Run)ONS(Start_ONS)CTU(Start_Count,9999,0)XIC(Motor_Run)OTE(Motor_Cmd);', r1);
+    await page.click('#ladwrap rect.tap[data-ri="4"][data-p="0"]:not([data-opi])'); await wait(80);
+    await menu('Edit', 'Select All'); await wait(100);
+    check('Edit > Select All does the same', (await selIn(4)) === 3);
+    await page.keyboard.press('Delete'); await wait(120);
+    check('Delete: the rung stays, without instructions', await ev(() => { const r = MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs; return r.length === 5 && r[4].t === ''; }));
+    await page.keyboard.press('Control+z'); await wait(120);
+    await page.click('#ladwrap rect.tap[data-rn][data-ri="2"]'); await wait(80);
+    await page.keyboard.press('Control+a'); await wait(120);
+    check('the caret on a rung: Select All still selects all the rungs', (await page.$$('#ladwrap rect.rsel')).length === 5);
+    await page.keyboard.press('Escape'); await wait(80);
+    // tablet (touch): tap an instruction, then Edit > Select All in the folding menu
+    const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    const tp = await tctx.newPage();
+    await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await tp.waitForTimeout(150);
+    await tp.tap('#ladwrap rect.tap[data-ri="0"][data-p="1"]:not([data-opi])'); await tp.waitForTimeout(150);
+    await tp.tap('[data-allmenu]'); await tp.waitForTimeout(150); await tp.tap('[data-fold="Edit"]'); await tp.waitForTimeout(150);
+    await pick('Select All', tp, true); await tp.waitForTimeout(150);
+    check('tablet (touch): Select All on an instruction selects the 5 instructions and the branch of rung 0', (await selIn(0, tp)) === 6, String(await selIn(0, tp)));
+    await tctx.close();
+  }
 };

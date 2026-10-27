@@ -688,13 +688,21 @@
      all rows of the grid): Copy, Cut and Delete then act on all of them */
   const selAllOn = () => S.view === 'ladder' && !!S.selAll && S.selAll.k === S.prog + '/' + S.routine && !S.sel && S.selRung === S.selAll.ri && rungs().length > 0;
   const tagAllOn = () => S.view === 'tags' && !!S.tagAll;
+  // the caret on an instruction: Select All selects all the instructions of its rung (Ladder Editor command reference)
+  const insAllOn = () => S.view === 'ladder' && !!S.selIns && S.selIns.k === S.prog + '/' + S.routine && !S.sel && S.selRung === S.selIns.ri && !!(parsed(S.selIns.ri) || []).length;
   function selectAll() {
     if (S.view === 'tags') { S.tagAll = true; refreshTags(); toast('All tag rows selected: Copy copies them.'); return; }
+    if (S.sel && S.sel.path) {
+      const ri = S.sel.ri, n = flat(parsed(ri) || []).length;
+      S.sel = null; S.selRung = ri; S.selAll = null; S.selIns = { k: S.prog + '/' + S.routine, ri };
+      render(); toast(`${n} instruction(s) of rung ${ri} selected.`); return;
+    }
     const ri = curSelRung() == null ? 0 : curSelRung();
     S.sel = null; S.selRung = ri; S.selAll = { k: S.prog + '/' + S.routine, ri };
     render(); toast(`${rungs().length} rung(s) selected.`);
   }
   function delSel() {
+    if (insAllOn()) return edit(() => { const ri = S.selIns.ri; writeRung(ri, []); S.selIns = null; S.sel = null; S.selRung = ri; });
     if (selAllOn()) return edit(() => { rungs().splice(0); S.selAll = null; S.sel = null; S.selRung = null; });
     if (S.sel && S.sel.leg) {
       // delete a branch level with what is on it; a branch left with one level is unwrapped
@@ -733,6 +741,13 @@
       try { navigator.clipboard && navigator.clipboard.writeText(['Name\tAlias For\tData Type\tDescription'].concat(rows).join('\n')).catch(() => {}); } catch (e) { /* ignore */ }
       S.clipTags = rows; toast(`Copied ${rows.length} tag row(s)`); return;
     }
+    if (insAllOn()) {
+      const els = JSON.parse(JSON.stringify(parsed(S.selIns.ri)));
+      S.clip = { kind: 'els', els };
+      try { navigator.clipboard && navigator.clipboard.writeText(E.serializeRung(els).replace(/;$/, '')).catch(() => {}); } catch (e) { /* ignore */ }
+      if (cut) delSel(); else toast(`Copied ${flat(els).length} instruction(s)`);
+      return;
+    }
     if (selAllOn()) {
       const list = rungs().map(r => { const c = { ...r }; delete c.z; delete c.dx; return c; });
       S.clip = { kind: 'rungs', rungs: list };
@@ -759,6 +774,18 @@
       if (!S.sel && ri != null && els && els.length) insert(el, { ri, path: [0], after: false }, false);
       else if (S.sel && S.sel.leg && els && (getEl(els, S.sel.path.slice(0, -1)).legs[S.sel.path[S.sel.path.length - 1]] || []).length) insert(el, { ri, path: S.sel.path.concat(0), after: false }, false);
       else insert(el, null, false);
+    } else if (S.clip.kind === 'els') {
+      // the instructions of a rung: after the selected instruction, at the start of a selected rung, else on a new rung
+      edit(() => {
+        const items = JSON.parse(JSON.stringify(S.clip.els)), ri0 = S.sel ? S.sel.ri : S.selRung;
+        let ri = ri0 != null && rungs()[ri0] ? ri0 : null;
+        if (ri == null) { rungs().push({ t: '' }); ri = rungs().length - 1; }
+        const els = parsed(ri); if (!els) { toast('This rung has a text error: fix it with Edit Rung first.', 'err'); return false; }
+        let path;
+        if (S.sel && S.sel.path && !S.sel.leg && !S.sel.br) { const { arr, idx } = seqOf(els, S.sel.path); arr.splice(idx + 1, 0, ...items); path = S.sel.path.slice(0, -1).concat(idx + items.length); }
+        else { els.unshift(...items); path = [items.length - 1]; }
+        writeRung(ri, els); S.sel = { ri, path }; S.selRung = null; S.selIns = null;
+      });
     } else if (S.clip.kind === 'rungs') edit(() => { const ri = curSelRung(), at = ri == null ? rungs().length : ri + 1; rungs().splice(at, 0, ...S.clip.rungs.map(r => ({ ...r }))); S.sel = null; S.selRung = at; });
     else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
   }
@@ -1248,7 +1275,7 @@
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
       live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, selAll: selAllOn(), tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
+      sel: S.sel, selRung: S.sel || insAllOn() ? null : S.selRung, selAll: selAllOn(), selIns: insAllOn() ? S.selIns.ri : null, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
     ladPatch(w, res);
     S.ladNodes = res.nodes || null;
@@ -1285,7 +1312,7 @@
   }
   function zoom(f) { setZoom(S.prefs.zoom * f); savePrefs(); }
   function select(t) {
-    S.selAll = null; S.pickAt = 'lad';
+    S.selAll = null; S.selIns = null; S.pickAt = 'lad';
     if (!t) { S.sel = null; S.selRung = null; return; }
     if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br, leg: t.leg }; if (t.op != null) S.sel.op = t.op; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
   }
@@ -5544,7 +5571,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     }
     if (k === 'ArrowLeft' || k === 'ArrowRight') { ev.preventDefault(); moveSel(k === 'ArrowLeft' ? -1 : 1, 0); return; }
     if (k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); moveSel(0, k === 'ArrowUp' ? -1 : 1); return; }
-    if (k === 'Escape') { S.sel = null; S.selAll = null; if (S.tagAll) { S.tagAll = false; refreshTags(); } render(); return; }
+    if (k === 'Escape') { S.sel = null; S.selAll = null; S.selIns = null; if (S.tagAll) { S.tagAll = false; refreshTags(); } render(); return; }
     if (ctrl || ev.altKey || k.length !== 1 || !editable()) return;
     // Quick Keys on: one key inserts its instruction after the selection (or at the end of the selected rung)
     if (S.prefs.quickKeys && QUICK[k.toLowerCase()] && (S.sel || curSelRung() != null)) { ev.preventDefault(); quickKey(QUICK[k.toLowerCase()]); return; }
