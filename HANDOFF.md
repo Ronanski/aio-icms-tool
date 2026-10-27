@@ -5,7 +5,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 ## Savepoint
 | | |
 |---|---|
-| **Now (2026-10-27 11:45)** | Wave 4 DROPPED by the owner (never merged). PR #100 (merged, Beta beta.6a73ebe): a "?" operand is set by a second tap on touch, the emulator I/O button shows one module (DO = lamps), the tag browser labels module tags, the * mark moved off the alias line. Proven on the live Beta at tablet size (screenshots in project files `mtps-proof/`). Engine audit started: 42 Logix rule checks (timers, counters, one-shots, prescan, rung logic, MCR, JMP, math) all match; added to `tests/mtps.test.js`. `tests/mtps-ui-sealin.js`: the owner's tablet flow by touch (seal-in, TON, CTU, OTL/OTU, RES, forces). Next: the file explorer (.mtp save, delete, folder). No Stable without a new literal GO STABLE. |
+| **Now (2026-10-27 19:10)** | 0.5.0 Stable. Beta (main) since then: #101 (one tap on "?" edits it, hold 0.55 s = menu), #102 (no window on add, New "name" row in the operand list, I/O point description), #103 (engine audit part 2, tests only), #104 (findings of a real-app touch run on the live Beta: Restart to update keeps the project with no "Leave site?", Go Online / Go Offline label on tablet, a new instruction scrolls fully into view, File headings in the folded menu). Owner wants testing done IN THE REAL APP by touch at tablet size (live Beta, screenshots of every step), not only unit tests; findings go in the artifact MT PLC STUDIO REAL APP TEST FINDINGS https://claude.ai/artifact/R83bUyHywdwT6wdQkURPce (table: criticality, action, estimate, status; FIXED only with a live screenshot). Held, not merged: file explorer Delete (new feature, needs GO), in /mnt/project-files/mtps-wip/file-explorer-and-restart.patch (its restart part is in #104). Android app updated to github.io has no Capacitor bridge (files go to browser storage): on hold. W4 dropped. No Stable without a new literal GO STABLE. |
 | **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). 0.5.0 Stable (Wave 1 of the coverage map, PR #96) released 2026-10-27 on owner GO. Wave 2 (owner GO 2026-10-27 01:29) merged to `main` as PR #97 (a324dca) on 2026-10-27, live on Beta and Wave 3 (owner GO 2026-10-27 04:15) merged on 2026-10-27 the same way, both live on Beta; Stable is still 0.5.0. Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
 | **Tags** | `mtps-v0.4.0-beta.3`, `mtps-v0.1.0`; Trainer `v2.0.0` back to `v1.1.0` (full list in archive). |
 | **Branch** | `main` is the default branch and holds released code. Work on feature branches, merged through PRs only with the owner's GO. |
@@ -34,9 +34,9 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
   - In the cloud, work from the docs and the skill only.
 - **Tests in the cloud container** (one per file, same env as `CLAUDE.md`):
   `NODE_PATH=/opt/node-tools/node_modules CHROMIUM_PATH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux*/chrome | head -1) node tests/<file>` (the folder may be `chrome-linux64`)
-  - `mtps.test.js`: 600
+  - `mtps.test.js`: 1014
   - `mtps-ref.test.js`: 168
-  - `mtps-ui.test.js`: 1137 (includes `tests/mtps-ui-menus.js` and `tests/mtps-ui-w2A.js` … `w2E.js`)
+  - `mtps-ui.test.js`: 1876 (includes `tests/mtps-ui-menus.js` and `tests/mtps-ui-w2A.js` … `w2E.js`)
   - `mtps-audit.js`: 85 of 85 instructions
   - `e2e.test.js`: 884
   - `npm run audit` (`tests/mtps-audit-run.js`): 53
