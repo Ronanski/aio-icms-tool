@@ -2321,6 +2321,16 @@ function check(name, cond, info = '') {
     check('the ladder is patched in place (same SVG, only the changed rungs), and draws exactly as a full redraw', same.kept && same.same && same.sel === 1 && same.rsel === 1, JSON.stringify(same));
     await tp.close();
   }
+  console.log('In-app update: every merge into main reaches Beta (a new build of the same version)');
+  {
+    const u = await page.evaluate(() => { const f = (v, b, ch, av, ab, served) => window.MTPSUpdater.isUpdate({ version: v, build: b, channel: ch }, { version: av, build: ab }, served);
+      return [f('0.5.0', 'beta.a324dca', 'beta', '0.5.0', 'mtps-v0.5.0', false), f('0.5.0', 'mtps-v0.5.0', 'stable', '0.5.0', 'mtps-v0.5.0', false), f('0.5.0', 'beta.a324dca', 'stable', '0.5.0', 'mtps-v0.5.0', false),
+        f('0.6.0', 'mtps-v0.6.0', 'stable', '0.5.0', 'mtps-v0.5.0', false), f('0.5.0', 'beta.a324dca', 'beta', '0.5.0', 'beta.a324dca', true), f('0.5.0', 'beta.b111111', 'beta', '0.5.0', 'beta.a324dca', true), f('0.4.0', 'beta.old', 'beta', '0.5.0', 'mtps-v0.5.0', false)]; });
+    check('Beta: the exe / APK built-in copy sees a new Beta build of the same version as an update', u[0] === true);
+    check('Stable: the same release is no update; a Beta build is not offered on Stable; a newer release is', u[1] === false && u[2] === false && u[3] === true);
+    check('the hosted Beta copy: the same build is no update, another build is; an older version is never offered', u[4] === false && u[5] === true && u[6] === false, JSON.stringify(u));
+  }
+  await require('./mtps-ui-update')({ browser, check });
   await require('./mtps-ui-w2A')({ browser, page, URL, check });
   await require('./mtps-ui-w2E')({ browser, page, URL, check });
   await require('./mtps-ui-w2B')({ browser, page, URL, check });
