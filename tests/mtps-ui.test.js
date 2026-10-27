@@ -1348,8 +1348,9 @@ function check(name, cond, info = '') {
     await pp.waitForTimeout(150);
     const cnt = await pp.evaluate(() => new Promise(r => {
       const c = { lad: 0, dock: 0, olbar: 0 };
-      const watch = (sel, k) => { const e = document.querySelector(sel); if (!e) return null; const mo = new MutationObserver(ms => { if (ms.some(m => m.type === 'childList' && m.target === e)) c[k]++; }); mo.observe(e, { childList: true }); return mo; };
-      const mos = [watch('#ladwrap', 'lad'), watch('#iob', 'dock'), watch('#olbar', 'olbar')];
+      const watch = (sel, k, sub) => { const e = document.querySelector(sel); if (!e) return null; const mo = new MutationObserver(ms => { if (ms.some(m => m.type === 'childList' && (sub || m.target === e))) c[k]++; }); mo.observe(e, { childList: true, subtree: !!sub }); return mo; };
+      // the ladder is patched rung by rung: one redraw is one batch of changes inside #ladwrap
+      const mos = [watch('#ladwrap', 'lad', true), watch('#iob', 'dock'), watch('#olbar', 'olbar')];
       const acc0 = MTPS.App.ctl.read('Run_Timer.ACC');
       setTimeout(() => { mos.forEach(m => m && m.disconnect()); c.acc = MTPS.App.ctl.read('Run_Timer.ACC') - acc0; r(c); }, 1000);
     }));
@@ -1708,6 +1709,8 @@ function check(name, cond, info = '') {
     check('an old Dark setting becomes Classic, Dark', JSON.stringify(await old.evaluate(() => [document.documentElement.dataset.theme, document.documentElement.dataset.mode])) === '["classic","dark"]');
     await old.close();
   }
+  // the blocks below start from a fresh emulator (one chassis: controller in slot 0, DI16 in 1, DO16 in 2) and drivers
+  await page.evaluate(() => localStorage.clear()); await page.reload(); await page.waitForTimeout(300);
   console.log('Logix Emulate: Speed of Time (right-click the controller, Configure Emulation)');
   {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.waitForTimeout(150);
@@ -1912,6 +1915,7 @@ function check(name, cond, info = '') {
     await page.waitForTimeout(150);
     await ev(() => MTPS.App.run('rswho')); await page.waitForTimeout(200);
     const mode = () => ev(() => MTPS.App.racks[0].controller(0).mode);
+    await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('Workstation')).click()); await page.waitForTimeout(80);
     await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
     check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Data Monitor|+Change Mode…|-Set Time');
     await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
@@ -1972,6 +1976,39 @@ function check(name, cond, info = '') {
     const r = await tp.evaluate(() => { const s = document.querySelector('.strip'); return { fit: s.scrollWidth <= s.clientWidth + 1, boxes: [...s.querySelectorAll('.sbox')].map(b => [b.textContent.trim(), b.scrollWidth <= b.clientWidth + 1]), who: (() => { const b = s.querySelector('.whob').getBoundingClientRect(); return b.right <= innerWidth && b.width >= 38 && b.height >= 34; })() }; });
     check(`phone ${w} px: the strip fits; Rem Prog, No Forces and Edits Present show whole; Who Active is there`, r.fit && r.boxes.length === 3 && r.boxes.every(b => b[1]) && r.boxes[2][0] === 'Edits Present' && r.who, JSON.stringify(r));
     if (w === 360) { await tp.tap('.strip .whob'); await tp.waitForTimeout(200); check('phone 360 px: a tap on the Who Active icon opens Who Active', (await tp.$eval('#layer .dlg .dh b', b => b.textContent).catch(() => '')) === 'Who Active'); }
+    await tp.close();
+  }
+  console.log('Tap speed: a tap in a 200-rung routine (tablet, touch, CPU 4x slower)');
+  {
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    tp.on('pageerror', e => errors.push(e.message));
+    await tp.goto(URL); await tp.waitForTimeout(400); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => {
+      document.querySelector('#layer').innerHTML = '';
+      const p = MTPS.App.example(), R = p.tasks[0].programs[0].routines[0], base = R.rungs.slice();
+      while (R.rungs.length < 200) R.rungs.push(JSON.parse(JSON.stringify(base[R.rungs.length % base.length])));
+      MTPS.App.openProject(p);
+    });
+    await tp.waitForTimeout(800);
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await tp.evaluate(() => { window._svg = document.querySelector('#ladwrap svg'); document.addEventListener('pointerdown', () => { window._t0 = performance.now(); }, true); });
+    const ms = [];
+    for (let k = 0; k < 5; k++) {
+      const b = await tp.$eval(`#ladwrap rect.tap.rung[data-ri="${k % 2 ? 3 : 1}"]`, r => { const x = r.getBoundingClientRect(); return { x: x.x + 20, y: x.y + 10 }; });
+      const done = tp.evaluate(ri => new Promise(r => { const f = () => { if (MTPS.App.state.selRung === ri) requestAnimationFrame(() => setTimeout(() => r(performance.now() - window._t0), 0)); else setTimeout(f, 1); }; f(); }), k % 2 ? 3 : 1);
+      await tp.touchscreen.tap(b.x, b.y);
+      ms.push(Math.round(await done)); await tp.waitForTimeout(300);
+    }
+    ms.sort((a, b) => a - b);
+    check('a tap selects the rung and the screen answers fast (median under 250 ms at 4x slower CPU)', ms[2] < 250, ms.join(', '));
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    const same = await tp.evaluate(() => {
+      const w = document.querySelector('#ladwrap'), kept = w.querySelector('svg') === window._svg, a = w.innerHTML;
+      w.appendChild(document.createElement('i')); MTPS.App.render();
+      return { kept, same: document.querySelector('#ladwrap').innerHTML === a, sel: MTPS.App.state.selRung, rsel: document.querySelectorAll('#ladwrap rect.rsel').length };
+    });
+    check('the ladder is patched in place (same SVG, only the changed rungs), and draws exactly as a full redraw', same.kept && same.same && same.sel === 1 && same.rsel === 1, JSON.stringify(same));
     await tp.close();
   }
   check('no JS errors', errors.length === 0, errors.join(' | '));

@@ -888,12 +888,36 @@
     if (dt && S.descEd) S.descEd.value = dt.value;
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
-    app.className = document.body.className = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
-    app.innerHTML = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    const cls = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
+    if (app.className !== cls) app.className = cls;
+    if (document.body.className !== cls) document.body.className = cls;
+    const html = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    // the ladder stays in place when the new frame has it too: the rest of the screen is brought up to date around it
+    // and the ladder gets only its changes (a tap in a 200-rung routine does not rebuild and lay out the whole SVG)
+    let kept = false;
+    if (lw && app.contains(lw)) { const tpl = document.createElement('div'); tpl.innerHTML = html; kept = !!tpl.querySelector('#ladwrap') && morph(app, tpl, lw); }
+    if (!kept) app.innerHTML = html;
     const nl = $('#ladwrap');
-    if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
+    if (nl) { renderLadder(); if (st && !kept) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
+  }
+  /* bring the live element a up to the parsed element b: a node that differs is replaced by the new one, except the
+     ladder (lw) and the elements around it, which keep their place and take the new attributes. false: the two do not
+     line up (then the caller writes the whole frame). */
+  function morph(a, b, lw) {
+    const ac = [...a.childNodes], bc = [...b.childNodes];
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) {
+      const x = ac[i], y = bc[i];
+      if (x.nodeType === 1 && (x === lw || x.contains(lw))) {
+        if (y.nodeType !== 1 || y.tagName !== x.tagName || (x === lw) !== (y.id === 'ladwrap')) return false;
+        for (const at of [...x.attributes]) if (!y.hasAttribute(at.name)) x.removeAttribute(at.name);
+        for (const at of [...y.attributes]) if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+        if (x !== lw && !morph(x, y, lw)) return false;
+      } else if (!x.isEqualNode(y)) x.replaceWith(y);
+    }
+    return true;
   }
   const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
   const modeCls = () => (!S.online ? '' : ctl.fault ? ' fault' : ctl.mode === 'run' || ctl.mode === 'remrun' ? ' run' : '');
@@ -1131,8 +1155,30 @@
       live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
       sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
-    w.innerHTML = res.svg;
+    ladPatch(w, res);
     S.ladNodes = res.nodes || null;
+  }
+  /* write the ladder: when the SVG in place was drawn from the same frame (same size and classes, same taps and rails,
+     same number of rungs), only the rungs whose drawing changed are replaced (a tap that moves the selection touches
+     one or two rungs, not the 200 of a big routine); otherwise the whole SVG is written */
+  let ladLast = null;
+  function ladPatch(w, res) {
+    const svg = w.firstElementChild, L0 = ladLast;
+    ladLast = { head: res.head, tail: res.tail, parts: res.parts, svg: null };
+    if (svg && L0 && L0.svg === svg && w.childElementCount === 1 && L0.head === res.head && L0.tail === res.tail && L0.parts.length === res.parts.length) {
+      const gs = svg.children;
+      let ok = true;
+      for (let i = 0; i < res.parts.length && ok; i++) {
+        if (L0.parts[i] === res.parts[i]) continue;
+        const g = gs[i];
+        if (!g || g.getAttribute('data-rg') !== String(i)) { ok = false; break; }
+        const tmp = document.createElement('div'); tmp.innerHTML = '<svg>' + res.parts[i] + '</svg>';
+        g.replaceWith(tmp.firstChild.firstChild);
+      }
+      if (ok) { ladLast.svg = svg; return; }
+    }
+    w.innerHTML = res.svg;
+    ladLast.svg = w.firstElementChild;
   }
   let ro = null, lastW = 0;
   function watchLadder(w) {
@@ -2874,7 +2920,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (ev.pointerType === 'mouse') return;
       const k = devAt(ev.target); if (!k || rlS.modal) return;
       const cx = ev.clientX, cy = ev.clientY;
-      rlLp = { cx, cy, t: setTimeout(() => { rlLp = null; ctxAt(k, cx, cy); box.dataset.lp = String(performance.now()); }, 550) };
+      rlLp = { cx, cy, t: setTimeout(() => { rlLp = null; ctxAt(k, cx, cy); box.dataset.lp = String(performance.now()); box.dataset.lpx = cx + ',' + cy; }, 550) };
     });
     ['pointerup', 'pointercancel', 'pointermove'].forEach(n => box.addEventListener(n, ev => { if (rlLp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - rlLp.cx, ev.clientY - rlLp.cy) > 10)) { clearTimeout(rlLp.t); rlLp = null; } }));
     box.addEventListener('click', ev => {
@@ -2882,7 +2928,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       let x;
       if (rlS.ctx) {
         // the click that ends a long-press leaves the menu open
-        if (box.dataset.lp && performance.now() - +box.dataset.lp < 400) return;
+        if (box.dataset.lp && performance.now() - +box.dataset.lp < 400) { const [lx, ly] = (box.dataset.lpx || '').split(',').map(Number); if (!t.closest('[data-rlci]') || Math.hypot(ev.clientX - lx, ev.clientY - ly) < 12) return; }
         const it = t.closest('[data-rlci]'), k = rlS.ctx.k;
         if (!it && t.closest('.rlctx')) return;
         rlS.ctx = null;
