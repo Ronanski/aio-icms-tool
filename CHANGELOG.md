@@ -5,7 +5,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### Changed (MT PLC Studio, Wave 1 of the coverage map): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+### Changed (MT PLC Studio 0.5.0, Stable, Wave 1 of the coverage map): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
 - **Studio 5000 menus:**
   - File > Close closes the project and goes back to the Start Page.
   - Closing, New Project, Open, a recent project or Exit now asks "Save changes to <name>?" with Yes / No / Cancel, as in Studio 5000.

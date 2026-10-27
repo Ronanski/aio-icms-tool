@@ -5,7 +5,7 @@ Read this first. Old history (past sessions, PLC Trainer phases, per-branch test
 ## Savepoint
 | | |
 |---|---|
-| **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). Wave 1 of the coverage map is on branch `claude/project-thread-c32nav` (PR, waiting for the owner's GO MERGE). Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
+| **Version** | MT PLC Studio **0.4.0** Stable released 2026-10-26 (PR #95, tag `mtps-v0.4.0`). 0.5.0 Stable (Wave 1 of the coverage map, PR #96) released 2026-10-27 on owner GO. Previous: 0.4.0-beta.3 (PR #91). PLC Trainer (repo root): latest `v2.0.0` stable. |
 | **Tags** | `mtps-v0.4.0-beta.3`, `mtps-v0.1.0`; Trainer `v2.0.0` back to `v1.1.0` (full list in archive). |
 | **Branch** | `main` is the default branch and holds released code. Work on feature branches, merged through PRs only with the owner's GO. |
 | **Tests** | See "Tests in the cloud container" below for current counts. |
