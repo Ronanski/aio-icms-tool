@@ -388,7 +388,7 @@ function check(name, cond, info = '') {
   check('an output card pulled from the chassis: module fault 16#0204, I/O not responding', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0204' && !MTPS.App.ctl.ioOk()));
   await ev(() => MTPS.App.chassis.insert(2, 'PLC-DI16-24V', 'Wrong'));
   await page.waitForTimeout(120);
-  check('the wrong card in the slot: keying mismatch 16#0116', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0116'));
+  check('the wrong card in the slot (an input card for an output module): keying mismatch 16#0114', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0114'));
   await ev(() => { MTPS.App.chassis.remove(2); MTPS.App.chassis.insert(2, 'PLC-DO16-24V', 'DO_1'); });
   await page.waitForTimeout(120);
   check('the right card back: running', await ev(() => MTPS.App.ctl.moduleStatus(2).state === 'Running'));

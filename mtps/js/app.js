@@ -3149,7 +3149,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlDevice(m) {
     const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
     return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
-      ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
+      ['Revision', m.ctl ? '1.0' : m.rev || E.REV0], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
       ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']]);
   }
   function rlCtxHTML(root) {
@@ -3756,20 +3756,22 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
      so Select Module Type comes back after this dialog. */
   function newModule2(type, free, back) {
     const n0 = (() => { let k = free[0], n = 'MOD_' + k; while (S.p.rack.modules.some(m => U(m.name) === U(n))) n = 'MOD_' + ++k; return n; })();
-    dialog({ title: 'New Module', size: 'md', onClose: back ? () => setTimeout(back, 0) : null,
+    dialog({ title: 'New Module', size: 'md', mount: keyMount, onClose: back ? () => setTimeout(back, 0) : null,
       body: `<div class="frow"><label>Type</label><span><span class="mono" id="nm-t">${esc(type)}</span> <span class="muted">${esc(MODNAMES[type] || '')}</span></span></div>
         <div class="frow"><label>Vendor</label><span>${SMTVEND}</span></div>
         <div class="frow"><label>Parent</label><span>Local</span></div>
         <div class="frow"><label>Name</label><input class="inp" id="mn2" value="${esc(n0)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="nm-d" rows="2"></textarea></div>
         <div class="frow"><label>Slot</label><select class="inp" id="ms">${free.map(s => `<option>${s}</option>`).join('')}</select></div>
+        ${keyRows({ type }, '')}
         <label class="ck"><input type="checkbox" id="nm-op"> Open Module Properties</label>
         <div class="errtx" id="me"></div>`,
       buttons: [{ l: 'Cancel', run: () => { if (back) setTimeout(back, 0); } }, { l: 'OK', pri: true, run: el => {
         const slot = +el.querySelector('#ms').value, name = el.querySelector('#mn2').value.trim(), d = el.querySelector('#nm-d').value.trim(), op = el.querySelector('#nm-op').checked;
         if (!E.validName(name)) { el.querySelector('#me').textContent = 'Use letters, digits and _.'; return false; }
         if (S.p.rack.modules.some(m => U(m.name) === U(name))) { el.querySelector('#me').textContent = 'A module with that name exists.'; return false; }
-        const m = { slot, type, name }; if (d) m.desc = d;
+        const kr = keyRead(el); if (!kr) return false;
+        const m = { slot, type, name }; if (d) m.desc = d; if (kr.rev !== E.REV0) m.rev = kr.rev; if (kr.key !== 'compat') m.key = kr.key;
         edit(() => { S.p.rack.modules.push(m); S.orgSel = 'mod:' + slot; });
         toast(`Module ${type} added in slot ${slot}: its tags are ${['C', 'I', 'O'].filter(k => (E.MODULES[type] || {})[k]).map(k => `Local:${slot}:${k}`).join(', ')}`);
         if (op) setTimeout(() => moduleProps(slot), 0); else if (back) setTimeout(back, 0);
@@ -3791,6 +3793,20 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
   }
   const kv = (k, v) => `<div class="kv"><span>${k}</span><span class="v">${v}</span></div>`;
   const when = t => (t ? new Date(t).toLocaleTimeString() : '');
+  /* Revision (major.minor; the minor revision is chosen, major 0-127 and minor 0-255) and Electronic Keying (Exact
+     Match, Compatible Module, Disable Keying), as on the General tab (help: Module Properties - General for 1756) */
+  function keyRows(m, dis) {
+    const [M1, n1] = String(m.rev || E.REV0).split('.'), k = m.key || 'compat';
+    return `<div class="frow"><label>Revision</label><span><input class="inp" id="mk-M" type="number" min="0" max="127" value="${M1}" style="width:70px"${dis}> . <input class="inp" id="mk-m" type="number" min="0" max="255" value="${n1}" style="width:70px"${dis}></span></div>
+      <div class="frow"><label>Electronic Keying</label><select class="inp" id="mk-k"${dis}>${Object.entries(E.KEYING).map(([v, l]) => `<option value="${v}"${v === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <p class="help" id="mk-h"${k === 'off' ? '' : ' hidden'} style="color:var(--danger)">ATTENTION: Be extremely cautious when using Disable Keying; if used incorrectly, this option can lead to personal injury or death, property damage, or economic loss. With Disable Keying, communication can occur with a device other than the type specified in the project.</p>`;
+  }
+  function keyMount(el) { const k = el.querySelector('#mk-k'); if (k) k.onchange = () => { el.querySelector('#mk-h').hidden = k.value !== 'off'; }; }
+  function keyRead(el) {
+    const M1 = el.querySelector('#mk-M').value.trim(), n1 = el.querySelector('#mk-m').value.trim();
+    if (!/^\d+$/.test(M1) || +M1 > 127 || !/^\d+$/.test(n1) || +n1 > 255) { toast('Revision: major 0 to 127, minor 0 to 255.', 'err'); return null; }
+    return { rev: `${+M1}.${+n1}`, key: el.querySelector('#mk-k').value };
+  }
   /* Module Properties, as in the reference: General, Connection (Inhibit, Major Fault on Controller), Status */
   function moduleProps(slot, tab) {
     const m = S.p.rack.modules.find(x => x.slot === slot);
@@ -3806,8 +3822,9 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
       <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
       <div class="frow"><label>Slot</label><select class="inp" id="mp-s"${dis}>${slots.map(s => `<option${s === slot ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+      ${keyRows(m, dis)}
       <div class="frow"><label>Tags</label><span class="mono">${['C', 'I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
-    const conn = `<div class="frow"><label>RPI (ms)</label><input class="inp" id="mp-r" type="number" min="2" max="750" value="${m.rpi || 20}"${dis}></div>
+    const conn = `<div class="frow"><label>Requested Packet Interval (RPI)</label><span><input class="inp" id="mp-r" type="number" min="${E.RPI[0]}" max="${E.RPI[1]}" step="0.1" value="${m.rpi || 20}" style="width:110px"${dis}> ms <span class="muted">(${E.RPI[0].toFixed(1)} - ${E.RPI[1].toFixed(1)} ms)</span></span></div>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
       ${st && st.code ? `<div class="kv" style="color:var(--danger)"><span>Module fault</span><span class="v">(Code ${st.code}) ${esc(st.text)}</span></div>` : ''}
@@ -3824,14 +3841,19 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
         if (!offline()) return;
         const name = el2.querySelector('#mp-n').value.trim(), ns = +el2.querySelector('#mp-s').value;
         if (!E.validName(name)) { toast('Module name: letters, digits and _.', 'err'); return false; }
-        const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.max(2, Math.min(750, +el2.querySelector('#mp-r').value || 20)), inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked };
+        const rpi = +el2.querySelector('#mp-r').value, kr = keyRead(el2);
+        if (!(rpi >= E.RPI[0] && rpi <= E.RPI[1])) { toast(`Enter an RPI from ${E.RPI[0].toFixed(1)} to ${E.RPI[1].toFixed(1)} ms.`, 'err'); return false; }
+        if (!kr) return false;
+        const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.round(rpi * 10) / 10, inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked, rev: kr.rev, key: kr.key };
+        if (nv.rev === E.REV0) delete nv.rev;
+        if (nv.key === 'compat') delete nv.key;
         if (!nv.desc) delete nv.desc;
         if (!nv.inhibit) delete nv.inhibit;
         if (!nv.majorOnFail) delete nv.majorOnFail;
         if (JSON.stringify(nv) !== JSON.stringify(m)) edit(() => { S.p.rack.modules.splice(S.p.rack.modules.indexOf(m), 1, nv); });
       } }],
       mount: e2 => {
-        bindTabs(e2);
+        bindTabs(e2); keyMount(e2);
         const x = e2.querySelector('#mp-x');
         if (x) x.onclick = () => { chassis.setFault(slot, !card.fault); chassis.advance(0); live(true); render(); moduleProps(slot, 'st'); };
       } });
@@ -4753,6 +4775,8 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     const m = r.module(emuSel.slot);
     if (!m) return '<p class="help">That slot is empty now.</p>';
     if (!m.ctl) return `<div class="ph" style="background:none">I/O card</div><div class="emuform">${kv('Type', esc(m.type) + ' <span class="muted">· ' + esc(CARDNAMES[m.type] || '') + '</span>')}${kv('Name', esc(m.name))}${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}${kv('State', m.fault ? '<b style="color:var(--danger)">Faulted</b>' : 'OK')}
+        <div class="frow"><label>Revision</label><span class="seg">${['1.1', '1.2', '2.1'].concat(['1.1', '1.2', '2.1'].includes(m.rev || E.REV0) ? [] : [m.rev]).map(v => `<span data-erev="${emuSel.ri}:${m.slot}:${v}" class="${(m.rev || E.REV0) === v ? 'on' : ''}">${v}</span>`).join('')}</span></div>
+        <p class="help">The firmware revision of the card: the controller checks it against the Revision and Electronic Keying of its I/O configuration.</p>
         <p class="help">An addition of this app: the field devices of a card reach the controller whose project configures the same module in this slot.</p></div><div class="emurack">${rackHTML(emuSel.ri)}</div>`;
     const c = m.ctl, id = emuSel.ri + ':' + m.slot;
     return `<div class="ph" style="background:none">Controller</div><div class="emuform">
@@ -4837,6 +4861,7 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     if ((el = t.closest('[data-ecfg]'))) { configEmulation(el.dataset.ecfg, emuOpen()); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
+    if ((el = t.closest('[data-erev]'))) { const [ri, s, v] = el.dataset.erev.split(':'), r = racks[+ri]; r.setRevision(+s, v); r.advance(0); saveChassis(); chassisLive(true); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-epow]'))) { const [ri, s, on] = ids(el.dataset.epow); racks[ri].setController(s, { on: !!on }); saveChassis(); chassisLive(true); live(true); return true; }
     if ((el = t.closest('[data-eapply]'))) {
       const [ri, s] = ids(el.dataset.eapply), n = doc.getElementById('ec-n').value.trim();

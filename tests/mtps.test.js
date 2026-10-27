@@ -690,7 +690,7 @@ console.log('Chassis: controller and I/O cards in slots');
   ch.remove(1); ch.advance(20);
   check('an empty slot: 16#0204', c.moduleStatus(1).code === '16#0204');
   ch.insert(1, 'PLC-DO16-24V', 'Wrong'); ch.advance(20);
-  check('another module in the slot: keying mismatch 16#0116', c.moduleStatus(1).code === '16#0116');
+  check('another module of the same product type in the slot: keying mismatch 16#0114 (product code)', c.moduleStatus(1).code === '16#0114');
   ch.remove(1); ch.insert(1, 'PLC-DI16-24V', 'In'); ch.setBit(1, 0, true); ch.advance(30);
   check('the right card back: running, inputs again', c.moduleStatus(1).state === 'Running' && ch.outputs(2) === 8);
   ch.insert(5, 'PLC-CPU', 'Emu2');
@@ -992,6 +992,34 @@ console.log('Wave 2 D: task watchdog (1756-PM005, Adjust the System Watchdog Tim
   check('the Controller Fault Handler clears the watchdog fault once; the same fault again in that scan faults the controller', c4.read('Seen') === 1 && !!c4.fault && c4.fault.type === 6 && ms4 >= 55, `${ms4} ms Seen ${c4.read('Seen')}`);
   const p5 = loop(1, 'LES(N,3)'); const c5 = new MTPS.Controller(); c5.download(p5); c5.setMode('remrun'); scans(c5, 5);
   check('a short task with a 1 ms watchdog runs without a fault', !c5.fault);
+}
+
+console.log('Wave 2 D: Electronic Keying and RPI (help: Module Properties - General for 1756; Module Faults 16#0100 - 16#02ff; 1756-UM058)');
+{
+  const mk = (m, card, rev) => { const ch = new MTPS.Chassis(8); ch.insert(0, 'PLC-CPU', 'E'); const c = ch.controller(0); ch.insert(1, card || 'PLC-DI16-24V', 'X'); if (rev) ch.setRevision(1, rev);
+    c.download(proj({ modules: [Object.assign({ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, m)], tags: [T('Q', 'BOOL')], rungs: ['XIC(Local:1:I.Data.0)OTE(Q);'] })); c.setMode('remrun'); ch.setBit(1, 0, true); ch.advance(30); return { ch, c, st: c.moduleStatus(1) }; };
+  let r = mk({});
+  check('default Compatible Module, revision 1.1 against a 1.1 card: Running, inputs flow', r.st.state === 'Running' && r.c.read('Q') === 1);
+  check('Compatible Module, a card with a higher minor revision (1.2): Running', mk({}, null, '1.2').st.state === 'Running');
+  r = mk({ rev: '1.2' });
+  check('Compatible Module, the card\'s minor revision lower (1.1 < 1.2): 16#0116 Major and/or Minor revision', r.st.code === '16#0116' && /^Electronic Keying Mismatch: Major and\/or Minor revision invalid or incorrect/.test(r.st.text) && r.c.read('Q') === 0, JSON.stringify(r.st));
+  check('Compatible Module, another major revision (2.1): 16#0116', mk({}, null, '2.1').st.code === '16#0116');
+  check('Exact Match, minor 1.2 against 1.1: 16#0116', mk({ key: 'exact' }, null, '1.2').st.code === '16#0116');
+  check('Exact Match, the same revision: Running', mk({ key: 'exact', rev: '1.2' }, null, '1.2').st.state === 'Running');
+  r = mk({}, 'PLC-DI16-120V');
+  check('another catalog number of the same product type: 16#0114 product code mismatch', r.st.code === '16#0114' && /product code and\/or vendor ID mismatch/.test(r.st.text));
+  r = mk({}, 'PLC-AI4');
+  check('an analog card for a digital module: 16#0115 product type mismatch', r.st.code === '16#0115' && /product type mismatch/.test(r.st.text));
+  r = mk({ key: 'off' }, 'PLC-DI16-120V', '2.7');
+  check('Disable Keying: another catalog number and revision of the same kind of card runs, inputs flow', r.st.state === 'Running' && r.c.read('Q') === 1);
+  check('Disable Keying, a card of another kind (output card): 16#0109 invalid connection size', mk({ key: 'off' }, 'PLC-DO16-24V').st.code === '16#0109');
+  check('a missing card: 16#0204 Connection request timed out', (() => { const x = mk({}); x.ch.remove(1); x.ch.advance(20); const s = x.c.moduleStatus(1); return s.code === '16#0204' && /^Connection Request Error: Connection request timed out/.test(s.text); })());
+  const ch2 = MTPS.Chassis.from(JSON.parse(JSON.stringify(mk({}, null, '2.1').ch)));
+  check('the card revision is kept with the chassis', ch2.module(1).rev === '2.1');
+  check('setRevision refuses a controller or a bad value', !ch2.setRevision(0, '1.2') && !ch2.setRevision(1, 'x'));
+  const v = m => MTPS.verify(proj({ modules: [Object.assign({ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, m)] })).errors.map(e => e.msg || e).join(' ');
+  check('RPI 0.2 and 750 ms: no Verify error', !/RPI/.test(v({ rpi: 0.2 })) && !/RPI/.test(v({ rpi: 750 })));
+  check('RPI 0.1 or 751 ms: Verify error "not in the range 0.2 to 750 ms"', /RPI 0\.1 ms is not in the range 0\.2 to 750 ms/.test(v({ rpi: 0.1 })) && /RPI 751 ms/.test(v({ rpi: 751 })), v({ rpi: 0.1 }));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

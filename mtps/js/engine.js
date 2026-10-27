@@ -50,6 +50,20 @@
     'PLC-ENET': { kind: 'enet' },
   };
   const IODIRS = ['I', 'O', 'C', 'S'];
+  /* Electronic Keying (help: Module Properties - General for 1756; Module Faults 16#0100 - 16#02ff). Product Type as
+     the L5X writes it: 7 discrete I/O, 14 controller (1756-RM014); 10 for analog is not confirmed by a publication.
+     Revision major.minor: major 0 to 127, minor 0 to 255 (default 1). RPI of a 1756 I/O module: 0.2 to 750 ms
+     (1756-UM058 for the digital modules; the same limits are used for analog). */
+  const PTYPE = { di: 7, do: 7, ai: 10, ao: 10, cpu: 14 };
+  const KEYING = { exact: 'Exact Match', compat: 'Compatible Module', off: 'Disable Keying' };
+  const REV0 = '1.1', RPI = [0.2, 750];
+  const revOf = r => { const m = /^(\d+)\.(\d+)$/.exec(String(r == null ? REV0 : r)); return m ? [+m[1], +m[2]] : [1, 1]; };
+  const KEYTEXT = {
+    '16#0109': 'Connection Request Error: Invalid connection size. The connection size is inconsistent with that expected (with Disable Keying, the card in this slot is another kind of module).',
+    '16#0114': 'Electronic Keying Mismatch: Electronic keying product code and/or vendor ID mismatch. The Product Code of the module in the slot does not match the module of the I/O configuration.',
+    '16#0115': 'Electronic Keying Mismatch: Electronic Keying product type mismatch. The Product Type of the module in the slot does not match the module of the I/O configuration.',
+    '16#0116': 'Electronic Keying Mismatch: Major and/or Minor revision invalid or incorrect. The revision of the module in the slot does not match the revision of the I/O configuration (Exact Match or Compatible Module).',
+  };
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
   const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
   /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
@@ -687,7 +701,8 @@
       if (m.slot === cslot) { ctlErr(`Module '${m.name}': slot ${m.slot} holds the controller`); continue; }
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
-      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
+      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20, key: KEYING[m.key] ? m.key : 'compat', rev: m.rev || REV0 };
+      if (mod.rpi < RPI[0] || mod.rpi > RPI[1]) ctlErr(`Module '${m.name}': RPI ${mod.rpi} ms is not in the range ${RPI[0]} to ${RPI[1]} ms`);
       for (const dir of IODIRS) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
@@ -1510,8 +1525,8 @@
       if (m.inhibit) return { state: 'Inhibited', code: null, text: 'The module is inhibited: no connection, its inputs hold and its outputs are off.' };
       if (this.pulled.has(slot)) {
         const code = this.codes.get(slot);
-        if (code === '16#0116') return { state: 'Faulted', code, text: 'Electronic keying mismatch: the card in this slot is not the module of the I/O configuration.' };
-        return { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+        if (KEYTEXT[code]) return { state: 'Faulted', code, text: KEYTEXT[code] };
+        return { state: 'Faulted', code: '16#0204', text: 'Connection Request Error: Connection request timed out. The module does not answer: it is missing from the backplane or faulted.' };
       }
       return { state: 'Running', code: null, text: '' };
     }
@@ -1562,7 +1577,8 @@
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
-     module fault when the slot is empty (16#0204) or holds another module (16#0116). An output card follows the
+     module fault when the slot is empty (16#0204) or fails the Electronic Keying (16#0114, 16#0115, 16#0116; 16#0109
+     with Disable Keying and another kind of card). An output card follows the
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU';
   class Chassis {
@@ -1577,6 +1593,7 @@
       if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
+      if (kind !== 'cpu') m.rev = REV0;
       if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
@@ -1628,11 +1645,23 @@
       return true;
     }
     setFault(slot, on) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu') return false; m.fault = !!on; this.emit('fault'); return true; }
-    /* the code a controller gets for a slot of its I/O configuration */
-    codeFor(slot, type) { const m = this.mods.get(slot); return !m || m.fault ? '16#0204' : m.type !== type ? '16#0116' : null; }
+    /* the firmware revision (major.minor) of an I/O card, to try the Electronic Keying */
+    setRevision(slot, rev) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu' || !/^\d{1,3}\.\d{1,3}$/.test(String(rev))) return false; m.rev = String(rev); this.emit('fault'); return true; }
+    /* the code a controller gets for a slot of its I/O configuration (want: the configured module, or its type).
+       Exact Match: type and revision the same. Compatible Module: the same type and major revision, the card's minor
+       revision equal or higher. Disable Keying: no check, but another kind of card cannot take the connection. */
+    codeFor(slot, want) {
+      const w = typeof want === 'string' ? { type: want } : want, m = this.mods.get(slot);
+      if (!m || m.fault) return '16#0204';
+      const a = m.kind, b = (MODULES[w.type] || {}).kind, key = KEYING[w.key] ? w.key : 'compat';
+      if (key === 'off') return a === b ? null : '16#0109';
+      if (m.type !== w.type) return PTYPE[a] !== PTYPE[b] ? '16#0115' : '16#0114';
+      const [M1, n1] = revOf(m.rev), [M2, n2] = revOf(w.rev);
+      return M1 !== M2 || (key === 'exact' ? n1 !== n2 : n1 < n2) ? '16#0116' : null;
+    }
     exchange(c) {
       for (const m of c.M.mods.values()) {
-        const code = this.codeFor(m.slot, m.type);
+        const code = this.codeFor(m.slot, m);
         c.linkFault(m.slot, code);
         if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
       }
@@ -1644,7 +1673,7 @@
     owner(slot) {
       const m = this.mods.get(slot);
       if (!m) return null;
-      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm.type); });
+      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm); });
       return o ? o.ctl : null;
     }
     /* what an output card drives: bits of a discrete card, channel values of an analog card (off without an owner) */
@@ -1656,7 +1685,7 @@
     }
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
-      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
+      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field, rev: m.rev && m.rev !== REV0 ? m.rev : undefined,
         ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
@@ -1671,6 +1700,7 @@
         if (!r.ok) return;
         const m = r.module;
         if (x.fault && m.kind !== 'cpu') m.fault = true;
+        if (x.rev && m.kind !== 'cpu') ch.setRevision(x.slot, x.rev);
         if (m.kind === 'di') m.field = Number(x.field) | 0;
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
@@ -1689,7 +1719,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;

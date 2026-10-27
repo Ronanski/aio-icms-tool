@@ -296,6 +296,51 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     check('phone (touch): Create, OK adds the relay module', await tp.evaluate(() => MTPS.App.state.p.rack.modules.some(m => m.type === 'PLC-DO16-RLY')));
     await tp.close();
   }
+  console.log('Wave 2 D: Electronic Keying, Revision and RPI (help: Module Properties - General for 1756, Connection tab; Module Faults)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    const slot = await ev(() => MTPS.App.state.p.rack.modules.find(m => m.type === 'PLC-DI16-24V').slot);
+    await page.click(`.nd[data-org="mod:${slot}"]`); await wait(200);
+    const t = await dlgTitle() + ' ' + await dlgText();
+    check('Module Properties General: Revision 1 . 1 and Electronic Keying Compatible Module (Exact Match, Compatible Module, Disable Keying)', (await page.$eval('#mk-M', e => e.value)) === '1' && (await page.$eval('#mk-m', e => e.value)) === '1' && (await page.$eval('#mk-k', e => e.value)) === 'compat' && (await page.$$eval('#mk-k option', o => o.map(x => x.textContent).join('|'))) === 'Exact Match|Compatible Module|Disable Keying', t.slice(0, 300));
+    await page.selectOption('#mk-k', 'off'); await wait(50);
+    check('Disable Keying shows the ATTENTION text', await page.$eval('#mk-h', e => !e.hidden && /extremely cautious/.test(e.textContent)));
+    await shot('keying-general');
+    await page.selectOption('#mk-k', 'exact'); await page.fill('#mk-m', '2');
+    await page.click('#layer [data-dt="con"]'); await wait(60);
+    check('Connection tab: RPI with its limits "(0.2 - 750.0 ms)"', /\(0\.2 - 750\.0 ms\)/.test(await page.$eval('#layer [data-pane="con"]', e => e.textContent)));
+    await shot('rpi-connection');
+    await page.fill('#mp-r', '0.1'); await clickBtn('OK');
+    check('RPI 0.1 ms refused, the dialog stays', (await dlgTitle()).startsWith('Module Properties'));
+    await page.fill('#mp-r', '0.5'); await clickBtn('OK'); await wait(100);
+    check('OK: Exact Match, revision 1.2, RPI 0.5 ms saved', await ev(s => { const m = MTPS.App.state.p.rack.modules.find(x => x.slot === s); return m.key === 'exact' && m.rev === '1.2' && m.rpi === 0.5; }, slot));
+    check('Go Online with a Download', await online());
+    await ev(() => MTPS.App.run('runm')); await wait(150); { const b = await page.$('#layer .dlg .btn.pri'); if (b) { await b.click(); await wait(150); } }
+    await wait(200);
+    check('the card is 1.1, the module wants Exact Match 1.2: 16#0116 Major and/or Minor revision invalid', await ev(s => MTPS.App.ctl.moduleStatus(s).code === '16#0116', slot));
+    await page.click(`.nd[data-org="mod:${slot}"]`); await wait(200);
+    check('Module Properties online: the Connection tab shows the fault code and text', /16#0116.*Electronic Keying Mismatch: Major and\/or Minor revision/.test(await page.$eval('#layer [data-pane="con"]', e => e.textContent)));
+    await shot('keying-fault');
+    await page.keyboard.press('Escape'); await wait(80);
+    // the emulator card: Revision 1.2 makes it match
+    await ev(() => MTPS.App.run('chassis')); await wait(200);
+    await page.click(`#emubody [data-esel="m:0:${slot}"] .mname`); await wait(150);
+    check('the emulator I/O card: Revision 1.1 (on), 1.2, 2.1', (await page.$$eval(`#emubody [data-erev^="0:${slot}:"]`, x => x.map(e => e.textContent + (e.classList.contains('on') ? '*' : '')).join('|'))) === '1.1*|1.2|2.1');
+    await page.click(`#emubody [data-erev="0:${slot}:1.2"]`); await wait(200);
+    await shot('emulator-card-revision');
+    await page.keyboard.press('Escape'); await wait(80);
+    check('the card revision set to 1.2 in the emulator: Running', await ev(s => MTPS.App.ctl.moduleStatus(s).state === 'Running', slot));
+    await ev(() => MTPS.App.run('offline')); await wait(100);
+    // tablet, touch: New Module with Disable Keying
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 800, height: 1280 }); await open(tp, () => { const p = MTPS.App.blank('Keys'); p.rack.modules = []; MTPS.App.openProject(p); });
+    await tp.evaluate(() => MTPS.App.run('newmod')); await tp.waitForTimeout(200);
+    await tp.tap('#layer tr[data-smt="PLC-AI4"]'); await clickBtn('Create', tp, true); await tp.waitForTimeout(150);
+    check('tablet (touch): New Module has Revision and Electronic Keying', !!(await tp.$('#mk-M')) && !!(await tp.$('#mk-k')));
+    await tp.selectOption('#mk-k', 'off'); await tp.fill('#mk-m', '3'); await clickBtn('OK', tp, true); await tp.waitForTimeout(150);
+    check('tablet (touch): the module keeps Disable Keying and revision 1.3', await tp.evaluate(() => { const m = MTPS.App.state.p.rack.modules.find(x => x.type === 'PLC-AI4'); return m && m.key === 'off' && m.rev === '1.3'; }));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {
