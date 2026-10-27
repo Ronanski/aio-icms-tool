@@ -5,6 +5,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed (MT PLC Studio)
+- New Tag from Controller Tags (the tag editor's New Tag button, or Controller Tags > New Tag…) made the tag in MainProgram, so the new tag (base or alias) never showed in Controller Tags. The Scope now starts on the scope of the tag editor (Controller Tags: the controller), and the message says where the tag was made. From the ladder the routine's program stays the default.
+
 ### Changed (MT PLC Studio, Wave 3 of the coverage map): the other languages, tasks, Add-On Instructions, messages and more menus (owner)
 - **Languages:**
   - Structured Text routines (New Routine > Type Structured Text): a text editor with line numbers and colours, Verify errors by line and column, and an online monitor of the values. The controller runs `:=` and `[:=]`, IF / ELSIF / ELSE, CASE, FOR, WHILE, REPEAT, EXIT, comments, the math and conversion functions, strings, and calls such as TONR, TOFR, RTOR, CTUD, JSR, COP, GSV, SSV and PID.
