@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Fixed (MT PLC Studio)
+- Restart to update no longer asks "Leave site?" and no longer loses the open project: the project, with its unsaved changes and its file, opens again in the new version.
+- Tablet: the communications button says Go Online / Go Offline at every width; online, it said "Offline" in red, which read like the status.
+- Ladder: a new instruction at the foot of the routine scrolls fully into view, with the text under it (RES under its coil); it was cut off under the instruction bar.
+- Tablet and phone menu: File shows its New Component, Import Component and Print headings again, so "Routine…" says whether it imports or prints.
 - Ladder: adding an instruction from the toolbar or Add Ladder Element opens no window any more, as in the reference: the "?" is edited in place with the tag list. A new name shows New "name" (Ctrl+W) in that list, a tap makes the tag (type, alias, description) and sets it on the operand; a box (TON, CTU) goes on with its next operand. Edit Instruction (Enter) still opens the instruction editor.
 - Edit Main Operand Description works on a module I/O point too (Local:1:I.Data.0), as in the reference; it was greyed out, so an input or output used straight in a rung could get no description.
 - Touch: one tap on a "?" (or on any operand) now edits that operand in place with the tag list, as a double-click does in the reference; before, a tap only selected and a slow tap opened the instruction menu. The menu (the right-click) now needs a held finger of 0.55 s.

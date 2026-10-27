@@ -44,6 +44,8 @@
 - [x] ~~Wave 4 of the coverage map~~: DROPPED by the owner 2026-10-27 11:02 (nothing of it was merged)
 - [x] Ladder by touch fixes found in a tablet seal-in click-through (#100)
 - [ ] Core engine first: ladder editing and emulation perfect on tablet and desktop (seal-in, TON, CTU, OTL/OTU, branch, forces, DI/DO)
+- [x] Real-app touch run on the live Beta (seal-in, TON, CTU, OTL/OTU, RES, forces, Download, Run, Save/Open, Restart to update): 4 findings, fixed in #104
+- [x] Engine audit part 2 in tests (compares, LIM, MOV, REAL math): #103
 - [ ] Engine accuracy audit against the Rockwell manuals (owner 2026-10-27 11:02)
 - [ ] Stable release: only on a new literal GO STABLE
 - [ ] Owner feedback on 0.4.0-beta.3 (tablet): tag browser, hold-to-drag, tap-again edit, portrait toolbar / Errors, start page
