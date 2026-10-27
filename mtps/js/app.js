@@ -115,7 +115,7 @@
     Favorites: ['RUNG', 'BR', 'BRL', 'XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES'],
     Bit: ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'OSR', 'OSF'],
     'Timer/Counter': ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES'],
-    'Input/Output': ['GSV', 'SSV'],
+    'Input/Output': ['MSG', 'GSV', 'SSV'],
     Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
@@ -1298,7 +1298,7 @@
   const markOf = (r, err) => (!r.z ? '' : r.z === 'i' && err ? 'e' : r.z);
   function ladderRungs() {
     const R = liveRoutine(), map = R ? liveIdx() : null;
-    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t] && INSTR[e.t].ctl != null) { try { e.bv = { ...e.x[INSTR[e.t].ctl].obj() }; } catch (err) { /* ignore */ } } };
+    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t] && INSTR[e.t].ctl != null) { try { const o = e.x[INSTR[e.t].ctl].obj(); e.bv = INSTR[e.t].bvx ? INSTR[e.t].bvx(o) : { ...o }; } catch (err) { /* ignore */ } } };
     return rungs().map((r, i) => {
       const pr = E.parseRung(r.t), err = S.errRungs.has(i) || !!pr.err;
       const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx, bm: !!r.bm };
@@ -1679,6 +1679,8 @@
       items = items.map(it => (it === '-' ? it : it.id === 'help' ? { ...it, id: null, run: () => instrHelp(e.t) } : it.id === 'desc' && oi ? { ...it, l: `Edit "${a}" Description` } : it));
       // a box operand holding a tag: its forced value is monitored and edited there (the app forces I/O bits only)
       if (!bit && t.op != null && isTagText(a)) items.splice(items.findIndex(it => it.id === 'frem'), 0, { l: `Monitor/Edit Force Value Of "${a}"`, i: 'force', run: () => monitorTag(String(a).split(/[.[]/)[0]) }, '-');
+      // Wave 3: the MSG instruction opens its Message Configuration (js/msg.js)
+      if (e.t === 'MSG' && E.App.msgConfig) items.unshift({ l: 'Message Configuration…', i: 'gear', run: () => E.App.msgConfig(e.a[0]) }, '-');
       openMenu(tagItems(e, oi, t.op != null).concat(items), { x, y }, `Rung ${t.ri} · ${e.t} ${e.a.join(', ')}`);
       return;
     }
@@ -1821,7 +1823,7 @@
   // Wave 3: string operands (STRING and the project's string types), numeric / REAL tags only
   const strTypes = () => ['STRING'].concat(((S.p && S.p.dataTypes) || []).filter(d => d.family === 'string').map(d => d.name));
   ['str', 'strw'].forEach(k => Object.defineProperty(KIND_TYPES, k, { get: strTypes }));
-  Object.assign(KIND_TYPES, { ntag: ['SINT', 'INT', 'DINT', 'LINT', 'REAL'], rtag: ['REAL'] });
+  Object.assign(KIND_TYPES, { ntag: ['SINT', 'INT', 'DINT', 'LINT', 'REAL'], rtag: ['REAL'], msg: ['MESSAGE'] });
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr', 'aelem', 'aelemw'];
   /* the name operands that are picked from a list, as the reference editor offers them (Mode of FAL / FSC, the class,
@@ -2319,7 +2321,7 @@
         <div class="frow"><label>External Access</label><select class="inp" id="tea">${ACCESS.map(a => `<option${a === accessOf(t0) ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
         <div class="frow"><label>Style</label><select class="inp" id="tsty"></select></div>
         <div class="frow ckrow"><label for="tcon">Constant</label><input type="checkbox" id="tcon"${t0.constant ? ' checked' : ''}></div>
-        ${edit0 ? '' : '<div class="frow ckrow"><label for="tocf">Open Configuration</label><input type="checkbox" id="tocf" disabled title="Opens the configuration of a data type that has one (MESSAGE, PID, AXIS…) after Create. No data type of this app has one."></div>'}
+        ${edit0 ? '' : '<div class="frow ckrow"><label for="tocf">Open Configuration</label><input type="checkbox" id="tocf" disabled title="Opens the configuration of a data type that has one after Create: the Message Configuration of a MESSAGE tag."></div>'}
         <div class="errtx" id="te"></div>`,
       mount: el => {
         const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), tat = el.querySelector('#tat');
@@ -2334,6 +2336,7 @@
           if (sty.value) styWant = sty.value;
           sty.innerHTML = l.map(x => `<option${x === (l.includes(styWant) ? styWant : defStyle(ty)) ? ' selected' : ''}>${x}</option>`).join('');
           sty.disabled = a || !l.length; ea.disabled = a; con.disabled = a;
+          const ocf = el.querySelector('#tocf'); if (ocf) { ocf.disabled = a || U(ty) !== 'MESSAGE' || !E.App.msgConfig; if (ocf.disabled) ocf.checked = false; }
           if (a) { ea.value = accessOf(b); con.checked = !!(b && b.constant); }
         };
         el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; if (a) { br.show(); ta.focus(); } else { br.hide(); ea.value = accessOf(t0.alias ? null : t0); con.checked = !t0.alias && !!t0.constant; } sync(); };
@@ -2367,6 +2370,9 @@
         }
         if (!t.desc) delete t.desc;
         if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type && E.dimText(t.dim) === E.dimText(edit0.dim)) t.value = edit0.value;
+        if (edit0 && edit0.msg && !alias && t.type === 'MESSAGE' && !t.dim) t.msg = edit0.msg;
+        const ocf = el.querySelector('#tocf');
+        if (ocf && ocf.checked && t.type === 'MESSAGE' && !t.dim && E.App.msgConfig) setTimeout(() => E.App.msgConfig(name, scope), 0);
         const ok = edit(() => { if (edit0) list.splice(list.indexOf(edit0), 1, t); else list.push(t); });
         if (!ok) return false;
         toast(edit0 ? `Tag ${name} changed` : `Tag ${name} created`);
@@ -7050,7 +7056,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   function liveSig() {
     if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
-    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t].ctl != null) { try { const s = e.x[INSTR[e.t].ctl].obj(); parts.push(s.POS, s.LEN, s.EN, s.EU, s.DN, s.EM, s.ER); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
+    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t].ctl != null) { try { const s = e.x[INSTR[e.t].ctl].obj(); parts.push(s.POS, s.LEN, s.EN, s.EU, s.DN, s.EM, s.ER, s.FLAGS); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
     ladPart = parts.join(',');
     const io = [];
     ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
@@ -7487,5 +7493,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
+  // for the parts of the app in their own files (js/msg.js): the dialog and the project helpers
+  E.App.ui = { dialog, closeLayer, esc, ic, edit, tagFor, curProg, allProgs, offline, editable, tabbed, bindTabs, kv, toast, newTag, addrType };
   start();
 })();

@@ -768,7 +768,7 @@
         const dims = dimsOf(Array.isArray(t.dim) ? t.dim : t.dim > 0 ? Math.floor(t.dim) : 0);
         if (!dims) { ctlErr(`Tag '${t.name}': invalid array dimensions [${String(t.dim)}] (1 to 3 dimensions, each 1 or more)`); continue; }
         const dim = dims.reduce((x, y) => x * y, dims.length ? 1 : 0);
-        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '' });
+        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '', msg: t.msg || null });
         vals[t.name] = conform(types, type, dim, t.value);
       }
     };
@@ -1671,6 +1671,7 @@
       this.inputs();
       if (!this.running || this.bp) return;
       this.clock += this.dt;
+      if (this.msgq && this.msgq.size) this.msgTick();
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
@@ -2254,6 +2255,155 @@
     forceState() { return !this.forces.size ? 'none' : this.forcesOn ? 'enabled' : 'disabled'; }
   }
 
+  /* ---------- MSG: Message (1756-RM018A chapter 4, Input/Output; 1756-PM012; v37 help: Message Configuration) ----------
+     The emulator carries CIP Data Table Read and CIP Data Table Write between the controllers of the chassis, and
+     from a controller to itself. The configuration (the Message Configuration dialog) is kept with the MESSAGE tag:
+     tag.msg = { type: 'read' | 'write', src, n, dst, path, cache }. At download the path goes into .Path, one byte per
+     number as RM018A shows it (1,2 → $01$02; THIS or an empty path: the controller itself), and the remote element
+     into .RemoteElement, so logic can change them (RM018A, MESSAGE structure). The remote element can name a program
+     tag: Program:<program>.<tag>. The status bits are the controller's own: a change to .EW .ER .DN .ST or .EN is
+     ignored (RM018A); .TO set by the user stops the message with .ER.
+     Timing (RM018A, the MSG timing diagram): rung true with .EN clear: .EN and .EW set, .DN / .ER cleared; the next
+     scan the message is sent (.ST set, .EW cleared); the scan after it, it is done (.DN, or .ER with .ERR and .EXERR)
+     and .ST is cleared. .EN clears on a false rung once .DN or .ER is set. The transfer goes on while the rung is
+     false. Prescan clears .EW .ST .DN .ER. */
+  const MSGB = { EW: 2, ER: 4, DN: 5, ST: 6, EN: 7, TO: 8, EN_CC: 9 }, MSGMASK = (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
+  PREDEF.MESSAGE = [{ name: 'FLAGS', type: 'INT' }, ...members('ERR:INT EXERR:INT REQ_LEN:INT DN_LEN:INT'),
+    ...Object.keys(MSGB).map(name => ({ name, type: 'BOOL', of: 'FLAGS', bit: MSGB[name] })),
+    ...members('ERR_SRC:SINT DestinationLink:INT DestinationNode:INT SourceLink:INT Class:INT Attribute:INT Instance:DINT LocalIndex:DINT Channel:SINT Rack:SINT Group:SINT Slot:SINT Path:STRING RemoteIndex:DINT RemoteElement:STRING UnconnectedTimeout:DINT ConnectionRate:DINT TimeoutMultiplier:SINT')];
+  // .UnconnectedTimeout 30 s and .ConnectionRate 7.5 s by default (RM018A); kept in microseconds, as Logix keeps them
+  const MSGTO = 30000000, MSGCR = 7500000;
+  /* the error codes the emulator gives (RM018A, Error Codes): [ERR, EXERR, text]. Which code a case gives is the app's
+     choice from that list: no publication says which code a CIP Data Table message gets for each of these cases */
+  const MSGERR = {
+    uninit: [0x00FD, 0, 'Message uninitialized'],
+    timeout: [0x00FE, 0, 'Message timeout'],
+    port: [0x0001, 0x0311, 'Connection failure: port not available'],
+    link: [0x0001, 0x0312, 'Connection failure: link address not available'],
+    noanswer: [0x0001, 0x0204, 'Connection failure: unconnected message timeout'],
+    service: [0x0008, 0, 'Service unsupported'],
+    ioi: [0x0004, 0, 'IOI syntax error'],
+    unknown: [0x0005, 0, 'Destination unknown, class unsupported, instance undefined or structure element undefined'],
+    range: [0x00FF, 0x2105, 'General error: address and how many out of range'],
+    type: [0x00FF, 0x2107, 'General error: type is invalid or not supported'],
+  };
+  const msgText = (err, ext) => { const k = Object.keys(MSGERR).find(n => MSGERR[n][0] === err && MSGERR[n][1] === ext); return k ? MSGERR[k][2] : ''; };
+  Object.assign(OPN, { MSG: ['Message Control'] });
+  const msgBits = o => { const f = o && o.FLAGS | 0, out = {}; for (const n in MSGB) out[n] = (f >> MSGB[n]) & 1; return out; };
+  INSTR.MSG = I('box', 'Input/Output', 'Message', 'msg', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, bvx: msgBits });
+  // a MESSAGE tag, not an element of an array or a member
+  XKIND.msg = (r, writable, one) => (r.type === 'MESSAGE' && one && r.bit < 0 && !r.steps.length ? r : BAD_TYPE);
+  // the path text → bytes: THIS or empty → [] (this controller); '1,2' → [1, 2]; null when it is not valid
+  const msgPath = t => { const s = String(t == null ? '' : t).trim(); if (!s || U(s) === 'THIS') return []; const a = s.split(',').map(x => x.trim()); return a.every(x => /^\d{1,3}$/.test(x) && +x <= 255) ? a.map(Number) : null; };
+  const strOf = o => String.fromCharCode(...o.DATA.slice(0, Math.max(0, Math.min(o.LEN, o.DATA.length))).map(c => c & 255));
+  const strSet = (o, codes) => { const n = Math.min(codes.length, o.DATA.length); for (let k = 0; k < o.DATA.length; k++) o.DATA[k] = k < n ? (codes[k] << 24) >> 24 : 0; o.LEN = n; };
+  // the configuration into the tag: .Path, .RemoteElement, .REQ_LEN, .EN_CC, and the default time outs
+  const msgInit = (o, c) => {
+    if (!(o.UnconnectedTimeout > 0)) o.UnconnectedTimeout = MSGTO;
+    if (!(o.ConnectionRate > 0)) o.ConnectionRate = MSGCR;
+    if (!c) return;
+    strSet(o.Path, msgPath(c.path) || []);
+    strSet(o.RemoteElement, codesOf(c.type === 'write' ? c.dst || '' : c.src || ''));
+    o.REQ_LEN = Math.max(1, Math.floor(+c.n) || 1);
+    o.FLAGS = c.cache === false ? o.FLAGS & ~(1 << MSGB.EN_CC) : o.FLAGS | (1 << MSGB.EN_CC);
+  };
+  const recOf = (M, P, r) => ((P && r.root === P.vals ? P.tags : M.tags).get(U(r.key)));
+  XCHK.MSG = (x, bad, e, M, P) => {
+    const r = x[0], rec = recOf(M, P, r);
+    r.rec = rec;
+    try { msgInit(r.obj(), rec && rec.msg); } catch (err) { if (!(err instanceof Fault)) throw err; }
+  };
+  // the status bits as the controller keeps them (a write to them by logic or a user is ignored)
+  const msgFlags = (c, o) => { const m = c.msgf || (c.msgf = new WeakMap()); if (!m.has(o)) m.set(o, o.FLAGS & MSGMASK); return m.get(o); };
+  const msgStore = (c, o, f) => { c.msgf.set(o, f & MSGMASK); o.FLAGS = (o.FLAGS & ~MSGMASK) | (f & MSGMASK); };
+  XPRE.MSG = function (x) { const o = x[0].obj(); if (this.msgq) this.msgq.delete(o); msgStore(this, o, msgFlags(this, o) & ~((1 << MSGB.EW) | (1 << MSGB.ST) | (1 << MSGB.DN) | (1 << MSGB.ER))); };
+  XEL.MSG = function (e, x, p) {
+    const r = x[0], o = r.obj(), q = this.msgq || (this.msgq = new Map()), B = n => 1 << MSGB[n];
+    let f = msgFlags(this, o);
+    if (!p) {
+      // .EN clears once the message is done or errored; the app also clears it when no message is under way
+      if ((f & B('EN')) && !q.has(o)) f &= ~B('EN');
+    } else if (!(f & B('EN'))) {
+      f = (f | B('EN') | B('EW')) & ~(B('DN') | B('ER') | B('ST'));
+      o.ERR = 0; o.EXERR = 0; o.DN_LEN = 0;
+      const c = r.rec && r.rec.msg;
+      if (!c) { f = (f & ~B('EW')) | B('ER'); o.ERR = MSGERR.uninit[0]; }
+      else { o.REQ_LEN = Math.max(1, Math.floor(+c.n) || 1); q.set(o, { M: this.M, P: this.curP, rec: r.rec, o, ph: 0, at: this.clock }); }
+    }
+    msgStore(this, o, f);
+    e.v = p; return p;
+  };
+  const msgType = r => r.bit < 0 && (['SINT', 'INT', 'DINT', 'LINT', 'REAL'].includes(r.type) || !ATOMIC[r.type]);
+  /* a CIP Data Table Read / Write: { n } done, or { err: [ERR, EXERR] }; null while it waits for an answer */
+  function msgDo(c, s) {
+    const o = s.o, cfg = s.rec.msg, wr = cfg.type === 'write', path = o.Path.DATA.slice(0, Math.max(0, Math.min(o.Path.LEN, o.Path.DATA.length))).map(b => b & 255);
+    const E = k => ({ err: MSGERR[k] });
+    let T = c;
+    if (path.length) {
+      if (path.length !== 2 || path[0] !== 1) return E('port');       // only the backplane (port 1) of the chassis
+      const own = c.slot != null ? c.slot : c.M.slot;
+      if (path[1] !== own) {
+        const ch = c.chassis, m = ch && path[1] < ch.size ? ch.module(path[1]) : null;
+        if (!m) return E('link');
+        if (!m.ctl) return E('service');
+        T = m.ctl;
+      }
+    }
+    if (!T.powered) return (c.clock - s.sent) * 1000 >= (o.UnconnectedTimeout > 0 ? o.UnconnectedTimeout : MSGTO) ? E('noanswer') : null;
+    if (!T.M) return E('unknown');
+    // the local element is in this controller (program tags of the program that ran the MSG first)
+    const local = String((wr ? cfg.src : cfg.dst) || ''), remote = strOf(o.RemoteElement);
+    if (!parsePath(local)) return E('ioi');
+    const L = ref(c.M, s.P, local);
+    if (typeof L === 'string') return E('ioi');
+    let rp = null, rt = remote;
+    const pm = /^Program:([A-Za-z_][A-Za-z0-9_]*)\.(.+)$/i.exec(remote.trim());
+    if (pm) { rp = T.M.programs.find(g => U(g.name) === U(pm[1])); if (!rp) return E('unknown'); rt = pm[2]; }
+    if (!parsePath(rt)) return E('ioi');
+    const R = ref(T.M, rp, rt);
+    if (typeof R === 'string') return E('unknown');
+    // 1756-PM012, Supported data types: SINT, INT, DINT, LINT, REAL and the structures; both ends the same type
+    if (U(L.type) !== U(R.type) || !msgType(L) || !msgType(R)) return E('type');
+    const n = Math.max(1, Math.floor(+cfg.n) || 1), src = wr ? L : R, dst = wr ? R : L;
+    try {
+      const a = file(src), b = file(dst);
+      if (n > a.n || n > b.n) return E('range');
+      const v = []; for (let k = 0; k < n; k++) v.push(clone(a.g(k)));
+      for (let k = 0; k < n; k++) b.s(k, v[k]);
+    } catch (err) { if (err instanceof Fault) return E('range'); throw err; }
+    return { n };
+  }
+  /* each scan, before the logic: the messages under way take their next step */
+  Controller.prototype.msgTick = function () {
+    const B = n => 1 << MSGB[n];
+    for (const [o, s] of this.msgq) {
+      if (s.M !== this.M) { this.msgq.delete(o); continue; }
+      let f = msgFlags(this, o), res = null;
+      if ((o.FLAGS >> MSGB.TO) & 1) res = { err: MSGERR.timeout };
+      else if (!s.ph) { s.ph = 1; s.sent = this.clock; f = (f & ~B('EW')) | B('ST'); msgStore(this, o, f); continue; }
+      else res = msgDo(this, s);
+      if (!res) continue;
+      f &= ~(B('ST') | B('EW'));
+      if (res.err) { f |= B('ER'); o.ERR = res.err[0]; o.EXERR = res.err[1]; } else { f |= B('DN'); o.DN_LEN = res.n; }
+      msgStore(this, o, f);
+      this.msgq.delete(o);
+    }
+  };
+  /* the Message Configuration changed while online: it takes effect at once (the controller keeps its copy) */
+  Controller.prototype.setMsg = function (name, program, cfg) {
+    if (!this.M) return false;
+    const P = program ? this.M.programs.find(g => U(g.name) === U(program)) : null, rec = (P ? P.tags : this.M.tags).get(U(name));
+    if (!rec || rec.type !== 'MESSAGE') return false;
+    rec.msg = cfg ? clone(cfg) : null;
+    try { msgInit(program ? P.vals[rec.name] : this.M.vals[rec.name], rec.msg); } catch (err) { if (!(err instanceof Fault)) throw err; }
+    if (this.copy) {
+      const p = JSON.parse(this.copy), g = program ? (p.tasks || []).flatMap(t => t.programs || []).find(x => U(x.name) === U(program)) : null;
+      const t = ((g ? g.tags : p.tags) || []).find(x => U(x.name) === U(name));
+      if (t) { if (cfg) t.msg = clone(cfg); else delete t.msg; this.copy = JSON.stringify(p); }
+    }
+    return true;
+  };
+
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
@@ -2274,7 +2424,7 @@
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
       if (kind !== 'cpu') m.rev = REV0;
-      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
+      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ctl.chassis = this; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
       return { ok: true, module: m };
@@ -2405,6 +2555,7 @@
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
   MTPS.GSVOBJ = GSVOBJ;
+  MTPS.MSG = { ERR: MSGERR, BIT: MSGB, text: msgText, path: msgPath };
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

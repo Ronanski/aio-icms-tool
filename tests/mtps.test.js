@@ -1542,5 +1542,91 @@ console.log('Wave 3 E: ASCII string and conversion instructions (1756-RM018A cha
   eq('verify: string operands must be string tags, RTOS a REAL, STOD an integer Dest, DTOS a tag', v.errors.map(e => e.rung), [0, 1, 2, 3, 4]);
 }
 
+console.log('Wave 3 E: MSG, CIP Data Table Read / Write (1756-RM018A chapter 4, 1756-PM012)');
+{
+  const B = (c, n) => ['EN', 'EW', 'ST', 'DN', 'ER'].filter(b => c.read(n + '.' + b)).join(' ');
+  const cfg = (o, value) => T(o.name || 'Msg', 'MESSAGE', { msg: o.msg, value });
+  // to itself: THIS
+  const c = run({ modules: [], tags: [T('Src', 'DINT', { dim: 5, value: [1, 2, 3, 4, 5] }), T('Dst', 'DINT', { dim: 5 }), T('Go', 'BOOL'),
+    cfg({ msg: { type: 'read', src: 'Src[1]', n: 3, dst: 'Dst[0]', path: 'THIS' } })], rungs: ['XIC(Go)MSG(Msg);'] });
+  c.scan(10);
+  eq('rung false: no bits', B(c, 'Msg'), '');
+  c.write('Go', 1); c.scan(10);
+  eq('rung true: .EN and .EW set (the message is queued)', B(c, 'Msg'), 'EN EW');
+  c.scan(10);
+  eq('next scan: the message is sent, .ST set and .EW cleared', B(c, 'Msg'), 'EN ST');
+  c.scan(10);
+  eq('then done: .DN set, .ST cleared', B(c, 'Msg'), 'EN DN');
+  eq('CIP Data Table Read to THIS: Src[1..3] into Dst[0..2], .DN_LEN 3', [c.read('Dst'), c.read('Msg.DN_LEN'), c.read('Msg.REQ_LEN')], [[2, 3, 4, 0, 0], 3, 3]);
+  c.scan(10);
+  eq('rung still true: .EN stays, no new message', B(c, 'Msg'), 'EN DN');
+  c.write('Msg.DN', 0); c.scan(10);
+  eq('a write to .DN is ignored (the controller keeps its own bits)', B(c, 'Msg'), 'EN DN');
+  c.write('Go', 0); c.scan(10);
+  eq('rung false with .DN set: .EN clears, .DN stays', B(c, 'Msg'), 'DN');
+  c.write('Src[1]', 20); c.write('Go', 1); c.scan(10);
+  eq('false to true again: .DN cleared, .EN .EW set', B(c, 'Msg'), 'EN EW');
+  c.write('Go', 0); c.scan(10); c.scan(10);
+  eq('the transfer goes on with the rung false, then .EN clears', [B(c, 'Msg'), c.read('Dst[0]')], ['DN', 20]);
+  c.setMode('remprog'); c.setMode('remrun');
+  eq('prescan clears .DN (.EW .ST .DN .ER)', B(c, 'Msg'), '');
+  eq('.EN_CC set by Cache Connections, .UnconnectedTimeout 30 s by default (in microseconds)', [c.read('Msg.EN_CC'), c.read('Msg.UnconnectedTimeout')], [1, 30000000]);
+
+  // between two controllers in a chassis: slot 0 and slot 2 (slot 1 holds an input card)
+  const ch = new MTPS.Chassis(8);
+  ch.insert(0, 'PLC-CPU', 'Ctl_A'); ch.insert(1, 'PLC-DI16-24V'); ch.insert(2, 'PLC-CPU', 'Ctl_B');
+  const A = ch.controller(0), Bc = ch.controller(2);
+  const pa = proj({ modules: [], tags: [T('Out', 'REAL', { dim: 2, value: [1.5, -2.25] }), T('In', 'REAL', { dim: 2 }), T('Go', 'BOOL'), T('Mine', 'INT'),
+    cfg({ name: 'Wr', msg: { type: 'write', src: 'Out[0]', n: 2, dst: 'Program:MainProgram.Rx[0]', path: '1,2' } }),
+    cfg({ name: 'Rd', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[1]', path: '1, 2' } }),
+    cfg({ name: 'E1', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '1,5' } }),
+    cfg({ name: 'E2', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '1,1' } }),
+    cfg({ name: 'E3', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '2,10' } }),
+    cfg({ name: 'E4', msg: { type: 'read', src: 'Nothing', n: 1, dst: 'In[0]', path: '1,2' } }),
+    cfg({ name: 'E5', msg: { type: 'read', src: 'Tx', n: 1, dst: 'Mine', path: '1,2' } }),
+    cfg({ name: 'E6', msg: { type: 'read', src: 'Tx', n: 3, dst: 'In[0]', path: '1,2' } }),
+    cfg({ name: 'E8', msg: { type: 'write', src: 'Go', n: 1, dst: 'Flag', path: '1,2' } }),
+    T('E7', 'MESSAGE')],
+    rungs: ['XIC(Go)MSG(Wr);', 'XIC(Go)MSG(Rd);', 'XIC(Go)MSG(E1);', 'XIC(Go)MSG(E2);', 'XIC(Go)MSG(E3);', 'XIC(Go)MSG(E4);', 'XIC(Go)MSG(E5);', 'XIC(Go)MSG(E6);', 'XIC(Go)MSG(E7);', 'XIC(Go)MSG(E8);'] });
+  const pb = proj({ modules: [], tags: [T('Tx', 'REAL', { value: 9.75 }), T('Flag', 'BOOL')], ptags: [T('Rx', 'REAL', { dim: 4 })], rungs: ['NOP();'] });
+  pb.controller.name = 'Ctl_B'; pb.controller.slot = 2; pb.rack.size = 8; pa.rack.size = 8;
+  check('both controllers take their projects', A.download(pa).ok && Bc.download(pb).ok);
+  A.setMode('remrun'); Bc.setMode('remrun');
+  eq('the configuration is in the tag: .Path $01$02, .RemoteElement', [A.read('Wr.Path').DATA.slice(0, A.read('Wr.Path').LEN), String.fromCharCode(...A.read('Wr.RemoteElement').DATA.slice(0, A.read('Wr.RemoteElement').LEN))], [[1, 2], 'Program:MainProgram.Rx[0]']);
+  A.write('Go', 1); scans(A, 3);
+  eq('CIP Data Table Write over the backplane (path 1,2) into a program tag of the other controller', [B(A, 'Wr'), Bc.read('Rx', 'MainProgram').slice(0, 2)], ['EN DN', [1.5, -2.25]]);
+  eq('CIP Data Table Read from the other controller', [B(A, 'Rd'), A.read('In[1]')], ['EN DN', 9.75]);
+  const er = n => [A.read(n + '.ER'), A.read(n + '.ERR'), A.read(n + '.EXERR')];
+  eq('path to an empty slot: .ER, 16#0001 extended 16#0312 (link address not available)', er('E1'), [1, 0x0001, 0x0312]);
+  eq('path to an I/O card: 16#0008 (service unsupported)', er('E2'), [1, 0x0008, 0]);
+  eq('a port other than the backplane: 16#0001 extended 16#0311 (port not available)', er('E3'), [1, 0x0001, 0x0311]);
+  eq('a remote tag that does not exist: 16#0005 (destination unknown)', er('E4'), [1, 0x0005, 0]);
+  eq('REAL into an INT: 16#00FF extended 16#2107 (type invalid)', er('E5'), [1, 0x00FF, 0x2107]);
+  eq('more elements than the tag holds: 16#00FF extended 16#2105 (out of range)', er('E6'), [1, 0x00FF, 0x2105]);
+  eq('a BOOL is not a supported data type (1756-PM012): 16#00FF extended 16#2107', er('E8'), [1, 0x00FF, 0x2107]);
+  eq('a message never configured: .ER at once, 16#00FD (message uninitialized)', er('E7'), [1, 0x00FD, 0]);
+  check('MTPS.MSG.text gives the description', MTPS.MSG.text(0x0001, 0x0312) === 'Connection failure: link address not available');
+  // the other controller is off: no answer until .UnconnectedTimeout
+  A.write('Go', 0); scans(A, 1);
+  A.write('Rd.UnconnectedTimeout', 50000); Bc.power(false);
+  A.write('Go', 1); scans(A, 3);
+  check('no answer: the message waits (.ST)', B(A, 'Rd') === 'EN ST');
+  scans(A, 5);
+  eq('after .UnconnectedTimeout (50 ms): 16#0001 extended 16#0204', er('Rd'), [1, 0x0001, 0x0204]);
+  Bc.power(true);
+  // .TO stops a message
+  A.write('Go', 0); scans(A, 1); A.write('Go', 1); scans(A, 1); A.write('Wr.TO', 1); scans(A, 1);
+  eq('.TO set by the user: the message stops with .ER (16#00FE, message timeout)', er('Wr'), [1, 0x00FE, 0]);
+  // online: a changed configuration takes effect at once and the controller still holds the project
+  const pa2 = JSON.parse(JSON.stringify(pa)); pa2.tags.find(t => t.name === 'E1').msg.path = '1,2';
+  A.write('Wr.TO', 0);
+  check('setMsg online: the controller still holds the (changed) project', A.setMsg('E1', null, pa2.tags.find(t => t.name === 'E1').msg) && A.holds(pa2));
+  A.write('Go', 0); scans(A, 1); A.write('Go', 1); scans(A, 3);
+  eq('… and the message uses the new path', [B(A, 'E1'), A.read('In[0]')], ['EN DN', 9.75]);
+  // verify
+  const v = MTPS.verify(proj({ tags: [T('D', 'DINT'), T('M', 'MESSAGE', { dim: 2 })], rungs: ['MSG(D);', 'MSG(M[0]);'] }));
+  eq('verify: the operand must be a MESSAGE tag (not another type, not an array element)', v.errors.map(e => e.rung), [0, 1]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
