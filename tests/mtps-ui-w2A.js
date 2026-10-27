@@ -77,4 +77,68 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     const o = await ev(() => { const p = MTPS.App.state.p; return { n: p.controller.name, dt: (p.dataTypes || []).map(d => d.name).join(','), lv: (p.tags.find(t => t.name === 'Level') || {}).value, fill: JSON.stringify((p.tags.find(t => t.name === 'Fill') || {}).value), rpi: (p.rack.modules.find(m => m.slot === 1) || {}).rpi, progs: p.tasks[0].programs.length }; });
     check('File > Open of the exported .L5X: types, values, modules and programs are back', o.n === 'Motor_Demo' && o.dt === 'Motor,Line' && o.lv === 12.5 && /"Speed":3.25/.test(o.fill) && o.rpi === 50 && o.progs === 2, JSON.stringify(o));
   }
+  if (want('imp')) {
+    console.log('File > Import Component (help v37 File menu; About Import/Export of Components; Import Configuration)');
+    await fresh(); await bigProject();
+    const f = await menu('File');
+    const ix = f.findIndex(x => x[0] === '#Import Component');
+    check('File: an Import Component group with the reference\'s kinds (Add-On Instructions, Data Type, Equipment Phase, Program, Routine, String Type, Trend)', ix > 0 && f.slice(ix + 1, ix + 8).map(x => x[0]).join('|') === 'Add-On Instructions…|Data Type…|Equipment Phase…|Program…|Routine…|String Type…|Trend…', f.map(x => x[0]).join('|'));
+    check('Data Type, Program and Routine are on; the kinds this app lacks are off', f.slice(ix + 1, ix + 8).map(x => (x[1] ? 0 : 1)).join('') === '0101100');
+    await page.keyboard.press('Escape'); await wait(80);
+    // export the routine, the program Second and the type Line from the organizer's right-click menus
+    const orgRight = async k => { await page.click(`.org [data-org="${k}"]`, { button: 'right' }); await wait(120); };
+    await ev(() => { const s = MTPS.App.state; s.prefs.collapsed = []; MTPS.App.render(); });
+    await orgRight('rt:MainProgram/MainRoutine');
+    check('right-click a routine: Export Routine…', (await items()).some(x => x[0] === 'Export Routine…'));
+    await pick('Export Routine…'); await fileSave('W2A_Rtn');
+    const x = await ev(() => MTPS.FS.read('/MT PLC Studio Projects/W2A_Rtn.L5X'));
+    check('the routine file: TargetType Routine, with the tags it uses as context', /TargetType="Routine" TargetSubType="RLL" ContainsContext="true"/.test(x) && /<Routine Use="Target" Name="MainRoutine"/.test(x) && /<Tag Name="Start_PB" TagType="Alias"/.test(x) && !/<Tag Name="Level"/.test(x));
+    await orgRight('prog:Second'); await pick('Export Program…'); await fileSave('W2A_Prog');
+    await orgRight('dt:u:Line'); await pick('Export Data Type…'); await fileSave('W2A_Line');
+    const xd = await ev(() => MTPS.FS.read('/MT PLC Studio Projects/W2A_Line.L5X'));
+    check('the data type file: Line as the target, Motor (which it uses) as context', /TargetType="DataType"/.test(xd) && /<DataType Use="Target" Name="Line"/.test(xd) && /<DataType Use="Context" Name="Motor"/.test(xd));
+    // a new project: import the three
+    await ev(() => { MTPS.App.openProject(MTPS.App.blank('Target'), true); MTPS.App.render(); });
+    await menu('File', 'Routine…'); await fileOpen('W2A_Rtn.L5X');
+    check('Import Routine: the Import Configuration dialog', (await dlgTitle()) === 'Import Configuration');
+    const rows = await page.$$eval('#ic-t tr', r => r.slice(1).map(y => [...y.children].slice(0, 3).map(c => c.textContent).join(':')));
+    check('it lists the routine (MainRoutine exists: Overwrite) and its tags (Create)', rows[0] === 'Routine:MainRoutine:Overwrite' && rows.some(r => r === 'Tag:Motor_Run:Create'), rows.join(' | '));
+    await page.fill('#ic-n', 'Motor_Logic'); await wait(80);
+    check('a new final name: Create', (await page.$eval('#ic-t tr:nth-child(2)', r => r.textContent)).includes('Create'));
+    await clickBtn('OK'); await wait(200);
+    const st = await ev(() => { const s = MTPS.App.state, g = s.p.tasks[0].programs[0]; return { r: g.routines.map(y => y.name).join(','), open: s.routine, tags: s.p.tags.map(t => t.name).join(','), err: MTPS.verify(s.p).errors.filter(e => e.routine === "Motor_Logic").length, rungs: (g.routines.find(y => y.name === 'Motor_Logic') || { rungs: [] }).rungs.length }; });
+    check('OK: the routine is in the program and open, with its rungs; the tags it uses were created', st.r === 'MainRoutine,Motor_Logic' && st.open === 'Motor_Logic' && st.rungs === 5 && /Start_PB/.test(st.tags) && /Run_Timer/.test(st.tags) && st.err === 0, JSON.stringify(st));
+    await menu('File', 'Data Type…'); await fileOpen('W2A_Line.L5X'); await clickBtn('OK'); await wait(150);
+    check('Import Data Type: Line and the Motor type it uses are created', (await ev(() => MTPS.App.state.p.dataTypes.map(d => d.name).join(','))) === 'Motor,Line');
+    await menu('File', 'Program…'); await fileOpen('W2A_Prog.L5X');
+    check('Import Program into MainTask, as a new program', (await page.$eval('#ic-i', s => s.value)) === 'MainTask' && (await page.$eval('#ic-t tr:nth-child(2)', r => r.textContent)).includes('Create'));
+    await clickBtn('OK'); await wait(150);
+    check('the program is scheduled in the task', (await ev(() => MTPS.App.state.p.tasks[0].programs.map(g => g.name).join(','))) === 'MainProgram,Second');
+    await menu('File', 'Program…'); await fileOpen('W2A_Prog.L5X');
+    check('the same program again: Overwrite', (await page.$eval('#ic-t tr:nth-child(2)', r => r.textContent)).includes('Overwrite'));
+    await clickBtn('OK'); await wait(150);
+    check('overwritten in place, not added twice', (await ev(() => MTPS.App.state.p.tasks[0].programs.map(g => g.name).join(','))) === 'MainProgram,Second');
+    await menu('File', 'Routine…'); await fileOpen('W2A_Line.L5X');
+    check('a data type file picked for Import Routine: an error, nothing opens', (await dlgTitle()) !== 'Import Configuration' && /not a Routine/.test(await ev(() => MTPS.App.state.msg)));
+    // tablet (touch): the folding File menu
+    const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    const tp = await tctx.newPage();
+    await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+    await tp.evaluate(t => { MTPS.App.openProject(MTPS.App.blank('Tab')); return MTPS.FS.write('/MT PLC Studio Projects/W2A_Rtn.L5X', t); }, x); await tp.waitForTimeout(150);
+    await tp.tap('[data-allmenu]'); await tp.waitForTimeout(150); await tp.tap('[data-fold="File"]'); await tp.waitForTimeout(150);
+    await pick('Routine…', tp, true); await fileOpen('W2A_Rtn.L5X', tp, true);
+    await clickBtn('OK', tp, true); await tp.waitForTimeout(150);
+    check('tablet (touch): File > Routine… overwrites MainRoutine with the imported rungs', (await tp.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines.length)) === 1 && (await tp.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.length)) === 5);
+    await tctx.close();
+    // phone (touch): More > Import Component…
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const pp = await pctx.newPage();
+    await pp.goto(URL); await pp.waitForTimeout(300); await pp.keyboard.press('Escape');
+    await pp.evaluate(t => { MTPS.App.openProject(MTPS.App.blank('Ph')); return MTPS.FS.write('/MT PLC Studio Projects/W2A_Line.L5X', t); }, xd); await pp.waitForTimeout(150);
+    await pp.tap('[data-go="more"]'); await pp.waitForTimeout(150);
+    await pp.tap('.page [data-cmd="impcomp"]'); await pp.waitForTimeout(200);
+    await pick('Data Type…', pp, true); await fileOpen('W2A_Line.L5X', pp, true); await clickBtn('OK', pp, true); await pp.waitForTimeout(150);
+    check('phone (touch): More > Import Component… > Data Type…', (await pp.evaluate(() => MTPS.App.state.p.dataTypes.map(d => d.name).join(','))) === 'Motor,Line');
+    await pctx.close();
+  }
 };

@@ -822,6 +822,16 @@
     newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => {}, on: () => false },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
+    // File > Import Component (help v37 File menu): Add-On Instructions, Data Type, Equipment Phase, Program, Routine,
+    // String Type, Trend; this app has data types, programs and routines
+    impaoi: { l: 'Add-On Instructions…', i: 'upload', run: () => {}, on: () => false },
+    impdt: { l: 'Data Type…', i: 'upload', run: () => importComponent('DataType'), on: () => editable() && offline() },
+    impep: { l: 'Equipment Phase…', i: 'upload', run: () => {}, on: () => false },
+    impprog: { l: 'Program…', i: 'upload', run: () => importComponent('Program'), on: () => editable() && offline() },
+    imprtn: { l: 'Routine…', i: 'upload', run: () => importComponent('Routine'), on: () => editable() && offline() },
+    impstr: { l: 'String Type…', i: 'upload', run: () => {}, on: () => false },
+    imptrend: { l: 'Trend…', i: 'upload', run: () => {}, on: () => false },
+    impcomp: { l: 'Import Component…', i: 'upload', run: () => importCompMenu(), on: () => editable() && offline() },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
     foff: { l: 'Force Off', i: 'force', run: () => forceSel(0), on: selForceable },
@@ -878,7 +888,7 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
@@ -1100,7 +1110,7 @@
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
-      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
+      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -1593,9 +1603,13 @@
   }
   function orgMenu(key, x, y) {
     const items = [];
-    if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, '-', { l: 'Rename…', run: () => renameRoutine(key), dis: !editable() }, { l: 'Delete', run: () => deleteRoutine(key), dis: !editable() }, '-', { l: 'Verify', run: () => { openRoutine(key); verifyCmd(true); } }, { l: 'Properties…', run: () => routineProps(key) }); }
-    else if (key.startsWith('prog:')) items.push({ l: 'New Routine…', run: () => newRoutine(key.slice(5)), dis: !editable() }, { l: 'Program Tags', run: () => tagEditor('mon', key.slice(5)) }, '-', { l: 'Properties…', run: () => progProps(key.slice(5)) });
-    else if (key.startsWith('task:')) items.push({ l: 'Properties…', run: () => taskProps(key.slice(5)) });
+    const rtOf = k => { const [gn, rn] = k.slice(3).split('/'), g = allProgs().find(x => x.name === gn); return { g, r: g && g.routines.find(x => x.name === rn) }; };
+    const imp = (l, kind) => ({ l, i: 'upload', run: () => { S.orgSel = key; importComponent(kind); }, dis: !editable() || !offline() });
+    if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, '-', { l: 'Rename…', run: () => renameRoutine(key), dis: !editable() }, { l: 'Delete', run: () => deleteRoutine(key), dis: !editable() }, '-', { l: 'Export Routine…', i: 'download', run: () => exportComponent('Routine', rtOf(key)) }, '-', { l: 'Verify', run: () => { openRoutine(key); verifyCmd(true); } }, { l: 'Properties…', run: () => routineProps(key) }); }
+    else if (key.startsWith('prog:')) items.push({ l: 'New Routine…', run: () => newRoutine(key.slice(5)), dis: !editable() }, imp('Import Routine…', 'Routine'), { l: 'Program Tags', run: () => tagEditor('mon', key.slice(5)) }, '-', { l: 'Export Program…', i: 'download', run: () => exportComponent('Program', { g: allProgs().find(x => x.name === key.slice(5)) }) }, '-', { l: 'Properties…', run: () => progProps(key.slice(5)) });
+    else if (key.startsWith('task:')) items.push(imp('Import Program…', 'Program'), '-', { l: 'Properties…', run: () => taskProps(key.slice(5)) });
+    else if (key === 'dt:user') items.push(imp('Import Data Type…', 'DataType'));
+    else if (key.startsWith('dt:u:')) { const d = (S.p.dataTypes || []).find(x => x.name === key.slice(5)); if (d) items.push({ l: 'Export Data Type…', i: 'download', run: () => exportComponent('DataType', { d }) }); }
     else if (key.startsWith('ptags:')) items.push({ l: 'Monitor Tags', run: () => tagEditor('mon', key.slice(6)) }, { l: 'Edit Tags', run: () => tagEditor('edit', key.slice(6)) });
     else if (key === 'bp' || key === 'io') items.push({ l: 'New Module…', run: newModule, dis: !offline() });
     else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
@@ -3501,7 +3515,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   // module firmware revision and connection, as a new module of that catalog number gets them (not checked in the VM)
   const L5XMOD = { di: ['3', '1', 'StandardInput', 'Input'], do: ['3', '1', 'StandardOutput', 'Output'], ai: ['1', '1', 'Float', 'Input'], ao: ['1', '1', 'Float', 'Output'] };
   const l5xIdx = (k, dims) => { const out = []; for (let d = dims.length - 1; d >= 0; d--) { out.unshift(k % dims[d]); k = Math.floor(k / dims[d]); } return out.join(','); };
-  function toL5X(p) {
+  function l5xKit(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
     const dsc = v => (v ? `<Description>${cd(v)}</Description>` : '');
@@ -3544,6 +3558,22 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const k = (E.MODULES[m.type] || {}).kind, r = L5XMOD[k] || ['1', '1', 'Data', 'Input'];
       return `<Module Name="${x(m.name)}" CatalogNumber="${L5XCAT[m.type] || x(m.type)}" Vendor="1" Major="${r[0]}" Minor="${r[1]}" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}" MajorFault="${m.majorOnFail ? 'true' : 'false'}">${dsc(m.desc)}<EKey State="CompatibleModule"/><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports><Communications><Connections><Connection Name="${r[2]}" RPI="${(m.rpi || 20) * 1000}" Type="${r[3]}"/></Connections></Communications></Module>`;
     };
+    // a routine and a program; use: the Use attribute of a component export (Target or Context)
+    const rtn = (r, use) => `<Routine${use ? ` Use="${use}"` : ''} Name="${x(r.name)}" Type="RLL">${dsc(r.desc)}
+<RLLContent>
+${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '') ? u.z : 'N'}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+</RLLContent>
+</Routine>`;
+    const prog = (g, use, only) => `<Program${use ? ` Use="${use}"` : ''} Name="${x(g.name)}" TestEdits="false" MainRoutineName="${x(g.main || '')}"${g.fault ? ` FaultRoutineName="${x(g.fault)}"` : ''} Disabled="${g.inhibit ? 'true' : 'false'}" UseAsFolder="false">${dsc(g.desc)}
+<Tags${use ? ' Use="Context"' : ''}>${(only ? only.tags : g.tags || []).map(tag).join('')}</Tags>
+<Routines${use ? ' Use="Context"' : ''}>
+${only ? rtn(only.routine, 'Target') : g.routines.map(r => rtn(r)).join('\n')}
+</Routines>
+</Program>`;
+    return { x, cd, dsc, tag, udt, order, mod, prog };
+  }
+  function toL5X(p) {
+    const { x, dsc, tag, udt, order, mod, prog } = l5xKit(p);
     const progs = p.tasks.flatMap(t => t.programs), cslot = Number.isInteger(p.controller.slot) ? p.controller.slot : 0;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
@@ -3557,16 +3587,7 @@ ${p.rack.modules.map(mod).join('\n')}
 ${p.tags.map(tag).join('\n')}
 </Tags>
 <Programs>
-${progs.map(g => `<Program Name="${x(g.name)}" TestEdits="false" MainRoutineName="${x(g.main || '')}"${g.fault ? ` FaultRoutineName="${x(g.fault)}"` : ''} Disabled="${g.inhibit ? 'true' : 'false'}" UseAsFolder="false">${dsc(g.desc)}
-<Tags>${(g.tags || []).map(tag).join('')}</Tags>
-<Routines>
-${g.routines.map(r => `<Routine Name="${x(r.name)}" Type="RLL">${dsc(r.desc)}
-<RLLContent>
-${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '') ? u.z : 'N'}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
-</RLLContent>
-</Routine>`).join('\n')}
-</Routines>
-</Program>`).join('\n')}
+${progs.map(g => prog(g)).join('\n')}
 </Programs>
 <Tasks>
 ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.watchdog || 500}" DisableUpdateOutputs="${t.noOutputs ? 'true' : 'false'}" InhibitTask="${t.inhibit ? 'true' : 'false'}">${dsc(t.desc)}<ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
@@ -3588,7 +3609,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
   const nonZero = v => (Array.isArray(v) ? v.some(nonZero) : v && typeof v === 'object' ? Object.values(v).some(nonZero) : !!v);
   /* L5X import: the parts this app knows. I/O modules map by catalog number (or by kind: digital in/out, analog in/out);
      rung text is kept as written, so an instruction this app lacks shows up in Verify */
-  function fromL5X(t) {
+  function fromL5X(t, quiet) {
     let d; try { d = new DOMParser().parseFromString(t, 'application/xml'); } catch (e) { d = null; }
     const c = d && d.querySelector('Controller');
     if (!c || d.querySelector('parsererror')) { toast('That L5X file could not be read.', 'err'); return null; }
@@ -3670,9 +3691,123 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
       p.tasks = tasks.filter(o => o.programs.length);
     }
     const n = list.reduce((k, g) => k + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0);
-    setTimeout(() => toast(`Imported ${name}: ${list.length} program(s), ${n} rung(s), ${p.tags.length} controller tag(s). Run Verify to see what this app does not support.`, 'ok'), 50);
+    if (!quiet) setTimeout(() => toast(`Imported ${name}: ${list.length} program(s), ${n} rung(s), ${p.tags.length} controller tag(s). Run Verify to see what this app does not support.`, 'ok'), 50);
     return p;
   }
+
+  /* ---------- File > Import Component, and the organizer's Export (help v37: About Import/Export of Components) ----------
+     A routine, a program or a user-defined data type as a component .L5X (TargetType Routine / Program / DataType,
+     ContainsContext): the file holds the component and what it uses (tags, data types). Import Configuration then
+     shows each item with its Operation: Create, Overwrite (the component when its final name exists) or Use Existing
+     (a tag or data type the project has already); the component's final name can be changed. */
+  const COMPK = { Routine: 'Routine', Program: 'Program', DataType: 'Data Type' };
+  function udtsFor(p, types) {
+    const out = new Set(), list = p.dataTypes || [];
+    const add = n => { const d = list.find(y => U(y.name) === U(n)); if (!d || out.has(d)) return; out.add(d); (d.members || []).forEach(m => add(m.type)); };
+    types.forEach(add);
+    return out;
+  }
+  // the names (upper case) the rungs' operands use, members and bits left out
+  function rungNames(rs) {
+    const names = new Set();
+    rs.forEach(r => { const pr = E.parseRung(r.t || ''); if (pr.err) return; const walk = arr => arr.forEach(e => { if (e.t === 'BR') e.legs.forEach(walk); else (e.a || []).forEach(a => (String(a).match(/(?<![.\w:])[A-Za-z_]\w*/g) || []).forEach(n => names.add(U(n)))); }); walk(pr.elems); });
+    return names;
+  }
+  function compL5X(kind, o) {
+    const p = S.p, k = l5xKit(p), g = o.g, rs = kind === 'Routine' ? o.r.rungs : kind === 'Program' ? g.routines.flatMap(r => r.rungs) : [];
+    const names = rungNames(rs), mine = n => (g ? g.tags : []).some(y => U(y.name) === U(n));
+    const ptags = kind === 'Routine' ? g.tags.filter(t => names.has(U(t.name))) : [];
+    const ctags = kind === 'DataType' ? [] : p.tags.filter(t => names.has(U(t.name)) && !mine(t.name));
+    const used = udtsFor(p, kind === 'DataType' ? [o.d.name] : [...ctags, ...(kind === 'Program' ? g.tags : ptags)].map(t => t.type || ''));
+    const dts = k.order.filter(d => used.has(d)).map(d => k.udt(d).replace('<DataType ', `<DataType Use="${kind === 'DataType' && d === o.d ? 'Target' : 'Context'}" `));
+    const name = kind === 'DataType' ? o.d.name : kind === 'Routine' ? o.r.name : g.name;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${k.x(name)}" TargetType="${kind}"${kind === 'Routine' ? ' TargetSubType="RLL"' : ''} ContainsContext="true" ExportDate="${new Date().toUTCString()}" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
+<Controller Use="Context" Name="${k.x(p.controller.name)}">
+<DataTypes Use="Context">${dts.join('\n')}</DataTypes>
+${kind === 'DataType' ? '' : `<Tags Use="Context">${ctags.map(k.tag).join('')}</Tags>
+<Programs Use="Context">
+${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.prog(g, 'Target')}
+</Programs>`}
+</Controller>
+</RSLogix5000Content>
+`;
+  }
+  function exportComponent(kind, o) {
+    const name = kind === 'DataType' ? o.d.name : kind === 'Routine' ? o.r.name : o.g.name;
+    fileDialog({ mode: 'save', title: `Export ${COMPK[kind]}`, name: `${name}.L5X`, types: ['l5x'], onPick: async f => { try { await FS.write(f, compL5X(kind, o)); toast(`Exported ${COMPK[kind]} ${name} to ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } });
+  }
+  function importComponent(kind) {
+    if (!offline()) { toast('Go offline to import a component.'); return; }
+    fileDialog({ mode: 'open', title: `Import ${COMPK[kind]}`, types: ['l5x'], onPick: async f => {
+      let t; try { t = await FS.read(f); } catch (e) { toast('That file could not be read: ' + (e.message || e), 'err'); return; }
+      let d = null; try { d = new DOMParser().parseFromString(t, 'application/xml'); } catch (e) { /* not XML */ }
+      const root = d && !d.querySelector('parsererror') && d.querySelector('RSLogix5000Content'), tt = root ? root.getAttribute('TargetType') : '';
+      if (!root) { toast('That L5X file could not be read.', 'err'); return; }
+      if (tt !== kind) { toast(`That file holds ${tt ? 'a ' + (COMPK[tt] || tt) : 'no component'}, not a ${COMPK[kind]}.`, 'err'); return; }
+      const q = fromL5X(t, true); if (!q) return;
+      importConfig(kind, q, root.getAttribute('TargetName') || '', baseName(f));
+    } });
+  }
+  function importConfig(kind, q, tname, file) {
+    const qg = q.tasks.flatMap(t => t.programs), dts = q.dataTypes || [];
+    let comp = null, ptags = [];
+    if (kind === 'Routine') { const g = qg[0]; comp = g ? g.routines.find(r => r.name === tname) || g.routines[0] : null; ptags = g ? g.tags : []; }
+    else if (kind === 'Program') comp = qg.find(g => g.name === tname) || qg[0] || null;
+    else comp = dts.find(x => x.name === tname) || null;
+    if (!comp) { toast(`That file holds no ${COMPK[kind]}.`, 'err'); return; }
+    const ctags = kind === 'DataType' ? [] : q.tags;
+    const st = { name: comp.name, into: kind === 'Routine' ? orgProg() : kind === 'Program' ? (S.p.tasks.find(t => S.orgSel === 'task:' + t.name) || S.p.tasks[0]).name : '' };
+    const intoProg = () => allProgs().find(g => g.name === st.into);
+    const has = (list, n) => (list || []).some(y => U(y.name) === U(n));
+    const exists = () => (kind === 'Routine' ? has(intoProg().routines, st.name) : kind === 'Program' ? has(allProgs(), st.name) : has(S.p.dataTypes, st.name));
+    const refDts = dts.filter(x => x !== comp), refPt = kind === 'Routine' ? ptags : [];
+    const rows = () => [[COMPK[kind], comp.name, exists() ? 'Overwrite' : 'Create', st.name]]
+      .concat(refDts.map(x => ['Data Type', x.name, has(S.p.dataTypes, x.name) ? 'Use Existing' : 'Create', x.name]))
+      .concat(ctags.map(x => ['Tag', x.name, has(S.p.tags, x.name) ? 'Use Existing' : 'Create', x.name]))
+      .concat(refPt.map(x => ['Tag', x.name, has(intoProg().tags, x.name) ? 'Use Existing' : 'Create', x.name]));
+    const table = () => `<table class="ictbl"><tr><th>Type</th><th>Import Name</th><th>Operation</th><th>Final Name</th></tr>${rows().map(([k, n, op, f], i) => `<tr><td>${k}</td><td class="mono">${esc(n)}</td><td>${op}</td><td class="mono">${i ? esc(f) : ''}</td></tr>`).join('')}</table>`;
+    const into = kind === 'Routine' ? allProgs().map(g => g.name) : kind === 'Program' ? S.p.tasks.map(t => t.name) : [];
+    const el = dialog({ title: 'Import Configuration', size: 'md',
+      body: `<div class="frow"><label>File</label><span class="mono">${esc(file)}</span></div>
+        <div class="frow"><label>Files containing</label><span>${COMPK[kind]}</span></div>
+        ${into.length ? `<div class="frow"><label for="ic-i">Into</label><select class="inp" id="ic-i">${into.map(n => `<option${n === st.into ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
+        <div class="frow"><label for="ic-n">Final Name</label><input class="inp mono" id="ic-n" value="${esc(st.name)}" autocomplete="off" spellcheck="false"></div>
+        <div id="ic-t">${table()}</div><div class="errtx" id="ic-e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: e2 => {
+        const err = m => { e2.querySelector('#ic-e').textContent = m; return false; };
+        if (!E.validName(st.name)) return err('Final Name: letters, digits and _ (up to 40).');
+        const over = exists(), cl = v => JSON.parse(JSON.stringify(v));
+        edit(() => {
+          S.p.dataTypes = S.p.dataTypes || [];
+          refDts.forEach(x => { if (!has(S.p.dataTypes, x.name)) S.p.dataTypes.push(cl(x)); });
+          ctags.forEach(x => { if (!has(S.p.tags, x.name)) S.p.tags.push(cl(x)); });
+          if (kind === 'DataType') {
+            const nd = Object.assign(cl(comp), { name: st.name }), i = S.p.dataTypes.findIndex(y => U(y.name) === U(st.name));
+            if (i >= 0) S.p.dataTypes.splice(i, 1, nd); else S.p.dataTypes.push(nd);
+            return;
+          }
+          if (kind === 'Routine') {
+            const g = intoProg(), nr = Object.assign(cl(comp), { name: st.name }), i = g.routines.findIndex(y => U(y.name) === U(st.name));
+            refPt.forEach(x => { if (!has(g.tags, x.name)) g.tags.push(cl(x)); });
+            if (i >= 0) { nr.name = g.routines[i].name; g.routines.splice(i, 1, nr); } else g.routines.push(nr);
+            S.prog = g.name; S.routine = nr.name;
+          } else {
+            const ng = Object.assign(cl(comp), { name: st.name }), T = S.p.tasks.find(t => t.name === st.into);
+            const at = S.p.tasks.find(t => t.programs.some(y => U(y.name) === U(st.name)));
+            if (at) { const i = at.programs.findIndex(y => U(y.name) === U(st.name)); ng.name = at.programs[i].name; at.programs.splice(i, 1, ng); } else T.programs.push(ng);
+            S.prog = ng.name; S.routine = ng.main || ng.routines[0].name;
+          }
+          S.view = 'ladder'; S.sel = null; S.selRung = 0;
+        });
+        reverify(); render();
+        toast(`${COMPK[kind]} ${st.name} ${over ? 'overwritten' : 'imported'} from ${file}.`, 'ok');
+      } }] });
+    const upd = () => { st.name = el.querySelector('#ic-n').value.trim(); const i = el.querySelector('#ic-i'); if (i) st.into = i.value; el.querySelector('#ic-t').innerHTML = table(); };
+    el.addEventListener('input', upd); el.addEventListener('change', upd);
+  }
+  // File > Import Component on the phone and tablet's More: the kinds, as the reference's submenu
+  function importCompMenu(at) { openMenu(['impdt', 'impprog', 'imprtn'].map(id => ({ id, l: C[id].l, i: C[id].i })), at || { x: 40, y: 80 }, 'Import Component'); }
 
   /* ---------- organizer actions ---------- */
   function openRoutine(key) { const [g, r] = key.slice(3).split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; S.sel = null; S.selRung = 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); }
