@@ -964,6 +964,7 @@
   function run(id) {
     const c = C[id];
     if (!c) return;
+    if (E.FBD && E.FBD.cmd && E.FBD.cmd(id)) return;
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
@@ -1036,6 +1037,7 @@
     if (!kept) app.innerHTML = html;
     const nl = $('#ladwrap');
     if (nl) { renderLadder(); if (st && !kept) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
+    if (fbdOn()) E.FBD.mount();
     if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
   }
@@ -1080,8 +1082,11 @@
     return L4.map(([c, t]) => `<div><i class="led ${c}"></i>${t}</div>`).join('');
   }
   const keyHTML = () => `<span class="key" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>`;
-  const gbtns = tab => TABS[tab].map(m => `<button class="gbtn" data-mn="${m}" title="${esc(NAME(m))}"${editable() ? '' : ' disabled'}>${L.icon(m)}<span>${m === 'RUNG' ? 'Rung' : m === 'BR' ? 'Branch' : m === 'BRL' ? 'Level' : m}</span></button>`).join('');
-  const itabs = () => Object.keys(TABS).map(t => `<span data-tab="${esc(t)}" class="${t === S.prefs.tab ? 'on' : ''}">${t}</span>`).join('');
+  // the routine's drawing: the ladder, or the Function Block Diagram editor (fbd.js) for a routine of Type FBD
+  const fbdOn = () => !!(E.FBD && E.FBD.on && E.FBD.on());
+  const edArea = () => (fbdOn() ? E.FBD.html() : '<div class="ladwrap" id="ladwrap" tabindex="0"></div>');
+  const gbtns = tab => fbdOn() ? E.FBD.glyphs() : TABS[tab].map(m => `<button class="gbtn" data-mn="${m}" title="${esc(NAME(m))}"${editable() ? '' : ' disabled'}>${L.icon(m)}<span>${m === 'RUNG' ? 'Rung' : m === 'BR' ? 'Branch' : m === 'BRL' ? 'Level' : m}</span></button>`).join('');
+  const itabs = () => fbdOn() ? '' : Object.keys(TABS).map(t => `<span data-tab="${esc(t)}" class="${t === S.prefs.tab ? 'on' : ''}">${t}</span>`).join('');
   const tbtn = (id, n) => `<button class="ib" data-cmd="${id}" title="${esc(C[id].l + (C[id].k ? ' (' + C[id].k + ')' : ''))}"${can(id) ? '' : ' disabled'}>${ic(n || C[id].i)}</button>`;
 
   const tbtT = (id, t) => `<button class="tbt" data-cmd="${id}" title="${esc(C[id].l)}"${can(id) ? '' : ' disabled'}>${ic(C[id].i)}<span>${t}</span></button>`;
@@ -1096,7 +1101,7 @@
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
-          ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
+          ${descBarHTML()}${edArea()}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
   }
@@ -1115,7 +1120,7 @@
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
           ${port && S.view === 'ladder' ? `<div class="ibar top"><div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div></div>` : ''}
-          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>
+          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `${descBarHTML()}${edArea()}
           ${selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}</div>
           ${S.prefs.emu && dockSide(port) === 'bottom' ? dockHTML('bottom') : ''}
           ${port ? msgPane() : `<div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div>`}</section>
@@ -1130,6 +1135,7 @@
   }
   const errHandle = () => { const n = S.verify ? S.verify.errors.length : 0; return `<span class="errh${n ? '' : ' ok'}" data-errh="1">${ic(n ? 'warn' : 'check')}<b>${n}</b> Errors${ic('down')}</span>`; };
   function selbarHTML(e) {
+    if (fbdOn()) return E.FBD.selbar();
     const ri = curSelRung();
     const tag = e && e.a && e.a[0] ? tagFor(e.a[0]) : null;
     return `<div class="selbar">${e ? `<span class="mn">${esc(e.t)}</span><span class="op ell" style="max-width:40%">${esc(e.a.join(', '))}</span>` : `<span class="muted">${ri == null ? 'Tap a rung or an instruction' : 'Rung ' + ri}</span>`}
@@ -1146,7 +1152,7 @@
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
       if (emuTab) { body = tabs + dockHTML('full'); }
       else body = tabs + `<div class="pbar"><span class="rt grow" data-routines="1"><span class="tt">${esc(curRoutine().name)}<small>${esc(curProg().name)}</small></span>${ic('down')}</span>${tbtn('undo')}${tbtn('find')}<button class="ib" data-more="ladder">${ic('more')}</button></div>
-        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div><button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button></div>${selbarHTML(curEl())}`;
+        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">${descBarHTML()}${edArea()}<button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button></div>${selbarHTML(curEl())}`;
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
@@ -1188,7 +1194,7 @@
     const add = (key, lvl, txt, icon, o, kids) => { const n = N(key, lvl, txt, icon, { ...o, kids }); h += n.html; if (kids && n.open) kids(); };
     const progNode = (g, lvl) => add('prog:' + g.name, lvl, g.name, 'prog', {}, () => {
       add('ptags:' + g.name, lvl + 1, 'Program Tags', 'tag');
-      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, lvl + 1, r.name + (r.name === g.main ? '' : ''), 'ladder', { on: g.name === S.prog && r.name === S.routine,
+      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, lvl + 1, r.name + (r.name === g.main ? '' : ''), r.type === 'FBD' ? 'fbd' : 'ladder', { on: g.name === S.prog && r.name === S.routine,
         f: S.verify && S.verify.errors.some(e => e.program === g.name && e.routine === r.name) ? '⊗' : '' }));
     });
     add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => {
@@ -4631,7 +4637,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'New Routine', size: 'md', focus: true,
       body: `<div class="frow"><label>Name</label><input class="inp" id="p1" value="${esc(n)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="nr-d" rows="2"></textarea></div>
-        <div class="frow"><label>Type</label><select class="inp" disabled><option>Ladder Diagram</option></select></div>
+        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option>${E.FBD ? '<option value="FBD">Function Block Diagram</option>' : ''}</select></div>
         <div class="frow"><label>In Program</label><select class="inp" disabled><option>${esc(g.name)}</option></select></div>
         <div class="frow"><label>Assignment</label><select class="inp" id="nr-a"><option value=""${g.main ? ' selected' : ''}>&lt;none&gt;</option><option value="main"${g.main ? '' : ' selected'}>Main</option><option value="fault">Fault</option></select></div>
         <p class="help">Call a routine from the main routine with JSR. A Fault routine runs when an instruction of this program faults; it clears the fault by setting Type and Code of the program's MajorFaultRecord to 0.</p><div class="errtx" id="p1e"></div>`,
@@ -4639,7 +4645,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         const v = el.querySelector('#p1').value.trim(), d = el.querySelector('#nr-d').value.trim(), as = el.querySelector('#nr-a').value, er = t => { el.querySelector('#p1e').textContent = t; return false; };
         if (!E.validName(v)) return er('Use letters, digits and _ (up to 40).');
         if (g.routines.some(r => U(r.name) === U(v))) return er('A routine with that name exists.');
-        edit(() => { const r = { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
+        const ty = el.querySelector('#nr-t').value;
+        edit(() => { const r = ty === 'FBD' ? { name: v, ...E.FBD.blank() } : { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
       } }] });
   }
   /* New Program in the Controller Fault Handler or Power-Up Handler folder (1756-PM014; help: the handler program cannot
@@ -4918,7 +4925,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'Routine Properties - ' + r.name, size: 'md',
       body: `<div class="frow"><label>Name</label><input class="inp" id="rp-n" value="${esc(r.name)}"${dis}></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="rp-d" rows="3"${dis}>${esc(r.desc || '')}</textarea></div>
-        ${kv('Type', 'Ladder Diagram')}${kv('In program', esc(g.name))}${kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
+        ${kv('Type', r.type === 'FBD' ? 'Function Block Diagram' : 'Ladder Diagram')}${kv('In program', esc(g.name))}${r.type === 'FBD' ? kv('Number of sheets', (r.sheets || []).length) : kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!editable()) return;
         const n = el.querySelector('#rp-n').value.trim(), d = el.querySelector('#rp-d').value.trim();
@@ -7051,6 +7058,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   let lastFault = null;
   function live(force) {
+    if (E.FBD && E.FBD.live) E.FBD.live(force);
     const s = liveSig();
     if (!force && s === sig) return;
     sig = s;
@@ -7421,6 +7429,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
+    if (!ctrl && !ev.altKey && E.FBD && E.FBD.key && E.FBD.key(ev)) return;
     if (ev.key === 'Escape' && S.descEd) { ev.preventDefault(); closeDescBar(false); return; }
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
@@ -7480,5 +7489,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
+  // the FBD editor (fbd.js) works through these helpers of the app
+  if (E.FBD && E.FBD.init) E.FBD.init({ S, IC, ctl: () => ctl, curProg, curRoutine, edit, render, toast, dialog, openMenu, closeLayer, prompt1, confirm: confirmDlg, candidates, editable, ic });
   start();
 })();
