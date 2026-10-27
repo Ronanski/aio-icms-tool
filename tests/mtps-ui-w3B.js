@@ -305,7 +305,7 @@ module.exports = async function w3B({ browser, page, URL, check }) {
         }
         await pg.waitForTimeout(250);
         if (ops.length) {
-          if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
+          if (await pg.$('#inl')) { await pg.keyboard.press('Escape'); await pg.evaluate(() => MTPS.App.run('edit')); await pg.waitForTimeout(150); } if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
           await tp('#layer [data-op="0"]'); await pg.waitForTimeout(120);
           if (mn === 'EVENT' && lay.n === 'desktop') {
             const sug = await pg.$$eval('#sg [data-pick]', x => x.map(y => y.textContent).join('|')).catch(() => '');

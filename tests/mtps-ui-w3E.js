@@ -29,6 +29,7 @@ module.exports = async function w3E({ browser, page, URL, check }) {
     await pg.fill('#layer #pq', mn); await pg.waitForTimeout(60);
     if (touch) await pg.tap(`#layer [data-pk="${mn}"]`); else await pg.click(`#layer [data-pk="${mn}"]`);
     await pg.waitForTimeout(200);
+    if (await pg.$('#inl')) { await pg.keyboard.press('Escape'); await pg.evaluate(() => MTPS.App.run('edit')); await pg.waitForTimeout(150); } 
     for (let i = 0; i < ops.length; i++) { const f = `#layer [data-op="${i}"]`; if (touch) await pg.tap(f); else await pg.click(f); await pg.fill(f, ops[i]); }
     if (touch) await pg.tap('#layer .df .btn.pri'); else await pg.click('#layer .df .btn.pri');
     await pg.waitForTimeout(200);
@@ -65,7 +66,7 @@ module.exports = async function w3E({ browser, page, URL, check }) {
     check('in Run: CONCAT gives Hello World, FIND 6, STOD -250', (await strText(page, 'Txt_D')) === 'Hello World' && (await ev(() => MTPS.App.racks[0].controller(0).read('Pos'))) === 6 && (await ev(() => MTPS.App.racks[0].controller(0).read('Wt'))) === -250);
     // the operand box offers only string tags for a string operand
     await ev(() => { const S = MTPS.App.state; S.sel = null; MTPS.App.render(); MTPS.App.run('ins'); }); await wait(150);
-    await page.fill('#layer #pq', 'UPPER'); await wait(60); await page.click('#layer [data-pk="UPPER"]'); await wait(200);
+    await page.fill('#layer #pq', 'UPPER'); await wait(60); await page.click('#layer [data-pk="UPPER"]'); await wait(200); if (await page.$('#inl')) { await page.keyboard.press('Escape'); await page.evaluate(() => MTPS.App.run('edit')); await page.waitForTimeout(150); } 
     await page.click('#layer [data-op="0"]'); await page.fill('#layer [data-op="0"]', ''); await wait(80);
     const offered = await page.$$eval('#layer #sg .row[data-pick]', x => x.map(y => y.dataset.pick));
     check('the operand box offers the string tags (and no DINT) for Source', offered.includes('Txt_A') && !offered.includes('Pos'), offered.join(','));

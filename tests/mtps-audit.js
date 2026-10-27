@@ -87,7 +87,7 @@ const MNS = Object.keys(PLAN);
         await page.waitForTimeout(250);
         const plan = PLAN[mn];
         if (plan.length) {
-          if (!(await page.$('#layer [data-op="0"]'))) { r.notes.push('operand box did not open'); continue; }
+          if (await page.$('#inl')) { await page.keyboard.press('Escape'); await page.evaluate(() => MTPS.App.run('edit')); await page.waitForTimeout(150); } if (!(await page.$('#layer [data-op="0"]'))) { r.notes.push('operand box did not open'); continue; }
           for (let i = 0; i < plan.length; i++) {
             const f = `#layer [data-op="${i}"]`;
             if (!(await page.$(f))) { r.notes.push(`no field for operand ${i}`); break; }

@@ -34,15 +34,15 @@ module.exports = async function sealin({ browser, URL, check }) {
   // a tile, then the name typed in the operand box, then New "name" as an alias of an I/O point picked in the browser
   const ins = async (tile, name, alias) => {
     await tap(T(tile));
-    await pg.fill('#layer .dlg input >> nth=1', name); await wait(200);
+    if (await pg.$('#layer .dlg')) throw new Error(`${tile}: a window opened on add (the reference has none)`);
+    await pg.keyboard.type(name); await wait(200);
     if (alias) {
-      await tap(`#layer :text("New \\"${name}\\"")`);
+      await tap(`[data-inew="${name}"]`);
       await pg.selectOption('#layer #tk', 'alias'); await wait(200);
       const x = alias.split('.Data.')[0];
       await tap(`#layer #asg [data-abx="${x}"]`); await tap(`#layer #asg [data-abb="${x}.Data"]`); await tap(`#layer #asg [data-abp="${alias}"]`);
       await tap('#layer .dlg .df .btn >> nth=-1');
-    }
-    if (/Rung \d+ ·/.test(await layer())) await tap('#layer .btn.pri');
+    } else { await pg.keyboard.press('Enter'); await wait(200); }
   };
 
   await pg.goto(URL); await pg.evaluate(() => localStorage.clear()); await pg.reload(); await wait(800);
@@ -71,7 +71,7 @@ module.exports = async function sealin({ browser, URL, check }) {
     return [...document.querySelectorAll('#ladwrap svg .dty')].every(d => { const r = d.getBoundingClientRect(); return !al.some(a => r.left < a.right && r.right > a.left && r.top < a.bottom && r.bottom > a.top); });
   }));
   await hit('0'); await tap(T('Branch'));
-  await hit('0.1'); await tap(T('Examine If Closed')); await tap('#layer :text-is("Motor")'); await tap('#layer .btn.pri');
+  await hit('0.1'); await tap(T('Examine If Closed')); await tap('#layer :text-is("Motor")'); await wait(200);
   check('tablet: the seal-in branch: Motor in parallel with Start_PB', (await rung()) === '[XIC(Start_PB),XIC(Motor)]XIC(Stop_PB)OTE(Motor);', await rung());
   await tap('button:has-text("Verify")'); await wait(300);
   check('tablet: Verify: 0 errors', /Complete - 0 error\(s\)/.test(await pg.evaluate(() => document.body.innerText)));
@@ -120,14 +120,17 @@ module.exports = async function sealin({ browser, URL, check }) {
   // a timer, a counter, latch and unlatch, made by touch on new rungs, then run
   const ins2 = async (tile, vals, mk) => {
     await tap(T(tile));
-    for (let i = 0; i < vals.length; i++) { await pg.fill(`#layer .dlg input >> nth=${i + 1}`, String(vals[i])); await wait(120); }
-    if (mk) { await pg.locator('#layer .dlg input >> nth=1').focus(); await wait(200); await tap(`#layer :text("New \\"${vals[0]}\\"")`); await tap('#layer .dlg .df .btn >> nth=-1'); }
-    if (/Rung \d+ ·/.test(await layer())) await tap('#layer .btn.pri');
+    for (let i = 0; i < vals.length; i++) {
+      await pg.keyboard.type(String(vals[i])); await wait(150);
+      if (!i && mk) { await tap(`[data-inew="${vals[0]}"]`); await tap('#layer .dlg .df .btn >> nth=-1'); await wait(250); }
+      else { await pg.keyboard.press('Enter'); await wait(200); }
+    }
+    if (await pg.$('#inl')) { await pg.keyboard.press('Escape'); await wait(150); }
   };
   const rungs = () => pg.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.map(r => r.t).join(' / '));
-  await tap(T('Rung')); await ins('Examine If Closed', 'Start_PB'); await ins2('Timer On Delay', ['T1', '2000', '0'], true);
+  await tap(T('Rung')); await ins('Examine If Closed', 'Start_PB'); await ins2('Timer On Delay', ['T1', '2000'], true);
   await tap(T('Rung')); await ins('Examine If Closed', 'T1.DN'); await ins('Output Energize', 'Lamp', 'Local:2:O.Data.1');
-  await tap(T('Rung')); await ins('Examine If Closed', 'Start_PB'); await ins2('Count Up', ['C1', '3', '0'], true);
+  await tap(T('Rung')); await ins('Examine If Closed', 'Start_PB'); await ins2('Count Up', ['C1', '3'], true);
   await tap(T('Rung')); await ins('Examine If Closed', 'C1.DN'); await ins('Output Latch', 'Latched', 'Local:2:O.Data.2');
   await tap(T('Rung')); await ins('Examine If Closed', 'Reset_PB', 'Local:1:I.Data.2'); await ins('Output Unlatch', 'Latched');
   await tap(T('Rung')); await ins('Examine If Closed', 'Reset_PB'); await ins2('Reset', ['C1']);
@@ -158,7 +161,7 @@ module.exports = async function sealin({ browser, URL, check }) {
   // a "?" left on the rung: one tap on it edits the operand in place with the tag list (a double-click in the
   // reference); a tap on a row of the list sets it
   await tap(T('Rung')); await wait(200);
-  await tap(T('Examine If Closed')); await tap('#layer button:has-text("Cancel")');
+  await tap(T('Examine If Closed')); await pg.keyboard.press('Escape'); await wait(200);
   const ri = await pg.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.length - 1);
   const b = await pg.evaluate(ri => { const t = document.querySelector(`#ladwrap [data-ri="${ri}"][data-p="0"]:not([data-opi])`); t.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, ri);
   await pg.touchscreen.tap(b.x, b.y); await wait(400);
@@ -167,8 +170,8 @@ module.exports = async function sealin({ browser, URL, check }) {
   await tap('#layer :text-is("Start_PB")'); await wait(300);
   check('tablet: … the tag picked there is set on the instruction', await pg.evaluate(ri => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[ri].t === 'XIC(Start_PB);', ri));
   // the alias browser says what the input tag of an output module holds
-  await tap(T('Output Energize')); await pg.fill('#layer .dlg input >> nth=1', 'Horn'); await wait(200);
-  await tap('#layer :text("New \\"Horn\\"")'); await pg.selectOption('#layer #tk', 'alias'); await wait(200);
+  await tap(T('Output Energize')); await pg.keyboard.type('Horn'); await wait(200);
+  await tap('[data-inew="Horn"]'); await pg.selectOption('#layer #tk', 'alias'); await wait(200);
   check('tablet: the tag browser marks Local:2:I of the output module as status and output echo, Local:2:O as the outputs', /Local:2:I[^\n]*status: Fault and output echo/.test(await layer()) && /Local:2:O[^\n]*outputs \(the program writes these\)/.test(await layer()));
   await shot('alias-browser');
   check('tablet: no JS errors (seal-in by touch)', !errs.length, errs.join(' | '));
