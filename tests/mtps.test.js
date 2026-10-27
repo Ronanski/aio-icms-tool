@@ -1497,5 +1497,175 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
+console.log('FBD / ST timers and counter: TONR, TOFR, RTOR, CTUD (1756-RM018A chapter 3)');
+{
+  const F = MTPS.FBDI, c = { clock: 0 };
+  const tm = o => Object.assign({ EnableIn: 1, TimerEnable: 0, PRE: 0, Reset: 0, EnableOut: 0, ACC: 0, EN: 0, TT: 0, DN: 0, Status: 0 }, o);
+  const go = (f, s, n, dt = 10) => { for (let k = 0; k < n; k++) { c.clock += dt; f(c, s); } };
+  const a = tm({ PRE: 50, TimerEnable: 1 });
+  go(F.TONR, a, 1);
+  eq('TONR: first enabled scan sets EN and TT, ACC 0', [a.EN, a.TT, a.DN, a.ACC, a.EnableOut], [1, 1, 0, 0, 1]);
+  go(F.TONR, a, 3);
+  eq('… ACC = ACC + (current time - last time scanned)', a.ACC, 30);
+  go(F.TONR, a, 4);
+  eq('… DN when ACC reaches PRE, TT cleared, ACC stays at PRE', [a.DN, a.TT, a.ACC], [1, 0, 50]);
+  a.TimerEnable = 0; go(F.TONR, a, 1);
+  eq('TONR is not retentive: TimerEnable cleared resets ACC, EN, TT, DN', [a.EN, a.TT, a.DN, a.ACC], [0, 0, 0, 0]);
+  a.TimerEnable = 1; go(F.TONR, a, 3); a.Reset = 1; go(F.TONR, a, 2);
+  eq('Reset clears EN, TT, DN and ACC while TimerEnable stays set', [a.EN, a.TT, a.DN, a.ACC], [0, 0, 0, 0]);
+  a.Reset = 0; go(F.TONR, a, 2);
+  eq('… and the timer starts again when Reset clears', [a.EN, a.ACC], [1, 10]);
+  const sk = tm({ PRE: 1000, TimerEnable: 1 }); go(F.TONR, sk, 1); c.clock += 300; F.TONR(c, sk);
+  eq('a timer not scanned for 300 ms gets the whole time on its next scan', sk.ACC, 300);
+  const bad = tm({ PRE: -1, TimerEnable: 1 }); go(F.TONR, bad, 2);
+  eq('a negative PRE sets Status.PresetInv and .InstructFault; the timer does not run', [bad.Status & 3, bad.EN, bad.ACC], [3, 0, 0]);
+  const r = tm({ PRE: 100, TimerEnable: 1 }); go(F.RTOR, r, 4);
+  r.TimerEnable = 0; go(F.RTOR, r, 3);
+  eq('RTOR keeps ACC while TimerEnable is cleared (EN and TT cleared)', [r.ACC, r.EN, r.TT], [30, 0, 0]);
+  r.TimerEnable = 1; go(F.RTOR, r, 8);
+  eq('… and goes on from there to DN', [r.ACC, r.DN], [100, 1]);
+  r.TimerEnable = 0; go(F.RTOR, r, 1); r.Reset = 1; go(F.RTOR, r, 1);
+  eq('… DN stays while disabled; only Reset clears ACC', [r.ACC, r.DN], [0, 0]);
+  const f = tm({ PRE: 40, TimerEnable: 1 }); go(F.TOFR, f, 1);
+  eq('TOFR: TimerEnable set gives EN and DN, ACC 0', [f.EN, f.DN, f.TT, f.ACC], [1, 1, 0, 0]);
+  f.TimerEnable = 0; go(F.TOFR, f, 2);
+  eq('… cleared: TT while it times the off delay, DN still set', [f.EN, f.TT, f.DN, f.ACC], [0, 1, 1, 10]);
+  go(F.TOFR, f, 4);
+  eq('… DN and TT cleared when ACC reaches PRE', [f.TT, f.DN, f.ACC], [0, 0, 40]);
+  f.TimerEnable = 1; go(F.TOFR, f, 1); f.Reset = 1; go(F.TOFR, f, 1);
+  eq('TOFR Reset: EN, TT, DN cleared and ACC = PRE (not as RES of a TOF)', [f.EN, f.TT, f.DN, f.ACC], [0, 0, 0, 40]);
+  f.Reset = 0; f.TimerEnable = 0; go(F.TOFR, f, 3);
+  check('… with TimerEnable cleared it does not time again after Reset', f.TT === 0 && f.DN === 0);
+  const k = { EnableIn: 1, CUEnable: 0, CDEnable: 0, PRE: 2, Reset: 0, EnableOut: 0, ACC: 0, CU: 0, CD: 0, DN: 0, OV: 0, UN: 0 };
+  MTPS.fbdPrescan('CTUD', k);
+  k.CUEnable = 1; F.CTUD(c, k);
+  eq('CTUD after prescan: a CUEnable already set does not count (a 0-to-1 change is needed)', k.ACC, 0);
+  k.CUEnable = 0; F.CTUD(c, k); k.CUEnable = 1; F.CTUD(c, k); F.CTUD(c, k);
+  eq('… CUEnable cleared to set counts up once, CU follows CUEnable', [k.ACC, k.CU], [1, 1]);
+  k.CUEnable = 0; F.CTUD(c, k); k.CUEnable = 1; F.CTUD(c, k);
+  eq('… DN when ACC >= PRE', [k.ACC, k.DN], [2, 1]);
+  k.CUEnable = 0; k.CDEnable = 1; F.CTUD(c, k);
+  eq('CDEnable cleared to set counts down', [k.ACC, k.CD, k.DN], [1, 1, 0]);
+  k.CUEnable = 1; k.CDEnable = 0; F.CTUD(c, k); k.CUEnable = 0; F.CTUD(c, k); k.CUEnable = 1; k.CDEnable = 1; F.CTUD(c, k);
+  eq('both toggled in one scan: up, then down', k.ACC, 2);
+  k.ACC = 2147483647; k.CUEnable = 0; k.CDEnable = 0; F.CTUD(c, k); k.CUEnable = 1; F.CTUD(c, k);
+  eq('past 2,147,483,647: rolls over to -2,147,483,648 with OV', [k.ACC, k.OV], [-2147483648, 1]);
+  k.CDEnable = 0; F.CTUD(c, k); k.CDEnable = 1; F.CTUD(c, k);
+  eq('… and below -2,147,483,648 back to 2,147,483,647 with UN', [k.ACC, k.UN], [2147483647, 1]);
+  k.Reset = 1; F.CTUD(c, k);
+  eq('Reset clears CU, CD, DN, OV, UN and ACC', [k.ACC, k.CU, k.CD, k.DN, k.OV, k.UN], [0, 0, 0, 0, 0, 0]);
+  k.Reset = 0; F.CTUD(c, k);
+  eq('… and the last CUEnable / CDEnable: a set input counts on the next scan', k.ACC, 0);
+  // the data types
+  const ft = run({ tags: [T('Tm', 'FBD_TIMER'), T('Ct', 'FBD_COUNTER')], rungs: ['NOP();'] });
+  eq('FBD_TIMER / FBD_COUNTER tags: EnableIn starts set, the rest 0', [ft.read('Tm.EnableIn'), ft.read('Tm.PRE'), ft.read('Ct.EnableIn'), ft.read('Ct.ACC')], [1, 0, 1, 0]);
+  ft.write('Tm.Status', 2);
+  eq('.PresetInv is bit 1 of .Status, .InstructFault bit 0', [ft.read('Tm.PresetInv'), ft.read('Tm.InstructFault')], [1, 0]);
+  check('FBD_TIMER and FBD_COUNTER are predefined data types', MTPS.dataTypes(proj()).predefined.includes('FBD_TIMER') && MTPS.dataTypes(proj()).predefined.includes('FBD_COUNTER'));
+  check('TONR, TOFR, RTOR and CTUD are not ladder instructions', !['TONR', 'TOFR', 'RTOR', 'CTUD'].some(m => MTPS.INSTR[m]) && MTPS.verify(proj({ tags: [T('Tm', 'FBD_TIMER')], rungs: ['TONR(Tm);'] })).errors.length === 1);
+}
+
+console.log('Structured Text routines (1756-PM007L): language, verify and execution');
+{
+  require('../mtps/js/st.js');
+  const stp = (st, o = {}) => { const q = proj(o); const g = q.tasks[0].programs[0]; g.routines[0] = { name: 'MainRoutine', type: 'ST', st, rungs: [] }; (o.more || []).forEach(r => g.routines.push(r)); if (o.wd) q.tasks[0].watchdog = o.wd; return q; };
+  const D = n => T(n, 'DINT'), B = n => T(n, 'BOOL'), Rl = n => T(n, 'REAL');
+  const strun = (st, o) => { const c = new MTPS.Controller(), r = c.download(stp(st, o)); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const tags = [D('A'), D('Bv'), D('Cv'), D('I'), D('J'), D('K'), D('N'), Rl('R'), Rl('R2'), B('X'), B('Y'), B('Z'), T('Arr', 'DINT', { dim: 10 }), T('Tm', 'FBD_TIMER'), T('Ct', 'FBD_COUNTER'), T('S1', 'STRING'), T('S2', 'STRING')];
+  const v0 = MTPS.verify(stp('A := 1;', { tags }));
+  check('an ST routine (type ST) verifies', v0.errors.length === 0 && v0.lines[0] === "Verifying routine 'MainRoutine' of program 'MainProgram'...");
+  const ve = MTPS.verify(stp('A := 1;\nIF X THEN\n  Bv := Nope + 1;\nEND_IF;', { tags }));
+  eq('an error names the line and column: Error: Line n, Column m: …', ve.errors.map(e => e.text), ["Error: Line 3, Column 9: Undefined tag 'Nope'."]);
+  eq('… and is kept with its line for the editor', [ve.errors[0].line, ve.errors[0].col, ve.errors[0].routine], [3, 9, 'MainRoutine']);
+  const vm = MTPS.verify(stp('A := 1\nBv := 2;', { tags }));
+  eq("a missing ';' is reported after the token before it, and the next line still verifies", vm.errors.map(e => e.text), ["Error: Line 1, Column 7: ';' expected."]);
+  const errs = st => MTPS.verify(stp(st, { tags })).errors.map(e => e.msg);
+  eq('ladder-only instructions are not available in ST, with what to use instead', errs('ADD(A,Bv,Cv);\nTON(Tm,0,0);'), ['ADD is not available in structured text: use the + operator.', 'TON is not available in structured text: use TONR.']);
+  eq('an instruction cannot be used in an expression; a function cannot be a statement', errs('A := TONR(Tm);\nABS(A);'), ['TONR is an instruction: an instruction is a statement of its own, it cannot be used in an expression.', 'ABS is a function: use it in an expression, e.g. Result := ABS(Value);.']);
+  eq("'=' is not an assignment; EXIT only in a loop; IF needs a BOOL expression; END_IF is required", errs('A = 1;\nEXIT;\nIF A THEN Bv := 1; END_IF;\nIF X THEN Bv := 2;'), ["Use := to assign a value ('=' compares).", 'EXIT can be used only in a FOR, WHILE or REPEAT loop.', 'A BOOL expression is expected (a BOOL tag, a comparison or a logical operation).', 'END_IF is missing for this IF.']);
+  eq('type checks: a string into a number, a structure assigned, a REAL subscript, a REAL FOR count', errs("A := 'x';\nTm := 1;\nArr[R] := 1;\nFOR R := 1 TO 2 DO END_FOR;"), ['A string cannot be assigned to a number.', "'Tm' is a structure: assign a BOOL, SINT, INT, DINT, REAL or string tag (or a member or element).", 'Array subscript must be an integer expression.', 'The FOR count must be a SINT, INT or DINT tag.']);
+  eq('TONR needs an FBD_TIMER, CTUD an FBD_COUNTER', errs('TONR(A);\nCTUD(Tm);'), ['TONR needs a FBD_TIMER tag.', 'CTUD needs a FBD_COUNTER tag.']);
+  check('a routine with an error is not downloaded', !new MTPS.Controller().download(stp('A := ;', { tags })).ok);
+  check('GOTO is reserved, an unclosed comment is an error', errs('GOTO x;').length === 1 && /comment is not closed/.test(errs('A := 1; (* open')[0]));
+  // expressions and the order of execution
+  const ex = strun(`A := 2 + 3 * 4;      // 14
+Bv := (2 + 3) * 4;    (* 20 *)
+Cv := -2 ** 2;        /* ** before negate: -4 */
+I := 7 / 2; J := -7 MOD 3; K := 16#0F AND 2#1010;
+R := 7 / 2.0; R2 := SQRT(16) + ABS(-1.5) + TRUNC(2.7) + DEG(RAD(90));
+X := NOT Y AND 1 < 2 OR 3 >= 4;
+Z := 5 > 3 & 2 <> 2 XOR Tru;`, { tags: tags.concat([B('Tru')]) });
+  ex.write('Tru', 1); ex.scan(10);
+  eq('* before +, parentheses, ** before negate, comments', [ex.read('A'), ex.read('Bv'), ex.read('Cv')], [14, 20, -4]);
+  eq('integer / truncates, MOD keeps the sign of the dividend, AND of integers is bitwise', [ex.read('I'), ex.read('J'), ex.read('K')], [3, -1, 10]);
+  eq('a REAL operand gives a REAL; SQRT ABS TRUNC DEG RAD', [ex.read('R'), ex.read('R2')], [3.5, 97.5]);
+  eq('NOT before AND before OR; & is AND; relational before logical; XOR', [ex.read('X'), ex.read('Z')], [1, 1]);
+  const tr = strun('R := SIN(0.5) + COS(0.5) + TAN(0.5) + ASIN(0.5) + ACOS(0.5) + ATAN(0.5) + LN(2.0) + LOG(100.0);', { tags });
+  tr.scan(10);
+  check('SIN COS TAN ASIN ACOS ATAN LN LOG', Math.abs(tr.read('R') - Math.fround(Math.sin(.5) + Math.cos(.5) + Math.tan(.5) + Math.asin(.5) + Math.acos(.5) + Math.atan(.5) + Math.log(2) + 2)) < 1e-5);
+  const dz = strun('A := 5 / Bv;', { tags });
+  dz.scan(10);
+  check('integer divide by 0: 0 and S:V (a minor fault)', dz.read('A') === 0 && dz.minors.length === 1);
+  // constructs
+  const ct = strun(`IF A > 10 THEN Bv := 1; ELSIF A > 5 THEN Bv := 2; ELSIF A > 0 THEN Bv := 3; ELSE Bv := 4; END_IF;
+CASE A OF
+  1: Cv := 10;
+  2, 3: Cv := 20;
+  4..6, 8: Cv := 30;
+  -3..-1: Cv := 40;
+ELSE Cv := 99;
+END_CASE;`, { tags });
+  const ifc = v => { ct.write('A', v); ct.scan(10); return [ct.read('Bv'), ct.read('Cv')]; };
+  eq('IF / ELSIF / ELSE: the first true branch; CASE: values, lists, ranges, negative ranges, ELSE', [ifc(11), ifc(6), ifc(1), ifc(0), ifc(3), ifc(5), ifc(8), ifc(-2), ifc(7)], [[1, 99], [2, 30], [3, 10], [4, 99], [3, 20], [3, 30], [2, 30], [4, 40], [2, 99]]);
+  const lp = strun(`N := 0;
+FOR I := 0 TO 9 DO Arr[I] := I * I; END_FOR;
+FOR J := 10 TO 1 BY -3 DO N := N + J; END_FOR;
+FOR K := 0 TO 100 DO IF K = 4 THEN EXIT; END_IF; END_FOR;
+A := 0; WHILE A < 50 DO A := A + 7; END_WHILE;
+Bv := 100; REPEAT Bv := Bv + 1; UNTIL Bv > 0 END_REPEAT;
+Cv := 0; WHILE Cv < 1 DO Cv := Cv + 1; END_WHILE;`, { tags });
+  lp.scan(10);
+  eq('FOR … TO … DO (count left one past the final value), BY a negative step, EXIT', [lp.read('Arr'), lp.read('I'), lp.read('N'), lp.read('K')], [[0, 1, 4, 9, 16, 25, 36, 49, 64, 81], 10, 10 + 7 + 4 + 1, 4]);
+  eq('WHILE tests first, REPEAT runs at least once', [lp.read('A'), lp.read('Bv'), lp.read('Cv')], [56, 101, 1]);
+  const sub = strun('Arr[I + 1] := 5; Arr[Arr[1]] := 6;', { tags });
+  sub.write('I', 2); sub.write('Arr[1]', 7); sub.scan(10);
+  eq('subscripts are expressions', [sub.read('Arr[3]'), sub.read('Arr[7]')], [5, 6]);
+  sub.write('I', 9); sub.scan(10);
+  check('a subscript out of range at run time: major fault 4/20', !!sub.fault && sub.fault.type === 4 && sub.fault.code === 20);
+  const wd = strun('WHILE 1 = 1 DO A := A + 1; END_WHILE;', { tags, wd: 20 });
+  wd.scan(10);
+  check('a loop that runs past the task watchdog: major fault 6/1', !!wd.fault && wd.fault.type === 6 && wd.fault.code === 1);
+  // non-retentive assignment and prescan
+  const nr = strun('IF X THEN Y [:=] 1; A [:=] 5; Bv := 7; END_IF;', { tags });
+  nr.write('X', 1); nr.scan(10); nr.write('X', 0); nr.setMode('remprog'); nr.setMode('remrun');
+  eq('[:=] tags are cleared when the controller enters Run; := tags keep their value', [nr.read('Y'), nr.read('A'), nr.read('Bv')], [0, 0, 7]);
+  // instructions in ST
+  const fb = strun('Tm.PRE := 50; Tm.TimerEnable := X; TONR(Tm);\nCt.CUEnable := Y; Ct.PRE := 2; CTUD(Ct);', { tags });
+  fb.write('X', 1); scans(fb, 7);
+  eq('TONR called from ST each scan: ACC, DN; EnableIn and EnableOut set', [fb.read('Tm.ACC'), fb.read('Tm.DN'), fb.read('Tm.EnableIn'), fb.read('Tm.EnableOut')], [50, 1, 1, 1]);
+  [1, 0, 1, 0, 1].forEach(v => { fb.write('Y', v); fb.scan(10); });
+  eq('CTUD from ST counts the clear-to-set changes of CUEnable', [fb.read('Ct.ACC'), fb.read('Ct.DN')], [3, 1]);
+  fb.setMode('remprog'); fb.setMode('remrun');
+  eq('prescan of the ST routine: TONR EN, TT, DN and ACC cleared', [fb.read('Tm.ACC'), fb.read('Tm.DN'), fb.read('Tm.EN')], [0, 0, 0]);
+  const js = strun('A := A + 1; JSR(Sub); IF A > 2 THEN RET(); END_IF; Bv := Bv + 1;', { tags, more: [{ name: 'Sub', rungs: [{ t: 'ADD(Cv,1,Cv);' }] }] });
+  scans(js, 4);
+  eq('JSR from ST to a ladder routine; RET() leaves the routine', [js.read('A'), js.read('Cv'), js.read('Bv')], [4, 4, 2]);
+  const q2 = proj({ tags, rungs: ['XIC(X)JSR(StSub,0);'] });
+  q2.tasks[0].programs[0].routines.push({ name: 'StSub', type: 'ST', st: 'N := N + 10; SIZE(Arr, 0, K); COP(Arr[0], Arr[5], 2); SWPB(16#11223344, REVERSE, J);', rungs: [] });
+  const c2 = new MTPS.Controller(); check('a ladder JSR to an ST routine verifies', c2.download(q2).ok);
+  c2.setMode('remrun'); c2.write('Arr[0]', 3); c2.write('Arr[1]', 4); c2.write('X', 1); scans(c2, 2);
+  eq('… and runs it; SIZE, COP and SWPB in ST', [c2.read('N'), c2.read('K'), c2.read('Arr[5]'), c2.read('Arr[6]'), c2.read('J')], [20, 10, 3, 4, 0x44332211]);
+  const sg = strun("S1 := 'Pump $'A$' on$N'; S2 := S1; X := S1 = S2; Y := S1 < 'Q'; S2.DATA[0] := 66;", { tags });
+  sg.scan(10);
+  eq("strings: a literal with $' and $N, string := string, = and < compare", [sg.read('S1.LEN'), sg.read('S1.DATA[5]'), sg.read('S1.DATA[11]'), sg.read('X'), sg.read('Y'), sg.read('S2.DATA[0]')], [12, 39, 10, 1, 1, 66]);
+  check('not case sensitive (keywords, tags)', MTPS.verify(stp('if x then a := abs(-1); end_if;', { tags })).errors.length === 0);
+  const pt = MTPS.ST.paths('Arr[I + 1].0 := Tm.ACC; // A\nTONR(Tm);');
+  eq('the tags of the text, for the monitor', pt.map(x => x.text), ['Arr[I+1].0', 'Tm.ACC', 'Tm']);
+  const ed = strun('A := A + 1;', { tags });
+  scans(ed, 3);
+  const er = ed.edit(stp('A := A + 100;', { tags })); ed.scan(10);
+  check('an online edit of an ST routine (Accept Edits) runs the new text, the tags keep their values', er.ok && ed.read('A') === 103);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

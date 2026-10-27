@@ -152,7 +152,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def != null ? m.def : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.def: a start value (FBD EnableIn)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +160,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def != null && s[m.name] === undefined ? m.def : conform(types, m.type, m.dim, s[m.name]);
     return o;
   }
 
@@ -790,7 +790,7 @@
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
-        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map() });
+        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null });
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
@@ -824,6 +824,17 @@
         out.lines.push(text);
       };
       const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      // a Structured Text routine (st.js): errors and warnings name the line and column of the text
+      if (R.st != null) {
+        const say = (kind, ln, col, msg) => {
+          if (!want) return;
+          const text = `${kind}: Line ${ln}${col ? ', Column ' + col : ''}: ${dot(msg)}`;
+          (kind === 'Error' ? out.errors : out.warnings).push({ program: P.name, routine: R.name, line: ln, col, msg: dot(msg), text });
+          out.lines.push(text);
+        };
+        if (MTPS.ST) R.stc = MTPS.ST.compile(M, P, R, say); else say('Error', 1, 0, 'Structured Text is not available');
+        continue;
+      }
       R.src.forEach((src, n) => {
         const text = String(src && (src.t != null ? src.t : src.text) || '');
         const rung = { n, text, c: (src && src.c) || '', elems: [] };
@@ -1322,6 +1333,67 @@
     e.v = true; return true;
   };
 
+  /* ---------- FBD / ST timers and counter (RM018A chapter 3: TONR, TOFR, RTOR, CTUD; not in ladder) ----------
+     FBD_TIMER: inputs EnableIn (default set), TimerEnable, PRE (ms, 0 or more), Reset; outputs EnableOut, ACC, EN, TT,
+     DN, Status (.0 InstructFault, .1 PresetInv). FBD_COUNTER: EnableIn, CUEnable, CDEnable, PRE, Reset; EnableOut,
+     ACC, CU, CD, DN, OV, UN. A timer adds the time since it was last scanned (ACC = ACC + current_time - last_time);
+     the last time and the counter's CUEnable / CDEnable of the last scan are hidden, kept per structure here. */
+  PREDEF.FBD_TIMER = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, ...members('TimerEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT EN:BOOL TT:BOOL DN:BOOL Status:DINT'),
+    { name: 'InstructFault', type: 'BOOL', of: 'Status', bit: 0 }, { name: 'PresetInv', type: 'BOOL', of: 'Status', bit: 1 }];
+  PREDEF.FBD_COUNTER = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, ...members('CUEnable:BOOL CDEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL')];
+  const FBH = new WeakMap(), fbh = s => FBH.get(s) || (FBH.set(s, {}), FBH.get(s));
+  /* one execution with EnableIn set (ST always executes so): c is the controller (c.clock, the time in ms), s the
+     structure. A negative PRE sets PresetInv and InstructFault and the timer does not run. */
+  function fbdTimer(t, c, s) {
+    const h = fbh(s), now = c.clock;
+    s.EnableIn = 1; s.EnableOut = 1;
+    if (s.PRE < 0) { s.Status |= 3; return; }
+    s.Status &= ~3;
+    const step = () => { if (h.last != null) s.ACC = Math.min(s.PRE, s.ACC + Math.max(0, now - h.last)); h.last = now; };
+    if (t === 'TOFR') {
+      // Reset: EN, TT and DN cleared and ACC = PRE (not as a RES of a TOF); TimerEnable cleared starts the off delay
+      if (s.Reset) { s.EN = s.TT = s.DN = 0; s.ACC = s.PRE; h.last = null; return; }
+      if (s.TimerEnable) { s.EN = 1; s.DN = 1; s.TT = 0; s.ACC = 0; h.last = null; return; }
+      if (s.EN) { s.EN = 0; h.last = now; } else if (s.DN) step();
+      if (s.DN && s.ACC >= s.PRE) s.DN = 0;
+      s.TT = s.DN; return;
+    }
+    // TONR, RTOR: Reset clears EN, TT, DN and ACC; with TimerEnable still set the timer starts again when Reset clears
+    if (s.Reset) { s.EN = s.TT = s.DN = 0; s.ACC = 0; h.last = null; return; }
+    if (!s.TimerEnable) {
+      s.EN = 0; s.TT = 0; h.last = null;
+      if (t === 'TONR') { s.DN = 0; s.ACC = 0; } else s.DN = s.ACC >= s.PRE ? 1 : 0;   // RTOR keeps ACC
+      return;
+    }
+    if (!s.EN) { s.EN = 1; h.last = now; } else step();
+    s.DN = s.ACC >= s.PRE ? 1 : 0; s.TT = s.DN ? 0 : 1;
+  }
+  /* CTUD: a clear-to-set CUEnable counts up, then a clear-to-set CDEnable counts down (both in one scan is allowed);
+     past 2,147,483,647 ACC rolls over to -2,147,483,648 with OV set (UN the other way); DN while ACC >= PRE */
+  function fbdCounter(c, s) {
+    const h = fbh(s);
+    s.EnableIn = 1; s.EnableOut = 1;
+    if (h.cu == null) { h.cu = s.CUEnable; h.cd = s.CDEnable; }
+    if (s.Reset) { h.cu = h.cd = 0; s.CU = s.CD = s.DN = s.OV = s.UN = 0; s.ACC = 0; return; }
+    s.CU = s.CUEnable ? 1 : 0; s.CD = s.CDEnable ? 1 : 0;
+    if (s.CU && !h.cu) { if (s.ACC >= 2147483647) { s.ACC = -2147483648; s.OV = 1; } else s.ACC++; }
+    if (s.CD && !h.cd) { if (s.ACC <= -2147483648) { s.ACC = 2147483647; s.UN = 1; } else s.ACC--; }
+    h.cu = s.CU; h.cd = s.CD;
+    s.DN = s.ACC >= s.PRE ? 1 : 0;
+  }
+  /* prescan (and first scan): EnableIn and EnableOut cleared; TONR: EN, TT, DN and ACC cleared; TOFR, RTOR: EN, TT
+     and DN cleared, ACC kept; CTUD: a 0-to-1 change of CUEnable or CDEnable is needed before it counts */
+  function fbdPrescan(t, s) {
+    const h = fbh(s);
+    s.EnableIn = 0; s.EnableOut = 0;
+    if (t === 'CTUD') { h.cu = h.cd = 1; return; }
+    s.EN = s.TT = s.DN = 0; h.last = null;
+    if (t === 'TONR') s.ACC = 0;
+  }
+  const FBDI = { TONR: (c, s) => fbdTimer('TONR', c, s), TOFR: (c, s) => fbdTimer('TOFR', c, s), RTOR: (c, s) => fbdTimer('RTOR', c, s), CTUD: fbdCounter };
+  const FBDT = { TONR: 'FBD_TIMER', TOFR: 'FBD_TIMER', RTOR: 'FBD_TIMER', CTUD: 'FBD_COUNTER' };
+  const FBDN = { TONR: 'Timer On Delay with Reset', TOFR: 'Timer Off Delay with Reset', RTOR: 'Retentive Timer On with Reset', CTUD: 'Count Up/Down' };
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -1455,7 +1527,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
-      for (const P of this.M.programs) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
+      for (const P of this.M.programs) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.stc) R.stc.pre(this); }
     }
 
     /* ---------- project ---------- */
@@ -1617,6 +1689,7 @@
     /* a routine: rungs in order; JMP goes to its LBL rung, RET and TND end the routine. The MCR override (every rung
        false) is toggled by an MCR with rung-condition-in false, and is reset when the routine ends. */
     routine(R) {
+      if (R.stc) { R.stc.run(this); this.tnd = this.ret = false; return; }
       const rungs = R.rungs, mcr0 = this.mcr;
       let jumps = 0;
       this.mcr = false;
@@ -2282,8 +2355,10 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt, FBDI, FBDT, FBDN, fbdPrescan });
   MTPS.GSVOBJ = GSVOBJ;
+  // the parts the Structured Text compiler (st.js) builds on
+  MTPS._k = { ref, parseNumber, compileElem, Fault, Halt, isInt, isReal, isNum, ATOMIC, XPRE, INSTR, FBDI, FBDT, fbdPrescan };
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);
