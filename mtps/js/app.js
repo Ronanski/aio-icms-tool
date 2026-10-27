@@ -870,6 +870,7 @@
     vorg: { l: 'Controller Organizer', i: 'tree', run: () => { S.prefs.org = !S.prefs.org; S.drawer = !S.drawer; savePrefs(); render(); }, ck: () => S.prefs.org },
     verr: { l: 'Errors', i: 'warn', run: () => { if (S.layout === 'desktop') { S.prefs.err = !S.prefs.err; savePrefs(); } else S.errOpen = !S.errOpen; render(); }, ck: () => S.prefs.err },
     vio: { l: 'Emulator Panel', i: 'rack', run: () => { if (S.layout === 'phone' && innerWidth <= innerHeight) { S.area = 'ladder'; S.phoneEmu = !S.phoneEmu; } else { S.prefs.emu = !S.prefs.emu; savePrefs(); } render(); }, ck: () => S.prefs.emu },
+    vcols: { l: 'Toggle Column…', i: 'tags', run: () => colMenu($('#tagpage .tagtbl thead') || $('#tagpage'), null), on: () => !S.noProj && S.view === 'tags' && !!$('#tagpage .tagtbl') },
     zin: { l: 'Zoom In', i: 'zin', run: () => zoom(1.12) },
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
     options: { l: 'Options…', i: 'gear', run: options },
@@ -881,7 +882,7 @@
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
-    ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
+    ['View', ['vorg', 'verr', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
@@ -2382,9 +2383,9 @@
   const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
   // calls fn(entry, depth, kids, open) for each row shown: the tags, then the members of the open ones
   function tagWalk(scope, q, fn) {
-    const qq = U(q || ''), hit = (n, d) => !qq || U(n).includes(qq) || U(d || '').includes(qq);
-    const top = (scope ? [] : moduleTags().filter(x => hit(x.path)))
-      .concat(scopeTags(scope).filter(t => hit(t.name, t.desc)).map(t => ({ path: t.name, ty: typeOf(t), dim: t.dim || 0, t })));
+    const qq = U(q || ''), hit = (n, d) => tagHit(qq, n, d), sh = showFilter(scope);
+    const top = (scope ? [] : moduleTags().filter(x => hit(x.path) && sh(x)))
+      .concat(scopeTags(scope).filter(t => hit(t.name, t.desc)).map(t => ({ path: t.name, ty: typeOf(t), dim: t.dim || 0, t })).filter(sh));
     const go = (e, depth) => {
       const kids = tagKids(e.path, e.ty, e.dim), open = !!kids && S.tagOpen.has(scope + '|' + e.path);
       fn(e, depth, kids, open);
@@ -2421,7 +2422,7 @@
     return `<div style="padding:8px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:none;border-bottom:1px solid var(--border)">
         <span class="seg"><span data-tmode="mon" class="${S.tagMode === 'mon' ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${S.tagMode === 'edit' ? 'on' : ''}">Edit Tags</span></span>
         <select class="inp" id="tscope" style="width:auto;flex:1;min-width:140px"><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>Program: ${esc(g.name)}</option>`).join('')}</select>
-        <input class="inp" id="tq" placeholder="Filter" style="flex:1;min-width:120px" value="${esc(S.tagQ || '')}">${inline ? '' : `<button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button>`}</div>
+        ${tagShowBar()}<input class="inp" id="tq" placeholder="Filter" style="flex:1;min-width:120px" value="${esc(S.tagQ || '')}">${inline ? '' : `<button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button>`}</div>
       <div class="list" id="tagrows" style="flex:1">${tagRows(S.tagMode, sc, S.tagQ)}</div>
       <p class="help" style="padding:0 12px">${S.tagMode === 'mon' ? (S.online ? 'Online: tap a BOOL to toggle it, a number to type a value.' : 'Offline: values are the saved start values of the project.') : 'Tap a tag to change its properties.'}</p>`;
   }
@@ -2479,8 +2480,8 @@
   function tagWsHTML() {
     const sc = S.tagScope || '', mon = S.tagMode === 'mon';
     return `<div class="tagws" id="tagpage"><div class="tagbar"><label for="tscope">Scope:</label><select class="inp" id="tscope"><option value="">${esc(S.p.controller.name)} (controller)</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>${esc(g.name)} (program)</option>`).join('')}</select>
-        <input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
-      <div class="tagtbl"><table><thead><tr><th></th>${TCOLS[mon ? 'mon' : 'edit'].map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
+        ${tagShowBar()}<input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
+      ${tagColStyle(mon)}<div class="tagtbl"><table><thead><tr><th></th>${TCOLS[mon ? 'mon' : 'edit'].map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
       <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it. Type a name in the last row to add one.'}</span></div></div>`;
   }
   /* a click on a row of the tag editor: Edit Tags opens Tag Properties (or edits the Data Type / Description cell
@@ -3989,6 +3990,96 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members>${ms}</Members></DataType>`;
     }).join('\n')}\n</DataTypes>`;
   }
+  /* ---------- the Tag Editor command bar: Show and the filter; the columns ----------
+     v37 help, Tag Editor command bar settings: Scope; Show (All Tags, Configure… = the Define Tag Filter dialog,
+     Filter History = the five filters used last); the Filter icon (Filter On Name, Description or Both) and the box
+     beside it. Filter the tag list: Filter On (<all>, Unused, Produced, Consumed, Can Be Forced, Alias; the parameter
+     kinds are left out: this app has no program parameters) and Include Data Types, Clear Filter, OK. Filtering is
+     applied to the base tags only. Hide and Show Columns: right-click a column name, Hide Column or Toggle Column, or
+     View > Toggle Column; the Tag Editor and the Data Monitor keep their own columns. */
+  const FILTER_ON = ['<all>', 'Unused', 'Produced', 'Consumed', 'Can Be Forced', 'Alias'];
+  const tagShow = () => { const f = S.prefs.tagShow; return f && FILTER_ON.includes(f.on) ? { on: f.on, types: Array.isArray(f.types) ? f.types : [] } : { on: '<all>', types: [] }; };
+  const showAll = f => f.on === '<all>' && !f.types.length;
+  const showText = f => (showAll(f) ? 'All Tags' : [f.on !== '<all>' ? f.on : '', f.types.join(', ')].filter(Boolean).join('; '));
+  const tagFilterOn = () => (['name', 'desc', 'both'].includes(S.prefs.tagFon) ? S.prefs.tagFon : 'both');
+  const tagHit = (qq, n, d) => !qq || (tagFilterOn() !== 'desc' && U(n).includes(qq)) || (tagFilterOn() !== 'name' && U(d || '').includes(qq));
+  // the base names the logic of a scope refers to (operands, expressions) and the targets of its aliases
+  function usedNames(scope) {
+    const out = new Set(), words = t => (String(t).match(/[A-Za-z_]\w*/g) || []).forEach(w => out.add(U(w)));
+    const progs = scope ? allProgs().filter(g => g.name === scope) : allProgs();
+    progs.forEach(g => g.routines.forEach(r => r.rungs.forEach(x => { const pr = E.parseRung(x.t || ''); const w = a => a.forEach(e => (e.t === 'BR' ? e.legs.forEach(w) : (e.a || []).forEach(words))); if (!pr.err) w(pr.elems); })));
+    S.p.tags.concat(...allProgs().map(g => g.tags)).forEach(t => { if (t.alias) words(t.alias.split(/[.[]/)[0]); });
+    return out;
+  }
+  function showFilter(scope) {
+    const f = tagShow();
+    if (showAll(f)) return () => true;
+    const used = f.on === 'Unused' ? usedNames(scope) : null, types = new Set(f.types.map(U));
+    return e => {
+      if (types.size && !types.has(U(baseTy(e.ty)))) return false;
+      switch (f.on) {
+        case 'Unused': return !e.mod && !!e.t && !used.has(U(e.t.name));
+        case 'Produced': case 'Consumed': return false;   // no produced or consumed tags in this app
+        case 'Can Be Forced': return e.mod ? /:[IO]$/.test(e.path) : !!(e.t && e.t.alias && /^Local:\d+:[IO]\./i.test(baseTagOf(e.t.alias)));
+        case 'Alias': return !!(e.t && e.t.alias);
+      }
+      return true;
+    };
+  }
+  const fonIcon = () => `<button class="ib tfon" type="button" data-tfon="1" title="Filter On: ${{ name: 'Name', desc: 'Description', both: 'Both' }[tagFilterOn()]}" aria-label="Filter options"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6 7.5V18l-4 2v-7.5z"/></svg></button>`;
+  const tagShowBar = () => `<label class="tshl" for="tshow">Show:</label><button class="btn tshow" type="button" id="tshow" data-tshow="1" title="Show: ${esc(showText(tagShow()))}"><span class="ell">${esc(showText(tagShow()))}</span>${ic('down')}</button>${fonIcon()}`;
+  function setShow(f) {
+    S.prefs.tagShow = f;
+    if (!showAll(f)) { const k = JSON.stringify(f); S.prefs.tagHist = [f].concat((S.prefs.tagHist || []).filter(x => JSON.stringify(x) !== k)).slice(0, 5); }
+    savePrefs(); tagsRedraw();
+  }
+  const tagsRedraw = () => { if (S.view === 'tags' && S.layout !== 'phone') render(); else { const p = $('#tagpage'); if (p) p.innerHTML = tagEditorBody(S.layout === 'phone'); } };
+  function showMenu(at) {
+    const f = tagShow(), hist = (S.prefs.tagHist || []).slice(0, 5);
+    openMenu([{ l: 'All Tags', ck: showAll(f), run: () => setShow({ on: '<all>', types: [] }) }, { l: 'Configure…', i: 'gear', run: defineTagFilter }]
+      .concat(hist.length ? ['-', { hd: 'Filter History' }, ...hist.map(h => ({ l: showText(h), ck: JSON.stringify(h) === JSON.stringify(f), run: () => setShow(h) }))] : []), at);
+  }
+  function fonMenu(at) {
+    const set = m => { S.prefs.tagFon = m; savePrefs(); refreshTags(); const b = $('[data-tfon]'); if (b) b.title = 'Filter On: ' + { name: 'Name', desc: 'Description', both: 'Both' }[m]; };
+    openMenu([['name', 'Filter On Name'], ['desc', 'Filter On Description'], ['both', 'Filter On Both']].map(([m, l]) => ({ l, ck: tagFilterOn() === m, run: () => set(m) })), at);
+  }
+  function defineTagFilter() {
+    const f = tagShow(), types = [...new Set(E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name), moduleTags().map(x => x.ty)))];
+    dialog({ title: 'Define Tag Filter', size: 'md',
+      body: `<div class="frow"><label for="dfon">Filter On</label><select class="inp" id="dfon">${FILTER_ON.map(x => `<option${x === f.on ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+        <div class="frow"><label>Include Data Types</label><span class="muted">None checked: every data type</span></div>
+        <div class="list dftl" id="dftl">${types.map(t => `<label class="row ck"><input type="checkbox" value="${esc(t)}"${f.types.some(x => U(x) === U(t)) ? ' checked' : ''}> <span class="mono">${esc(t)}</span></label>`).join('')}</div>`,
+      mount: el => { el.querySelector('.df').insertAdjacentHTML('afterbegin', '<button class="btn" type="button" id="dfclr">Clear Filter</button><span class="grow"></span>'); el.querySelector('#dfclr').onclick = () => { el.querySelectorAll('#dftl input').forEach(i => { i.checked = false; }); el.querySelector('#dfon').value = '<all>'; }; },
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { setShow({ on: el.querySelector('#dfon').value, types: [...el.querySelectorAll('#dftl input:checked')].map(i => i.value) }); } }] });
+  }
+  const tcolHidden = mode => ((S.prefs.tagCols || {})[mode] || []).filter(c => TCOLS[mode].includes(c) && c !== 'Name');
+  function tagColStyle(mon) {
+    const mode = mon ? 'mon' : 'edit', h = tcolHidden(mode);
+    return h.length ? `<style>${h.map(c => `#tagpage .tagtbl tr:not(.newrow) > :nth-child(${TCOLS[mode].indexOf(c) + 2})`).join(',')}{display:none}</style>` : '';
+  }
+  function setCol(mode, c, show) {
+    const o = Object.assign({}, S.prefs.tagCols), h = new Set(tcolHidden(mode));
+    if (show) h.delete(c); else h.add(c);
+    o[mode] = [...h]; S.prefs.tagCols = o; savePrefs(); render();
+  }
+  // the column menu: Hide Column (the one under the pointer), then Toggle Column with every column but Name
+  function colMenu(at, col) {
+    const mode = S.tagMode === 'mon' ? 'mon' : 'edit', h = tcolHidden(mode);
+    const items = col && col !== 'Name' ? [{ l: `Hide Column "${col}"`, run: () => setCol(mode, col, false) }, '-'] : [];
+    openMenu(items.concat({ hd: 'Toggle Column' }, TCOLS[mode].filter(c => c !== 'Name').map(c => ({ l: c, ck: !h.includes(c), run: () => setCol(mode, c, h.includes(c)) }))), at);
+  }
+  document.addEventListener('click', ev => {
+    const t = ev.target, b = t.closest && (t.closest('[data-tshow]') || t.closest('[data-tfon]'));
+    if (!b || !S.p) return;
+    if (b.dataset.tshow) showMenu(b); else fonMenu(b);
+  });
+  document.addEventListener('contextmenu', ev => {
+    const th = ev.target.closest && ev.target.closest('#tagpage .tagtbl th');
+    if (!th || !S.p) return;
+    ev.preventDefault(); ev.stopPropagation();
+    colMenu({ x: ev.clientX, y: ev.clientY }, th.textContent.trim());
+  }, true);
+
   /* the Date/Time styles of a LINT (v37 help: About the Tag Editor): microseconds since 1970 as
      DT#2014-05-28-19:00:01.200_000 (UTC-05:00), or nanoseconds as LDT#…200_000_000 (UTC-05:00), in the computer's time
      zone; a negative value cannot be shown as a date (null: the number is shown) */

@@ -1170,3 +1170,9 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .dtegrid td { padding: 1px 3px; }
 .dtegrid td .ib { width: 24px; height: 22px; min-width: 24px; }
 .dtegrid .cdt { display: flex; gap: 2px; }
+.tshl { color: var(--muted); }
+.btn.tshow { max-width: 220px; min-width: 90px; justify-content: space-between; gap: 4px; }
+.btn.tshow .ell { min-width: 0; }
+.ib.tfon { flex: none; }
+.dftl { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.dftl .row.ck { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; }

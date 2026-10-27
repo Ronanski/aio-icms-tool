@@ -260,4 +260,83 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     check('phone: Project > Data Types shows Add-On-Defined', (await pp.$('.page [data-org="dt:aod"]')) !== null);
     await pp.context().close();
   }
+
+  /* ---------- 5. Tag Editor: Show filter, Filter On, columns ---------- */
+  console.log('Wave 2 B: Tag Editor Show filter and columns (v37 help: Tag Editor command bar settings; Filter the tag list; Hide and Show Columns)');
+  await fresh();
+  await addTag('Spare', 'DINT');
+  await ev(() => MTPS.App.run('tagsmon')); await wait(150);
+  const rowsTop = (pg = page) => pg.$$eval('#tagrows [data-tag]:not(.mem)', r => r.map(x => x.dataset.tag).join(','));
+  check('the command bar: Scope, Show: All Tags, the Filter icon and the filter box', (await cellText('#tshow')) === 'All Tags' && (await page.$('[data-tfon]')) !== null && (await page.$('#tq')) !== null);
+  await page.click('#tshow'); await wait(120);
+  check('Show offers All Tags and Configure…', JSON.stringify((await items()).map(x => x[0])) === JSON.stringify(['All Tags', 'Configure…']), JSON.stringify(await items()));
+  await pick('Configure…');
+  check('Configure… opens Define Tag Filter: Filter On (<all>, Unused, Produced, Consumed, Can Be Forced, Alias), Include Data Types, Clear Filter',
+    (await dlgTitle()) === 'Define Tag Filter' && (await page.$$eval('#dfon option', o => o.map(x => x.textContent).join(','))) === '<all>,Unused,Produced,Consumed,Can Be Forced,Alias' && (await page.$('#dfclr')) !== null && (await page.$$('#dftl input')).length > 8);
+  await page.selectOption('#dfon', 'Alias'); await clickBtn('OK');
+  check('Filter On Alias: only the alias tags, Show names the filter', (await rowsTop()) === 'Start_PB,Stop_PB,OL_OK,Motor_Cmd,Run_Lamp' && (await cellText('#tshow')) === 'Alias', await rowsTop());
+  await page.click('#tshow'); await wait(120); await pick('Configure…');
+  await page.click('#dfclr'); await page.check('#dftl input[value="TIMER"]'); await page.check('#dftl input[value="COUNTER"]'); await clickBtn('OK');
+  check('Include Data Types TIMER and COUNTER (after Clear Filter): Run_Timer, Start_Count', (await rowsTop()) === 'Run_Timer,Start_Count' && (await cellText('#tshow')) === 'TIMER, COUNTER', await rowsTop());
+  await page.click('#tshow'); await wait(120); await pick('Configure…');
+  await page.click('#dfclr'); await page.selectOption('#dfon', 'Unused'); await clickBtn('OK');
+  check('Filter On Unused: the tag no logic uses (Spare)', (await rowsTop()) === 'Spare', await rowsTop());
+  await page.click('#tshow'); await wait(120); await pick('Configure…');
+  await page.selectOption('#dfon', 'Can Be Forced'); await clickBtn('OK');
+  check('Filter On Can Be Forced: the I and O module tags and the aliases of I/O points', (await rowsTop()) === 'Local:1:I,Local:2:I,Local:2:O,Start_PB,Stop_PB,OL_OK,Motor_Cmd,Run_Lamp', await rowsTop());
+  await page.click('#tshow'); await wait(120);
+  check('Filter History: the filters used last, newest first (up to five)', JSON.stringify((await items()).map(x => x[0])) === JSON.stringify(['All Tags', 'Configure…', 'Can Be Forced', 'Unused', 'TIMER, COUNTER', 'Alias']), JSON.stringify(await items()));
+  await pick('Alias');
+  check('a filter from the history shows its tags again', (await cellText('#tshow')) === 'Alias' && (await rowsTop()).split(',').length === 5);
+  await page.click('#tshow'); await wait(120); await pick('All Tags');
+  check('All Tags shows every tag again', (await rowsTop()).split(',').length === 15, await rowsTop());
+  await page.click('[data-tfon]'); await wait(120);
+  check('the Filter icon: Filter On Name, Filter On Description, Filter On Both', JSON.stringify((await items()).map(x => x[0])) === JSON.stringify(['Filter On Name', 'Filter On Description', 'Filter On Both']));
+  await pick('Filter On Description');
+  await page.fill('#tq', 'lamp'); await wait(120);
+  check('Filter On Description: "lamp" finds Run_Timer (Run lamp delay) and Run_Lamp (H1 RUN LAMP)', (await rowsTop()) === 'Run_Timer,Run_Lamp', await rowsTop());
+  await page.click('[data-tfon]'); await wait(120); await pick('Filter On Name');
+  await page.fill('#tq', 'run'); await wait(120);
+  check('Filter On Name: "run" finds only names (Motor_Run, Run_Timer, Run_Lamp)', (await rowsTop()) === 'Motor_Run,Run_Timer,Run_Lamp', await rowsTop());
+  await page.fill('#tq', ''); await wait(80);
+  // columns
+  const heads = (pg = page) => pg.$$eval('#tagpage .tagtbl th', t => t.filter(x => getComputedStyle(x).display !== 'none').map(x => x.textContent).join('|'));
+  await page.click('#tagpage .tagtbl th:nth-child(5)', { button: 'right' }); await wait(120);
+  check('right-click a column name: Hide Column, then Toggle Column with each column', (await items())[0][0] === 'Hide Column "Style"' && (await items()).map(x => x[0]).slice(1).join(',') === 'Value,Force Mask,Style,Data Type,Description');
+  await pick('Hide Column "Style"');
+  check('Monitor Tags without the Style column (cells too)', (await heads()) === '|Name|Value|Force Mask|Data Type|Description' && (await page.$eval('#tagrows tr[data-tag="Spare"] td:nth-child(5)', td => getComputedStyle(td).display)) === 'none');
+  await ev(() => { MTPS.App.state.tagMode = 'edit'; MTPS.App.render(); }); await wait(120);
+  check('Edit Tags keeps its own columns (Style still shown there)', (await heads()).includes('Style'));
+  await ev(() => { MTPS.App.state.tagMode = 'mon'; MTPS.App.render(); }); await wait(120);
+  await page.click('.dmenu [data-menu="View"]'); await wait(120);
+  await pick('Toggle Column…');
+  check('View > Toggle Column… lists the columns, Style unticked', (await items()).find(x => x[0] === 'Style') !== undefined && (await page.$$eval('#layer .menu .it', r => r.filter(x => x.textContent.includes('Style')).map(x => x.querySelector('.ck').textContent).join())) === '');
+  await pick('Style');
+  check('Toggle Column shows it again', (await heads()) === '|Name|Value|Force Mask|Style|Data Type|Description');
+  await shot('5-tag-filter');
+  {
+    const tp = await touchPage(800, 1280);
+    await fresh(tp);
+    await ev(() => MTPS.App.run('tagsmon'), null, tp); await wait(200, tp);
+    await tp.tap('#tshow'); await wait(150, tp); await pick('Configure…', tp, true);
+    await tp.selectOption('#dfon', 'Alias'); await clickBtn('OK', tp, true);
+    check('tablet (touch): Show > Configure… > Alias', (await rowsTop(tp)).split(',').length === 5 && (await cellText('#tshow', tp)) === 'Alias');
+    await tp.tap('[data-allmenu]'); await wait(150, tp); await tp.tap('[data-fold="View"]'); await wait(150, tp);
+    await pick('Toggle Column…', tp, true);
+    await pick('Description', tp, true);
+    check('tablet (touch): View > Toggle Column… hides Description', !(await heads(tp)).includes('Description'));
+    check('tablet: no JS errors', tp._errs.length === 0, tp._errs.join(' | '));
+    await tp.context().close();
+  }
+  {
+    const pp = await touchPage(390, 844);
+    await fresh(pp);
+    await pp.tap('[data-go="tags"]'); await wait(200, pp);
+    await pp.tap('#tshow'); await wait(150, pp); await pick('Configure…', pp, true);
+    await pp.selectOption('#dfon', 'Alias'); await clickBtn('OK', pp, true);
+    check('phone (touch): the Tags page has Show too (Alias: 5 tags)', (await rowsTop(pp)).split(',').length === 5 && (await ev(() => document.documentElement.scrollWidth <= innerWidth + 1, null, pp)));
+    await shot('5-tag-filter-phone', pp);
+    check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
+    await pp.context().close();
+  }
 };
