@@ -5,6 +5,54 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio, Wave 2 of the coverage map, not released yet): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+- **Projects and menus:**
+  - Export to L5X carries the whole project (tags with values and attributes, data types, modules with keying, revision and RPI, tasks with watchdog, programs with fault routine, fault handlers, routines with edit zones), and opening that L5X brings it all back.
+  - File > Import Component: import a routine, program or data type from an L5X file, with the Import Configuration dialog. The organizer's right-click menus export them.
+  - Controller Properties > Change Controller… changes the controller type and revision and keeps the logic. A Project tab shows the project name, path, created and edited dates, and Download Project Documentation and Extended Properties.
+  - Select All with an instruction selected selects all the instructions of its rung.
+  - Replace: Use Wildcards (*), Limit To (tag references, forces, edit zones, shorted branches), Find Where by program or task, and history lists for Find What and Replace With.
+  - Search > Browse Logic: a tree of programs, routines and rungs with Find, Description and Go To.
+  - Tools > Options has categories, Apply and Reset Category, plus Ladder Editor display options (rung numbers, rung comments, operand descriptions, alias lines, routine description).
+  - Help > Contents: help with Contents, Index and Search over Getting Started, the keyboard shortcuts and every instruction.
+  - Keyboard: Ctrl+I now toggles insert/append mode (Alt+Insert adds an element). New: Alt+Enter, the Alt+letter menu keys, Ctrl+PageDown/PageUp, Ctrl+Tab, Ctrl+F6 and Ctrl+F4 for routine windows, and Ctrl+D on a rung.
+  - Bookmarks: mark rungs and move through them (Search menu, ladder toolbar, rung menu), view them all, clear them.
+- **Data types, tags and monitoring:**
+  - Data Types > User-Defined > New Data Type…: the Data Type Editor (name, description, members with Name, Data Type, Style, Description and External Access, size, Apply). UDT tags work in logic and in Monitor Tags.
+  - STRING data type (LEN, DATA[82]), the Strings folder, New String Type…, and string values in Monitor Tags with a String Browser to edit them.
+  - LINT and LREAL data types in the engine, the tag editor (Date/Time styles for LINT) and L5X.
+  - An Add-On-Defined folder in Data Types, empty when the project has no Add-On types.
+  - The Tag Editor gains the Show filter (All Tags, Configure…, Filter History), Filter On Name, Description or Both, and hiding or showing columns (right-click a column name, or View > Toggle Column…).
+  - View > Watch: a Watch tab in the Output window with Quick Watch lists, live values online, click to write, and named lists saved with the project.
+  - A Quick View pane below the Controller Organizer shows the type, description and details of the selected item.
+  - Trends: a Trends folder, New Trend… (up to 8 tags, Sample Period 1 ms to 30 min), a trend chart with Run and Stop online, and Trend "tag" from the ladder and Cross Reference right-click menus.
+- **Instructions (1756-RM018A, the current edition of 1756-RM003):**
+  - SIN, COS, TAN, ASN, ACS, ATN (Trig Functions tab); LN, LOG, XPY (Advanced Math tab).
+  - DEG, RAD, TOD, FRD, TRN (Math Conversions tab).
+  - FAL and FSC with ALL, INC and numerical modes, and a Mode list in the operand box.
+  - AVE, STD, SRT, SIZE and CPS, which work along a chosen array dimension.
+  - GSV and SSV on an Input/Output tab, with lists of classes, instances and attributes for the clock, controller, tasks, programs, modules and fault log.
+  - The PID data type and PID instruction (independent or dependent gains, manual modes, deadband, alarms, cascade) on a Special tab.
+- **Controller and online:**
+  - Controller Fault Handler: add one program to it from the organizer. It runs when a major fault occurs and can clear the fault.
+  - Power-Up Handler: after a power loss in Run, its program runs on power-up (fault type 1 code 1) and can clear the fault.
+  - A program's fault routine runs when an instruction faults. Clearing MajorFaultRecord Type and Code lets the program go on with the next instruction.
+  - Task watchdog: a task that runs longer than its watchdog time gives major fault type 6 code 1.
+  - Connected To Go Online names the reason (no project in the controller, a different project, offline changes, upload or download needed) and shows the Connected Controller and Offline Project details.
+  - New Module opens Select Module Type: type-ahead search with * wildcards, sortable columns, category and vendor filters, Favorites and Close on Create.
+  - Module Properties and New Module have Revision and Electronic Keying. A wrong card gives the real codes (16#0114, 16#0115, 16#0116, 16#0109, 16#0204). The RPI field takes 0.2 to 750.0 ms.
+  - The analog output configuration tag has ConfigBits, as in 1756-UM009.
+- **Logix Emulate:**
+  - Breakpoint (BPT) and Tracepoint (TPT) instructions on a Debug tab. A true TPT writes to a trace window; a BPT stops the controller and asks to resume. The trace settings are in Configure Emulation.
+  - Right-click an emulated controller > Properties: General (Startup Mode, Periodic Save…), System (Continuous Task Dwell Time, CPU, serial port), Emulator and Debug tabs.
+  - The Chassis Monitor has a status bar and a Computer box (hidden by View > Compact), and a chassis Properties dialog.
+- **RSLinx Classic:**
+  - Every RSLinx Classic menu item. Items that need real hardware, DDE/OPC clients or FactoryTalk security show a "not available in emulation" note. The Window menu lists and switches the open windows.
+  - Module Statistics (right-click a module) with General, Connection Manager and Backplane, Lock Counters and Reset Counters. Device Properties shows the device's faults.
+  - Driver Diagnostics and CIP Diagnostics with live counters fed by real traffic (browses, Autobrowse polls, Go Online connections and packets, a lost connection in the event log).
+  - Station Diagnostics (Freeze, Unfreeze, Reset Diagnostic Counters), Data Monitor (data list, data table with Radix and poll rate) and Set Time for a controller.
+- **Fixes:** the All… toolbar button no longer throws a JS error on touch.
+
 ### Changed (MT PLC Studio 0.5.0, Stable, Wave 1 of the coverage map): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
 - **Studio 5000 menus:**
   - File > Close closes the project and goes back to the Start Page.
