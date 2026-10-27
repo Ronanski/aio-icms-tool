@@ -39,7 +39,7 @@
 - [x] 0.4.0 Stable (2026-10-26, PR #95): Studio 5000 right-click menus, one-row chassis and RTB door, Local:n:C tags and Edit Tags grid, RSLinx window, Cross Reference, Find All, branch menu, ladder drag / inline edit / online edits / force / Run look, New Project declares only, Logix Emulate Create, staged communications, responsive and low-end performance, themes
 - [x] COVERAGE MAP of Studio 5000, RSLinx Classic and Logix Emulate (HAVE / PARTIAL / MISSING, priority waves), 2026-10-26
 - [x] Wave 1 of the coverage map (2026-10-27, PR): menus, tags, module tags, status flags, RTB pins, shift / FIFO / LIFO / sequencer, Emulate and RSLinx items, phone strip, tap speed
-- [x] Wave 2 of the coverage map (2026-10-27, PR): full L5X, Import Component, Change Controller, Options, Help, bookmarks, UDT / STRING / LINT / LREAL, Watch, Quick View, Trends, trig / conversion / file instructions, GSV/SSV, PID, fault handlers, watchdog, correlation, module catalog and keying, Emulate BPT/TPT, RSLinx diagnostics
+- [x] Wave 2 of the coverage map (2026-10-27, PR #97 merged, not released): full L5X, Import Component, Change Controller, Options, Help, bookmarks, UDT / STRING / LINT / LREAL, Watch, Quick View, Trends, trig / conversion / file instructions, GSV/SSV, PID, fault handlers, watchdog, correlation, module catalog and keying, Emulate BPT/TPT, RSLinx diagnostics
 - [ ] Wave 3 (needs the owner's GO)
 - [ ] Owner feedback on 0.4.0-beta.3 (tablet): tag browser, hold-to-drag, tap-again edit, portrait toolbar / Errors, start page
 - [ ] New Tag: External Access, Style, Constant, Produced / Consumed; Select Data Type with 2- and 3-dimension arrays
