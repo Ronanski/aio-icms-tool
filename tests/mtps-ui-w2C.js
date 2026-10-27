@@ -15,15 +15,19 @@ module.exports = async function w2c({ browser, URL, check }) {
     ['Advanced Math', 'LN', ['Five', 'R7']], ['Advanced Math', 'LOG', ['Hund', 'R8']], ['Advanced Math', 'XPY', ['Two', '10', 'D1']],
     ['Math Conversions', 'DEG', ['One', 'R9']], ['Math Conversions', 'RAD', ['Hund', 'R10']], ['Math Conversions', 'TOD', ['N22', 'D2']],
     ['Math Conversions', 'FRD', ['D2', 'D3']], ['Math Conversions', 'TRN', ['F57', 'D4']],
+    ['File/Misc', 'FAL', ['C1', '5', '0', 'ALL', 'Arr2[C1.POS]', 'Arr[C1.POS]*2']], ['File/Misc', 'FSC', ['C2', '5', '0', 'ALL', 'Arr[C2.POS]>=3']],
   ];
+  // the Mode operand of FAL / FSC is picked from its list (ALL, INC, a number)
+  const PICK = { FAL: 3, FSC: 3 };
   // the values in Run (the manual's own examples where it gives one)
   const WANT = { R1: Math.sin(0.5), R2: Math.cos(0.5), R3: Math.tan(0.5), R4: Math.asin(0.5), R5: Math.acos(0.5), R6: Math.atan(1), R7: 1.609438, R8: 2, D1: 1024,
-    R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5 };
+    R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5, 'Arr2[0]': 2, 'Arr2[4]': 10, 'C1.DN': 1, 'C1.POS': 5, 'C2.FD': 1, 'C2.IN': 1, 'C2.POS': 2 };
   const project = () => {
     const A = MTPS.App, p = A.blank('Wave2C'), T = (name, type, value, dim) => p.tags.push(Object.assign({ name, type }, value != null ? { value } : {}, dim ? { dim } : {}));
     T('Ang', 'REAL', 0.5); T('Half', 'REAL', 0.5); T('One', 'REAL', 1); T('Five', 'REAL', 5); T('Hund', 'REAL', 100); T('Two', 'DINT', 2);
     for (let k = 1; k <= 10; k++) T('R' + k, 'REAL');
     T('D1', 'DINT'); T('N22', 'DINT', 22); T('D2', 'DINT'); T('D3', 'DINT'); T('D4', 'DINT'); T('F57', 'REAL', 5.7);
+    T('Arr', 'DINT', [1, 2, 3, 4, 5], 5); T('Arr2', 'DINT', null, 5); T('C1', 'CONTROL'); T('C2', 'CONTROL');
     A.openProject(p);
   };
   const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 800, height: 1280 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
@@ -56,7 +60,18 @@ module.exports = async function w2c({ browser, URL, check }) {
       const labels = await pg.$$eval('#layer .frow label', l => l.map(x => x.textContent));
       const want = await pg.evaluate(m => MTPS.OPN[m], mn);
       if (!want.every(w => labels.some(l => l.startsWith(w)))) bad.push(`${mn}: operand prompts ${labels.join('/')}`);
-      for (let i = 0; i < ops.length; i++) { await tp(`#layer [data-op="${i}"]`); await pg.fill(`#layer [data-op="${i}"]`, ops[i]); }
+      for (let i = 0; i < ops.length; i++) {
+        await tp(`#layer [data-op="${i}"]`);
+        if (PICK[mn] === i) {
+          await pg.fill(`#layer [data-op="${i}"]`, ''); await pg.waitForTimeout(80);
+          const picks = await pg.$$eval('#layer #sg [data-pick]', l => l.map(x => x.dataset.pick).join(','));
+          if (picks !== 'ALL,INC,1') bad.push(`${mn}: Mode list ${picks}`);
+          if (await pg.$(`#layer #sg [data-pick="${ops[i]}"]`)) await tp(`#layer #sg [data-pick="${ops[i]}"]`);
+          await pg.waitForTimeout(80);
+          const v = await pg.$eval(`#layer [data-op="${i}"]`, x => x.value);
+          if (v !== ops[i]) { bad.push(`${mn}: picking ${ops[i]} gave "${v}"`); await pg.fill(`#layer [data-op="${i}"]`, ops[i]); }
+        } else await pg.fill(`#layer [data-op="${i}"]`, ops[i]);
+      }
       await tp('#layer .df .btn.pri'); await pg.waitForTimeout(200);
       if (await pg.$('#layer .dlg')) { bad.push(`${mn}: the operand box stayed open`); await pg.keyboard.press('Escape'); await pg.waitForTimeout(80); }
       const t = await pg.evaluate(i => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[i].t, ri);
@@ -92,6 +107,9 @@ module.exports = async function w2c({ browser, URL, check }) {
       await pg.click('#layer [data-ih="TOD"]'); await pg.waitForTimeout(80);
       const td = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
       check('Instruction Help for TOD: Math Conversion Instructions, 0 to 99,999,999, all 9s, TO_BCD in v36', td.includes('Convert To BCD (TOD)') && td.includes('Math Conversion Instructions') && td.includes('99,999,999') && td.includes('16#9999') && td.includes('TO_BCD'));
+      await pg.click('#layer [data-ih="FAL"]'); await pg.waitForTimeout(80);
+      const fa = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for FAL: the modes ALL / INC, .POS and .ER', fa.includes('(FAL)') && fa.includes('INC') && fa.includes('.POS') && fa.includes('.ER'), fa.slice(0, 200));
       await pg.screenshot({ path: `${SHOTS}/after-help-desktop.png` }).catch(() => {});
       await pg.keyboard.press('Escape');
     } else await pg.screenshot({ path: `${SHOTS}/after-ladder-${lay.n}.png` }).catch(() => {});

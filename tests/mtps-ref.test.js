@@ -459,5 +459,32 @@ console.log('Math conversions: the examples of 1756-RM018A (chapter 16)');
   check('RAD: 0.0 gives 0.0, S:Z set', c.read('Rad_D') === 0 && c.S.Z === 1);
 }
 
+console.log('FAL and FSC: the examples of 1756-RM018A (chapter 8)');
+{
+  const ten = k => Array.from({ length: 10 }, (_, i) => i * k + 1);
+  const c = run({ tags: [T('array_1', 'DINT', { dim: 10 }), T('array_2', 'DINT', { dim: 10, value: ten(3) }), T('array_3', 'DINT', { dim: 10, value: ten(1) }), T('array_4', 'DINT', { dim: 10 }),
+    T('value_1', 'DINT', { value: 5 }), T('value_2', 'DINT'), T('control_1', 'CONTROL'), T('control_2', 'CONTROL'), T('control_3', 'CONTROL'), T('control_4', 'CONTROL'), T('control_5', 'CONTROL'), T('En', 'BOOL')],
+    rungs: ['FAL(control_1,10,0,ALL,array_1[control_1.POS],array_2[control_1.POS]);',
+      'FAL(control_2,10,0,ALL,array_4[control_2.POS],array_2[control_2.POS]/array_3[control_2.POS]);',
+      'XIC(En)FAL(control_3,10,0,INC,value_2,array_2[control_3.POS]+value_1);',
+      'FAL(control_4,10,0,ALL,array_3[control_4.POS],value_1);',
+      'FSC(control_5,10,0,ALL,array_1[control_5.POS]<>array_2[control_5.POS]);'] });
+  scans(c, 1);
+  eq('Example 1, array to array: each element of array_2 copied into the same position of array_1', c.read('array_1'), ten(3));
+  eq('Example 4, array / array to array: array_2[i] / array_3[i] (integer divide truncates)', c.read('array_4'), ten(3).map((v, i) => Math.trunc(v / (i + 1))));
+  eq('Example 2, element to array: value_1 into all 10 elements', c.read('array_3'), Array(10).fill(5));
+  c.write('En', 1); scans(c, 1);
+  check('Example 7, (element + array) to element, INC: only the current element each time it is enabled', c.read('value_2') === 6 && c.read('control_3.POS') === 1);
+  c.write('En', 0); scans(c, 1); c.write('En', 1); scans(c, 1);
+  check('Example 7: the next time, value_2 is overwritten with the next value', c.read('value_2') === 9 && c.read('control_3.POS') === 2);
+  check('FSC Example 1: all equal (array_1 is a copy of array_2): no find, .DN set', c.read('control_5.DN') === 1 && c.read('control_5.FD') === 0);
+  const s = run({ tags: [T('array_1', 'DINT', { dim: 10, value: [1, 2, 3, 9, 5, 6, 7, 8, 0, 10] }), T('array_2', 'DINT', { dim: 10, value: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }), T('control', 'CONTROL')],
+    rungs: ['FSC(control,10,0,ALL,array_1[control.POS]<>array_2[control.POS]);'] });
+  scans(s, 1);
+  eq('FSC Example 1: the first element that is not equal sets FD and IN, POS holds its location', [s.read('control.FD'), s.read('control.IN'), s.read('control.POS')], [1, 1, 3]);
+  s.write('control.IN', 0); scans(s, 1);
+  check('FSC Example 1: clear the IN bit to search the rest of the array (the next one is element 8)', s.read('control.POS') === 8 && s.read('control.IN') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

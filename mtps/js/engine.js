@@ -813,6 +813,7 @@
     SIN: ['Source', 'Dest'], COS: ['Source', 'Dest'], TAN: ['Source', 'Dest'], ASN: ['Source', 'Dest'], ACS: ['Source', 'Dest'], ATN: ['Source', 'Dest'],
     LN: ['Source', 'Dest'], LOG: ['Source', 'Dest'], XPY: ['Source X', 'Source Y', 'Dest'],
     DEG: ['Source', 'Dest'], RAD: ['Source', 'Dest'], TOD: ['Source', 'Dest'], FRD: ['Source', 'Dest'], TRN: ['Source', 'Dest'],
+    FAL: ['Control', 'Length', 'Position', 'Mode', 'Dest', 'Expression'], FSC: ['Control', 'Length', 'Position', 'Mode', 'Expression'],
   });
   Object.assign(INSTR, {
     // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
@@ -825,6 +826,9 @@
     DEG: I('box', 'Math Conversions', 'Degrees', 'num dest', { out: true }), RAD: I('box', 'Math Conversions', 'Radians', 'num dest', { out: true }),
     TOD: I('box', 'Math Conversions', 'Convert To BCD', 'int idest', { out: true }), FRD: I('box', 'Math Conversions', 'Convert To Integer', 'int idest', { out: true }),
     TRN: I('box', 'Math Conversions', 'Truncate', 'real dest', { out: true }),
+    // File/Misc (chapter 8): Length and Position are the .LEN and .POS of the CONTROL (pseudo-operands)
+    FAL: I('box', 'File/Misc', 'File Arith/Logical', 'control imm imm fmode dest expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
+    FSC: I('box', 'File/Misc', 'File Search/Compare', 'control imm imm fmode expr', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, live: { 1: 'LEN', 2: 'POS' } }),
   });
   /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
      integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
@@ -862,6 +866,59 @@
   const signed = (v, t) => (t === 'SINT' ? (v << 24) >> 24 : t === 'INT' ? (v << 16) >> 16 : v | 0);
   XEL.TOD = function (e, x, p) { if (p) { const r = toBCD(x[0].get(), x[1].type); this.put(x[1], signed(r.v, x[1].type), r.ov); } e.v = p; return p; };
   XEL.FRD = function (e, x, p) { if (p) this.put(x[1], fromBCD(x[0].get(), x[0] instanceof Const ? 'DINT' : x[0].type)); e.v = p; return p; };
+
+  /* the Mode of FAL / FSC: ALL, INC, or the number of elements per scan (1 to 2147483647) */
+  XNAME.fmode = s => { const u = U(s); if (u === 'ALL' || u === 'INC') return { mode: u }; const c = parseNumber(s); return c && !c.real && c.v >= 1 && c.v <= 2147483647 ? { mode: c.v } : 'Mode must be ALL, INC or a number of elements per scan (1 to 2147483647)'; };
+  /* FAL and FSC (RM018A chapter 8, the flow charts and the CONTROL members): .POS is the element the expression is
+     working on (write it as Array[Control.POS]); .DN is set when the last element is done (.POS = .LEN).
+     - ALL: every element on one false-to-true rung; INC: one element per false-to-true rung; a number N: N elements
+       each scan, also while the rung is false, until done.
+     - FAL: Dest = Expression for each element; an overflow sets .ER and stops (.POS stays at that element); the
+       instruction does nothing more until .ER is cleared.
+     - FSC: the first element whose Expression is true sets .FD and .IN and stops there (.POS = that element); clear
+       .IN to search on from the next element. .ER is not changed.
+     - Rung-condition-in false: nothing while .ER (or .IN) is set; .DN set: .EN .ER .DN and .POS are cleared; INC:
+       .EN is cleared.
+     - .LEN < 0 or .POS < 0: major fault type 4, code 21. */
+  function fileOp(e, x, p) {
+    const fsc = e.t === 'FSC', c = x[0].obj(), mode = x[3].mode, ex = fsc ? x[4] : x[5];
+    const step = k => {
+      let i = fsc && c.FD ? c.POS + 1 : c.POS;
+      c.EN = 1; if (fsc) c.FD = 0;
+      for (let m = 0; m < k && i < c.LEN; m++, i++) {
+        c.POS = i;
+        DIV0 = false;
+        const v = ex.get();
+        if (fsc) {
+          if (DIV0 && !this.S.V) { this.S.V = this.S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero) in the FSC expression'); }
+          if (v !== 0) { c.FD = c.IN = 1; return; }
+        } else {
+          this.put(x[4], v, DIV0);
+          if (this.S.V) { c.ER = 1; return; }
+        }
+      }
+      c.POS = i;
+      if (c.POS >= c.LEN) { c.POS = c.LEN; c.DN = 1; if (!p) c.EN = 0; }
+    };
+    if (!p) {
+      if (!(c.ER || (fsc && c.IN))) {
+        if (c.DN) { c.EN = c.ER = c.DN = 0; c.POS = 0; }
+        else if (mode === 'INC') c.EN = 0;
+        else if (mode !== 'ALL' && c.EN) {
+          if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+          step(mode);
+        }
+      }
+      e.v = false; return false;
+    }
+    if (!(c.ER || (fsc && c.IN) || c.DN)) {
+      if (c.LEN < 0 || c.POS < 0) throw new Fault(4, 21, `${e.t}: .LEN or .POS is less than 0`);
+      if (c.LEN === 0) { c.DN = c.EN = 1; if (fsc) c.FD = 0; }
+      else if (!(mode === 'INC' && c.EN)) step(mode === 'ALL' ? Infinity : mode === 'INC' ? 1 : mode);
+    }
+    e.v = true; return true;
+  }
+  XEL.FAL = fileOp; XEL.FSC = fileOp;
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

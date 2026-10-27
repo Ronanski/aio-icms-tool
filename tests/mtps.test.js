@@ -927,5 +927,61 @@ console.log('Wave 2 (C): math conversions DEG RAD TOD FRD TRN (1756-RM003 / -RM0
   check('CPT knows FRD, TOD and TRN', e.read('D') === 22 + 0x12 + 2, e.read('D'));
 }
 
+console.log('Wave 2 (C): FAL and FSC (1756-RM003 / -RM018A chapter 8)');
+{
+  const INS = MTPS.INSTR;
+  check('FAL and FSC: File/Misc, CONTROL first, Length / Position show .LEN / .POS, EN DN ER', INS.FAL.grp === 'File/Misc' && INS.FSC.grp === 'File/Misc' && INS.FAL.bits.join() === 'EN,DN,ER' && INS.FAL.ctl === 0 && INS.FAL.live[1] === 'LEN' && INS.FSC.live[2] === 'POS' && MTPS.OPN.FAL.join() === 'Control,Length,Position,Mode,Dest,Expression' && MTPS.OPN.FSC.join() === 'Control,Length,Position,Mode,Expression');
+  const tags = [T('En', 'BOOL'), T('A', 'DINT', { dim: 6, value: [1, 2, 3, 4, 5, 6] }), T('B', 'DINT', { dim: 6 }), T('Ctl', 'CONTROL'), T('Sm', 'SINT', { dim: 6 }), T('W', 'DINT', { value: 4 })];
+  check('verify: Mode is ALL, INC or a number of elements per scan', MTPS.verify(proj({ tags, rungs: ['FAL(Ctl,6,0,ALL,B[Ctl.POS],A[Ctl.POS]);', 'FAL(Ctl,6,0,inc,B[Ctl.POS],A[Ctl.POS]);', 'FAL(Ctl,6,0,2,B[Ctl.POS],A[Ctl.POS]);'] })).errors.length === 0 &&
+    MTPS.verify(proj({ tags, rungs: ['FAL(Ctl,6,0,SOME,B[Ctl.POS],A[Ctl.POS]);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['FSC(Ctl,6,0,0,A[Ctl.POS]=W);'] })).errors.length === 1);
+  check('the Length and Position of the rung are written into the CONTROL at download', (() => { const c = run({ tags, rungs: ['XIC(En)FAL(Ctl,6,2,ALL,B[Ctl.POS],A[Ctl.POS]);'] }); return c.read('Ctl.LEN') === 6 && c.read('Ctl.POS') === 2; })());
+  // ALL
+  const a = run({ tags, rungs: ['XIC(En)FAL(Ctl,6,0,ALL,B[Ctl.POS],A[Ctl.POS]*10);'] });
+  a.write('En', 1); a.scan(10);
+  eq('ALL: every element in one scan, .DN and .EN set, .POS = .LEN', [a.read('B'), a.read('Ctl.DN'), a.read('Ctl.EN'), a.read('Ctl.POS')], [[10, 20, 30, 40, 50, 60], 1, 1, 6]);
+  a.write('A[0]', 7); a.scan(10);
+  check('ALL: a rung that stays true does not run it again', a.read('B[0]') === 10);
+  a.write('En', 0); a.scan(10);
+  eq('ALL: a false rung clears .EN .DN and .POS', [a.read('Ctl.EN'), a.read('Ctl.DN'), a.read('Ctl.POS')], [0, 0, 0]);
+  a.write('En', 1); a.scan(10);
+  check('ALL: the next false-to-true rung runs it again', a.read('B[0]') === 70);
+  // INC
+  const i = run({ tags, rungs: ['XIC(En)FAL(Ctl,3,0,INC,B[Ctl.POS],A[Ctl.POS]);'] });
+  const pulse = () => { i.write('En', 1); i.scan(10); i.scan(10); i.write('En', 0); i.scan(10); };
+  pulse();
+  eq('INC: one element per false-to-true rung (a rung held true does not step), a false rung clears .EN', [i.read('B'), i.read('Ctl.POS'), i.read('Ctl.EN')], [[1, 0, 0, 0, 0, 0], 1, 0]);
+  i.write('En', 1); i.scan(10); i.write('En', 0); i.scan(10); i.write('En', 1); i.scan(10);
+  eq('INC: after the last element .DN is set (.POS = .LEN)', [i.read('B'), i.read('Ctl.POS'), i.read('Ctl.DN')], [[1, 2, 3, 0, 0, 0], 3, 1]);
+  i.write('En', 0); i.scan(10);
+  check('INC: the false rung after .DN clears .DN and .POS', i.read('Ctl.DN') === 0 && i.read('Ctl.POS') === 0);
+  // numerical
+  const n = run({ tags, rungs: ['XIC(En)FAL(Ctl,6,0,2,B[Ctl.POS],A[Ctl.POS]+100);'] });
+  n.write('En', 1); n.scan(10);
+  eq('numerical mode 2: two elements in the first scan', [n.read('B').slice(0, 3), n.read('Ctl.POS'), n.read('Ctl.DN')], [[101, 102, 0], 2, 0]);
+  n.write('En', 0); n.scan(10); n.scan(10);
+  eq('numerical mode: it goes on while the rung is false, then .DN set and .EN cleared', [n.read('B'), n.read('Ctl.DN'), n.read('Ctl.EN')], [[101, 102, 103, 104, 105, 106], 1, 0]);
+  // overflow
+  const o = run({ tags, rungs: ['FAL(Ctl,6,0,ALL,Sm[Ctl.POS],A[Ctl.POS]*40);'] });
+  o.scan(10);
+  eq('an overflow sets .ER and stops at that element (S:V, minor fault)', [o.read('Sm').slice(0, 5), o.read('Ctl.ER'), o.read('Ctl.POS'), o.read('Ctl.DN'), o.S.V], [[40, 80, 120, -96, 0], 1, 3, 0, 1]);
+  o.scan(10);
+  check('.ER set: the instruction does nothing more', o.read('Sm[4]') === 0 && o.read('Ctl.POS') === 3);
+  o.write('Ctl.ER', 0); o.write('A[3]', 1); o.scan(10);
+  check('.ER cleared by the program: it goes on from that element', o.read('Sm[3]') === 40 && o.read('Ctl.ER') === 1 && o.read('Ctl.POS') === 4);
+  const f = run({ tags, rungs: ['FAL(Ctl,-1,0,ALL,B[Ctl.POS],A[Ctl.POS]);'] });
+  f.scan(10);
+  check('.LEN < 0: major fault type 4, code 21', f.fault && f.fault.type === 4 && f.fault.code === 21);
+  // FSC
+  const s = run({ tags: [...tags, T('Fd', 'BOOL')], rungs: ['XIC(En)FSC(Ctl,6,0,ALL,A[Ctl.POS]>=W);', 'XIC(Ctl.FD)OTE(Fd);'] });
+  s.write('En', 1); s.scan(10);
+  eq('FSC: the first true comparison sets .FD and .IN, .POS is its element', [s.read('Ctl.FD'), s.read('Ctl.IN'), s.read('Ctl.POS'), s.read('Ctl.DN'), s.read('Fd')], [1, 1, 3, 0, 1]);
+  s.scan(10);
+  check('FSC: .IN set, the search waits', s.read('Ctl.POS') === 3);
+  s.write('Ctl.IN', 0); s.scan(10);
+  eq('FSC: .IN cleared, the search goes on from the next element', [s.read('Ctl.POS'), s.read('Ctl.FD'), s.read('Ctl.IN')], [4, 1, 1]);
+  s.write('Ctl.IN', 0); s.write('W', 100); s.scan(10);
+  eq('FSC: nothing more found: .DN set, .FD cleared, .POS = .LEN', [s.read('Ctl.DN'), s.read('Ctl.FD'), s.read('Ctl.POS')], [1, 0, 6]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
