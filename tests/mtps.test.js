@@ -974,5 +974,25 @@ console.log('Wave 2 D: the fault routine of a program (1756-PM014, Create a faul
   check('a fault inside the fault routine: the controller faults', !!c6.fault && c6.fault.type === 4);
 }
 
+console.log('Wave 2 D: task watchdog (1756-PM005, Adjust the System Watchdog Time: major fault type 6 code 1)');
+{
+  const loop = (wd, cond, fh) => { const p = proj({ tags: [T('N', 'DINT'), T('Seen', 'DINT')], rungs: ['LBL(L1)ADD(N,1,N);', `${cond || ''}JMP(L1);`] }); if (wd != null) p.tasks[0].watchdog = wd; if (fh) p.tasks.push(fh); return p; };
+  const time = fn => { const t = Date.now(); fn(); return Date.now() - t; };
+  const c = new MTPS.Controller(); c.download(loop(50)); c.setMode('remrun');
+  const ms = time(() => c.scan(10));
+  check('an endless loop with a 50 ms watchdog: major fault type 6 code 1 after about 50 ms', !!c.fault && c.fault.type === 6 && c.fault.code === 1 && ms >= 45 && ms < 1000, `${ms} ms ${JSON.stringify(c.fault)}`);
+  check('the fault names the task and its watchdog time', /Task watchdog expired: task 'MainTask'.*\(50 ms\)/.test(c.fault.text), c.fault.text);
+  const c2 = new MTPS.Controller(); c2.download(loop(null)); c2.setMode('remrun');
+  const ms2 = time(() => c2.scan(10));
+  check('no watchdog set: the default 500 ms', !!c2.fault && c2.fault.type === 6 && ms2 >= 480 && ms2 < 2000, `${ms2} ms`);
+  const c3 = new MTPS.Controller(); c3.download(loop(500, 'LES(N,300000)')); c3.setMode('remrun'); c3.scan(10);
+  check('a long loop that ends within the watchdog time is not a fault (300000 jumps)', !c3.fault && c3.read('N') === 300000, JSON.stringify(c3.fault));
+  const c4 = new MTPS.Controller(); c4.download(loop(30, '', handlerTask('fault', 'FaultProg', ['ADD(Seen,1,Seen);']))); c4.setMode('remrun'); clearsIn(c4, 'Main');
+  const ms4 = time(() => c4.scan(10));
+  check('the Controller Fault Handler clears the watchdog fault once; the same fault again in that scan faults the controller', c4.read('Seen') === 1 && !!c4.fault && c4.fault.type === 6 && ms4 >= 55, `${ms4} ms Seen ${c4.read('Seen')}`);
+  const p5 = loop(1, 'LES(N,3)'); const c5 = new MTPS.Controller(); c5.download(p5); c5.setMode('remrun'); scans(c5, 5);
+  check('a short task with a 1 ms watchdog runs without a fault', !c5.fault);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

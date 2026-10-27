@@ -716,12 +716,15 @@
     addTags(pj.tags, null);
 
     const progNames = new Set();
-    for (const task of pj.tasks || []) for (const pg of task.programs || []) {
+    let tk = 0;
+    for (const task of pj.tasks || []) for (const pg of (tk++, task.programs || [])) {
       if (!validName(pg.name) || progNames.has(U(pg.name))) { ctlErr(`Invalid or repeated program name '${pg.name}'`); continue; }
       progNames.add(U(pg.name));
       // the Controller Fault Handler and the Power-Up Handler (1756-PM014) hold one program each, never scheduled in a task
       const hd = task.type === 'fault' || task.type === 'powerup' ? task.type : null;
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd };
+      // the task's watchdog (Task Properties > Configuration: 1 to 2,000,000 ms, 500 by default; 1756-PM005)
+      const wd = Math.floor(+task.watchdog) >= 1 ? Math.min(2000000, Math.floor(+task.watchdog)) : 500;
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd };
       if (hd) { const k = hd === 'fault' ? 'cfh' : 'puh'; if (M[k]) ctlErr(`Only one program can be in the ${hd === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler'} ('${M[k].name}' is)`); else M[k] = P; }
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
@@ -806,6 +809,9 @@
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // the longest the emulator lets one task run before its watchdog fault, so the app keeps answering (ms)
+  const WDCAP = 5000;
   class Controller {
     constructor() {
       this.key = 'REM';            // PROG | REM | RUN
@@ -823,6 +829,7 @@
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
       this.curP = null; this.inHandler = false; this.ioCleared = new Set();   // fault handling (1756-PM014)
+      this.wdT0 = 0; this.wdMs = 0; this.wdN = 0; this.wdHit = false; this.wdTask = '';   // task watchdog
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
       this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
       this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
@@ -1004,13 +1011,18 @@
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
-      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; this.routine(P.main); }
+      let tk = -1;
+      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) {
+        // the watchdog timer starts when the task starts and stops when all of its programs have run
+        if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task; this.wdHit = false; }
+        this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; this.routine(P.main); this.wdCheck();
+      }
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         // a fault that no fault routine cleared goes to the Controller Fault Handler; not cleared there, the controller faults
         if (e.tried || !this.handle(this.M.cfh, e)) this.majorFault(e.type, e.code, e.message);
       }
-      this.curP = null;
+      this.curP = null; this.wdMs = 0;
       this.S.FS = 0;
       this.first = false;
       this.scans++;
@@ -1062,18 +1074,29 @@
       let jumps = 0;
       this.mcr = false;
       for (let i = 0; i < rungs.length;) {
+        if ((++this.wdN & 255) === 0) this.wdCheck();
         this.seq(rungs[i].elems, !this.mcr);
         if (this.tnd || this.ret) { this.tnd = this.ret = false; break; }
         if (this.jmp !== null) {
           const to = R.labels.get(this.jmp);
           this.jmp = null;
-          if (++jumps > 100000) throw new Fault(6, 1, 'Watchdog timeout: the task did not finish in time');
+          if ((++jumps & 255) === 0) this.wdCheck();
           i = to;
           continue;
         }
         i++;
       }
       this.mcr = mcr0;
+    }
+    /* the task watchdog (1756-PM005, Adjust the System Watchdog Time): a task that runs longer than its watchdog time is a
+       major fault type 6 code 1. The Controller Fault Handler can clear it once; the same watchdog fault a second time
+       in the same scan faults the controller anyway. */
+    wdCheck() {
+      if (this.inHandler || !this.wdMs || now() - this.wdT0 <= this.wdMs) return;
+      const f = new Fault(6, 1, `Task watchdog expired: task '${this.wdTask}' did not complete in its watchdog time (${this.wdSet} ms)`);
+      if (!this.wdHit && this.M && this.handle(this.M.cfh, f)) { this.wdHit = true; this.wdT0 = now(); return; }
+      f.tried = true;
+      throw f;
     }
     // a true JMP, RET or TND leaves the rung at once: the rest of it is not scanned
     get leave() { return this.jmp !== null || this.ret || this.tnd; }

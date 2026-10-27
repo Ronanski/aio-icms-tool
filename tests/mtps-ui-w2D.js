@@ -132,6 +132,32 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     check('phone (touch): New Routine with Assignment Fault', await tp.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].fault === 'FR2'));
     await tp.close();
   }
+  console.log('Wave 2 D: task watchdog (1756-PM005: 1 to 2,000,000 ms, default 500; major fault type 6 code 1)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    await page.dblclick('.nd[data-org="task:MainTask"]'); await wait(200);
+    await page.click('#layer [data-dt="cfg"]'); await wait(80);
+    check('Task Properties > Configuration: Watchdog 500 ms by default, 1 to 2,000,000', (await page.$eval('#tp-w', i => [i.value, i.min, i.max].join())) === '500,1,2000000');
+    await page.fill('#tp-w', '40'); await clickBtn('OK');
+    check('the watchdog is saved with the task', await ev(() => MTPS.App.state.p.tasks[0].watchdog === 40));
+    await ev(() => { const p = MTPS.App.state.p; p.tags.push({ name: 'N', type: 'DINT' }); p.tasks[0].programs[0].routines[0].rungs.push({ t: 'LBL(Again)ADD(N,1,N);' }, { t: 'JMP(Again);' }); MTPS.App.render(); });
+    const on = await online(); await ev(() => MTPS.App.run('runm')); await wait(400);
+    check('online in Run, an endless loop: after 40 ms the watchdog faults the controller (type 6 code 1)', on && await ev(() => { const c = MTPS.App.ctl; return !!c.fault && c.fault.type === 6 && c.fault.code === 1 && /40 ms/.test(c.fault.text); }));
+    await ev(() => MTPS.App.run('gofaults')); await wait(200);
+    check('Major Faults: Type 6, Code 1, Task watchdog expired', /Type 6, Code 1/.test(await dlgText()) && /Task watchdog expired/.test(await dlgText()));
+    await shot('watchdog-major-fault');
+    await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => { MTPS.App.ctl.clearFault(); MTPS.App.run('offline'); }); await wait(100);
+    // tablet, touch: the drawer, hold MainTask, Properties
+    const tp = await browser.newPage({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 800, height: 1280 }); await open(tp, () => MTPS.App.openProject(MTPS.App.example()));
+    await tp.tap('[data-drawer="1"]'); await tp.waitForTimeout(300);
+    await hold(tp, '.nd[data-org="task:MainTask"]'); await pick('Properties…', tp, true);
+    await tp.tap('#layer [data-dt="cfg"]'); await tp.waitForTimeout(80);
+    await tp.fill('#tp-w', '250'); await clickBtn('OK', tp, true);
+    check('tablet (touch): Task Properties sets the watchdog', await tp.evaluate(() => MTPS.App.state.p.tasks[0].watchdog === 250));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {
