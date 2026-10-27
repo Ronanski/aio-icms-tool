@@ -873,10 +873,10 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
-    // File > New Component (reference order); Program and Task are listed but not in this version yet
+    // File > New Component (reference order)
     newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
-    newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
-    newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
+    newprog: { l: 'New Program…', i: 'prog', run: () => newProgramDlg(), on: editable },
+    newtask: { l: 'New Task…', i: 'task', run: () => newTaskDlg(), on: () => editable() && offline() },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
@@ -963,7 +963,7 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'genrep', { hd: 'Print' }, 'prtrtn', 'prttags', 'prtmod', 'prtdt', 'prtorg', 'prtctl', 'prtall', 'prtopts', '-', 'recent', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newstr', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'genrep', { hd: 'Print' }, 'prtrtn', 'prttags', 'prtmod', 'prtdt', 'prtorg', 'prtctl', 'prtall', 'prtopts', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
@@ -1185,7 +1185,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}${b('newprog')}${b('newtask')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('samples', 'Sample Projects…')}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
@@ -3488,6 +3488,66 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function printCtx(key, items) {
     const k = key.startsWith('rt:') ? ['routine', key] : key === 'ctags' ? ['tags'] : key === 'ctl' ? ['ctl'] : key === 'io' || key === 'bp' || key.startsWith('mod:') ? ['mods'] : key === 'dts' || key === 'dt:user' ? ['dts'] : null;
     if (k) items.push('-', { l: 'Print…', i: 'file', run: () => printDlg(k[0], k[1]) });
+    // New Task on the Tasks folder, New Program on a task (help v37: Create a Task, New Component > Program)
+    if (key === 'tasks') items.unshift({ l: 'New Task…', i: 'task', run: () => newTaskDlg(), dis: !editable() || !offline() }, '-');
+    if (key.startsWith('task:')) items.unshift({ l: 'New Program…', i: 'prog', run: () => newProgramDlg(key.slice(5)), dis: !editable() }, '-');
+  }
+  /* File > New Component > Program (help v37: New program dialog box settings): Name, Description, Schedule In (the
+     task selected in the organizer fills it in), Inhibit Program. The program gets a MainRoutine as its main routine
+     (here a program always holds a routine). Class and Synchronize Redundancy Data are for Safety and redundancy
+     controllers only, so they are not shown. */
+  const freeName = (base, used) => { let n = base, k = 1; while (used.has(U(n))) n = base + ++k; return n; };
+  function newProgramDlg(task) {
+    const ts = S.p.tasks.filter(t => !HANDLERS[t.type]), sel = S.orgSel || '';
+    const t0 = task || (sel.startsWith('task:') ? sel.slice(5) : (S.p.tasks.find(t => t.programs.some(g => g.name === orgProg())) || ts[0]).name);
+    const n = freeName('Program', new Set(allProgs().map(g => U(g.name))));
+    dialog({ title: 'New Program', size: 'md', focus: true,
+      body: `<div class="frow"><label for="npg-n">Name</label><input class="inp" id="npg-n" value="${esc(n)}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label for="npg-d">Description</label><textarea class="inp" id="npg-d" rows="2"></textarea></div>
+        <div class="frow"><label for="npg-s">Schedule In</label><select class="inp" id="npg-s">${ts.map(t => `<option${t.name === t0 ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
+        <label class="ck"><input type="checkbox" id="npg-i"> Inhibit Program</label>
+        <p class="help">The program gets a MainRoutine (its main routine). Add more routines with New Routine.</p><div class="errtx" id="npg-e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const q = s => el.querySelector(s), v = q('#npg-n').value.trim(), d = q('#npg-d').value.trim(), er = x => { q('#npg-e').textContent = x; return false; };
+        if (!E.validName(v)) return er('Name: letters, digits and _ (starting with a letter or _), up to 40 characters, no __ and no _ at the end.');
+        if (allProgs().some(g => U(g.name) === U(v))) return er(`A program named ${v} exists.`);
+        const T = S.p.tasks.find(t => t.name === q('#npg-s').value);
+        edit(() => {
+          const g = { name: v, main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
+          if (d) g.desc = d; if (q('#npg-i').checked) g.inhibit = true;
+          T.programs.push(g); S.orgSel = 'prog:' + v;
+          const c = new Set(S.prefs.collapsed); c.delete('tasks'); c.delete('task:' + T.name); S.prefs.collapsed = [...c]; savePrefs();
+        });
+        toast(`Program ${v} scheduled in ${T.name}.`, 'ok');
+      } }] });
+  }
+  /* File > New Component > Task (help v37: Create a Task): Name, Description, Type (Continuous, Periodic, Event),
+     Period, Priority, Watchdog, Disable automatic output processing, Inhibit task. A project allows only one continuous
+     task; periodic and event tasks are not emulated in this version (the scan runs every program as continuous). */
+  function newTaskDlg() {
+    const n = freeName('Task', new Set(S.p.tasks.map(t => U(t.name))));
+    const el = dialog({ title: 'New Task', size: 'md', focus: true,
+      body: `<div class="frow"><label for="ntk-n">Name</label><input class="inp" id="ntk-n" value="${esc(n)}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label for="ntk-d">Description</label><textarea class="inp" id="ntk-d" rows="2"></textarea></div>
+        <div class="frow"><label for="ntk-t">Type</label><select class="inp" id="ntk-t"><option value="periodic">Periodic</option><option value="event">Event</option><option value="continuous">Continuous</option></select></div>
+        <div class="frow"><label for="ntk-p">Period (ms)</label><input class="inp" id="ntk-p" type="number" min="0.1" max="2000000" step="1" value="10" inputmode="decimal"></div>
+        <div class="frow"><label for="ntk-r">Priority</label><input class="inp" id="ntk-r" type="number" min="1" max="15" value="10" inputmode="numeric"></div>
+        <div class="frow"><label for="ntk-w">Watchdog (ms)</label><input class="inp" id="ntk-w" type="number" min="1" max="2000000" value="500" inputmode="numeric"></div>
+        <label class="ck"><input type="checkbox" id="ntk-o"> Disable automatic output processing to reduce task overhead</label>
+        <label class="ck"><input type="checkbox" id="ntk-i"> Inhibit task</label>
+        <p class="help">A project allows only one continuous task. Periodic and event tasks are not emulated in this version.</p><div class="errtx" id="ntk-e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
+        const q = s => el2.querySelector(s), v = q('#ntk-n').value.trim(), ty = q('#ntk-t').value, w = +q('#ntk-w').value, er = x => { q('#ntk-e').textContent = x; return false; };
+        if (!E.validName(v)) return er('Name: letters, digits and _ (starting with a letter or _), up to 40 characters, no __ and no _ at the end.');
+        if (S.p.tasks.some(t => U(t.name) === U(v))) return er(`A task named ${v} exists.`);
+        if (S.p.tasks.filter(t => !HANDLERS[t.type]).length >= 32) return er('A controller can have up to 32 tasks.');
+        if (!Number.isInteger(w) || w < 1 || w > 2000000) return er('Watchdog: 1 to 2,000,000 ms.');
+        if (ty !== 'continuous') return er(`${ty === 'periodic' ? 'Periodic' : 'Event'} tasks are not emulated in this version: the controller runs one continuous task.`);
+        if (S.p.tasks.some(t => (t.type || 'continuous') === 'continuous')) return er('Only one continuous task is allowed in a project.');
+        edit(() => { const t = { name: v, type: 'continuous', programs: [], watchdog: w }; const d = q('#ntk-d').value.trim(); if (d) t.desc = d; if (q('#ntk-o').checked) t.noOutputs = true; if (q('#ntk-i').checked) t.inhibit = true; S.p.tasks.push(t); });
+      } }] });
+    const sync = () => { const ty = el.querySelector('#ntk-t').value; el.querySelector('#ntk-p').disabled = ty !== 'periodic'; el.querySelector('#ntk-r').disabled = ty === 'continuous'; };
+    el.querySelector('#ntk-t').addEventListener('change', sync); sync();
   }
   /* Tools > Options, as the Workstation Options dialog (help v37): the Categories list on the left (a changed
      category gets a * after its name), the page of the category, Reset Category; OK, Cancel, Apply. The pages are the

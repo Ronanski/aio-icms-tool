@@ -179,5 +179,54 @@ module.exports = async function w3a({ browser, URL, check }) {
     check('desktop: the Traffic_Light sample runs (north-south green, east-west red)', v.g === 1 && v.r === 1, JSON.stringify(v));
   }
 
+  /* ---------- 4. File > New Component: every kind opens its dialog; New Program and New Task ---------- */
+  const NEWC = [['New Data Type…', /Data Type/], ['New Module…', /Module/], ['New Program…', /^New Program$/], ['New Routine…', /^New Routine$/], ['New String Type…', /^New String Type$/], ['New Tag…', /^New Tag$/], ['New Task…', /^New Task$/], ['New Trend…', /Trend/]];
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    await example(T); await T.wait(150);
+    const bad = [];
+    for (const [l, re] of NEWC) {
+      if (n === 'phone' && ['New Module…', 'New Routine…', 'New Tag…'].includes(l)) continue;   // the phone has them on the Project and Tags pages
+      if (!(await T.cmd('File', l))) { bad.push(l + ': not found'); continue; }
+      const t = await T.title(); if (!re.test(t)) bad.push(`${l}: ${t}`);
+      await T.pg.keyboard.press('Escape'); await T.wait(120);
+      if (await T.pg.$('#layer .dlg')) { await T.ev(() => { document.querySelector('#layer').innerHTML = ''; }); }
+    }
+    check(`${n}: each File > New Component opens its dialog`, !bad.length, bad.join(' | '));
+    // New Program: Schedule In the task, a MainRoutine, in the organizer
+    await T.cmd('File', 'New Program…');
+    check(`${n}: New Program: Schedule In lists MainTask`, (await T.pg.$eval('#layer #npg-s', s => s.value)) === 'MainTask');
+    await T.pg.fill('#layer #npg-n', 'Bad__Name'); await T.btn('OK');
+    check(`${n}: New Program refuses a bad name`, /letters, digits/.test(await T.text('#layer #npg-e')));
+    await T.pg.fill('#layer #npg-n', 'Conveyor'); await T.pg.fill('#layer #npg-d', 'Belt logic'); await T.btn('OK'); await T.wait(150);
+    const g = await T.ev(() => { const P = MTPS.App.state.p.tasks[0].programs.find(x => x.name === 'Conveyor'); return P && { main: P.main, r: P.routines.map(r => r.name), d: P.desc, errs: MTPS.App.state.verify.errors.filter(e => e.program !== 'Conveyor').length }; });
+    check(`${n}: the program is scheduled in MainTask with its MainRoutine (one empty rung, as New Routine)`, g && g.main === 'MainRoutine' && g.r.join() === 'MainRoutine' && g.d === 'Belt logic' && g.errs === 0, JSON.stringify(g));
+    if (n !== 'phone') check(`${n}: the program shows in the Controller Organizer`, !!(await T.pg.$('[data-org="prog:Conveyor"]')) || n === 'tablet');
+    // New Task: one continuous task only; periodic and event are not emulated
+    await T.cmd('File', 'New Task…');
+    check(`${n}: New Task offers Periodic, Event and Continuous`, (await T.pg.$$eval('#layer #ntk-t option', o => o.map(x => x.textContent))).join() === 'Periodic,Event,Continuous');
+    await T.btn('OK');
+    check(`${n}: a periodic task is refused (not emulated)`, /Periodic tasks are not emulated/.test(await T.text('#layer #ntk-e')));
+    await T.pg.selectOption('#layer #ntk-t', 'continuous'); await T.wait(60);
+    check(`${n}: Continuous greys Period and Priority`, await T.pg.$eval('#layer #ntk-p', x => x.disabled) && await T.pg.$eval('#layer #ntk-r', x => x.disabled));
+    await T.btn('OK');
+    check(`${n}: a second continuous task is refused`, /Only one continuous task/.test(await T.text('#layer #ntk-e')));
+    await T.btn('Cancel');
+    check(`${n}: no JS errors (New Component)`, !T.errs.length, T.errs.join(' | '));
+  }
+  {
+    // the organizer: right-click MainTask > New Program…, the Tasks folder > New Task…
+    const T = await open('desktop');
+    await example(T); await T.wait(150);
+    await T.pg.click('[data-org="task:MainTask"]', { button: 'right' }); await T.wait(150);
+    check('desktop: right-click a task: New Program…', await T.hitText('#layer .menu .it span', 'New Program…'));
+    check('desktop: … with Schedule In the task', (await T.title()) === 'New Program' && (await T.pg.$eval('#layer #npg-s', s => s.value)) === 'MainTask');
+    await T.btn('Cancel');
+    await T.pg.click('[data-org="tasks"]', { button: 'right' }); await T.wait(150);
+    check('desktop: right-click Tasks: New Task…', await T.hitText('#layer .menu .it span', 'New Task…') && (await T.title()) === 'New Task');
+    await T.btn('Cancel');
+    await T.shot('newcomp');
+  }
+
   for (const T of opened) await T.cx.close();
 };

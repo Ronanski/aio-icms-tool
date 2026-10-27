@@ -135,9 +135,9 @@ module.exports = async function menus({ browser, page, URL, check }) {
   console.log('File > New Component (help v37: Routine opens New Routine for the program picked in the organizer)');
   await fresh(); await example();
   f = await menu('File');
-  const nc = f.findIndex(x => x[0] === '#New Component'), ncs = f.slice(nc + 1, nc + 8);
-  check('New Component: Data Type, Module, Program, Routine, Tag, Task, Trend in the reference order', ncs.map(x => x[0]).join('|') === 'New Data Type…|New Module…|New Program…|New Routine…|New Tag…|New Task…|New Trend…', ncs.map(x => x[0]).join('|'));
-  check('Data Type, Routine, Tag, Module and Trend work; Program and Task are listed but off', ncs.filter(x => x[1]).map(x => x[0]).join('|') === 'New Program…|New Task…');
+  const nc = f.findIndex(x => x[0] === '#New Component'), ncs = f.slice(nc + 1, nc + 9);
+  check('New Component: Data Type, Module, Program, Routine, String Type, Tag, Task, Trend in the reference order', ncs.map(x => x[0]).join('|') === 'New Data Type…|New Module…|New Program…|New Routine…|New String Type…|New Tag…|New Task…|New Trend…', ncs.map(x => x[0]).join('|'));
+  check('every kind of New Component is on (Wave 3)', ncs.filter(x => x[1]).length === 0, ncs.filter(x => x[1]).map(x => x[0]).join('|'));
   await page.keyboard.press('Escape');
   await page.click('.org [data-org="prog:MainProgram"]'); await wait(450);
   await menu('File', 'New Routine…');
