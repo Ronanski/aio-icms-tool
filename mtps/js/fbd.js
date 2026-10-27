@@ -1,7 +1,7 @@
 /* MT PLC Studio Function Block Diagram routines (Logix 5000 FBD, 1756-PM009J; instructions 1756-RM018A).
    A routine of Type 'FBD' holds sheets: { desc, els, wires }. Sheets only organise the drawing: every sheet runs.
    Elements: IREF (input reference: a tag or a constant), OREF (output reference: a tag), ICON / OCON (wire
-   connectors, by name, across sheets) and BLK (a function block with its backing tag, e.g. ADD_01 : FBD_MATH).
+   connectors, by name, across sheets) and BLK (a function block with its backing tag, e.g. TONR_01 : FBD_TIMER).
    A wire goes from an output pin to an input pin: { a, ap, b, bp, ada } (ada: Assume Data Available).
    Execution each scan (PM009 Summary): 1. the IREF values are latched, 2. the blocks run in the order of the data
    flow (an input needs its data first; a feedback wire marked Assume Data Available uses last scan's value),
@@ -31,11 +31,15 @@
     FBD_BOOLEAN_NOT: 'EnableIn:BOOL In:BOOL EnableOut:BOOL Out:BOOL',
     FBD_MASKED_MOVE: 'EnableIn:BOOL Source:DINT Mask:DINT Target:DINT EnableOut:BOOL Dest:DINT',
     FBD_ONESHOT: 'EnableIn:BOOL InputBit:BOOL EnableOut:BOOL OutputBit:BOOL',
+    FBD_TIMER: 'EnableIn:BOOL TimerEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT EN:BOOL TT:BOOL DN:BOOL Status:DINT',
+    FBD_COUNTER: 'EnableIn:BOOL CUEnable:BOOL CDEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL',
   };
   for (const n in TYPES) {
     const m = mem(TYPES[n]);
     // EnableIn: "Default is set"; the In1..In8 of BAND: "Set to 1 on first download" (RM018A)
     m.forEach(x => { if (x.name === 'EnableIn' || (n === 'FBD_BOOLEAN_AND' && /^In\d$/.test(x.name))) x.init = 1; });
+    // Status.0 InstructFault, Status.1 PresetInv (FBD_TIMER)
+    if (n === 'FBD_TIMER') m.push({ name: 'InstructFault', type: 'BOOL', of: 'Status', bit: 0 }, { name: 'PresetInv', type: 'BOOL', of: 'Status', bit: 1 });
     MTPS.PREDEF[n] = m;
   }
 
@@ -98,7 +102,50 @@
   def('OSRI', 'FBD_ONESHOT', 'Bit', 'One Shot Rising with Input', 'InputBit', 'OutputBit', (s, st) => { const i = s.InputBit ? 1 : 0; s.OutputBit = i && st.prev === 0 ? 1 : 0; st.prev = i; });
   def('OSFI', 'FBD_ONESHOT', 'Bit', 'One Shot Falling with Input', 'InputBit', 'OutputBit', (s, st) => { const i = s.InputBit ? 1 : 0; s.OutputBit = !i && st.prev === 1 ? 1 : 0; st.prev = i; });
 
-  const GROUPS = ['Compute/Math', 'Compare', 'Move/Logical', 'Bit', 'Advanced Math', 'Math Conversions', 'Trigonometry'];
+  /* the FBD timers (RM018A chapter 3): time base 1 ms, ACC = ACC + the time since the last scan. A PRE below 0 sets
+     Status.InstructFault and .PresetInv and the timer does not run. Reset: TONR / RTOR clear EN TT DN and set ACC 0,
+     TOFR clears EN TT DN and sets ACC = PRE. */
+  const preBad = s => { if (s.PRE < 0) { s.Status = 3; return true; } s.Status = 0; return false; };
+  function timer(t, s, st, c) {
+    const dt = c.dt;
+    if (st.first) { st.first = false; s.EN = s.TT = s.DN = 0; if (t === 'TONR') s.ACC = 0; }
+    if (s.Reset) { s.EN = s.TT = s.DN = 0; s.ACC = t === 'TOFR' ? s.PRE : 0; st.run = false; return; }
+    if (preBad(s)) return;
+    const on = !!s.TimerEnable;
+    if (t === 'TOFR') {
+      // timing starts when TimerEnable goes false, while DN is still set
+      if (on) { s.EN = 1; s.DN = 1; s.TT = 0; s.ACC = 0; st.run = false; return; }
+      s.EN = 0;
+      if (s.DN) { if (st.run) s.ACC = Math.min(s.PRE, s.ACC + dt); st.run = true; if (s.ACC >= s.PRE) { s.DN = 0; st.run = false; } }
+      s.TT = s.DN;
+      return;
+    }
+    if (!on) {
+      s.EN = 0; s.TT = 0; st.run = false;
+      if (t === 'TONR') { s.DN = 0; s.ACC = 0; } else s.DN = s.ACC >= s.PRE ? 1 : 0;
+      return;
+    }
+    s.EN = 1;
+    if (st.run && s.ACC < s.PRE) s.ACC = Math.min(s.PRE, s.ACC + dt);
+    st.run = true;
+    s.DN = s.ACC >= s.PRE ? 1 : 0;
+    s.TT = s.DN ? 0 : 1;
+  }
+  for (const [t, n] of [['TONR', 'Timer On Delay with Reset'], ['TOFR', 'Timer Off Delay with Reset'], ['RTOR', 'Retentive Timer On with Reset']])
+    def(t, 'FBD_TIMER', 'Timer/Counter', n, 'TimerEnable PRE Reset', 'ACC EN TT DN -InstructFault -PresetInv', (s, st, c) => timer(t, s, st, c));
+  /* CTUD (RM018A): counts up on a false-to-true CUEnable, then down on a false-to-true CDEnable (both in one scan:
+     up first). Past 2,147,483,647 it rolls to -2,147,483,648 with OV; below, the other way with UN. Reset clears
+     CUEnable(n-1), CDEnable(n-1), CU, CD, DN, OV, UN and sets ACC 0. First scan: needs a 0 → 1 transition. */
+  def('CTUD', 'FBD_COUNTER', 'Timer/Counter', 'Count Up/Down', 'CUEnable CDEnable PRE Reset', 'ACC CU CD DN -OV -UN', (s, st) => {
+    const u = s.CUEnable ? 1 : 0, d = s.CDEnable ? 1 : 0;
+    if (st.first) { st.first = false; st.cu = u; st.cd = d; }
+    if (s.Reset) { st.cu = st.cd = 0; s.CU = s.CD = s.DN = s.OV = s.UN = 0; s.ACC = 0; return; }
+    if (u && !st.cu) { if (s.ACC >= 2147483647) { s.ACC = -2147483648; if (s.UN) s.UN = 0; else s.OV = 1; } else s.ACC++; }
+    if (d && !st.cd) { if (s.ACC <= -2147483648) { s.ACC = 2147483647; if (s.OV) s.OV = 0; else s.UN = 1; } else s.ACC--; }
+    st.cu = u; st.cd = d; s.CU = u; s.CD = d;
+    s.DN = s.ACC >= s.PRE ? 1 : 0;
+  });
+  const GROUPS = ['Compute/Math', 'Compare', 'Move/Logical', 'Bit', 'Timer/Counter', 'Advanced Math', 'Math Conversions', 'Trigonometry'];
   const typeOfPin = (b, pin) => { const m = MTPS.PREDEF[b.type].find(x => x.name === pin); return m ? m.type : null; };
 
   /* ---------- compile (Verify, Download) ----------
