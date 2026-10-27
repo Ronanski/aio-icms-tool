@@ -242,4 +242,22 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     check('tablet: no JS errors', tp._errs.length === 0, tp._errs.join(' | '));
     await tp.context().close();
   }
+
+  /* ---------- 4. Data Types > Add-On-Defined ---------- */
+  console.log('Wave 2 B: the Add-On-Defined folder (v37 help: Controller Organizer folders)');
+  await fresh();
+  await page.click('.org [data-org="dts"] [data-tw]'); await wait(80);
+  check('Data Types: User-Defined, Strings, Add-On-Defined, Predefined, Module-Defined (the reference order)', (await dtFolders()) === 'User-Defined|Strings|Add-On-Defined|Predefined|Module-Defined', await dtFolders());
+  check('Add-On-Defined is empty (no Add-On Instructions): no expand icon, as for an empty User-Defined', (await page.$('.org [data-org="dt:aod"] [data-tw] svg')) === null && (await page.$('.org [data-org="dt:user"] [data-tw] svg')) === null && (await page.$('.org [data-org="dt:str"] [data-tw] svg')) !== null);
+  await page.click('.org [data-org="dt:aod"]'); await wait(80);
+  check('a click on the empty folder selects it and opens nothing', (await page.$('#layer .dlg')) === null && (await ev(() => MTPS.App.state.orgSel)) === 'dt:aod');
+  await shot('4-addon-defined');
+  {
+    const pp = await touchPage(390, 844);
+    await fresh(pp);
+    await pp.tap('[data-go="project"]'); await wait(150, pp);
+    await pp.tap('.page [data-org="dts"]'); await wait(150, pp);
+    check('phone: Project > Data Types shows Add-On-Defined', (await pp.$('.page [data-org="dt:aod"]')) !== null);
+    await pp.context().close();
+  }
 };

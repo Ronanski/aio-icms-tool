@@ -796,7 +796,7 @@
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {
     const t = typeTable(project), of = k => [...t.values()].filter(d => d.kind === k).map(d => d.name);
-    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user'), strings: of('string') };
+    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user'), strings: of('string'), addOnDefined: of('addon') };
   }
   /* the size of a data type in bytes, as a Logix controller lays a structure out (general knowledge, not quoted): the
      members in order, each on its own boundary (SINT 1, INT 2, DINT and REAL 4, LINT and LREAL 8 bytes); BOOL members in a row share a

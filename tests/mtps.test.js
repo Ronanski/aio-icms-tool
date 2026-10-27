@@ -902,7 +902,7 @@ console.log('Wave 2 B: STRING and the string types of Data Types > Strings (1756
 {
   const p = proj({ dataTypes: [{ name: 'STR20', family: 'string', len: 20 }], tags: [T('S1', 'STRING', { value: { LEN: 2, DATA: [72, 105] } }), T('S2', 'STRING'), T('Short', 'STR20')], rungs: ['COP(S1,S2,1);', 'MOV(S1.LEN,Short.LEN)MOV(S1.DATA[0],Short.DATA[0])MOV(S1.DATA[1],Short.DATA[1]);'] });
   const dt = MTPS.dataTypes(p);
-  check('Strings lists STRING and the project\'s string types; Predefined no longer lists STRING', dt.strings.join() === 'STRING,STR20' && !dt.predefined.includes('STRING') && dt.predefined.includes('TIMER'));
+  check('Strings lists STRING and the project\'s string types; Add-On-Defined is empty; Predefined no longer lists STRING', dt.strings.join() === 'STRING,STR20' && dt.addOnDefined.length === 0 && !dt.predefined.includes('STRING') && dt.predefined.includes('TIMER'));
   eq('STRING is LEN (DINT) and DATA (SINT[82])', MTPS.PREDEF.STRING, [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }]);
   eq('sizes: STRING 88 bytes, STR20 24 bytes', [MTPS.typeSize(p, 'STRING'), MTPS.typeSize(p, 'STR20')], [88, 24]);
   check('a project with STRING tags verifies (COP of a string, its LEN and DATA)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));

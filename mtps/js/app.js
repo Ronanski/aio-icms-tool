@@ -1123,8 +1123,12 @@
     })))));
     const dt = E.dataTypes(S.p);
     add('dts', 0, 'Data Types', 'folder', {}, () => {
-      add('dt:user', 1, 'User-Defined', 'type', {}, () => dt.userDefined.forEach(n => add('dt:u:' + n, 2, n, 'type')));
-      add('dt:str', 1, 'Strings', 'type', {}, () => dt.strings.forEach(n => add('dt:s:' + n, 2, n, 'type')));
+      // a folder shows the expand icon only when it has content (v37 help: Controller Organizer); Add-On-Defined
+      // holds the data types of the Add-On Instructions, so it is empty in this app
+      const sub = (k, txt, list, pre) => add(k, 1, txt, 'type', {}, list.length ? () => list.forEach(n => add(pre + n, 2, n, 'type')) : undefined);
+      sub('dt:user', 'User-Defined', dt.userDefined, 'dt:u:');
+      sub('dt:str', 'Strings', dt.strings, 'dt:s:');
+      sub('dt:aod', 'Add-On-Defined', dt.addOnDefined || [], 'dt:a:');
       add('dt:pre', 1, 'Predefined', 'type', {}, () => dt.predefined.forEach(n => add('dt:p:' + n, 2, n, 'type')));
       add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
     });
