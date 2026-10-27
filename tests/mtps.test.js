@@ -2038,5 +2038,186 @@ console.log('Function Block Diagram routines (1756-PM009, 1756-RM018A)');
   check('Program → Run: TONR starts as on a first scan (ACC 0, EN TT DN cleared, then times)', ct.read('Acc') === 0 && ct.read('TONR_01.EN') === 1);
 }
 
+console.log('Wave 3 B: Unscheduled Programs (v37 help: Create a program, Unschedule a program/phase)');
+{
+  const unsched = (rungs, extra) => ({ name: 'Unscheduled Programs', type: 'unscheduled', programs: [Object.assign({ name: 'Spare', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] }, extra || {})] });
+  const p = proj({ tags: [T('Cnt', 'DINT'), T('Spare_Ran', 'DINT'), T('Q', 'BOOL')], rungs: ['ADD(Cnt,1,Cnt);'] });
+  p.tasks.push(unsched(['ADD(Spare_Ran,1,Spare_Ran);', 'OTE(Q);']));
+  const c = new MTPS.Controller(); check('a project with an unscheduled program downloads', c.download(p).ok);
+  c.write('Q', 1); c.setMode('remrun'); scans(c, 5);
+  check('the scheduled program runs; the unscheduled one never does', c.read('Cnt') === 5 && c.read('Spare_Ran') === 0);
+  check('an unscheduled program is not prescanned (its OTE keeps its value)', c.read('Q') === 1);
+  const bad = proj({ rungs: ['NOP();'] }); bad.tasks.push(unsched(['ADD(Nope,1,Nope);']));
+  check('an unscheduled program is still verified', MTPS.verify(bad).errors.some(e => e.program === 'Spare'));
+  const e2 = proj({ rungs: ['NOP();'] }); e2.tasks.push(unsched([], { routines: [] })); delete e2.tasks[1].programs[0].main;
+  check('an unscheduled program with no routine verifies', MTPS.verify(e2).errors.length === 0);
+}
+
+console.log('Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v37 help: Create a Task)');
+{
+  // a project with more tasks: each one a program with one routine of rung text
+  const prog = (name, rungs) => ({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] });
+  const multi = (tags, cont, tasks) => {
+    const p = proj({ tags, rungs: cont });
+    tasks.forEach((t, k) => { const o = Object.assign({ name: 'T' + k }, t, { programs: [prog('P' + k, t.rungs)] }); delete o.rungs; p.tasks.push(o); });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const D = (n, x) => T(n, 'DINT', x);
+  const loop = n => ['MOV(0,I);', 'LBL(Lp)ADD(I,1,I);', `LES(I,${n})JMP(Lp);`];
+  // periodic: runs every Period of emulated time, the first time at once
+  let c = go(multi([D('Cnt'), D('F'), D('S')], ['ADD(Cnt,1,Cnt);'], [{ type: 'periodic', period: 5, priority: 5, rungs: ['ADD(F,1,F);'] }, { type: 'periodic', period: 100, priority: 10, rungs: ['ADD(S,1,S);'] }]));
+  scans(c, 10);
+  eq('a 5 ms periodic task runs 20 times in 100 ms; the continuous task once a scan', [c.read('F'), c.read('Cnt')], [20, 10]);
+  eq('a 100 ms periodic task runs once in 100 ms', c.read('S'), 1);
+  scans(c, 1); eq('… and again after its period', c.read('S'), 2);
+  // priority: tasks due at the same time run the highest priority (lowest number) first
+  c = go(multi([D('Ord')], ['NOP();'], [{ type: 'periodic', period: 50, priority: 8, rungs: ['MUL(Ord,10,Ord)ADD(Ord,1,Ord);'] }, { type: 'periodic', period: 50, priority: 3, rungs: ['MUL(Ord,10,Ord)ADD(Ord,2,Ord);'] }]));
+  scans(c, 1); eq('priority 3 runs before priority 8', c.read('Ord'), 21);
+  // preemption: a periodic task interrupts a long continuous scan between two rungs
+  c = go(multi([D('I'), D('Mid'), D('Runs')], loop(400000), [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,400000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 1);
+  check('a periodic task interrupts the continuous task in the middle of its scan', c.read('Mid') > 0 && c.read('Runs') > 2, `Mid ${c.read('Mid')} Runs ${c.read('Runs')}`);
+  // overlap: a periodic task that runs longer than its period
+  c = go(multi([D('I'), D('Ov'), D('St')], ['GSV(Task,Slow,OverlapCount,Ov)GSV(Task,Slow,Status,St);'], [{ name: 'Slow', type: 'periodic', period: 0.5, priority: 2, rungs: loop(200000) }]));
+  scans(c, 3);
+  check('a periodic task that runs past its period counts overlaps (OverlapCount, Status bit 2), the controller keeps running', c.read('Ov') > 0 && (c.read('St') & 4) === 4 && c.mode === 'remrun', `Ov ${c.read('Ov')} St ${c.read('St')}`);
+  check('… and logs the minor fault type 6 code 2 (task overlap)', c.minors.some(f => f.type === 6 && f.code === 2));
+  // inhibit
+  c = go(multi([D('F')], ['NOP();'], [{ type: 'periodic', period: 5, inhibit: true, rungs: ['ADD(F,1,F);'] }]));
+  scans(c, 5); eq('an inhibited periodic task does not run', c.read('F'), 0);
+  // timers in a periodic task count the time between its runs
+  c = go(multi([T('Tm', 'TIMER')], ['NOP();'], [{ type: 'periodic', period: 50, rungs: ['TON(Tm,1000,0);'] }]));
+  scans(c, 30); eq('a TON in a 50 ms periodic task times emulated time', c.read('Tm.ACC'), 250);
+  // event task: a change of state of a digital input module (Module Input Data State Change)
+  c = go(multi([D('E'), D('Cnt')], ['ADD(Cnt,1,Cnt);'], [{ type: 'event', trigger: 'input', tag: 'Local:1:I', priority: 4, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('an input event task does not run while its inputs do not change', c.read('E'), 0);
+  c.setInputs(1, 1); scans(c, 3); eq('a change of an input runs it once', c.read('E'), 1);
+  c.setInputs(1, 0); scans(c, 1); c.setInputs(1, 3); scans(c, 1); eq('… each change once', c.read('E'), 3);
+  // event task timeout: Execute Task If No Event Occurs Within
+  c = go(multi([D('E'), D('St')], ['GSV(Task,T0,Status,St);'], [{ type: 'event', trigger: 'event', timeoutOn: true, timeout: 20, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 10); check('with no event, the timeout runs an event task each timeout (Status bit 1)', c.read('E') >= 4 && c.read('E') <= 5 && (c.read('St') & 2) === 2, `E ${c.read('E')} St ${c.read('St')}`);
+  c = go(multi([D('E')], ['NOP();'], [{ type: 'event', trigger: 'event', rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 10); eq('an event task with no trigger and no timeout never runs', c.read('E'), 0);
+  // GSV TASK attributes of 1756-RM018A
+  c = go(multi([D('R'), T('Pr', 'INT'), D('Mx', { dim: [2] }), D('Mn', { dim: [2] })], ['GSV(Task,T0,Rate,R)GSV(Task,T0,Priority,Pr)GSV(Task,T0,MaxInterval,Mx[0])GSV(Task,T0,MinInterval,Mn[0]);'], [{ type: 'periodic', period: 20, priority: 7, rungs: ['NOP();'] }]));
+  scans(c, 10);
+  eq('GSV TASK Rate (µs), Priority, Max/MinInterval (µs)', [c.read('R'), c.read('Pr'), c.read('Mx[0]'), c.read('Mn[0]')], [20000, 7, 20000, 20000]);
+  // after Program mode and Run again, the tasks start over
+  c = go(multi([D('S')], ['NOP();'], [{ type: 'periodic', period: 1000, rungs: ['ADD(S,1,S);'] }]));
+  scans(c, 3); c.setMode('remprog'); c.setMode('remrun'); scans(c, 1);
+  eq('Program then Run: a periodic task is due at once again', c.read('S'), 2);
+  // verify
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  check('only one task can be continuous', /Only one task can be continuous/.test(errs(multi([], ['NOP();'], [{ type: 'continuous', rungs: ['NOP();'] }]))));
+  check('a priority outside 1 to 15 is an error', /Priority 0 is not in the range 1 to 15/.test(errs(multi([], ['NOP();'], [{ type: 'periodic', priority: 0, rungs: ['NOP();'] }]))));
+  check('a period over 2,000 s is an error', /Period 3000000 ms/.test(errs(multi([], ['NOP();'], [{ type: 'periodic', period: 3000000, rungs: ['NOP();'] }]))));
+  check('an input event needs an input module tag', /needs the input tag of an input module/.test(errs(multi([], ['NOP();'], [{ type: 'event', trigger: 'input', tag: 'Local:2:I', rungs: ['NOP();'] }]))));
+  check('at most 32 tasks', /supports 32 tasks/.test(errs(multi([], ['NOP();'], Array.from({ length: 32 }, () => ({ type: 'periodic', rungs: ['NOP();'] }))))));
+  // a project without a periodic or event task keeps the plain scan
+  check('a project with only the continuous task does not take the timed path', !go(proj({ rungs: ['NOP();'] })).M.timed);
+}
+
+console.log('Wave 3 B: program parameters, Input / Output / InOut / Public and direct access (1756-PM021)');
+{
+  // MainProgram (in the proj helper) and B, both in MainTask; B runs after MainProgram
+  const two = (mainTags, mainRungs, bTags, bRungs, ctags) => {
+    const p = proj({ tags: ctags || [], ptags: mainTags, rungs: mainRungs });
+    p.tasks[0].programs.push({ name: 'B', main: 'Main', tags: bTags, routines: [{ name: 'Main', rungs: bRungs.map(t => ({ t })) }] });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  const D = (n, x) => T(n, 'DINT', x);
+  // Output -> Input: the Input of B is copied from the published Output before B runs
+  let c = go(two([D('Out', { usage: 'Output', conn: ['\\B.In'] })], ['ADD(Out,1,Out);'], [D('In', { usage: 'Input' }), D('Seen')], ['MOV(In,Seen);']));
+  scans(c, 3);
+  eq('Output -> Input: B sees the Output of MainProgram of the same scan', [c.read('Out', 'MainProgram'), c.read('Seen', 'B')], [3, 3]);
+  // Input from a controller tag, by value: a write to the tag during the program does not change it
+  c = go(two([D('In', { usage: 'Input', conn: ['Level'] }), D('A'), D('Bv')], ['MOV(In,A);', 'MOV(99,Level);', 'MOV(In,Bv);'], [], ['NOP();'], [D('Level', { value: 7 })]));
+  scans(c, 1);
+  eq('Input from a controller tag: copied before the scan, passed by value', [c.read('A', 'MainProgram'), c.read('Bv', 'MainProgram')], [7, 7]);
+  scans(c, 1); eq('… and refreshed before the next scan', c.read('A', 'MainProgram'), 99);
+  // Output to controller tags: fan-out, written when the program completes
+  c = go(two([D('Out', { usage: 'Output', conn: ['T1', 'T2'] })], ['MOV(5,Out);', 'MOV(T1,Mid);'], [], ['NOP();'], [D('T1'), D('T2'), D('Mid')]));
+  scans(c, 1);
+  eq('Output to two controller tags at the end of the program (not during it)', [c.read('T1'), c.read('T2'), c.read('Mid')], [5, 5, 0]);
+  // InOut: by reference
+  c = go(two([D('Io', { usage: 'InOut', conn: ['Shared'] })], ['ADD(Io,1,Io);', 'MOV(Io,Copy);'], [], ['NOP();'], [D('Shared', { value: 10 }), D('Copy')]));
+  scans(c, 1);
+  eq('InOut: a reference to the controller tag (read and written at once)', [c.read('Shared'), c.read('Copy')], [11, 11]);
+  // Public and direct access
+  c = go(two([D('Pub', { usage: 'Public' }), D('OutP', { usage: 'Output' }), D('Loc')], ['ADD(Pub,1,Pub);', 'MOV(Pub,OutP);'], [D('X'), D('Y')], ['MOV(\\MainProgram.Pub,X);', 'ADD(\\MainProgram.OutP,100,Y);']));
+  scans(c, 2);
+  eq('direct access \\Program.Parameter: a Public and an Output parameter of another program', [c.read('X', 'B'), c.read('Y', 'B')], [2, 102]);
+  c = go(two([D('Pub', { usage: 'Public' })], ['NOP();'], [], ['MOV(42,\\MainProgram.Pub);']));
+  scans(c, 1); eq('direct access writes a Public parameter', c.read('Pub', 'MainProgram'), 42);
+  c = go(two([D('Pub', { usage: 'Public' }), D('R')], ['CPT(R,\\B.Q*2);'], [D('Q', { usage: 'Public', value: 4 })], ['NOP();']));
+  scans(c, 1); eq('direct access in a CPT expression', c.read('R', 'MainProgram'), 8);
+  // structures pass by value too
+  c = go(two([T('Ot', 'TIMER', { usage: 'Output', conn: ['\\B.It'] })], ['MOV(1234,Ot.PRE);'], [T('It', 'TIMER', { usage: 'Input' }), D('P')], ['MOV(It.PRE,P);']));
+  scans(c, 1); eq('a TIMER Output to a TIMER Input: copied member by member', c.read('P', 'B'), 1234);
+  // the rules of the connections (verify)
+  check('direct access to a local tag is an error', /local tag of program 'MainProgram'/.test(errs(two([D('Loc')], ['NOP();'], [D('X')], ['MOV(\\MainProgram.Loc,X);']))));
+  check('an Input takes one source connection', /more than one source connection/.test(errs(two([D('In', { usage: 'Input', conn: ['A1', 'A2'] })], ['NOP();'], [], ['NOP();'], [D('A1'), D('A2')]))));
+  check('a Public parameter cannot connect to a controller tag', /Public parameter cannot connect to a controller tag/.test(errs(two([D('Pub', { usage: 'Public', conn: ['A1'] })], ['NOP();'], [], ['NOP();'], [D('A1')]))));
+  check('two parameters of the same usage do not connect (Output - Output)', /cannot connect to another Output parameter/.test(errs(two([D('O1', { usage: 'Output', conn: ['\\B.O2'] })], ['NOP();'], [D('O2', { usage: 'Output' })], ['NOP();']))));
+  check('the data types of a connection must match', /data types do not match \(DINT and REAL\)/.test(errs(two([D('Out', { usage: 'Output', conn: ['\\B.In'] })], ['NOP();'], [T('In', 'REAL', { usage: 'Input' })], ['NOP();']))));
+  check('an InOut needs exactly one connection', /needs exactly one connection/.test(errs(two([D('Io', { usage: 'InOut' })], ['NOP();'], [], ['NOP();']))));
+  check('an InOut connects to an Output only when it is Constant', /only when it is Constant/.test(errs(two([D('Io', { usage: 'InOut', conn: ['\\B.O'] })], ['NOP();'], [D('O', { usage: 'Output' })], ['NOP();']))));
+  check('a connection to a tag that does not exist is an error', /connection 'Nope'/.test(errs(two([D('In', { usage: 'Input', conn: ['Nope'] })], ['NOP();'], [], ['NOP();']))));
+  check('a project without parameters has no parameter copies', go(proj({ rungs: ['NOP();'] })).M.programs.every(P => !P.pin && !P.pout));
+}
+
+console.log('Wave 3 B: UID, UIE, EVENT, IOT (1756-RM018A chapters 11 and 4)');
+{
+  const prog = (name, rungs) => ({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] });
+  const multi = (tags, cont, tasks) => {
+    const p = proj({ tags, rungs: cont });
+    tasks.forEach((t, k) => { const o = Object.assign({ name: 'T' + k }, t, { programs: [prog('P' + k, t.rungs)] }); delete o.rungs; p.tasks.push(o); });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  const D = n => T(n, 'DINT');
+  eq('the four instructions: Program Control and Input/Output', ['UID', 'UIE', 'EVENT', 'IOT'].map(m => MTPS.INSTR[m].grp), ['Program Control', 'Program Control', 'Program Control', 'Input/Output']);
+  // EVENT: one run of the event task each time it executes; Status bit 0
+  let c = go(multi([D('E'), D('St'), T('Go', 'BOOL'), T('Os', 'BOOL')], ['XIC(Go)ONS(Os)EVENT(Shut_Down);', 'GSV(Task,Shut_Down,Status,St);'], [{ name: 'Shut_Down', type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('EVENT: the event task does not run before it executes', c.read('E'), 0);
+  c.write('Go', 1); scans(c, 3);
+  check('EVENT on a true rung (with ONS): the task runs once; Status bit 0 is set', c.read('E') === 1 && (c.read('St') & 1) === 1, `E ${c.read('E')} St ${c.read('St')}`);
+  // an EVENT each scan on a task of a lower priority than ... the event task runs each scan
+  c = go(multi([D('E')], ['EVENT(T0);'], [{ type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 5); eq('EVENT each scan: the event task runs each scan', c.read('E'), 5);
+  // a second trigger while it waits or runs: an overlap, not a second run
+  c = go(multi([D('E'), D('Ov')], ['NOP();'], [{ type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }, { type: 'periodic', period: 10, priority: 15, rungs: ['EVENT(T0)EVENT(T0)GSV(Task,T0,OverlapCount,Ov);'] }]));
+  // T1 (priority 15) is below T0 (5): T0 interrupts at the next rung, so two EVENTs in one rung overlap
+  scans(c, 3);
+  check('two EVENTs before the task can run: one run, one overlap counted', c.read('E') === 3 && c.read('Ov') >= 2, `E ${c.read('E')} Ov ${c.read('Ov')}`);
+  c = go(multi([D('E'), D('S')], ['EVENT(T0);', 'ADD(S,1,S);'], [{ type: 'periodic', period: 1000, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('EVENT on a task that is not an event task: it is not run', c.read('E'), 1);
+  check('EVENT names a task that exists', /Undefined task 'Nope'/.test(errs(multi([], ['EVENT(Nope);'], []))));
+  // UID / UIE: no interruption between them
+  c = go(multi([D('I'), D('Mid'), D('Runs')], ['MOV(0,I);', 'UID();', 'LBL(Lp)ADD(I,1,I);', 'LES(I,300000)JMP(Lp);', 'UIE();'], [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,300000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 2);
+  check('UID … UIE: the 1 ms task does not interrupt the rungs between them; it runs after UIE', c.read('Mid') === 0 && c.read('Runs') > 0, `Mid ${c.read('Mid')} Runs ${c.read('Runs')}`);
+  c = go(multi([D('I'), D('Mid'), D('Runs')], ['MOV(0,I);', 'UID();', 'UID();', 'UIE();', 'LBL(Lp)ADD(I,1,I);', 'LES(I,300000)JMP(Lp);', 'UIE();'], [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,300000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 1); eq('UID / UIE nest: two UID need two UIE', c.read('Mid'), 0);
+  // IOT
+  c = go(multi([], ['IOT(Local:2:O);'], []));
+  scans(c, 4); eq('IOT on the output tag of an output module: each true rung sends the outputs', c.iots, 4);
+  check('IOT takes only the output tag of an I/O module', /output tag of an I\/O module/.test(errs(multi([], ['IOT(Local:1:I);'], []))) && /output tag of an I\/O module/.test(errs(multi([], ['IOT(Local:2:O.Data);'], []))));
+  check('UID and UIE take no operands; EVENT takes one', !errs(multi([], ['UID();', 'UIE();'], [])) && !!errs(multi([], ['UID(MainTask);'], [])));
+}
+
+console.log('Wave 3 B: Controller Properties > SFC Execution settings (help v37; 1756-PM006)');
+{
+  eq('the defaults: Execute current active steps only, Restart at most recently executed step, Don\'t scan', MTPS.sfcOf({}), { exec: 'current', restart: 'recent', last: 'dontscan' });
+  const p = proj({ rungs: ['NOP();'] }); p.controller.sfc = { exec: 'untilFalse', restart: 'initial', last: 'auto' };
+  const c = new MTPS.Controller(); c.download(p);
+  eq('the settings of the project reach the SFC routines (sfc.js)', MTPS.SFC.cfgOf(c.M.sfcCfg), { exec: 'untilFalse', restart: 'initial', last: 'auto' });
+  eq('an unknown value takes the default', MTPS.sfcOf({ sfc: { exec: 'x', last: 'programmatic' } }), { exec: 'current', restart: 'recent', last: 'programmatic' });
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

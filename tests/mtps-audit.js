@@ -35,6 +35,8 @@ const PLAN = {
   GSV: ['WallClockTime', '', 'DateTime', 'ARR[0]'], SSV: ['Program', 'THIS', 'MaxScanTime', 'D1'],
   PID: ['PID1', 'R1', '0', 'R2', '0', '0', '0'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
+  // Wave 3 (B): program control and IOT
+  UID: [], UIE: [], EVENT: ['MainTask'], IOT: ['Local:2:O'],
 };
 const MNS = Object.keys(PLAN);
 

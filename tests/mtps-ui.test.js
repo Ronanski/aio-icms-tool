@@ -887,7 +887,7 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   await page.dblclick('.nd[data-org="task:MainTask"]');
   await page.waitForTimeout(120);
-  check('organizer: double-click a task opens Task Properties (General, Configuration, Program Schedule, Monitor)', (await dlgTitle()) === 'Task Properties - MainTask' && (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent).join('|'))) === 'General|Configuration|Program Schedule|Monitor');
+  check('organizer: double-click a task opens Task Properties (General, Configuration, Program / Phase Schedule, Monitor)', (await dlgTitle()) === 'Task Properties - MainTask' && (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent).join('|'))) === 'General|Configuration|Program / Phase Schedule|Monitor');
   await page.keyboard.press('Escape');
   await page.click('.nd[data-org="prog:MainProgram"]', { button: 'right' });
   await page.waitForTimeout(80);
@@ -2340,6 +2340,7 @@ function check(name, cond, info = '') {
   await require('./mtps-ui-w3F')({ browser, page, URL, check });
   await require('./mtps-ui-w3G')({ browser, page, URL, check });
   await require('./mtps-ui-w3D')({ browser, page, URL, check });
+  await require('./mtps-ui-w3B')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

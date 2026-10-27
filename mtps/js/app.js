@@ -116,14 +116,14 @@
     Favorites: ['RUNG', 'BR', 'BRL', 'XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES'],
     Bit: ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'OSR', 'OSF'],
     'Timer/Counter': ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES'],
-    'Input/Output': ['GSV', 'SSV'],
+    'Input/Output': ['GSV', 'SSV', 'IOT'],
     Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
     'File/Misc': ['FAL', 'FSC', 'COP', 'CPS', 'FLL', 'AVE', 'SRT', 'STD', 'SIZE'],
     'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     Sequencer: ['SQI', 'SQO', 'SQL'],
-    'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
+    'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND', 'UID', 'UIE', 'EVENT'],
     Debug: ['BPT', 'TPT'],
     Special: ['PID'],
     'Trig Functions': ['SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN'],
@@ -364,8 +364,9 @@
     if (p.rack && p.rack.size != null && !E.RACKS.includes(p.rack.size)) p.rack.size = E.fitRack(p.rack.size, (p.rack.modules || []).map(m => m.slot).concat(p.controller && Number.isInteger(p.controller.slot) ? p.controller.slot : 0));
     const gone = (p.rack && p.rack.modules || []).filter(m => !E.MODULES[m.type]);
     if (gone.length) { p.rack.modules = p.rack.modules.filter(m => E.MODULES[m.type]); setTimeout(() => toast(`Removed from the I/O configuration: ${gone.map(m => `[${m.slot}] ${m.name}`).join(', ')} (module type no longer in the app).`), 300); }
-    S.prog = allProgs()[0].name;
-    S.routine = allProgs()[0].main || allProgs()[0].routines[0].name;
+    const g0 = allProgs().find(g => g.routines.length) || allProgs()[0];
+    S.prog = g0.name;
+    S.routine = g0.main || g0.routines[0].name;
     S.sel = null; S.selRung = rungs().length ? 0 : null; S.undo = []; S.redo = [];
     S.online = false;
     relink();
@@ -376,7 +377,7 @@
   }
   function validProject(p) {
     return p && p.format === 'mt-plc-studio' && p.controller && E.validName(p.controller.name) && Array.isArray(p.tasks) && p.tasks.length &&
-      p.tasks.every(t => Array.isArray(t.programs) && t.programs.every(g => Array.isArray(g.routines) && (g.routines.length || HANDLERS[t.type])));
+      p.tasks.every(t => Array.isArray(t.programs) && t.programs.every(g => Array.isArray(g.routines))) && p.tasks.some(t => t.programs.some(g => g.routines.length));
   }
 
   /* ---------- state ---------- */
@@ -404,10 +405,10 @@
   const allProgs = () => S.p.tasks.flatMap(t => t.programs);
   /* the Controller Fault Handler and the Power-Up Handler folders (1756-PM014): kept as a task of type fault / powerup
      that holds at most one program, which is never scheduled (it runs on a major fault, or at power-up) */
-  const HANDLERS = { fault: 'Controller Fault Handler', powerup: 'Power-Up Handler' };
+  const HANDLERS = { fault: 'Controller Fault Handler', powerup: 'Power-Up Handler', unscheduled: 'Unscheduled Programs' };
   const handlerTask = kind => S.p.tasks.find(t => t.type === kind);
   const handlerProg = kind => { const t = handlerTask(kind); return t && t.programs[0] || null; };
-  const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
+  const curProg = () => allProgs().find(p => p.name === S.prog && p.routines.length) || allProgs().find(p => p.routines.length);
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
   // an SFC routine has no rungs: the ladder commands see an empty list (sfc.js edits the chart)
   const rungs = () => { const r = curRoutine(); return r.type === 'SFC' ? [] : r.rungs; };
@@ -881,10 +882,10 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
-    // File > New Component (reference order); Program and Task are listed but not in this version yet
+    // File > New Component (reference order); Task is listed but not in this version yet
     newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
-    newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
-    newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
+    newprog: { l: 'New Program…', i: 'tree', run: () => TK.newProgram((S.orgSel || '').startsWith('task:') ? S.orgSel.slice(5) : ''), on: () => editable() && offline() },
+    newtask: { l: 'New Task…', i: 'tree', run: () => TK.newTask(), on: () => editable() && offline() },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
@@ -1214,7 +1215,7 @@
       add('cfh', 1, HANDLERS.fault, 'folder', {}, () => { const g = handlerProg('fault'); if (g) progNode(g, 2); });
       add('puh', 1, HANDLERS.powerup, 'folder', {}, () => { const g = handlerProg('powerup'); if (g) progNode(g, 2); });
     });
-    add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.filter(t => !HANDLERS[t.type]).forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => progNode(g, 2)))));
+    add('tasks', 0, 'Tasks', 'folder', {}, () => { S.p.tasks.filter(t => !HANDLERS[t.type]).forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => progNode(g, 2)))); const un = TK.unscheduled(); add('unsch', 1, HANDLERS.unscheduled, 'folder', {}, un.length ? () => un.forEach(g => progNode(g, 2)) : undefined); });
     const dt = E.dataTypes(S.p);
     add('dts', 0, 'Data Types', 'folder', {}, () => {
       // a folder shows the expand icon only when it has content (v37 help: Controller Organizer); Add-On-Defined
@@ -1719,6 +1720,7 @@
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
     else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
+    TK.orgMore(key, items);
     if (items.length) openMenu(items, { x, y });
   }
 
@@ -1855,6 +1857,9 @@
       const O = E.GSVOBJ[Object.keys(E.GSVOBJ).find(k => PCTX && U(k) === U(PCTX.ops[0] || ''))];
       return O ? Object.entries(O.attrs).filter(([, a]) => PCTX.mn !== 'SSV' || a[2]).map(([name, a]) => ({ name, type: a[0] + (a[1] > 1 ? `[${a[1]}]` : ''), desc: a[2] ? 'GSV / SSV' : 'GSV' })) : [];
     } },
+    // EVENT: the tasks (the event tasks first); IOT: the output tags of the output modules
+    task: { title: 'Tasks (EVENT runs an event task)', list: () => S.p.tasks.filter(t => !HANDLERS[t.type]).sort((a, b) => (b.type === 'event') - (a.type === 'event')).map(t => ({ name: t.name, type: '', desc: TK.typeText(t) })) },
+    iot: { title: 'Output tags of the I/O modules', list: () => S.p.rack.modules.filter(m => ['do', 'ao'].includes((E.MODULES[m.type] || {}).kind)).map(m => ({ name: `Local:${m.slot}:O`, type: '', desc: `[${m.slot}] ${MODNAMES[m.type] || m.type}` })) },
     adim: { title: 'Dimension to vary (the order is array[0,1,2])', list: () => [['0', 'The first dimension'], ['1', 'The second dimension'], ['2', 'The third dimension']].map(([name, desc]) => ({ name, type: '', desc })) },
   };
   const PICKK = Object.keys(PICKS);
@@ -2976,7 +2981,7 @@
     // Go To: the routine (its first rung) or the rung, in the ladder editor
     function go() {
       const k = cur, [g, r, ri] = k.slice(2).split('/');
-      if (k[0] === 'g') { const pg = allProgs().find(x => x.name === g); S.prog = g; S.routine = pg.main || pg.routines[0].name; }
+      if (k[0] === 'g') { const pg = allProgs().find(x => x.name === g); if (!pg.routines.length) return; S.prog = g; S.routine = pg.main || pg.routines[0].name; }
       else { S.prog = g; S.routine = r; }
       S.view = 'ladder'; S.sel = null; S.selAll = null; S.selRung = ri != null ? +ri : 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder';
       setTimeout(() => { reverify(); render(); scrollToSel(); }, 0);
@@ -4903,32 +4908,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   /* Controller Properties: General, Major Faults, Minor Faults */
   let orgTap = { k: '', t: 0 };
-  /* Task Properties: General, Configuration, Program Schedule, Monitor (the reference's tabs; one continuous task here) */
-  function taskProps(name) {
-    const T = S.p.tasks.find(x => x.name === name); if (!T) return;
-    const dis = editable() ? '' : ' disabled', on = S.online && ctl.M;
-    const general = `<div class="frow"><label>Name</label><input class="inp" id="tp-n" value="${esc(T.name)}"${offline() ? '' : ' disabled'}></div>
-      <div class="frow"><label>Description</label><textarea class="inp" id="tp-d" rows="3"${dis}>${esc(T.desc || '')}</textarea></div>`;
-    const conf = `<div class="frow"><label>Type</label><select class="inp" id="tp-t" disabled><option>Continuous</option></select></div>
-      <div class="frow"><label>Watchdog (ms)</label><input class="inp" id="tp-w" type="number" min="1" max="2000000" value="${T.watchdog || 500}"${dis}></div>
-      <label class="ck"><input type="checkbox" id="tp-o"${T.noOutputs ? ' checked' : ''}${dis}> Disable automatic output processing to reduce task overhead</label>
-      <label class="ck"><input type="checkbox" id="tp-i"${T.inhibit ? ' checked' : ''}${dis}> Inhibit task</label>
-      <p class="help">This controller has one continuous task. Periodic and event tasks are not emulated.</p>`;
-    const sched = `<div class="grp">Scheduled programs</div>${T.programs.map((g, i) => `<div class="row"><span class="mono">${i + 1}</span><span class="grow">${esc(g.name)}</span></div>`).join('') || '<p class="help">None.</p>'}`;
-    const mon = on ? `${kv('Last scan time', ((ctl.scanUs || 0) / 1000).toFixed(3) + ' ms')}${kv('Maximum scan time', ((ctl.maxScanUs || 0) / 1000).toFixed(3) + ' ms')}${kv('Scan period', ctl.period + ' ms')}${kv('Scans', ctl.scans)}<div class="brow"><button class="btn" id="tp-r">Reset</button></div>`
-      : '<p class="help">Offline. Go online to see the scan times.</p>';
-    dialog({ title: 'Task Properties - ' + T.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['sch', 'Program Schedule', sched], ['mon', 'Monitor', mon]], 'gen'),
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        if (!editable()) return;
-        const n = el.querySelector('#tp-n').value.trim(), d = el.querySelector('#tp-d').value.trim(), w = Math.max(1, +el.querySelector('#tp-w').value || 500);
-        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
-        const no = el.querySelector('#tp-o').checked, inh = el.querySelector('#tp-i').checked;
-        if (n === T.name && d === (T.desc || '') && w === (T.watchdog || 500) && no === !!T.noOutputs && inh === !!T.inhibit) return;
-        edit(() => { T.name = n; if (d) T.desc = d; else delete T.desc; T.watchdog = w; if (no) T.noOutputs = true; else delete T.noOutputs; if (inh) T.inhibit = true; else delete T.inhibit; });
-      } }],
-      mount: el => { bindTabs(el); const r = el.querySelector('#tp-r'); if (r) r.onclick = () => { ctl.maxScanUs = 0; taskProps(name); }; } });
-  }
+  /* Task Properties: General, Configuration, Program Schedule, Monitor (the reference's tabs), in tasks.js */
+  function taskProps(name) { TK.taskProps(name); }
   /* Program Properties: General, Configuration (main and fault routines), Monitor */
   function progProps(name) {
     const g = allProgs().find(x => x.name === name); if (!g) return;
@@ -4941,15 +4922,17 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       <label class="ck"><input type="checkbox" id="pp-i"${g.inhibit ? ' checked' : ''}${dis}> Inhibit program</label>
       <p class="help">The main routine runs each scan; it calls the other routines with JSR.</p>`;
     const mon = `${kv('Routines', g.routines.length)}${kv('Rungs', g.routines.reduce((n, r) => n + r.rungs.length, 0))}${kv('Program tags', (g.tags || []).length)}`;
+    const PAR = TK.params(g);
     dialog({ title: 'Program Properties - ' + g.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['mon', 'Monitor', mon]], 'gen'),
+      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['par', 'Parameters', PAR.html()], ['mon', 'Monitor', mon]], 'gen'),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!editable()) return;
         const d = el.querySelector('#pp-d').value.trim(), m = el.querySelector('#pp-m').value, fr = el.querySelector('#pp-f').value, inh = el.querySelector('#pp-i').checked;
-        if (d === (g.desc || '') && m === (g.main || '') && fr === (g.fault || '') && inh === !!g.inhibit) return;
-        edit(() => { if (d) g.desc = d; else delete g.desc; g.main = m || undefined; if (!m) delete g.main; if (fr) g.fault = fr; else delete g.fault; if (inh) g.inhibit = true; else delete g.inhibit; });
+        const pc = PAR.changed();
+        if (d === (g.desc || '') && m === (g.main || '') && fr === (g.fault || '') && inh === !!g.inhibit && !pc) return;
+        edit(() => { if (pc) PAR.apply(); if (d) g.desc = d; else delete g.desc; g.main = m || undefined; if (!m) delete g.main; if (fr) g.fault = fr; else delete g.fault; if (inh) g.inhibit = true; else delete g.inhibit; });
       } }],
-      mount: bindTabs });
+      mount: el => { bindTabs(el); PAR.mount(el); } });
   }
   /* Routine Properties: General (name, description, type, program, rungs) */
   function routineProps(key) {
@@ -5019,13 +5002,14 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       : (ctl.minors.length ? ctl.minors.map(row).join('') : '<p><b style="color:var(--ok)">No minor faults.</b></p>') +
         `<div class="brow"><button class="btn" id="cp-cn"${ctl.minors.length ? '' : ' disabled'}>Clear Minors</button></div>`;
     dialog({ title: 'Controller Properties - ' + S.p.controller.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['proj', 'Project', projTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
+      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['sfc', 'SFC Execution', TK.sfcHTML()], ['proj', 'Project', projTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!offline()) return;
         const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim(), cs = +el.querySelector('#cp-s').value;
         if (cs !== ctlSlot()) edit(() => { S.p.controller.slot = cs; });
         const docs = el.querySelector('#cp-docs').checked;
         if (docs === !!S.p.noDocs) edit(() => { if (docs) delete S.p.noDocs; else S.p.noDocs = true; });
+        const sfc = TK.sfcRead(el); if (sfc) edit(() => { S.p.controller.sfc = sfc; });
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         const old = S.p.controller.name;
         if (v === old && desc === (S.p.controller.desc || '')) return;
@@ -5499,7 +5483,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k === 'ctl') return [P.controller.name, [['Type', P.controller.type || 'PLC-CPU'], ['Revision', P.controller.rev || ''], ['Slot', ctlSlot()], ['Description', P.controller.desc || ''], ['Mode', modeText()]]];
     if (k === 'ctags') return ['Controller Tags', [['Type', 'Tags of the controller scope'], ['Tags', P.tags.length]]];
     if (k === 'tasks') return ['Tasks', [['Type', 'Folder'], ['Tasks', P.tasks.length]]];
-    if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', 'Continuous task'], ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
+    if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', TK.typeText(T)], ...TK.quick(T), ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
     if (k.startsWith('prog:')) { const g = prog(k.slice(5)); return g && [g.name, [['Type', 'Program'], ['Description', g.desc || ''], ['Main Routine', g.main || '<none>'], ['Routines', g.routines.length], ['Tags', g.tags.length]]]; }
     if (k.startsWith('ptags:')) { const g = prog(k.slice(6)); return g && ['Program Tags', [['Type', 'Tags of the program scope'], ['Program', g.name], ['Tags', g.tags.length]]]; }
     if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', R.type === 'ST' ? 'Structured Text routine' : R.type === 'SFC' ? 'Sequential Function Chart routine' : R.type === 'FBD' ? 'Function Block Diagram routine' : 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
@@ -7546,7 +7530,9 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   if (E.ST && E.ST.ui) E.ST.ui.init({ S, edit, render, run, curRoutine, curProg, liveRoutine, editable, get ctl() { return ctl; } });
   if (SFCUI()) SFCUI().bind({ S, dialog, openMenu, toast, esc, ic, edit, render, run, curProg, curRoutine, ctl: () => ctl, prompt1, savePrefs, editable });
-  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
+  // tasks and programs (tasks.js): New Program, Unscheduled Programs, Task Properties
+  const TK = E.TasksUI({ S, E, esc, U, kv, tabbed, bindTabs, dialog, confirmDlg, toast, edit, editable, offline, render, allProgs, HANDLERS, savePrefs, get ctl() { return ctl; } });
+  E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll, tasks: TK };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   // the FBD editor (fbd.js) works through these helpers of the app
   if (E.FBD && E.FBD.init) E.FBD.init({ S, IC, ctl: () => ctl, curProg, curRoutine, edit, render, toast, dialog, openMenu, closeLayer, prompt1, confirm: confirmDlg, candidates, editable, ic });

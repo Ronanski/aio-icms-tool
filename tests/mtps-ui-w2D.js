@@ -202,7 +202,7 @@ module.exports = async function w2D({ browser, page, URL, check }) {
   {
     await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
     const projTab = async () => { await page.dblclick('.nd[data-org="ctl"]'); await wait(200); await page.click('#layer [data-dt="proj"]'); await wait(80); return page.$eval('#layer [data-pane="proj"]', e => e.textContent); };
-    check('the tabs: General, Major Faults, Minor Faults, Date/Time, Advanced, Project, Memory', (await (async () => { await page.dblclick('.nd[data-org="ctl"]'); await wait(200); return page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent.trim()).join('|')); })()) === 'General|Major Faults|Minor Faults|Date/Time|Advanced|Project|Memory');
+    check('the tabs: General, Major Faults, Minor Faults, Date/Time, Advanced, SFC Execution, Project, Memory', (await (async () => { await page.dblclick('.nd[data-org="ctl"]'); await wait(200); return page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent.trim()).join('|')); })()) === 'General|Major Faults|Minor Faults|Date/Time|Advanced|SFC Execution|Project|Memory');
     await page.keyboard.press('Escape'); await wait(80);
     let t = await projTab();
     check('not saved yet: Name (not saved yet), Created set, Edited -', /Name\(not saved yet\)/.test(t) && /Created\d/.test(t) && /Edited-/.test(t), t);

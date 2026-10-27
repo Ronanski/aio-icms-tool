@@ -198,6 +198,14 @@
       flags: NOF, faults: '.UPD ≤ 0: minor fault, type 4, code 35. Setpoint out of range: minor fault, type 4, code 36 (.SPOR is set and the last valid setpoint is used).' },
     TRN: { ops: ['The REAL value to truncate (immediate or tag).', 'Where the whole-number part goes.'], exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', RSET], ['Rung-condition-in is true', RSET + ' Dest = the truncated value of the Source.'], ['Postscan', 'N/A.']], flags: MATHF,
       desc: 'Removes (truncates) the fractional part of the Source and stores the result in Dest. It does not round: the whole-number part stays the same whatever the fraction. Logix Designer v36 and later call it TRUNC. Example from the manual: Source 789.55554 gives 789.0.', faults: 'None specific to this instruction.' },
+    UID: { ops: [], desc: 'Works with UIE to keep a small number of critical rungs from being interrupted by other tasks. On a true rung, tasks of a higher priority cannot interrupt the task this instruction is in; a fault routine and the Controller Fault Handler still run. Each UID adds one to a nesting counter, each UIE takes one away: the task can be interrupted again when it is back to 0. Keep the rungs between them as few as possible.',
+      exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', 'N/A.'], ['Rung-condition-in is true', 'The task that contains the instruction cannot be interrupted.'], ['Postscan', 'N/A.']], flags: NOF, faults: 'None specific to this instruction.' },
+    UIE: { ops: [], desc: 'Ends a UID: on a true rung the nesting counter goes down by one; at 0, tasks of a higher priority can interrupt the task again as usual. Example: UID(); <rungs>; UIE();',
+      exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', 'N/A.'], ['Rung-condition-in is true', 'The task that contains the instruction can be interrupted again.'], ['Postscan', 'N/A.']], flags: NOF, faults: 'None specific to this instruction.' },
+    EVENT: { ops: ['The event task to run. A task that is not an event task is not run.'], desc: 'Triggers one run of an event task, whatever its trigger type. Each time the instruction executes, it triggers the task once: give the task time to finish before the next trigger. An EVENT while the task is already running (or waiting to run) adds one to its overlap count and does not trigger it. Bit 0 of the Status attribute of the TASK object (GSV) shows that an EVENT instruction triggered the task; the controller does not clear it.',
+      exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', 'N/A.'], ['Rung-condition-in is true', 'The instruction executes.'], ['Postscan', 'N/A.']], flags: NOF, faults: 'None specific to this instruction.' },
+    IOT: { ops: ['The output tag of an I/O module (Local:slot:O). A produced tag is not supported here.'], desc: 'Immediately updates the output data of the module: it overrides the RPI of the output connection and sends fresh data. The connection to the module must be open. In this emulator the outputs of the rack are always current, so the instruction only counts the update.',
+      exec: [['Prescan', 'N/A.'], ['Rung-condition-in is false', 'N/A.'], ['Rung-condition-in is true', 'The instruction updates the connection of the tag and resets the RPI timer of the connection.'], ['Postscan', 'N/A.']], flags: NOF, faults: 'None specific to this instruction.' },
   });
   // the operand types and formats, by kind of operand
   const KIND = {
@@ -209,7 +217,7 @@
     ddest: ['DINT', 'tag'],
     fsrc: ['SINT, INT, DINT, REAL, structure', 'immediate or tag'], farr: ['SINT, INT, DINT, REAL, structure', 'array tag'], fdst: ['SINT, INT, DINT, REAL, structure', 'tag'],
     fmt: ['STRING', "quoted string 'heading:text %d'"], trace: ['BOOL, SINT, INT, DINT, REAL', 'tag'],
-    routine: ['ROUTINE', 'name'], label: ['LABEL', 'name'], order: ['keyword', 'REVERSE, WORD, HIGH/LOW'],
+    routine: ['ROUTINE', 'name'], label: ['LABEL', 'name'], task: ['TASK', 'name'], iot: ['output tag of an I/O module', 'tag'], order: ['keyword', 'REVERSE, WORD, HIGH/LOW'],
   };
   const G = window.MTPS || (window.MTPS = {});
   G.HELPREF = { R, KIND };
