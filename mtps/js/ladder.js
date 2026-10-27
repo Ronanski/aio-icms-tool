@@ -74,6 +74,7 @@
     const LM = Math.round(Math.max(30, CW * 0.36)), cols = Math.max(3, Math.floor((o.W - LM - 8) / CW)), RR = LM + cols * CW;
     const fName = `${S + 1}px Arial`, fDesc = `${S}px Arial`, descLines = o.descLines || 2;
     let y = 8, out = '', taps = '';
+    const parts = [];   // each rung's drawing, in a <g data-rg> of its own: a redraw can replace only the rungs that changed
     const nodes = [], dashes = [], dk = nkey(o.drop);
     const node = (n, x, y) => { if (o.nodeOk && o.nodeOk(n)) nodes.push(Object.assign({}, n, { x, y })); };
     const tagOf = a => (o.tag ? o.tag(String(a || '').split(/[.[]/)[0]) : null);
@@ -97,6 +98,8 @@
         if (o.live && e.x) {
           const x = e.x[i];
           if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && i > 0) { const s = e.x[0].obj(); v = i === 1 ? s.PRE : s.ACC; }
+          // Length / Position of a file or sequencer instruction show the live .LEN / .POS of its CONTROL
+          else if (INSTR[e.t] && INSTR[e.t].live && INSTR[e.t].live[i]) { try { v = e.x[INSTR[e.t].ctl].obj()[INSTR[e.t].live[i]]; } catch (err) { v = a; } }
           else if (x && typeof x.get === 'function' && x.at && !x.dim && MTPS.ATOMIC.includes(x.type)) { try { val = x.get(); if (x.type === 'REAL') val = +val.toPrecision(6); } catch (err) { val = '?'; } }
         }
         return [names[i] || '', v, val];
@@ -120,6 +123,7 @@
       return { end: c, rows };
     }
     rungs.forEach((R, ri) => {
+      const o0 = out.length;
       const elems = R.elems || [];
       const dirty = new Set(R.dx || []), seen = {};
       const lock = !!R.ro;
@@ -203,7 +207,8 @@
           if (o.lifted && o.lifted.ri === ri && same(o.lifted.path, it.path)) out += `<rect class="lift" x="${x + 1.5}" y="${cy - h.h - 7.5}" width="${w - 3}" height="${h.h + (isBox(e) ? boxH(e) + 6 : 28)}" rx="4"/>`;
           if (o.press && o.press.ri === ri && same(o.press.path, it.path)) out += `<circle class="press" cx="${cx}" cy="${cy}" r="${CW * .4}"/>`;
           h.lines.forEach(([k, t], i) => { out += `<text class="${k}" x="${cx}" y="${cy - h.h + LH - 4 + i * LH}" text-anchor="middle">${esc(t)}</text>`; });
-          const on = o.live && !!e.v;
+          // a status flag (S:FS, S:Z …) changes too fast to show: its instruction is never highlighted (reference help)
+          const on = o.live && !!e.v && !(e.a && /^S:/i.test(e.a[0] || ''));
           if (isBox(e)) out += box(e, x, cy, w, on, o, opsOf(e), LH);
           else out += glyph(e, x, cy, w, on, S);
           // a dirty instruction (changed since the last verify): '*' right of the mnemonic
@@ -242,7 +247,7 @@
       const rungBot = Math.max(y, rungTop + 40);
       y = rungBot;
       if (R.dash) dashes.push([rungTop - 4, rungBot]);
-      const selR = o.selRung === ri;
+      const selR = o.selRung === ri || !!o.selAll;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
       out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;
@@ -254,6 +259,7 @@
       taps = `<rect class="tap rung" data-ri="${ri}" x="${LM}" y="${rungTop - 4}" width="${RR - LM}" height="${rungBot - rungTop + 4}"/>`
         + `<rect class="tap" data-ri="${ri}" data-rn="1" x="0" y="${rungTop - 4}" width="${LM}" height="${rungBot - rungTop + 4}"/>` + taps;
       y += 10;
+      parts.push(`<g data-rg="${ri}">${out.slice(o0)}</g>`); out = out.slice(0, o0);
     });
     // the power rails run unbroken from the first rung down to (End), as in the reference editor
     out += `<text class="rn" x="${LM - 6}" y="${y + 14}" text-anchor="end">(End)</text><line class="rail" x1="${LM + .5}" y1="4" x2="${LM + .5}" y2="${y + 20}"/><line class="rail" x1="${RR + .5}" y1="4" x2="${RR + .5}" y2="${y + 20}"/><line class="w" x1="${LM}" y1="${y + 20.5}" x2="${RR}" y2="${y + 20.5}"/>`;
@@ -268,7 +274,8 @@
     y += 44;
     const W = Math.max(o.W, RR + 8);
     const cls = 'lad' + (o.live ? ' online' : '') + (o.run ? ' run' : '');
-    return { svg: `<svg class="${cls}" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}" style="font-size:${S}px">${out}${taps}</svg>`, height: y, cols, nodes };
+    const top = `<svg class="${cls}" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}" style="font-size:${S}px">`, tail = `${out}${taps}</svg>`;
+    return { svg: top + parts.join('') + tail, head: top, parts, tail, height: y, cols, nodes };
   }
   function glyph(e, x, cy, w, on, S) {
     const cx = x + w / 2, g = 7, k = e.t;

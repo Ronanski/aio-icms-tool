@@ -9,33 +9,47 @@
   const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT';
   const isNum = t => isInt(t) || t === 'REAL';
   const U = s => String(s).toUpperCase();
-  const members = s => s.split(' ').map(x => { const [name, type] = x.split(':'); return { name, type }; });
+  const members = s => s.split(' ').map(x => { const k = x.indexOf(':'); return { name: x.slice(0, k), type: x.slice(k + 1) }; });
   const CH4 = t => [0, 1, 2, 3].map(k => `Ch${k}Data:${t}`).join(' ');
   const PREDEF = {
     TIMER: members('PRE:DINT ACC:DINT EN:BOOL TT:BOOL DN:BOOL'),
     COUNTER: members('PRE:DINT ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL'),
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
   };
+  /* the module-defined data types, named as Studio 5000 names them (help: 1756 discrete / analog module-defined data
+     types): the digital cards are 1756-IB16 / -IA16 (AB:1756_DI) and 1756-OB16E / -OW16I (AB:1756_DO); the analog input
+     card is a 1756-IF8 in differential float mode (4 channels: AB:1756_IF4_Float), the analog output card a 1756-OF4
+     (AB:1756_OF4_Float). Status tags (Local:<slot>:S) are made for a module type that has an S type; these 1756 modules
+     have none. */
   const MODTYPES = {
-    'PLC:DI16:I': members('Fault:DINT Data:DINT'),
-    'PLC:DO16:I': members('Fault:DINT'), 'PLC:DO16:O': members('Data:DINT'),
-    'PLC:AI4:I': members('Fault:DINT ' + CH4('REAL')),
-    'PLC:AO4:I': members('Fault:DINT'), 'PLC:AO4:O': members(CH4('REAL')),
-    // the configuration tags (Local:<slot>:C), laid out like those of the 1756 I/O modules: input filters and
-    // change of state (digital in), the fault and program mode states (digital out), scaling and states (analog)
-    'PLC:DI16:C': members('FilterOffOn_0_7:SINT FilterOnOff_0_7:SINT FilterOffOn_8_15:SINT FilterOnOff_8_15:SINT COSOnOffEn:DINT COSOffOnEn:DINT'),
-    'PLC:DO16:C': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
-    'PLC:AI4:C': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}LowEngineering:REAL Ch${k}HighEngineering:REAL`).join(' ')),
-    'PLC:AO4:C': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}FaultValue:REAL Ch${k}ProgValue:REAL`).join(' ')),
+    'AB:1756_DI:I:0': members('Fault:DINT Data:DINT'),
+    // the output card echoes the outputs it applies in its input tag (Data)
+    'AB:1756_DO:I:0': members('Fault:DINT Data:DINT'), 'AB:1756_DO:O:0': members('Data:DINT'),
+    'AB:1756_IF4_Float:I:0': members('Fault:DINT ' + CH4('REAL')),
+    'AB:1756_OF4_Float:I:0': members('Fault:DINT'), 'AB:1756_OF4_Float:O:0': members(CH4('REAL')),
+    // the configuration tags (Local:<slot>:C), as in the module profiles: AB:1756_DI:C:0 (help 1756-IB16: the filter
+    // times of four groups of 8 points, as the type is shared with the 32-point modules, and change of state),
+    // AB:1756_DO:C:0 (help 1756-OB16I / -OW16I), and the floating point analog ones (1756-UM009, Floating Point
+    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel
+    'AB:1756_DI:C:0': members(['OffOn', 'OnOff'].map(d => ['0_7', '8_15', '16_23', '24_31'].map(g => `Filter${d}_${g}:SINT`).join(' ')).join(' ') + ' COSOnOffEn:DINT COSOffOnEn:DINT'),
+    'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
+    'AB:1756_NII_Struct:C:0': members('AlarmDisable:BOOL ProcessAlarmLatch:BOOL RateAlarmLatch:BOOL DigitalFilter:INT RateAlarmLimit:INT LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL LAlarmLimit:REAL HAlarmLimit:REAL LLAlarmLimit:REAL HHAlarmLimit:REAL AlarmDeadband:REAL CalBias:REAL'),
+    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
+    'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NII_Struct:C:0`).join(' ')),
+    'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NIO_Struct:C:0`).join(' ')),
   };
-  const DO = { kind: 'do', I: 'PLC:DO16:I', O: 'PLC:DO16:O', C: 'PLC:DO16:C' };
-  const DI = { kind: 'di', I: 'PLC:DI16:I', C: 'PLC:DI16:C' };
+  // the names of 0.4.0 and older (PLC:DI16:I …): a project that uses one still reads
+  const OLDTYPES = { 'PLC:DI16:I': 'AB:1756_DI:I:0', 'PLC:DI16:C': 'AB:1756_DI:C:0', 'PLC:DO16:I': 'AB:1756_DO:I:0', 'PLC:DO16:O': 'AB:1756_DO:O:0', 'PLC:DO16:C': 'AB:1756_DO:C:0',
+    'PLC:AI4:I': 'AB:1756_IF4_Float:I:0', 'PLC:AI4:C': 'AB:1756_IF4_Float:C:0', 'PLC:AO4:I': 'AB:1756_OF4_Float:I:0', 'PLC:AO4:O': 'AB:1756_OF4_Float:O:0', 'PLC:AO4:C': 'AB:1756_OF4_Float:C:0' };
+  const DO = { kind: 'do', I: 'AB:1756_DO:I:0', O: 'AB:1756_DO:O:0', C: 'AB:1756_DO:C:0' };
+  const DI = { kind: 'di', I: 'AB:1756_DI:I:0', C: 'AB:1756_DI:C:0' };
   const MODULES = {
     'PLC-DI16-24V': DI, 'PLC-DI16-120V': DI,
     'PLC-DO16-24V': DO, 'PLC-DO16-RLY': DO,
-    'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I', C: 'PLC:AI4:C' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O', C: 'PLC:AO4:C' },
+    'PLC-AI4': { kind: 'ai', I: 'AB:1756_IF4_Float:I:0', C: 'AB:1756_IF4_Float:C:0' }, 'PLC-AO4': { kind: 'ao', I: 'AB:1756_OF4_Float:I:0', O: 'AB:1756_OF4_Float:O:0', C: 'AB:1756_OF4_Float:C:0' },
     'PLC-ENET': { kind: 'enet' },
   };
+  const IODIRS = ['I', 'O', 'C', 'S'];
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
   const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
   /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
@@ -51,6 +65,16 @@
   // the reference's name rules: letters, digits and _, starting with a letter or _, up to 40, no __ and no _ at the end
   const validName = n => { const s = String(n == null ? '' : n); return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(s) && !/__/.test(s) && !/_$/.test(s); };
   const dot = m => (/[.!?]$/.test(m) ? m : m + '.');
+  /* array dimensions of a tag, as written in its data type: DINT[10] → 10, DINT[4,5] → [4, 5], DINT[2,3,4] → [2, 3, 4]
+     (1, 2 or 3 dimensions; the last one varies fastest, 1756-PM004). dimsOf gives the list, or null when it is not
+     valid; dimN the number of elements; dimText '4,5' */
+  const dimsOf = d => {
+    if (d == null || d === 0 || d === '') return [];
+    const a = Array.isArray(d) ? d : [d];
+    return a.length <= 3 && a.every(n => Number.isInteger(+n) && +n > 0) ? a.map(Number) : null;
+  };
+  const dimN = d => { const a = dimsOf(d); return a && a.length ? a.reduce((x, y) => x * y, 1) : 0; };
+  const dimText = d => (dimsOf(d) || []).join(',');
   const clone = v => (typeof v === 'object' && v !== null ? JSON.parse(JSON.stringify(v)) : v);
   const i32 = v => Math.trunc(v) | 0;
 
@@ -89,7 +113,7 @@
     return t;
   }
   function canon(types, name) {
-    const u = U(name || '');
+    const u = U(OLDTYPES[name] || OLDTYPES[U(name || '')] || name || '');
     if (ATOMIC[u]) return u;
     const d = types.get(u);
     return d ? d.name : null;
@@ -235,6 +259,11 @@
     BTD: ['Source', 'Source Bit', 'Dest', 'Dest Bit', 'Length'], SWPB: ['Source', 'Order Mode', 'Dest'],
     COP: ['Source', 'Dest', 'Length'], FLL: ['Source', 'Dest', 'Length'], JSR: ['Routine Name', 'Input Par'],
     OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
+    BSL: ['Array', 'Control', 'Source Bit', 'Length'], BSR: ['Array', 'Control', 'Source Bit', 'Length'],
+    FFL: ['Source', 'FIFO', 'Control', 'Length', 'Position'], FFU: ['FIFO', 'Dest', 'Control', 'Length', 'Position'],
+    LFL: ['Source', 'LIFO', 'Control', 'Length', 'Position'], LFU: ['LIFO', 'Dest', 'Control', 'Length', 'Position'],
+    SQI: ['Array', 'Mask', 'Source', 'Control', 'Length', 'Position'], SQO: ['Array', 'Mask', 'Dest', 'Control', 'Length', 'Position'],
+    SQL: ['Array', 'Source', 'Control', 'Length', 'Position'],
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -244,7 +273,16 @@
       let p = this.root, k = this.key;
       for (const s of this.steps) {
         p = p[k];
-        if (s.len) {
+        if (s.lens) {
+          // Tag[i,j,k]: each subscript is checked against its own dimension, then the element is found row by row
+          let i = 0;
+          for (let n = 0; n < s.lens.length; n++) {
+            const x = typeof s.ixs[n] === 'number' ? s.ixs[n] : s.ixs[n].get();
+            if (!(x >= 0 && x < s.lens[n])) throw new Fault(4, 20, 'Array subscript too large, or less than 0');
+            i = i * s.lens[n] + x;
+          }
+          k = i;
+        } else if (s.len) {
           const i = typeof s.ix === 'number' ? s.ix : s.ix.get();
           if (!(i >= 0 && i < s.len)) throw new Fault(4, 20, 'Array subscript too large, or less than 0');
           k = i;
@@ -270,6 +308,11 @@
   const BYTES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
   const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else dv.setFloat32(o, v, true); };
   const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : dv.getFloat32(o, true));
+  // an operand that names one element of an array (Bits[0], Fifo[Ix]): the instructions that walk an array need it
+  const arrEl = r => r.bit < 0 && !r.dim && r.steps.length > 0 && !!r.steps[r.steps.length - 1].len;
+  // a value as a FIFO / LIFO moves it: a number, or a copy of a structure; zero keeps the shape (a structure of 0s)
+  const take = r => (ATOMIC[r.type] || r instanceof Const ? r.get() : clone(r.obj()));
+  const zero = v => (Array.isArray(v) ? v.map(zero) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).map(k => [k, zero(v[k])])) : 0);
   class Const { constructor(v, real) { this.c = v; this.type = real ? 'REAL' : 'DINT'; this.bit = -1; } get() { return this.c; } }
 
   /* text → Ref, or the reason it is not one (program tags hide controller tags; aliases are followed) */
@@ -287,31 +330,38 @@
     if (!rec) return `Undefined tag '${text}'`;
     if (rec.alias) {
       if (depth > 8) return `Alias '${rec.name}' points back to itself`;
+      // the status flags are keywords, not tags: no alias can point at one (reference help, Monitor Status Flags)
+      if (/^S:/i.test(rec.alias)) return `'${rec.alias}' is a status flag keyword, not a tag: an alias cannot point to it`;
       return ref(M, scope, rec.alias + p.rest, depth + 1);
     }
-    let type = rec.type, dim = rec.dim, bit = -1, ptype = null, norm = (scope ? scope.name + '/' : '') + rec.name;
+    let type = rec.type, dim = rec.dim, dims = rec.dims || (rec.dim ? [rec.dim] : []), bit = -1, ptype = null, norm = (scope ? scope.name + '/' : '') + rec.name;
     const steps = [];
     for (const s of p.segs) {
       if (bit >= 0) return `Undefined tag '${text}'`;
       if (s.i !== undefined) {
         if (!dim) return `Tag '${rec.name}' is not an array here: '${text}'`;
-        const c = parseNumber(s.i);
-        let ix;
-        if (c) {
-          if (c.real || c.v < 0 || c.v >= dim) return `Array subscript out of range in '${text}' (0 to ${dim - 1})`;
-          ix = c.v;
-          if (norm) norm += `[${ix}]`;
-        } else {
-          const r = ref(M, prog, s.i, depth);
-          if (typeof r === 'string') return r;
-          if (!isInt(r.type) || r.dim) return `Array subscript must be an integer: '${s.i}'`;
-          ix = r; norm = null;
+        // one subscript for each dimension of the array: [5], [2,8], [3,2,7] (1756-PM004)
+        const parts = s.i.split(',').map(x => x.trim());
+        if (parts.length !== dims.length) return `Wrong number of subscripts in '${text}': '${rec.name}' has ${dims.length} dimension${dims.length > 1 ? 's' : ''} (e.g. ${rec.name}[${dims.map(() => 0).join(',')}])`;
+        const ixs = [];
+        for (let n = 0; n < parts.length; n++) {
+          const c = parseNumber(parts[n]);
+          if (c) {
+            if (c.real || c.v < 0 || c.v >= dims[n]) return `Array subscript out of range in '${text}' (0 to ${dims[n] - 1})`;
+            ixs.push(c.v);
+          } else {
+            const r = ref(M, prog, parts[n], depth);
+            if (typeof r === 'string') return r;
+            if (!isInt(r.type) || r.dim) return `Array subscript must be an integer: '${parts[n]}'`;
+            ixs.push(r); norm = null;
+          }
         }
-        steps.push({ ix, len: dim });
-        dim = 0;
+        if (norm) norm += `[${ixs.join(',')}]`;
+        steps.push(dims.length === 1 ? { ix: ixs[0], len: dim } : { ixs, lens: dims, len: dim });
+        dim = 0; dims = [];
         continue;
       }
-      if (dim) return `Tag '${rec.name}' is an array: give a subscript, e.g. ${rec.name}[0]`;
+      if (dim) return `Tag '${rec.name}' is an array: give a subscript, e.g. ${rec.name}[${dims.map(() => 0).join(',')}]`;
       if (s.b !== undefined) {
         if (!isInt(type) || s.b >= ATOMIC[type]) return `Undefined tag '${text}'`;
         bit = s.b; ptype = type; type = 'BOOL';
@@ -321,12 +371,13 @@
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
       if (!mm) return `Undefined tag '${text}'`;
       steps.push({ m: mm.name });
-      type = mm.type; dim = mm.dim || 0;
+      type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
       if (norm) norm += '.' + mm.name;
     }
     const io = rec.io || null;
     const force = io && steps.length === 1 && steps[0].m === 'Data' && bit >= 0 ? `${io.slot}:${io.dir}:${bit}` : null;
-    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, bit, ptype, ro: !!rec.constant,
+    // a constant tag (and its members, elements, bits and aliases) cannot be written by logic (help: Constant)
+    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
   }
 
@@ -424,7 +475,10 @@
   /* ---------- Instruction set ---------- */
   /* operand kinds: bit / bitw (BOOL to read / to write), timer, counter, struct (any of the three), imm (a number),
      num / int (a number or a tag), dest / idest (a tag to write), expr, elem / elemw (an array element), routine,
-     label, order (SWPB); a ? at the end makes the operand optional */
+     label, order (SWPB), control (a CONTROL tag), darr (an element of a DINT array, to write), fsrc / farr / fdst
+     (the Source, the array element and the Dest of a FIFO or LIFO: SINT, INT, DINT, REAL or a structure), ddest (a
+     DINT tag to write); a ? at the end makes the operand optional. ctl is the index of the CONTROL operand; live maps the Length / Position operands to the
+     .LEN / .POS they show (written into the tag on download, as the reference does) */
   const I = (k, grp, name, args, more) => ({ k, grp, name, args: args ? args.split(' ') : [], ...more });
   const INSTR = {
     XIC: I('contact', 'Bit', 'Examine If Closed', 'bit'),
@@ -470,6 +524,17 @@
     SWPB: I('box', 'Move/Logical', 'Swap Byte', 'int order idest', { out: true }),
     COP: I('box', 'File/Misc', 'Copy File', 'elem elemw imm', { out: true }),
     FLL: I('box', 'File/Misc', 'File Fill', 'num elemw imm', { out: true }),
+    // Array (File)/Shift (1756-RM003 chapter 9): transitional, they act on a false-to-true rung
+    BSL: I('box', 'File/Shift', 'Bit Shift Left', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
+    BSR: I('box', 'File/Shift', 'Bit Shift Right', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
+    FFL: I('box', 'File/Shift', 'FIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    FFU: I('box', 'File/Shift', 'FIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    LFL: I('box', 'File/Shift', 'LIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    LFU: I('box', 'File/Shift', 'LIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    // Sequencer (1756-RM003 chapter 10): normally one CONTROL for the SQO, SQI and SQL of a sequence
+    SQI: I('box', 'Sequencer', 'Sequencer Input', 'darr int int control imm imm', { ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SQO: I('box', 'Sequencer', 'Sequencer Output', 'darr int ddest control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SQL: I('box', 'Sequencer', 'Sequencer Load', 'darr int control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     JSR: I('box', 'Program Control', 'Jump to Subroutine', 'routine imm?', { out: true }),
     RET: I('box', 'Program Control', 'Return from Subroutine', '', { out: true }),
     SBR: I('box', 'Program Control', 'Subroutine', ''),
@@ -495,19 +560,26 @@
     }
     const c = parseNumber(s);
     if (c) {
-      if (kind === 'num' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
+      if (kind === 'num' || kind === 'fsrc' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
       return kind === 'int' ? BAD_TYPE : 'Immediate value not allowed';
     }
     const r = ref(M, P, s);
     if (typeof r === 'string') return r;
     const one = !r.dim;
-    const writable = () => (r.ro ? 'Tag is read-only' : r);
+    // "If a logic routine tries to write to a constant tag, the routine does not verify" (help: Tag Editor columns)
+    const writable = () => (r.ro ? 'Tag is read-only' : r.konst ? `Tag '${r.konst}' is a constant: logic cannot write to it` : r);
     switch (kind) {
       case 'bit': return r.type === 'BOOL' && one ? r : BAD_TYPE;
       case 'bitw': return r.type === 'BOOL' && one ? writable() : BAD_TYPE;
       case 'timer': return r.type === 'TIMER' && one ? r : BAD_TYPE;
       case 'counter': return r.type === 'COUNTER' && one ? r : BAD_TYPE;
       case 'struct': return ['TIMER', 'COUNTER', 'CONTROL'].includes(r.type) && one ? r : BAD_TYPE;
+      case 'control': return r.type === 'CONTROL' && one ? writable() : BAD_TYPE;
+      case 'darr': if (!arrEl(r)) return 'Operand must be an array element, e.g. Bits[0]'; return r.type === 'DINT' ? writable() : BAD_TYPE;
+      case 'farr': if (!arrEl(r)) return 'Operand must be an array element, e.g. Fifo[0]'; return r.type !== 'BOOL' ? writable() : BAD_TYPE;
+      case 'fsrc': return one && r.bit < 0 && r.type !== 'BOOL' ? r : BAD_TYPE;
+      case 'fdst': return one && r.bit < 0 && r.type !== 'BOOL' ? writable() : BAD_TYPE;
+      case 'ddest': return r.type === 'DINT' && one ? writable() : BAD_TYPE;
       case 'num': return isNum(r.type) && one ? r : BAD_TYPE;
       case 'int': return isInt(r.type) && one ? r : BAD_TYPE;
       case 'dest': return isNum(r.type) && one ? writable() : BAD_TYPE;
@@ -556,6 +628,12 @@
         break;
       }
       case 'SWPB': if (x[0].type === 'SINT' || x[2].type === 'SINT') bad(BAD_TYPE, x[0].type === 'SINT' ? 0 : 2); break;
+      // a number Source / Dest is converted to the type of the array; a structure must be the array's own type
+      case 'FFL': case 'FFU': case 'LFL': case 'LFU': {
+        const ld = e.t.endsWith('L'), arr = ld ? x[1] : x[0], o = ld ? x[0] : x[1];
+        if (isNum(arr.type) ? !isNum(o.type) : o.type !== arr.type) bad(BAD_TYPE, ld ? 0 : 1);
+        break;
+      }
       case 'LBL':
         if (!first) bad('LBL must be the first instruction of the rung', 0);
         if (R.labels.has(x[0].label)) bad(`Label '${e.a[0]}' is defined more than once`, 0); else R.labels.set(x[0].label, n);
@@ -565,6 +643,11 @@
     if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && ok) {
       // the preset and accum of the rung text are written into the tag
       try { const s = x[0].obj(); s.PRE = x[1].c; s.ACC = x[2].c; } catch (err) { if (!(err instanceof Fault)) throw err; }
+    }
+    if (d.live && ok) {
+      // Length / Position are the .LEN / .POS of the CONTROL: whole numbers, written into the tag (as a timer's preset)
+      for (const k in d.live) if (x[k] && x[k].type === 'REAL') bad(`${OPN[e.t][k]} must be a whole number`, +k);
+      if (ok) try { const s = x[d.ctl].obj(); for (const k in d.live) s[d.live[k]] = x[k].c; } catch (err) { if (!(err instanceof Fault)) throw err; }
     }
     if ((e.t === 'OTE' || e.t === 'OTL' || e.t === 'OTU') && x[0].input) W('Writing to an input image: the next input update overwrites it', e.t, 0);
     if (e.t === 'OTE' && x[0].norm) {
@@ -605,7 +688,7 @@
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
       const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
-      for (const dir of ['I', 'O', 'C']) {
+      for (const dir of IODIRS) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
         mod[dir] = name;
@@ -623,8 +706,10 @@
         if (t.alias != null && t.alias !== '') { map.set(U(t.name), { name: t.name, alias: String(t.alias).trim(), desc: t.desc || '' }); continue; }
         const type = canon(types, t.type);
         if (!type) { ctlErr(`Tag '${t.name}': Undefined data type '${t.type}'`); continue; }
-        const dim = t.dim > 0 ? Math.floor(t.dim) : 0;
-        map.set(U(t.name), { name: t.name, type, dim, constant: !!t.constant, desc: t.desc || '' });
+        const dims = dimsOf(Array.isArray(t.dim) ? t.dim : t.dim > 0 ? Math.floor(t.dim) : 0);
+        if (!dims) { ctlErr(`Tag '${t.name}': invalid array dimensions [${String(t.dim)}] (1 to 3 dimensions, each 1 or more)`); continue; }
+        const dim = dims.reduce((x, y) => x * y, dims.length ? 1 : 0);
+        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '' });
         vals[t.name] = conform(types, type, dim, t.value);
       }
     };
@@ -651,8 +736,8 @@
         if (!rec.alias) continue;
         const r = ref(M, P, rec.name);
         if (typeof r === 'string') { ctlErr(`Tag '${rec.name}': Alias for '${rec.alias}' is not a valid tag (${r})`); continue; }
-        if (r.steps.some(s => s.len && typeof s.ix !== 'number')) { ctlErr(`Tag '${rec.name}': an alias cannot use a tag as a subscript`); continue; }
-        rec.type = r.type; rec.dim = r.dim;
+        if (r.steps.some(s => (s.lens ? s.ixs.some(x => typeof x !== 'number') : s.len && typeof s.ix !== 'number'))) { ctlErr(`Tag '${rec.name}': an alias cannot use a tag as a subscript`); continue; }
+        rec.type = r.type; rec.dim = r.dim; rec.dims = r.dims;
       }
     };
     aliases(M.tags, null);
@@ -697,9 +782,20 @@
     return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
   }
 
-  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits */
+  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
+     nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+
+  /* the .EM / .DN of a FIFO or LIFO from its .POS and .LEN (RM003 flow charts, Prescan and false): .LEN <= 0 or
+     .POS < 0 set both; else .EM while .POS = 0 and .DN while .POS >= .LEN */
+  function fstat(c) {
+    if (c.LEN <= 0 || c.POS < 0) { c.EM = c.DN = 1; return; }
+    c.EM = c.POS === 0 ? 1 : 0; c.DN = c.POS >= c.LEN ? 1 : 0;
+  }
+
+  // a sequencer Mask: a SINT or INT is zero extended to a DINT (RM003, SQI Mask)
+  const maskOf = r => { const v = i32(r.get()); return r.type === 'SINT' ? v & 0xFF : r.type === 'INT' ? v & 0xFFFF : v; };
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
@@ -721,6 +817,8 @@
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
+      this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
+      this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -734,6 +832,11 @@
       if (!was && RUN(m) && this.M) this.prescan();
       this.emit('mode');
     }
+    /* Single Scan (Logix Emulate only, not on a physical controller): in Run the logic runs through once, then waits
+       until it is asked to scan again or to run continuously */
+    singleScan(on) { this.single = !!on; this.held = false; this.emit('mode'); }
+    scanAgain() { if (!this.single) return false; this.held = false; this.emit('mode'); return true; }
+    runContinuous() { this.single = false; this.held = false; this.emit('mode'); }
     setMode(m) {
       if (this.key !== 'REM' || !['remprog', 'remrun', 'remtest'].includes(m) || (m !== 'remprog' && !this.M)) return false;
       this.go(m);
@@ -771,7 +874,7 @@
     }
     /* Program → Run: OTE bits off, TON reset, one-shot storage set so a true input does not fire at start */
     prescan() {
-      this.first = true;
+      this.first = true; this.held = false;
       const walk = arr => {
         for (const e of arr) {
           if (!e) continue;
@@ -788,6 +891,13 @@
               case 'RTO': { const s = x[0].obj(); s.EN = s.TT = 0; break; }
               case 'CTU': x[0].obj().CU = 1; break;
               case 'CTD': x[0].obj().CD = 1; break;
+              case 'BSL': case 'BSR': { const c = x[1].obj(); c.EN = c.DN = c.ER = 0; c.POS = 0; break; }
+              // .EN (load) / .EU (unload) set, so a true rung does not load or unload on the first scan
+              case 'FFL': case 'LFL': { const c = x[2].obj(); c.EN = 1; fstat(c); break; }
+              case 'FFU': case 'LFU': { const c = x[2].obj(); c.EU = 1; fstat(c); break; }
+              // .EN set: a rung that is true at the change to Run does not step on the first scan (it stays at .POS)
+              case 'SQO': x[3].obj().EN = 1; break;
+              case 'SQL': x[2].obj().EN = 1; break;
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -802,13 +912,22 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
-      this.copy = JSON.stringify(project);
+      this.copy = JSON.stringify(project); this.dlAt = Date.now();
       this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
       this.emit('download');
       this.emit('mode');
       return res;
+    }
+    /* a download clears the controller memory before the project goes in (v37 help, Download dialog box): a download
+       cancelled after that leaves the controller empty (no name, no project) */
+    clearMemory() {
+      this.M = null; this.copy = null; this.name = ''; this.dlAt = null;
+      this.S = { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 };
+      this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
+      this.mode = this.key === 'PROG' ? 'prog' : this.key === 'RUN' ? 'run' : 'remprog';
+      this.emit('download'); this.emit('mode');
     }
     /* power: off keeps the project; on starts again like a real controller (RUN key: Run, PROG: Program,
        REM: the mode it had), with the current fault cleared and a prescan before Run */
@@ -830,9 +949,9 @@
       const keep = (list, prog) => (list || []).forEach(t => {
         if (t.alias) return;
         const r = this.refOf(t.name, prog);
-        if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || (r.dim || 0) !== (t.dim || 0)) return;
+        if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || dimText(r.dims) !== dimText(t.dim)) return;
         const v = this.read(t.name, prog);
-        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER') kept.push([t.name, prog, v]); }
+        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER' || (r.type === 'CONTROL' && !r.dim)) kept.push([t.name, prog, v, r.type === 'CONTROL' ? 'LEN' : 'PRE']); }
       });
       keep(p.tags, null);
       (p.tasks || []).forEach(k => (k.programs || []).forEach(g => keep(g.tags, g.name)));
@@ -840,11 +959,14 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       Object.assign(r.model.S, this.S);
+      // a program that was inhibited and is not any more gets S:FS on its next scan
+      r.model.programs.forEach(P => { const o = this.M.programs.find(x => U(x.name) === U(P.name)); if (o && o.inhibit && !P.inhibit) P.fs = true; });
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
-      // a timer or a counter keeps its accum and bits: only the preset comes from the (maybe edited) rung
-      kept.forEach(([name, prog, v]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { PRE: o.PRE }); } });
+      // a timer or a counter keeps its accum and bits, a CONTROL its position and bits: only the preset (.LEN) comes
+      // from the (maybe edited) rung
+      kept.forEach(([name, prog, v, k]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { [k]: o[k] }); } });
       this.emit('download');
       return res;
     }
@@ -867,7 +989,8 @@
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
-        for (const P of this.M.programs) if (P.main && !P.inhibit) this.routine(P.main);
+        // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
+      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         this.majorFault(e.type, e.code, e.message);
@@ -879,12 +1002,19 @@
       const us = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) * 1000);
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
     }
+    /* speed of time (LGEM5K-GR016: 0-100 %, takes effect at once; 60 % makes 1 s take about 1.67 s) */
+    setSpeed(p) { p = Math.round(Number(p)); if (!(p >= 0 && p <= 100)) return false; this.sot = p; this.emit('speed'); return true; }
     /* the controller's own clock: fixed scans of `period` ms, catching up after a slow frame (at most 1 s) */
     advance(ms) {
       if (!this.powered) return 0;
+      ms *= this.sot / 100;
       this.acc = Math.min(this.acc + ms, 1000);
       let n = 0;
-      while (this.acc >= this.period) { this.acc -= this.period; this.scan(this.period); n++; }
+      while (this.acc >= this.period) {
+        if (this.single && this.held) { this.acc = 0; break; }
+        this.acc -= this.period; this.scan(this.period); n++;
+        if (this.single && this.running) { this.held = true; this.acc = 0; this.emit('single'); }
+      }
       return n;
     }
     inputs() {
@@ -900,6 +1030,7 @@
         }
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
+        else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
       }
     }
@@ -985,7 +1116,8 @@
         }
         case 'CPT': if (p) { DIV0 = false; const v = x[1].get(); this.put(x[0], v, DIV0); } e.v = p; return p;
         case 'MOV': if (p) this.put(x[1], x[0].get()); e.v = p; return p;
-        case 'MVM': if (p) { const m = i32(x[1].get()); this.put(x[2], (i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
+        // MVM does not affect the math status flags on a 5580 controller (reference manual 1756-RM003)
+        case 'MVM': if (p) { const m = i32(x[1].get()); x[2].set((i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
         case 'CLR': if (p) this.put(x[0], 0); e.v = p; return p;
         case 'AND': if (p) this.put(x[2], i32(x[0].get()) & i32(x[1].get())); e.v = p; return p;
         case 'OR': if (p) this.put(x[2], i32(x[0].get()) | i32(x[1].get())); e.v = p; return p;
@@ -1040,6 +1172,11 @@
           }
           e.v = p; return p;
         }
+        case 'BSL': case 'BSR': this.bitShift(e.t, x, p); e.v = p; return p;
+        case 'FFL': case 'LFL': this.load(e.t, x, p); e.v = p; return p;
+        case 'FFU': case 'LFU': this.unload(e.t, x, p); e.v = p; return p;
+        case 'SQO': case 'SQL': this.sequencer(e.t, x, p); e.v = p; return p;
+        case 'SQI': { if (!p) { e.v = false; return false; } e.v = this.seqIn(x); return e.v; }
         case 'JSR': {
           if (p) {
             if (this.d >= 32) throw new Fault(4, 31, 'JSR nesting too deep');
@@ -1062,10 +1199,11 @@
        S:N negative; S:C carry only from ADD and SUB */
     put(dest, v, ov, carry) {
       dest.set(v);
-      const r = dest.get(), S = this.S;
+      const r = dest.get(), S = this.S, was = S.V;
       S.V = OV || ov ? 1 : 0; S.Z = r === 0 ? 1 : 0; S.N = r < 0 ? 1 : 0;
       if (carry !== undefined) S.C = carry ? 1 : 0;
-      if (S.V) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
+      // each time S:V goes from cleared to set it makes a minor fault (type 4, code 4)
+      if (S.V && !was) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
     }
     arith(op, A, B, D) {
       const a = A.get(), b = B.get(), real = A.type === 'REAL' || B.type === 'REAL' || D.type === 'REAL';
@@ -1079,6 +1217,103 @@
         default: if (b === 0) { r = real ? NaN : a; ov = true; } else r = real ? a - b * Math.trunc(a / b) : a % b;
       }
       this.put(D, r, ov, c);
+    }
+    /* BSL / BSR (1756-RM003, Bit Shift Left / Right): on a false-to-true rung .EN is set and the other bits cleared,
+       then .LEN bits from Array bit 0 shift one place (left: the top bit goes to .UL and Source Bit into bit 0; right:
+       bit 0 goes to .UL and Source Bit into the top bit), .DN set and .POS = .LEN. .LEN = 0: .DN set and .UL = Source
+       Bit; .LEN < 0: .ER set; .LEN past the end of the array: major fault 4/20. A false rung clears .EN .DN .ER .POS */
+    bitShift(t, x, p) {
+      const c = x[1].obj();
+      if (!p) { c.EN = c.DN = c.ER = 0; c.POS = 0; return; }
+      if (c.EN) return;
+      c.EN = 1; c.EU = c.DN = c.EM = c.ER = c.UL = c.IN = c.FD = 0;
+      const len = c.LEN, src = x[2].get() ? 1 : 0;
+      if (len === 0) { c.DN = 1; c.POS = 0; c.UL = src; return; }
+      if (len < 0) { c.ER = 1; return; }
+      const A = file(x[0]);
+      if (len > A.n * 32) throw new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN ${len} is past the end of the array)`);
+      const get = i => (A.g(i >> 5) >>> (i & 31)) & 1;
+      const put = (i, v) => { const w = A.g(i >> 5), m = 1 << (i & 31); A.s(i >> 5, v ? (w | m) | 0 : (w & ~m) | 0); };
+      if (t === 'BSL') { c.UL = get(len - 1); for (let i = len - 1; i > 0; i--) put(i, get(i - 1)); put(0, src); }
+      else { c.UL = get(0); for (let i = 0; i < len - 1; i++) put(i, get(i + 1)); put(len - 1, src); }
+      c.DN = 1; c.POS = len;
+    }
+    /* FFL and LFL (1756-RM003, FIFO / LIFO Load flow charts: the same steps): on a false-to-true rung .EN is set and .POS + 1; while .POS <= .LEN the
+       Source goes into the element .POS - 1 (the next free one), converted to the array's type; past .LEN the FIFO is
+       full and .POS goes back. A false rung clears .EN. .EM and .DN follow .POS and .LEN on every scan (fstat). */
+    load(t, x, p) {
+      const c = x[2].obj();
+      if (!p) { c.EN = 0; fstat(c); return; }
+      if (c.LEN <= 0 || c.POS < 0) { c.EM = c.DN = 1; return; }
+      c.EM = c.DN = 0;
+      if (c.EN) { fstat(c); return; }
+      c.EN = 1; c.POS++;
+      if (c.POS >= c.LEN) c.DN = 1;
+      if (c.POS > c.LEN) { c.POS--; return; }
+      const F = file(x[1]);
+      if (c.POS > F.n) throw new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .POS is past the end of the array)`);
+      const v = take(x[0]);
+      F.s(c.POS - 1, ATOMIC[x[1].type] ? store(x[1].type, v) : v);
+      OV = false;
+    }
+    /* FFU (FIFO Unload flow charts): on a false-to-true rung .EU is set; with data (.POS >= 1) element 0 goes to Dest,
+       the others move down one place and .POS - 1; an empty FIFO puts 0 in Dest. LFU (LIFO Unload): the last loaded
+       element (.POS - 1, .POS limited to .LEN) goes to Dest and 0 is stored in its place. .LEN past the end of the
+       array is a major fault 4/20. A false rung clears .EU. */
+    unload(t, x, p) {
+      const c = x[2].obj();
+      if (!p) { c.EU = 0; fstat(c); return; }
+      if (c.LEN <= 0 || c.POS < 0) { c.EM = c.DN = 1; return; }
+      c.EM = c.DN = 0;
+      if (c.EU) { fstat(c); return; }
+      c.EU = 1;
+      const F = file(x[0]), D = x[1], lifo = t === 'LFU', past = () => new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN is past the end of the array)`);
+      if (!lifo && c.LEN > F.n) throw past();
+      if (c.POS <= 1) c.EM = 1;
+      const put = v => { if (ATOMIC[D.type]) D.set(v); else { D.at(); PP[PK] = clone(v); } OV = false; };
+      if (c.POS < 1) { put(ATOMIC[D.type] ? 0 : zero(D.obj())); return; }
+      if (lifo) {
+        if (c.POS > c.LEN) c.POS = c.LEN;
+        c.POS--;
+        if (c.LEN > F.n) throw past();
+        const v = F.g(c.POS);
+        put(v); F.s(c.POS, zero(v));
+        return;
+      }
+      c.POS--;
+      put(F.g(0));
+      for (let i = 1; i < c.LEN; i++) F.s(i - 1, clone(F.g(i)));
+    }
+    /* SQO / SQL (1756-RM003, Sequencer Output / Load flow charts): on a false-to-true rung .EN is set, .ER and .DN
+       cleared and .POS steps (+1, or back to 1 at .LEN); .DN is set at .POS = .LEN, .ER past .LEN. While the rung is
+       true, SQO writes Dest = (Dest AND NOT Mask) OR (Array[.POS] AND Mask) and SQL writes Array[.POS] = Source.
+       .LEN <= 0 or .POS < 0: .ER set. .POS past the end of the array: SQO sets .ER, SQL is a major fault 4/20. */
+    sequencer(t, x, p) {
+      const c = x[t === 'SQL' ? 2 : 3].obj();
+      if (!p) { c.EN = 0; return; }
+      if (!(c.LEN > 0 && c.POS >= 0)) { c.EN = 1; c.ER = 1; c.DN = c.POS === c.LEN ? 1 : 0; return; }
+      if (!c.EN) { c.EN = 1; c.ER = 0; c.DN = 0; c.POS = c.POS < c.LEN ? c.POS + 1 : 1; } else c.DN = 0;
+      if (c.POS === c.LEN) c.DN = 1;
+      else if (c.POS > c.LEN) { c.ER = 1; return; }
+      const A = file(x[0]);
+      if (c.POS >= A.n) {
+        if (t === 'SQL') throw new Fault(4, 20, 'Array subscript too large, or less than 0 (SQL: .POS is past the end of the array)');
+        c.ER = 1; return;
+      }
+      if (t === 'SQL') A.s(c.POS, store('DINT', x[1].get()));
+      else { const m = maskOf(x[1]); x[2].set((i32(x[2].get()) & ~m) | (A.g(c.POS) & m)); }
+      OV = false;
+    }
+    /* SQI (Sequencer Input flow chart): .ER cleared; with .LEN > 0 and 0 <= .POS <= .LEN the rung-condition-out is
+       (Source AND Mask) = (Array[.POS] AND Mask); otherwise, or past the end of the array, .ER is set and it is false */
+    seqIn(x) {
+      const c = x[3].obj();
+      c.ER = 0;
+      if (!(c.LEN > 0 && c.POS >= 0 && c.POS <= c.LEN)) { c.ER = 1; return false; }
+      const A = file(x[0]);
+      if (c.POS >= A.n) { c.ER = 1; return false; }
+      const m = maskOf(x[1]);
+      return (i32(x[2].get()) & m) === (A.g(c.POS) & m);
     }
     /* ACC = ACC + (now - last scan), from the scan after the timer is enabled. Setting DN pauses a TON / RTO, clearing
        it pauses a TOF (reference help). */
@@ -1133,17 +1368,18 @@
     /* an input image that its card updates (connected, not inhibited); the others can be written */
     inputLive(r) { const m = r.io && this.M.mods.get(r.io.slot); return !!m && !m.inhibit && !this.pulled.has(m.slot); }
     /* writing an input image of a working card is refused: the next input update would overwrite it */
-    write(path, v, program) {
+    /* monitor: written from Monitor Tags (the Data Monitor), which may change a constant tag; other editors may not */
+    write(path, v, program, monitor) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro) return false;
+      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro || (r.konst && !monitor)) return false;
       try {
         if (r.dim || !ATOMIC[r.type]) { r.at(); PP[PK] = conform(this.M.types, r.type, r.dim, v); } else r.set(Number(v));
         return true;
       } catch (e) { if (e instanceof Fault) return false; throw e; }
     }
-    toggle(path, program) {
+    toggle(path, program, monitor) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || r.type !== 'BOOL' || r.dim || r.ro) return false;
+      if (typeof r === 'string' || r.type !== 'BOOL' || r.dim || r.ro || (r.konst && !monitor)) return false;
       try { r.set(r.get() ? 0 : 1); return true; } catch (e) { if (e instanceof Fault) return false; throw e; }
     }
 
@@ -1241,7 +1477,7 @@
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU';
   class Chassis {
-    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; }
+    constructor(size = 8, name = 'Chassis') { this.size = size; this.name = name; this.desc = ''; this.mods = new Map(); this.ls = []; this.kept = new Map(); }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, chassis: this }); }
     static types() { return [CPU].concat(Object.keys(MODULES).filter(t => MODULES[t].kind !== 'enet')); }
@@ -1257,7 +1493,25 @@
       this.emit('insert');
       return { ok: true, module: m };
     }
-    remove(slot) { const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok; }
+    /* Remove Module (cannot be undone). A controller's configuration stays in place unless it is cleared (Clear module
+       configuration): a controller created later in that slot can use it, and load the saved controller image. */
+    remove(slot, keep) {
+      const m = this.mods.get(slot);
+      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
+      const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok;
+    }
+    /* a controller created in a slot whose configuration was kept: use it (else defaults, the name stays), and load
+       the saved controller image when asked */
+    useKept(slot, useConfig, loadImage) {
+      const k = this.kept.get(slot), m = this.mods.get(slot);
+      if (!k || !m || !m.ctl) return false;
+      this.kept.delete(slot);
+      m.name = k.name;
+      if (useConfig) this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot });
+      if (loadImage && k.project) { const key = m.ctl.key; m.ctl.key = 'REM'; m.ctl.download(k.project); if (k.at) m.ctl.dlAt = k.at; m.ctl.key = key; if (key === 'PROG') m.ctl.go('prog'); }
+      this.emit('controller');
+      return true;
+    }
     /* another chassis size (4 or 8 slots); refused while a module sits in a slot that would go */
     resize(n) {
       n = Math.floor(n);
@@ -1279,6 +1533,7 @@
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
       if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
+      if (o.sot != null) m.ctl.setSpeed(o.sot);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
       return true;
@@ -1313,13 +1568,15 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
-        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined,
-        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })) };
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
+        project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined })),
+        kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
     }
     static from(o) {
       // an old chassis (7, 10 or 12 slots) becomes 8 slots when its modules fit, else it keeps its size
       const ch = new Chassis(o && o.size > 0 ? fitRack(Math.min(12, Math.max(4, Math.floor(o.size))), ((o && o.mods) || []).map(x => x.slot)) : 8, (o && o.name) || 'Chassis');
       ch.desc = (o && o.desc) || '';
+      ((o && o.kept) || []).forEach(k => { if (k && k.slot >= 0) { const { slot, ...rest } = k; ch.kept.set(slot, rest); } });
       ((o && o.mods) || []).forEach(x => {
         const r = ch.insert(x.slot, x.type, x.name);
         if (!r.ok) return;
@@ -1329,6 +1586,7 @@
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
+          if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }
@@ -1342,7 +1600,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, fitRack, INSTR,
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;

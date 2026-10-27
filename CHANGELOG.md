@@ -5,6 +5,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed (MT PLC Studio 0.5.0, Stable, Wave 1 of the coverage map): closer to Studio 5000, RSLinx Classic and Logix Emulate (owner)
+- **Studio 5000 menus:**
+  - File > Close closes the project and goes back to the Start Page.
+  - Closing, New Project, Open, a recent project or Exit now asks "Save changes to <name>?" with Yes / No / Cancel, as in Studio 5000.
+  - File menu lists Recent Projects (up to eight, newest first).
+  - File > New Component lists Data Type, Module, Program, Routine, Tag, Task, Trend; New Routine works (Program, Task, Data Type, Trend come later).
+  - Edit > Select All (Ctrl+A) selects all rungs of the routine (Copy, Cut, Delete, Paste work on them) or all rows of the Tag Editor.
+  - Edit > Properties opens the properties of the selected routine, program, task, module, tag or controller.
+  - Search > Find Previous (Shift+F3), Next Result (F4) and Previous Result (Shift+F4) for the Search Results of Find All.
+  - Search > Replace (Ctrl+H): the Studio 5000 Replace dialog with Find Next, Replace and Replace All.
+  - Communications > Select Recent Path: go online, or set the project path, with a path used before.
+  - Communications > Go To Faults opens Controller Properties on the Major Faults tab.
+- **Tags and modules:**
+  - New Tag has External Access, Style, Constant and Open Configuration, and L5X keeps ExternalAccess, Radix and Constant. Logic cannot write a constant tag; Monitor Tags can.
+  - Select Data Type (the "…" next to Data Type) has a filter, Show Data Types by Groups and Dim 2/1/0. Tags can be arrays of 2 or 3 dimensions (Tag[i,j,k]), in Monitor Tags and L5X too.
+  - Edit Tags can change Alias For (with a tag browser button), Style and External Access in their cells, and has a new External Access column. Monitor Tags shows each value in its tag's Style.
+  - Module tags use the Studio 5000 type names (AB:1756_DI:I:0 …). Old projects still open.
+  - S:V sets minor fault 4/4 only when it goes from cleared to set. S:FS is set on the first scan after a program is uninhibited. MVM does not change the flags. Status flags cannot be aliased.
+  - The DC input, AC input and DC output cards show their real 20-pin RTB numbering, with each pin's signal on hover.
+  - Local:slot:C members match the 1756 module profiles.
+- **Instructions:**
+  - Added BSL and BSR (Bit Shift Left / Right) on a new File/Shift toolbar tab, with .UL, .DN and .ER, shifting across the elements of a DINT array.
+  - Added FFL and FFU (FIFO Load / Unload) with .EN, .EU, .DN and .EM. They take numbers or structures, and an empty FIFO gives 0.
+  - Added LFL and LFU (LIFO Load / Unload): last in, first out, and the unloaded place is set to 0.
+  - Added SQI, SQO and SQL on a new Sequencer toolbar tab. Steps go 1 to Length and back to 1, step 0 is the start-up step, and Mask works as in the reference.
+- **Logix Emulate, RSLinx Classic, communications and speed:**
+  - Logix Emulate: Configure Emulation sets each controller's speed of time (0-100 %).
+  - Logix Emulate: Single Scan mode runs one scan at a time, with a Run Continuously / Single Scan prompt.
+  - Logix Emulate: Remove Module can keep or clear a controller's configuration; inserting it again offers the previous configuration and image.
+  - Logix Emulate: the Chassis Monitor has a menu bar (File, Slot, View, Help) in the window and the dock.
+  - RSLinx: right-click a device in RSWho for Device Properties and the other services (greyed).
+  - RSLinx: Configure Drivers > Configure… sets the Virtual Backplane slot and the Emulate Ethernet station mapping.
+  - RSLinx: Station > Change Mode puts the selected controller in Run, Program or Test.
+  - RSLinx: View > Toolbar and Status Bar toggles; the menu bar fits on the phone.
+  - Download: a cancelled download leaves the controller memory cleared, as in Studio 5000.
+  - RSWho: the browsing status names the node found.
+  - Phone: the mode strip (Edits Present and the rest) fits at 360-414 px.
+  - Taps in a big routine answer at once (200 rungs: about 120-150 ms with 4x CPU throttle, was 400-1000 ms).
+
 ### Added (MT PLC Studio 0.4.0, Stable): four themes (owner)
 - **Four themes, each Light and Dark**, in Tools > Options > Theme: CLASSIC (the look so far), CONTROL ROOM (ISA-101
   grey, flat and dense), WORKBENCH (IBM Carbon: dark menu bar and toolbar, square corners, IBM Plex fonts) and

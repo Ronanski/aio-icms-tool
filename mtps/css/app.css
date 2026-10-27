@@ -311,6 +311,20 @@ svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-widt
 .tab .dlg .dh b { font-size: 16px; }
 .frow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
 .phone .frow { grid-template-columns: 1fr; gap: 4px; margin-bottom: 12px; }
+.frow.ckrow input[type=checkbox] { justify-self: start; width: 18px; height: 18px; margin: 0; }
+/* Select Data Type: over the dialog that opened it */
+.dlg.sdt { width: min(400px, calc(100% - 24px)); z-index: 2; }
+.scrim.sdtscrim { z-index: 1; }
+.sdt .sdlab { display: block; margin-bottom: 4px; }
+.sdt .sdtl { height: 180px; border: 1px solid var(--border); border-radius: var(--r-sm); margin: 6px 0; }
+.sdt .sdtl .row { min-height: 26px; padding: 2px 8px; }
+.tab .sdt .sdtl .row, .phone .sdt .sdtl .row { min-height: 44px; }
+.sdt .grp { font-size: 11px; font-weight: 700; color: var(--muted); padding: 6px 8px 2px; }
+.sdt .sdd { display: flex; gap: 8px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 8px 8px; margin: 6px 0 0; min-width: 0; }
+.sdt .sdim { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.sdt .sdim .inp { width: 100%; min-width: 0; }
+.phone .sdt .sdtl { height: auto; flex: 1; min-height: 160px; }
+.phone .frow.ckrow { grid-template-columns: 1fr auto; }
 .inp { height: 28px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); padding: 0 8px; min-width: 0; width: 100%; }
 .inp:focus { border-color: var(--accent); outline: 2px solid var(--accent-soft); }
 .inp.bad { border-color: var(--danger); }
@@ -646,6 +660,7 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl tr.modtag td { background: var(--surface-2); }
 .tagtbl tr.modtag:hover td { background: var(--accent-soft); }
 .tagtbl tr.just td { background: var(--accent-soft); }
+.tagtbl tr.all td { background: var(--accent-soft); }
 .tagtbl td.ced { cursor: text; }
 .tagtbl td.ck { text-align: center; width: 64px; }
 .tagtbl .cin { width: 100%; min-width: 90px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-sm); padding: 0 4px; height: 20px; }
@@ -657,6 +672,15 @@ body.chaswin { display: flex; flex-direction: column; height: 100vh; margin: 0; 
 .tagtbl .nrin:focus { border-color: var(--accent); background: var(--surface); }
 .tagtbl .lnk { font: inherit; color: var(--accent-text); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 .tab .tagtbl .nrin, .tab .tagtbl .cin { height: 30px; }
+/* Edit Tags: the Data Type cell with its … (Select Data Type) */
+.tagtbl .cdt { display: flex; gap: 2px; align-items: center; }
+.tagtbl .cdt .cin { flex: 1; }
+.tagtbl .cdtb { flex: none; height: 20px; min-width: 22px; padding: 0 4px; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; }
+.tab .tagtbl .cdtb, .phone .tagtbl .cdtb { height: 30px; min-width: 36px; }
+.tagtbl .cdtb svg { width: 12px; height: 12px; vertical-align: -2px; }
+.tagtbl td.dim { color: var(--muted); }
+/* the tag browser of an Alias For cell: over the grid, under the cell */
+.asg.tabr { position: fixed; z-index: 90; margin: 0; box-shadow: var(--shadow, 0 4px 16px rgba(0, 0, 0, .25)); }
 .tab .tagtbl td, .phone .tagtbl td { height: 36px; }
 .tagtabs { display: flex; align-items: center; gap: 2px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface-2); flex: none; }
 .tagtabs > span[data-tmode] { white-space: nowrap; padding: 4px 12px; border: 1px solid var(--border); border-top: 0; background: var(--surface-3); cursor: pointer; }
@@ -831,6 +855,9 @@ svg.lad .osel { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); s
 .mterm .scr i, .tab .mterm .scr i, .phone .mterm .scr i { width: 6px; height: 6px; }
 .mterm .scr i::after { top: 2px; }
 .mterm .scr b { font-size: 7px; }
+/* a 20-pin RTB: two digits beside the screw */
+.mterm.rtb20 .scr { padding: 0; gap: 1px; }
+.mterm.rtb20 .scr b { font-size: 6.5px; letter-spacing: -.4px; overflow: visible; text-overflow: clip; }
 .mf { gap: 2px; padding: 3px 3px; }
 .mmat { gap: 1px; padding: 2px; font-size: 7px; }
 .mmat i { width: 6px; height: 6px; }
@@ -1107,3 +1134,33 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
   .spin { animation: none; border-top-color: var(--border-strong); }
   .prog.det i { transition: none; }
 }
+/* Logix Emulate: Configure Emulation (Speed of Time) */
+.sotf { margin: 0 0 10px; padding: 6px 10px 10px; border: 1px solid var(--border); border-radius: var(--r); min-width: 0; }
+.sotf input[type=range] { width: 100%; }
+.sotrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.sotrow .num { width: 72px; }
+.ciprev { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+.ciprev p { margin: 4px 0; }
+/* Logix Emulate Chassis Monitor menu bar (Emulator window and panel) */
+.emb { display: flex; flex-wrap: wrap; gap: 2px; padding: 1px 6px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; grid-column: 1 / -1; }
+.emb button { height: 24px; padding: 0 9px; border: 0; border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.emb button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.tab .emb button, .phone .emb button { height: 32px; }
+.emu { grid-template-rows: auto minmax(0, 1fr) minmax(92px, auto); }
+.emu.compact { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+.emu.compact .emudev, .emu.compact .emustat { display: none; }
+.rlctx { min-width: 220px; }
+/* RSLinx menu bar on the phone: the menus wrap onto a second row instead of scrolling sideways */
+.phone .rlmb { flex-wrap: wrap; overflow-x: visible; padding: 2px 4px; }
+.phone .rlmb button { height: 32px; padding: 0 8px; }
+/* phone mode strip (360-414 px): Who Active as its icon, no dropdown arrows, tighter boxes, so the mode, forces and
+   edits boxes show their whole text ("Edits Present") */
+@media (max-width: 440px) {
+  .phone .strip { gap: 4px; padding: 0 6px; }
+  .phone .strip .sbox { padding: 0 7px; gap: 4px; flex: none; }
+  .phone .strip .sbox svg.i { display: none; }
+  .phone .strip .whob { padding: 0; width: 40px; justify-content: center; }
+  .phone .strip .whob span { display: none; }
+  .phone .strip .warn { padding: 0 8px; }
+}
+@media (max-width: 380px) { .phone .strip .sbox { font-size: 12px; padding: 0 6px; } .phone .strip { gap: 3px; } }

@@ -28,11 +28,11 @@ Where each reference concept lives in the app (`mtps/`), and what still differs.
 
 ## Known differences (open)
 
-- New Tag lacks External Access, Style, Constant, Usage and Produced/Consumed.
-- There is no Select Data Type dialog with 2- or 3-dimension arrays (the engine supports one dimension in the dialog).
-- Edit Tags is a grid with a blank new-tag row, Data Type and Description cells (0.4.0); Alias For is not editable in the cell yet.
+- New Tag lacks Usage and Produced/Consumed (External Access, Style, Constant, Open Configuration since Wave 1).
+- Select Data Type with Dim 0/1/2 and 2- or 3-dimension arrays exist (Wave 1); no UDT editor yet.
+- Edit Tags is a grid with a blank new-tag row; Alias For, Style, External Access, Data Type and Description edit in their cells (Wave 1).
 - Branch rails move with Move Branch Rail (0.4.0).
-- `C` (configuration) tags exist (0.4.0, members from the 1756 modules); no `S` (status) I/O tags. Module tag types use the app's names (`PLC:DI16:I`), not `AB:1756_DI:I:0`.
+- `C` (configuration) tags exist (0.4.0, members from the 1756 modules); module tag types use the Studio 5000 names (`AB:1756_DI:I:0`, Wave 1); no modelled module has `S` tags.
 - No remote I/O locations (only `Local`).
 - No rack-optimized connections.
 - Electronic keying and RPI exist in Module Properties, but the connection codes are simplified.
@@ -40,9 +40,9 @@ Where each reference concept lives in the app (`mtps/`), and what still differs.
 - Only a continuous MainTask: no periodic or event tasks, one program per task in practice.
 - Data types: BOOL, SINT, INT, DINT, REAL, TIMER, COUNTER, CONTROL. No LINT, STRING, UDT editor or Add-On Instructions.
 - Instructions missing compared with 1756-RM003 (audit 2026-10-26): GSV/SSV, BSL/BSR, FFL/FFU, LFL/LFU, SQO/SQI/SQL,
-  FAL/FSC/AVE/SRT/SIZE, MSG, PID, TRN/TOD/FRD/DEG/RAD, SIN/COS/TAN/LN/LOG/XPY, CTUD/TONR (FBD/ST only), UID/UIE, IOT,
+  (BSL/BSR, FFL/FFU, LFL/LFU, SQO/SQI/SQL added in Wave 1) FAL/FSC/AVE/SRT/SIZE, MSG, PID, TRN/TOD/FRD/DEG/RAD, SIN/COS/TAN/LN/LOG/XPY, CTUD/TONR (FBD/ST only), UID/UIE, IOT,
   string instructions. The engine has the 53 in `INSTR`.
 - RSLinx: no EtherNet/IP driver (listed as "not in this version"), so no path to a real controller.
-- Logix Emulate extras: no speed of time, single scan or BPT/TPT.
+- Logix Emulate: speed of time, Single Scan, Remove Module keep/clear and the Chassis Monitor menu bar exist (Wave 1); no BPT/TPT yet.
 - L5X export: modules are written without revision, keying and connection data, and the controller is fixed as
   1756-L85E v37. Not yet imported into a real Studio 5000 to prove it opens there.

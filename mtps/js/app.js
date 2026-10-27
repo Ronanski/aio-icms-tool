@@ -3,7 +3,7 @@
    follows the window, so a resized Windows window or a turned tablet switches it live without losing anything. */
 (function () {
   'use strict';
-  const VERSION = '0.4.0';
+  const VERSION = '0.5.0';
   const BUILD = 'dev';
   const E = window.MTPS, L = E.Ladder, INSTR = E.INSTR;
   const $ = (s, el = document) => el.querySelector(s);
@@ -63,7 +63,9 @@
     return { ip: x.ip, slot: x.slot, rack: r, m, ctl: m && m.ctl && m.ctl.powered ? m.ctl : null };
   }
   const curPath = () => (S.p ? store.get('path.' + S.p.controller.name, DEFPATH) : DEFPATH);
-  function setPath(p) { store.set('path.' + S.p.controller.name, p); relink(); }
+  function setPath(p) { store.set('path.' + S.p.controller.name, p); rememberPath(p); relink(); }
+  // the paths used last (Who Active, Set Project Path, Download, Upload), newest first: Communications > Select Recent Path
+  function rememberPath(p) { if (!p) return; S.prefs.paths = [p].concat((S.prefs.paths || []).filter(x => x !== p)).slice(0, 8); savePrefs(); }
   /* the controller at the project's path; one that went away (card removed, power off) drops the app offline */
   function relink() {
     const x = S.p ? resolve(curPath()) : null;
@@ -117,6 +119,8 @@
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
     'File/Misc': ['COP', 'FLL'],
+    'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
+    Sequencer: ['SQI', 'SQO', 'SQL'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
@@ -297,8 +301,24 @@
   function rememberFile(path) { if (!/\.mtp$/i.test(path)) return; S.prefs.files = [path].concat((S.prefs.files || []).filter(x => x !== path)).slice(0, 8); savePrefs(); }
   function cmdOpen() {
     const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
-    if (S.dirty) confirmDlg('Open Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Open another project anyway? (Save first with Save or Save As.)`, 'Open anyway', go, true);
-    else go();
+    saveChanges(go);
+  }
+  /* File > Close: the project closes (offline first) and the Start Page shows, as at the first start */
+  function closeProject() {
+    if (S.online) { S.online = false; linked = null; commLed(); }
+    S.ed = null; closeLayer();
+    openProject(blank('New_Project'), true);
+    S.noProj = true; S.view = 'start'; S.area = 'ladder'; S.selRung = null; S.drawer = false; reverify();
+    render();
+  }
+  /* the reference's prompt before the project closes (Close, New, Open, Exit): "Save changes to <name>?" Yes saves
+     first (Save As when it has no file yet) and then goes on, No goes on without saving, Cancel stays */
+  function saveChanges(fn) {
+    if (!S.dirty || S.noProj) { fn(); return; }
+    const then = ok => { if (ok) setTimeout(fn, 0); };
+    dialog({ title: 'MT PLC Studio', body: `<p>Save changes to <b>${esc(S.file ? S.file.name : S.p.controller.name)}</b>?</p>`, size: 'sm',
+      buttons: [{ l: 'Yes', pri: true, run: () => { setTimeout(() => (S.file && S.file.path ? writeTo(S.file.path).then(then) : fileDialog({ mode: 'save', title: 'Save As', name: S.p.controller.name + '.mtp', types: ['mtp'], onPick: f => writeTo(f).then(then) })), 0); } },
+        { l: 'No', run: () => { setTimeout(fn, 0); } }, { l: 'Cancel' }] });
   }
   function exportL5X() { fileDialog({ mode: 'save', title: 'Export L5X', name: S.p.controller.name + '.L5X', types: ['l5x'], onPick: async f => { try { await FS.write(f, toL5X(S.p)); toast(`Exported ${baseName(f)}`, 'ok'); } catch (e) { toast('Could not export: ' + (e.message || e), 'err'); } } }); }
   function importL5X() { fileDialog({ mode: 'open', title: 'Import L5X', types: ['l5x'], onPick: f => loadFile(f) }); }
@@ -653,7 +673,18 @@
       buttons: [{ l: 'Close', pri: true }],
       mount: el => el.addEventListener('click', ev => { const t = ev.target.closest('[data-mvr]'); if (!t) return; const [w, d] = t.dataset.mvr.split(','); if (!stepRail(w, +d)) toast('The rail cannot move that way.'); }) });
   }
+  /* Edit > Select All (reference: Ladder Editor > Select All selects all the rungs of the routine; in the Tag Editor,
+     all rows of the grid): Copy, Cut and Delete then act on all of them */
+  const selAllOn = () => S.view === 'ladder' && !!S.selAll && S.selAll.k === S.prog + '/' + S.routine && !S.sel && S.selRung === S.selAll.ri && rungs().length > 0;
+  const tagAllOn = () => S.view === 'tags' && !!S.tagAll;
+  function selectAll() {
+    if (S.view === 'tags') { S.tagAll = true; refreshTags(); toast('All tag rows selected: Copy copies them.'); return; }
+    const ri = curSelRung() == null ? 0 : curSelRung();
+    S.sel = null; S.selRung = ri; S.selAll = { k: S.prog + '/' + S.routine, ri };
+    render(); toast(`${rungs().length} rung(s) selected.`);
+  }
   function delSel() {
+    if (selAllOn()) return edit(() => { rungs().splice(0); S.selAll = null; S.sel = null; S.selRung = null; });
     if (S.sel && S.sel.leg) {
       // delete a branch level with what is on it; a branch left with one level is unwrapped
       return edit(() => {
@@ -685,6 +716,19 @@
   }
   const curSelRung = () => (S.sel ? S.sel.ri : S.selRung);
   function copySel(cut) {
+    if (tagAllOn()) {
+      // the rows as text (tab between the columns), as a copy of the grid
+      const rows = scopeTags(S.tagScope || '').map(t => [t.name, t.alias || '', t.alias ? '' : (t.type || 'BOOL') + (t.dim ? '[' + t.dim + ']' : ''), t.desc || ''].join('\t'));
+      try { navigator.clipboard && navigator.clipboard.writeText(['Name\tAlias For\tData Type\tDescription'].concat(rows).join('\n')).catch(() => {}); } catch (e) { /* ignore */ }
+      S.clipTags = rows; toast(`Copied ${rows.length} tag row(s)`); return;
+    }
+    if (selAllOn()) {
+      const list = rungs().map(r => { const c = { ...r }; delete c.z; delete c.dx; return c; });
+      S.clip = { kind: 'rungs', rungs: list };
+      try { navigator.clipboard && navigator.clipboard.writeText(list.map(r => r.t).join('\n')).catch(() => {}); } catch (e) { /* ignore */ }
+      if (cut) delSel(); else toast(`Copied ${list.length} rung(s)`);
+      return;
+    }
     if (S.sel && S.sel.path) {
       const el = curEl(); if (!el) return;
       S.clip = { kind: 'el', el: JSON.parse(JSON.stringify(el)) };
@@ -704,7 +748,8 @@
       if (!S.sel && ri != null && els && els.length) insert(el, { ri, path: [0], after: false }, false);
       else if (S.sel && S.sel.leg && els && (getEl(els, S.sel.path.slice(0, -1)).legs[S.sel.path[S.sel.path.length - 1]] || []).length) insert(el, { ri, path: S.sel.path.concat(0), after: false }, false);
       else insert(el, null, false);
-    } else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
+    } else if (S.clip.kind === 'rungs') edit(() => { const ri = curSelRung(), at = ri == null ? rungs().length : ri + 1; rungs().splice(at, 0, ...S.clip.rungs.map(r => ({ ...r }))); S.sel = null; S.selRung = at; });
+    else edit(() => { const ri = curSelRung(); const at = ri == null ? rungs().length : ri + 1; const r = { ...S.clip.rung }; delete r.z; rungs().splice(at, 0, r); S.sel = null; S.selRung = at; });
   }
 
   /* ---------- layout ---------- */
@@ -735,17 +780,19 @@
   const C = {
     new: { l: 'New Project…', k: 'Ctrl+N', i: 'file', run: cmdNew },
     open: { l: 'Open… (.mtp, .L5X)', k: 'Ctrl+O', i: 'open', run: cmdOpen },
+    close: { l: 'Close', i: 'close', run: () => saveChanges(closeProject), on: () => !S.noProj },
     save: { l: 'Save', k: 'Ctrl+S', i: 'save', run: saveCmd },
     uptags: { l: 'Upload Tag Values', i: 'upload', run: () => uploadTags(true), on: () => S.online && !!ctl.M && ctl.holds(S.p) },
     saveas: { l: 'Save As… (.mtp file)', i: 'save', run: saveFileAs },
     import: { l: 'Import L5X…', i: 'upload', run: importL5X },
     export: { l: 'Export L5X…', i: 'download', run: exportL5X },
 
-    exit: { l: 'Exit', i: 'exit', run: () => { saveProject(); window.close(); }, show: () => isElectron },
+    exit: { l: 'Exit', i: 'exit', run: () => saveChanges(() => { saveProject(); S.dirty = false; window.close(); }), show: () => isElectron },
     undo: { l: 'Undo', k: 'Ctrl+Z', i: 'undo', run: undo, on: () => editable() && S.undo.length > 0 },
     redo: { l: 'Redo', k: 'Ctrl+Y', i: 'redo', run: redo, on: () => editable() && S.redo.length > 0 },
     cut: { l: 'Cut', k: 'Ctrl+X', i: 'cut', run: () => copySel(true), on: () => editable() && (!!S.sel || S.selRung != null) },
-    copy: { l: 'Copy', k: 'Ctrl+C', i: 'copy', run: () => copySel(false), on: () => !!S.sel || S.selRung != null },
+    copy: { l: 'Copy', k: 'Ctrl+C', i: 'copy', run: () => copySel(false), on: () => !!S.sel || S.selRung != null || tagAllOn() },
+    selall: { l: 'Select All', k: 'Ctrl+A', i: 'check', run: selectAll, on: () => !S.noProj && (S.view === 'tags' || (S.view === 'ladder' && rungs().length > 0)) },
     paste: { l: 'Paste', k: 'Ctrl+V', i: 'paste', run: paste, on: () => editable() && !!S.clip },
     del: { l: 'Delete', k: 'Del', i: 'trash', run: delSel, on: () => editable() && (!!S.sel || S.selRung != null) },
     rung: { l: 'Add Rung', k: 'Ctrl+R', i: 'ladder', run: addRung, on: editable },
@@ -769,12 +816,22 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
+    // File > New Component (reference order); Program, Task, Data Type and Trend are listed but not in this version yet
+    newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
+    newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
+    newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
+    newdt: { l: 'New Data Type…', i: 'tags', run: () => {}, on: () => false },
+    newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
     foff: { l: 'Force Off', i: 'force', run: () => forceSel(0), on: selForceable },
     frem: { l: 'Remove Force', i: 'close', run: () => forceSel(null), on: () => selForceable() && ctl.forced(curEl().a[0], S.prog) !== null },
     find: { l: 'Find…', k: 'Ctrl+F', i: 'search', run: cmdFind },
+    replace: { l: 'Replace…', k: 'Ctrl+H', i: 'edit', run: cmdReplace, on: () => !S.noProj },
     findnext: { l: 'Find Next', k: 'F3', i: 'search', run: () => findNext(true), on: () => !!S.find },
+    findprev: { l: 'Find Previous', k: 'Shift+F3', i: 'search', run: () => findNext(true, -1), on: () => !!S.find },
+    nextres: { l: 'Next Result', k: 'F4', i: 'down', run: () => nextResult(1), on: () => !S.noProj },
+    prevres: { l: 'Previous Result', k: 'Shift+F4', i: 'up', run: () => nextResult(-1), on: () => !S.noProj },
     goto: { l: 'Go To…', k: 'Ctrl+G', i: 'goto', run: cmdGoto },
     xref: { l: 'Cross Reference', k: 'Ctrl+E', i: 'xref', run: () => xref() },
     verifyr: { l: 'Verify Routine', i: 'checkr', run: () => verifyCmd(true) },
@@ -788,8 +845,10 @@
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
+    recentpath: { l: 'Select Recent Path…', i: 'net', run: recentPathDlg, on: () => !S.noProj && (S.prefs.paths || []).length > 0 },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
     ctlprops: { l: 'Controller Properties…', i: 'gear', run: () => controllerProps() },
+    props: { l: 'Properties', i: 'gear', run: propsCmd, on: () => !S.noProj },
     drivers: { l: 'Configure Drivers…', i: 'online', run: () => rslinx('drivers') },
     rswho: { l: 'RSWho (RSLinx Classic)', i: 'net', run: () => rslinx('rswho') },
     setup: { l: 'Setup Wizard…', i: 'gear', run: () => setupWizard(0) },
@@ -801,6 +860,8 @@
     prog: { l: 'Program Mode', i: 'stop', run: () => setMode('remprog'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remprog' && !ctl.fault },
     runm: { l: 'Run Mode', i: 'play', run: () => setMode('remrun'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remrun' && !ctl.fault },
     testm: { l: 'Test Mode', i: 'play', run: () => setMode('remtest'), on: () => S.online && ctl.key === 'REM' && ctl.mode !== 'remtest' && !ctl.fault },
+    // reference: the Major Faults tab of Controller Properties; on only while the controller has a major fault
+    gofaults: { l: 'Go To Faults', i: 'fault', run: () => controllerProps('maj'), on: () => S.online && !!ctl.fault },
     clear: { l: 'Clear Faults', i: 'fault', run: () => { ctl.clearFault(); live(true); }, on: () => S.online && !!ctl.fault },
     fen: { l: 'Enable All I/O Forces', i: 'force', run: () => { ctl.enableForces(true); live(true); }, on: () => S.online && ctl.forceState() === 'disabled' },
     fdis: { l: 'Disable All I/O Forces', i: 'force', run: () => { ctl.enableForces(false); live(true); }, on: () => S.online && ctl.forceState() === 'enabled' },
@@ -817,12 +878,12 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'save', 'saveas', '-', { hd: 'New Component' }, 'newtag', 'newmod', '-', 'import', 'export', '-', 'exit']],
-    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'ctlprops']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
+    ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
-    ['Search', ['find', 'findnext', 'goto', 'xref']],
+    ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
-    ['Communications', ['rswho', 'drivers', 'who', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
+    ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['help', 'tips', 'about']],
   ];
@@ -834,7 +895,11 @@
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
-  const menuItems = ids => ids.filter(id => id === '-' || id.hd || !C[id].show || C[id].show()).map(id => (id === '-' || id.hd ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
+  /* menu rows made when the menu opens: the recent projects of File (up to eight, as the reference's Recent Projects) */
+  const DYN = {
+    recent: () => { const f = S.prefs.files || []; return f.length ? [{ hd: 'Recent Projects' }, ...f.slice(0, 8).map((p, n) => ({ l: `${n + 1} ${baseName(p)}`, i: 'file', run: () => saveChanges(() => loadFile(p)) })), '-'] : []; },
+  };
+  const menuItems = ids => ids.flatMap(id => (DYN[id] ? DYN[id]() : [id])).filter(id => typeof id === 'object' || id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' || typeof id === 'object' ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
 
   /* ---------- render ---------- */
   /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */
@@ -888,12 +953,36 @@
     if (dt && S.descEd) S.descEd.value = dt.value;
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
-    app.className = document.body.className = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
-    app.innerHTML = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    const cls = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
+    if (app.className !== cls) app.className = cls;
+    if (document.body.className !== cls) document.body.className = cls;
+    const html = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
+    // the ladder stays in place when the new frame has it too: the rest of the screen is brought up to date around it
+    // and the ladder gets only its changes (a tap in a 200-rung routine does not rebuild and lay out the whole SVG)
+    let kept = false;
+    if (lw && app.contains(lw)) { const tpl = document.createElement('div'); tpl.innerHTML = html; kept = !!tpl.querySelector('#ladwrap') && morph(app, tpl, lw); }
+    if (!kept) app.innerHTML = html;
     const nl = $('#ladwrap');
-    if (nl) { renderLadder(); if (st) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
+    if (nl) { renderLadder(); if (st && !kept) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
+  }
+  /* bring the live element a up to the parsed element b: a node that differs is replaced by the new one, except the
+     ladder (lw) and the elements around it, which keep their place and take the new attributes. false: the two do not
+     line up (then the caller writes the whole frame). */
+  function morph(a, b, lw) {
+    const ac = [...a.childNodes], bc = [...b.childNodes];
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) {
+      const x = ac[i], y = bc[i];
+      if (x.nodeType === 1 && (x === lw || x.contains(lw))) {
+        if (y.nodeType !== 1 || y.tagName !== x.tagName || (x === lw) !== (y.id === 'ladwrap')) return false;
+        for (const at of [...x.attributes]) if (!y.hasAttribute(at.name)) x.removeAttribute(at.name);
+        for (const at of [...y.attributes]) if (x.getAttribute(at.name) !== at.value) x.setAttribute(at.name, at.value);
+        if (x !== lw && !morph(x, y, lw)) return false;
+      } else if (!x.isEqualNode(y)) x.replaceWith(y);
+    }
+    return true;
   }
   const modeText = () => (!S.online ? 'Offline' : ctl.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[ctl.mode]);
   const modeCls = () => (!S.online ? '' : ctl.fault ? ' fault' : ctl.mode === 'run' || ctl.mode === 'remrun' ? ' run' : '');
@@ -993,7 +1082,7 @@
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
-    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who">${ic('search')}Who Active</button></div>${body}<nav class="pnav">${nav}</nav>`;
+    return `<div class="strip"><span id="olbar" style="display:contents">${modeBox()}${forcesBox()}${editsBox()}${nErr ? `<span class="warn" data-go="more">${ic('warn')}${nErr}</span>` : ''}</span><span class="grow"></span>${commHTML(false)}<button class="btn whob" data-cmd="who" title="Who Active" aria-label="Who Active">${ic('search')}<span>Who Active</span></button></div>${body}<nav class="pnav">${nav}</nav>`;
   }
   function controllerPage() {
     const on = S.online;
@@ -1002,7 +1091,7 @@
         <div style="margin-top:8px"><div class="kv"><span>Mode</span><span class="v">${modeText()}</span></div><div class="kv"><span>Controller holds</span><span class="v">${esc(ctl.name || '(no project)')}</span></div><div class="kv"><span>Path</span><span class="v">${esc(curPath())}</span></div></div>
         <div class="brow"><button class="btn" data-cmd="who">${ic('search')}Who Active</button><button class="btn" data-cmd="rswho">${ic('net')}RSLinx</button><button class="btn" data-cmd="chassis">${ic('rack')}Emulator</button></div>
         <div class="brow">${on ? `<button class="btn danger" data-cmd="offline">${ic('online')}Go Offline</button>` : `<button class="btn pri" data-cmd="online">${ic('online')}Go Online</button>`}<button class="btn" data-cmd="upload"${can('upload') ? '' : ' disabled'}>${ic('upload')}Upload</button><button class="btn" data-cmd="download">${ic('download')}Download</button></div>
-        <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button>` : ''}</div></div></div>
+        <div class="brow"><button class="btn" data-cmd="prog"${can('prog') ? '' : ' disabled'}>${ic('stop')}Program</button><button class="btn" data-cmd="runm"${can('runm') ? '' : ' disabled'}>${ic('play')}Run</button>${ctl.fault ? `<button class="btn danger" data-cmd="clear">${ic('fault')}Clear Faults</button><button class="btn" data-cmd="gofaults">${ic('fault')}Go To Faults</button>` : ''}</div></div></div>
       <div class="card"><div class="ch">Forces<span class="grow"></span><span class="muted" style="font-weight:400">${S.online ? { none: 'No Forces', disabled: 'Forces disabled', enabled: 'Forces enabled' }[ctl.forceState()] : 'Offline'}</span></div><div class="cb">
         <div class="brow" style="margin-top:0"><button class="btn" data-cmd="fen"${can('fen') ? '' : ' disabled'}>Enable</button><button class="btn" data-cmd="fdis"${can('fdis') ? '' : ' disabled'}>Disable</button><button class="btn" data-cmd="fall"${can('fall') ? '' : ' disabled'}>Remove All</button></div></div></div>
 `;
@@ -1010,8 +1099,8 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
-      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
+      <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -1059,7 +1148,7 @@
     const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
     if (S.outTab === 'search') {
       const sv = S.search || { lines: [], found: [] };
-      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m"${m && /^Found/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
+      return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^(Found|Replaced)/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
     }
     return tabs + errorsBody();
   }
@@ -1082,6 +1171,15 @@
     S.errCur = x.t;
     gotoLine(x.ri, x.rt, x.t, false);
     refreshErrLog();
+  }
+  /* Search > Next Result / Previous Result (reference: the next result listed in the Output window): the Found lines
+     of Search Results when that tab shows, else the Errors lines (as F4 / Shift+F4) */
+  function nextResult(dir) {
+    const fd = S.search && S.search.found || [];
+    if (S.outTab !== 'search' || !fd.length) { nextErrLine(dir); return; }
+    const i = fd.findIndex(x => x.text === S.searchCur), x = fd[i < 0 ? (dir > 0 ? 0 : fd.length - 1) : (i + dir + fd.length) % fd.length];
+    S.searchCur = x.text;
+    gotoLine(x.rung, x.program + '/' + x.routine, x.text, false);
   }
   function lineRoutine(t, v) { const e = v.errors.concat(v.warnings, v.found || []).find(x => x.text === t); return e ? e.program + '/' + e.routine : ''; }
 
@@ -1112,7 +1210,7 @@
   const markOf = (r, err) => (!r.z ? '' : r.z === 'i' && err ? 'e' : r.z);
   function ladderRungs() {
     const R = liveRoutine(), map = R ? liveIdx() : null;
-    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
+    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t] && INSTR[e.t].ctl != null) { try { e.bv = { ...e.x[INSTR[e.t].ctl].obj() }; } catch (err) { /* ignore */ } } };
     return rungs().map((r, i) => {
       const pr = E.parseRung(r.t), err = S.errRungs.has(i) || !!pr.err;
       const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx };
@@ -1129,10 +1227,32 @@
     const res = L.render(ladderRungs(), {
       W: w.clientWidth || 600, cell: Math.round(CELL[S.layout] * z), font: Math.round((S.layout === 'desktop' ? 11 : 12) * z), descLines: S.layout === 'phone' ? 1 : 2,
       live: S.online && !!liveRoutine() && !!liveIdx(), run: S.online && (ctl.mode === 'run' || ctl.mode === 'remrun') && !ctl.fault,
-      sel: S.sel, selRung: S.sel ? null : S.selRung, tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
+      sel: S.sel, selRung: S.sel ? null : S.selRung, selAll: selAllOn(), tag: tagFor, desc: opDesc, forced: S.online ? op => ctl.forced(op, S.prog) : null, drop: drop && drop !== 'nodes' ? drop : null, nodeOk: S.drag ? nodeOk : null, lifted: S.lifted, press,
     });
-    w.innerHTML = res.svg;
+    ladPatch(w, res);
     S.ladNodes = res.nodes || null;
+  }
+  /* write the ladder: when the SVG in place was drawn from the same frame (same size and classes, same taps and rails,
+     same number of rungs), only the rungs whose drawing changed are replaced (a tap that moves the selection touches
+     one or two rungs, not the 200 of a big routine); otherwise the whole SVG is written */
+  let ladLast = null;
+  function ladPatch(w, res) {
+    const svg = w.firstElementChild, L0 = ladLast;
+    ladLast = { head: res.head, tail: res.tail, parts: res.parts, svg: null };
+    if (svg && L0 && L0.svg === svg && w.childElementCount === 1 && L0.head === res.head && L0.tail === res.tail && L0.parts.length === res.parts.length) {
+      const gs = svg.children;
+      let ok = true;
+      for (let i = 0; i < res.parts.length && ok; i++) {
+        if (L0.parts[i] === res.parts[i]) continue;
+        const g = gs[i];
+        if (!g || g.getAttribute('data-rg') !== String(i)) { ok = false; break; }
+        const tmp = document.createElement('div'); tmp.innerHTML = '<svg>' + res.parts[i] + '</svg>';
+        g.replaceWith(tmp.firstChild.firstChild);
+      }
+      if (ok) { ladLast.svg = svg; return; }
+    }
+    w.innerHTML = res.svg;
+    ladLast.svg = w.firstElementChild;
   }
   let ro = null, lastW = 0;
   function watchLadder(w) {
@@ -1144,6 +1264,7 @@
   }
   function zoom(f) { setZoom(S.prefs.zoom * f); savePrefs(); }
   function select(t) {
+    S.selAll = null; S.pickAt = 'lad';
     if (!t) { S.sel = null; S.selRung = null; return; }
     if (t.path) { S.sel = { ri: t.ri, path: t.path, br: t.br, leg: t.leg }; if (t.op != null) S.sel.op = t.op; S.selRung = null; } else if (t.ri != null) { S.sel = null; S.selRung = t.ri; } else { S.sel = null; S.selRung = null; }
   }
@@ -1594,7 +1715,10 @@
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
+    control: ['CONTROL'], darr: ['DINT'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
   };
+  // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
+  const ARRK = ['elem', 'elemw', 'darr', 'farr'];
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
   const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || ((S.p.dataTypes || []).find(d => U(d.name) === U(ty)) || {}).members || null;
@@ -1604,7 +1728,7 @@
   function addrType(addr, seen) {
     const a = String(addr || '').trim();
     let ty, dim = 0, rest;
-    const io = /^Local:(\d+):([ICO])(.*)$/i.exec(a);
+    const io = /^Local:(\d+):([ICOS])(.*)$/i.exec(a);
     if (io) {
       const m = S.p.rack.modules.find(x => x.slot === +io[1]), d = m && E.MODULES[m.type], k = U(io[2]);
       if (!d || !d[k]) return null;
@@ -1618,19 +1742,29 @@
       if (t.alias) { seen = seen || new Set(); if (seen.has(U(t.name))) return null; seen.add(U(t.name)); return addrType(t.alias + rest, seen); }
       ty = t.type || 'BOOL'; dim = t.dim || 0;
     }
-    const re = /^(?:\[(\d+)\]|\.([A-Za-z_]\w*)|\.(\d+))/;
+    // Tag[i], Tag[i,j], Tag[i,j,k]: one subscript per dimension, each inside its own dimension
+    const re = /^(?:\[\s*(\d+(?:\s*,\s*\d+){0,2})\s*\]|\.([A-Za-z_]\w*)|\.(\d+))/;
     while (rest) {
       const m = re.exec(rest);
       if (!m) return null;
       rest = rest.slice(m[0].length);
-      if (m[1] != null) { if (!dim || +m[1] >= dim) return null; dim = 0; continue; }
+      if (m[1] != null) { const ds = E.dimsOf(dim) || [], ix = m[1].split(',').map(Number); if (!ds.length || ix.length !== ds.length || ix.some((x, n) => x >= ds[n])) return null; dim = 0; continue; }
       if (dim) return null;
       if (m[2] != null) { const mem = (membersOf(ty) || []).find(x => U(x.name) === U(m[2])); if (!mem) return null; ty = mem.type; dim = mem.dim || 0; continue; }
       if (!NBITS[ty] || +m[3] >= NBITS[ty]) return null;
       ty = 'BOOL';
     }
-    return dim ? ty + '[' + dim + ']' : ty;
+    return dim ? ty + '[' + E.dimText(dim) + ']' : ty;
   }
+  /* the subscripts of the elements of an array, row by row (the rightmost varies fastest): [2,3] → 0,0 0,1 0,2 1,0 …;
+     at most cap of them */
+  const subsOf = (dims, cap) => {
+    const ds = E.dimsOf(dims) || [], n = Math.min(E.dimN(dims), cap || 64), out = [];
+    for (let k = 0; k < n; k++) { let r = k; const ix = []; for (let d = ds.length - 1; d >= 0; d--) { ix.unshift(r % ds[d]); r = Math.floor(r / ds[d]); } out.push(ix.join(',')); }
+    return out;
+  };
+  // a data type with its dimensions: DINT, DINT[10], DINT[4,5]
+  const tyDims = (ty, dim) => ty + (E.dimN(dim) ? '[' + E.dimText(dim) + ']' : '');
   /* the tag browser of Alias For (as in the reference): the I/O tags of the modules, the controller tags, the program
      tags; a structure opens to its members, an integer to its bits (+) */
   function aliasBrowser(box, inp, o) {
@@ -1639,15 +1773,15 @@
     const build = () => {
       const groups = [];
       const tree = (path, ty, depth) => {
-        const n = node(path, ty, depth, null), dm = /^(.*)\[(\d+)\]$/.exec(ty);
-        if (dm) n.kids = Array.from({ length: Math.min(+dm[2], 64) }, (_, i) => tree(`${path}[${i}]`, dm[1], depth + 1));
+        const n = node(path, ty, depth, null), dm = /^(.*)\[([\d,]+)\]$/.exec(ty);
+        if (dm) n.kids = subsOf(dm[2].split(',').map(Number)).map(i => tree(`${path}[${i}]`, dm[1], depth + 1));
         else { const mem = membersOf(ty); if (mem) n.kids = mem.map(m => tree(`${path}.${m.name}`, m.type + (m.dim ? '[' + m.dim + ']' : ''), depth + 1)); }
         return n;
       };
       const ioRows = [];
-      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
       groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
-      const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = typeOf(t) + (t.dim ? '[' + t.dim + ']' : ''); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
+      const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = tyDims(typeOf(t), t.dim); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
       groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
       const P = o.scope && o.scope() ? allProgs().find(g => g.name === o.scope()) : null;
       if (P) groups.push({ name: `Program Tags · ${P.name}`, rows: tagRowsOf(P.tags), empty: 'No program tags' });
@@ -1699,7 +1833,7 @@
       const M = E.PREDEF[ty], g = t.alias ? io(t.alias) : 'tag', nb = { SINT: 8, INT: 16, DINT: 32 }[ty];
       if (M && !t.dim) M.forEach(m => add(`${t.name}.${m.name}`, m.type, '', scope, 0, g));
       if (nb && !t.dim) for (let b = 0; b < nb; b++) add(`${t.name}.${b}`, 'BOOL', '', scope, 0, g);
-      if (t.dim && E.ATOMIC.includes(ty)) for (let i = 0; i < Math.min(t.dim, 64); i++) add(`${t.name}[${i}]`, ty, '', scope, 0, g);
+      if (t.dim && E.ATOMIC.includes(ty)) subsOf(t.dim).forEach(i => add(`${t.name}[${i}]`, ty, '', scope, 0, g));
     });
     tags(P.tags, P.name);
     tags(S.p.tags, 'Controller');
@@ -1719,7 +1853,7 @@
     if (kind === 'imm' || kind === 'order') return kind === 'order' ? ['REVERSE', 'WORD', 'HIGH/LOW'].map(n => ({ name: n, type: '', desc: '' })) : [];
     const types = KIND_TYPES[kind];
     let list = candidates();
-    if (kind === 'elem' || kind === 'elemw') list = list.filter(c => /\[\d+\]$/.test(c.name));
+    if (ARRK.includes(kind)) list = list.filter(c => /\[\d+\]$/.test(c.name) && (!types || types.includes(c.type)));
     else if (types) list = list.filter(c => types.includes(c.type) && !c.dim);
     if (q) list = list.filter(c => U(c.name).includes(q)).sort((a, b) => (U(a.name).startsWith(q) ? 0 : 1) - (U(b.name).startsWith(q) ? 0 : 1));
     return list.slice(0, 120);
@@ -1758,7 +1892,7 @@
     const r = (S.prefs.recent || []).filter(x => !list.some(y => U(y) === U(x)));
     S.prefs.recent = list.concat(r).slice(0, RECENT_MAX); savePrefs();
   }
-  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER' })[kind] || 'DINT';
+  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER', control: 'CONTROL' })[kind] || 'DINT';
   function openEditor(ri, path, focusIdx) {
     const elems = parsed(ri), e = elems && getEl(elems, path);
     if (!e || e.t === 'BR') return;
@@ -1997,6 +2131,45 @@
   const inlineOpen = () => !!$('#inled');
 
   /* ---------- tags ---------- */
+  /* External Access and Style (radix), as in the New Tag dialog and the Tag Editor of the reference (help: New Parameter
+     or Tag dialog box, Tag Editor columns; L5X attributes ExternalAccess and Radix, 1756-RM014). A structure has no
+     style; a REAL shows Float or Exponential; an integer or BOOL Binary, Octal, Decimal, Hex (integers also ASCII). */
+  const ACCESS = ['Read/Write', 'Read Only', 'None'];
+  const baseTy = ty => String(ty || 'BOOL').replace(/\[.*$/, '');
+  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : []; };
+  const defStyle = ty => (U(baseTy(ty)) === 'REAL' ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
+  const styleOfTag = (t, ty) => { const l = stylesOf(ty || (t && t.type)); return t && l.includes(t.style) ? t.style : defStyle(ty || (t && t.type)); };
+  const accessOf = t => (t && ACCESS.includes(t.access) ? t.access : 'Read/Write');
+  /* a value as its Style shows it (1756-RM014, Data display style: 15 in an INT is 2#0000_0000_0000_1111, 8#000_017,
+     16#000F, '$00$0F', 1.5000000e+01); null for Decimal and Float, which show the number as it is */
+  const BITW = { SINT: 8, INT: 16, DINT: 32 };
+  const grp_ = (x, n) => x.replace(new RegExp(`\\B(?=(\\w{${n}})+$)`, 'g'), '_');
+  function styled(v, ty, st) {
+    if (typeof v !== 'number' || !st || st === 'Decimal' || st === 'Float') return null;
+    if (st === 'Exponential') { const [m, e] = v.toExponential(7).split('e'); return m + 'e' + (e[0] === '-' ? '-' : '+') + e.replace(/^[+-]/, '').padStart(2, '0'); }
+    const w = BITW[U(ty)];
+    if (!w || !Number.isInteger(v)) return null;
+    const u = BigInt.asUintN(w, BigInt(v));
+    if (st === 'Hex') return '16#' + grp_(u.toString(16).toUpperCase().padStart(w / 4, '0'), 4);
+    if (st === 'Binary') return '2#' + grp_(u.toString(2).padStart(w, '0'), 4);
+    if (st === 'Octal') return '8#' + grp_(u.toString(8).padStart(Math.ceil(w / 3), '0'), 3);
+    if (st === 'ASCII') { let x = ''; for (let k = w / 8 - 1; k >= 0; k--) { const c = Number((u >> BigInt(8 * k)) & 255n); x += c === 36 ? '$$' : c === 39 ? "$'" : c > 31 && c < 127 ? String.fromCharCode(c) : '$' + c.toString(16).toUpperCase().padStart(2, '0'); } return `'${x}'`; }
+    return null;
+  }
+  const fmtSt = (v, ty, t) => (t && !t.alias && !t.dim && styled(v, ty, styleOfTag(t, ty))) || fmtVal(v);
+  // the base tag of an alias (the last link of the chain), whose External Access and Constant the alias shows
+  const aliasBase = a => { const x = baseTagOf(a) || '', b = /^([A-Za-z_]\w*)/.exec(x), t = b && !/^Local:/i.test(x) ? tagFor(b[1]) : null; return t && !t.alias ? t : null; };
+  /* the L5X attributes of a base tag, and back; Dimensions="10" or "4 5" (also read with commas or brackets) */
+  const l5xDims = t => (E.dimN(t.dim) ? ` Dimensions="${E.dimText(t.dim).replace(/,/g, ' ')}"` : '');
+  const l5xDimsIn = g => { const a = String(g.getAttribute('Dimensions') || '').replace(/[[\]]/g, '').split(/[\s,]+/).filter(Boolean).map(Number), d = E.dimsOf(a); return !d || !d.length ? 0 : d.length === 1 ? d[0] : d; };
+  const l5xAttrs = (t, x) => { const st = styleOfTag(t); return `${st ? ` Radix="${st}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="${x(accessOf(t))}"`; };
+  function l5xTagIn(g, o) {
+    const ra = g.getAttribute('Radix'), ea = g.getAttribute('ExternalAccess');
+    if (ra && stylesOf(o.type).includes(ra) && ra !== defStyle(o.type)) o.style = ra;
+    if (ea && ACCESS.includes(ea) && ea !== 'Read/Write') o.access = ea;
+    if (g.getAttribute('Constant') === 'true' && !o.alias) o.constant = true;
+    return o;
+  }
   function newTag(o) {
     const P = curProg();
     const types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
@@ -2010,18 +2183,34 @@
         <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><span class="afor"><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="btn" id="tab" type="button" title="Browse tags">${ic('down')}</button></span></div>
         <div class="asg abrw" id="asg" hidden></div>
         <div class="frow" id="rat"${t0.alias ? '' : ' hidden'}><label>Data Type</label><span class="mono" id="tat"></span></div>
-        <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label>Data Type</label><select class="inp" id="tt">${types.map(t => `<option${t === (t0.type || 'BOOL') ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow" id="rd"${t0.alias ? ' hidden' : ''}><label>Array size</label><input class="inp" id="tdim" type="number" min="0" max="10000" value="${t0.dim || ''}" placeholder="0 = not an array"></div>
+        <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label for="tt">Data Type</label><span class="afor"><input class="inp mono" id="tt" value="${esc(tyDims(t0.type || 'BOOL', t0.dim))}" list="ttl" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Data Type"><button class="btn" id="ttb" type="button" title="Select Data Type (with the array dimensions)" aria-label="Select Data Type">…</button></span><datalist id="ttl">${types.map(t => `<option value="${t}">`).join('')}</datalist></div>
         <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
+        <div class="frow"><label>External Access</label><select class="inp" id="tea">${ACCESS.map(a => `<option${a === accessOf(t0) ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+        <div class="frow"><label>Style</label><select class="inp" id="tsty"></select></div>
+        <div class="frow ckrow"><label for="tcon">Constant</label><input type="checkbox" id="tcon"${t0.constant ? ' checked' : ''}></div>
+        ${edit0 ? '' : '<div class="frow ckrow"><label for="tocf">Open Configuration</label><input type="checkbox" id="tocf" disabled title="Opens the configuration of a data type that has one (MESSAGE, PID, AXIS…) after Create. No data type of this app has one."></div>'}
         <div class="errtx" id="te"></div>`,
       mount: el => {
         const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), tat = el.querySelector('#tat');
         const br = aliasBrowser(asg, ta, { self: edit0 && edit0.name, scope: () => el.querySelector('#ts').value || (edit0 && o.list !== S.p.tags ? (allProgs().find(g => g.tags === o.list) || {}).name : '') });
         const showType = () => { const v = ta.value.trim(), ty = v ? addrType(v) : null; tat.textContent = !v ? '-' : ty || 'not a tag, member or bit of this project'; tat.classList.toggle('bad', !!v && !ty); };
-        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; if (a) { br.show(); ta.focus(); } else br.hide(); };
-        ta.addEventListener('input', showType); ta.addEventListener('focus', () => br.show());
+        // Style lists the display formats of the data type; an alias takes External Access, Constant and its data type
+        // from its base tag, so those boxes are greyed (help: Tag Editor columns, Alias For)
+        const sty = el.querySelector('#tsty'), ea = el.querySelector('#tea'), con = el.querySelector('#tcon');
+        let styWant = t0.alias ? '' : styleOfTag(t0);
+        const sync = () => {
+          const a = el.querySelector('#tk').value === 'alias', ty = a ? addrType(ta.value.trim()) || '' : el.querySelector('#tt').value.trim(), l = stylesOf(ty), b = a ? aliasBase(ta.value.trim()) : null;
+          if (sty.value) styWant = sty.value;
+          sty.innerHTML = l.map(x => `<option${x === (l.includes(styWant) ? styWant : defStyle(ty)) ? ' selected' : ''}>${x}</option>`).join('');
+          sty.disabled = a || !l.length; ea.disabled = a; con.disabled = a;
+          if (a) { ea.value = accessOf(b); con.checked = !!(b && b.constant); }
+        };
+        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; if (a) { br.show(); ta.focus(); } else { br.hide(); ea.value = accessOf(t0.alias ? null : t0); con.checked = !t0.alias && !!t0.constant; } sync(); };
+        ta.addEventListener('input', () => { showType(); sync(); }); ta.addEventListener('focus', () => br.show());
+        el.querySelector('#tt').addEventListener('input', sync);
+        el.querySelector('#ttb').onclick = () => selectDataType(el.querySelector('#tt').value, v => { el.querySelector('#tt').value = v; sync(); });
         el.querySelector('#tab').onclick = () => br.toggle();
-        showType();
+        showType(); sync();
       },
       buttons: [{ l: 'Cancel' }, { l: edit0 ? 'OK' : 'Create', pri: true, run: el => {
         const name = el.querySelector('#tn').value.trim(), scope = el.querySelector('#ts').value, alias = el.querySelector('#tk').value === 'alias';
@@ -2031,19 +2220,97 @@
         if (!edit0 && list.some(t => U(t.name) === U(name))) return err(`A tag named ${name} already exists in this scope.`);
         const t = { name, desc: el.querySelector('#td').value.trim() };
         if (alias) {
-          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([ico])/, (m, a, b) => a + b.toUpperCase());
+          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([icos])/, (m, a, b) => a + b.toUpperCase());
           if (!t.alias) return err('Alias For: pick the tag, member or bit this alias points to (Browse).');
           if (U(t.alias.split(/[.[]/)[0]) === U(name)) return err('A tag cannot be an alias for itself.');
           if (!addrType(t.alias)) return err(/^Local:/i.test(t.alias) ? `Alias For: ${t.alias} is not an I/O point of this project. I/O tags are Local:<slot>:I or O, then .Data.<bit> (digital) or .Ch<n>Data (analog), for a module in the I/O Configuration.` : `Alias For: ${t.alias} is not a tag, member or bit of this project.`);
         }
-        else { t.type = el.querySelector('#tt').value; const d = +el.querySelector('#tdim').value; if (d > 0) t.dim = Math.floor(d); }
-        if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type) t.value = edit0.value;
+        else {
+          const dt = parseDataType(el.querySelector('#tt').value);
+          if (typeof dt === 'string') return err(dt);
+          t.type = dt.type; if (dt.dim) t.dim = dt.dim;
+          const acc = el.querySelector('#tea').value, st = el.querySelector('#tsty').value;
+          if (acc !== 'Read/Write') t.access = acc;
+          if (st && st !== defStyle(t.type)) t.style = st;
+          if (el.querySelector('#tcon').checked) t.constant = true;
+        }
+        if (!t.desc) delete t.desc;
+        if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type && E.dimText(t.dim) === E.dimText(edit0.dim)) t.value = edit0.value;
         const ok = edit(() => { if (edit0) list.splice(list.indexOf(edit0), 1, t); else list.push(t); });
         if (!ok) return false;
         toast(edit0 ? `Tag ${name} changed` : `Tag ${name} created`);
         if (o.after) setTimeout(o.after, 0);
       } }],
     });
+  }
+  /* the data types a tag can have (atomic, predefined, user-defined), and the Data Type text of the reference:
+     DINT, DINT[10], DINT[4,5], DINT[2,3,4] → { type, dim } or the reason it is not one */
+  const tagTypes = () => E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
+  function parseDataType(txt) {
+    const m = /^\s*([A-Za-z_]\w*)\s*(?:\[\s*([^\]]*)\])?\s*$/.exec(String(txt || ''));
+    if (!m) return 'Data Type: type a data type, e.g. DINT, DINT[10] or DINT[4,5] (or use … to select it).';
+    const ty = tagTypes().find(x => U(x) === U(m[1]));
+    if (!ty) return `Data Type: '${m[1]}' is not a data type of this project.`;
+    if (m[2] == null) return { type: ty, dim: 0 };
+    const a = m[2].split(',').map(x => x.trim()), d = E.dimsOf(a.map(Number));
+    if (!d || !d.length || a.some(x => !/^\d+$/.test(x))) return 'Data Type: an array has 1, 2 or 3 dimensions, each a whole number of 1 or more, e.g. DINT[4,5].';
+    return { type: ty, dim: d.length === 1 ? d[0] : d };
+  }
+  /* Select Data Type (the … beside Data Type), as in the reference: the list of data types with the box above it that
+     filters it, Show Data Types by Groups, and the Array Dimensions Dim 2, Dim 1, Dim 0 (Dim 1 is open when Dim 0 is
+     more than 0, Dim 2 when Dim 1 is). The data type shows them as [Dim 2, Dim 1, Dim 0]. It opens over the dialog
+     that asked for it and gives the text back to done(). */
+  function selectDataType(cur, done, cancel) {
+    const l = $('#layer'), was = { key: layerKey, click: l.onclick };
+    const pd = parseDataType(cur), d0 = typeof pd === 'string' ? { type: String(cur || '').replace(/\[.*$/, '').trim(), dim: 0 } : pd;
+    const ds = (E.dimsOf(d0.dim) || []).slice().reverse();   // [Dim 0, Dim 1, Dim 2]
+    const user = (S.p.dataTypes || []).map(x => x.name);
+    const scrim = document.createElement('div'), el = document.createElement('div');
+    scrim.className = 'scrim sdtscrim';
+    el.className = 'dlg sdt'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Select Data Type');
+    const dimIn = n => `<label class="sdim"><span>Dim ${n}</span><input class="inp" type="number" min="0" inputmode="numeric" id="sdd${n}" value="${ds[n] || 0}" aria-label="Dim ${n}"></label>`;
+    el.innerHTML = `<div class="dh"><b>Select Data Type</b><button class="ib" data-sdc="1" title="Close" aria-label="Close">${ic('close')}</button></div>
+      <div class="db"><label class="sdlab" for="sdq">Data Types:</label><input class="inp mono" id="sdq" value="${esc(d0.type)}" autocomplete="off" spellcheck="false" autocapitalize="off">
+        <div class="list sdtl" id="sdl" role="listbox" aria-label="Data Types"></div>
+        <label class="ck"><input type="checkbox" id="sdg"> Show Data Types by Groups</label>
+        <fieldset class="sdd"><legend>Array Dimensions</legend>${dimIn(2)}${dimIn(1)}${dimIn(0)}</fieldset><div class="errtx" id="sde"></div></div>
+      <div class="df"><button class="btn" data-sdc="1">Cancel</button><button class="btn pri" data-sdo="1">OK</button></div>`;
+    l.appendChild(scrim); l.appendChild(el);
+    const q = el.querySelector('#sdq'), list = el.querySelector('#sdl'), D = n => el.querySelector('#sdd' + n);
+    const draw = () => {
+      const f = U(q.value.trim()), all = tagTypes(), exact = all.some(x => U(x) === f), hit = x => !f || exact || U(x).includes(f);
+      const row = x => `<div class="row${U(x) === f ? ' on' : ''}" data-sdt="${esc(x)}" role="option"><span class="nm grow">${esc(x)}</span></div>`;
+      const groups = [['Predefined', all.filter(x => !user.includes(x))], ['User-Defined', user]];
+      list.innerHTML = el.querySelector('#sdg').checked ? groups.map(([g, xs]) => (xs.filter(hit).length ? `<div class="grp">${g}</div>` + xs.filter(hit).map(row).join('') : '')).join('')
+        : all.filter(hit).slice().sort((a, b) => a.localeCompare(b)).map(row).join('') || '<div class="empty">No data type matches</div>';
+      const on = list.querySelector('.row.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+    };
+    const dims = () => {
+      D(1).disabled = !(+D(0).value > 0); if (D(1).disabled) D(1).value = 0;
+      D(2).disabled = !(+D(1).value > 0); if (D(2).disabled) D(2).value = 0;
+    };
+    const close = () => { scrim.remove(); el.remove(); layerKey = was.key; l.onclick = was.click; };
+    const ok = () => {
+      const ty = tagTypes().find(x => U(x) === U(q.value.trim()));
+      if (!ty) { el.querySelector('#sde').textContent = `'${q.value.trim()}' is not a data type of this project.`; return; }
+      const v = [2, 1, 0].map(n => Math.floor(+D(n).value) || 0);
+      if (v.some(x => x < 0)) { el.querySelector('#sde').textContent = 'A dimension is a whole number, 0 or more.'; return; }
+      const used = v.filter(x => x > 0);
+      close(); done(ty + (used.length ? '[' + used.join(',') + ']' : ''));
+    };
+    l.onclick = ev => {
+      if (!el.contains(ev.target)) return;
+      if (ev.target.closest('[data-sdc]')) { close(); if (cancel) cancel(); return; }
+      if (ev.target.closest('[data-sdo]')) { ok(); return; }
+      const r = ev.target.closest('[data-sdt]'); if (r) { q.value = r.dataset.sdt; draw(); }
+    };
+    list.addEventListener('dblclick', ev => { const r = ev.target.closest('[data-sdt]'); if (r) { q.value = r.dataset.sdt; ok(); } });
+    q.addEventListener('input', draw);
+    el.querySelector('#sdg').addEventListener('change', draw);
+    [0, 1, 2].forEach(n => D(n).addEventListener('input', dims));
+    layerKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); close(); if (cancel) cancel(); } else if (ev.key === 'Enter') { ev.preventDefault(); ok(); } };
+    dims(); draw();
+    setTimeout(() => { q.focus(); q.select(); }, 0);
   }
   /* the description of an operand: the tag's own description when the operand is the tag; otherwise (an I/O address,
      a member such as Timer.DN, a bit) an operand description kept with the project, as the reference allows */
@@ -2093,7 +2360,7 @@
      the I/O Configuration come first (Local:<slot>:C, :I and :O, made with the module, read-only, gone with it), then
      the project's tags. A structure opens to its members, an array to its elements, an integer to its bits. */
   function tagKids(path, ty, dim) {
-    if (dim) return Array.from({ length: Math.min(dim, 64) }, (_, i) => ({ path: `${path}[${i}]`, ty, dim: 0 }));
+    if (E.dimN(dim)) return subsOf(dim).map(i => ({ path: `${path}[${i}]`, ty, dim: 0 }));
     const mem = membersOf(ty);
     if (mem) return mem.map(m => ({ path: `${path}.${m.name}`, ty: m.type, dim: m.dim || 0 }));
     if (NBITS[ty]) return Array.from({ length: NBITS[ty] }, (_, b) => ({ path: `${path}.${b}`, ty: 'BOOL', dim: 0 }));
@@ -2101,7 +2368,7 @@
   }
   function moduleTags() {
     const out = [];
-    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
+    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
     return out;
   }
   const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
@@ -2117,8 +2384,8 @@
     };
     top.forEach(e => go(e, 0));
   }
-  const tyText = e => (e.t ? (e.t.alias || !e.t.type ? e.ty : e.t.type) + (e.t.dim ? '[' + e.t.dim + ']' : '') : e.ty + (e.dim ? '[' + e.dim + ']' : ''));
-  const aggr = e => !!e.dim || !!membersOf(e.ty) || /\[\d+\]$/.test(e.ty);
+  const tyText = e => (e.t ? tyDims(e.t.alias || !e.t.type ? e.ty : e.t.type, e.t.dim) : tyDims(e.ty, e.dim));
+  const aggr = e => !!E.dimN(e.dim) || !!membersOf(e.ty) || /\[[\d,]+\]$/.test(e.ty);
   function tagRows(mode, scope, q) {
     const rows = [];
     tagWalk(scope || '', q, (e, depth, kids, open) => {
@@ -2132,11 +2399,11 @@
   function rowVal(path, ty, scope, t) {
     if (S.online && ctl.M) {
       const v = ctl.read(path, scope || undefined), f = ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null;
-      return { t: fmtVal(v), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
+      return { t: fmtSt(v, ty, t), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
     }
-    if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtVal(t.value), cls: '' };
+    if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtSt(t.value, ty, t), cls: '' };
     // an atomic tag without a start value starts at 0
-    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
+    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
   }
   function tagEditorBody(inline, mode0, scope0) {
     S.tagMode = mode0 || S.tagMode || 'mon';
@@ -2174,27 +2441,30 @@
   const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
   // the tag an alias ends at (an alias of an alias goes on to the base tag)
   const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
-  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'Usage', 'Constant'] };
+  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'External Access', 'Usage', 'Constant'] };
   function tagTableRows() {
     const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
     tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
       const t = e.t && !e.member ? e.t : null, ag = aggr(e);
-      const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : ''].filter(Boolean).join(' ');
+      const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : '', S.tagAll && !depth ? 'all' : ''].filter(Boolean).join(' ');
       const head = `<tr${cls ? ` class="${cls}"` : ''} data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}><td class="ex"></td>`
         + `<td class="nm" style="padding-left:${4 + depth * 16}px"><span class="tx"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span>${esc(e.path)}</td>`;
       if (mon) {
         const v = ag ? { t: '{…}', cls: '' } : rowVal(e.path, e.ty, scope, t);
         const fm = S.online && ctl.M && e.ty === 'BOOL' ? ctl.forced(e.path, scope || undefined) : null;
-        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
+        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${t ? styleOfTag(t.alias ? null : t, e.ty) : styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
         return;
       }
-      const base = !!t && !t.alias;
-      rows.push(head + `<td class="mono">${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
-        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td>${styleOf(e.ty)}</td>`
-        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
+      const base = !!t && !t.alias, sty = base && stylesOf(t.type).length;
+      // an alias takes External Access from its base tag (greyed); a module-defined tag has none (help: Tag Editor)
+      const acc = base ? accessOf(t) : t && aliasBase(t.alias) ? accessOf(aliasBase(t.alias)) : '';
+      rows.push(head + `<td class="mono${t ? ' ced' : ''}"${t ? ' data-tcell="alias"' : ''}>${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
+        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td${sty ? ' class="ced" data-tcell="style"' : ''}>${t ? styleOfTag(base ? t : null, e.ty) : styleOf(e.ty)}</td>`
+        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td>`
+        + `<td class="${base ? 'ced' : 'dim'}"${base ? ' data-tcell="access"' : ''}>${acc}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
         + `<td class="ck">${depth ? '' : `<input type="checkbox" data-tconst="${esc(e.path)}"${t && t.constant ? ' checked' : ''}${base ? '' : ' disabled'} aria-label="Constant">`}</td></tr>`);
     });
-    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="7" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
+    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="8" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
     return rows.join('') || `<tr><td colspan="${TCOLS.mon.length + 1}" class="empty">No tags.</td></tr>`;
   }
   function tagWsHTML() {
@@ -2208,6 +2478,7 @@
      in place); Monitor Tags toggles or writes the value online, or the start value offline. The module-defined
      tags cannot be edited or deleted: they come and go with their module. */
   function tagClick(row, cell) {
+    S.tagAll = false; S.pickAt = 'tag'; S.tagPick = row.dataset.tag;
     const name = row.dataset.tag, ty = row.dataset.ty, scope = S.tagScope || '';
     const list = scopeTags(scope);
     const t = list.find(x => x.name === name);
@@ -2218,10 +2489,10 @@
       if (slot != null) toast(`${name.split(/[.[]/)[0]} is a module-defined tag: it comes with the module in slot ${slot}. Change the module in the I/O Configuration.`);
       return;
     }
-    if (membersOf(ty) || /\[\d+\]$/.test(ty) || (t && t.dim)) return;
+    if (membersOf(ty) || /\[[\d,]+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
-      if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
-      prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined)) return 'This tag cannot be written (an input or read-only).'; live(true); });
+      if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined, true)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
+      prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined, true)) return 'This tag cannot be written (an input or read-only).'; live(true); });
       return;
     }
     if (slot != null) { toast('A module-defined tag has no start value: its values come from the module when online.'); return; }
@@ -2229,24 +2500,70 @@
     if (ty === 'BOOL') { edit(() => { t.value = t.value ? 0 : 1; }); refreshTags(); return; }
     prompt1('Start value', name, fmtVal(t.value || 0), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; edit(() => { t.value = n.v; }); });
   }
-  // Edit Tags: the Data Type or Description cell of a tag, edited in place (Enter or another cell keeps it, Esc does not)
+  /* Edit Tags: the Alias For, Data Type, Style, Description or External Access cell of a tag, edited in place (Enter
+     or another cell keeps it, Esc does not). Alias For has the button of the reference that opens the tag browser. */
   function tagCellEdit(td, t, list) {
     if (td.querySelector('input, select')) return;
     const k = td.dataset.tcell, types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
-    td.innerHTML = k === 'type' ? `<select class="cin" aria-label="Data Type">${types.map(x => `<option${x === (t.type || 'BOOL') ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
-    const f = td.firstChild;
-    let done = false;
+    td.innerHTML = k === 'type' ? `<span class="cdt"><input class="cin mono" aria-label="Data Type" value="${esc(tyDims(t.type || 'BOOL', t.dim))}" list="cdtl" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="cdtb" type="button" data-cdtb="1" title="Select Data Type" aria-label="Select Data Type">…</button><datalist id="cdtl">${types.map(x => `<option value="${esc(x)}">`).join('')}</datalist></span>`
+      : k === 'style' ? cellSel(stylesOf(t.type), styleOfTag(t), 'Style') : k === 'access' ? cellSel(ACCESS, accessOf(t), 'External Access')
+      : k === 'alias' ? `<span class="cdt"><input class="cin mono" aria-label="Alias For" value="${esc(t.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="cdtb" type="button" data-cabb="1" title="Browse tags" aria-label="Browse tags">${ic('down')}</button></span>`
+      : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
+    const f = td.querySelector('input, select');
+    let done = false, picking = false, box = null;
     const commit = keep => {
       if (done) return; done = true;
-      const v = f.value.trim(), was = k === 'type' ? t.type || 'BOOL' : t.desc || '';
+      if (box) { box.remove(); box = null; }
+      const v = f.value.trim(), was = k === 'type' ? tyDims(t.type || 'BOOL', t.dim) : k === 'style' ? styleOfTag(t) : k === 'access' ? accessOf(t) : k === 'alias' ? t.alias || '' : t.desc || '';
       if (!keep || v === was) { refreshTags(); return; }
-      edit(() => { const n = { ...t }; if (k === 'type') { n.type = v; delete n.value; } else if (v) n.desc = v; else delete n.desc; list[list.indexOf(t)] = n; });
+      if (k === 'style' || k === 'access') {
+        edit(() => { const n = { ...t }; if (k === 'style') { if (v === defStyle(t.type)) delete n.style; else n.style = v; } else if (v === 'Read/Write') delete n.access; else n.access = v; list[list.indexOf(t)] = n; });
+        return;
+      }
+      if (k === 'alias') {
+        // a tag typed in Alias For makes the tag an alias of it (it then takes its data type from there)
+        const a = v.replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([icos])/, (m, x, y) => x + y.toUpperCase());
+        const bad = !a ? 'Alias For: type or browse the tag, member or bit this alias points to. To make it a base tag, open its Tag Properties.'
+          : U(a.split(/[.[]/)[0]) === U(t.name) ? 'A tag cannot be an alias for itself.'
+          : !addrType(a) ? (/^Local:/i.test(a) ? `Alias For: ${a} is not an I/O point of this project.` : `Alias For: ${a} is not a tag, member or bit of this project.`) : '';
+        if (bad) { toast(bad, 'err'); refreshTags(); return; }
+        edit(() => { const n = { name: t.name, alias: a }; if (t.desc) n.desc = t.desc; list[list.indexOf(t)] = n; });
+        return;
+      }
+      if (k === 'type') {
+        const dt = parseDataType(v);
+        if (typeof dt === 'string') { toast(dt, 'err'); refreshTags(); return; }
+        if (dt.type === (t.type || 'BOOL') && E.dimText(dt.dim) === E.dimText(t.dim)) { refreshTags(); return; }
+        edit(() => { const n = { ...t, type: dt.type }; if (dt.dim) n.dim = dt.dim; else delete n.dim; delete n.value; if (n.style && !stylesOf(baseTy(dt.type)).includes(n.style)) delete n.style; list[list.indexOf(t)] = n; });
+        return;
+      }
+      edit(() => { const n = { ...t }; if (v) n.desc = v; else delete n.desc; list[list.indexOf(t)] = n; });
     };
     f.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(true); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commit(false); } });
-    f.addEventListener('blur', () => commit(true));
-    if (k === 'type') f.addEventListener('change', () => commit(true));
+    f.addEventListener('blur', () => { if (!picking) commit(true); });
+    if (f.tagName === 'SELECT') f.addEventListener('change', () => commit(true));
+    const ab = td.querySelector('[data-cabb]');
+    if (ab) {
+      // the tag browser of Alias For, under the cell (over the grid); picking a row writes it in the cell
+      box = document.createElement('div'); box.className = 'asg abrw tabr'; box.hidden = true; document.body.appendChild(box);
+      const place = () => { const r = td.getBoundingClientRect(), w = Math.min(Math.max(r.width, 380), innerWidth - 16); box.style.width = w + 'px'; box.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; box.style.top = (r.bottom + 270 < innerHeight ? r.bottom + 2 : Math.max(8, r.top - 264)) + 'px'; };
+      const br = aliasBrowser(box, f, { self: t.name, scope: () => S.tagScope || '', picked: () => { picking = false; commit(true); } });
+      box.addEventListener('pointerdown', () => { picking = true; setTimeout(() => { picking = false; }, 600); });
+      box.addEventListener('mousedown', ev => ev.preventDefault());
+      ab.addEventListener('pointerdown', () => { picking = true; });
+      ab.addEventListener('mousedown', ev => { picking = true; ev.preventDefault(); });
+      ab.addEventListener('click', ev => { ev.stopPropagation(); picking = false; place(); br.toggle(); f.focus(); });
+    }
+    const b = td.querySelector('[data-cdtb]');
+    if (b) {
+      // the … opens Select Data Type; the cell waits for it (OK writes the type, Cancel goes back to the cell)
+      b.addEventListener('pointerdown', () => { picking = true; });
+      b.addEventListener('mousedown', ev => { picking = true; ev.preventDefault(); });
+      b.addEventListener('click', ev => { ev.stopPropagation(); picking = true; selectDataType(f.value, v => { picking = false; f.value = v; commit(true); }, () => { picking = false; f.focus(); }); });
+    }
     f.focus(); if (f.select) f.select();
   }
+  const cellSel = (l, cur, lab) => `<select class="cin" aria-label="${lab}">${l.map(x => `<option${x === cur ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
   // Edit Tags: the blank row at the end (the pencil): a name typed there makes a DINT tag in this scope
   function newTagInline(inp) {
     const name = inp.value.trim(), list = scopeTags(S.tagScope || '');
@@ -2284,18 +2601,125 @@
     openDescBar(`Rung Comment For Rung: ${ri}`, rungs()[ri].c || '', v => { edit(() => { if (v) rungs()[ri].c = v; else delete rungs()[ri].c; }); });
   }
   function cmdFind() { prompt1('Find', 'Find what', S.find, v => { if (!v) return 'Type a tag or an instruction.'; S.find = v; if (!findNext(false)) return `"${v}" was not found in ${curRoutine().name}.`; }, 'Looks for a tag, an operand or a mnemonic in this routine. F3 finds the next one.'); }
-  function findNext(wrapMsg) {
+  function findNext(wrapMsg, dir = 1) {
     const q = U(S.find), R = rungs();
     const items = [];
     R.forEach((r, ri) => { const el = parsed(ri); if (el) flat(el).forEach(p => items.push({ ri, p, e: getEl(el, p) })); });
     if (!items.length) return false;
     const cur = S.sel ? items.findIndex(x => x.ri === S.sel.ri && x.p.join() === S.sel.path.join()) : -1;
-    for (let k = 1; k <= items.length; k++) {
-      const x = items[(cur + k) % items.length];
+    const n = items.length, at = cur < 0 && dir < 0 ? n : cur;
+    for (let k = 1; k <= n; k++) {
+      const x = items[(((at + k * dir) % n) + n) % n];
       if (U(x.e.t) === q || x.e.a.some(a => U(a).includes(q))) { S.sel = { ri: x.ri, path: x.p }; S.selRung = null; render(); scrollToSel(); return true; }
     }
     if (wrapMsg) toast(`"${S.find}" was not found.`);
     return false;
+  }
+  /* Search > Replace, as the reference's Replace dialog: Find What, Replace With, Find Where (this routine or all
+     routines, in the organizer's order), Wrap, Match Whole Word Only, Direction, Find Within (Instructions,
+     Instruction Operands, Rung Comments); Find Next, Replace (the selected occurrence, else finds the first),
+     Replace All (results in Search Results). As in the reference, nothing is replaced while online. */
+  const rxEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function repHits(o) {
+    const q = U(o.what), wb = '[A-Za-z0-9_]', hits = [];
+    const re = o.whole ? new RegExp('(^|[^A-Za-z0-9_])(' + rxEsc(o.what) + ')(?!' + wb + ')', 'i') : null;
+    const has = t => (re ? re.test(String(t)) : U(String(t)).includes(q));
+    const list = o.all ? allProgs().flatMap(g => g.routines.map(r => ({ g, r }))) : [{ g: curProg(), r: curRoutine() }];
+    list.forEach(({ g, r }, gi) => r.rungs.forEach((rg, ri) => {
+      if (o.cm && rg.c && has(rg.c)) hits.push({ g: g.name, r: r.name, ri, kind: 'cm', key: [gi, ri, -1, 0] });
+      const pr = E.parseRung(rg.t); if (pr.err) return;
+      flat(pr.elems).forEach((path, fi) => {
+        const e = getEl(pr.elems, path);
+        if (o.ins && has(e.t)) hits.push({ g: g.name, r: r.name, ri, kind: 'ins', path, key: [gi, ri, fi, 0], e });
+        if (o.ops) (e.a || []).forEach((a, oi) => { if (has(a)) hits.push({ g: g.name, r: r.name, ri, kind: 'op', path, oi, key: [gi, ri, fi, 1 + oi], e }); });
+      });
+    }));
+    return { hits, list, re };
+  }
+  const keyCmp = (a, b) => { for (let i = 0; i < 4; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  const selKey = () => JSON.stringify([S.prog, S.routine, S.sel, S.selRung]);
+  function cmdReplace() {
+    const a = selOperand(), o = { what: isTagText(a) ? String(a) : S.find || '', with: S.repWith || '', all: false, wrap: true, whole: false, up: false, ins: true, ops: true, cm: true };
+    const el = dialog({ title: 'Replace', size: 'md', focus: true,
+      body: `<div class="frow"><label for="rp-f">Find What:</label><input class="inp mono" id="rp-f" value="${esc(o.what)}" autocomplete="off" spellcheck="false" autofocus></div>
+        <div class="frow"><label for="rp-w">Replace With:</label><input class="inp mono" id="rp-w" value="${esc(o.with)}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label for="rp-wh">Find Where:</label><select class="inp" id="rp-wh"><option value="">Current Routine: ${esc(curRoutine().name)}</option><option value="all">All Routines</option></select></div>
+        <div class="frow"><span></span><div><label class="ockb"><input type="checkbox" id="rp-wrap" checked> Wrap</label><label class="ockb"><input type="checkbox" id="rp-whole"> Match Whole Word Only</label>
+          <div class="ockb">Direction: <label class="ockb"><input type="radio" name="rp-dir" id="rp-up"> Up</label><label class="ockb"><input type="radio" name="rp-dir" id="rp-down" checked> Down</label></div></div></div>
+        <div class="frow"><span>Find Within:</span><div><b>Ladder Diagrams</b><label class="ockb"><input type="checkbox" id="rp-ins" checked> Instructions</label><label class="ockb"><input type="checkbox" id="rp-ops" checked> Instruction Operands</label><label class="ockb"><input type="checkbox" id="rp-cm" checked> Rung Comments</label></div></div>
+        <div class="errtx" id="rp-e"></div><p class="help" id="rp-m"></p>`,
+      buttons: [{ l: 'Find Next', pri: true, run: () => { act('next'); return false; } }, { l: 'Replace', run: () => { act('one'); return false; } }, { l: 'Replace All', run: () => { act('all'); return false; } }, { l: 'Close' }] });
+    const q = s2 => el.querySelector(s2);
+    const say = (m, err) => { q('#rp-e').textContent = err ? m : ''; q('#rp-m').textContent = err ? '' : m; };
+    const read = () => { Object.assign(o, { what: q('#rp-f').value.trim(), with: q('#rp-w').value.trim(), all: q('#rp-wh').value === 'all', wrap: q('#rp-wrap').checked, whole: q('#rp-whole').checked, up: q('#rp-up').checked, ins: q('#rp-ins').checked, ops: q('#rp-ops').checked, cm: q('#rp-cm').checked }); S.find = o.what; S.repWith = o.with; };
+    // where the search stands: the occurrence found last while it is still selected, else the selection
+    const pos = list => {
+      if (S.repHit && S.repHit.sk === selKey()) return S.repHit.key;
+      const gi = Math.max(0, list.findIndex(x => x.g.name === S.prog && x.r.name === S.routine));
+      if (S.sel && S.sel.path) { const els = parsed(S.sel.ri) || [], fi = flat(els).findIndex(p => p.join() === S.sel.path.join()); return [gi, S.sel.ri, fi, S.sel.op != null ? 1 + S.sel.op : 0]; }
+      return S.selRung != null ? [gi, S.selRung, -1, -1] : [gi, -1, 0, 0];
+    };
+    const show = h => {
+      S.prog = h.g; S.routine = h.r; S.view = 'ladder'; if (S.layout === 'phone') S.area = 'ladder';
+      if (h.kind === 'cm') { S.sel = null; S.selRung = h.ri; } else { S.sel = { ri: h.ri, path: h.path }; if (h.kind === 'op') S.sel.op = h.oi; S.selRung = null; }
+      S.selAll = null; reverify(); render(); scrollToSel();
+      S.repHit = { key: h.key, sk: selKey() };
+      say(`Found: ${h.g} - ${h.r}, Rung ${h.ri}${h.kind === 'cm' ? ', rung comment' : `, ${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+    };
+    const next = () => {
+      const { hits, list } = repHits(o); if (!hits.length) { say(`Search complete: "${o.what}" was not found.`, true); return null; }
+      const p = pos(list);
+      let h = o.up ? [...hits].reverse().find(x => keyCmp(x.key, p) < 0) : hits.find(x => keyCmp(x.key, p) > 0);
+      if (!h && o.wrap) h = o.up ? hits[hits.length - 1] : hits[0];
+      if (!h) { say(`Search complete: no more "${o.what}" ${o.up ? 'above' : 'below'}.`, true); return null; }
+      show(h); return h;
+    };
+    // the new text of one occurrence (the matched part is replaced, every time it appears in that operand or comment)
+    const swap = (t, re) => String(t).replace(re ? new RegExp(re.source, 'gi') : new RegExp(rxEsc(o.what), 'gi'), (m0, a1, a2) => (re ? a1 + o.with : o.with));
+    function apply(h, re, R) {
+      const rg = R.rungs[h.ri];
+      if (h.kind === 'cm') { const c = swap(rg.c, re); if (c) rg.c = c; else delete rg.c; return true; }
+      const pr = E.parseRung(rg.t); if (pr.err) return false;
+      const x = getEl(pr.elems, h.path); if (!x) return false;
+      if (h.kind === 'op') x.a[h.oi] = swap(x.a[h.oi], re);
+      else { const m = U(swap(x.t, re)); if (!INSTR[m]) return false; x.a = morphOps(x, m); x.t = m; }
+      rg.t = E.serializeRung(pr.elems);
+      return true;
+    }
+    const routineOf = h => allProgs().find(g => g.name === h.g).routines.find(r => r.name === h.r);
+    const act = kind => {
+      read();
+      if (!o.what) { say('Type what to find.', true); return; }
+      if (!o.ins && !o.ops && !o.cm) { say('Pick at least one place in Find Within.', true); return; }
+      if (kind === 'next') { next(); return; }
+      if (S.online) { say('Cannot replace logic, tags or comments while online.', true); return; }
+      if (!editable()) return;
+      const { hits, re } = repHits(o);
+      if (kind === 'one') {
+        const p = S.repHit && S.repHit.sk === selKey() ? S.repHit.key : null, h = p && hits.find(x => keyCmp(x.key, p) === 0);
+        if (!h) { next(); return; }
+        let ok = true;
+        edit(() => { ok = apply(h, re, routineOf(h)); return ok; });
+        if (!ok) { say('Fail to replace element: that is not a valid instruction. Type a valid instruction and try again.', true); return; }
+        S.repHit = null; render();
+        if (!next()) say(`Replaced. No more "${o.what}".`);
+        return;
+      }
+      if (!hits.length) { say(`Nothing to replace: "${o.what}" was not found.`, true); return; }
+      const done = [];
+      edit(() => {
+        // from the last occurrence back, so the paths of the ones before it stay right
+        [...hits].reverse().forEach(h => { if (apply(h, re, routineOf(h))) done.unshift(h); });
+        return done.length ? true : false;
+      });
+      S.repHit = null;
+      const lines = done.map(h => `Replaced: ${h.g} - ${h.r}, Rung ${h.ri}, ${h.kind === 'cm' ? 'Rung Comment' : `${h.e.t}${h.kind === 'op' ? `, Operand ${h.oi}` : ''}`}`);
+      S.search = { errors: [], warnings: [], found: done.map((h, n) => ({ text: lines[n], program: h.g, routine: h.r, rung: h.ri })), lines: [`Replacing "${o.what}" with "${o.with}" in ${o.all ? S.p.controller.name : curRoutine().name}...`, ...lines, `Complete - ${done.length} occurrence(s) replaced.`] };
+      S.outTab = 'search';
+      if (S.layout === 'desktop') S.prefs.err = true; else if (S.layout === 'tablet') S.errOpen = true;
+      reverify(); render();
+      say(done.length < hits.length ? `${done.length} of ${hits.length} replaced (an instruction name that is not valid was left).` : `${done.length} occurrence(s) replaced. See Search Results.`, done.length < hits.length);
+    };
   }
   /* Go To, as in the reference: "Go to what" (a rung, or a tag's Cross Reference, Edit, Monitor, Properties or its row
      in the tag editor) and the rung or the tag to go to */
@@ -2366,7 +2790,7 @@
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`, P = curProg(), names = new Set();
     list.forEach(r => { const pr = E.parseRung(r.t); if (pr.err) return; const walk = arr => arr.forEach(e => { if (e.t === 'BR') e.legs.forEach(walk); else (e.a || []).forEach(x => { if (isTagText(x)) names.add(U(String(x).split(/[.[]/)[0])); }); }); walk(pr.elems); });
     const tags = [...P.tags, ...S.p.tags].filter(tg => names.has(U(tg.name)));
-    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${tg.dim ? ` Dimensions="${tg.dim}"` : ''}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
+    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${l5xDims(tg)}${l5xAttrs(tg, esc)}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.00" TargetType="Rung" TargetCount="${list.length}" ContainsContext="true" ExportDate="${new Date().toUTCString()}" ExportOptions="References NoRawData L5KData DecoratedData Context RoutineLabels AliasExtras IOTags NoStringData ForceProtectedEncoding AllProjDocTrans">
 <Controller Use="Context" Name="${esc(S.p.controller.name)}">${desc ? `<Description>${cd(desc)}</Description>` : ''}
@@ -2392,7 +2816,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const bad = rs.map(r => E.parseRung(r.t.trim())).findIndex(pr => pr.err);
       if (bad >= 0) { toast(`Rung ${bad} of the file cannot be read.`, 'err'); return; }
       const have = n => !!tagFor(n);
-      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: +(tg.getAttribute('Dimensions') || 0), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
+      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ el: tg, name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: l5xDimsIn(tg), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
       // Import Configuration, as in the reference: each tag of the file is created, or the project's tag of that name is used
       dialog({ title: 'Import Configuration', size: 'md',
         body: `<p>${rs.length} rung(s) from <b class="mono">${esc(baseName(f))}</b> go after ${curSelRung() == null ? 'the last rung' : `rung ${curSelRung()}`} of ${esc(curRoutine().name)}.</p>
@@ -2401,7 +2825,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
           edit(() => {
             const at = curSelRung() == null ? rungs().length : curSelRung() + 1;
             rungs().splice(at, 0, ...rs.map(r => (r.c ? { t: r.t.trim(), c: r.c } : { t: r.t.trim() })));
-            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; (tg.prog ? curProg().tags : S.p.tags).push(o); });
+            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; else l5xTagIn(tg.el, o); (tg.prog ? curProg().tags : S.p.tags).push(o); });
             S.sel = null; S.selRung = at;
           });
           toast(`Imported ${rs.length} rung(s).`, 'ok');
@@ -2414,7 +2838,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = w.querySelector(`rect.tap[data-rn][data-ri="${ri}"]`);
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
-  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct'];
+  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest'];
   /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
      wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
      Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a
@@ -2501,7 +2925,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
-  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['Program Control', 'Program Control Instructions']];
+  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
      instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
@@ -2635,14 +3059,14 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   const RLAVAIL = ['vbp', 'emulate'];
   const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
     ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
-    ['View', [['Toolbar'], ['Status Bar'], '-', ['Options…']]],
+    ['View', [['Toolbar', 'tb'], ['Status Bar', 'sb'], '-', ['Options…']]],
     ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
-    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode'], ['Set Time']]],
+    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode…', 'chmode'], ['Set Time']]],
     ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
     ['Security', [['Network Security…'], ['Change Password…']]],
     ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
     ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
-  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null };
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true };
   const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
   function rlTree() {
@@ -2701,25 +3125,74 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="rlcdl"><fieldset><legend>Available Driver Types:</legend><div class="rlts"><select class="inp" id="rldt">${RLTYPES.map(([k, n]) => `<option value="${k}"${k === rlS.dtype ? ' selected' : ''}>${esc(n)}${RLAVAIL.includes(k) ? '' : ' (not in this version)'}</option>`).join('')}</select><button class="btn" data-rladd="1">Add New…</button></div></fieldset>
         <fieldset class="rlcfg"><legend>Configured Drivers:</legend><div class="rltabw"><table class="rltab"><thead><tr><th>Name and Description</th><th>Status</th></tr></thead><tbody>${drivers.map((x, i) => `<tr class="${i === rlS.dsel ? 'on' : ''}" data-rlrow="${i}"><td><span class="mono">${esc(x.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === x.type) || [, , , x.type])[3])}</span></td><td class="${x.run ? 'run' : ''}">${x.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers. Pick a type, then Add New…</td></tr>'}</tbody></table></div></fieldset>
         <p class="help">${t && RLAVAIL.includes(t[0]) ? '' : 'That driver type reaches real hardware: it is not in this version. '}Without a running driver, Who Active finds nothing and the project cannot go online.</p></div>
-      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" disabled>Configure…</button><button class="btn" disabled>Startup…</button>
+      <div class="rlbtns"><button class="btn pri" data-rlclose="1">Close</button><button class="btn" disabled>Help</button><span class="rlgap"></span><button class="btn" data-rlcfg="1"${d ? '' : ' disabled'}>Configure…</button><button class="btn" disabled>Startup…</button>
         <button class="btn" data-rlstart="1"${d && !d.run ? '' : ' disabled'}>Start</button><button class="btn" data-rlstop="1"${d && d.run ? '' : ' disabled'}>Stop</button><button class="btn" data-rldel="1"${d ? '' : ' disabled'}>Delete</button></div></div></div>`;
+  }
+  /* RSWho: right-click a device (RSLinx Classic GR001: Station Diagnostics, Configure DDE Topic and the other services
+     of that device; Upload EDS file from device; Remove for a device with a red X). Device Properties shows what the
+     emulated module reports: vendor, product type and code, revision, serial number, product name. */
+  const RLPTYPE = { cpu: ['Programmable Logic Controller', 14], di: ['General Purpose Discrete I/O', 7], do: ['General Purpose Discrete I/O', 7], ai: ['Analog I/O', 10], ao: ['Analog I/O', 10] };
+  const rlSerial = (r, m) => { let h = 2166136261; for (const ch of r.name + ':' + m.slot + ':' + m.type) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return (h >>> 0).toString(16).toUpperCase().padStart(8, '0'); };
+  function rlDevice(m) {
+    const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
+    return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
+      ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
+      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']]);
+  }
+  function rlCtxHTML(root) {
+    const c = rlS.ctx, n = rlFind(root, c.k);
+    if (!n || !n.m) return '';
+    const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+  }
+  /* Configure… of a driver. Virtual Backplane: the Configure Virtual Backplane window, Slot Number (the slot of the
+     RSLinx Classic module in the virtual chassis, slot 0 by default; LGEM5K-GR016M chapter 6). Emulate Ethernet: the
+     station mapping of an Ethernet devices driver, one station per emulated controller with an IP address. */
+  function rlCfgHTML(md) {
+    const d = drivers.find(x => x.name === md.name);
+    if (!d) return '';
+    const bf = `<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div><div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
+    if (d.type === 'vbp') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Configure Virtual Backplane"><div class="bh">Configure Virtual Backplane (${esc(d.name)})</div><div class="bb">
+      <div class="frow"><label for="rlslot">Slot Number</label><input class="inp num" id="rlslot" type="number" min="0" max="${(racks[0] ? racks[0].size : 8) - 1}" step="1" value="${esc(md.v != null ? md.v : d.slot || 0)}"></div>
+      <p class="help">The slot of the RSLinx Classic module in the virtual chassis (${esc(racks[0] ? racks[0].name : 'Chassis')}). An emulated controller can be in any other slot.</p>${bf}`;
+    const st = [];
+    racks.forEach(r => r.controllers().forEach(m => { if (m.ip && !st.some(x => x[1] === m.ip)) st.push([st.length, m.ip, m.name]); }));
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Configure driver"><div class="bh">Configure driver: ${esc(d.name)}</div><div class="bb">
+      <div class="lbl">Station Mapping</div><div class="rltabw"><table class="rltab" id="rlmap"><thead><tr><th>Station</th><th>Host Name</th></tr></thead><tbody>${st.map(([n, ip, nm]) => `<tr><td>${n}</td><td class="mono">${esc(ip)} <span class="muted">${esc(nm)}</span></td></tr>`).join('') || '<tr><td colspan="2" class="muted">No emulated controller has an IP address.</td></tr>'}</tbody></table></div>
+      <p class="help">The host names are the IP addresses of the emulated controllers (Emulator > Controller > IP Address).</p>${bf}`;
   }
   function rlModalHTML() {
     const md = rlS.modal;
+    if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'mode') {
+      const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, cur = c && { prog: 'remprog', run: 'remrun' }[c.mode] || (c && c.mode);
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Change Mode"><div class="bh">Change Mode</div><div class="bb">${c ? `<p style="margin-top:0"><b>${esc(n.l)}</b><br>Current mode: ${esc(ctlMode(c))} · key switch ${esc(c.key)}</p>
+        ${[['remrun', 'Run'], ['remprog', 'Program'], ['remtest', 'Test']].map(([m, l]) => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="rlmd" value="${m}"${m === (md.v || cur) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+        <p class="help">Software changes the mode only while the key switch is in REM (Remote).</p>` : '<p class="help">Select a controller in RSWho.</p>'}<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok"${c ? '' : ' disabled'}>OK</button></div></div></div>`;
+    }
+    if (md.k === 'props') {
+      const n = rlFind(rlTree(), md.key);
+      return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
+    }
     if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
       <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rlpx="ok">OK</button></div></div></div>`;
     return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="RSLinx Classic"><div class="bh">RSLinx Classic</div><div class="bb"><p style="margin:0">Delete the driver <b class="mono">${esc(md.name)}</b>? Who Active, Go Online and Download can no longer use it.</p></div>
       <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn danger" data-rlpx="ok">Delete</button></div></div></div>`;
   }
+  /* the RSWho status while it browses, as in the RSLinx Classic figure (LINX-GR001, RSWho): "Browsing - node
+     10.224.69.105 found", the address of the node found last (its label up to the comma) */
+  const browseSt = label => { const a = label ? String(label).split(',')[0].trim() : ''; return a ? `Browsing - node ${a} found` : 'Browsing - node found'; };
   function rslinx(view) {
-    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null;
+    rlS.view = view || 'rswho'; rlS.menu = ''; rlS.modal = null; rlS.ctx = null;
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
     let treeKey = '', lim = Infinity, btimer = 0;
     const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
     const quit = () => { clearInterval(timer); stopBrowse(); };
     const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
-    const bstat = root => (lim < rlCount(root) ? 'Browsing - node found' : rlS.auto ? 'Browsing - done' : 'Not browsing');
+    const bstat = root => (lim < rlCount(root) ? browseSt(order(root)[lim - 1].l) : rlS.auto ? 'Browsing - done' : 'Not browsing');
     const box = el.querySelector('#rl');
     const draw = () => {
       const root = rlTree();
@@ -2727,12 +3200,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const sel = rlFind(root, rlS.sel);
       treeKey = JSON.stringify(root, (k, v) => (k === 'm' ? undefined : v));
       box.innerHTML = `<div class="rlmb" role="menubar">${RLMENUS.map(([n]) => `<button data-rlm="${esc(n)}" class="${rlS.menu === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>
-        <div class="rltb"><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
+        <div class="rltb"${rlS.tb ? '' : ' hidden'}><button class="btn${rlS.view === 'rswho' ? ' on' : ''}" data-rlv="rswho">${ic('tree')}RSWho</button><button class="btn${rlS.view === 'drivers' ? ' on' : ''}" data-rlv="drivers">${ic('online')}Configure Drivers…</button></div>
         <div class="rlchild"><div class="rlch"><b>RSWho - 1</b><label class="rlck"><input type="checkbox" id="rlauto"${rlS.auto ? ' checked' : ''}>Autobrowse</label><button class="btn" data-rlref="1">Refresh</button><span class="grow"></span><span class="muted ell" id="rlbst">${bstat(root)}</span></div>
           <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
-        <div class="rlst"><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
-        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}
-        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}><span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+        <div class="rlst"${rlS.sb ? '' : ' hidden'}><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
+        ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}${rlS.ctx ? rlCtxHTML(root) : ''}
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' ? `<span class="ck">${rlS[it[1]] ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
       if (rlS.menu) {
         const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
         p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
@@ -2773,7 +3246,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     // quietly: only a change redraws it, and it is not browsed again
     const timer = setInterval(() => {
       if (!el.isConnected) { quit(); return; }
-      if (!rlS.auto || rlS.menu || rlS.modal || lim !== Infinity) return;
+      if (!rlS.auto || rlS.menu || rlS.modal || rlS.ctx || lim !== Infinity) return;
       if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
     }, 1000);
     const changed = () => { saveDrivers(); relink(); render(); };
@@ -2787,18 +3260,69 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     };
     const modalAct = ok => {
       const md = rlS.modal;
-      if (!ok) { rlS.modal = null; draw(); return; }
+      if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
+      if (md.k === 'mode') {
+        // the same controller code as Studio's Run / Program / Test Mode (Controller.setMode, REM key only)
+        const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, b = box.querySelector('[name="rlmd"]:checked');
+        if (!c || !b) { rlS.modal = null; draw(); return; }
+        if (!c.powered) { md.err = 'The device does not answer.'; draw(); return; }
+        if (!c.setMode(b.value)) { md.v = b.value; md.err = c.key !== 'REM' ? 'The key switch does not allow that mode.' : 'The controller holds no project: download first.'; draw(); return; }
+        saveChassis(); rlS.modal = null; live(true); render(); draw(); return;
+      }
+      if (md.k === 'cfg') {
+        const d = drivers.find(x => x.name === md.name), i = box.querySelector('#rlslot');
+        if (d && i) {
+          const v = i.value.trim(), n = +v, max = (racks[0] ? racks[0].size : 8) - 1, m = racks[0] && racks[0].module(n);
+          const err = !/^\d+$/.test(v) || n > max ? `Enter a slot number from 0 to ${max}.` : m && n !== (d.slot || 0) ? `Slot ${n} holds [${n}] ${m.ctl ? 'PLC-CPU' : m.type} ${m.name}: pick a free slot.` : '';
+          if (err) { md.v = v; md.err = err; draw(); return; }
+          d.slot = n; saveDrivers();
+        }
+        rlS.modal = null; draw(); return;
+      }
       const i = drivers.findIndex(d => d.name === md.name);
       if (i >= 0) drivers.splice(i, 1);
       rlS.dsel = Math.min(rlS.dsel, drivers.length - 1); if (rlS.dsel < 0) rlS.dsel = 0;
       rlS.modal = null; changed(); draw();
     };
+    // right-click (long-press on touch) a device in the tree or the right pane: its menu
+    const ctxAt = (k, cx, cy) => {
+      const b = box.getBoundingClientRect();
+      rlS.ctx = { k, x: Math.max(4, Math.min(cx - b.left, b.width - 230)), y: Math.max(4, Math.min(cy - b.top, b.height - 220)) };
+      rlS.sel = k; draw();
+    };
+    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && n.m ? k : null; };
+    box.addEventListener('contextmenu', ev => { const k = devAt(ev.target); if (!k || rlS.modal || rlS.view !== 'rswho') return; ev.preventDefault(); rlS.menu = ''; ctxAt(k, ev.clientX, ev.clientY); });
+    let rlLp = null;
+    box.addEventListener('pointerdown', ev => {
+      if (ev.pointerType === 'mouse') return;
+      const k = devAt(ev.target); if (!k || rlS.modal) return;
+      const cx = ev.clientX, cy = ev.clientY;
+      rlLp = { cx, cy, t: setTimeout(() => { rlLp = null; ctxAt(k, cx, cy); box.dataset.lp = String(performance.now()); box.dataset.lpx = cx + ',' + cy; }, 550) };
+    });
+    ['pointerup', 'pointercancel', 'pointermove'].forEach(n => box.addEventListener(n, ev => { if (rlLp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - rlLp.cx, ev.clientY - rlLp.cy) > 10)) { clearTimeout(rlLp.t); rlLp = null; } }));
     box.addEventListener('click', ev => {
       const t = ev.target;
       let x;
+      if (rlS.ctx) {
+        // the click that ends a long-press leaves the menu open
+        if (box.dataset.lp && performance.now() - +box.dataset.lp < 400) { const [lx, ly] = (box.dataset.lpx || '').split(',').map(Number); if (!t.closest('[data-rlci]') || Math.hypot(ev.clientX - lx, ev.clientY - ly) < 12) return; }
+        const it = t.closest('[data-rlci]'), k = rlS.ctx.k;
+        if (!it && t.closest('.rlctx')) return;
+        rlS.ctx = null;
+        if (it) rlS.modal = { k: 'props', key: k };
+        draw();
+        return;
+      }
       if ((x = t.closest('[data-rlm]'))) { rlS.menu = rlS.menu === x.dataset.rlm ? '' : x.dataset.rlm; draw(); return; }
-      if ((x = t.closest('[data-rlmi]'))) { const a = x.dataset.rlmi; rlS.menu = ''; if (a === 'exit') { quit(); closeLayer(); return; } rlS.view = a; draw(); return; }
+      if ((x = t.closest('[data-rlmi]'))) {
+        const a = x.dataset.rlmi; rlS.menu = '';
+        if (a === 'exit') { quit(); closeLayer(); return; }
+        // View > Toolbar / Status Bar: show or hide them (kept while the app runs)
+        if (a === 'tb' || a === 'sb') { rlS[a] = !rlS[a]; draw(); return; }
+        if (a === 'chmode') { const n = rlFind(rlTree(), rlS.sel); if (n && n.m && n.m.ctl) { rlS.view = 'rswho'; rlS.modal = { k: 'mode', key: rlS.sel }; } else toast('Select a controller in RSWho first.', 'err'); draw(); return; }
+        rlS.view = a; draw(); return;
+      }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if (rlS.modal) return;
@@ -2819,13 +3343,15 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const d = drivers[rlS.dsel];
       if (t.closest('[data-rlstart]') && d) { d.run = true; changed(); draw(); return; }
       if (t.closest('[data-rlstop]') && d) { d.run = false; changed(); draw(); return; }
-      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); }
+      if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); return; }
+      if (t.closest('[data-rlcfg]') && d) { rlS.modal = { k: 'cfg', name: d.name }; draw(); }
     });
     box.addEventListener('change', ev => {
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
     layerKey = ev => {
+      if (ev.key === 'Escape' && rlS.ctx) { ev.preventDefault(); rlS.ctx = null; draw(); return; }
       if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
       if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
     };
@@ -2934,8 +3460,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     toast('Quick setup done: driver, emulator, project and path are ready.', 'ok');
   }
   function cmdNew() {
-    if (S.dirty) confirmDlg('New Project', `<b>${esc(S.file ? S.file.name : S.p.controller.name)}</b> has changes that are not saved. Start a new project anyway? (Save first with Save or Save As.)`, 'Start anyway', () => setTimeout(newProjectDlg, 0), true);
-    else newProjectDlg();
+    saveChanges(newProjectDlg);
   }
   /* New Project, as in the reference: it only declares the controller (type, name, revision, chassis, slot,
      description). Drivers, the emulated controller and I/O modules are set up any time after (Setup Wizard,
@@ -2971,9 +3496,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function toL5X(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
-    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF4FXOF2F', 'PLC-AO4': '1756-OF4' };
+    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF8', 'PLC-AO4': '1756-OF4' };
     const tag = t => t.alias ? `<Tag Name="${x(t.name)}" TagType="Alias" AliasFor="${x(t.alias)}">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`
-      : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${t.dim ? ` Dimensions="${t.dim}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="Read/Write">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
+      : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${l5xDims(t)}${l5xAttrs(t, x)}>${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
     const progs = p.tasks.flatMap(t => t.programs);
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
@@ -3019,8 +3544,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const n = g.getAttribute('Name'), desc = txt(kids(g, 'Description')[0]).trim();
       if (g.getAttribute('TagType') === 'Alias') return { name: n, alias: g.getAttribute('AliasFor'), desc };
       const o = { name: n, type: g.getAttribute('DataType') || 'BOOL', desc };
-      const dim = parseInt(g.getAttribute('Dimensions') || '', 10); if (dim > 0) o.dim = dim;
-      if (g.getAttribute('Constant') === 'true') o.constant = true;
+      const dim = l5xDimsIn(g); if (dim) o.dim = dim;
+      l5xTagIn(g, o);
       if (!o.desc) delete o.desc;
       return o;
     });
@@ -3053,6 +3578,35 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
 
   /* ---------- organizer actions ---------- */
   function openRoutine(key) { const [g, r] = key.slice(3).split('/'); S.prog = g; S.routine = r; S.view = 'ladder'; S.sel = null; S.selRung = 0; S.drawer = false; if (S.layout === 'phone') S.area = 'ladder'; reverify(); render(); }
+  /* Edit > Properties (reference: the properties of the current component): what was picked last, in the Controller
+     Organizer (routine, program, task, module, controller), the Tag Editor (a tag) or the ladder (the tag of the
+     selected operand, else the routine) */
+  function propsCmd() {
+    const k = S.orgSel || '';
+    if (S.pickAt === 'org' && k) {
+      if (k.startsWith('rt:')) return routineProps(k);
+      if (k.startsWith('prog:')) return progProps(k.slice(5));
+      if (k.startsWith('task:')) return taskProps(k.slice(5));
+      if (k.startsWith('mod:') && +k.slice(4) !== ctlSlot()) return moduleProps(+k.slice(4));
+      return controllerProps();
+    }
+    if (S.pickAt === 'tag' && S.view === 'tags' && S.tagPick) {
+      const list = scopeTags(S.tagScope || ''), t = list.find(x => x.name === S.tagPick), io = /^Local:(\d+)/.exec(S.tagPick);
+      if (t) return newTag({ tag: t, list });
+      if (io) return moduleProps(+io[1]);
+    }
+    if (S.view === 'ladder') {
+      const a = selOperand(), t = isTagText(a) ? tagFor(String(a).split(/[.[]/)[0]) : null;
+      if (t) return newTag({ tag: t });
+      return routineProps(`rt:${S.prog}/${S.routine}`);
+    }
+    controllerProps();
+  }
+  // the program picked in the Controller Organizer (a program or one of its routines), else the open routine's
+  function orgProg() {
+    const k = S.orgSel || '', g = k.startsWith('prog:') ? k.slice(5) : k.startsWith('rt:') ? k.slice(3).split('/')[0] : '';
+    return allProgs().some(x => x.name === g) ? g : curProg().name;
+  }
   function newRoutine(gname) {
     const g = allProgs().find(x => x.name === gname);
     prompt1('New Routine', 'Name', 'Routine' + (g.routines.length + 1), v => {
@@ -3478,7 +4032,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         const wasRun = ctl.running;
         if (wasRun) ctl.setMode('remprog');
         const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p));
-        let r = null;
+        let r = null, cleared = false;
+        // "Before a project is downloaded, the memory of the controller is cleared" (v37 help, Download dialog box)
+        x.st[0].run = () => { if (ctl === to) { to.clearMemory(); cleared = true; saveChassis(); } };
         // the controller takes the project at Verifying: from there the transfer cannot be cancelled
         x.st.push({ t: 'Verifying…', w: 2, fixed: true, run: () => {
           if (ctl !== to) { toast('The controller stopped answering: the download failed.', 'err'); return false; }
@@ -3490,7 +4046,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           saveChassis();
         } });
         setTimeout(() => transfer({ title: 'Downloading', kind: 'download', ms: x.ms, sub: `To ${curPath()}`, steps: x.st, doneText: 'Download complete',
-          cancelled: () => { linked = null; toast('Download cancelled. The project in the controller was not changed.'); },
+          cancelled: () => {
+            linked = null;
+            if (!cleared) { toast('Download cancelled. The project in the controller was not changed.'); return; }
+            if (S.online) { S.online = false; commLed(); }
+            render(); live(true);
+            toast('Download cancelled. The controller memory was cleared before the download: the controller holds no project now.', 'err');
+          },
           done: () => {
             online();
             if (wasRun && ctl.key === 'REM') confirmDlg('Download', 'Done. Return the controller to Remote Run?', 'Yes', () => { setMode('remrun'); });
@@ -3582,6 +4144,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
   function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
+  /* Communications > Select Recent Path (reference: go online using a recent communications path) */
+  function recentPathDlg() {
+    let sel = (S.prefs.paths || []).includes(curPath()) ? curPath() : (S.prefs.paths || [])[0];
+    const rows = () => (S.prefs.paths || []).map(p => `<div class="row${p === sel ? ' on' : ''}" data-rpath="${esc(p)}">${ic('net')}<span class="grow mono ell">${esc(p)}</span>${p === curPath() ? '<span class="sub">project path</span>' : ''}</div>`).join('');
+    const go = () => { setPath(sel); render(); if (S.online) { toast('Go Offline first, then go online at the other path.'); return; } setTimeout(goOnline, 0); };
+    const el = dialog({ title: 'Select Recent Path', size: 'md',
+      body: `<p class="help">The communications paths used last. Pick one to go online there.</p><div class="list" id="rpl">${rows()}</div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Set Project Path', run: () => { setPath(sel); render(); toast(`Project path: ${sel}`); } }, { l: 'Go Online', pri: true, run: go }] });
+    el.querySelector('#rpl').addEventListener('click', ev => {
+      const r = ev.target.closest('[data-rpath]'); if (!r) return;
+      if (r.dataset.rpath === sel && r.dataset.clicked) { closeLayer(); go(); return; }
+      sel = r.dataset.rpath; el.querySelector('#rpl').innerHTML = rows();
+      const n = el.querySelector(`[data-rpath="${CSS.escape(sel)}"]`); if (n) { n.dataset.clicked = '1'; setTimeout(() => { delete n.dataset.clicked; }, 450); }
+    });
+  }
   function setMode(m) { if (!ctl.setMode(m)) toast('The key switch does not allow that mode.', 'err'); live(true); render(); }
   /* Who Active: browse the emulated Ethernet like a communications driver: each controller that is on and has an IP
      address, then its chassis backplane; a controller picked there becomes the project path */
@@ -3655,7 +4232,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       buttons: [{ l: 'Close', run: stopAll }, { l: 'Emulator…', run: () => { stopAll(); setTimeout(chassisMonitor, 0); } }, { l: 'Set Project Path', run: () => { const x = pick(); if (!x || !x.ctl) return false; setPath(sel); render(); toast(`Project path: ${sel}`); return false; } },
         { l: 'Upload…', run: () => { stopAll(); return via(upload)(); } }, { l: 'Download…', run: () => { stopAll(); return via(download)(); } }, { l: 'Go Online', pri: true, run: () => { stopAll(); return via(goOnline)(); } }] });
     const draw = () => {
-      const all = list(), h = rows(all), st = shown < all.length ? 'Browsing - node found' : auto ? 'Browsing - done' : 'Not browsing';
+      const all = list(), h = rows(all), st = shown < all.length ? browseSt(shown > 0 && all[shown - 1].h.replace(/<[^>]*>/g, '').replace(/&[a-z]+;/g, '')) : auto ? 'Browsing - done' : 'Not browsing';
       if (h !== last) { el.querySelector('#wa-rows').innerHTML = h; last = h; }
       if (st !== lastSt) { el.querySelector('#wa-st').textContent = st; lastSt = st; }
     };
@@ -3743,7 +4320,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function dockBody() {
     const ri = Math.max(0, racks.indexOf(chassis));
     const cs = chassis.controllers();
-    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
+    return rackHTML(ri) + `<div class="dockst">${cs.map(m => { const c = m.ctl, id = ri + ':' + m.slot; return `<span class="dkc"><b>[${m.slot}] ${esc(m.name)}</b> ${c.powered ? modeName(c) : 'Off'}${c.single ? ' · Single Scan' : ''}<span class="seg">${[['RUN', 'Run'], ['REM', 'Rem'], ['PROG', 'Prog']].map(([k, t]) => `<span data-emode="${id}:${k}" class="${c.key === k ? 'on' : ''}">${t}</span>`).join('')}</span></span>`; }).join('') || '<span class="muted">No controller in this chassis.</span>'}</div>`;
   }
   /* the emulator panel: on the right in landscape and at the bottom in portrait, unless it was moved; it can be
      folded to a thin bar (like the organizer) and opened again from there */
@@ -3756,7 +4333,53 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
       <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `${innerWidth > innerHeight ? `<button class="ib" data-dkat="${where === 'side' ? 'bottom' : 'right'}" title="${where === 'side' ? 'Move the panel under the ladder' : 'Move the panel to the right of the ladder'}">${ic(where === 'side' ? 'dockb' : 'dockr')}</button>` : ''}<button class="ib" data-dkmin="1" title="Fold the emulator panel">${ic(where === 'side' ? 'right' : 'down')}</button>`}</div>
-      <div class="dockb" id="iob">${dockBody()}</div></div>`;
+      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div></div>`;
+  }
+  /* the Chassis Monitor menu bar (Logix Emulate, LGEM5K-GR016M chapters 3-5): Slot > Create Module / Remove Module /
+     Properties, View, Options, All Modules > Run / Program, Help; the right-click menus stay as they are */
+  const EMUMENUS = ['File', 'Slot', 'View', 'Options', 'All Modules', 'Help'];
+  const emuMenuBar = where => `<div class="emb" role="menubar">${EMUMENUS.map(n => `<button type="button" data-emb="${where}:${n}">${n}</button>`).join('')}</div>`;
+  function emuMenu(el) {
+    const [where, name] = el.dataset.emb.split(':'), doc = el.ownerDocument, was = emuOpen();
+    const ri = where === 'dock' ? Math.max(0, racks.indexOf(chassis)) : Math.min(emuSel.ri || 0, racks.length - 1), r = racks[ri];
+    const used = [...r.mods.keys()].sort((a, b) => a - b), free = Array.from({ length: r.size }, (_, s) => s).filter(s => !r.module(s));
+    const cur = emuSel.k === 'm' && emuSel.ri === ri && r.module(emuSel.slot) ? emuSel.slot : null;
+    const P = S.prefs, tog = k => () => { P[k] = !P[k]; savePrefs(); chassisLive(true); render(); backToEmu(was); };
+    const items = {
+      File: [{ l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
+      Slot: [{ l: 'Create Module…', i: 'plus', dis: !free.length, run: () => insertCard(ri, free[0]) }, { l: 'Remove Module…', i: 'trash', dis: !used.length, run: () => removeModuleDlg(ri, cur, was) }, '-',
+        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
+      View: [{ l: 'Compact', ck: !!P.emuCompact, run: tog('emuCompact') }, { l: 'Hide Slots 9-16', ck: false, dis: true }],
+      Options: [{ l: 'Clear Configuration on Remove', ck: !!P.clearOnRemove, run: tog('clearOnRemove') }, { l: 'Always On Top', ck: false, dis: true }, { l: 'Auto Refresh Rate', dis: true }],
+      'All Modules': [{ l: 'Run…', dis: !r.controllers().length, run: () => allModes(ri, 'RUN', was) }, { l: 'Program…', dis: !r.controllers().length, run: () => allModes(ri, 'PROG', was) }],
+      Help: [{ l: 'Help Topics', i: 'help', run: () => run('tips') }, { l: 'About MT PLC Studio', i: 'info', run: () => run('about') }] }[name];
+    openMenu(items, doc === document ? el : { x: 40, y: 80 }, name);
+    if (doc !== document) window.focus();
+  }
+  /* Slot > Remove Module: pick the slot, then a prompt confirms the removal (cannot be undone) */
+  function removeModuleDlg(ri, cur, was) {
+    const r = racks[ri], used = [...r.mods.keys()].sort((a, b) => a - b);
+    dialog({ title: 'Remove Module', size: '', focus: true,
+      body: `<div class="frow"><label>Slot</label><select class="inp" id="rmm-s">${used.map(s => `<option value="${s}"${s === cur ? ' selected' : ''}>${s}: ${esc(r.module(s).type)} ${esc(r.module(s).name)}</option>`).join('')}</select></div>`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const s = +e2.querySelector('#rmm-s').value, m = r.module(s);
+        if (!m) return;
+        setTimeout(() => {
+          if (m.ctl) { removeCpu(ri, s, was); return; }
+          dialog({ title: 'Remove Module', size: '', body: `<p>Remove <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from the virtual chassis ${esc(r.name)}? This cannot be undone.</p>`,
+            buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', danger: true, run: () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); backToEmu(was); } }] });
+        }, 0);
+      } }] });
+  }
+  /* All Modules > Run / Program: every emulated controller of the chassis is ticked; clear the ones to leave as they are */
+  function allModes(ri, k, was) {
+    const r = racks[ri], cs = r.controllers(), t = k === 'RUN' ? 'Run' : 'Program';
+    dialog({ title: `${t} Mode`, size: '',
+      body: `<p style="margin-top:0">Put these emulated controllers in ${t} mode:</p>${cs.map(m => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" data-amod="${m.slot}" checked><span>Slot ${m.slot}: ${esc(m.name)}</span></label>`).join('')}`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        e2.querySelectorAll('[data-amod]').forEach(b => { if (b.checked) r.controller(+b.dataset.amod).setKey(k); });
+        saveChassis(); chassisLive(true); live(true); render(); backToEmu(was);
+      } }] });
   }
   /* ---------- Emulator dashboard (spec section 15), laid out like a PC emulator's dashboard ----------
      Devices pane: the chassis and their cards. Details: the Controller pane (name, description, IP address, power),
@@ -3771,6 +4394,20 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
      as in the reference emulator */
   const rtbOpen = new Set();   // the I/O cards ('rack:slot') whose RTB door is open: UI state only
+  /* the 20-pin RTB of a 1756 digital module, as its wiring diagram has it (1756-UM058): pin 1 at the top right, the
+     even pins in the left column and the odd ones in the right. On the card the two halves (pins 1-10 and 11-20) stand
+     side by side, each as on the RTB (even left, odd right), so the card keeps its size. A screw shows its pin
+     number; its signal (IN-0, GND-0, …) is in its title. 1756-OW16I has a 36-pin RTB and is not one of these. */
+  const rtbPins = (a, g) => { const p = {}; for (let i = 0; i < 8; i++) { p[i + 1] = a + '-' + i; p[i + 11] = a + '-' + (i + 8); } return Object.assign(p, g); };
+  const RTBPINS = {
+    'PLC-DI16-24V': rtbPins('IN', { 9: 'GND-0', 10: 'GND-0', 19: 'GND-1', 20: 'GND-1' }),             // 1756-IB16
+    'PLC-DI16-120V': rtbPins('IN', { 9: 'L2-0', 10: 'L2-0', 19: 'L2-1', 20: 'L2-1' }),                // 1756-IA16
+    'PLC-DO16-24V': rtbPins('OUT', { 9: 'RTN OUT-0', 10: 'DC-0(+)', 19: 'RTN OUT-1', 20: 'DC-1(+)' }), // 1756-OB16E
+  };
+  const rtb20 = pins => `<div class="mterm rtb20" aria-label="Terminal block, 20 pins">${[0, 1, 2, 3, 4].map(r => [2 * r + 2, 2 * r + 1, 2 * r + 12, 2 * r + 11].map(n => {
+    const l = pins[n], com = !/^(IN|OUT)-/.test(l);
+    return `<span class="scr${com ? ' com' : ''}" data-pin="${n}" title="Pin ${n}: ${esc(l)}" aria-label="Pin ${n}, ${esc(l)}"><i></i><b>${n}</b></span>`;
+  }).join('')).join('')}</div>`;
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
@@ -3778,7 +4415,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (m.ctl) {
       const c = m.ctl, run = c.powered && c.running, fs = c.forceState();
       const disp = !c.powered ? '' : c.fault ? 'FLT' : { prog: 'PROG', run: 'RUN', remprog: 'PROG', remrun: 'RUN', remtest: 'TEST' }[c.mode];
-      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}">
+      return `<div class="ccard cpu${c.powered ? '' : ' off'}" data-esel="m:${id}" data-ccpu="${id}">
         <div class="mf"><div class="mcat">PLC-CPU</div><div class="mdisp">${disp}</div>
           <div class="mleds">${led(run, 'RUN')}${led(c.powered && fs !== 'none', 'FORCE', fs === 'enabled' ? 'a' : 'a blink')}${led(c.powered && c.M, 'I/O', c.ioOk() ? 'g' : 'r blink')}${led(c.powered, 'OK', c.fault ? 'r blink' : 'g')}</div>
           <div class="mname">${esc(m.name)}</div><div class="mip">${esc(m.ip || 'no IP')}</div>
@@ -3793,7 +4430,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const com = m.kind === 'di' ? ['GND', 'GND'] : m.kind === 'do' ? ['DC+', 'RTN'] : ['RTN', 'RTN'];
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
     const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
-    const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
+    const term = RTBPINS[m.type] ? rtb20(RTBPINS[m.type]) : `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
     /* the RTB (removable terminal block) housing: its door is closed over the terminals, as on a 1756 module; a click
        or tap opens it on its side hinge and shows the terminals, another one closes it (kept per card, not in the project) */
     const open = rtbOpen.has(id);
@@ -3890,6 +4527,73 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (!m) return;
     openMenu([{ l: 'Module I/O…', i: 'io', run: () => openIoWin(id) }, { l: m.fault ? 'Clear the fault' : 'Simulate a fault', i: 'fault', run: () => { r.setFault(s, !m.fault); r.advance(0); live(true); render(); refreshIO(); } }, '-', { l: 'Remove module', i: 'trash', run: () => chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })) }], { x, y }, `[${s}] ${m.type} ${m.name}`);
   }
+  /* Logix Emulate: right-click (or long-press) an emulated controller: its mode, Configure Emulation, Remove
+     (LGEM5K-GR016M chapters 4 and 5) */
+  const emuOpen = () => !!document.querySelector('#layer #emubody');
+  const backToEmu = was => { if (was) setTimeout(() => { if (!emuOpen() && !$('#layer .dlg, #layer .menu')) chassisMonitor(); }, 0); };
+  function cpuMenu(id, x, y) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s), was = emuOpen();
+    if (!m || !m.ctl) return;
+    const c = m.ctl, key = k => () => { c.setKey(k); saveChassis(); chassisLive(true); live(true); render(); backToEmu(was); };
+    openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') },
+      { l: 'Single Scan', ck: c.single, run: () => { c.singleScan(!c.single); asked.delete(c); chassisLive(true); live(true); render(); backToEmu(was); } }, '-',
+      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, '-',
+      { l: 'Remove', i: 'trash', run: () => { chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })); } }], { x, y }, `[${s}] PLC-CPU ${m.name}`);
+  }
+  /* Single Scan: when the one scan is done, a prompt asks to run the controller continuously or to scan once more */
+  const asked = new WeakSet();
+  function singleAsk() {
+    for (const r of racks) for (const m of r.controllers()) {
+      const c = m.ctl;
+      if (!c.held) { asked.delete(c); continue; }
+      if (asked.has(c)) continue;
+      asked.add(c);
+      const was = emuOpen();
+      dialog({ title: 'Single Scan', size: '', modal: true,
+        body: `<p>The single scan of <b>[${m.slot}] ${esc(m.name)}</b> is complete. Run the emulated controller continuously, or perform a single scan again?</p>`,
+        buttons: [{ l: 'Run Continuously', run: () => { c.runContinuous(); asked.delete(c); chassisLive(true); live(true); backToEmu(was); } },
+          { l: 'Single Scan', pri: true, run: () => { c.scanAgain(); asked.delete(c); live(true); backToEmu(was); } }] });
+      return;
+    }
+  }
+  /* Remove (an emulated controller): cannot be undone; the controller's configuration stays in place unless Clear
+     module configuration is ticked (ticked at first with Options > Clear Configuration on Remove) */
+  function removeCpu(ri, s, was) {
+    const r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    dialog({ title: 'Remove Module', size: '',
+      body: `<p style="margin-top:0">Remove <b>[${s}] PLC-CPU ${esc(m.name)}</b> from the virtual chassis ${esc(r.name)}? This cannot be undone.</p>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="rm-clr"${S.prefs.clearOnRemove ? ' checked' : ''}><span>Clear module configuration</span></label>
+        <p class="help">Not ticked: the configuration${m.ctl.name ? ` and the controller image (${esc(m.ctl.name)})` : ''} stay in place, and a controller created later in slot ${s} can use them. Ticked: both are deleted.</p>`,
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', danger: true, run: e2 => {
+        r.remove(s, !e2.querySelector('#rm-clr').checked); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); backToEmu(was);
+      } }] });
+  }
+  /* Configure Emulation: the Speed of Time area (slider in 1 % steps or the % box, Confirm Time % Change, 100% NOW,
+     0% NOW; the last value set shows on the left). A change takes effect at once; 0 % stops execution. */
+  function configEmulation(id, was) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    const c = m.ctl;
+    const el = dialog({ title: 'Configure Emulation', size: 'md', onClose: () => backToEmu(was),
+      body: `<p class="help" style="margin-top:0">[${s}] PLC-CPU <b>${esc(m.name)}</b> · ${esc(r.name)}</p>
+        <fieldset class="sotf"><legend>Speed of Time</legend><input type="range" id="sot-r" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time">
+          <div class="sotrow"><span>Set: <b id="sot-cur">${c.sot}</b> %</span><span class="grow"></span><input class="inp num" id="sot-v" type="number" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time percent"><span>%</span></div>
+          <div class="sotrow"><button class="btn" data-sot="0">0% NOW</button><button class="btn" data-sot="100">100% NOW</button><span class="grow"></span><button class="btn pri" data-sot="ok">Confirm Time % Change</button></div></fieldset>
+        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>`,
+      buttons: [{ l: 'Close', run: () => backToEmu(was) }] });
+    const q = k => el.querySelector(k);
+    const show = () => { q('#sot-cur').textContent = c.sot; q('#sot-r').value = c.sot; q('#sot-v').value = c.sot; };
+    q('#sot-r').oninput = () => { q('#sot-v').value = q('#sot-r').value; };
+    q('#sot-v').oninput = () => { q('#sot-r').value = q('#sot-v').value; };
+    el.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-sot]'); if (!b) return;
+      const ok = b.dataset.sot === 'ok', v = ok ? +q('#sot-v').value : +b.dataset.sot;
+      if ((ok && q('#sot-v').value === '') || !(v >= 0 && v <= 100)) { toast('Speed of time: 0 to 100 %.', 'err'); return; }
+      r.setController(s, { sot: Math.round(v) }); saveChassis(); chassisLive(true); live(true);
+      show(); toast(`Speed of time: ${c.sot} %.`, 'ok');
+    });
+  }
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -3918,6 +4622,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       ${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}
       <div class="frow"><label>Controller</label><span class="seg"><span data-epow="${id}:1" class="${c.powered ? 'on' : ''}">On</span><span data-epow="${id}:0" class="${c.powered ? '' : 'on'}">Off</span></span></div>
       ${kv('Revision', '1.0')}${kv('Memory Size', (m.mem || 3072) + ' KB')}${kv('Holds', c.name ? esc(c.name) : '(no project)')}
+      <div class="frow"><label>Speed of Time</label><span>${c.sot} % <button class="btn" data-ecfg="${id}">Configure Emulation…</button></span></div>
       <p class="help">One controller in each chassis needs an IP address: Who Active reaches the chassis through it, and the other controllers across the backplane. Off keeps the project; On starts it again.</p>
       <div class="brow"><button class="btn pri" data-eapply="${id}">Apply</button><button class="btn danger" data-crem="${id}">Delete</button></div></div>`;
   }
@@ -3932,7 +4637,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }));
     return rows.join('') || '<p class="help" style="padding:8px">No emulated controllers. Add one.</p>';
   }
-  const emuHTML = () => `<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
+  const emuHTML = () => `${emuMenuBar('win')}<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
     <div class="emumain" id="emumain">${detailsHTML()}</div>
     <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div>`;
   const chassisSig = () => racks.map(r => r.name + ':' + [...r.mods.values()].map(m => (m.ctl ? [m.slot, m.name, m.ip, m.ctl.powered, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.name, m.fault, JSON.stringify(m.field), JSON.stringify(r.outputs(m.slot))].join(','))).join('|')).join('#') + curPath();
@@ -3945,6 +4650,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const b = d.getElementById('emubody');
       if (!b || (!force && b.dataset.sig === sg)) return;
       b.dataset.sig = sg;
+      b.classList.toggle('compact', !!S.prefs.emuCompact);
       const a = d.activeElement, busy = a && b.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
       if (!busy) { b.innerHTML = emuHTML(); return; }
       // typing in the details: refresh the devices, the status and the rack around it
@@ -3981,10 +4687,13 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if ((el = t.closest('[data-cins]'))) { const [ri, s] = ids(el.dataset.cins); insertCard(ri, s); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-crem]'))) {
       const [ri, s] = ids(el.dataset.crem), r = racks[ri], m = r.module(s);
+      if (m && m.ctl) { removeCpu(ri, s, emuOpen()); if (doc !== document) window.focus(); return true; }
       confirmDlg('Delete', `Delete <b>[${s}] ${esc(m.type)} ${esc(m.name)}</b> from chassis ${esc(r.name)}?${m.ctl && m.ctl.name ? ` The project <b>${esc(m.ctl.name)}</b> in it is lost.` : ''}`, 'Delete', () => { r.remove(s); r.advance(0); emuSel = { k: 'r', ri }; saveChassis(); refreshIO(); live(true); }, true);
       if (doc !== document) window.focus();
       return true;
     }
+    if ((el = t.closest('[data-emb]'))) { emuMenu(el); return true; }
+    if ((el = t.closest('[data-ecfg]'))) { configEmulation(el.dataset.ecfg, emuOpen()); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
     if ((el = t.closest('[data-epow]'))) { const [ri, s, on] = ids(el.dataset.epow); racks[ri].setController(s, { on: !!on }); saveChassis(); chassisLive(true); live(true); return true; }
@@ -4076,7 +4785,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
           <div class="frow"><label>Revision</label><select class="inp" id="ci-rev"><option>1.0</option></select></div>
           <div class="frow"><label>Memory Size (KB)</label><input class="inp" id="ci-mem" type="number" min="64" step="64" value="3072"></div>
           <div class="frow"><label>IP Address</label><select class="inp" id="ci-ip"><option value="">(none)</option>${EMUIPS.map(a => `<option>${a}</option>`).join('')}</select></div>
-          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label></div>
+          <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="ci-on" checked><span>Turn the controller on</span></label>
+          <div id="ci-prev" class="ciprev" hidden></div></div>
         <p class="help" id="ci-h"></p>`,
       buttons: [{ l: 'Cancel' }, { l: 'Add', pri: true, run: e2 => {
         const r = racks[+e2.querySelector('#ci-r').value], s = +e2.querySelector('#ci-s').value, t = e2.querySelector('#ci-t').value;
@@ -4085,7 +4795,9 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (!E.validName(n)) { toast('Name: letters, digits and _.', 'err'); return false; }
         const res = r.insert(s, t, n);
         if (!res.ok) { toast(res.msg, 'err'); return false; }
-        if (t === 'PLC-CPU') r.setController(s, { desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
+        const pv = t === 'PLC-CPU' && e2.querySelector('#ci-prev:not([hidden])');
+        if (pv) r.useKept(s, pv.querySelector('#cp-use').checked, !!(pv.querySelector('#cp-img') && pv.querySelector('#cp-img').checked));
+        if (t === 'PLC-CPU') r.setController(s, { name: n, desc: e2.querySelector('#ci-d').value.trim(), ip: e2.querySelector('#ci-ip').value, mem: +e2.querySelector('#ci-mem').value || 3072, on: e2.querySelector('#ci-on').checked });
         r.advance(0); saveChassis();
         emuSel = { k: 'm', ri: racks.indexOf(r), slot: s };
         setTimeout(() => { if (!chasWin) chassisMonitor(); else chassisLive(true); refreshIO(); live(true); }, 0);
@@ -4097,19 +4809,38 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const cpu = q('#ci-t').value === 'PLC-CPU';
       q('#ci-cpu').hidden = !cpu;
       if (cpu && !q('#ci-ip').dataset.touched) { const used = new Set(racks.flatMap(x => x.controllers().map(m => m.ip))); q('#ci-ip').value = gatewayIp(r) ? '' : EMUIPS.find(a => !used.has(a)) || ''; }
+      prevCfg(cpu && r.kept.get(+q('#ci-s').value));
       q('#ci-h').textContent = cpu ? 'An emulated controller holds a project (Download through Who Active). Give one controller in each chassis an IP address.' : 'An I/O card brings field switches (inputs) or lamps (outputs); the project must configure the same module in the same slot.';
+    };
+    /* a controller removed from this slot left its configuration: use it, or reset it to default values (the name
+       stays); Load Saved Controller Image from Previous Instance (LGEM5K-GR016M, Create a controller, step 5) */
+    let pvAt = null;
+    const prevCfg = k => {
+      const b = q('#ci-prev');
+      if (!k) { b.hidden = true; b.innerHTML = ''; pvAt = null; return; }
+      if (pvAt === k) return;
+      pvAt = k; b.hidden = false;
+      b.innerHTML = `<p><b>Previous configuration information exists for this slot.</b></p>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="cp" id="cp-use" checked><span>Use the Configuration from the Previous Controller</span></label>
+        <label class="frow" style="grid-template-columns:auto 1fr"><input type="radio" name="cp" id="cp-def"><span>Reset the Configuration to Default Values</span></label>
+        ${k.project ? `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="cp-img"><span>Load Saved Controller Image from Previous Instance: <b>${esc(k.project.controller ? k.project.controller.name : k.name)}</b>${k.at ? ', last downloaded ' + esc(new Date(k.at).toLocaleString()) : ''}</span></label>
+        <p class="help">Using a previously loaded controller image may result in unexpected operation. Make sure the program is correct before running emulations.</p>` : ''}`;
+      const fill = use => { q('#ci-n').value = k.name; q('#ci-d').value = use ? k.desc || '' : ''; q('#ci-mem').value = use ? k.mem || 3072 : 3072; q('#ci-ip').value = use ? k.ip || '' : ''; q('#ci-ip').dataset.touched = '1'; };
+      b.querySelector('#cp-use').onchange = () => fill(true); b.querySelector('#cp-def').onchange = () => fill(false);
+      fill(true);
     };
     q('#ci-t').value = type0 || 'PLC-DI16-24V';
     const cfg = slot != null && S.p && S.p.rack.modules.find(x => x.slot === slot);
     if (cfg && !type0) q('#ci-t').value = cfg.type;
     q('#ci-r').onchange = () => { slot = null; sync(); };
     q('#ci-t').onchange = sync;
+    q('#ci-s').onchange = sync;
     q('#ci-ip').onchange = () => { q('#ci-ip').dataset.touched = '1'; };
     sync();
   }
   function chassisMonitor() {
     dialog({ title: 'Emulator', size: 'lg', flush: true,
-      body: `<div id="emubody" class="emu">${emuHTML()}</div>`,
+      body: `<div id="emubody" class="emu${S.prefs.emuCompact ? ' compact' : ''}">${emuHTML()}</div>`,
       buttons: (S.layout === 'phone' ? [] : [{ l: 'Open in a window', run: () => { setTimeout(popChassis, 0); } }]).concat([{ l: 'Who Active…', run: () => { setTimeout(whoActive, 0); } }, { l: 'Close', pri: true }]) });
   }
   /* the emulator in a window of its own, beside the programming software. The window starts blank (so it shares this
@@ -4157,7 +4888,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function liveSig() {
     if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
-    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
+    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t].ctl != null) { try { const s = e.x[INSTR[e.t].ctl].obj(); parts.push(s.POS, s.LEN, s.EN, s.EU, s.DN, s.EM, s.ER); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
     ladPart = parts.join(',');
     const io = [];
     ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
@@ -4190,6 +4921,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
     racks.forEach(r => r.advance(dt));
+    singleAsk();
   }
   function loop(now) {
     tick();
@@ -4335,6 +5067,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if ((el = t.closest('[data-tw]'))) { const k = el.dataset.tw, c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); return; }
       if ((el = t.closest('[data-org]'))) {
         const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
+        S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
@@ -4353,7 +5086,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
-      if ((el = t.closest('[data-recent]'))) { loadFile(el.dataset.recent); return; }
+      if ((el = t.closest('[data-recent]'))) { const f = el.dataset.recent; saveChanges(() => loadFile(f)); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
       if ((el = t.closest('[data-msgt]')) && !t.closest('[data-cmd]')) { S.errOpen = !S.errOpen; render(); return; }
       if ((el = t.closest('[data-ef]'))) { const f = S.errFilter || { e: true, w: true, m: true }; f[el.dataset.ef] = !f[el.dataset.ef]; S.errFilter = f; render(); return; }
@@ -4387,13 +5120,14 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       // Logix Emulate: right-click an empty slot of the chassis, then Create
       const e = ev.target.closest('[data-cins]');
       if (e) { ev.preventDefault(); const [ri, s] = ids(e.dataset.cins); openMenu([{ l: 'Create…', i: 'plus', run: () => insertCard(ri, s) }], { x: ev.clientX, y: ev.clientY }, `Slot ${s}`); return; }
+      const u = ev.target.closest('[data-ccpu]'); if (u) { ev.preventDefault(); cpuMenu(u.dataset.ccpu, ev.clientX, ev.clientY); return; }
       const c = ev.target.closest('[data-cmod]'); if (!c) return; ev.preventDefault(); moduleMenu(c.dataset.cmod, ev.clientX, ev.clientY);
     });
     let lp = null;
     document.addEventListener('pointerdown', ev => {
-      const c = ev.target.closest('[data-cmod]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button')) return;
+      const c = ev.target.closest('[data-cmod],[data-ccpu]'); if (!c || ev.pointerType === 'mouse' || ev.target.closest('button,.seg')) return;
       const x = ev.clientX, y = ev.clientY;
-      lp = { x, y, t: setTimeout(() => { lp = null; moduleMenu(c.dataset.cmod, x, y); }, 550) };
+      lp = { x, y, t: setTimeout(() => { lp = null; if (c.dataset.ccpu) cpuMenu(c.dataset.ccpu, x, y); else moduleMenu(c.dataset.cmod, x, y); }, 550) };
     });
     const lpEnd = ev => { if (lp && (ev.type !== 'pointermove' || Math.hypot(ev.clientX - lp.x, ev.clientY - lp.y) > 10)) { clearTimeout(lp.t); lp = null; } };
     ['pointerup', 'pointercancel', 'pointermove'].forEach(t => document.addEventListener(t, lpEnd));
@@ -4447,7 +5181,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const l = $('#layer');
     l.innerHTML = `<div class="scrim" data-close="1"></div><div class="sheet" style="height:46%"><div class="grab"></div><div class="ph" style="background:none;border:0">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button><button class="ib" data-close="1">${ic('close')}</button></div><div class="sb" style="display:flex;flex-direction:column">${errorsHTML()}</div></div>`;
     l.onclick = ev => { if (ev.target.closest('[data-close]')) closeLayer(); };
-    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextErrLine(ev.shiftKey ? -1 : 1); } };
+    layerKey = ev => { if (ev.key === 'Escape') closeLayer(); else if (ev.key === 'F4') { ev.preventDefault(); closeLayer(); nextResult(ev.shiftKey ? -1 : 1); } };
   }
   function gotoErr(el) { S.errCur = (el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.nodeValue : el.textContent) || null; gotoLine(+el.dataset.errline, el.dataset.errrt, el.textContent, true); }
   /* go to the rung of an Errors line (double-click, or F4): the instruction it names is selected; a double-click also
@@ -4505,7 +5239,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return;
     }
     const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
-    if (k === 'F4') { ev.preventDefault(); nextErrLine(ev.shiftKey ? -1 : 1); return; }
+    if (k === 'F4') { ev.preventDefault(); nextResult(ev.shiftKey ? -1 : 1); return; }
     if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
@@ -4513,7 +5247,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit1' || ev.code === 'Numpad1')) { ev.preventDefault(); showErrors(); return; }
-    const map = { n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
+    const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'ins' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
@@ -4523,7 +5257,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'F2') { ev.preventDefault(); editSelOperand(); return; }
     if (k === 'Enter') { if (selInstr() && S.sel.op != null) editSelOperand(); else if (S.sel && !S.sel.br) run('edit'); else if (curSelRung() != null && editable()) rungText(curSelRung()); return; }
     if (k === 'F1') { ev.preventDefault(); run('help'); return; }
-    if (k === 'F3') { ev.preventDefault(); run('findnext'); return; }
+    if (k === 'F3') { ev.preventDefault(); run(ev.shiftKey ? 'findprev' : 'findnext'); return; }
     if (k === 'Home' || k === 'End') {
       ev.preventDefault();
       const ri = curSelRung(), fl = ri == null ? [] : flat(parsed(ri) || []);
@@ -4532,7 +5266,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }
     if (k === 'ArrowLeft' || k === 'ArrowRight') { ev.preventDefault(); moveSel(k === 'ArrowLeft' ? -1 : 1, 0); return; }
     if (k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); moveSel(0, k === 'ArrowUp' ? -1 : 1); return; }
-    if (k === 'Escape') { S.sel = null; render(); return; }
+    if (k === 'Escape') { S.sel = null; S.selAll = null; if (S.tagAll) { S.tagAll = false; refreshTags(); } render(); return; }
     if (ctrl || ev.altKey || k.length !== 1 || !editable()) return;
     // Quick Keys on: one key inserts its instruction after the selection (or at the end of the selected rung)
     if (S.prefs.quickKeys && QUICK[k.toLowerCase()] && (S.sel || curSelRung() != null)) { ev.preventDefault(); quickKey(QUICK[k.toLowerCase()]); return; }
