@@ -822,7 +822,7 @@
     newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
-    newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
+    newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
     foff: { l: 'Force Off', i: 'force', run: () => forceSel(0), on: selForceable },
@@ -1102,7 +1102,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
@@ -1134,6 +1134,8 @@
       add('dt:pre', 1, 'Predefined', 'type', {}, () => dt.predefined.forEach(n => add('dt:p:' + n, 2, n, 'type')));
       add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
     });
+    const trs = Array.isArray(S.p.trends) ? S.p.trends : [];
+    add('trends', 0, 'Trends', 'folder', {}, trs.length ? () => trs.forEach(t => add('trend:' + t.name, 1, t.name, 'xref')) : undefined);
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
       add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] PLC-CPU ${S.p.controller.name}`, 'chip');
       [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
@@ -1579,7 +1581,7 @@
     if (!onName) return [];
     return [{ l: `Edit "${tg.name}" Properties`, i: 'tag', run: () => newTag({ tag: tg }) }, { l: `Find All "${a}"`, i: 'search', run: () => findAll(a) },
       { l: `Go To Cross Reference For "${base}"`, i: 'xref', run: () => xref(base) }, { l: `Monitor "${a}"`, i: 'tags', run: () => monitorTag(base) },
-      { l: `Trend "${a}"`, dis: true }, '-'];
+      { l: `Trend "${a}"`, i: 'xref', run: () => quickTrend(a), dis: !S.online }, '-'];
   }
   function ctxMenu(t, x, y) {
     if (!t || t.end) return;
@@ -2928,12 +2930,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         box.addEventListener('contextmenu', ev => {
           const t = ev.target.closest('[data-x]'); if (!t) return; ev.preventDefault(); ev.stopPropagation();
           const x = rows[+t.dataset.x], b = x.ref.split(/[.[]/)[0], tg = tagFor(b); st.sel = +t.dataset.x;
-          const items = [['go', 'Go To Location', !1], ['edit', `Edit Tag "${b}"`, !tg], ['mon', `Monitor Tag "${b}"`, !tg], ['trend', `Trend Tag "${b}"`, !0]];
+          const items = [['go', 'Go To Location', !1], ['edit', `Edit Tag "${b}"`, !tg], ['mon', `Monitor Tag "${b}"`, !tg], ['trend', `Trend Tag "${b}"`, !tg || !S.online]];
           box.querySelectorAll('.xrm').forEach(m => m.remove());
           const m = document.createElement('div'); m.className = 'menu xrm'; m.style.cssText = 'position:fixed;z-index:400';
           m.innerHTML = items.map(([k, l, dis]) => `<div class="it${dis ? ' dis' : ''}" data-xm="${k}"><span>${esc(l)}</span></div>`).join('');
           box.appendChild(m); m.style.left = Math.min(ev.clientX, innerWidth - m.offsetWidth - 6) + 'px'; m.style.top = Math.min(ev.clientY, innerHeight - m.offsetHeight - 6) + 'px';
-          m.onclick = me => { const it = me.target.closest('[data-xm]'); me.stopPropagation(); m.remove(); if (!it || it.classList.contains('dis')) return; const k = it.dataset.xm; if (k === 'go') goTo(x); else if (k === 'edit') { closeLayer(); newTag({ tag: tg }); } else if (k === 'mon') { closeLayer(); monitorTag(b); } };
+          m.onclick = me => { const it = me.target.closest('[data-xm]'); me.stopPropagation(); m.remove(); if (!it || it.classList.contains('dis')) return; const k = it.dataset.xm; if (k === 'go') goTo(x); else if (k === 'edit') { closeLayer(); newTag({ tag: tg }); } else if (k === 'mon') { closeLayer(); monitorTag(b); } else if (k === 'trend') { closeLayer(); quickTrend(b); } };
         });
       } });
   }
@@ -3961,6 +3963,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function dtOpen(k) {
     if (k.startsWith('dt:u:')) { dataTypeEditor(k.slice(5)); return true; }
     if (k.startsWith('dt:s:')) { stringTypeEditor(k.slice(5)); return true; }
+    if (k.startsWith('trend:')) { openTrend(k.slice(6)); return true; }
     return false;
   }
   function dtMenu(k) {
@@ -3968,6 +3971,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (k === 'dts') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }, nst];
     if (k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }];
     if (k === 'dt:str') return [nst];
+    if (k === 'trends') return [{ l: 'New Trend…', i: 'xref', run: () => trendDialog(), dis: S.noProj }];
+    if (k.startsWith('trend:')) { const n = k.slice(6); return [{ l: 'Open', run: () => openTrend(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteTrend(n) }, '-', { l: 'Properties…', run: () => trendDialog(n) }]; }
     if (k.startsWith('dt:s:')) { const n = k.slice(5); return [{ l: 'Open', run: () => stringTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() || U(n) === 'STRING' }]; }
     if (k.startsWith('dt:u:')) { const n = k.slice(5); return [{ l: 'Open', run: () => dataTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() }]; }
     return null;
@@ -4111,6 +4116,172 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     else if (ev.target.id === 'wname') { ev.preventDefault(); ev.stopPropagation(); wName(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
   }, true);
 
+  /* ---------- Trends (v37 help: About trending; Create a trend; New Trend dialog box overview; Trend chart window
+     overview; Trend control bar overview; Quick Trend command). A trend holds up to 8 tags (BOOL, SINT, INT, DINT,
+     REAL), a Sample Period of 1 ms to 30 min (10 ms by default), a Name (40) and a Description (128). The chart
+     runs online only (Run is unavailable offline or while it runs) and stops when the controller goes offline. The
+     trends are saved with the project (not logic: no online edit). Kept light: one chart window, samples at most once
+     a frame, at most 3000 samples, the chart redrawn 4 times a second. ---------- */
+  const TPENS = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf'];
+  const TTYPES = ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'];
+  const TR = { win: null, cur: null, run: false, on: false, buf: null, at: 0, drawAt: 0, span: 60000, quick: null };
+  const trList = () => (S.p && Array.isArray(S.p.trends) ? S.p.trends : []);
+  const trGet = n => (TR.quick && n === TR.quick.name ? TR.quick : trList().find(t => t.name === n));
+  const perText = ms => (ms % 60000 === 0 ? ms / 60000 + ' min' : ms % 1000 === 0 ? ms / 1000 + ' s' : ms + ' ms');
+  // a trend tag: a tag, member or bit of the program in use or of the controller, of a type a trend shows
+  function penOf(txt) {
+    const v = String(txt).trim(), b = (/^[A-Za-z_]\w*/.exec(v) || [])[0], P = curProg();
+    const pt = b && P.tags.find(t => U(t.name) === U(b)), ct = b && S.p.tags.find(t => U(t.name) === U(b)), t = pt || ct;
+    if (!t) return { err: `${v || '?'} is not a tag of ${P.name} or of the controller.` };
+    const name = v.replace(/^[A-Za-z_]\w*/, t.name), ty = name === t.name ? (t.dim ? '' : typeOf(t)) : addrType(name) || '';
+    if (!TTYPES.includes(ty)) return { err: `${name}: a trend shows BOOL, SINT, INT, DINT and REAL values${ty ? ` (this is ${ty})` : ''}.` };
+    return { name, scope: pt ? P.name : '' };
+  }
+  function trendDialog(name) {
+    const T0 = name ? trList().find(t => t.name === name) : null, pens = T0 ? T0.pens.map(p => ({ ...p })) : [];
+    const per = T0 ? T0.period : 10, unit = per % 60000 === 0 ? 'min' : per % 1000 === 0 ? 's' : 'ms', pv = per / { min: 60000, s: 1000, ms: 1 }[unit];
+    const names = S.p.tags.concat(curProg().tags).filter(t => !t.dim && TTYPES.includes(typeOf(t))).map(t => t.name);
+    const list = el => {
+      el.querySelector('#trpl').innerHTML = pens.map((p, i) => `<div class="row"><i class="pen" style="background:${TPENS[i]}"></i><span class="grow mono ell">${esc(p.name)}</span><span class="muted ell">${esc(p.scope || S.p.controller.name)}</span><button class="ib" type="button" data-trdel="${i}" title="Remove" aria-label="Remove ${esc(p.name)}">${ic('close')}</button></div>`).join('') || '<p class="help">No tags yet: type a tag name, then Add.</p>';
+      el.querySelector('#trpc').textContent = `${pens.length} of 8`;
+    };
+    dialog({ title: T0 ? `Trend Properties - ${T0.name}` : 'New Trend', size: 'md',
+      body: `<div class="frow"><label for="trn">Name</label><input class="inp" id="trn" maxlength="40" value="${esc(T0 ? T0.name : '')}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label for="trd">Description</label><textarea class="inp" id="trd" rows="2" maxlength="128">${esc(T0 ? T0.desc || '' : '')}</textarea></div>
+        <div class="frow"><label for="trs">Sample Period</label><span class="trsp"><input class="inp num" id="trs" type="number" min="1" step="1" value="${pv}"><select class="inp" id="tru" aria-label="Sample Period unit"><option value="ms">ms</option><option value="s">s</option><option value="min">min</option></select></span></div>
+        <div class="grp">Tags to trend <span class="muted" id="trpc"></span></div>
+        <div class="trpadd"><input class="inp mono" id="trt" list="trtl" placeholder="Tag name (BOOL, SINT, INT, DINT, REAL)" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Tag to add"><datalist id="trtl">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist><button class="btn" type="button" id="tra">${ic('plus')}Add</button></div>
+        <div class="trpl" id="trpl"></div><div class="errtx" id="tre"></div>`,
+      noEnter: ev => ev.target.id === 'trt',
+      mount: el => {
+        list(el); el.querySelector('#tru').value = unit;
+        const inp = el.querySelector('#trt'), er = el.querySelector('#tre');
+        const add = () => {
+          if (!inp.value.trim()) return;
+          const p = penOf(inp.value); er.textContent = '';
+          if (p.err) { er.textContent = p.err; return; }
+          if (pens.length >= 8) { er.textContent = 'A trend holds up to 8 tags.'; return; }
+          if (pens.some(x => U(x.name) === U(p.name) && x.scope === p.scope)) { er.textContent = `${p.name} is in the trend.`; return; }
+          pens.push(p); inp.value = ''; list(el); inp.focus();
+        };
+        el.querySelector('#tra').onclick = add;
+        inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } });
+        el.querySelector('#trpl').addEventListener('click', ev => { const b = ev.target.closest('[data-trdel]'); if (b) { pens.splice(+b.dataset.trdel, 1); list(el); } });
+      },
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const er = el.querySelector('#tre'), n = el.querySelector('#trn').value.trim(), d = el.querySelector('#trd').value;
+        const pn = Number(el.querySelector('#trs').value), ms = pn * { min: 60000, s: 1000, ms: 1 }[el.querySelector('#tru').value];
+        if (!E.validName(n)) { er.textContent = 'Name: letters, digits and _ (starting with a letter or _), up to 40 characters.'; return false; }
+        if (trList().some(t => t !== T0 && U(t.name) === U(n))) { er.textContent = `A trend named ${n} exists.`; return false; }
+        if (d.length > 128) { er.textContent = 'Description: up to 128 characters.'; return false; }
+        if (!Number.isInteger(ms) || ms < 1 || ms > 1800000) { er.textContent = 'Sample Period: 1 ms to 30 min, in whole milliseconds.'; return false; }
+        const t = { name: n, period: ms, pens }; if (d.trim()) t.desc = d;
+        if (T0) { const old = T0.name; edit(() => { delete T0.desc; Object.assign(T0, t); }); if (TR.cur === old) { TR.cur = n; TR.run = false; TR.buf = null; if (TR.win) openTrend(n); } }
+        else { edit(() => { S.p.trends = trList().concat([t]); }); openTrend(n); }
+      } }] });
+  }
+  function deleteTrend(n) {
+    confirmDlg('Delete Trend', `Delete the trend ${esc(n)}?`, 'Delete', () => { if (TR.cur === n) closeTrend(); edit(() => { S.p.trends = trList().filter(t => t.name !== n); }); }, true);
+  }
+  function closeTrend() { if (TR.win) TR.win.remove(); TR.win = null; TR.run = false; TR.cur = null; TR.buf = null; TR.quick = null; }
+  function openTrend(n) {
+    const T = trGet(n); if (!T) return;
+    if (TR.cur !== n) { TR.run = false; TR.cur = n; TR.buf = null; }
+    let w = TR.win;
+    if (!w || !w.isConnected) {
+      w = document.createElement('div'); w.className = 'twin'; w.setAttribute('role', 'dialog');
+      document.body.appendChild(w); TR.win = w;
+      const ww = Math.min(600, innerWidth - 16);
+      w.style.left = Math.max(8, (innerWidth - ww) / 2) + 'px'; w.style.top = Math.max(8, Math.min(140, innerHeight - 420)) + 'px';
+    }
+    w.setAttribute('aria-label', 'Trend ' + T.name);
+    const sp = [[10000, '10 s'], [60000, '1 min'], [300000, '5 min'], [600000, '10 min']];
+    w.innerHTML = `<div class="twh" data-tdrag="1"><b class="ell">${T === TR.quick ? 'Quick Trend' : 'Trend - ' + esc(T.name)}</b><span class="grow"></span><button class="ib" type="button" data-tx="1" title="Close" aria-label="Close">${ic('close')}</button></div>
+      <div class="tbar"><button class="btn" type="button" data-trun="1">${ic('play')}Run</button><button class="btn" type="button" data-tstop="1">${ic('stop')}Stop</button>
+        <label class="muted" for="tspan">Time span</label><select class="inp" id="tspan">${sp.map(([v, l]) => `<option value="${v}"${TR.span === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="muted ell" id="tstat"></span></div>
+      <canvas class="tcv" height="200"></canvas>
+      <div class="tleg">${T.pens.map((p, i) => `<span class="tpen"><i class="pen" style="background:${TPENS[i]}"></i><span class="mono ell">${esc(p.name)}</span><b class="mono" data-tv="${i}"></b></span>`).join('') || '<span class="muted">No tags: right-click the trend, Properties…, to add tags.</span>'}</div>`;
+    trBar(); trDraw();
+  }
+  function trBar() {
+    const w = TR.win; if (!w) return;
+    const on = S.online && !!ctl.M, T = trGet(TR.cur), r = w.querySelector('[data-trun]'), s = w.querySelector('[data-tstop]'), st = w.querySelector('#tstat');
+    r.disabled = !on || TR.run || !T || !T.pens.length; s.disabled = !TR.run;
+    st.textContent = TR.run ? `Running · sample period ${perText(T.period)}` : on ? 'Stopped' : 'Offline: go online to run the trend';
+  }
+  function trRun() {
+    const T = trGet(TR.cur); if (!T || !S.online || !ctl.M || !T.pens.length) return;
+    if (!TR.buf || TR.buf.v.length !== T.pens.length) TR.buf = { t: [], v: T.pens.map(() => []) };
+    TR.run = true; TR.at = 0; trBar();
+  }
+  function trSample() {
+    const T = trGet(TR.cur), b = TR.buf;
+    b.t.push(Date.now());
+    T.pens.forEach((p, i) => { let v; try { v = Number(ctl.read(p.name, p.scope || undefined)); } catch (e) { v = NaN; } b.v[i].push(v); });
+    if (b.t.length > 3000) { b.t.splice(0, 500); b.v.forEach(a => a.splice(0, 500)); }
+  }
+  // from the frame loop: sample at the Sample Period (at most once a frame), redraw 4 times a second
+  function trendTick(now) {
+    const w = TR.win; if (!w) return;
+    if (!w.isConnected || !trGet(TR.cur)) { closeTrend(); return; }
+    const on = S.online && !!ctl.M;
+    if (on !== TR.on) { TR.on = on; if (!on) TR.run = false; trBar(); }
+    if (!TR.run) return;
+    if (now - TR.at >= trGet(TR.cur).period) { TR.at = now; trSample(); }
+    if (now - TR.drawAt > 250) { TR.drawAt = now; trDraw(); }
+  }
+  function trDraw() {
+    const w = TR.win, cv = w && w.querySelector('.tcv'); if (!cv) return;
+    const dpr = Math.min(2, devicePixelRatio || 1), W = cv.clientWidth || 560, H = cv.clientHeight || 200;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const g = cv.getContext('2d'), cs = getComputedStyle(w), col = n => cs.getPropertyValue(n).trim();
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = col('--surface') || '#fff'; g.fillRect(0, 0, W, H);
+    const L = 54, R = W - 8, Tp = 8, B = H - 20, b = TR.buf, n = b ? b.t.length : 0;
+    const end = n ? b.t[n - 1] : Date.now(), start = end - TR.span;
+    let i0 = 0; if (n) { let lo = 0, hi = n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (b.t[m] < start) lo = m + 1; else hi = m; } i0 = lo; }
+    let mn = Infinity, mx = -Infinity;
+    if (b) b.v.forEach(a => { for (let k = i0; k < n; k++) { const v = a[k]; if (v < mn) mn = v; if (v > mx) mx = v; } });
+    if (!(mx >= mn)) { mn = 0; mx = 1; } if (mx === mn) { mn -= 1; mx += 1; }
+    const pad = (mx - mn) * 0.05; mn -= pad; mx += pad;
+    const X = t => L + (t - start) / TR.span * (R - L), Y = v => B - (v - mn) / (mx - mn) * (B - Tp);
+    g.strokeStyle = col('--border') || '#ddd'; g.lineWidth = 1; g.fillStyle = col('--muted') || '#666'; g.font = '10px sans-serif';
+    for (let k = 0; k <= 4; k++) { const y = Math.round(Tp + k * (B - Tp) / 4) + 0.5, v = mx - k * (mx - mn) / 4; g.beginPath(); g.moveTo(L, y); g.lineTo(R, y); g.stroke(); g.fillText(+v.toPrecision(4) + '', 2, y + 3); }
+    for (let k = 0; k <= 6; k++) { const x = Math.round(L + k * (R - L) / 6) + 0.5; g.beginPath(); g.moveTo(x, Tp); g.lineTo(x, B); g.stroke(); }
+    const hms = t => new Date(t).toTimeString().slice(0, 8);
+    g.fillText(hms(start), L, H - 6); const e = hms(end); g.fillText(e, R - g.measureText(e).width, H - 6);
+    if (b && n) {
+      const step = Math.max(1, Math.floor((n - i0) / (W * 2)));
+      b.v.forEach((a, p) => {
+        g.strokeStyle = TPENS[p]; g.lineWidth = 1.5; g.beginPath(); let first = true, py = 0;
+        for (let k = i0; k < n; k += step) { const v = a[k]; if (!isFinite(v)) { first = true; continue; } const x = X(b.t[k]), y = Y(v); if (first) { g.moveTo(x, y); first = false; } else { g.lineTo(x, py); g.lineTo(x, y); } py = y; }
+        g.stroke();
+      });
+    }
+    w.querySelectorAll('[data-tv]').forEach(s => { const a = b && b.v[+s.dataset.tv], v = a && a.length ? a[a.length - 1] : null; s.textContent = v == null || !isFinite(v) ? '' : String(+v.toPrecision(7)); });
+  }
+  // Quick Trend (the ladder's and the Cross Reference's right-click menus): a trend of one tag, not saved, online
+  function quickTrend(a) {
+    if (!S.online || !ctl.M) { toast('Quick Trend runs online: press Go Online first.'); return; }
+    const p = penOf(a); if (p.err) { toast(p.err, 'err'); return; }
+    TR.quick = { name: '(Quick Trend)', period: 100, pens: [p] }; TR.cur = null;
+    openTrend(TR.quick.name); trRun();
+  }
+  document.addEventListener('click', ev => {
+    const t = ev.target; if (!t.closest || !TR.win || !TR.win.contains(t)) return;
+    if (t.closest('[data-tx]')) { closeTrend(); return; }
+    if (t.closest('[data-trun]')) { trRun(); return; }
+    if (t.closest('[data-tstop]')) { TR.run = false; trBar(); trDraw(); }
+  });
+  document.addEventListener('change', ev => { if (ev.target.id === 'tspan' && TR.win) { TR.span = +ev.target.value; trDraw(); } });
+  document.addEventListener('pointerdown', ev => {
+    const h = ev.target.closest && ev.target.closest('[data-tdrag]'); if (!h || ev.target.closest('button')) return;
+    const w = TR.win, sx = ev.clientX - w.offsetLeft, sy = ev.clientY - w.offsetTop; ev.preventDefault();
+    const mv = e => { w.style.left = Math.max(0, Math.min(innerWidth - 60, e.clientX - sx)) + 'px'; w.style.top = Math.max(0, Math.min(innerHeight - 30, e.clientY - sy)) + 'px'; };
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  });
+
   /* ---------- the Quick View pane below the Controller Organizer (v37 help, Controller Organizer: "provides summary
      information about the selected item"): the type, the description and a few details of the item last clicked in
      the organizer. Its header folds it (kept in the preferences). The rows shown are this app's choice. ---------- */
@@ -4137,6 +4308,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       r.push(['Size', sizeText(nm) || '']);
       return [nm, r];
     }
+    if (k === 'trends') return ['Trends', [['Type', 'Folder'], ['Trends', trList().length]]];
+    if (k.startsWith('trend:')) { const T = trList().find(x => x.name === k.slice(6)); return T && [T.name, [['Type', 'Trend'], ['Description', T.desc || ''], ['Sample Period', perText(T.period)], ['Tags', T.pens.map(x => x.name).join(', ') || '<none>']]]; }
     if (k === 'io') return ['I/O Configuration', [['Type', 'Folder'], ['Modules', P.rack.modules.length + 1]]];
     if (k === 'bp') return [`Backplane, PLC-RACK${P.rack.size}`, [['Type', 'Chassis'], ['Size', n(P.rack.size, 'slot')]]];
     if (k.startsWith('mod:')) {
@@ -5511,6 +5684,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (now - lastLay > 250) { lastLay = now; if (pickLayout() !== S.layout && !S.touching) render(); }
     live(false);
     if (S.online && S.outTab === 'watch') liveWatch(false);
+    trendTick(now);
     requestAnimationFrame(loop);
   }
 

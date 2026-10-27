@@ -1197,3 +1197,19 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .qvb .kv .v { overflow-wrap: anywhere; min-width: 0; }
 .tab .qvh, .phone .qvh { height: 44px; }
 .phone .qv { max-height: none; }
+.twin { position: fixed; z-index: 240; width: 600px; max-width: calc(100vw - 16px); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.twh { height: 30px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: var(--r) var(--r) 0 0; cursor: move; touch-action: none; flex: none; min-width: 0; }
+.tbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.tbar .inp { width: auto; }
+.tcv { display: block; width: 100%; height: 200px; }
+.tleg { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 10px 8px; border-top: 1px solid var(--border); font-size: 12px; }
+.tpen { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inline-block; }
+.trsp { display: flex; gap: 6px; }
+.trsp .num { width: 110px; }
+.trsp select { width: auto; }
+.trpadd { display: flex; gap: 6px; margin: 4px 0; }
+.trpadd .inp { flex: 1; min-width: 0; }
+.trpl { border: 1px solid var(--border); border-radius: var(--r-sm); max-height: 200px; overflow: auto; }
+.trpl .row { min-height: 32px; cursor: default; }
+.tab .twh, .phone .twh { height: 44px; }
