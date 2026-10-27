@@ -122,7 +122,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) o[m.name] = make(types, m.type, m.dim);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -130,7 +130,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
     return o;
   }
 
@@ -370,6 +370,7 @@
       }
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
       if (!mm) return `Undefined tag '${text}'`;
+      if (mm.of) { steps.push({ m: mm.of }); bit = mm.bit; ptype = 'DINT'; type = 'BOOL'; if (norm) norm += '.' + mm.name; continue; }
       steps.push({ m: mm.name });
       type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
       if (norm) norm += '.' + mm.name;
@@ -1112,6 +1113,90 @@
   const msNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); return msNow(); }
   function progEnd(P, p0) { P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+
+  /* ---------- PID (RM018A chapter 13, Special): the PID structure; .EN … .PVHA are bits of .CTL (bit 31 down to 7) ---------- */
+  const PIDBITS = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
+  PREDEF.PID = [{ name: 'CTL', type: 'DINT' }, ...Object.keys(PIDBITS).map(name => ({ name, type: 'BOOL', of: 'CTL', bit: PIDBITS[name] })),
+    ...members('SP:REAL KP:REAL KI:REAL KD:REAL BIAS:REAL MAXS:REAL MINS:REAL DB:REAL SO:REAL MAXO:REAL MINO:REAL UPD:REAL PV:REAL ERR:REAL OUT:REAL PVH:REAL PVL:REAL DVP:REAL DVN:REAL PVDB:REAL DVDB:REAL MAXI:REAL MINI:REAL TIE:REAL MAXCV:REAL MINCV:REAL MINTIE:REAL MAXTIE:REAL'),
+    { name: 'DATA', type: 'REAL', dim: 17 }];
+  Object.assign(OPN, { PID: ['PID', 'Process Variable', 'Tieback', 'Control Variable', 'PID Master Loop', 'Inhold Bit', 'Inhold Value'] });
+  INSTR.PID = I('box', 'Special', 'Proportional Integral Derivative', 'pid num num dest pidm bit0 num', { out: true });
+  XKIND.pid = (r, writable, one) => (r.type === 'PID' && one ? writable() : BAD_TYPE);
+  // the optional operands: 0 when not used
+  const orZero = (want, s, M, P) => { if (s === '0') return { none: true }; const r = ref(M, P, s); return typeof r === 'string' ? r : r.type === want && !r.dim ? r : BAD_TYPE; };
+  XNAME.pidm = (s, M, P) => orZero('PID', s, M, P);
+  XNAME.bit0 = (s, M, P) => orZero('BOOL', s, M, P);
+  XPRE.PID = x => { const s = x[0].obj(); s.CTL &= ~((1 << 31) | (1 << 15)); };
+  /* the loop (the positional equations of 1756-RM003; RM018A shows them as pictures):
+     error E = SP - PV (.CA = 0) or PV - SP (.CA = 1), as a % of the PV span (.MAXS - .MINS; none when they are equal)
+     independent gains: CV = KP·E + KI·∫E dt + KD·dE/dt + BIAS            (KI in 1/s, KD in s)
+     dependent gains:   CV = Kc·(E + 1/(60·Ti)·∫E dt + 60·Td·dE/dt) + BIAS   (Kc = KP, Ti = KI min/repeat, Td = KD min)
+     dt is .UPD (s): the instruction must run once each update time (a periodic task or a timer). The derivative is of
+     the error (.DOE = 1) or of the PV (.DOE = 0, no kick on a setpoint change), smoothed unless .NDF. Output limits
+     .MINO / .MAXO (equal: reset to 0 / 100) set .OLL / .OLH and freeze the integral (anti-reset windup). Manual (.MO,
+     the tieback) overrides software manual (.SWM, .SO); both back-calculate the integral (or .BIAS when KI = 0 and
+     .NOBC is clear) for a bumpless return to auto. Inhold bit set: CV = Inhold value, the loop re-initializes. */
+  XEL.PID = function (e, x, p) {
+    const s = x[0].obj(), b = n => (s.CTL >>> PIDBITS[n]) & 1, setb = (n, v) => { s.CTL = v ? s.CTL | (1 << PIDBITS[n]) : s.CTL & ~(1 << PIDBITS[n]); };
+    if (!p) { setb('EN', 0); e.v = false; return false; }
+    setb('EN', 1);
+    if (!(s.UPD > 0)) { this.minorFault(4, 35, 'PID: the loop update time (.UPD) is 0 or less'); e.v = true; return true; }
+    if (s.MAXO === s.MINO) { s.MAXO = 100; s.MINO = 0; }
+    const R = v => Math.fround(v), dt = s.UPD, span = s.MAXS - s.MINS, pct = span ? 100 / span : 1;
+    const pvIn = x[1].get(), PV = s.MAXI !== s.MINI ? (pvIn - s.MINI) * span / (s.MAXI - s.MINI) + s.MINS : pvIn;
+    s.PV = R(PV);
+    const M = x[4].none ? null : x[4].obj();
+    if (b('CL') && !b('CT') && M) s.SP = R(span ? M.OUT * span / 100 + s.MINS : M.OUT);
+    const manual = b('MO') || b('SWM');
+    if (manual && b('PVT')) s.SP = s.PV;
+    let SP = s.SP;
+    if (span && (SP > Math.max(s.MAXS, s.MINS) || SP < Math.min(s.MAXS, s.MINS))) { setb('SPOR', 1); this.minorFault(4, 36, 'PID: the setpoint is out of range (.MINS to .MAXS)'); SP = s.DATA[4]; } else { setb('SPOR', 0); s.DATA[4] = R(SP); }
+    const sg = b('CA') ? -1 : 1, E = sg * (SP - PV), init = !b('INI');
+    if (init) { s.DATA[2] = R(PV); s.DATA[3] = R(E); s.DATA[1] = 0; }
+    // deadband: inside .DB the error is 0 (.EWD); without .NOZC only after the error has crossed zero
+    let Eu = E;
+    if (s.DB > 0 && Math.abs(E) <= s.DB) { if (b('NOZC') || b('EWD') || E === 0 || Math.sign(E) !== Math.sign(s.DATA[3])) { setb('EWD', 1); Eu = 0; } }
+    else setb('EWD', 0);
+    s.ERR = R(E);
+    const dep = b('PE'), kp = s.KP, ki = dep ? (s.KI > 0 ? s.KP / (60 * s.KI) : 0) : s.KI, kd = dep ? s.KP * s.KD * 60 : s.KD;
+    const Ep = Eu * pct, Pt = kp * Ep;
+    const dRaw = (b('DOE') ? (E - s.DATA[3]) : -sg * (PV - s.DATA[2])) * pct / dt;
+    // derivative smoothing: a first order low pass filter (time constant kd / 16 s) unless .NDF
+    const tau = kd / 16, dF = b('NDF') || !(tau > 0) ? dRaw : s.DATA[1] + (dRaw - s.DATA[1]) * dt / (dt + tau);
+    const Dt = kd * dF;
+    let integ = s.DATA[0], out;
+    const hold = !x[5].none && x[5].get() === 1;
+    const lim = v => { setb('OLH', v > s.MAXO ? 1 : 0); setb('OLL', v < s.MINO ? 1 : 0); return Math.min(s.MAXO, Math.max(s.MINO, v)); };
+    const cvPct = cv => (s.MAXCV !== s.MINCV ? (cv - s.MINCV) * 100 / (s.MAXCV - s.MINCV) : cv);
+    if (hold || manual) {
+      if (hold) out = cvPct(x[6].get());
+      else if (b('MO')) { const t = x[2].get(); s.TIE = R(t); out = s.MAXTIE !== s.MINTIE ? (t - s.MINTIE) * 100 / (s.MAXTIE - s.MINTIE) : t; }
+      else out = s.SO;
+      out = lim(out);
+      // bumpless back to auto: the integral (or the bias) that gives this output
+      if (ki) integ = out - Pt - Dt - s.BIAS; else if (!b('NOBC')) s.BIAS = R(out - Pt - Dt);
+    } else {
+      const In = integ + ki * Ep * dt;
+      out = Pt + In + Dt + s.BIAS;
+      const o = lim(out);
+      // anti-reset windup: past a limit the integral grows only up to what gives that limit, then stays frozen
+      integ = o === out ? In : out > s.MAXO ? Math.max(integ, Math.min(In, s.MAXO - Pt - Dt - s.BIAS)) : Math.min(integ, Math.max(In, s.MINO - Pt - Dt - s.BIAS));
+      out = o;
+      s.SO = R(out);
+    }
+    s.OUT = R(out); s.DATA[0] = R(integ); s.DATA[1] = R(dF); s.DATA[2] = R(PV); s.DATA[3] = R(E);
+    const cv = hold ? x[6].get() : s.MAXCV !== s.MINCV ? out * (s.MAXCV - s.MINCV) / 100 + s.MINCV : out;
+    x[3].set(cv); s.DATA[14] = R(cv);
+    // alarms with their deadbands (a PV alarm when .PVH > .PVL; a deviation alarm when its limit is not 0)
+    if (s.PVH > s.PVL) {
+      setb('PVHA', PV > s.PVH || (b('PVHA') && PV > s.PVH - s.PVDB) ? 1 : 0);
+      setb('PVLA', PV < s.PVL || (b('PVLA') && PV < s.PVL + s.PVDB) ? 1 : 0);
+    } else { setb('PVHA', 0); setb('PVLA', 0); }
+    setb('DVPA', s.DVP && (E > s.DVP || (b('DVPA') && E > s.DVP - s.DVDB)) ? 1 : 0);
+    setb('DVNA', s.DVN && (E < s.DVN || (b('DVNA') && E < s.DVN + s.DVDB)) ? 1 : 0);
+    setb('INI', 1);
+    e.v = true; return true;
+  };
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

@@ -1116,5 +1116,122 @@ console.log('Wave 2 (C): GSV and SSV (1756-RM003 / -RM018A chapter 4, GSV/SSV Ob
   check('GSV / SSV do nothing on a false rung', (() => { const c = run({ tags, rungs: ['XIC(En)GSV(Controller,,TimeSlice,I);'] }); c.scan(10); return c.read('I') === 0; })());
 }
 
+console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
+{
+  const near = (name, got, want, tol = 1e-3) => check(name, Math.abs(got - want) < tol, `got ${got}, want ${want}`);
+  const INS = MTPS.INSTR;
+  check('PID: Special, the seven operands of the reference', INS.PID.grp === 'Special' && MTPS.OPN.PID.join() === 'PID,Process Variable,Tieback,Control Variable,PID Master Loop,Inhold Bit,Inhold Value');
+  const mem = MTPS.PREDEF.PID.map(m => m.name);
+  check('the PID structure: .CTL, its bits .EN (31) … .PVHA (7), the REAL members and .DATA[17]', mem[0] === 'CTL' && ['EN', 'CT', 'CL', 'PVT', 'DOE', 'SWM', 'CA', 'MO', 'PE', 'NDF', 'NOBC', 'NOZC', 'INI', 'SPOR', 'OLL', 'OLH', 'EWD', 'DVNA', 'DVPA', 'PVLA', 'PVHA'].every(b => mem.includes(b)) &&
+    ['SP', 'KP', 'KI', 'KD', 'BIAS', 'MAXS', 'MINS', 'DB', 'SO', 'MAXO', 'MINO', 'UPD', 'PV', 'ERR', 'OUT', 'PVH', 'PVL', 'DVP', 'DVN', 'PVDB', 'DVDB', 'MAXI', 'MINI', 'TIE', 'MAXCV', 'MINCV', 'MINTIE', 'MAXTIE'].every(b => mem.includes(b)) && MTPS.PREDEF.PID.find(m => m.name === 'DATA').dim === 17);
+  const tags = [T('En', 'BOOL'), T('Loop', 'PID'), T('Mst', 'PID'), T('Pv', 'REAL'), T('Cv', 'REAL'), T('Ci', 'DINT'), T('Tie', 'REAL'), T('Hold', 'BOOL'), T('Hv', 'REAL'), T('Bad', 'DINT')];
+  const V = r => MTPS.verify(proj({ tags, rungs: [r] })).errors.length;
+  check('verify: a PID tag first; Tieback, Master, Inhold bit and value take 0 when not used', !V('PID(Loop,Pv,0,Cv,0,0,0);') && !V('PID(Loop,Pv,Tie,Cv,Mst,Hold,Hv);') && V('PID(Bad,Pv,0,Cv,0,0,0);') === 1 && V('PID(Loop,Pv,0,Cv,Bad,0,0);') === 1 && V('PID(Loop,Pv,0,Cv,0,Pv,0);') === 1);
+  const c = run({ tags, rungs: ['XIC(En)PID(Loop,Pv,0,Cv,0,0,0);', 'XIC(Loop.EN)OTE(Bad.0);'] });
+  check('.EN, .PE … are the bits of .CTL (.EN is bit 31)', (() => { c.write('Loop.CTL', 1 << 23); return c.read('Loop.PE') === 1 && c.read('Loop.EN') === 0; })());
+  c.write('Loop.CTL', 0);
+  // independent, proportional only: span 0..100, SP 60, PV 50, KP 2: CV = 2 × 10 = 20
+  ['UPD:1', 'MAXS:100', 'MINS:0', 'SP:60', 'KP:2'].forEach(k => { const [m, v] = k.split(':'); c.write('Loop.' + m, +v); });
+  c.write('Pv', 50); c.write('En', 1); c.scan(10);
+  eq('P only, independent gains: E = SP - PV = 10 %, CV = KP × E = 20; .EN set, .INI set, .ERR, .PV', [c.read('Cv'), c.read('Loop.EN'), c.read('Loop.INI'), c.read('Loop.ERR'), c.read('Loop.PV'), c.read('Bad.0')], [20, 1, 1, 10, 50, 1]);
+  c.write('Loop.CA', 1); c.scan(10);
+  check('.CA = 1 (E = PV - SP): the output goes to 0 (limited at .MINO, .OLL)', c.read('Cv') === 0 && c.read('Loop.OLL') === 1);
+  c.write('Loop.CA', 0);
+  // integral: KI 0.5 /s, UPD 1 s: each execution adds 0.5 × 10 = 5
+  c.write('Loop.KP', 0); c.write('Loop.KI', 0.5); c.scan(10); c.scan(10);
+  near('integral, independent: KI × E × UPD each execution (5 then 10)', c.read('Cv'), 10);
+  c.write('En', 0); c.scan(10);
+  check('rung false: .EN cleared, the output held', c.read('Loop.EN') === 0 && Math.abs(c.read('Cv') - 10) < 1e-3);
+  // dependent: Kc 2, Ti 1 min: KI = Kc / (60 Ti) per second
+  const d = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:60', 'KP:2', 'KI:1', 'PE:1', 'NDF:1'].forEach(k => { const [m, v] = k.split(':'); d.write('Loop.' + m, +v); });
+  d.write('Pv', 50); d.scan(10); d.scan(10);
+  near('dependent gains (ISA): Kc·(E + 1/(60·Ti)·∫E dt): 2 × (10 + 20 / 60) after two updates', d.read('Cv'), 2 * (10 + 20 / 60));
+  // derivative of PV, no kick on a setpoint change
+  const k = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:0.5', 'MAXS:100', 'SP:50', 'KD:1', 'NDF:1'].forEach(q => { const [m, v] = q.split(':'); k.write('Loop.' + m, +v); });
+  k.write('Pv', 40); k.scan(10); k.write('Loop.SP', 70); k.scan(10);
+  check('derivative of PV (.DOE = 0): a setpoint change gives no derivative kick', Math.abs(k.read('Cv')) < 1e-6);
+  k.write('Pv', 41); k.scan(10);
+  near('derivative of PV: -KD × dPV/dt = -1 × 1 / 0.5 = -2 % (limited at 0 by .MINO)', k.read('Loop.OUT'), 0);
+  k.write('Loop.DOE', 1); k.write('Loop.MINO', -100); k.write('Loop.MAXO', 100); k.write('Loop.SP', 80); k.scan(10);
+  near('derivative of error (.DOE = 1): KD × dE/dt = 1 × (39 - 29) / 0.5 = 20 %', k.read('Cv'), 20);
+  // limits and anti-reset windup
+  const w = run({ tags, rungs: ['XIC(En)PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:100', 'KI:10', 'MAXO:80', 'MINO:5'].forEach(q => { const [m, v] = q.split(':'); w.write('Loop.' + m, +v); });
+  w.write('En', 1); for (let n = 0; n < 5; n++) w.scan(10);
+  eq('CV high limit .MAXO: the output stays at 80, .OLH set', [w.read('Cv'), w.read('Loop.OLH')], [80, 1]);
+  near('anti-reset windup: the integral stops at the value that gives the limit (80), not 5 × 1000', w.read('Loop.DATA[0]'), 80, 1e-3);
+  w.write('Pv', 100); w.scan(10);
+  check('… so the output leaves the limit as soon as the error changes sign', w.read('Cv') <= 80 && w.read('Loop.OLH') === 0);
+  const z = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  z.write('Loop.UPD', 1); z.scan(10);
+  check('.MAXO = .MINO: reset to 100 and 0', z.read('Loop.MAXO') === 100 && z.read('Loop.MINO') === 0);
+  // manual modes, bumpless transfer
+  const m = run({ tags, rungs: ['PID(Loop,Pv,Tie,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'KI:0.1', 'SO:35', 'SWM:1'].forEach(q => { const [n, v] = q.split(':'); m.write('Loop.' + n, +v); });
+  m.write('Pv', 50); m.scan(10);
+  check('software manual (.SWM): CV = .SO', Math.abs(m.read('Cv') - 35) < 1e-4);
+  m.write('Tie', 62); m.write('Loop.MO', 1); m.scan(10);
+  check('manual (.MO) overrides .SWM: CV = the tieback (.TIE)', Math.abs(m.read('Cv') - 62) < 1e-4 && m.read('Loop.TIE') === 62);
+  m.write('Loop.MO', 0); m.write('Loop.SWM', 0); m.scan(10);
+  check('back to auto: bumpless (the back-calculated integral keeps the output at 62; E = 0)', Math.abs(m.read('Cv') - 62) < 1e-4);
+  const nb = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'SO:40', 'SWM:1'].forEach(q => { const [n, v] = q.split(':'); nb.write('Loop.' + n, +v); });
+  nb.write('Pv', 50); nb.scan(10);
+  check('KI = 0: the .BIAS is back-calculated in manual (bumpless without integral)', Math.abs(nb.read('Loop.BIAS') - 40) < 1e-4);
+  nb.write('Loop.SWM', 0); nb.write('Loop.NOBC', 1); nb.write('Loop.BIAS', 0); nb.write('Loop.SWM', 1); nb.scan(10);
+  check('.NOBC: no bias calculation', nb.read('Loop.BIAS') === 0);
+  // scaling
+  const s = run({ tags: [...tags, T('Raw', 'DINT')], rungs: ['PID(Loop,Raw,0,Ci,0,0,0);'] });
+  ['UPD:1', 'MAXI:4095', 'MINI:0', 'MAXS:200', 'MINS:0', 'SP:100', 'KP:1', 'MAXCV:4095', 'MINCV:0', 'BIAS:50'].forEach(q => { const [n, v] = q.split(':'); s.write('Loop.' + n, +v); });
+  s.write('Raw', 1023.75); s.scan(10);
+  // PV = 1024 × 200 / 4095 = 50.01 EU; E = 49.99 EU = 24.99 %; OUT = 74.99 %; CV = 0.7499 × 4095
+  near('scaling: PV from .MINI/.MAXI to .MINS/.MAXS, error in % of span, CV from % to .MINCV/.MAXCV', s.read('Loop.PV'), 1024 * 200 / 4095, 1e-3);
+  check('… an integer CV is rounded', s.read('Ci') === Math.round((50 + (100 - 1024 * 200 / 4095) / 2) * 4095 / 100));
+  // setpoint out of range, UPD
+  const r = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  r.write('Loop.UPD', 1); r.write('Loop.MAXS', 100); r.write('Loop.SP', 20); r.write('Loop.KP', 1); r.scan(10);
+  r.write('Loop.SP', 150); r.scan(10);
+  check('setpoint out of range: .SPOR, minor fault 4/36, the last valid setpoint is used', r.read('Loop.SPOR') === 1 && r.minors.some(q => q.type === 4 && q.code === 36) && Math.abs(r.read('Cv') - 20) < 1e-4);
+  const u = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  u.scan(10);
+  check('.UPD 0 or less: minor fault 4/35, the loop does not run', u.minors.some(q => q.type === 4 && q.code === 35) && u.read('Loop.INI') === 0);
+  // deadband
+  const db = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'DB:2', 'MINO:-100', 'MAXO:100', 'NOZC:1'].forEach(q => { const [n, v] = q.split(':'); db.write('Loop.' + n, +v); });
+  db.write('Pv', 49); db.scan(10);
+  check('deadband (.NOZC): an error within .DB is 0, .EWD set', db.read('Cv') === 0 && db.read('Loop.EWD') === 1);
+  db.write('Loop.NOZC', 0); db.write('Loop.EWD', 0); db.write('Pv', 48.5); db.scan(10);
+  check('zero crossing: entering the deadband from one side, the error is used until it crosses zero', Math.abs(db.read('Cv') - 1.5) < 1e-4 && db.read('Loop.EWD') === 0);
+  db.write('Pv', 50.5); db.scan(10);
+  check('… once it has crossed zero, the error within .DB is 0 (.EWD)', db.read('Cv') === 0 && db.read('Loop.EWD') === 1);
+  // alarms
+  const al = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'PVH:80', 'PVL:20', 'PVDB:5', 'DVP:10', 'DVN:-10', 'DVDB:2'].forEach(q => { const [n, v] = q.split(':'); al.write('Loop.' + n, +v); });
+  const pv = v => { al.write('Pv', v); al.scan(10); };
+  pv(85); const hi = al.read('Loop.PVHA'), dvn = al.read('Loop.DVNA');
+  pv(77); const held = al.read('Loop.PVHA');
+  pv(74); const clr = al.read('Loop.PVHA');
+  pv(15);
+  eq('alarms: .PVHA above .PVH, held within .PVDB, cleared below .PVH - .PVDB; .PVLA; deviation .DVNA (E = SP - PV < .DVN) / .DVPA', [hi, dvn, held, clr, al.read('Loop.PVLA'), al.read('Loop.DVPA')], [1, 1, 1, 0, 1, 1]);
+  // cascade and inhold
+  const cc = run({ tags: [...tags, T('Pv2', 'REAL'), T('Cv2', 'REAL')], rungs: ['PID(Mst,Pv2,0,Cv2,0,0,0);', 'PID(Loop,Pv,0,Cv,Mst,0,0);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:2'].forEach(q => { const [n, v] = q.split(':'); cc.write('Mst.' + n, +v); });
+  ['UPD:1', 'MAXS:200', 'MINS:100', 'CL:1'].forEach(q => { const [n, v] = q.split(':'); cc.write('Loop.' + n, +v); });
+  cc.write('Pv2', 40); cc.write('Pv', 150); cc.scan(10);
+  near('cascade (.CL, slave .CT = 0): the slave setpoint is the master output (20 %) in the slave units (120)', cc.read('Loop.SP'), 120);
+  const ih = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,Hold,Hv);'] });
+  ['UPD:1', 'MAXS:100', 'SP:50', 'KP:1', 'KI:0.1'].forEach(q => { const [n, v] = q.split(':'); ih.write('Loop.' + n, +v); });
+  ih.write('Hold', 1); ih.write('Hv', 33); ih.write('Pv', 50); ih.scan(10);
+  check('Inhold bit set: CV = Inhold value', ih.read('Cv') === 33);
+  ih.write('Hold', 0); ih.scan(10);
+  check('… then a bumpless restart from that value', Math.abs(ih.read('Cv') - 33) < 1e-4);
+  // prescan
+  const pr = run({ tags, rungs: ['PID(Loop,Pv,0,Cv,0,0,0);'] });
+  pr.write('Loop.UPD', 1); pr.scan(10); pr.setMode('remprog'); pr.setMode('remrun');
+  check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

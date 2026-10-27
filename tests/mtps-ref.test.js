@@ -526,5 +526,26 @@ console.log('GSV and SSV: the example and rules of 1756-RM018A (chapter 4)');
   check('the MajorFaultRecord of the Program object requires a DINT[11]: a DINT[4] is too small, minor fault 4/7, Dest unchanged', c.minors.some(m => m.type === 4 && m.code === 7) && c.read('small').every(v => v === 0));
 }
 
+console.log('PID: the rules and examples of 1756-RM018A (chapter 13)');
+{
+  const bits = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
+  check('the .CTL member: the bit numbers of .EN (31) … .PVHA (7)', MTPS.PREDEF.PID.filter(m => m.of === 'CTL').every(m => bits[m.name] === m.bit) && MTPS.PREDEF.PID.filter(m => m.of).length === 21);
+  // Controlling a ratio: pid_2.SP = uncontrolled_flow × ratio (MUL), then PID(pid_2,pv_2,tieback_2,cv_2,0,0,0)
+  const c = run({ tags: [T('pid_2', 'PID'), T('pv_2', 'REAL', { value: 30 }), T('tieback_2', 'REAL'), T('cv_2', 'REAL'), T('uncontrolled_flow', 'REAL', { value: 40 }), T('ratio', 'REAL', { value: 0.5 }), T('PC_timer', 'TIMER')],
+    rungs: ['MUL(uncontrolled_flow,ratio,pid_2.SP);', 'TON(PC_timer,1000,0);', 'XIC(PC_timer.DN)PID(pid_2,pv_2,tieback_2,cv_2,0,0,0);', 'XIC(PC_timer.DN)RES(PC_timer);'] });
+  ['UPD:1', 'MAXS:100', 'KP:1', 'MAXO:0', 'MINO:0'].forEach(q => { const [n, v] = q.split(':'); c.write('pid_2.' + n, +v); });
+  for (let n = 0; n < 99; n++) c.scan(10);
+  check('the timer method: the PID runs only when PC_timer.DN is set (.UPD = the timer preset, 1 s)', c.read('pid_2.EN') === 0 && c.read('cv_2') === 0);
+  c.scan(10); c.scan(10);
+  check('Controlling a ratio: SP = 40 × 0.5 = 20, PV 30: CV = KP × (SP - PV) limited at 0 (MAXO = MINO were reset to 100 and 0)', c.read('pid_2.SP') === 20 && c.read('pid_2.MAXO') === 100 && c.read('pid_2.MINO') === 0 && c.read('cv_2') === 0 && c.read('pid_2.EN') === 1);
+  c.write('pid_2.CA', 1); for (let n = 0; n < 102; n++) c.scan(10);
+  check('E = PV - SP (direct action, .CA): CV = 10', Math.abs(c.read('cv_2') - 10) < 1e-4);
+  c.write('pid_2.SWM', 1); c.write('pid_2.SO', 25); c.write('pid_2.MO', 1); c.write('tieback_2', 70); for (let n = 0; n < 102; n++) c.scan(10);
+  check('Manual mode overrides software manual mode if both mode bits are set', Math.abs(c.read('cv_2') - 70) < 1e-4);
+  const f = run({ tags: [T('p', 'PID'), T('pv', 'REAL'), T('cv', 'REAL')], rungs: ['PID(p,pv,0,cv,0,0,0);'] });
+  f.scan(10); f.write('p.UPD', 1); f.write('p.MAXS', 100); f.write('p.SP', 101); f.scan(10);
+  check('minor faults: .UPD ≤ 0, type 4 code 35; setpoint out of range, type 4 code 36', f.minors.some(m => m.code === 35) && f.minors.some(m => m.code === 36) && f.read('p.SPOR') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -33,6 +33,7 @@ const PLAN = {
   FAL: ['CT6', '10', '0', 'ALL', 'ARR2[CT6.POS]', 'ARR[CT6.POS] * 2'], FSC: ['CT7', '10', '0', 'INC', 'ARR[CT7.POS] = D1'],
   AVE: ['ARR[0]', '0', 'D3', 'CT8', '5', '0'], STD: ['ARR[0]', '0', 'R2', 'CT9', '5', '0'], SRT: ['ARR2[0]', '0', 'CT10', '5', '0'], SIZE: ['ARR', '0', 'D3'], CPS: ['ARR[0]', 'ARR2[0]', '5'],
   GSV: ['WallClockTime', '', 'DateTime', 'ARR[0]'], SSV: ['Program', 'THIS', 'MaxScanTime', 'D1'],
+  PID: ['PID1', 'R1', '0', 'R2', '0', '0', '0'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
 };
 const MNS = Object.keys(PLAN);
@@ -59,7 +60,7 @@ const MNS = Object.keys(PLAN);
       ['B1', 'B2', 'SB', 'SB2', 'SB3', 'OB', 'OB2'].forEach(n => T(n, 'BOOL'));
       ['D1', 'D2', 'D3'].forEach(n => T(n, 'DINT')); ['R1', 'R2'].forEach(n => T(n, 'REAL'));
       ['T1', 'T2', 'T3'].forEach(n => T(n, 'TIMER')); ['C1', 'C2'].forEach(n => T(n, 'COUNTER'));
-      T('ARR', 'DINT', 10); T('ARR2', 'DINT', 10);
+      T('ARR', 'DINT', 10); T('ARR2', 'DINT', 10); T('PID1', 'PID');
       ['CT1', 'CT2', 'CT3', 'CT4', 'CT5', 'CT6', 'CT7', 'CT8', 'CT9', 'CT10'].forEach(n => T(n, 'CONTROL'));
       p.tasks[0].programs[0].routines.push({ name: 'Sub', rungs: [{ t: 'NOP();' }] });
       A.openProject(p);

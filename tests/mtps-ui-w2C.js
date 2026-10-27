@@ -19,6 +19,7 @@ module.exports = async function w2c({ browser, URL, check }) {
     ['File/Misc', 'AVE', ['Grid[0,1]', '0', 'Av', 'C3', '4', '0']], ['File/Misc', 'STD', ['Grid[0,4]', '0', 'Sd', 'C4', '4', '0']],
     ['File/Misc', 'SRT', ['Gs[2,0]', '1', 'C5', '5', '0']], ['File/Misc', 'SIZE', ['Grid', '1', 'Sz']], ['File/Misc', 'CPS', ['Arr[0]', 'Dst[0]', '3']],
     ['Input/Output', 'GSV', ['WallClockTime', '', 'DateTime', 'Now[0]']], ['Input/Output', 'SSV', ['Module', 'DI_1', 'Mode', 'M1']], ['Input/Output', 'GSV', ['Module', 'DI_1', 'Mode', 'Md']],
+    ['Special', 'PID', ['Tpid', 'Lvl', '0', 'Vlv', '0', '0', '0']],
   ];
   // the operands picked from their list: the Mode of FAL / FSC (ALL, INC, a number), Dim. To Vary (0, 1, 2)
   const MODES = 'ALL,INC,1', DIMS = '0,1,2';
@@ -30,7 +31,7 @@ module.exports = async function w2c({ browser, URL, check }) {
   const WANT = { R1: Math.sin(0.5), R2: Math.cos(0.5), R3: Math.tan(0.5), R4: Math.asin(0.5), R5: Math.acos(0.5), R6: Math.atan(1), R7: 1.609438, R8: 2, D1: 1024,
     R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5, 'Arr2[0]': 2, 'Arr2[4]': 10, 'C1.DN': 1, 'C1.POS': 5, 'C2.FD': 1, 'C2.IN': 1, 'C2.POS': 2,
     Av: 12, Sd: 6.454972, 'Gs[2,0]': 6, 'Gs[2,4]': 10, 'C5.DN': 1, Sz: 5, 'Dst[2]': 3,
-    'Now[0]': new Date().getUTCFullYear(), Md: 1 };
+    'Now[0]': new Date().getUTCFullYear(), Md: 1, Vlv: 20, 'Tpid.EN': 1, 'Tpid.PV': 40 };
   const project = () => {
     const A = MTPS.App, p = A.blank('Wave2C'), T = (name, type, value, dim) => p.tags.push(Object.assign({ name, type }, value != null ? { value } : {}, dim ? { dim } : {}));
     T('Ang', 'REAL', 0.5); T('Half', 'REAL', 0.5); T('One', 'REAL', 1); T('Five', 'REAL', 5); T('Hund', 'REAL', 100); T('Two', 'DINT', 2);
@@ -39,7 +40,7 @@ module.exports = async function w2c({ browser, URL, check }) {
     T('Arr', 'DINT', [1, 2, 3, 4, 5], 5); T('Arr2', 'DINT', null, 5); T('C1', 'CONTROL'); T('C2', 'CONTROL');
     const grid = Array.from({ length: 20 }, (_, k) => 20 - k);
     T('Grid', 'DINT', grid, [4, 5]); T('Gs', 'DINT', grid, [4, 5]); T('Av', 'DINT'); T('Sd', 'REAL'); T('Sz', 'DINT'); T('Dst', 'DINT', null, 3);
-    T('Now', 'DINT', null, 7); T('M1', 'INT', 1); T('Md', 'INT');
+    T('Now', 'DINT', null, 7); T('Tpid', 'PID', { UPD: 1, MAXS: 100, SP: 50, KP: 2 }); T('Lvl', 'REAL', 40); T('Vlv', 'REAL'); T('M1', 'INT', 1); T('Md', 'INT');
     T('C3', 'CONTROL'); T('C4', 'CONTROL'); T('C5', 'CONTROL');
     A.openProject(p);
   };
@@ -111,7 +112,7 @@ module.exports = async function w2c({ browser, URL, check }) {
       const svg = await pg.$eval('#ladwrap svg', s => s.textContent).catch(() => '');
       check('desktop: the SIN box shows its live Dest value online', svg.includes('SIN') && svg.includes('0.479426'), svg.slice(0, 200));
       const tabs = await pg.$$eval('.itabs [data-tab]', x => x.map(y => y.dataset.tab).join(','));
-      check('desktop: the toolbar has the Input/Output (after Timer/Counter), Trig Functions, Advanced Math and Math Conversions tabs', /Timer\/Counter,Input\/Output,/.test(tabs) && /Trig Functions,Advanced Math,Math Conversions/.test(tabs), tabs);
+      check('desktop: the toolbar has the Input/Output (after Timer/Counter), Special, Trig Functions, Advanced Math and Math Conversions tabs', /Timer\/Counter,Input\/Output,/.test(tabs) && /Special,Trig Functions,Advanced Math,Math Conversions/.test(tabs), tabs);
       await pg.evaluate(() => MTPS.App.select({ ri: 0, path: [0] })); await pg.keyboard.press('F1'); await pg.waitForTimeout(150);
       const ih = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
       check('Instruction Help for SIN: Trigonometric Instructions, radians, the manual example and the status flags', ih.includes('Sine (SIN)') && ih.includes('Trigonometric Instructions') && ih.includes('radians') && ih.includes('0.70710677') && ih.includes('S:Z'), ih.slice(0, 300));
@@ -133,6 +134,9 @@ module.exports = async function w2c({ browser, URL, check }) {
       await pg.click('#layer [data-ih="GSV"]'); await pg.waitForTimeout(80);
       const gs = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
       check('Instruction Help for GSV: Input/Output Instructions, the objects covered, the lower 8 bits rule, minor fault 4/7', gs.includes('(GSV)') && gs.includes('Input/Output Instructions') && gs.includes('WallClockTime') && gs.includes('MajorFaultRecord') && gs.includes('lower 8 bits') && gs.includes('code 7'), gs.slice(0, 200));
+      await pg.click('#layer [data-ih="PID"]'); await pg.waitForTimeout(80);
+      const pd = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for PID: Special Instructions, independent / dependent gains, .UPD, the modes, the .CTL bits, faults 4/35 4/36', pd.includes('(PID)') && pd.includes('Special Instructions') && pd.includes('independent gains') && pd.includes('dependent gains') && pd.includes('.UPD') && pd.includes('.SWM') && pd.includes('.EN 31') && pd.includes('code 35') && pd.includes('code 36'), pd.slice(0, 200));
       await pg.screenshot({ path: `${SHOTS}/after-help-desktop.png` }).catch(() => {});
       await pg.keyboard.press('Escape');
     } else await pg.screenshot({ path: `${SHOTS}/after-ladder-${lay.n}.png` }).catch(() => {});
