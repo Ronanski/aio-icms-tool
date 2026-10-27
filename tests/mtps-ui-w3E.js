@@ -225,5 +225,120 @@ module.exports = async function w3E({ browser, page, URL, check }) {
     check('phone (touch): hold, Message Configuration…, the Tag tab fits the screen; Cancel closes it', okP && fit && !(await ph.$('#layer .dlg')));
     await ph.close();
   }
+  console.log('Add-On Instructions (1756-PM010; v37 help: Creating add-on instructions)');
+  {
+    const aoiProject = () => {
+      const A = MTPS.App, p = A.example();
+      p.tags.push({ name: 'Pb', type: 'BOOL' }, { name: 'Sb', type: 'BOOL', value: 1 }, { name: 'Lamp', type: 'BOOL' }, { name: 'Arr', type: 'DINT', dim: 2 });
+      document.querySelector('#layer').innerHTML = '';
+      A.openProject(p);
+    };
+    const pick = async (pg, label, tap) => {
+      const ok = await pg.evaluate(l => { document.querySelectorAll('[data-w3pick]').forEach(x => delete x.dataset.w3pick); const it = [...document.querySelectorAll('#layer .menu .it')].find(x => [...x.querySelectorAll('span')].some(s => s.textContent === l)); if (it) it.dataset.w3pick = '1'; return !!it; }, label);
+      if (!ok) return false;
+      if (tap) await pg.tap('#layer [data-w3pick]'); else await pg.click('#layer [data-w3pick]');
+      await pg.waitForTimeout(200);
+      return true;
+    };
+    const aoiOf = (pg, n = 0) => pg.evaluate(n => JSON.parse(JSON.stringify((MTPS.App.state.p.aois || [])[n] || null)), n);
+    // fill the last parameter (or local tag) row of the Definition editor
+    const row = async (pg, sel, vals, tap) => {
+      for (const [f, v] of Object.entries(vals)) {
+        const s = `#layer ${sel}:last-child [data-f="${f}"]`;
+        if (typeof v === 'boolean') { const c = await pg.$eval(s, x => x.checked); if (c !== v) { if (tap) await pg.tap(s); else await pg.click(s); } }
+        else if (f === 'usage') await pg.selectOption(s, v);
+        else { if (tap) await pg.tap(s); else await pg.click(s); await pg.fill(s, v); }
+      }
+    };
+    await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
+    await ev(aoiProject); await wait(200);
+    check('the organizer has Assets with Add-On Instructions, Data Types and Trends in it', await ev(() => { const n = [...document.querySelectorAll('.org [data-org]')].map(x => x.dataset.org), i = n.indexOf('assets'); return i >= 0 && n.indexOf('aois') === i + 1 && n.indexOf('dts') > i && n.indexOf('trends') > n.indexOf('dts'); }));
+    await page.click('.org [data-org="aois"]', { button: 'right' }); await wait(150);
+    check('right-click Add-On Instructions: New Add-On Instruction…', await pick(page, 'New Add-On Instruction…'));
+    check('… opens the New Add-On Instruction dialog: Name, Description, Type, Revision, Revision Note, Vendor', (await dlgTitle()) === 'New Add-On Instruction' && (await page.$$('#layer #na-n, #layer #na-d, #layer #na-t, #layer #na-r, #layer #na-rn, #layer #na-v')).length === 6);
+    await page.fill('#layer #na-n', 'TON'); await page.click('#layer .df .btn.pri'); await wait(100);
+    check('a name of a built-in instruction is refused', /built-in instruction/.test(await page.$eval('#layer #na-e', e => e.textContent)));
+    await page.fill('#layer #na-n', 'Motor_Ctl'); await page.fill('#layer #na-d', 'Start / stop with seal-in'); await page.fill('#layer #na-v', 'MT');
+    await page.click('#layer .df .btn.pri'); await wait(250);
+    check('OK creates it and opens the Add-On Instruction Definition (General, Parameters, Local Tags)', (await dlgTitle()) === 'Add-On Instruction Definition - Motor_Ctl v1.0' && (await page.$$eval('#layer .dtabs [data-dt]', t => t.map(x => x.textContent).join(','))) === 'General,Parameters,Local Tags');
+    check('the Parameters tab shows EnableIn and EnableOut', /EnableIn[\s\S]*EnableOut/.test(await page.$eval('#layer [data-pane="par"]', e => e.textContent)));
+    for (const [n, us, ty, req, vis] of [['Start', 'Input', 'BOOL', true], ['Stop', 'Input', 'BOOL', true], ['Run', 'Output', 'BOOL', true], ['Fault', 'Output', 'BOOL', false, true], ['Cfg', 'InOut', 'DINT[2]']]) {
+      await page.click('#layer #ad-np'); await wait(60);
+      await row(page, '[data-ap]', Object.assign({ name: n, usage: us, type: ty }, req !== undefined ? { req } : {}, vis !== undefined ? { vis } : {}));
+    }
+    check('an InOut parameter is always required and visible (greyed), with no Default', await page.$eval('#layer [data-ap]:last-child', r => r.querySelector('[data-f="req"]').checked && r.querySelector('[data-f="req"]').disabled && r.querySelector('[data-f="vis"]').checked && r.querySelector('[data-f="def"]').disabled));
+    await page.click('#layer [data-dt="loc"]'); await wait(60);
+    await page.click('#layer #ad-nl'); await wait(60); await row(page, '[data-al]', { name: 'Tmr', type: 'MESSAGE' });
+    await page.click('#layer .df .btn.pri'); await wait(100);
+    check('a MESSAGE local tag is refused (use an InOut parameter)', /MESSAGE cannot be a local tag/.test(await page.$eval('#layer #ad-e', e => e.textContent)));
+    await row(page, '[data-al]', { type: 'TIMER' });
+    await page.click('#layer .df .btn.pri'); await wait(200);
+    const a1 = await aoiOf(page);
+    eq('OK keeps the parameters in order (Req makes Vis; InOut required) and the local tag', a1 && [a1.params.map(x => [x.name, x.usage, x.type, !!x.req, !!x.vis]), a1.locals.map(x => x.name + ':' + x.type), a1.desc, a1.vendor],
+      [[['Start', 'Input', 'BOOL', true, true], ['Stop', 'Input', 'BOOL', true, true], ['Run', 'Output', 'BOOL', true, true], ['Fault', 'Output', 'BOOL', false, true], ['Cfg', 'InOut', 'DINT', true, true]], ['Tmr:TIMER'], 'Start / stop with seal-in', 'MT']);
+    check('the organizer: Motor_Ctl with Parameters and Local Tags, and Logic', await ev(() => ['aoi:Motor_Ctl', 'aoip:Motor_Ctl', 'rt:aoi:Motor_Ctl/Logic'].every(k => document.querySelector(`.org [data-org="${k}"]`))));
+    if (!(await page.$('.org [data-org="dt:aod"]'))) { await page.click('.org [data-org="dts"] [data-tw]'); await wait(100); }
+    if (!(await page.$('.org [data-org="dt:a:Motor_Ctl"]'))) { await page.click('.org [data-org="dt:aod"] [data-tw]'); await wait(100); }
+    check('Data Types > Add-On-Defined holds the data type Motor_Ctl', !!(await page.$('.org [data-org="dt:a:Motor_Ctl"]')));
+    // the Logic routine: a ladder routine in the editor
+    await page.click('.org [data-org="rt:aoi:Motor_Ctl/Logic"]'); await wait(200);
+    check('a tap on Logic opens it in the editor (tab Motor_Ctl - Logic)', (await ev(() => MTPS.App.state.prog)) === 'aoi:Motor_Ctl' && (await ev(() => document.body.textContent.includes('Motor_Ctl - Logic'))));
+    const logic = ['[XIC(Start),XIC(Run)]XIC(Stop)OTE(Run);', 'XIC(Run)TON(Tmr,50,0);', 'XIC(Tmr.DN)OTE(Fault);', 'MOV(1,Cfg[1]);'];
+    for (let i = 0; i < logic.length; i++) {
+      if (i) await ev(() => { const S = MTPS.App.state, rr = S.p.aois[0].routines[0].rungs; rr.push({ t: '' }); S.selRung = rr.length - 1; MTPS.App.render(); });
+      await page.click(`#ladwrap rect.tap[data-rn][data-ri="${i}"]`, { button: 'right' }); await wait(120);
+      await pick(page, 'Edit Rung'); await page.fill('#desctx', logic[i]); await page.keyboard.press('Control+Enter'); await wait(120);
+    }
+    eq('the logic typed with Edit Rung', await ev(() => MTPS.App.state.p.aois[0].routines[0].rungs.map(r => r.t)), logic);
+    await ev(() => MTPS.App.run('verifyc')); await wait(100);
+    check('the logic uses only the parameters and local tags: it verifies', (await ev(() => MTPS.App.state.verify.errors.length)) === 0, JSON.stringify(await ev(() => MTPS.App.state.verify.errors.map(e => e.text))));
+    // a tag of the Add-On Instruction's data type, and the instruction in MainRoutine
+    await page.click('.org [data-org="rt:MainProgram/MainRoutine"]'); await wait(150);
+    await ev(() => MTPS.App.ui.newTag({})); await wait(150);
+    await page.fill('#layer #tn', 'M1'); await page.fill('#layer #tt', 'Motor_Ctl'); await page.dispatchEvent('#layer #tt', 'input'); await page.selectOption('#layer #ts', ''); await wait(60);
+    const nte = await page.$eval('#layer #te', e => e.textContent).catch(() => '');
+    await page.click('#layer .df .btn.pri'); await wait(150);
+    check('New Tag of the data type Motor_Ctl', (await ev(() => (MTPS.App.state.p.tags.find(t => t.name === 'M1') || {}).type)) === 'Motor_Ctl', nte);
+    await page.click('[data-tab="Add-On"]'); await wait(100);
+    check('the instruction toolbar has the Add-On tab with Motor_Ctl', (await page.$$eval('.gbtn[data-mn]', b => b.map(x => x.dataset.mn).join(','))) === 'MOTOR_CTL');
+    const ta = await addInstr(page, 'MOTOR_CTL', ['M1', 'Pb', 'Sb', 'Lamp', 'Arr']);
+    check('Add Ladder Element: the Add-On Instruction with its tag and required parameters', ta === 'MOTOR_CTL(M1,Pb,Sb,Lamp,Arr);', ta);
+    const tx = await page.$$eval('#ladwrap text', t => t.map(x => x.textContent));
+    check('the box: Motor_Ctl, its operands (Start, Stop, Run, Cfg) and Fault as a flag on the right', ['Motor_Ctl', 'Start', 'Stop', 'Run', 'Cfg', 'Fault'].every(x => tx.includes(x)), tx.join(','));
+    await ev(() => MTPS.App.run('verifyc')); await wait(100);
+    check('the controller verifies', (await ev(() => MTPS.App.state.verify.errors.length)) === 0, JSON.stringify(await ev(() => MTPS.App.state.verify.errors.map(e => e.text))));
+    check('download and run', await dlRun(page)); await wait(150);
+    await ev(() => MTPS.App.racks[0].controller(0).write('Pb', 1)); await wait(150); await ev(() => MTPS.App.racks[0].controller(0).write('Pb', 0)); await wait(200);
+    eq('in Run: Start seals in Run (Lamp), the InOut writes Arr[1]', await ev(() => { const c = MTPS.App.racks[0].controller(0); return [c.read('Lamp'), c.read('M1.Run'), c.read('Arr[1]')]; }), [1, 1, 1]);
+    await wait(300);
+    check('… and the TON in the logic sets the Fault output', (await ev(() => MTPS.App.racks[0].controller(0).read('M1.Fault'))) === 1);
+    await ev(() => MTPS.App.racks[0].controller(0).setMode('remprog'));
+    await page.screenshot({ path: '/tmp/claude-0/shots-w3/E/after-aoi-call-1440.png' }).catch(() => {});
+    await ev(() => MTPS.App.aoiDefinition('Motor_Ctl', 'par')); await wait(150);
+    await page.screenshot({ path: '/tmp/claude-0/shots-w3/E/after-aoi-def-1440.png' }).catch(() => {});
+    await page.keyboard.press('Escape'); await wait(100);
+    // tablet (touch): File > New Component > New Add-On Instruction…, then a parameter, by touch
+    const tb = await touchPage(800, 1280, aoiProject);
+    await tb.evaluate(() => MTPS.App.run('newaoi')); await tb.waitForTimeout(150);
+    await tb.tap('#layer #na-n'); await tb.fill('#layer #na-n', 'Valve'); await tb.tap('#layer .df .btn.pri'); await tb.waitForTimeout(250);
+    await tb.tap('#layer #ad-np'); await tb.waitForTimeout(80);
+    await row(tb, '[data-ap]', { name: 'Open', usage: 'Input', type: 'BOOL', req: true }, true);
+    await tb.tap('#layer .df .btn.pri'); await tb.waitForTimeout(200);
+    const av = await aoiOf(tb);
+    eq('tablet (touch): New Add-On Instruction and a required Input made by touch', av && [av.name, av.params.map(x => [x.name, x.usage, !!x.req])], ['Valve', [['Open', 'Input', true]]]);
+    await tb.close();
+    // phone (touch): the Definition editor fits the screen
+    const ph = await touchPage(390, 844, aoiProject);
+    await ph.evaluate(() => MTPS.App.run('newaoi')); await ph.waitForTimeout(150);
+    await ph.tap('#layer #na-n'); await ph.fill('#layer #na-n', 'Pump'); await ph.tap('#layer .df .btn.pri'); await ph.waitForTimeout(250);
+    await ph.tap('#layer #ad-np'); await ph.waitForTimeout(80);
+    await row(ph, '[data-ap]', { name: 'Speed', usage: 'Input', type: 'REAL', def: '1.5' }, true);
+    const fit = await ph.evaluate(() => { const d = document.querySelector('#layer .dlg'); return d.getBoundingClientRect().width <= innerWidth + 1 && d.scrollWidth <= d.clientWidth + 1 && [...d.querySelectorAll('.aprow')].every(r => r.getBoundingClientRect().right <= innerWidth + 1); });
+    await ph.screenshot({ path: '/tmp/claude-0/shots-w3/E/after-aoi-def-390.png' }).catch(() => {});
+    await ph.tap('#layer .df .btn.pri'); await ph.waitForTimeout(200);
+    const ap = await aoiOf(ph);
+    check('phone (touch): the Definition editor fits the screen; a REAL Input with Default 1.5', fit && ap && ap.params[0].def === 1.5 && ap.params[0].type === 'REAL', JSON.stringify(ap));
+    await ph.close();
+  }
   check('Wave 3 E: no JS errors on the touch pages', !errors.length, errors.join(' | '));
 };

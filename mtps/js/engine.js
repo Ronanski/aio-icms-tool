@@ -119,6 +119,12 @@
         add(d.name, strMembers(n), 'string');
       } else add(d.name, d.members || [], 'user');
     }
+    // the data type of each Add-On Instruction (1756-PM010, Data Type): EnableIn, EnableOut, the Input and Output
+    // parameters in their order, then the local tags as hidden members
+    for (const a of (project && project.aois) || []) {
+      if (!validName(a.name) || t.has(U(a.name)) || ATOMIC[U(a.name)]) continue;
+      add(a.name, aoiMembers(a), 'addon');
+    }
     for (const d of t.values()) {
       d.members = d.members.filter(m => {
         const c = canon(t, m.type);
@@ -131,7 +137,7 @@
     }
     // a user type that leads back to itself could never be built
     for (const d of t.values()) {
-      if (d.kind !== 'user') continue;
+      if (d.kind !== 'user' && d.kind !== 'addon') continue;
       const seen = new Set(), todo = [d];
       let loop = false;
       while (todo.length) for (const m of todo.pop().members) {
@@ -152,7 +158,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def !== undefined ? conform(types, m.type, m.dim, m.def) : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +166,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name] !== undefined ? s[m.name] : m.def);
     return o;
   }
 
@@ -362,7 +368,8 @@
       return new Ref({ root: M.S, key: f, steps: [], type: 'BOOL', dim: 0, bit: -1, ro: f !== 'V' && f !== 'MINOR', norm: 'S:' + f });
     }
     let scope = prog, rec = prog && prog.tags.get(bu);
-    if (!rec) { scope = null; rec = M.tags.get(bu); }
+    // the logic of an Add-On Instruction sees only its parameters and local tags (1756-PM010, Encapsulation)
+    if (!rec) { if (prog && prog.noCtl) return `Undefined tag '${text}'`; scope = null; rec = M.tags.get(bu); }
     if (!rec) return `Undefined tag '${text}'`;
     if (rec.alias) {
       if (depth > 8) return `Alias '${rec.name}' points back to itself`;
@@ -405,7 +412,7 @@
         continue;
       }
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
-      if (!mm) return `Undefined tag '${text}'`;
+      if (!mm || mm.hidden) return `Undefined tag '${text}'`;
       if (mm.of) { steps.push({ m: mm.of }); bit = mm.bit; ptype = 'DINT'; type = 'BOOL'; if (norm) norm += '.' + mm.name; continue; }
       steps.push({ m: mm.name });
       type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
@@ -414,8 +421,9 @@
     const io = rec.io || null;
     const force = io && steps.length === 1 && steps[0].m === 'Data' && bit >= 0 ? `${io.slot}:${io.dir}:${bit}` : null;
     // a constant tag (and its members, elements, bits and aliases) cannot be written by logic (help: Constant)
-    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
+    const out = new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
+    return scope && scope.bind ? scope.bind(out, rec) : out;
   }
 
   /* ---------- CPT / CMP expressions ---------- */
@@ -647,6 +655,7 @@
 
   /* checks one instruction and compiles its operands; E / W report an error / warning on it */
   function compileElem(M, P, R, e, n, first, E, W, jumps) {
+    if (M.aois && M.aois.has(e.t)) return aoiElem(M, P, e, E);
     const d = INSTR[e.t];
     if (!d) { E(`Unknown instruction '${e.t}'`); return null; }
     const need = d.args.filter(a => !a.endsWith('?')).length;
@@ -730,6 +739,7 @@
     if (!validName(ctl.name)) ctlErr(`Invalid controller name '${ctl.name || ''}'`);
     const types = typeTable(pj, ctlErr);
     const M = { name: ctl.name || '', types, tags: new Map(), vals: {}, S: { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 }, mods: new Map(), programs: [], otes: new Map() };
+    aoiBuild(M, pj, filter, out, ctlErr);
 
     const rack = pj.rack || {};
     const okSize = n => RACKS.includes(n) || OLDRACKS.includes(n);
@@ -1576,6 +1586,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
+      this.pwalk = walk;   // the logic of an Add-On Instruction is prescanned through it (XPRE of the instruction)
       for (const P of this.M.programs) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
     }
 
@@ -2404,6 +2415,192 @@
     return true;
   };
 
+  /* ---------- Add-On Instructions (1756-PM010, Add-On Instructions Programming Manual) ----------
+     project.aois = [{ name, desc, type, rev, note, vendor, params: [{ name, usage: 'Input' | 'Output' | 'InOut', type,
+     dim, req, vis, def, desc, access }], locals: [{ name, type, dim, def, desc }], routines: [{ name: 'Logic', rungs }] }].
+     Input and Output parameters are BOOL, SINT, INT, DINT or REAL, passed by value; an InOut parameter is any type,
+     passed by reference, always required and visible; a required parameter is visible. The data type of the
+     instruction holds EnableIn, EnableOut, the Input and Output parameters in their order, then the local tags as
+     hidden members. In ladder the instruction takes its tag, then one argument for each required parameter.
+     Execution (PM010, Scan modes, EnableIn and EnableOut): rung true: the required Inputs are passed in, EnableIn
+     set, EnableOut set (the logic can change it), the Logic routine runs, the required Outputs are passed out; the
+     rung out is EnableOut. Rung false: the Inputs are passed, the logic does not run and no output is written,
+     EnableOut is cleared. Prescan: the Logic routine is prescanned with the required parameters passed. The logic sees
+     only the parameters and local tags; JSR, RET and SBR cannot be used in it, nor can it call itself. The Scan Mode
+     routines (Prescan, Postscan, EnableInFalse) are not in this app. */
+  const AOI_IO = ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'], AOI_NO = ['JSR', 'RET', 'SBR'];
+  const aoiParams = a => (a.params || []).filter(x => x && x.name);
+  // EnableIn starts at 1 (the app's choice: a new instance tag executes when its rung is true)
+  function aoiMembers(a) {
+    const m = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, { name: 'EnableOut', type: 'BOOL' }];
+    for (const x of aoiParams(a)) if (x.usage !== 'InOut') m.push({ name: x.name, type: x.type || 'BOOL', def: x.def });
+    for (const x of a.locals || []) if (x && x.name) m.push({ name: x.name, type: x.type || 'BOOL', dim: x.dim > 0 ? Math.floor(x.dim) : 0, def: x.def, hidden: true });
+    return m;
+  }
+  // an InOut parameter inside the logic: a reference to the argument of the call that runs (a bit of an integer too)
+  const aoiSlot = () => ({ p: { v: 0 }, k: 'v', b: -1, t: null,
+    get v() { const x = this.p[this.k]; return this.b < 0 ? x : (x >> this.b) & 1; },
+    set v(n) { if (this.b < 0) this.p[this.k] = n; else { const x = this.p[this.k]; this.p[this.k] = store(this.t || 'DINT', n ? x | (1 << this.b) : x & ~(1 << this.b)); } } });
+  function aoiBuild(M, pj, filter, out, ctlErr) {
+    M.aois = new Map();
+    syncAOIs(pj, false);
+    const list = (pj.aois || []).filter(a => a && typeof a === 'object');
+    for (const a of list) {
+      const u = U(a.name || '');
+      if (!validName(a.name)) { ctlErr(`Invalid Add-On Instruction name '${a.name || ''}'`); continue; }
+      if ((INSTR[u] && !INSTR[u].aoi) || M.aois.has(u)) { ctlErr(`Add-On Instruction '${a.name}': the name must not match a built-in instruction or another Add-On Instruction`); continue; }
+      const d = M.types.get(u);
+      if (!d || d.kind !== 'addon') { ctlErr(`Add-On Instruction '${a.name}': the name is already used by a data type`); continue; }
+      const seen = new Set(['ENABLEIN', 'ENABLEOUT']), params = [], E = m => { ctlErr(`Add-On Instruction '${a.name}': ${m}`); ok = false; };
+      let ok = true;
+      for (const x of aoiParams(a)) {
+        const usage = ['Input', 'Output', 'InOut'].includes(x.usage) ? x.usage : null, ty = canon(M.types, x.type || 'BOOL');
+        if (!validName(x.name) || seen.has(U(x.name))) { E(`invalid or repeated parameter name '${x.name}'`); continue; }
+        seen.add(U(x.name));
+        if (!usage) { E(`parameter '${x.name}': Usage must be Input, Output or InOut`); continue; }
+        if (!ty) { E(`parameter '${x.name}': undefined data type '${x.type}'`); continue; }
+        if (usage !== 'InOut' && (!AOI_IO.includes(ty) || x.dim > 0)) { E(`parameter '${x.name}': an ${usage} parameter must be BOOL, SINT, INT, DINT or REAL (an InOut parameter can be any type)`); continue; }
+        if (U(ty) === u) { E(`parameter '${x.name}': an Add-On Instruction cannot contain itself`); continue; }
+        const req = usage === 'InOut' || !!x.req;
+        params.push({ name: x.name, usage, type: ty, dim: usage === 'InOut' && x.dim > 0 ? Math.floor(x.dim) : 0, req, vis: req || !!x.vis });
+      }
+      for (const x of a.locals || []) {
+        if (!x || !x.name) continue;
+        if (!validName(x.name) || seen.has(U(x.name))) { E(`invalid or repeated local tag name '${x.name}'`); continue; }
+        seen.add(U(x.name));
+        const ty = canon(M.types, x.type || 'BOOL');
+        if (!ty) E(`local tag '${x.name}': undefined data type '${x.type}'`);
+        else if (ty === 'MESSAGE') E(`local tag '${x.name}': a MESSAGE cannot be a local tag; use an InOut parameter`);
+      }
+      if (ok) M.aois.set(u, { name: a.name, params, H: { I: null }, slots: {}, R: null, src: a, def: d, calls: new Set() });
+    }
+    for (const A of M.aois.values()) {
+      const a = A.src, pname = 'aoi:' + a.name;
+      const P = { name: pname, aoi: A, noCtl: true, tags: new Map(), vals: {}, routines: new Map(), main: null };
+      for (const m of A.def.members) P.tags.set(U(m.name), { name: m.name, type: m.type, dim: m.dim || 0, dims: m.dim ? [m.dim] : [] });
+      for (const x of A.params) if (x.usage === 'InOut') {
+        P.tags.set(U(x.name), { name: x.name, type: x.type, dim: x.dim, dims: x.dim ? [x.dim] : [], inout: true });
+        const s = A.slots[x.name] = aoiSlot(); s.p = { v: make(M.types, x.type, x.dim) };
+      }
+      P.bind = (r, rec) => { if (rec.inout) { r.root = A.slots[rec.name]; r.key = 'v'; } else { r.steps.unshift({ m: rec.name }); r.root = A.H; r.key = 'I'; } return r; };
+      const lr = (a.routines || [])[0] || { name: 'Logic', rungs: [] }, R = { name: 'Logic', src: lr.rungs || [], rungs: [], labels: new Map() };
+      P.routines.set('LOGIC', R); P.main = R; A.R = R;
+      // compiled against a default instance: the Preset of a timer in the logic goes into the local tag's default
+      A.H.I = make(M.types, a.name, 0);
+      const want = !filter || ((!filter.program || U(filter.program) === U(pname)) && (!filter.routine || U(filter.routine) === 'LOGIC'));
+      if (want) out.lines.push(`Verifying routine 'Logic' of Add-On Instruction '${a.name}'...`);
+      const report = (lst, kind) => (n, msg, mnem, op) => {
+        if (!want) return;
+        const text = `${kind}: Rung ${n}${mnem ? ', ' + mnem : ''}${op != null ? ', Operand ' + op : ''}: ${dot(msg)}`;
+        lst.push({ program: pname, routine: 'Logic', rung: n, mnem, op, msg: dot(msg), text }); out.lines.push(text);
+      };
+      const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      R.src.forEach((src, n) => {
+        const text = String(src && (src.t != null ? src.t : src.text) || '');
+        const rung = { n, text, c: (src && src.c) || '', elems: [] };
+        R.rungs.push(rung);
+        const pr = parseRung(text);
+        if (pr.err) { err(n, pr.err); return; }
+        if (!pr.elems.length) { err(n, 'Rung has no instructions'); return; }
+        const walk = (arr, top) => arr.map((e, k) => {
+          if (e.t === 'BR') return { t: 'BR', legs: e.legs.map(l => walk(l, false)) };
+          if (AOI_NO.includes(e.t)) { err(n, `${e.t} cannot be used in an Add-On Instruction`, e.t); return null; }
+          if (e.t === U(a.name)) { err(n, 'An Add-On Instruction cannot call itself', e.t); return null; }
+          if (e.t === 'MCR' && !(top && k === arr.length - 1)) err(n, 'MCR must be the last instruction of the rung', 'MCR');
+          return compileElem(M, P, R, e, n, top && k === 0, (m, mn, op) => err(n, m, mn, op), (m, mn, op) => warn(n, m, mn, op), jumps);
+        });
+        rung.elems = walk(pr.elems, true);
+      });
+      for (const j of jumps) if (!R.labels.has(j.label)) err(j.n, `Undefined label '${j.text}'`, 'JMP', 0);
+      // the values the logic wrote into structured local tags (a timer's Preset) are their defaults
+      for (const m of A.def.members) if (m.hidden && !ATOMIC[m.type]) m.def = clone(A.H.I[m.name]);
+      A.H.I = null;
+    }
+    // Add-On Instructions that call each other in a circle could never finish
+    for (const A of M.aois.values()) {
+      const seen = new Set(), todo = [...A.calls];
+      while (todo.length) { const B = todo.pop(); if (B === A) { ctlErr(`Add-On Instruction '${A.name}' calls itself through another Add-On Instruction`); break; } if (!seen.has(B)) { seen.add(B); todo.push(...B.calls); } }
+    }
+  }
+  /* an Add-On Instruction in the logic: its tag (of its data type), then the required parameters in their order */
+  function aoiElem(M, P, e, E) {
+    const A = M.aois.get(e.t), req = A.params.filter(x => x.req);
+    if (e.a.length !== req.length + 1) { E(`Wrong number of operands (${req.length + 1} expected)`, e.t); return null; }
+    const x = [];
+    let ok = true;
+    const bad = (m, k) => { E(m, e.t, k); ok = false; };
+    const s0 = String(e.a[0]).trim();
+    if (!s0 || s0 === '?') bad('Missing operand', 0);
+    else { const r = ref(M, P, s0); if (typeof r === 'string') bad(r, 0); else if (U(r.type) !== U(A.name) || r.dim || r.bit >= 0) bad(BAD_TYPE, 0); else if (r.konst) bad(`Tag '${r.konst}' is a constant: logic cannot write to it`, 0); else x[0] = r; }
+    req.forEach((pm, i) => {
+      const k = i + 1, s = String(e.a[k] == null ? '' : e.a[k]).trim();
+      if (!s || s === '?' || s === '??') { bad('Missing operand', k); return; }
+      if (pm.usage === 'Input') { const c = parseNumber(s); if (c) { if (pm.type === 'BOOL' && c.v !== 0 && c.v !== 1) bad(BAD_TYPE, k); else x[k] = new Const(c.v, c.real); return; } }
+      const r = ref(M, P, s);
+      if (typeof r === 'string') { bad(r, k); return; }
+      if (pm.usage === 'InOut') { if (U(r.type) !== U(pm.type) || (r.dim || 0) !== pm.dim) bad(BAD_TYPE, k); else x[k] = r; return; }
+      if (r.dim || !ATOMIC[r.type] || (pm.type === 'BOOL') !== (r.type === 'BOOL')) { bad(BAD_TYPE, k); return; }
+      if (pm.usage === 'Output' && (r.ro || r.konst)) { bad(r.ro ? 'Tag is read-only' : `Tag '${r.konst}' is a constant: logic cannot write to it`, k); return; }
+      x[k] = r;
+    });
+    if (P && P.aoi) P.aoi.calls.add(A);
+    return ok ? { t: e.t, a: e.a, x, v: false, aoi: A } : null;
+  }
+  // the InOut arguments of this call; gives back what to restore after it
+  function aoiBind(A, x) {
+    const saved = [];
+    let k = 1;
+    for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'InOut') { const s = A.slots[pm.name], r = x[k]; r.at(); saved.push([s, s.p, s.k, s.b, s.t]); s.p = PP; s.k = PK; s.b = r.bit; s.t = r.ptype; } k++; }
+    return saved;
+  }
+  const aoiUnbind = saved => { for (const [s, p, k, b, t] of saved) { s.p = p; s.k = k; s.b = b; s.t = t; } };
+  const aoiIn = (A, x, inst) => { let k = 1; for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'Input') inst[pm.name] = store(pm.type, x[k].get()); k++; } };
+  const aoiOut = (A, x, inst) => { let k = 1; for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'Output') x[k].set(inst[pm.name]); k++; } OV = false; };
+  function aoiRun(e, x, p) {
+    const A = e.aoi, inst = x[0].obj(), I0 = A.H.I;
+    aoiIn(A, x, inst);
+    inst.EnableIn = p ? 1 : 0;
+    if (!p) { inst.EnableOut = 0; e.v = false; return false; }
+    const saved = aoiBind(A, x);
+    A.H.I = inst; inst.EnableOut = 1;
+    try { this.routine(A.R); } finally { A.H.I = I0; aoiUnbind(saved); }
+    aoiOut(A, x, inst);
+    e.v = inst.EnableOut === 1;
+    return e.v;
+  }
+  function aoiPre(x, e) {
+    const A = e && e.aoi;
+    if (!A || !A.R || !this.pwalk) return;
+    const inst = x[0].obj(), I0 = A.H.I;
+    aoiIn(A, x, inst);
+    const saved = aoiBind(A, x);
+    A.H.I = inst;
+    try { for (const r of A.R.rungs) this.pwalk(r.elems); } finally { A.H.I = I0; aoiUnbind(saved); }
+    aoiOut(A, x, inst);
+  }
+  /* the instruction table entries of a project's Add-On Instructions (group Add-On): the ladder box shows the tag,
+     the required parameters as operands, the other visible Input / Output parameters as values, and the visible BOOL
+     Outputs that are not required as the flags on its right. full: also drop those of Add-On Instructions that are gone */
+  const AOIREG = new Set();
+  function syncAOIs(project, full) {
+    const now = new Set();
+    for (const a of (project && project.aois) || []) {
+      if (!a || !validName(a.name)) continue;
+      const u = U(a.name);
+      if (INSTR[u] && !INSTR[u].aoi) continue;
+      const ps = aoiParams(a).filter(x => ['Input', 'Output', 'InOut'].includes(x.usage)), req = ps.filter(x => x.usage === 'InOut' || x.req);
+      const kind = x => (x.usage === 'InOut' ? 'aio' : (x.usage === 'Input' ? 'ai' : 'ao') + (AOI_IO.includes(U(x.type)) ? U(x.type) : 'DINT'));
+      const bits = ps.filter(x => x.usage === 'Output' && U(x.type) === 'BOOL' && x.vis && !x.req).map(x => x.name);
+      const extra = ps.filter(x => x.usage !== 'InOut' && x.vis && !x.req && !bits.includes(x.name)).map(x => x.name);
+      INSTR[u] = I('box', 'Add-On', a.name, ['aoi'].concat(req.map(kind)).join(' '), { out: ps.some(x => x.usage !== 'Input'), bits, ctl: 0, aoi: true, disp: a.name, extra, desc: a.desc || '',
+        bvx: o => { const r = {}; bits.forEach(b => { r[b] = o ? o[b] : 0; }); return r; } });
+      OPN[u] = [a.name].concat(req.map(x => x.name));
+      XEL[u] = aoiRun; XPRE[u] = aoiPre;
+      now.add(u); AOIREG.add(u);
+    }
+    if (full) for (const u of [...AOIREG]) if (!now.has(u)) { delete INSTR[u]; delete OPN[u]; AOIREG.delete(u); }
+  }
+
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
@@ -2556,6 +2753,7 @@
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
   MTPS.GSVOBJ = GSVOBJ;
   MTPS.MSG = { ERR: MSGERR, BIT: MSGB, text: msgText, path: msgPath };
+  MTPS.syncAOIs = syncAOIs; MTPS.AOI_IO = AOI_IO;
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

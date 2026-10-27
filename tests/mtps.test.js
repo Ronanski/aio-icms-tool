@@ -1628,5 +1628,62 @@ console.log('Wave 3 E: MSG, CIP Data Table Read / Write (1756-RM018A chapter 4, 
   eq('verify: the operand must be a MESSAGE tag (not another type, not an array element)', v.errors.map(e => e.rung), [0, 1]);
 }
 
+console.log('Wave 3 E: Add-On Instructions (1756-PM010)');
+{
+  // Motor_Ctl: Start / Stop in, Run out (required), Fault a visible BOOL Output, Count a local, Cfg an InOut
+  const aoi = (o = {}) => Object.assign({ name: 'Motor_Ctl', desc: 'Start / stop with seal-in', rev: '1.0', type: 'Ladder Diagram',
+    params: [{ name: 'Start', usage: 'Input', type: 'BOOL', req: true }, { name: 'Stop', usage: 'Input', type: 'BOOL', req: true, def: 1 },
+      { name: 'Run', usage: 'Output', type: 'BOOL', req: true }, { name: 'Fault', usage: 'Output', type: 'BOOL', vis: true },
+      { name: 'Cfg', usage: 'InOut', type: 'DINT', dim: 2 }, { name: 'Gain', usage: 'Input', type: 'REAL', def: 2.5, vis: true }],
+    locals: [{ name: 'Starts', type: 'DINT' }, { name: 'Tmr', type: 'TIMER' }, { name: 'Ons', type: 'BOOL' }],
+    routines: [{ name: 'Logic', rungs: [{ t: '[XIC(Start),XIC(Run)]XIC(Stop)OTE(Run);' }, { t: 'XIC(Start)ONS(Ons)ADD(Starts,1,Starts);' }, { t: 'MOV(Starts,Cfg[1]);' }, { t: 'XIC(Run)TON(Tmr,40,0);' }, { t: 'XIC(Tmr.DN)OTE(Fault);' }] }] }, o);
+  const ap = (o = {}) => { const p = proj({ modules: [], tags: [T('M1', 'Motor_Ctl'), T('Pb', 'BOOL'), T('Sb', 'BOOL', { value: 1 }), T('Lamp', 'BOOL'), T('Arr', 'DINT', { dim: 2 }), T('Go', 'BOOL', { value: 1 }), T('Out2', 'BOOL')].concat(o.tags || []), rungs: o.rungs || ['XIC(Go)MOTOR_CTL(M1,Pb,Sb,Lamp,Arr)OTE(Out2);'] }); p.aois = o.aois || [aoi()]; return p; };
+  eq('Data Types > Add-On-Defined lists the data type of the Add-On Instruction', MTPS.dataTypes(ap()).addOnDefined, ['Motor_Ctl']);
+  const v0 = MTPS.verify(ap());
+  eq('the project verifies, with the logic routine of the Add-On Instruction', [v0.errors.map(e => e.text), v0.lines.some(l => /Verifying routine 'Logic' of Add-On Instruction 'Motor_Ctl'/.test(l))], [[], true]);
+  const c = new MTPS.Controller(); check('download', c.download(ap()).ok); c.setMode('remrun');
+  eq('a new instance tag: EnableIn 1, the parameter defaults (Stop 1, Gain 2.5)', [c.read('M1.EnableIn'), c.read('M1.Stop'), c.read('M1.Gain'), c.read('M1.EnableOut')], [1, 1, 2.5, 0]);
+  check('local tags are hidden members: not reachable from outside', c.read('M1.Starts') === undefined && typeof c.refOf('M1.Starts') === 'string');
+  c.scan(10);
+  eq('rung true: the logic runs, EnableOut set, the rung goes on (Out2 on), Run not yet', [c.read('M1.EnableOut'), c.read('Out2'), c.read('Lamp')], [1, 1, 0]);
+  c.write('Pb', 1); c.scan(10);
+  eq('required Input in (Start), the logic seals in, the required Output out (Lamp)', [c.read('M1.Start'), c.read('M1.Run'), c.read('Lamp')], [1, 1, 1]);
+  eq('the InOut is passed by reference: Cfg[1] = Starts writes Arr[1] of the caller', c.read('Arr'), [0, 1]);
+  c.write('Pb', 0); scans(c, 2);
+  eq('a one-shot in the logic counts once; the seal-in holds', [c.read('Arr[1]'), c.read('Lamp')], [1, 1]);
+  scans(c, 5);
+  eq('a TON in the logic times with its local TIMER (the rung Preset 40 is its default): the visible Output Fault', c.read('M1.Fault'), 1);
+  c.write('Go', 0); c.write('Sb', 0); c.scan(10);
+  eq('rung false: EnableIn 0, EnableOut 0, the Inputs are passed (Stop 0) but no Output is written (Lamp stays on)', [c.read('M1.EnableIn'), c.read('M1.EnableOut'), c.read('M1.Stop'), c.read('Lamp'), c.read('Out2')], [0, 0, 0, 1, 0]);
+  c.write('Go', 1); c.scan(10);
+  eq('rung true with Stop off: the logic drops Run, Lamp off', [c.read('M1.Run'), c.read('Lamp')], [0, 0]);
+  c.write('M1.Gain', 7.5); c.scan(10);
+  check('a visible parameter that is not required is set through the tag (M1.Gain)', c.read('M1.Gain') === 7.5);
+  // two instances keep their own data
+  const c2 = run2();
+  function run2() { const x = new MTPS.Controller(); const p = ap({ tags: [T('M2', 'Motor_Ctl'), T('L2', 'BOOL'), T('A2', 'DINT', { dim: 2 })], rungs: ['MOTOR_CTL(M1,1,1,Lamp,Arr);', 'MOTOR_CTL(M2,0,1,L2,A2);'] }); x.download(p); x.setMode('remrun'); return x; }
+  c2.scan(10);
+  eq('two instances keep their own data (immediate Inputs 1 / 0); the ONS in the logic was prescanned, so no count', [c2.read('Lamp'), c2.read('L2'), c2.read('Arr[1]'), c2.read('A2[1]')], [1, 0, 0, 0]);
+  // prescan: the logic is prescanned with the required parameters passed (OTE cleared)
+  c2.setMode('remprog'); c2.write('M1.Run', 1); c2.setMode('remrun');
+  check('prescan: the logic is prescanned (its OTE Run cleared) and the required Output passed out', c2.read('M1.Run') === 0 && c2.read('Lamp') === 0);
+  // verify errors
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('an Input parameter must be BOOL, SINT, INT, DINT or REAL', errs(ap({ aois: [aoi({ params: [{ name: 'X', usage: 'Input', type: 'TIMER' }] })], rungs: ['NOP();'] })).some(m => /an Input parameter must be BOOL, SINT, INT, DINT or REAL/.test(m)));
+  check('the name must not match a built-in instruction', errs(ap({ aois: [aoi({ name: 'TON' })], rungs: ['NOP();'], tags: [] })).some(m => /must not match a built-in instruction/.test(m)));
+  const vin = MTPS.verify(ap({ aois: [aoi({ routines: [{ name: 'Logic', rungs: [{ t: 'XIC(Pb)OTE(Run);' }, { t: 'JSR(Logic);' }, { t: 'MOTOR_CTL(M1,1,1,Run,Cfg);' }] }] })] }));
+  eq('in the logic: no controller tags (Pb), no JSR, no call to itself', vin.errors.filter(e => e.program === 'aoi:Motor_Ctl').map(e => e.rung), [0, 1, 2]);
+  eq('in a call: the tag must be of the instruction\'s type; an InOut takes the same type and size', MTPS.verify(ap({ rungs: ['MOTOR_CTL(Pb,Pb,Sb,Lamp,Arr);', 'MOTOR_CTL(M1,Pb,Sb,Lamp,Pb);', 'MOTOR_CTL(M1,Pb,Sb);'] })).errors.map(e => [e.rung, e.op]), [[0, 0], [1, 4], [2, undefined]]);
+  // nesting: an Add-On Instruction that calls another
+  const inner = { name: 'Dbl', params: [{ name: 'In', usage: 'Input', type: 'DINT', req: true }, { name: 'Out', usage: 'Output', type: 'DINT', req: true }], locals: [], routines: [{ name: 'Logic', rungs: [{ t: 'MUL(In,2,Out);' }] }] };
+  const outer = { name: 'Quad', params: [{ name: 'In', usage: 'Input', type: 'DINT', req: true }, { name: 'Out', usage: 'Output', type: 'DINT', req: true }], locals: [{ name: 'D1', type: 'Dbl' }, { name: 'Mid', type: 'DINT' }], routines: [{ name: 'Logic', rungs: [{ t: 'DBL(D1,In,Mid)DBL(D1,Mid,Out);' }] }] };
+  const pn = proj({ modules: [], tags: [T('Q', 'Quad'), T('R', 'DINT')], rungs: ['QUAD(Q,5,R);'] }); pn.aois = [inner, outer];
+  const cn = new MTPS.Controller(); check('nested Add-On Instructions download', cn.download(pn).ok); cn.setMode('remrun'); cn.scan(10);
+  eq('Quad(5) through Dbl twice = 20', cn.read('R'), 20);
+  const loop = JSON.parse(JSON.stringify(pn)); loop.aois[0].locals = [{ name: 'Q2', type: 'Quad' }]; loop.aois[0].routines[0].rungs.push({ t: 'QUAD(Q2,1,Out);' });
+  check('Add-On Instructions that call each other in a circle do not verify', MTPS.verify(loop).errors.length > 0);
+  check('the instruction table has the Add-On Instruction (group Add-On, its operands, Fault as a flag on the right)', MTPS.INSTR.MOTOR_CTL && MTPS.INSTR.MOTOR_CTL.grp === 'Add-On' && MTPS.OPN.MOTOR_CTL.join() === 'Motor_Ctl,Start,Stop,Run,Cfg' && MTPS.INSTR.MOTOR_CTL.bits.join() === 'Fault' && MTPS.INSTR.MOTOR_CTL.extra.join() === 'Gain');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

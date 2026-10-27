@@ -132,6 +132,8 @@
     'ASCII String': ['CONCAT', 'DELETE', 'FIND', 'INSERT', 'MID'],
     'ASCII Conversion': ['STOD', 'STOR', 'DTOS', 'RTOS', 'UPPER', 'LOWER'],
   };
+  // the Add-On tab: the Add-On Instructions of the project
+  Object.defineProperty(TABS, 'Add-On', { enumerable: true, get: () => Object.keys(INSTR).filter(k => INSTR[k].aoi && S.p && (S.p.aois || []).some(a => U(a.name) === k)) });
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
 
@@ -409,12 +411,13 @@
   const HANDLERS = { fault: 'Controller Fault Handler', powerup: 'Power-Up Handler' };
   const handlerTask = kind => S.p.tasks.find(t => t.type === kind);
   const handlerProg = kind => { const t = handlerTask(kind); return t && t.programs[0] || null; };
-  const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
+  // the logic of an Add-On Instruction opens as program 'aoi:<name>' (js/aoi.js)
+  const curProg = () => allProgs().find(p => p.name === S.prog) || (E.App.aoiProg && E.App.aoiProg(S.prog)) || allProgs()[0];
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
   const rungs = () => curRoutine().rungs;
   const parsed = i => { const r = rungs()[i]; if (!r) return null; const pr = E.parseRung(r.t); return pr.err ? null : pr.elems; };
   // the ladder and the tags can be edited offline and online (online edits wait for Accept Edits); modules only offline
-  const editable = () => !S.noProj;
+  const editable = () => !S.noProj && !(S.online && /^aoi:/.test(S.prog || ''));
   const offline = () => !S.online;
   /* online edits, as in the reference software: pending edits (on this device only) are accepted; in Run the
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
@@ -458,6 +461,7 @@
 
   /* ---------- verify ---------- */
   function reverify() {
+    if (E.syncAOIs && !S.noProj) E.syncAOIs(S.p, true);
     S.verify = S.noProj ? { errors: [], warnings: [], lines: [] } : E.verify(S.p);
     S.errRungs = new Set(S.verify.errors.filter(e => e.routine === curRoutine().name && e.program === curProg().name).map(e => e.rung));
   }
@@ -883,6 +887,7 @@
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
+    newaoi: { l: 'New Add-On Instruction…', i: 'prog', run: () => E.App.newAOI && E.App.newAOI(), on: () => editable() && offline() && !!E.App.newAOI },
     // File > Import Component (help v37 File menu): Add-On Instructions, Data Type, Equipment Phase, Program, Routine,
     // String Type, Trend; this app has data types, programs and routines
     impaoi: { l: 'Add-On Instructions…', i: 'upload', run: () => {}, on: () => false },
@@ -953,7 +958,7 @@
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newaoi', 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
@@ -979,13 +984,13 @@
   /* ---------- render ---------- */
   /* the workspace tabs: routines as "program/routine", and "tags"; S.view is the active kind */
   function syncTabs() {
-    const ok = k => { if (k === 'tags') return true; const [g, r] = k.split('/'); const P = allProgs().find(x => x.name === g); return !!P && P.routines.some(x => x.name === r); };
+    const ok = k => { if (k === 'tags') return true; const [g, r] = k.split('/'); const P = allProgs().find(x => x.name === g) || (E.App.aoiProg && E.App.aoiProg(g)); return !!P && P.routines.some(x => x.name === r); };
     S.tabs = S.tabs.filter(ok);
     const cur = S.prog + '/' + S.routine;
     if (S.view === 'ladder' && !S.tabs.includes(cur)) S.tabs.push(cur);
     if (S.view === 'tags' && !S.tabs.includes('tags')) S.tabs.push('tags');
   }
-  function tabTitle(k) { if (k === 'tags') return (S.tagScope ? S.tagScope : 'Controller') + ' Tags'; const [g, r] = k.split('/'); return g + ' - ' + r; }
+  function tabTitle(k) { if (k === 'tags') return (S.tagScope ? S.tagScope : 'Controller') + ' Tags'; const [g, r] = k.split('/'); return g.replace(/^aoi:/, '') + ' - ' + r; }
   function rtabsHTML() {
     if (S.noProj) return '';
     const act = S.view === 'tags' ? 'tags' : S.view === 'ladder' ? S.prog + '/' + S.routine : '';
@@ -1201,18 +1206,21 @@
     });
     add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.filter(t => !HANDLERS[t.type]).forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => progNode(g, 2)))));
     const dt = E.dataTypes(S.p);
-    add('dts', 0, 'Data Types', 'folder', {}, () => {
+    add('assets', 0, 'Assets', 'folder', {}, () => {
+    add('aois', 1, 'Add-On Instructions', 'folder', {}, (S.p.aois || []).length && E.App.aoiTree ? () => E.App.aoiTree(add, 2) : undefined);
+    add('dts', 1, 'Data Types', 'folder', {}, () => {
       // a folder shows the expand icon only when it has content (v37 help: Controller Organizer); Add-On-Defined
       // holds the data types of the Add-On Instructions, so it is empty in this app
-      const sub = (k, txt, list, pre) => add(k, 1, txt, 'type', {}, list.length ? () => list.forEach(n => add(pre + n, 2, n, 'type')) : undefined);
+      const sub = (k, txt, list, pre) => add(k, 2, txt, 'type', {}, list.length ? () => list.forEach(n => add(pre + n, 3, n, 'type')) : undefined);
       sub('dt:user', 'User-Defined', dt.userDefined, 'dt:u:');
       sub('dt:str', 'Strings', dt.strings, 'dt:s:');
       sub('dt:aod', 'Add-On-Defined', dt.addOnDefined || [], 'dt:a:');
-      add('dt:pre', 1, 'Predefined', 'type', {}, () => dt.predefined.forEach(n => add('dt:p:' + n, 2, n, 'type')));
-      add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
+      add('dt:pre', 2, 'Predefined', 'type', {}, () => dt.predefined.forEach(n => add('dt:p:' + n, 3, n, 'type')));
+      add('dt:mod', 2, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 3, n, 'type')));
     });
     const trs = Array.isArray(S.p.trends) ? S.p.trends : [];
-    add('trends', 0, 'Trends', 'folder', {}, trs.length ? () => trs.forEach(t => add('trend:' + t.name, 1, t.name, 'xref')) : undefined);
+    add('trends', 1, 'Trends', 'folder', {}, trs.length ? () => trs.forEach(t => add('trend:' + t.name, 2, t.name, 'xref')) : undefined);
+    });
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
       add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] ${ctype(S.p.controller.type)[0]} ${S.p.controller.name}`, 'chip');
       [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
@@ -1688,6 +1696,7 @@
     openMenu(renamed(menuItems(ids), { cut: 'Cut Rung', copy: 'Copy Rung', del: 'Delete Rung' }), { x, y }, `Rung ${t.ri}`);
   }
   function orgMenu(key, x, y) {
+    const am = E.App.aoiMenu && E.App.aoiMenu(key); if (am) { openMenu(am, { x, y }); return; }
     const dm = dtMenu(key); if (dm) { openMenu(dm, { x, y }); return; }
     const items = [];
     const rtOf = k => { const [gn, rn] = k.slice(3).split('/'), g = allProgs().find(x => x.name === gn); return { g, r: g && g.routines.find(x => x.name === rn) }; };
@@ -1824,6 +1833,9 @@
   const strTypes = () => ['STRING'].concat(((S.p && S.p.dataTypes) || []).filter(d => d.family === 'string').map(d => d.name));
   ['str', 'strw'].forEach(k => Object.defineProperty(KIND_TYPES, k, { get: strTypes }));
   Object.assign(KIND_TYPES, { ntag: ['SINT', 'INT', 'DINT', 'LINT', 'REAL'], rtag: ['REAL'], msg: ['MESSAGE'] });
+  // Add-On Instructions: the tag of the instruction's own type, then its Input / Output parameters (by type)
+  Object.defineProperty(KIND_TYPES, 'aoi', { get: () => (PCTX && INSTR[PCTX.mn] && INSTR[PCTX.mn].aoi ? [INSTR[PCTX.mn].disp] : []) });
+  ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'].forEach(t => { KIND_TYPES['ai' + t] = KIND_TYPES['ao' + t] = t === 'BOOL' ? ['BOOL'] : ['SINT', 'INT', 'DINT', 'LINT', 'REAL']; });
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr', 'aelem', 'aelemw'];
   /* the name operands that are picked from a list, as the reference editor offers them (Mode of FAL / FSC, the class,
@@ -1848,7 +1860,7 @@
   const PICKK = Object.keys(PICKS);
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
-  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || (d => (d && d.family === 'string' ? strMems(d.len) : d && d.members))((S.p.dataTypes || []).find(d => U(d.name) === U(ty))) || null;
+  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || (E.App.aoiMembers && E.App.aoiMembers(ty)) || (d => (d && d.family === 'string' ? strMems(d.len) : d && d.members))((S.p.dataTypes || []).find(d => U(d.name) === U(ty))) || null;
   const NBITS = { SINT: 8, INT: 16, DINT: 32, LINT: 64 };
   /* the data type of a tag address, as the reference reads it: Name[Element].Member.Bit, or Location:Slot:Type.Member.Bit
      for the I/O tags of a module; null when the address names nothing in the project */
@@ -2022,7 +2034,7 @@
     const r = (S.prefs.recent || []).filter(x => !list.some(y => U(y) === U(x)));
     S.prefs.recent = list.concat(r).slice(0, RECENT_MAX); savePrefs();
   }
-  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER', control: 'CONTROL', str: 'STRING', strw: 'STRING', rtag: 'REAL', msg: 'MESSAGE' })[kind] || 'DINT';
+  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER', control: 'CONTROL', str: 'STRING', strw: 'STRING', rtag: 'REAL', msg: 'MESSAGE' })[kind] || (kind === 'aoi' && PCTX && INSTR[PCTX.mn] && INSTR[PCTX.mn].aoi ? INSTR[PCTX.mn].disp : /^a[io](BOOL|SINT|INT|REAL)$/.test(kind) ? kind.slice(2) : 'DINT');
   function openEditor(ri, path, focusIdx) {
     const elems = parsed(ri), e = elems && getEl(elems, path);
     if (!e || e.t === 'BR') return;
@@ -2305,7 +2317,7 @@
   }
   function newTag(o) {
     const P = curProg();
-    const types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
+    const types = tagTypes();
     const edit0 = o.tag;
     const t0 = edit0 || { name: o.name || '', type: defaultType(o.kind), desc: '' };
     dialog({
@@ -2382,7 +2394,7 @@
   }
   /* the data types a tag can have (atomic, predefined, user-defined), and the Data Type text of the reference:
      DINT, DINT[10], DINT[4,5], DINT[2,3,4] → { type, dim } or the reason it is not one */
-  const tagTypes = () => E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
+  const tagTypes = () => E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name), (S.p.aois || []).map(a => a.name));
   function parseDataType(txt) {
     const m = /^\s*([A-Za-z_]\w*)\s*(?:\[\s*([^\]]*)\])?\s*$/.exec(String(txt || ''));
     if (!m) return 'Data Type: type a data type, e.g. DINT, DINT[10] or DINT[4,5] (or use … to select it).';
@@ -7056,7 +7068,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   function liveSig() {
     if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
-    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t].ctl != null) { try { const s = e.x[INSTR[e.t].ctl].obj(); parts.push(s.POS, s.LEN, s.EN, s.EU, s.DN, s.EM, s.ER, s.FLAGS); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
+    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t].ctl != null) { try { const s = e.x[INSTR[e.t].ctl].obj(); parts.push(s.POS, s.LEN, s.EN, s.EU, s.DN, s.EM, s.ER, INSTR[e.t].bvx ? JSON.stringify(INSTR[e.t].bvx(s)) : ''); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
     ladPart = parts.join(',');
     const io = [];
     ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
@@ -7242,6 +7254,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
         S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
+        if (E.App.aoiOrg && E.App.aoiOrg(k, dbl)) return;
         if (dbl && dtOpen(k)) return;
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
@@ -7494,6 +7507,6 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   // for the parts of the app in their own files (js/msg.js): the dialog and the project helpers
-  E.App.ui = { dialog, closeLayer, esc, ic, edit, tagFor, curProg, allProgs, offline, editable, tabbed, bindTabs, kv, toast, newTag, addrType };
+  E.App.ui = { dialog, closeLayer, esc, ic, edit, tagFor, curProg, allProgs, offline, editable, tabbed, bindTabs, kv, toast, newTag, addrType, openRoutine, confirmDlg, selectDataType, parseDataType, reverify, render, changed };
   start();
 })();
