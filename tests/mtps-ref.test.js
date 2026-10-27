@@ -446,5 +446,18 @@ console.log('Trigonometric and advanced math: the examples of 1756-RM018A (chapt
   check('the math status flags follow the result: TAN(2.0943952) < 0 sets S:N', (() => { const t = run({ tags: [T('R', 'REAL')], rungs: ['TAN(2.0943952,R);'] }); scans(t, 1); return t.S.N === 1 && t.S.Z === 0; })());
 }
 
+console.log('Math conversions: the examples of 1756-RM018A (chapter 16)');
+{
+  const c = run({ tags: [T('Src', 'DINT', { value: 22 }), T('Bcd', 'DINT'), T('Va', 'DINT', { value: 34 }), T('Res1', 'DINT'), T('Big', 'DINT', { value: 0x1234567E }), T('Dec', 'DINT'),
+    T('Deg_S', 'REAL', { value: 15 }), T('Deg_D', 'REAL'), T('Fv', 'REAL', { value: 789.55554 }), T('Ft', 'REAL'), T('Rad_D', 'REAL')], rungs: ['TOD(Src,Bcd);', 'FRD(Va,Res1);', 'FRD(Big,Dec);', 'DEG(Deg_S,Deg_D);', 'TRN(Fv,Ft);', 'RAD(0.0,Rad_D);'] });
+  scans(c, 1);
+  check('TOD: Source 22 gives 34 (16#22)', c.read('Bcd') === 34);
+  check('FRD: Source 34 (16#22) gives 22', c.read('Res1') === 22);
+  check('FRD: 16#1234_567E gives 12345684 (a digit over 9 is used as it is)', c.read('Dec') === 12345684);
+  near('DEG: 15.0 gives 859.4367', c.read('Deg_D'), 859.4367);
+  check('TRN: 789.55554 gives 789.0', c.read('Ft') === 789);
+  check('RAD: 0.0 gives 0.0, S:Z set', c.read('Rad_D') === 0 && c.S.Z === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

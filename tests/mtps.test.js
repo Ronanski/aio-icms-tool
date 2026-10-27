@@ -906,5 +906,26 @@ console.log('Wave 2 (C): trigonometric and advanced math (1756-RM003 / -RM018A c
   check('CPT knows TAN ASN ACS ATN', Math.abs(e.read('R') - (Math.tan(0.5) + Math.PI / 2 + Math.PI / 4)) < 1e-5, e.read('R'));
 }
 
+console.log('Wave 2 (C): math conversions DEG RAD TOD FRD TRN (1756-RM003 / -RM018A chapter 16)');
+{
+  const INS = MTPS.INSTR;
+  check('DEG RAD TOD FRD TRN are in Math Conversions, outputs with Source / Dest', ['DEG', 'RAD', 'TOD', 'FRD', 'TRN'].every(m => INS[m].grp === 'Math Conversions' && INS[m].out && MTPS.OPN[m].join() === 'Source,Dest'));
+  const tags = [T('R', 'REAL', { value: 2.5 }), T('D', 'DINT'), T('I', 'INT'), T('S', 'SINT'), T('Rd', 'REAL')];
+  check('verify: TOD and FRD take integers only (a REAL Source or Dest is refused)', MTPS.verify(proj({ tags, rungs: ['TOD(R,D);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['FRD(D,Rd);'] })).errors.length === 1);
+  check('verify: TRN takes a REAL Source (a DINT tag is refused, an immediate is fine)', MTPS.verify(proj({ tags, rungs: ['TRN(D,I);'] })).errors.length === 1 && MTPS.verify(proj({ tags, rungs: ['TRN(3.7,D);'] })).errors.length === 0);
+  const c = run({ tags, rungs: ['TOD(-5,D);'] });
+  c.scan(10);
+  check('TOD of a negative Source: 0, S:V and a minor fault (4/4)', c.read('D') === 0 && c.S.V === 1 && c.minors.some(m => m.type === 4 && m.code === 4));
+  const o = run({ tags, rungs: ['TOD(100000000,D);', 'TOD(10000,I);', 'TOD(100,S);'] });
+  o.scan(10);
+  eq('TOD too large for Dest: all 9s (16#9999_9999 DINT, 16#9999 INT, 16#99 SINT)', [o.read('D') >>> 0, o.read('I') & 0xFFFF, o.read('S') & 0xFF], [0x99999999, 0x9999, 0x99]);
+  const t = run({ tags, rungs: ['TRN(-2.7,D);', 'TRN(R,I);', 'RAD(180,Rd);'] });
+  t.scan(10);
+  eq('TRN does not round (-2.7 -> -2, 2.5 -> 2); RAD(180) = pi', [t.read('D'), t.read('I'), +t.read('Rd').toFixed(5)], [-2, 2, 3.14159]);
+  const e = run({ tags, rungs: ['CPT(D,FRD(16#22)+TOD(12)+TRN(R));'] });
+  e.scan(10);
+  check('CPT knows FRD, TOD and TRN', e.read('D') === 22 + 0x12 + 2, e.read('D'));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

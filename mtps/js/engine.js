@@ -386,7 +386,8 @@
      Integers only: / and MOD truncate as in the controller; any REAL operand or a float function gives a REAL. */
   const FUNCS = { SQR: v => Math.sqrt(Math.abs(v)), ABS: Math.abs, NEG: v => -v, SIN: Math.sin, COS: Math.cos, LN: Math.log, LOG: Math.log10,
     // the trigonometric functions and their v36+ names (1756-RM003 / -RM018A, FAL and CPT order of operation)
-    TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, ASIN: Math.asin, ACOS: Math.acos, ATAN: Math.atan, DEG: v => v * 180 / Math.PI, RAD: v => v * Math.PI / 180 };
+    TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, ASIN: Math.asin, ACOS: Math.acos, ATAN: Math.atan, DEG: v => v * 180 / Math.PI, RAD: v => v * Math.PI / 180,
+    TRN: Math.trunc, TRUNC: Math.trunc, TOD: v => toBCD(v, 'DINT').v, TO_BCD: v => toBCD(v, 'DINT').v, FRD: v => fromBCD(v, 'DINT'), BCD_TO: v => fromBCD(v, 'DINT') };
   const REALF = ['SQR', 'SIN', 'COS', 'LN', 'LOG', 'TAN', 'ASN', 'ACS', 'ATN', 'ASIN', 'ACOS', 'ATAN', 'DEG', 'RAD'];
   const LEVELS = [['OR'], ['XOR'], ['AND'], ['=', '<>', '<', '<=', '>', '>='], ['+', '-'], ['*', '/', 'MOD']];
   function compileExpr(M, prog, src) {
@@ -563,7 +564,7 @@
     if (XNAME[kind]) return XNAME[kind](s, M, P);
     const c = parseNumber(s);
     if (c) {
-      if (kind === 'num' || kind === 'fsrc' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
+      if (kind === 'num' || kind === 'fsrc' || kind === 'real' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
       return kind === 'int' ? BAD_TYPE : 'Immediate value not allowed';
     }
     const r = ref(M, P, s);
@@ -811,6 +812,7 @@
   Object.assign(OPN, {
     SIN: ['Source', 'Dest'], COS: ['Source', 'Dest'], TAN: ['Source', 'Dest'], ASN: ['Source', 'Dest'], ACS: ['Source', 'Dest'], ATN: ['Source', 'Dest'],
     LN: ['Source', 'Dest'], LOG: ['Source', 'Dest'], XPY: ['Source X', 'Source Y', 'Dest'],
+    DEG: ['Source', 'Dest'], RAD: ['Source', 'Dest'], TOD: ['Source', 'Dest'], FRD: ['Source', 'Dest'], TRN: ['Source', 'Dest'],
   });
   Object.assign(INSTR, {
     // Trigonometric (chapter 14) and Advanced Math (chapter 15): Dest = f(Source) while the rung is true
@@ -819,6 +821,10 @@
     ACS: I('box', 'Trig Functions', 'Arc Cosine', 'num dest', { out: true }), ATN: I('box', 'Trig Functions', 'Arc Tangent', 'num dest', { out: true }),
     LN: I('box', 'Advanced Math', 'Natural Log', 'num dest', { out: true }), LOG: I('box', 'Advanced Math', 'Log Base 10', 'num dest', { out: true }),
     XPY: I('box', 'Advanced Math', 'X To The Power Of Y', 'num num dest', { out: true }),
+    // Math Conversion (chapter 16)
+    DEG: I('box', 'Math Conversions', 'Degrees', 'num dest', { out: true }), RAD: I('box', 'Math Conversions', 'Radians', 'num dest', { out: true }),
+    TOD: I('box', 'Math Conversions', 'Convert To BCD', 'int idest', { out: true }), FRD: I('box', 'Math Conversions', 'Convert To Integer', 'int idest', { out: true }),
+    TRN: I('box', 'Math Conversions', 'Truncate', 'real dest', { out: true }),
   });
   /* Dest = f(Source), always computed as a floating point value, then stored in the type of Dest (rounded for an
      integer); the math status flags follow the stored value. LN and LOG of a Source ≤ 0 and XPY of a negative X with
@@ -826,6 +832,36 @@
   const MATH1 = { SIN: Math.sin, COS: Math.cos, TAN: Math.tan, ASN: Math.asin, ACS: Math.acos, ATN: Math.atan, LN: Math.log, LOG: Math.log10 };
   for (const t in MATH1) XEL[t] = function (e, x, p) { if (p) { const r = MATH1[t](x[0].get()); this.put(x[1], r, (t === 'LN' || t === 'LOG') && !isFinite(r)); } e.v = p; return p; };
   XEL.XPY = function (e, x, p) { if (p) { const r = Math.pow(x[0].get(), x[1].get()); this.put(x[2], r, !isFinite(r)); } e.v = p; return p; };
+  // DEG: Source * 180 / pi; RAD: Source * pi / 180 (RM018A: 57.29578 and 0.017453292)
+  XEL.DEG = function (e, x, p) { if (p) this.put(x[1], x[0].get() * 180 / Math.PI); e.v = p; return p; };
+  XEL.RAD = function (e, x, p) { if (p) this.put(x[1], x[0].get() * Math.PI / 180); e.v = p; return p; };
+  // TRN: a REAL Source (immediate or tag) without its fractional part, not rounded
+  XKIND.real = r => (r.type === 'REAL' && !r.dim ? r : BAD_TYPE);
+  XEL.TRN = function (e, x, p) { if (p) this.put(x[1], Math.trunc(x[0].get())); e.v = p; return p; };
+  /* TOD (TO_BCD): 0 to 99,999,999 in 4-bit BCD digits. A negative Source gives 0, a Source too large for Dest (more
+     than 99,999,999; 9,999 for an INT, 99 for a SINT) all 9s; both set S:V (minor fault type 4, code 4). FRD (BCD_TO):
+     Dest = the sum of each 4-bit digit of the Source times its power of 10, a digit over 9 kept as it is
+     (16#1234_567E gives 12345684); a SINT or INT Source gives its 8 or 16 bits */
+  const NIB = { SINT: 2, INT: 4, DINT: 8 };
+  function toBCD(v, type) {
+    v = Math.trunc(v);
+    const n = NIB[type] || 8, max = Math.pow(10, n) - 1, all9 = parseInt('9'.repeat(n), 16);
+    if (v < 0) return { v: 0, ov: true };
+    if (v > max) return { v: all9 | 0, ov: true };
+    let r = 0;
+    for (let k = 0; v > 0; k++, v = Math.floor(v / 10)) r += (v % 10) * Math.pow(16, k);
+    return { v: r | 0, ov: false };
+  }
+  function fromBCD(v, type) {
+    let u = i32(v) >>> 0, r = 0;
+    const n = NIB[type] || 8;
+    for (let k = 0; k < n; k++, u = Math.floor(u / 16)) r += (u % 16) * Math.pow(10, k);
+    return r;
+  }
+  // an unsigned bit pattern of a SINT / INT / DINT as the signed value that type stores (16#9999 in an INT: -26215)
+  const signed = (v, t) => (t === 'SINT' ? (v << 24) >> 24 : t === 'INT' ? (v << 16) >> 16 : v | 0);
+  XEL.TOD = function (e, x, p) { if (p) { const r = toBCD(x[0].get(), x[1].type); this.put(x[1], signed(r.v, x[1].type), r.ov); } e.v = p; return p; };
+  XEL.FRD = function (e, x, p) { if (p) this.put(x[1], fromBCD(x[0].get(), x[0] instanceof Const ? 'DINT' : x[0].type)); e.v = p; return p; };
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

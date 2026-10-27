@@ -13,14 +13,17 @@ module.exports = async function w2c({ browser, URL, check }) {
     ['Trig Functions', 'SIN', ['Ang', 'R1']], ['Trig Functions', 'COS', ['Ang', 'R2']], ['Trig Functions', 'TAN', ['Ang', 'R3']],
     ['Trig Functions', 'ASN', ['Half', 'R4']], ['Trig Functions', 'ACS', ['Half', 'R5']], ['Trig Functions', 'ATN', ['One', 'R6']],
     ['Advanced Math', 'LN', ['Five', 'R7']], ['Advanced Math', 'LOG', ['Hund', 'R8']], ['Advanced Math', 'XPY', ['Two', '10', 'D1']],
+    ['Math Conversions', 'DEG', ['One', 'R9']], ['Math Conversions', 'RAD', ['Hund', 'R10']], ['Math Conversions', 'TOD', ['N22', 'D2']],
+    ['Math Conversions', 'FRD', ['D2', 'D3']], ['Math Conversions', 'TRN', ['F57', 'D4']],
   ];
   // the values in Run (the manual's own examples where it gives one)
-  const WANT = { R1: Math.sin(0.5), R2: Math.cos(0.5), R3: Math.tan(0.5), R4: Math.asin(0.5), R5: Math.acos(0.5), R6: Math.atan(1), R7: 1.609438, R8: 2, D1: 1024 };
+  const WANT = { R1: Math.sin(0.5), R2: Math.cos(0.5), R3: Math.tan(0.5), R4: Math.asin(0.5), R5: Math.acos(0.5), R6: Math.atan(1), R7: 1.609438, R8: 2, D1: 1024,
+    R9: 180 / Math.PI, R10: Math.PI * 100 / 180, D2: 0x22, D3: 22, D4: 5 };
   const project = () => {
     const A = MTPS.App, p = A.blank('Wave2C'), T = (name, type, value, dim) => p.tags.push(Object.assign({ name, type }, value != null ? { value } : {}, dim ? { dim } : {}));
     T('Ang', 'REAL', 0.5); T('Half', 'REAL', 0.5); T('One', 'REAL', 1); T('Five', 'REAL', 5); T('Hund', 'REAL', 100); T('Two', 'DINT', 2);
-    for (let k = 1; k <= 8; k++) T('R' + k, 'REAL');
-    T('D1', 'DINT');
+    for (let k = 1; k <= 10; k++) T('R' + k, 'REAL');
+    T('D1', 'DINT'); T('N22', 'DINT', 22); T('D2', 'DINT'); T('D3', 'DINT'); T('D4', 'DINT'); T('F57', 'REAL', 5.7);
     A.openProject(p);
   };
   const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 800, height: 1280 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
@@ -79,13 +82,16 @@ module.exports = async function w2c({ browser, URL, check }) {
       const svg = await pg.$eval('#ladwrap svg', s => s.textContent).catch(() => '');
       check('desktop: the SIN box shows its live Dest value online', svg.includes('SIN') && svg.includes('0.479426'), svg.slice(0, 200));
       const tabs = await pg.$$eval('.itabs [data-tab]', x => x.map(y => y.dataset.tab).join(','));
-      check('desktop: the toolbar has the Trig Functions and Advanced Math tabs', /Trig Functions,Advanced Math/.test(tabs), tabs);
+      check('desktop: the toolbar has the Trig Functions, Advanced Math and Math Conversions tabs', /Trig Functions,Advanced Math,Math Conversions/.test(tabs), tabs);
       await pg.evaluate(() => MTPS.App.select({ ri: 0, path: [0] })); await pg.keyboard.press('F1'); await pg.waitForTimeout(150);
       const ih = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
       check('Instruction Help for SIN: Trigonometric Instructions, radians, the manual example and the status flags', ih.includes('Sine (SIN)') && ih.includes('Trigonometric Instructions') && ih.includes('radians') && ih.includes('0.70710677') && ih.includes('S:Z'), ih.slice(0, 300));
       await pg.click('#layer [data-ih="XPY"]'); await pg.waitForTimeout(80);
       const xp = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
       check('Instruction Help for XPY: Advanced Math Instructions, Source X / Source Y, EXPT in v36', xp.includes('X To The Power Of Y (XPY)') && xp.includes('Advanced Math Instructions') && xp.includes('Source X') && xp.includes('EXPT'));
+      await pg.click('#layer [data-ih="TOD"]'); await pg.waitForTimeout(80);
+      const td = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+      check('Instruction Help for TOD: Math Conversion Instructions, 0 to 99,999,999, all 9s, TO_BCD in v36', td.includes('Convert To BCD (TOD)') && td.includes('Math Conversion Instructions') && td.includes('99,999,999') && td.includes('16#9999') && td.includes('TO_BCD'));
       await pg.screenshot({ path: `${SHOTS}/after-help-desktop.png` }).catch(() => {});
       await pg.keyboard.press('Escape');
     } else await pg.screenshot({ path: `${SHOTS}/after-ladder-${lay.n}.png` }).catch(() => {});
