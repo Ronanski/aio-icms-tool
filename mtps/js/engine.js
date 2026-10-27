@@ -813,6 +813,7 @@
     };
     aliases(M.tags, null);
     M.programs.forEach(P => aliases(P.tags, P));
+    pcBuild(pj, M, ctlErr, size, cslot);
 
     for (const P of M.programs) for (const R of P.routines.values()) {
       const want = !filter || ((!filter.program || U(filter.program) === U(P.name)) && (!filter.routine || U(filter.routine) === U(R.name)));
@@ -857,6 +858,58 @@
     out.lines.push(`Complete - ${out.errors.length} error(s), ${out.warnings.length} warning(s)`);
     out.model = M;
     return out;
+  }
+  /* produced and consumed tags (1756-PM011, LGEM5K-GR016M chapter 10). The project keeps the producing controllers of
+     its I/O configuration in rack.ctls [{ slot, name, desc }]; a tag has prod { max } (Produced: Max Consumers 1 to
+     255) or cons { producer, remote, rpi } (Consumed: Producer, Remote Data, RPI 0.196 to 536870.911 ms for
+     ControlLogix). Both are controller scope only; a standard produced / consumed tag is at most 500 bytes, and a
+     produced tag of less than 32 bits does not verify (v37 help, Tag Editor columns). */
+  const PCRPI = [0.196, 536870.911];
+  const PCTEXT = {
+    '16#0204': 'Connection Request Error: Connection request timed out. The producing controller does not answer: no controller in that slot, or it is turned off.',
+    '16#0117': 'Connection Request Error: Invalid produced or consumed application path. The producing controller has no produced tag of the Remote Data name (no project, no such tag, or the tag is not produced).',
+    '16#0109': 'Connection Request Error: Invalid connection size. The consumed tag does not have the data type, the array size and the layout of the produced tag.',
+    '16#011A': 'Connection Request Error: Target object out of connections. The produced tag already has its Max Consumers.',
+  };
+  // the layout of a data type, to match a consumed tag with its produced tag ("including user-defined data type layout")
+  const pcSig = (M, ty) => { const d = M.types.get(U(ty)); return d ? JSON.stringify(d.members.map(m => [U(m.name), U(m.type), m.dim || 0])) : U(ty); };
+  function pcBuild(pj, M, ctlErr, size, cslot) {
+    M.peers = new Map(); M.prods = new Map(); M.cons = [];
+    const rack = pj.rack || {}, names = new Set();
+    for (const c of rack.ctls || []) {
+      if (!validName(c.name) || names.has(U(c.name))) { ctlErr(`Invalid or repeated controller name '${c.name}' in the I/O configuration`); continue; }
+      if (!(Number.isInteger(c.slot) && c.slot >= 0 && c.slot < size) || c.slot === cslot || M.mods.has(c.slot) || M.peers.has(c.slot)) { ctlErr(`Controller '${c.name}': slot ${c.slot} is not a free slot of the ${size}-slot rack`); continue; }
+      names.add(U(c.name)); M.peers.set(c.slot, { slot: c.slot, name: c.name });
+    }
+    for (const task of pj.tasks || []) for (const pg of task.programs || []) for (const t of pg.tags || []) if (t.prod || t.cons) ctlErr(`Tag '${t.name}' in program '${pg.name}': a ${t.prod ? 'produced' : 'consumed'} tag must be a controller tag`);
+    const bytes = rec => { const l = layout(M.types, rec.type, new Map()).size; return U(rec.type) === 'BOOL' && rec.dim ? Math.ceil(rec.dim / 32) * 4 : l * Math.max(1, rec.dim || 0); };
+    for (const t of pj.tags || []) {
+      if (!t.prod && !t.cons) continue;
+      const rec = M.tags.get(U(t.name));
+      if (!rec || rec.name !== t.name) continue;
+      const what = t.prod ? 'produced' : 'consumed';
+      if (rec.alias) { ctlErr(`Tag '${t.name}': an alias tag cannot be ${what}`); continue; }
+      const n = bytes(rec);
+      if (n > 500) { ctlErr(`Tag '${t.name}': a ${what} tag is at most 500 bytes (${n} bytes)`); continue; }
+      if (t.prod) {
+        const max = Number(t.prod.max == null ? 1 : t.prod.max);
+        if (!(Number.isInteger(max) && max >= 1 && max <= 255)) { ctlErr(`Tag '${t.name}': Max Consumers must be 1 to 255`); continue; }
+        if (n < 4) { ctlErr(`Tag '${t.name}': the tag is produced, but the data type is less than 32 bits in size`); continue; }
+        rec.prod = { max }; rec.bytes = n; rec.sig = pcSig(M, rec.type); M.prods.set(U(t.name), rec);
+        continue;
+      }
+      const c = t.cons, peer = [...M.peers.values()].find(x => U(x.name) === U(c.producer || ''));
+      if (!peer) { ctlErr(`Tag '${t.name}': the producer '${c.producer || ''}' is not a controller in the I/O configuration`); continue; }
+      if (!validName(c.remote)) { ctlErr(`Tag '${t.name}': Remote Data '${c.remote || ''}' is not a tag name`); continue; }
+      const rpi = c.rpi == null ? 20 : +c.rpi;
+      if (!(rpi >= PCRPI[0] && rpi <= PCRPI[1])) { ctlErr(`Tag '${t.name}': RPI ${c.rpi} ms is not in the range ${PCRPI[0]} to ${PCRPI[1]} ms`); continue; }
+      rec.cons = { producer: peer.name, slot: peer.slot, remote: c.remote, rpi };
+      M.cons.push({ name: rec.name, u: U(rec.name), type: rec.type, dim: rec.dim, size: n, sig: pcSig(M, rec.type), slot: peer.slot, remote: c.remote, rpi });
+    }
+    // Map PLC/SLC Messages (1756-RM094, Map Tags): a file number (not 0, 1, 2) to a controller array of INT, DINT or REAL
+    const pm = pj.plcMap || {}, arr = (n, ok) => { const r = M.tags.get(U(n || '')); return !!r && !r.alias && r.dim > 0 && (!ok || ok.includes(U(r.type))); };
+    for (const x of pm.files || []) if (!(Number.isInteger(x.file) && x.file >= 3 && x.file <= 999) || !arr(x.tag, ['INT', 'DINT', 'REAL'])) ctlErr(`PLC/SLC mapping: file ${x.file} to '${x.tag}': map files 3 to 999 to a controller array tag of INT, DINT or REAL`);
+    if (pm.plc2 && !arr(pm.plc2)) ctlErr(`PLC/SLC mapping: PLC 2 Mapping '${pm.plc2}' is not a controller array tag`);
   }
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {
@@ -2162,8 +2215,18 @@
       }
       return { state: 'Running', code: null, text: '' };
     }
-    /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted */
-    ioOk() { return !this.M || ![...this.M.mods.values()].some(m => !m.inhibit && this.pulled.has(m.slot)); }
+    /* I/O LED: OK, or Not Responding when a card that is not inhibited has faulted, or a producer's connection */
+    ioOk() { return (!this.M || ![...this.M.mods.values()].some(m => !m.inhibit && this.pulled.has(m.slot))) && !(this.pcCodes && this.pcCodes.size); }
+    /* a producing controller of the I/O configuration, as its Module Properties (Connection tab) shows it */
+    peerStatus(slot) {
+      const p = this.M && this.M.peers && this.M.peers.get(slot);
+      if (!p) return { state: 'Not in the controller', code: null, text: 'The project in the controller has no controller in this slot. Download first.' };
+      const code = this.pcCodes && this.pcCodes.get(slot);
+      if (code) return { state: 'Faulted', code, text: PCTEXT[code] };
+      return this.M.cons.some(k => k.slot === slot) ? { state: 'Running', code: null, text: '' } : { state: 'Running', code: null, text: 'No consumed tag uses this controller: no connection.' };
+    }
+    /* a consumed tag: connected to its producer, the producer in Run mode, the fault code (Consumed Tag Connection, Status) */
+    pcState(name) { const st = this.pcSt && this.pcSt.get(U(name)); return st ? { conn: st.conn, run: st.run, code: st.code } : null; }
     /* Upload: the controller's copy of the project, with the tag values it has now */
     upload() {
       if (!this.copy) return null;
@@ -2271,6 +2334,9 @@
       if (o.desc != null) m.desc = String(o.desc);
       if (o.ip != null) m.ip = String(o.ip);
       if (o.mem != null && +o.mem > 0) m.mem = Math.floor(+o.mem);
+      // a controller added the FactoryTalk Logix Echo way (9310-GR001): its type and firmware revision, subnet mask
+      if (o.echo !== undefined) { if (o.echo && o.echo.type) m.echo = { type: String(o.echo.type), rev: String(o.echo.rev) }; else delete m.echo; }
+      if (o.mask != null) { if (o.mask) m.mask = String(o.mask); else delete m.mask; }
       if (o.sot != null) m.ctl.setSpeed(o.sot);
       if (o.on != null) m.ctl.power(o.on);
       this.emit('controller');
@@ -2298,9 +2364,41 @@
         if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
       }
     }
-    /* time goes by: inputs into every controller, then its scans */
+    /* time goes by: inputs into every controller, its consumed tags, then its scans */
     advance(ms) {
-      for (const m of this.controllers()) { const c = m.ctl; if (!c.powered) continue; if (c.M) this.exchange(c); c.advance(ms); }
+      for (const m of this.controllers()) { const c = m.ctl; if (!c.powered) continue; if (c.M) { this.exchange(c); this.consume(c, ms); } c.advance(ms); }
+    }
+    /* produced and consumed tags between the controllers of this chassis (1756-PM011, LGEM5K-GR016M chapter 10): the
+       connection of a consumed tag to the produced tag of the controller in its producer's slot, or the code it fails
+       with: 16#0204 no controller there (or turned off), 16#0117 no produced tag of that name, 16#0109 another data
+       type or size, 16#011A more consumers than Max Consumers (the lowest slots connect first). A producer that is
+       not in Run still sends its data; Producer in Run Mode shows it. */
+    produce(c, k) {
+      const m = this.mods.get(k.slot);
+      if (!m || !m.ctl || !m.ctl.powered || m.ctl === c) return { code: '16#0204' };
+      const p = m.ctl, pt = p.M && p.M.prods && p.M.prods.get(U(k.remote));
+      if (!pt) return { code: '16#0117' };
+      if (pt.sig !== k.sig || (pt.dim || 0) !== (k.dim || 0) || pt.bytes !== k.size) return { code: '16#0109' };
+      let n = 0;
+      for (const o of this.controllers()) { if (o.slot >= c.slot) break; const q = o.ctl.powered && o.ctl.M && o.ctl.M.cons; if (q && o.ctl !== p && q.some(x => x.slot === k.slot && U(x.remote) === U(k.remote))) n++; }
+      if (n >= pt.prod.max) return { code: '16#011A' };
+      return { code: null, run: p.running, v: p.M.vals[pt.name] };
+    }
+    // each consumed tag takes the produced value once every RPI; a faulted connection stops every tag of that producer
+    consume(c, ms) {
+      const M = c.M;
+      if (c.pcM !== M) { c.pcM = M; c.pcSt = new Map(); c.pcCodes = new Map(); }
+      if (!M.cons || !M.cons.length) return;
+      const res = M.cons.map(k => this.produce(c, k)), codes = new Map();
+      M.cons.forEach((k, i) => { if (res[i].code && !codes.has(k.slot)) codes.set(k.slot, res[i].code); });
+      M.cons.forEach((k, i) => {
+        let st = c.pcSt.get(k.u); if (!st) { st = { t: Infinity }; c.pcSt.set(k.u, st); }
+        st.code = codes.get(k.slot) || null; st.conn = !st.code; st.run = !st.code && !!res[i].run;
+        if (st.code) { st.t = Infinity; return; }
+        st.t += ms;
+        if (st.t >= k.rpi) { st.t = 0; M.vals[k.name] = clone(res[i].v); }
+      });
+      if (codes.size !== c.pcCodes.size || [...codes].some(([s, x]) => c.pcCodes.get(s) !== x)) { c.pcCodes = codes; c.emit('io'); }
     }
     owner(slot) {
       const m = this.mods.get(slot);
@@ -2318,7 +2416,7 @@
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field, rev: m.rev && m.rev !== REV0 ? m.rev : undefined,
-        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
+        ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, echo: m.echo || undefined, mask: m.mask || undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
         tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
@@ -2338,6 +2436,7 @@
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
+          if (x.echo && x.echo.type) m.echo = { type: String(x.echo.type), rev: String(x.echo.rev) }; if (x.mask) m.mask = String(x.mask);
           if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (x.tcfg) Object.assign(m.ctl.tcfg, x.tcfg);
           if (x.emu) m.ctl.setEmu(x.emu);

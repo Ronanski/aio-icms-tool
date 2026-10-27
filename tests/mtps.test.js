@@ -1667,5 +1667,87 @@ Cv := 0; WHILE Cv < 1 DO Cv := Cv + 1; END_WHILE;`, { tags });
   check('an online edit of an ST routine (Accept Edits) runs the new text, the tags keep their values', er.ok && ed.read('A') === 103);
 }
 
+console.log('Produced and consumed tags: verify (1756-PM011, v37 help Tag Editor columns)');
+{
+  const pj = (tags, ctls, ptags) => { const p = proj({ tags, ptags, modules: [] }); p.rack.size = 8; p.controller.slot = 2; p.rack.ctls = ctls === undefined ? [{ slot: 0, name: 'Line_A' }] : ctls; return p; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('a consumed DINT with its producer in the I/O configuration and a produced DINT verify', errs(pj([T('In_A', 'DINT', { cons: { producer: 'Line_A', remote: 'Out_A', rpi: 20 } }), T('Out_B', 'DINT', { prod: { max: 1 } })])).length === 0);
+  eq('a produced tag of less than 32 bits does not verify', errs(pj([T('P1', 'INT', { prod: { max: 1 } })])), ["Tag 'P1': the tag is produced, but the data type is less than 32 bits in size."]);
+  check('a produced SINT[4] (32 bits) and a produced user-defined type verify', errs(Object.assign(pj([T('P4', 'SINT', { dim: 4, prod: { max: 1 } }), T('PU', 'Pair', { prod: { max: 1 } })]), { dataTypes: [{ name: 'Pair', members: [{ name: 'A', type: 'DINT' }, { name: 'B', type: 'REAL' }] }] })).length === 0);
+  eq('Max Consumers is 1 to 255', errs(pj([T('P2', 'DINT', { prod: { max: 256 } })])), ["Tag 'P2': Max Consumers must be 1 to 255."]);
+  eq('a standard produced / consumed tag is at most 500 bytes', errs(pj([T('Big', 'DINT', { dim: 126, prod: { max: 1 } })])), ["Tag 'Big': a produced tag is at most 500 bytes (504 bytes)."]);
+  check('… 125 DINTs (500 bytes) are fine', errs(pj([T('Big', 'DINT', { dim: 125, prod: { max: 1 } })])).length === 0);
+  eq('produced and consumed tags are controller tags only', errs(pj([], undefined, [T('Q', 'DINT', { prod: { max: 1 } })])), ["Tag 'Q' in program 'MainProgram': a produced tag must be a controller tag."]);
+  eq('the producer must be a controller of the I/O configuration', errs(pj([T('C1', 'DINT', { cons: { producer: 'Nobody', remote: 'X', rpi: 20 } })])), ["Tag 'C1': the producer 'Nobody' is not a controller in the I/O configuration."]);
+  eq('the RPI of a consumed tag is 0.196 to 536870.911 ms (ControlLogix)', errs(pj([T('C2', 'DINT', { cons: { producer: 'Line_A', remote: 'X', rpi: 0.1 } })])), ["Tag 'C2': RPI 0.1 ms is not in the range 0.196 to 536870.911 ms."]);
+  eq('Remote Data is a tag name', errs(pj([T('C3', 'DINT', { cons: { producer: 'Line_A', remote: '1x', rpi: 20 } })])), ["Tag 'C3': Remote Data '1x' is not a tag name."]);
+  eq('the producer needs a free slot (not the controller\'s)', errs(pj([], [{ slot: 2, name: 'Line_A' }])), ["Controller 'Line_A': slot 2 is not a free slot of the 8-slot rack."]);
+  const c = new MTPS.Controller(); c.download(pj([T('In_A', 'DINT', { cons: { producer: 'Line_A', remote: 'Out_A', rpi: 20 } })]));
+  check('the model knows the producers (by slot) and the consumed tags', c.M.peers.get(0).name === 'Line_A' && c.M.cons.length === 1 && c.M.cons[0].remote === 'Out_A' && c.M.cons[0].slot === 0);
+}
+
+console.log('Map PLC/SLC Messages: verify (1756-RM094, Map Tags)');
+{
+  const pm = map => Object.assign(proj({ tags: [T('N7', 'INT', { dim: 10 }), T('L9', 'DINT', { dim: 4 }), T('One', 'DINT'), T('Tm', 'TIMER', { dim: 2 })] }), { plcMap: map });
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('files 3 to 999 mapped to controller arrays of INT, DINT or REAL verify', errs(pm({ files: [{ file: 7, tag: 'N7' }, { file: 9, tag: 'L9' }], plc2: 'N7' })).length === 0);
+  check('file 2 (the Status file of a PLC-5), a tag that is not an array and an array of TIMER do not', errs(pm({ files: [{ file: 2, tag: 'N7' }, { file: 10, tag: 'One' }, { file: 11, tag: 'Tm' }] })).length === 3);
+  check('a mapped tag that was deleted shows an error', /PLC\/SLC mapping: file 12 to 'Gone'/.test(errs(pm({ files: [{ file: 12, tag: 'Gone' }] }))[0] || ''));
+}
+
+console.log('Produced and consumed tags between two emulated controllers in the chassis (LGEM5K-GR016M ch. 10, 1756-PM011)');
+{
+  const pj = (name, slot, o) => { const p = proj({ modules: [], tags: o.tags, rungs: o.rungs }); p.controller.name = name; p.controller.slot = slot; p.rack.size = 8; if (o.ctls) p.rack.ctls = o.ctls; return p; };
+  const ch = new MTPS.Chassis(8);
+  ch.insert(0, 'PLC-CPU', 'Line_A'); ch.insert(2, 'PLC-CPU', 'Line_B');
+  const A = ch.controller(0), B = ch.controller(2);
+  const ra = A.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] }));
+  const rb = B.download(pj('Line_B', 2, { tags: [T('Count_In', 'DINT', { cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 50 } }), T('Pair_In', 'REAL', { dim: 2, cons: { producer: 'Line_A', remote: 'Pair_Out', rpi: 50 } }), T('Copy', 'DINT')], rungs: ['MOV(Count_In,Copy);'], ctls: [{ slot: 0, name: 'Line_A' }] }));
+  check('the producer (slot 0) and the consumer (slot 2, Line_A in its I/O configuration) download', ra.ok && rb.ok, ra.lines.concat(rb.lines).join(' | '));
+  A.setMode('remrun'); B.setMode('remrun');
+  A.write('Count_Out', 5); A.write('Pair_Out[1]', 2.5); ch.advance(10);
+  check('the consumed tags take the produced values when the connection opens', B.read('Count_In') === 5 && B.read('Pair_In[1]') === 2.5);
+  const cs = B.pcState('Count_In');
+  check('Status: Connected to Producer and Producer in Run Mode', cs.conn === true && cs.run === true && cs.code === null);
+  ch.advance(10);
+  check('the consumer\'s logic uses the consumed value (MOV to Copy)', B.read('Copy') === 5);
+  A.write('Count_Out', 7); ch.advance(20);
+  const mid = B.read('Count_In'); ch.advance(30);
+  check('the data moves once every RPI (50 ms): not after 20 ms, then after 50 ms', mid === 5 && B.read('Count_In') === 7, `${mid} ${B.read('Count_In')}`);
+  A.setMode('remprog'); A.write('Count_Out', 9); ch.advance(60);
+  check('a producer in Program mode still sends its data; Producer in Run Mode goes off (no fault)', B.read('Count_In') === 9 && B.pcState('Count_In').run === false && B.pcState('Count_In').conn === true && B.ioOk());
+  A.setMode('remrun');
+  ch.setController(0, { on: false }); ch.advance(60);
+  check('producer turned off: connection fault 16#0204 on the producer module, I/O not responding', B.pcState('Count_In').code === '16#0204' && B.peerStatus(0).state === 'Faulted' && B.peerStatus(0).code === '16#0204' && !B.ioOk());
+  check('… the consumed tag keeps its last value', B.read('Count_In') === 9);
+  ch.setController(0, { on: true }); ch.advance(60);
+  check('producer back on: the connection is made again', B.pcState('Count_In').conn === true && B.ioOk() && B.peerStatus(0).state === 'Running');
+  ch.remove(0); ch.advance(60);
+  check('producer removed from the chassis: 16#0204', B.peerStatus(0).code === '16#0204');
+  // a producer without the tag, another data type, Max Consumers
+  ch.insert(0, 'PLC-CPU', 'Line_A'); const A2 = ch.controller(0); ch.advance(10);
+  check('a controller with no project in the producer slot: 16#0117 (no produced tag of that name)', B.peerStatus(0).code === '16#0117');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT'), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); ch.advance(60);
+  check('the Remote Data tag is not produced: 16#0117, and the other tag of that producer stops too (PM011)', B.pcState('Count_In').code === '16#0117' && B.pcState('Pair_In').code === '16#0117');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'REAL', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); ch.advance(60);
+  check('another data type (REAL produced, DINT consumed): 16#0109', B.pcState('Count_In').code === '16#0109');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 1 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); A2.setMode('remrun');
+  ch.insert(3, 'PLC-CPU', 'Line_C'); const C = ch.controller(3);
+  C.download(pj('Line_C', 3, { tags: [T('Count_In', 'DINT', { cons: { producer: 'Line_A', remote: 'Count_Out', rpi: 20 } })], ctls: [{ slot: 0, name: 'Line_A' }] })); A2.write('Count_Out', 11); ch.advance(60);
+  check('Max Consumers 1: the first consumer (slot 2) connects, the second (slot 3) gets 16#011A', B.pcState('Count_In').conn && B.read('Count_In') === 11 && C.pcState('Count_In').code === '16#011A');
+  A2.download(pj('Line_A', 0, { tags: [T('Count_Out', 'DINT', { prod: { max: 2 } }), T('Pair_Out', 'REAL', { dim: 2, prod: { max: 1 } })], rungs: ['NOP();'] })); A2.write('Count_Out', 12); ch.advance(60);
+  check('… with Max Consumers 2 both consume', B.read('Count_In') === 12 && C.read('Count_In') === 12 && C.pcState('Count_In').conn);
+}
+
+console.log('Logix Echo controller in the chassis (9310-GR001D, Add an emulated controller)');
+{
+  const ch = new MTPS.Chassis(8, 'Echo_Rack');
+  ch.insert(1, 'PLC-CPU', 'Echo_L85'); ch.setController(1, { ip: '127.0.0.2', mask: '255.255.255.0', on: false, echo: { type: 'ControlLogix 5580', rev: '37' } });
+  const m = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch.toJSON()))).module(1);
+  check('the Echo type, firmware revision and subnet mask are kept with the chassis (and the power switch)', m.echo.type === 'ControlLogix 5580' && m.echo.rev === '37' && m.mask === '255.255.255.0' && m.ip === '127.0.0.2' && !m.ctl.powered);
+  const m2 = new MTPS.Chassis(8); m2.insert(0, 'PLC-CPU', 'E');
+  check('a Logix Emulate controller has none', m2.module(0).echo === undefined && m2.toJSON().mods[0].echo === undefined);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -271,8 +271,8 @@ module.exports = async function w2b({ browser, page, URL, check }) {
   await page.click('#tshow'); await wait(120);
   check('Show offers All Tags and Configure…', JSON.stringify((await items()).map(x => x[0])) === JSON.stringify(['All Tags', 'Configure…']), JSON.stringify(await items()));
   await pick('Configure…');
-  check('Configure… opens Define Tag Filter: Filter On (<all>, Unused, Produced, Consumed, Can Be Forced, Alias), Include Data Types, Clear Filter',
-    (await dlgTitle()) === 'Define Tag Filter' && (await page.$$eval('#dfon option', o => o.map(x => x.textContent).join(','))) === '<all>,Unused,Produced,Consumed,Can Be Forced,Alias' && (await page.$('#dfclr')) !== null && (await page.$$('#dftl input')).length > 8);
+  check('Configure… opens Define Tag Filter: Filter On (<all>, Unused, Produced, Consumed, Can Be Forced, Alias, Mapped), Include Data Types, Clear Filter',
+    (await dlgTitle()) === 'Define Tag Filter' && (await page.$$eval('#dfon option', o => o.map(x => x.textContent).join(','))) === '<all>,Unused,Produced,Consumed,Can Be Forced,Alias,Mapped' && (await page.$('#dfclr')) !== null && (await page.$$('#dftl input')).length > 8);
   await page.selectOption('#dfon', 'Alias'); await clickBtn('OK');
   check('Filter On Alias: only the alias tags, Show names the filter', (await rowsTop()) === 'Start_PB,Stop_PB,OL_OK,Motor_Cmd,Run_Lamp' && (await cellText('#tshow')) === 'Alias', await rowsTop());
   await page.click('#tshow'); await wait(120); await pick('Configure…');
