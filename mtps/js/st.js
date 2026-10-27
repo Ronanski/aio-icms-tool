@@ -516,5 +516,148 @@
   }
 
   const ST = E.ST = { compile, lex, paths, KW, FN: Object.keys(FN), INSTR: Object.keys(FBD).concat([...STI]) };
-  void ST;
+
+  /* the text as HTML with its colours (keywords, comments, numbers, strings, functions and instructions, tags);
+     chip(b) gives what follows the tag that ends at offset b (a value in the monitor) */
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function colorize(src, chip) {
+    const s = String(src == null ? '' : src), L = lex(s), all = L.toks.map(t => ({ a: t.a, b: t.b, t })).concat(L.cms.map(c => ({ a: c.a, b: c.b, c: 1 }))).sort((x, y) => x.a - y.a);
+    let at = 0, h = '';
+    all.forEach((x, k) => {
+      if (x.a < at) return;
+      h += esc(s.slice(at, x.a));
+      const t = x.t, txt = esc(s.slice(x.a, x.b)), nx = all[k + 1] && all[k + 1].t;
+      const cls = x.c ? 'cm' : t.k === 'num' ? 'nu' : t.k === 'str' ? 'sr' : t.k === 'id' ? (KWS.has(t.u) ? 'kw' : nx && nx.s === '(' ? (FN[t.u] ? 'fn' : 'in') : 'tg') : '';
+      h += cls ? `<span class="${cls}">${txt}</span>` : txt;
+      at = x.b;
+      const c = chip && chip(x.b);
+      if (c) h += c;
+    });
+    return h + esc(s.slice(at));
+  }
+  ST.colorize = colorize;
+
+  /* ---------- the editor (Studio 5000 ST editor: text with line numbers and colours; Verify lists errors by line;
+     online a monitor shows the tags' values as the controller runs) ---------- */
+  if (typeof document === 'undefined') return;
+  let X0 = null, el = null, tx = null, hl = null, gut = null, bar = null, body = null, cur = null, base = null, timer = 0, editOn = false, lastSig = '', ime = false;
+  const CSS = `.stwrap{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--lad-bg)}
+.sted{flex:1;display:flex;flex-direction:column;min-height:0}
+.stbar{flex:none;display:flex;align-items:center;gap:8px;min-height:26px;padding:2px 8px;background:var(--surface-2);border-bottom:1px solid var(--border);color:var(--muted);white-space:nowrap;overflow:hidden}
+.stbar b{color:var(--text);font-weight:600}.stbar>*{flex:none}.stbar .grow{flex:1}.stbar .ell{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}.stbar .btn{min-height:22px;padding:0 8px}
+.tab .stbar,.phone .stbar{min-height:40px}.tab .stbar .btn,.phone .stbar .btn{min-height:34px}
+.stbody{flex:1;overflow:auto;display:flex;align-items:flex-start;min-height:0;overscroll-behavior:contain}
+.stgut{position:sticky;left:0;z-index:1;flex:none;padding:6px 8px 40px 6px;text-align:right;color:var(--muted);background:var(--surface-2);border-right:1px solid var(--border);user-select:none;min-height:100%;box-sizing:border-box}
+.stgut div.e{color:var(--danger);font-weight:700;background:color-mix(in srgb,var(--danger) 14%,transparent)}
+.stcode{display:grid;flex:1;min-width:0;min-height:100%}
+.stcode>pre,.stcode>textarea{grid-area:1/1;margin:0;padding:6px 10px 40px;border:0;font:inherit;line-height:inherit;white-space:pre;tab-size:4;overflow:hidden;box-sizing:border-box;min-width:100%}
+.stcode>textarea{resize:none;background:transparent;color:transparent;caret-color:var(--text);outline:none;-webkit-text-fill-color:transparent}
+.stcode>textarea::selection{background:color-mix(in srgb,var(--accent) 30%,transparent);-webkit-text-fill-color:transparent}
+.sted.mon .stcode>textarea{display:none}
+.stcode .kw{color:var(--accent-text);font-weight:700}.stcode .cm{color:var(--ok);font-style:italic}.stcode .nu,.stcode .sr{color:var(--warn-text)}
+.stcode .fn,.stcode .in{color:var(--lad-alias);font-weight:600}
+.stcode .stv{display:inline-block;margin:0 2px;padding:0 4px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--lad-online);font-weight:600;line-height:1.25}`;
+  function make() {
+    if (!document.getElementById('st-css')) { const st = document.createElement('style'); st.id = 'st-css'; st.textContent = CSS; document.head.appendChild(st); }
+    el = document.createElement('div'); el.className = 'sted';
+    el.innerHTML = `<div class="stbar"></div><div class="stbody"><div class="stgut mono" aria-hidden="true"></div><div class="stcode mono"><pre class="sthl" aria-hidden="true"></pre><textarea class="sttx" id="sttx" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Structured text"></textarea></div></div>`;
+    bar = el.querySelector('.stbar'); body = el.querySelector('.stbody'); gut = el.querySelector('.stgut'); hl = el.querySelector('pre'); tx = el.querySelector('textarea');
+    tx.addEventListener('input', () => { typed(); paint(); });
+    // a word being composed (a phone keyboard) is not cut by the redraw of an Undo step
+    tx.addEventListener('compositionstart', () => { ime = true; });
+    tx.addEventListener('compositionend', () => { ime = false; typed(); });
+    ['keyup', 'click', 'select', 'focus'].forEach(k => tx.addEventListener(k, caret));
+    tx.addEventListener('keydown', ev => {
+      // Tab puts a tab in the text; Enter keeps the indent of the line; Ctrl+S saves
+      if (ev.key === 'Tab' && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) { ev.preventDefault(); ins('\t'); }
+      else if (ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey) { const v = tx.value, a = tx.selectionStart, l0 = v.lastIndexOf('\n', a - 1) + 1, ind = /^[\t ]*/.exec(v.slice(l0, a))[0]; ev.preventDefault(); ins('\n' + ind); }
+      else if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && /^[s]$/i.test(ev.key)) { ev.preventDefault(); X0.run('save'); }
+    });
+    el.addEventListener('click', ev => { const b = ev.target.closest('[data-stm]'); if (!b) return; editOn = b.dataset.stm === 'edit'; paint(); if (editOn) tx.focus(); });
+  }
+  // insert typed text at the caret (execCommand keeps the browser's own undo of the text box)
+  function ins(t) { if (!document.execCommand || !document.execCommand('insertText', false, t)) { const a = tx.selectionStart, b = tx.selectionEnd; tx.setRangeText(t, a, b, 'end'); typed(); paint(); } }
+  const R = () => { const r = X0.curRoutine(); return r && r.type === 'ST' ? r : null; };
+  const live = () => X0.S.online && !!X0.liveRoutine();
+  // online the routine opens in the monitor (values, read only); Edit goes back to the text, Monitor to the values
+  let wasLive = false;
+  const mon = () => { const lv = live(); if (lv !== wasLive) { wasLive = lv; if (lv) editOn = false; } return lv && !editOn; };
+  /* the text goes into the project at once; after a pause it becomes one step of Undo (the project as it was before
+     the typing, then the new text) */
+  function typed() {
+    const r = R(); if (!r || !X0.editable()) return;
+    if (base == null) base = { r, st: r.st || '' };
+    r.st = tx.value;
+    clearTimeout(timer); timer = setTimeout(function later() { if (ime) timer = setTimeout(later, 600); else commit(); }, 600);
+  }
+  // the routine is still in the project (an Undo or an Open puts in another one)
+  const inProj = r => X0.S.p.tasks.some(t => t.programs.some(g => g.routines.includes(r)));
+  function commit(b = base) {
+    if (b === base) { clearTimeout(timer); timer = 0; base = null; }
+    if (!b || !inProj(b.r)) return;
+    const v = b.r.st;
+    if (v === b.st) return;
+    b.r.st = b.st;
+    X0.edit(() => { b.r.st = v; });
+  }
+  function caret() {
+    const c = bar && bar.querySelector('[data-stpos]'); if (!c || !tx) return;
+    const v = tx.value.slice(0, tx.selectionStart), ln = v.split('\n').length, col = tx.selectionStart - v.lastIndexOf('\n');
+    c.textContent = `Line ${ln}, Column ${col}`;
+  }
+  const fmtV = v => (typeof v !== 'number' ? '' : Number.isInteger(v) ? String(v) : String(+v.toPrecision(7)));
+  function vals() {
+    const r = R(), out = new Map(); if (!r || !mon()) return out;
+    const prog = X0.curProg().name, ctl = X0.ctl;
+    for (const p of paths(r.st || '')) { const v = ctl.read(p.text, prog); if (typeof v === 'number') out.set(p.b, fmtV(v)); }
+    return out;
+  }
+  function paint() {
+    const r = R(); if (!el || !r) return;
+    const S = X0.S, m = mon(), txt = m ? r.st || '' : tx.value, z = S.prefs.zoom || 1, fs = Math.round((S.layout === 'desktop' ? 13 : 15) * z);
+    el.classList.toggle('mon', m);
+    el.style.fontSize = fs + 'px'; el.style.lineHeight = Math.round(fs * 1.5) + 'px';
+    const vs = m ? vals() : null;
+    hl.innerHTML = colorize(txt, vs ? b => (vs.has(b) ? `<span class="stv">${esc(vs.get(b))}</span>` : '') : null) + '\n';
+    lastSig = vs ? [...vs.values()].join(',') : '';
+    const n = txt.split('\n').length, errs = new Map();
+    ((S.verify && S.verify.errors) || []).forEach(e => { if (e.line && e.routine === r.name && e.program === X0.curProg().name && !errs.has(e.line)) errs.set(e.line, e.msg); });
+    let g = '';
+    for (let k = 1; k <= n; k++) g += errs.has(k) ? `<div class="e" title="${esc(errs.get(k)).replace(/"/g, '&quot;')}">${k}</div>` : `<div>${k}</div>`;
+    gut.innerHTML = g;
+    tx.readOnly = !X0.editable();
+    bar.innerHTML = `<b>Structured Text</b>${errs.size ? `<span style="color:var(--danger)">${errs.size} line${errs.size > 1 ? 's' : ''} with errors</span>` : ''}<span class="grow"></span>${m ? '<span class="ell" title="Monitoring the controller: the values update as it runs">Monitoring: values update as the controller runs</span>' : `<span class="mono ell" data-stpos></span>`}${live() ? `<button class="btn" data-stm="${m ? 'edit' : 'mon'}">${m ? 'Edit' : 'Monitor'}</button>` : ''}`;
+    if (!m) caret();
+  }
+  ST.ui = {
+    init(ctx) { X0 = ctx; },
+    // before the screen is written again: where the caret and the scroll are
+    save() { return el && el.isConnected ? { f: document.activeElement === tx, a: tx.selectionStart, b: tx.selectionEnd, top: body.scrollTop, left: body.scrollLeft } : null; },
+    // the editor goes into the frame's #stwrap, with the text of the open routine
+    mount(sv) {
+      const ph = document.getElementById('stwrap'), r = R();
+      if (!ph || !r || !X0) return;
+      if (!el) make();
+      const k = X0.curProg().name + '/' + r.name;
+      if (base && !inProj(base.r)) { clearTimeout(timer); base = null; }
+      // another routine: the typing of the last one becomes its Undo step after this redraw
+      if (k !== cur) { if (base) { const b = base; clearTimeout(timer); base = null; setTimeout(() => commit(b), 0); } cur = k; editOn = false; tx.value = r.st || ''; sv = null; }
+      else if (!base && tx.value !== (r.st || '')) tx.value = r.st || '';   // Undo / Redo, an upload, a Replace
+      if (el.parentNode !== ph) ph.appendChild(el);
+      paint();
+      if (sv) { body.scrollTop = sv.top; body.scrollLeft = sv.left; if (sv.f) { tx.focus({ preventScroll: true }); tx.setSelectionRange(sv.a, sv.b); } }
+    },
+    // online: the values, at the pace the app redraws the ladder
+    refresh() { if (el && el.isConnected && mon()) { const vs = vals(); if ([...vs.values()].join(',') !== lastSig) paint(); } },
+    sig() { const r = R(); return r && mon() ? [...vals().values()].join(',') : ''; },
+    // go to a line of the text (an Errors line)
+    goLine(n) {
+      if (!el) return;
+      editOn = true; paint();
+      const v = tx.value.split('\n'), a = v.slice(0, Math.max(0, n - 1)).reduce((s, l) => s + l.length + 1, 0);
+      tx.focus(); tx.setSelectionRange(a, a + (v[n - 1] || '').length); caret();
+      const lh = parseFloat(el.style.lineHeight) || 20;
+      body.scrollTop = Math.max(0, (n - 3) * lh);
+    },
+  };
 })(typeof window !== 'undefined' ? window : globalThis);
