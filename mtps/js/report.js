@@ -271,6 +271,25 @@
     } },
   ];
 
-  MTPS.Report = { compare, rungDiff, report, REPORTS, SAMPLES };
+  /* ---------- release notes (Help > Release Notes): from CHANGELOG.md, newest first; the newest is this version ---------- */
+  const NOTES = [
+    { v: '0.5.0', d: '2026-10-27', ch: 'Stable', n: ['Studio 5000 menus: Close, the Save prompt, Recent Projects, Select All, Properties, Replace, Find Previous, Select Recent Path, Go To Faults.', 'New Tag with External Access, Style, Constant and Open Configuration; Select Data Type with 2- and 3-dimension arrays; Edit Tags cells.', 'Studio 5000 module type names, arithmetic status flags, the 20-pin terminal block.', 'BSL, BSR, FFL, FFU, LFL, LFU, SQO, SQI and SQL.', 'Logix Emulate speed of time, Single Scan and the chassis menu; RSLinx Device Properties, driver Configure and Change Mode.', 'Faster taps and redraws on slow devices.'] },
+    { v: '0.4.0', d: '2026-10-27', ch: 'Stable', n: ['Four themes, each Light and Dark (Tools > Options > Theme).', 'Right-click menus in the Studio 5000 order, the edit bar above the routine, operands edited on the rung.', 'Cross Reference window, branch commands, New Project as in Studio 5000.', 'Logix Emulate chassis, module C/I/O tags, the RSLinx Classic window.', 'Drag and drop to nodes, online edits with edit zones, the Run look.'] },
+    { v: '0.4.0-beta.3', d: '2026-10-25', ch: 'Beta', n: ['Projects live in files only: the start page, New Project, Open Project.', 'New Tag Alias For with the tag browser; I/O Data as DINT; tag name rules.', 'Move an instruction to any node; tablet portrait toolbar and Errors pane.'] },
+    { v: '0.4.0-beta.2', d: '2026-10-25', ch: 'Beta', n: ['The SIM-16 card and the generic module removed; smaller modules.'] },
+    { v: '0.4.0-beta.1', d: '2026-10-25', ch: 'Beta', n: ['Virtual Backplane driver, the controller slot, the setup wizard in the reference order.'] },
+    { v: '0.3.0-beta.6', d: '2026-10-25', ch: 'Beta', n: ['Timers and counters start with Accum 0; error lines name the operand.'] },
+    { v: '0.3.0-beta.5', d: '2026-10-25', ch: 'Beta', n: ['Every instruction checked against the reference; the tag browser in the operand box; expressions for CMP and CPT.'] },
+    { v: '0.3.0-beta.4', d: '2026-10-25', ch: 'Beta', n: ['Fixes from building a motor seal-in on the Windows app (Ctrl+W, setup wizard, New Tag, Download).'] },
+    { v: '0.3.0-beta.3', d: '2026-10-25', ch: 'Beta', n: ['Operands one by one inside boxes, the organizer, the emulator panel and Instruction Help as in RSLogix 5000.'] },
+    { v: '0.3.0-beta.2', d: '2026-10-24', ch: 'Beta', n: ['Unbroken power rails, operand descriptions, workspace tabs, Monitor / Edit Tags tables, module terminal blocks.'] },
+    { v: '0.3.0-beta.1', d: '2026-10-24', ch: 'Beta', n: ['Setup wizard, the emulator beside the ladder, a chassis that looks like hardware, the tag browser, the Classic look.'] },
+    { v: '0.2.0-beta.3', d: '2026-10-24', ch: 'Beta', n: ['Download, Upload, Go Online and online edits as in RSLogix 5000; Remote Test mode.'] },
+    { v: '0.2.0-beta.2', d: '2026-10-24', ch: 'Beta', n: ['The emulator works like FactoryTalk Logix Echo: several chassis, controllers by IP address.'] },
+    { v: '0.2.0-beta.1', d: '2026-10-24', ch: 'Beta', n: ['The controller is a card in an emulated chassis.'] },
+    { v: '0.1.0', d: '2026-10-24', ch: 'Stable', n: ['First stable release: tag-based ladder programming and simulation, online edits, Module Properties, Controller Properties.'] },
+  ];
+
+  MTPS.Report = { compare, rungDiff, report, REPORTS, SAMPLES, NOTES };
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS.Report;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -370,5 +370,33 @@ module.exports = async function w3a({ browser, URL, check }) {
     check(`${n}: Reset Window Layout restores the default layout`, pf.org && pf.err && !pf.tb && !pf.lorg, JSON.stringify(pf));
     check(`${n}: no JS errors (Window)`, !T.errs.length, T.errs.join(' | '));
   }
+  /* ---------- 8. Help > Release Notes, Help > About ---------- */
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    const ver = await T.ev(() => MTPS.App.VERSION);
+    await T.cmd('Help', 'Release Notes');
+    check(`${n}: Help > Release Notes opens`, (await T.title()) === 'Release Notes');
+    const vs = () => T.pg.$$eval('#layer [data-relv]', r => r.map(x => x.dataset.relv));
+    const v1 = await vs();
+    check(`${n}: the newest note is this version, the betas are hidden`, v1[0] === ver && !v1.some(v => /beta/.test(v)), v1.join(', '));
+    await T.hit('#layer #relb');
+    const v2 = await vs();
+    check(`${n}: Show the beta releases lists them too`, v2.length > v1.length && v2.some(v => /beta/.test(v)));
+    if (n === 'desktop') await T.shot('release-notes');
+    await T.btn('Close');
+    await T.cmd('Help', 'About MT PLC Studio');
+    check(`${n}: Help > About opens`, (await T.title()) === 'About MT PLC Studio' && (await T.text('#layer #abtb')).includes('Version ' + ver));
+    await T.hit('#layer [data-abt="hist"]');
+    check(`${n}: About shows the version history`, (await T.text('#layer #abtb')).includes(ver) && /0\.1\.0/.test(await T.text('#layer #abtb')));
+    await T.hit('#layer [data-abt="comp"]');
+    check(`${n}: About lists the installed components`, /Controller engine/.test(await T.text('#layer #abtb')) && /js\/report\.js/.test(await T.text('#layer #abtb')));
+    await T.hit('#layer [data-abt="ctl"]');
+    check(`${n}: About lists the controller support`, /PLC-CPU/.test(await T.text('#layer #abtb')) && /1756-L85E/.test(await T.text('#layer #abtb')));
+    if (n === 'desktop') await T.shot('about');
+    await T.btn('Release Notes'); await T.wait(100);
+    check(`${n}: About > Release Notes opens the notes`, (await T.title()) === 'Release Notes');
+    await T.btn('Close');
+    check(`${n}: no JS errors (Help)`, !T.errs.length, T.errs.join(' | '));
+  }
   for (const T of opened) await T.cx.close();
 };

@@ -972,6 +972,7 @@
     prtopts: { l: 'Print Options…', i: 'gear', run: () => printOptions() },
     helpc: { l: 'Contents', i: 'help', run: () => helpContents() },
     samples: { l: 'Vendor Sample Projects…', i: 'ladder', run: () => samplesDlg() },
+    relnotes: { l: 'Release Notes', i: 'file', run: () => releaseNotes() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
     tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
@@ -985,7 +986,7 @@
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', '-', 'cmptool', '-', 'updates']],
     ['Window', ['wnew', 'wsplit', '-', 'wreset', '-', 'wclose', 'wcloseall', 'wclosertn', '-', 'wnext', 'wprev', 'wlist']],
-    ['Help', ['helpc', 'help', 'tips', '-', 'samples', '-', 'about']],
+    ['Help', ['helpc', 'help', 'relnotes', 'tips', '-', 'samples', '-', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
   const ONLINE_ONLY = ['toggle', 'fon', 'foff', 'frem', 'prog', 'runm', 'clear', 'fen', 'fdis', 'fall'];
@@ -1205,7 +1206,7 @@
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('samples', 'Sample Projects…')}${b('vlorg')}${b('vstart')}${C.vfull.on() ? b('vfull') : ''}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
       <div class="card">${b('wnext')}${b('wcloseall')}${b('wreset')}</div>
-      <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
+      <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('relnotes')}${b('tips')}${b('about')}</div>`;
   }
 
   /* ---------- organizer tree ---------- */
@@ -3330,9 +3331,34 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const rows = (HELP.TIPS.en || []);
     dialog({ title: 'Getting Started', size: 'md', body: `<table class="iht"><tbody>${rows.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`, buttons: [{ l: 'Close', pri: true }] });
   }
+  /* ---------- Help > About MT PLC Studio, as About Logix Designer (help v37 Help menu: the version history, the
+     installed components and the installed controller and firmware support) ---------- */
+  const COMPS = { 'js/engine.js': 'Controller engine (PLC-CPU, the scan, the instruction set)', 'js/ladder.js': 'Ladder Diagram editor and drawing', 'js/update.js': 'Updates', 'js/help.js': 'Instruction Help', 'js/help-ref.js': 'Instruction Help reference pages', 'js/report.js': 'Compare Tool, reports, sample projects, release notes', 'js/app.js': 'Logix Designer workspace, RSLinx Classic, Logix Emulate' };
   function about() {
-    dialog({ title: 'About MT PLC Studio', body: `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
-      <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`, buttons: [{ l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
+    const notes = (E.Report && E.Report.NOTES) || [];
+    const tabs = [['gen', 'General'], ['hist', 'Version History'], ['comp', 'Installed Components'], ['ctl', 'Controller Support']];
+    const tbl = (h, rows) => `<table class="cmpt"><thead><tr>${h.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const page = k => (k === 'hist' ? tbl(['Version', 'Date', 'Channel'], notes.map(n => [esc(n.v), esc(n.d), esc(n.ch)]))
+      : k === 'comp' ? tbl(['Component', 'File'], [...document.scripts].map(x => x.getAttribute('src')).filter(Boolean).map(x => [esc(COMPS[x] || x.replace(/^js\/|\.js$/g, '')), `<span class="mono">${esc(x)}</span>`]))
+      : k === 'ctl' ? tbl(['Controller', 'Description', 'Major revisions'], CTYPES.map(([t, d, v]) => [esc(t), esc(d) + (t === 'PLC-CPU' ? ' (download and go online)' : ' (L5X export)'), esc(v.join(', '))]))
+      : `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
+      <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`);
+    let at = 'gen';
+    const el = dialog({ title: 'About MT PLC Studio', body: `<div class="xrtabs">${tabs.map(([k, l]) => `<button class="xtab${k === at ? ' on' : ''}" data-abt="${k}">${l}</button>`).join('')}</div><div id="abtb" style="padding-top:8px">${page(at)}</div>`,
+      buttons: [{ l: 'Release Notes', run: () => { setTimeout(releaseNotes, 0); } }, { l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
+    el.addEventListener('click', ev => {
+      const t = ev.target.closest('[data-abt]'); if (!t) return;
+      at = t.dataset.abt; el.querySelectorAll('[data-abt]').forEach(x => x.classList.toggle('on', x === t)); el.querySelector('#abtb').innerHTML = page(at);
+    });
+  }
+  /* ---------- Help > Release Notes: the release notes of this app, newest first (MTPS.Report.NOTES, from the
+     changelog); the beta releases are shown on request ---------- */
+  function releaseNotes() {
+    const notes = (E.Report && E.Report.NOTES) || [];
+    let beta = false;
+    const body = () => notes.filter(n => beta || n.ch !== 'Beta').map(n => `<div class="grp">${esc(n.v)}${n.v === VERSION ? ' (this version)' : ''}<span class="grow"></span><span class="muted">${esc(n.d)} · ${esc(n.ch)}</span></div><ul class="relnl" data-relv="${esc(n.v)}">${n.n.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
+    const el = dialog({ title: 'Release Notes', size: 'lg', body: `<label class="ck"><input type="checkbox" id="relb"> Show the beta releases</label><div id="relbody">${body()}</div>`, buttons: [{ l: 'Close', pri: true }] });
+    el.addEventListener('change', ev => { if (ev.target.id !== 'relb') return; beta = ev.target.checked; el.querySelector('#relbody').innerHTML = body(); });
   }
   /* ---------- Tools > Compare Tool (as the Logix Designer Compare Tool: the open project on the left, a .mtp or .L5X
      file on the right; the differences listed by component, MTPS.Report.compare) ---------- */

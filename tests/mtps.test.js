@@ -1563,5 +1563,18 @@ console.log('Wave 3 (A): the sample projects (Help > Vendor Sample Projects), js
   check('… the lamp test turns every lamp on', ['NS_Red', 'NS_Amber', 'NS_Green', 'EW_Red', 'EW_Amber', 'EW_Green'].every(t => c.read(t) === 1));
 }
 
+console.log('Wave 3 (A): the release notes (Help > Release Notes), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const fs = require('fs'), path = require('path');
+  const ver = (fs.readFileSync(path.join(__dirname, '../mtps/js/app.js'), 'utf8').match(/const VERSION = '([^']+)'/) || [])[1];
+  const N = R.NOTES || [];
+  check('the newest release note is this version', N.length > 0 && N[0].v === ver, `${N[0] && N[0].v} / ${ver}`);
+  check('every release note has a version, a date, a channel and notes', N.every(n => /^\d+\.\d+\.\d+(-beta\.\d+)?$/.test(n.v) && /^\d{4}-\d\d-\d\d$/.test(n.d) && (n.ch === 'Stable' || n.ch === 'Beta') && n.n.length > 0));
+  check('the release notes are newest first, each version once', N.every((n, i) => !i || N[i - 1].d >= n.d) && new Set(N.map(n => n.v)).size === N.length);
+  const log = fs.readFileSync(path.join(__dirname, '../CHANGELOG.md'), 'utf8');
+  check('every version in the release notes is in the changelog', N.every(n => log.includes(`MT PLC Studio ${n.v}`)), N.filter(n => !log.includes(`MT PLC Studio ${n.v}`)).map(n => n.v).join(', '));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
