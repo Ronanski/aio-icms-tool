@@ -1164,3 +1164,13 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
   .phone .strip .warn { padding: 0 8px; }
 }
 @media (max-width: 380px) { .phone .strip .sbox { font-size: 12px; padding: 0 6px; } .phone .strip { gap: 3px; } }
+/* Logix Emulate trace windows (BPT / TPT) and the trace area of Configure Emulation */
+.trwin { width: 380px; min-width: 0; max-width: calc(100vw - 16px); }
+.trwin .iowb { display: grid; gap: 6px; }
+.trlist { max-height: 220px; min-height: 80px; overflow: auto; white-space: pre; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 4px 6px; }
+.trbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.trbtns .btn.on { background: var(--accent-soft); color: var(--accent-text); }
+.trset { max-height: 140px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r); }
+.trset .row { display: flex; gap: 8px; align-items: center; padding: 4px 8px; min-height: 30px; cursor: default; }
+.trset .row.on { background: var(--accent-soft); }
+.tab .trset .row, .phone .trset .row, .tab .trbtns .btn, .phone .trbtns .btn { min-height: 44px; }

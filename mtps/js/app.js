@@ -122,6 +122,7 @@
     'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     Sequencer: ['SQI', 'SQO', 'SQL'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
+    Debug: ['BPT', 'TPT'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
@@ -218,7 +219,7 @@
         <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
           <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
           <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}${o.descField ? '<label for="fbd">File description</label><input class="inp" id="fbd" autocomplete="off">' : ''}
-            <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : 'All projects'}</option>`).join('')}</select></div></div></div>
+            <select class="inp" id="fbt" aria-label="File type">${types.map(t => `<option value="${t}">${t === 'mtp' ? 'MT PLC Studio Project (*.mtp)' : t === 'l5x' ? 'Logix export (*.L5X)' : t === 'txt' ? 'Text file (*.txt)' : 'All projects'}</option>`).join('')}</select></div></div></div>
         <p class="help fbhint">${FS.kind === 'browser' ? 'In a browser, the files are kept by this browser. The Windows and Android apps keep them in the folders of the device.' : ''}</p>`,
       buttons: [{ l: 'Cancel' }, { l: o.mode === 'save' ? 'Save' : 'Open', pri: true, run: () => { act(); return false; } }] });
     const q = s => el.querySelector(s);
@@ -230,7 +231,7 @@
       const items = st.data.items.filter(x => x.dir || want.test(x.name)).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
       q('#fbl').innerHTML = items.map(x => `<div class="row fbi" data-fbi="${esc(x.path)}" data-dir="${x.dir ? 1 : ''}">${ic(x.dir ? 'folder' : /\.l5x$/i.test(x.name) ? 'upload' : 'file')}<span class="grow ell">${esc(x.name)}</span><span class="sub">${x.mtime ? new Date(x.mtime).toLocaleString() : ''}</span><span class="sub fbsz">${x.dir ? '' : fmtSize(x.size)}</span></div>`).join('') || '<div class="empty">This folder has no projects.</div>';
     };
-    const ext = () => (st.type === 'l5x' ? '.L5X' : '.mtp');
+    const ext = () => (st.type === 'l5x' ? '.L5X' : st.type === 'txt' ? '.txt' : '.mtp');
     const act = async () => {
       if (o.mode === 'open') {
         if (!st.sel) { toast('Pick a file.'); return; }
@@ -1715,7 +1716,7 @@
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
-    control: ['CONTROL'], darr: ['DINT'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
+    control: ['CONTROL'], darr: ['DINT'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr'];
@@ -2925,7 +2926,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
-  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
+  const HGRP = [['Debug', 'Debug Instructions (Logix Emulate)'], ['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
      instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
@@ -4580,8 +4581,10 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         <fieldset class="sotf"><legend>Speed of Time</legend><input type="range" id="sot-r" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time">
           <div class="sotrow"><span>Set: <b id="sot-cur">${c.sot}</b> %</span><span class="grow"></span><input class="inp num" id="sot-v" type="number" min="0" max="100" step="1" value="${c.sot}" aria-label="Speed of time percent"><span>%</span></div>
           <div class="sotrow"><button class="btn" data-sot="0">0% NOW</button><button class="btn" data-sot="100">100% NOW</button><span class="grow"></span><button class="btn pri" data-sot="ok">Confirm Time % Change</button></div></fieldset>
-        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>`,
+        <p class="help">100 % runs the logic in real time. A lower value slows the timers and the scan (60 %: one second takes about 1.67 s). 0 % stops program execution.</p>
+        ${traceCfgHTML(c)}`,
       buttons: [{ l: 'Close', run: () => backToEmu(was) }] });
+    bindTraceCfg(el, ri, s, () => configEmulation(id, was));
     const q = k => el.querySelector(k);
     const show = () => { q('#sot-cur').textContent = c.sot; q('#sot-r').value = c.sot; q('#sot-v').value = c.sot; };
     q('#sot-r').oninput = () => { q('#sot-v').value = q('#sot-r').value; };
@@ -4594,6 +4597,131 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       show(); toast(`Speed of time: ${c.sot} %.`, 'ok');
     });
   }
+  /* ---------- Logix Emulate breakpoints, tracepoints and trace windows (LGEM5K-GR016M chapters 4, 9 and 11) ----------
+     A trace window opens by itself the first time a BPT or TPT of a controller writes a trace (Display all new
+     traces); its title bar holds the slot and the text of the Format before the colon. Freeze Display, Clear Display,
+     Freeze Log (only while the trace is logged to disk). A triggered breakpoint stops the program and prompts; OK
+     lets it run on. The traces, the settings and the log file are in Configure Emulation. */
+  const trWins = new Map();   // 'rack:slot|title' → its window
+  const trFrozen = new Set(), trSeen = new WeakMap(), bpAsked = new WeakSet();
+  const trStamp = e => (e.t == null ? '' : `${String(e.t).padStart(8)} ms  `);
+  const trTitle = (c, tr) => `Slot ${c.slot}: ${tr.head}`;
+  const tlogOf = c => c.tlog || (c.tlog = { on: false, file: '', text: '', dirty: false, frozen: new Set() });
+  const trKey = k => { const i = k.indexOf('|'), [ri, s] = ids(k.slice(0, i)), title = k.slice(i + 1); return { ri, s, title, c: racks[ri] && racks[ri].controller(s) }; };
+  function trWinHTML(ri, s, title) {
+    const c = racks[ri] && racks[ri].controller(s), tr = c && c.traces.get(title), k = ri + ':' + s + '|' + title;
+    if (!tr) return '<p class="help">This trace was removed.</p>';
+    const lg = tlogOf(c);
+    return `<div class="trtags muted">Trace This: <span class="mono">${esc(tr.tags.join(', '))}</span></div><div class="trlist mono" data-trl="1">${trRows(tr)}</div>
+      <div class="trbtns"><button class="btn${trFrozen.has(k) ? ' on' : ''}" data-trf="${esc(k)}" aria-pressed="${trFrozen.has(k)}">Freeze Display</button><button class="btn" data-trc="${esc(k)}">Clear Display</button><button class="btn${lg.frozen.has(title) ? ' on' : ''}" data-trg="${esc(k)}"${lg.on ? '' : ' disabled'}>Freeze Log</button></div>`;
+  }
+  const trRows = tr => tr.list.slice(-200).map(e => `<div>${esc(trStamp(e) + e.text)}</div>`).join('') || '<span class="muted">No traces.</span>';
+  function openTrace(ri, s, title, doc) {
+    const c = racks[ri] && racks[ri].controller(s), tr = c && c.traces.get(title);
+    if (!tr) return;
+    doc = doc || document;
+    const k = ri + ':' + s + '|' + title;
+    let w = trWins.get(k);
+    if (w && !w.isConnected) w = null;
+    if (!w) {
+      w = doc.createElement('div'); w.className = 'iowin trwin'; w.dataset.trwin = k;
+      doc.body.appendChild(w); trWins.set(k, w);
+      const n = [...trWins.values()].filter(x => x.isConnected).length - 1, vw = doc.defaultView || window;
+      w.style.left = Math.max(4, Math.min(vw.innerWidth - 360, 80 + n * 26)) + 'px'; w.style.top = Math.max(4, Math.min(vw.innerHeight - 260, 90 + n * 26)) + 'px';
+    }
+    w.innerHTML = `<div class="iowh" data-iodrag="1"><b class="ell">${esc(trTitle(c, tr))}</b><span class="grow"></span><button class="ib" data-trx="${esc(k)}" aria-label="Close">${ic('close')}</button></div><div class="iowb trb">${trWinHTML(ri, s, title)}</div>`;
+    const l = w.querySelector('[data-trl]'); if (l) l.scrollTop = l.scrollHeight;
+  }
+  function closeTraces(c) { trWins.forEach((w, k) => { if (!c || trKey(k).c === c) { w.remove(); trWins.delete(k); } }); }
+  /* each tick: new traces open their window and go to the log, a triggered breakpoint prompts, open windows follow */
+  function tracesLive() {
+    racks.forEach((r, ri) => r.controllers().forEach(m => {
+      const c = m.ctl, seen = trSeen.get(c) || new Map(), lg = tlogOf(c);
+      trSeen.set(c, seen);
+      c.traces.forEach((tr, title) => {
+        const was = seen.get(title), k = ri + ':' + m.slot + '|' + title;
+        if (was !== tr.n) {
+          if (was == null && c.tcfg.show) openTrace(ri, m.slot, title);
+          if (lg.on && !lg.frozen.has(title)) { tr.list.slice(-Math.min(tr.list.length, tr.n - (was || 0))).forEach(e => { lg.text += `${trTitle(c, tr)}\t${trStamp(e)}${e.text}\r\n`; }); lg.dirty = true; }
+          seen.set(title, tr.n);
+        }
+        // only the list follows (at most 8 times a second): the buttons stay in place under the pointer
+        const w = trWins.get(k), now = performance.now();
+        if (w && w.isConnected && !trFrozen.has(k) && +w.dataset.n !== tr.n && now - (+w.dataset.at || 0) >= 120) {
+          w.dataset.n = String(tr.n); w.dataset.at = String(now);
+          const l = w.querySelector('[data-trl]'); if (l) { l.innerHTML = trRows(tr); l.scrollTop = l.scrollHeight; }
+        }
+      });
+      if (c.bp && !bpAsked.has(c.bp)) {
+        const bp = c.bp; bpAsked.add(bp);
+        const was = emuOpen(), ack = () => { if (c.bp === bp) c.resume(); live(true); backToEmu(was); };
+        dialog({ title: `Slot ${m.slot}: ${bp.head}`, size: '', modal: true, onClose: ack,
+          body: `<p style="margin-top:0" class="bptext">${esc(bp.text)}</p><div class="rlprops">${bp.tags.map((t, i) => kv(esc(t), esc(String(bp.vals[i])))).join('')}</div>
+            <p class="help">The breakpoint of <b>${esc(m.name)}</b> stopped the program. The project cannot be edited until the execution goes on. OK lets the program run; it stops again while the condition holds.</p>`,
+          buttons: [{ l: 'OK', pri: true, run: ack }] });
+      }
+    }));
+  }
+  // the trace log file is written about once a second
+  setInterval(() => racks.forEach(r => r.controllers().forEach(m => { const lg = m.ctl.tlog; if (lg && lg.dirty && lg.file) { lg.dirty = false; FS.write(lg.file, lg.text).catch(e => toast('Could not write the trace log file: ' + (e.message || e), 'err')); } })), 1000);
+  /* the trace area of Configure Emulation (LGEM5K-GR016M, Configure trace windows) */
+  function traceCfgHTML(c) {
+    const lg = tlogOf(c), list = [...c.traces.entries()];
+    return `<fieldset class="sotf trcfg"><legend>Traces</legend>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="tr-ign"${c.tcfg.ignore ? ' checked' : ''}><span>Ignore If No Value Changed</span></label>
+      <div class="frow"><label for="tr-ts">TimeStamp</label><select class="inp" id="tr-ts">${['None', 'Delta', 'Absolute'].map(t => `<option${t === c.tcfg.ts ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="tr-show"${c.tcfg.show ? ' checked' : ''}><span>Display all new traces</span></label>
+      <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="tr-log"${lg.on ? ' checked' : ''}><span>Log new traces to disk</span></label>
+      <div class="frow"><label>Trace Log File</label><span class="sotrow"><span class="mono ell" id="tr-file">${esc(lg.file || '(none)')}</span><span class="grow"></span><button class="btn" data-trbrowse="1">Browse…</button></span></div>
+      <div class="lbl">Current traces <span class="muted">(double-click to open)</span></div><div class="trset" id="tr-list">${list.map(([t, tr]) => `<div class="row" data-tro="${esc(t)}"><span class="mono">${tr.kind}</span><span class="grow ell">${esc(tr.head)}</span><span class="muted">${tr.n}</span></div>`).join('') || '<div class="empty">No traces yet.</div>'}</div>
+      <div class="sotrow wrap"><button class="btn" data-trall="1"${list.length ? '' : ' disabled'}>Display All Traces</button><button class="btn" data-trclose="1">Close All Traces</button><button class="btn" data-trrem="1"${list.length ? '' : ' disabled'}>Remove All Traces</button><button class="btn" data-trlogx="1"${lg.on ? '' : ' disabled'}>Close Log File</button></div></fieldset>`;
+  }
+  function bindTraceCfg(el, ri, s, reopen) {
+    const c = racks[ri].controller(s), lg = tlogOf(c);
+    const redraw = () => { const f = el.querySelector('.trcfg'); if (f) f.outerHTML = traceCfgHTML(c); };
+    el.addEventListener('change', ev => {
+      const t = ev.target;
+      if (t.id === 'tr-ign') c.tcfg.ignore = t.checked;
+      else if (t.id === 'tr-ts') c.tcfg.ts = t.value;
+      else if (t.id === 'tr-show') c.tcfg.show = t.checked;
+      else if (t.id === 'tr-log') { if (t.checked && !lg.file) { t.checked = false; toast('Browse to the trace log file first.', 'err'); return; } lg.on = t.checked; redraw(); return; }
+      else return;
+      saveChassis();
+    });
+    // Browse: the log file; a file that holds data is appended to or overwritten
+    const pick = () => fileDialog({ mode: 'save', title: 'Trace Log File', name: lg.file ? baseName(lg.file) : 'traces.txt', types: ['txt'], onPick: async f => {
+      let old = '';
+      try { if (await FS.exists(f)) old = await FS.read(f); } catch (e) { old = ''; }
+      const use = keep => { lg.file = f; lg.text = keep ? old : ''; lg.dirty = !keep; lg.on = true; setTimeout(reopen, 0); };
+      if (old) setTimeout(() => dialog({ title: 'Trace Log File', size: '', body: `<p><b>${esc(baseName(f))}</b> already holds data. Append the traces to the end of the file, or overwrite it?</p>`, buttons: [{ l: 'Cancel', run: () => setTimeout(reopen, 0) }, { l: 'Overwrite', run: () => use(false) }, { l: 'Append', pri: true, run: () => use(true) }] }), 0);
+      else use(false);
+    } });
+    el.addEventListener('click', ev => {
+      const t = ev.target;
+      if (t.closest('[data-trbrowse]')) { pick(); return; }
+      if (t.closest('[data-trall]')) { c.traces.forEach((_, k) => openTrace(ri, s, k)); return; }
+      if (t.closest('[data-trclose]')) { closeTraces(c); return; }
+      if (t.closest('[data-trrem]')) { closeTraces(c); c.traces.clear(); trSeen.delete(c); redraw(); return; }
+      if (t.closest('[data-trlogx]')) { if (lg.dirty && lg.file) { lg.dirty = false; FS.write(lg.file, lg.text).catch(() => {}); } lg.on = false; redraw(); toast('The trace log file is closed.', 'ok'); return; }
+      const r = t.closest('[data-tro]');
+      // double-click (on touch: a tap) a trace to open its window
+      if (r) { el.querySelectorAll('[data-tro].on').forEach(x => x.classList.remove('on')); r.classList.add('on'); if (S.layout !== 'desktop' || (r.dataset.clk && performance.now() - +r.dataset.clk < 450)) openTrace(ri, s, r.dataset.tro); r.dataset.clk = String(performance.now()); }
+    });
+  }
+  /* the buttons of a trace window */
+  document.addEventListener('click', ev => {
+    const t = ev.target, w = t.closest && t.closest('.trwin');
+    if (!w) return;
+    let x;
+    if ((x = t.closest('[data-trx]'))) { w.remove(); trWins.delete(x.dataset.trx); return; }
+    const k = (x = t.closest('[data-trf],[data-trc],[data-trg]')) && (x.dataset.trf || x.dataset.trc || x.dataset.trg), o = k && trKey(k);
+    if (!o || !o.c) return;
+    const tr = o.c.traces.get(o.title), lg = tlogOf(o.c);
+    if (x.dataset.trf) { if (trFrozen.has(k)) trFrozen.delete(k); else trFrozen.add(k); }
+    else if (x.dataset.trc) { if (tr) tr.list = []; }
+    else if (lg.frozen.has(o.title)) lg.frozen.delete(o.title); else lg.frozen.add(o.title);
+    openTrace(o.ri, o.s, o.title);
+  });
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -4921,7 +5049,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const now = performance.now(), dt = Math.min(1000, now - lastT);
     lastT = now;
     racks.forEach(r => r.advance(dt));
-    singleAsk();
+    singleAsk(); tracesLive();
   }
   function loop(now) {
     tick();

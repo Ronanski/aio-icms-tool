@@ -883,5 +883,44 @@ console.log('Download clears the controller memory first (v37 help, Download dia
   check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
 }
 
+console.log('Logix Emulate: breakpoints and tracepoints, BPT / TPT (LGEM5K-GR016M chapters 9 and 11)');
+{
+  const INS = MTPS.INSTR;
+  check('BPT and TPT are on the Debug tab, with Format and Trace This operands', INS.BPT.grp === 'Debug' && INS.TPT.grp === 'Debug' && MTPS.OPN.TPT[0] === 'Format' && MTPS.OPN.TPT[1] === 'Trace This');
+  eq('a quoted Format keeps its commas: TPT(\'Analog inputs trace:Analog inputs = %f, %f, and %f\',A1,A2,A3)', MTPS.parseRung("TPT('Analog inputs trace:Analog inputs = %f, %f, and %f',A1,A2,A3);").elems[0].a, ["'Analog inputs trace:Analog inputs = %f, %f, and %f'", 'A1', 'A2', 'A3']);
+  eq('the C print types of the manual (%d %o %x %X %e %E %f %g of 45.3202)', MTPS.traceFmt('X:%d %o %x %X %e %E %f %g', Array(8).fill(45.3202)).text, '45 55 2d 2D 4.532020e+001 4.532020E+001 45.320200 45.3202');
+  eq('the manual\'s example: My tracepoint:Tag 1 = %e and Tag 2 = %d', MTPS.traceFmt('My tracepoint:Tag 1 = %e and Tag 2 = %d', [648.8484, 443]), { head: 'My tracepoint', text: 'Tag 1 = 6.488484e+002 and Tag 2 = 443' });
+  const tags = [T('AV', 'REAL', { value: 3.5 }), T('N', 'INT', { value: 7 }), T('Go', 'BOOL'), T('T1', 'TIMER'), T('Cnt', 'DINT')];
+  check('Trace This: a whole TIMER is not traceable (a member is)', /not traceable/.test((MTPS.verify(proj({ tags, rungs: ["TPT('T:%d',T1);"] })).errors[0] || {}).msg || '') && MTPS.verify(proj({ tags, rungs: ["TPT('T:%d',T1.ACC);"] })).errors.length === 0);
+  check('Format: a string is required; 82 characters at most', MTPS.verify(proj({ tags, rungs: ['TPT(N,N);'] })).errors.length === 1 && /82 characters/.test((MTPS.verify(proj({ tags, rungs: [`TPT('${'x'.repeat(83)}',N);`] })).errors[0] || {}).msg || ''));
+  check('a Format without one % type per traced tag gives a warning', MTPS.verify(proj({ tags, rungs: ["TPT('T:%d',N,AV);"] })).warnings.some(w => /type indicator/.test(w.msg)));
+  const c = run({ tags, rungs: ["XIC(Go)TPT('Analog trace:value = %f, n = %d',AV,N);", "XIC(Go)ADD(Cnt,1,Cnt);"] });
+  c.scan(10);
+  check('TPT on a false rung writes nothing', c.traces.size === 0);
+  c.write('Go', 1); c.scan(10); c.scan(10);
+  const tr = c.traces.get('T:Analog trace');
+  check('TPT on a true rung writes a trace entry each scan, titled by the text before the colon', tr && tr.kind === 'TPT' && tr.head === 'Analog trace' && tr.list.length === 2 && tr.list[0].text === 'value = 3.500000, n = 7', JSON.stringify(tr && tr.list));
+  c.tcfg.ignore = true; c.scan(10);
+  check('Ignore If No Value Changed: an entry with the same values is not recorded', tr.list.length === 2);
+  c.write('N', 8); c.scan(10);
+  check('… and one with a changed value is', tr.list.length === 3 && tr.list[2].text.endsWith('n = 8'));
+  c.tcfg.ts = 'Delta'; c.write('N', 9); c.scan(10); c.write('N', 10); c.scan(10);
+  check('TimeStamp Delta: the time since the last trace of that window', tr.list[4].ts === 'Delta' && tr.list[4].t === 10, JSON.stringify(tr.list[4]));
+  c.tcfg.ts = 'Absolute'; c.write('N', 11); c.scan(10);
+  check('TimeStamp Absolute: ms since the controller last changed to Run', tr.list[5].t === c.clock - c.runAt && tr.list[5].t > 0);
+  const b = run({ tags, rungs: ['XIC(Go)ADD(Cnt,1,Cnt);', "XIC(Go)GRT(AV,3.02)BPT('Breakpoint:The input value is %f',AV);", 'XIC(Go)ADD(N,1,N);'] });
+  b.write('Go', 1); b.scan(10);
+  check('a true BPT stops the program there: the rungs after it do not run', b.bp && b.bp.head === 'Breakpoint' && b.bp.text === 'The input value is 3.500000' && b.read('Cnt') === 1 && b.read('N') === 7, JSON.stringify(b.bp));
+  b.advance(100);
+  check('while it is triggered the controller does not scan (it stays in Run)', b.read('Cnt') === 1 && b.mode === 'remrun' && b.running);
+  check('while it is triggered the project is not editable: "not in the correct mode"', !b.edit(proj({ tags, rungs: ['NOP();'] })).ok && /not in the correct mode/.test(b.edit(proj({ tags, rungs: ['NOP();'] })).lines[0]));
+  b.resume(); b.scan(10);
+  check('acknowledged: the program runs again, and the breakpoint triggers again while its condition holds', b.read('Cnt') === 2 && !!b.bp && b.traces.get('B:Breakpoint').list.length === 2);
+  b.resume(); b.write('AV', 1); b.scan(10);
+  check('condition changed: the scan runs to the end', !b.bp && b.read('N') === 8 && b.read('Cnt') === 3);
+  const ch = new MTPS.Chassis(8); ch.insert(1, 'PLC-CPU', 'E'); ch.controller(1).tcfg.ts = 'Delta';
+  check('the trace settings are kept with the chassis', MTPS.Chassis.from(JSON.parse(JSON.stringify(ch))).controller(1).tcfg.ts === 'Delta');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
