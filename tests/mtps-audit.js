@@ -23,6 +23,10 @@ const PLAN = {
   SQR: ['R1', 'R2'], NEG: ['D1', 'D3'], ABS: ['D1', 'D3'], CPT: ['D3', 'D1 * 2 + D2'],
   MOV: ['D1', 'D3'], MVM: ['D1', '16#0F', 'D3'], CLR: ['D3'], AND: ['D1', 'D2', 'D3'], OR: ['D1', 'D2', 'D3'], XOR: ['D1', 'D2', 'D3'], NOT: ['D1', 'D3'],
   BTD: ['D1', '0', 'D3', '4', '4'], SWPB: ['D1', 'HIGH/LOW', 'D3'], COP: ['ARR[0]', 'ARR2[0]', '5'], FLL: ['7', 'ARR[0]', '10'],
+  BSL: ['ARR[0]', 'CT1', 'B1', '16'], BSR: ['ARR2[0]', 'CT2', 'B1', '16'],
+  FFL: ['D1', 'ARR[0]', 'CT3', '10', '0'], FFU: ['ARR[0]', 'D3', 'CT3', '10', '0'],
+  LFL: ['D1', 'ARR2[0]', 'CT4', '10', '0'], LFU: ['ARR2[0]', 'D3', 'CT4', '10', '0'],
+  SQI: ['ARR[0]', '16#00FF', 'D1', 'CT5', '4', '0'], SQO: ['ARR[0]', '16#00FF', 'D3', 'CT5', '4', '0'], SQL: ['ARR2[0]', 'D1', 'CT5', '4', '0'],
   JSR: ['Sub'], RET: [], SBR: [], JMP: ['L1'], LBL: ['L1'], MCR: [], AFI: [], NOP: [], TND: [],
 };
 const MNS = Object.keys(PLAN);
@@ -50,6 +54,7 @@ const MNS = Object.keys(PLAN);
       ['D1', 'D2', 'D3'].forEach(n => T(n, 'DINT')); ['R1', 'R2'].forEach(n => T(n, 'REAL'));
       ['T1', 'T2', 'T3'].forEach(n => T(n, 'TIMER')); ['C1', 'C2'].forEach(n => T(n, 'COUNTER'));
       T('ARR', 'DINT', 10); T('ARR2', 'DINT', 10);
+      ['CT1', 'CT2', 'CT3', 'CT4', 'CT5'].forEach(n => T(n, 'CONTROL'));
       p.tasks[0].programs[0].routines.push({ name: 'Sub', rungs: [{ t: 'NOP();' }] });
       A.openProject(p);
     });

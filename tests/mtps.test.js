@@ -776,5 +776,55 @@ console.log('Online edit zones (Studio 5000: replace and delete zones are not ex
   check('a dirty mark (dx) is not a logic change', c2.holds(d2));
 }
 
+console.log('File/Shift and Sequencer instructions');
+{
+  const INS = MTPS.INSTR;
+  check('BSL and BSR are in the File/Shift group, with EN and DN on the box', ['BSL', 'BSR'].every(m => INS[m].grp === 'File/Shift' && INS[m].bits.join() === 'EN,DN' && INS[m].out));
+  eq('BSL operand names (as the reference box)', MTPS.OPN.BSL, ['Array', 'Control', 'Source Bit', 'Length']);
+  const p = proj({ tags: [T('Ad', 'DINT', { dim: 2 }), T('Ctl', 'CONTROL'), T('In', 'BOOL'), T('G', 'BOOL')], rungs: ['XIC(G)BSL(Ad[0],Ctl,In,10);'] });
+  const c = run({ tags: p.tags, rungs: ['XIC(G)BSL(Ad[0],Ctl,In,10);'] });
+  c.write('In', 1); c.scan(10); c.write('G', 1); c.scan(10);
+  const p2 = JSON.parse(JSON.stringify(p)); p2.tasks[0].programs[0].routines[0].rungs[0].t = 'XIC(G)BSL(Ad[0],Ctl,In,12);';
+  const r = c.edit(p2);
+  check('online edit of a BSL: accepted', r.ok, r.lines.join(' | '));
+  eq('online edit keeps the CONTROL bits and .POS; .LEN comes from the edited rung', [c.read('Ctl.EN'), c.read('Ctl.DN'), c.read('Ctl.POS'), c.read('Ctl.LEN'), c.read('Ad[0]')], [1, 1, 10, 12, 1]);
+  check('BSL Length must be a whole number', MTPS.verify(proj({ tags: p.tags, rungs: ['BSL(Ad[0],Ctl,In,1.5);'] })).errors.some(e => e.op === 3));
+  check('BSL Array must be an array element, not a whole DINT', /array element/.test((MTPS.verify(proj({ tags: [...p.tags, T('D', 'DINT')], rungs: ['BSL(D,Ctl,In,8);'] })).errors[0] || {}).msg || ''));
+  const ix = run({ tags: [...p.tags, T('K', 'DINT', { value: 1 })], rungs: ['XIC(G)BSL(Ad[K],Ctl,In,4);'] });
+  ix.write('In', 1); ix.write('G', 1); ix.scan(10);
+  eq('BSL with an indirect Array element (Ad[K])', [ix.read('Ad[0]'), ix.read('Ad[1]')], [0, 1]);
+}
+{
+  const INS = MTPS.INSTR;
+  check('FFL shows EN, DN, EM and FFU EU, DN, EM on the box', INS.FFL.bits.join() === 'EN,DN,EM' && INS.FFU.bits.join() === 'EU,DN,EM' && INS.FFL.grp === 'File/Shift');
+  eq('FFL / FFU operand names', [MTPS.OPN.FFL, MTPS.OPN.FFU], [['Source', 'FIFO', 'Control', 'Length', 'Position'], ['FIFO', 'Dest', 'Control', 'Length', 'Position']]);
+  const tags = [T('Q', 'DINT', { dim: 5 }), T('Ctl', 'CONTROL'), T('Ld', 'BOOL'), T('V', 'DINT', { value: 9 })];
+  const p = proj({ tags, rungs: ['XIC(Ld)FFL(V,Q[0],Ctl,5,0);'] });
+  const c = run({ tags, rungs: ['XIC(Ld)FFL(V,Q[0],Ctl,5,0);'] });
+  c.scan(10); c.write('Ld', 1); c.scan(10); c.write('Ld', 0); c.scan(10); c.write('Ld', 1); c.scan(10);
+  const p2 = JSON.parse(JSON.stringify(p)); p2.tasks[0].programs[0].routines[0].rungs[0].t = 'XIC(Ld)FFL(V,Q[0],Ctl,4,0);';
+  c.edit(p2);
+  eq('online edit of an FFL keeps the queue and .POS (not the Position of the rung), .LEN from the rung', [c.read('Ctl.POS'), c.read('Ctl.LEN'), c.read('Q[1]'), c.read('Ctl.EN')], [2, 4, 9, 1]);
+  check('FFL accepts an immediate Source', MTPS.verify(proj({ tags, rungs: ['FFL(16#7F,Q[0],Ctl,5,0);'] })).errors.length === 0);
+  check('LFL / LFU: File/Shift, EN DN EM / EU DN EM, LIFO operand names', INS.LFL.bits.join() === 'EN,DN,EM' && INS.LFU.bits.join() === 'EU,DN,EM' && INS.LFU.grp === 'File/Shift' && MTPS.OPN.LFU.join() === 'LIFO,Dest,Control,Length,Position');
+  const l = run({ tags: [...tags, T('O', 'DINT')], rungs: ['XIC(Ld)LFL(V,Q[0],Ctl,5,0);', 'XIC(Ld)LFU(Q[0],O,Ctl,5,0);'] });
+  l.scan(10); l.write('Ld', 1); l.scan(10);
+  eq('LFL then LFU on the same rising edge (one CONTROL): the value goes in and comes back out', [l.read('O'), l.read('Q[0]'), l.read('Ctl.POS'), l.read('Ctl.EM')], [9, 0, 0, 1]);
+}
+{
+  const INS = MTPS.INSTR;
+  check('SQI, SQO, SQL are in the Sequencer group; SQI is an input (no output bits), SQO / SQL show EN and DN', ['SQI', 'SQO', 'SQL'].every(m => INS[m].grp === 'Sequencer') && !INS.SQI.out && !INS.SQI.bits && INS.SQO.bits.join() === 'EN,DN' && INS.SQL.bits.join() === 'EN,DN');
+  eq('sequencer operand names', [MTPS.OPN.SQI.length, MTPS.OPN.SQO[2], MTPS.OPN.SQL[1]], [6, 'Dest', 'Source']);
+  // SQI and SQO on one CONTROL: the sequence waits at a step until its inputs match, then the SQO rung rises and steps
+  const c = run({ tags: [T('Out', 'DINT', { dim: 3, value: [0, 1, 2] }), T('Inp', 'DINT', { dim: 3, value: [0, 1, 2] }), T('In', 'DINT', { value: 5 }), T('Do', 'DINT'), T('Ctl', 'CONTROL')],
+    rungs: ['SQI(Inp[0],16#FF,In,Ctl,2,0)SQO(Out[0],16#FF,Do,Ctl,2,0);'] });
+  c.scan(10);
+  eq('SQI / SQO pair: step 0 waits while the input does not match', [c.read('Ctl.POS'), c.read('Ctl.EN')], [0, 0]);
+  c.write('In', 0); c.scan(10); c.scan(10);
+  eq('SQI / SQO pair: the input of step 0 matches, the SQO steps to 1 and outputs it', [c.read('Ctl.POS'), c.read('Do')], [1, 1]);
+  c.write('In', 1); c.scan(10); c.scan(10);
+  eq('SQI / SQO pair: step 1 mismatched (rung false), then input 1 matches: the sequence steps to 2 (.DN at .LEN)', [c.read('Ctl.POS'), c.read('Do'), c.read('Ctl.DN')], [2, 2, 1]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

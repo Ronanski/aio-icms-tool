@@ -1940,6 +1940,73 @@ function check(name, cond, info = '') {
     /*B-NEXT*/
     await bctx.close();
   }
+  console.log('File/Shift and Sequencer instructions, added through the screens (desktop mouse, tablet and phone touch)');
+  {
+    // [toolbar tab, mnemonic, operands typed in the operand box]
+    const ADD = [
+      ['File/Shift', 'BSL', ['Bits[0]', 'Ctl', 'In1', '40']], ['File/Shift', 'BSR', ['Bits[1]', 'Ctl2', 'In1', '8']],
+      ['File/Shift', 'FFL', ['Val', 'Fifo[0]', 'Ctl3', '10', '0']], ['File/Shift', 'FFU', ['Fifo[0]', 'Out', 'Ctl3', '10', '0']],
+      ['File/Shift', 'LFL', ['Val', 'Lifo[0]', 'Ctl4', '10', '0']], ['File/Shift', 'LFU', ['Lifo[0]', 'Out2', 'Ctl4', '10', '0']],
+      ['Sequencer', 'SQI', ['Seq[0]', '16#000F', 'Val', 'SCtl', '4', '0']], ['Sequencer', 'SQO', ['Seq[0]', 'Mask', 'Out', 'SCtl', '4', '0']], ['Sequencer', 'SQL', ['Seq[0]', 'Val', 'SCtl', '4', '0']],
+    ];
+    const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 1024, height: 768 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
+    for (const lay of LAYS) {
+      const cx = await browser.newContext({ viewport: lay.vp, isMobile: !!lay.touch, hasTouch: !!lay.touch });
+      await cx.route('https://ronanski.github.io/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ version: '0.0.1', build: 'test', notes: '' }) }));
+      const pg = await cx.newPage(), errs = [];
+      pg.on('pageerror', e => errs.push(e.message));
+      await pg.goto(URL); await pg.evaluate(() => localStorage.clear()); await pg.reload(); await pg.waitForTimeout(300);
+      const tp = sel => (lay.touch ? pg.tap(sel) : pg.click(sel));
+      await pg.evaluate(() => {
+        const A = MTPS.App, p = A.blank('Shift'), T = (name, type, dim) => p.tags.push(dim ? { name, type, dim } : { name, type });
+        T('Bits', 'DINT', 4); T('Ctl', 'CONTROL'); T('Ctl2', 'CONTROL'); T('Ctl3', 'CONTROL'); T('Ctl4', 'CONTROL'); T('SCtl', 'CONTROL'); T('In1', 'BOOL');
+        T('Fifo', 'DINT', 10); T('Lifo', 'DINT', 10); T('Seq', 'DINT', 8); T('Val', 'DINT'); T('Out', 'DINT'); T('Out2', 'DINT'); T('Mask', 'DINT');
+        A.openProject(p);
+      });
+      await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
+      const bad = [];
+      for (const [tab, mn, ops] of ADD) {
+        await pg.evaluate(() => { const S = MTPS.App.state, rr = S.p.tasks[0].programs[0].routines[0].rungs; if (rr[rr.length - 1].t) rr.push({ t: '' }); S.sel = null; S.selRung = rr.length - 1; MTPS.App.render(); });
+        const ri = await pg.evaluate(() => MTPS.App.state.selRung);
+        if (lay.n === 'phone') {
+          // the + button: Add Ladder Element, the group folder, then the instruction (a second tap adds it)
+          await tp('.fab'); await pg.waitForTimeout(150);
+          if (!(await pg.$(`#layer [data-pk="${mn}"]`))) await tp(`#layer [data-pgrp="${tab}"]`);
+          await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`); await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`);
+        } else {
+          await tp(`[data-tab="${tab}"]`); await pg.waitForTimeout(100);
+          await tp(`.gbtn[data-mn="${mn}"]`);
+        }
+        await pg.waitForTimeout(250);
+        if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
+        for (let i = 0; i < ops.length; i++) { await tp(`#layer [data-op="${i}"]`); await pg.fill(`#layer [data-op="${i}"]`, ops[i]); }
+        await tp('#layer .df .btn.pri'); await pg.waitForTimeout(200);
+        if (await pg.$('#layer .dlg')) { bad.push(`${mn}: the operand box stayed open`); await pg.keyboard.press('Escape'); await pg.waitForTimeout(80); }
+        const t = await pg.evaluate(i => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[i].t, ri);
+        if (t !== `${mn}(${ops.join(',')});`) bad.push(`${mn}: rung "${t}"`);
+      }
+      check(`${lay.n}: ${ADD.map(a => a[1]).join(', ')} added from the ${lay.n === 'phone' ? 'Add Ladder Element box (+)' : 'toolbar tabs'} with their operands`, !bad.length, bad.join(' | '));
+      const ver = await pg.evaluate(() => { MTPS.App.run('verifyc'); return MTPS.App.state.verify.errors.map(e => e.text); });
+      check(`${lay.n}: the rungs verify without errors`, !ver.length, ver.join(' | '));
+      if (lay.n === 'desktop') {
+        const tabs = await pg.$$eval('.itabs [data-tab]', x => x.map(y => y.dataset.tab).join(','));
+        check('the toolbar tabs: File/Misc, then File/Shift and Sequencer, then Program Control', /File\/Misc,File\/Shift,Sequencer,Program Control/.test(tabs), tabs);
+        const l5 = await pg.evaluate(() => { const A = MTPS.App, x = A.toL5X(A.state.p), q = A.fromL5X(x); return [x, q.tasks[0].programs[0].routines[0].rungs.map(r => r.t), MTPS.verify(q).errors.length]; });
+        check('L5X: the rung text is written as in the reference (BSL(Bits[0],Ctl,In1,40);) and reads back', l5[0].includes('<![CDATA[BSL(Bits[0],Ctl,In1,40);]]>') && JSON.stringify(l5[1].filter(Boolean)) === JSON.stringify(ADD.map(([, mn, ops]) => `${mn}(${ops.join(',')});`)) && l5[2] === 0, JSON.stringify(l5[1]));
+        await pg.evaluate(() => MTPS.App.select({ ri: 0, path: [0] })); await pg.keyboard.press('F1'); await pg.waitForTimeout(150);
+        const ih = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+        check('Instruction Help for BSL: Array (File)/Shift group, CONTROL operand, .UL member, the execution rows and a Taglish summary', ih.includes('Bit Shift Left (BSL)') && ih.includes('Array (File)/Shift Instructions') && ih.includes('CONTROL') && ih.includes('.UL unload') && ih.includes('Rung-condition-in is false'));
+        await pg.click('.ihc details.ipl summary').catch(() => {}); await pg.selectOption('#layer [data-hlsel]', 'tl').catch(() => {}); await pg.waitForTimeout(80);
+        check('Instruction Help for BSL in Taglish', (await pg.$eval('.ihc details.ipl', d => d.textContent).catch(() => '')).includes('Inuusog'));
+        await pg.click('#layer [data-ih="SQO"]'); await pg.waitForTimeout(80);
+        const sq = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+        check('Instruction Help for SQO: Sequencer Instructions group, Dest = (Dest AND NOT Mask) OR (Array[.POS] AND Mask), the first-scan rule', sq.includes('Sequencer Output (SQO)') && sq.includes('Sequencer Instructions') && sq.includes('(Dest AND NOT Mask) OR (Array[.POS] AND Mask)') && sq.includes('does not step on the first scan'));
+        await pg.keyboard.press('Escape');
+      }
+      check(`${lay.n}: no JS errors`, !errs.length, errs.join(' | '));
+      await cx.close();
+    }
+  }
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

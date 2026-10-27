@@ -259,6 +259,11 @@
     BTD: ['Source', 'Source Bit', 'Dest', 'Dest Bit', 'Length'], SWPB: ['Source', 'Order Mode', 'Dest'],
     COP: ['Source', 'Dest', 'Length'], FLL: ['Source', 'Dest', 'Length'], JSR: ['Routine Name', 'Input Par'],
     OSR: ['Storage Bit', 'Output Bit'], OSF: ['Storage Bit', 'Output Bit'],
+    BSL: ['Array', 'Control', 'Source Bit', 'Length'], BSR: ['Array', 'Control', 'Source Bit', 'Length'],
+    FFL: ['Source', 'FIFO', 'Control', 'Length', 'Position'], FFU: ['FIFO', 'Dest', 'Control', 'Length', 'Position'],
+    LFL: ['Source', 'LIFO', 'Control', 'Length', 'Position'], LFU: ['LIFO', 'Dest', 'Control', 'Length', 'Position'],
+    SQI: ['Array', 'Mask', 'Source', 'Control', 'Length', 'Position'], SQO: ['Array', 'Mask', 'Dest', 'Control', 'Length', 'Position'],
+    SQL: ['Array', 'Source', 'Control', 'Length', 'Position'],
   };
   /* a compiled operand: walks from the tag's value to the member, element or bit on every access */
   let PP = null, PK = null;
@@ -303,6 +308,11 @@
   const BYTES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
   const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else dv.setFloat32(o, v, true); };
   const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : dv.getFloat32(o, true));
+  // an operand that names one element of an array (Bits[0], Fifo[Ix]): the instructions that walk an array need it
+  const arrEl = r => r.bit < 0 && !r.dim && r.steps.length > 0 && !!r.steps[r.steps.length - 1].len;
+  // a value as a FIFO / LIFO moves it: a number, or a copy of a structure; zero keeps the shape (a structure of 0s)
+  const take = r => (ATOMIC[r.type] || r instanceof Const ? r.get() : clone(r.obj()));
+  const zero = v => (Array.isArray(v) ? v.map(zero) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).map(k => [k, zero(v[k])])) : 0);
   class Const { constructor(v, real) { this.c = v; this.type = real ? 'REAL' : 'DINT'; this.bit = -1; } get() { return this.c; } }
 
   /* text → Ref, or the reason it is not one (program tags hide controller tags; aliases are followed) */
@@ -465,7 +475,10 @@
   /* ---------- Instruction set ---------- */
   /* operand kinds: bit / bitw (BOOL to read / to write), timer, counter, struct (any of the three), imm (a number),
      num / int (a number or a tag), dest / idest (a tag to write), expr, elem / elemw (an array element), routine,
-     label, order (SWPB); a ? at the end makes the operand optional */
+     label, order (SWPB), control (a CONTROL tag), darr (an element of a DINT array, to write), fsrc / farr / fdst
+     (the Source, the array element and the Dest of a FIFO or LIFO: SINT, INT, DINT, REAL or a structure), ddest (a
+     DINT tag to write); a ? at the end makes the operand optional. ctl is the index of the CONTROL operand; live maps the Length / Position operands to the
+     .LEN / .POS they show (written into the tag on download, as the reference does) */
   const I = (k, grp, name, args, more) => ({ k, grp, name, args: args ? args.split(' ') : [], ...more });
   const INSTR = {
     XIC: I('contact', 'Bit', 'Examine If Closed', 'bit'),
@@ -511,6 +524,17 @@
     SWPB: I('box', 'Move/Logical', 'Swap Byte', 'int order idest', { out: true }),
     COP: I('box', 'File/Misc', 'Copy File', 'elem elemw imm', { out: true }),
     FLL: I('box', 'File/Misc', 'File Fill', 'num elemw imm', { out: true }),
+    // Array (File)/Shift (1756-RM003 chapter 9): transitional, they act on a false-to-true rung
+    BSL: I('box', 'File/Shift', 'Bit Shift Left', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
+    BSR: I('box', 'File/Shift', 'Bit Shift Right', 'darr control bit imm', { out: true, bits: ['EN', 'DN'], ctl: 1, live: { 3: 'LEN' } }),
+    FFL: I('box', 'File/Shift', 'FIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    FFU: I('box', 'File/Shift', 'FIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    LFL: I('box', 'File/Shift', 'LIFO Load', 'fsrc farr control imm imm', { out: true, bits: ['EN', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    LFU: I('box', 'File/Shift', 'LIFO Unload', 'farr fdst control imm imm', { out: true, bits: ['EU', 'DN', 'EM'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
+    // Sequencer (1756-RM003 chapter 10): normally one CONTROL for the SQO, SQI and SQL of a sequence
+    SQI: I('box', 'Sequencer', 'Sequencer Input', 'darr int int control imm imm', { ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SQO: I('box', 'Sequencer', 'Sequencer Output', 'darr int ddest control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 3, live: { 4: 'LEN', 5: 'POS' } }),
+    SQL: I('box', 'Sequencer', 'Sequencer Load', 'darr int control imm imm', { out: true, bits: ['EN', 'DN'], ctl: 2, live: { 3: 'LEN', 4: 'POS' } }),
     JSR: I('box', 'Program Control', 'Jump to Subroutine', 'routine imm?', { out: true }),
     RET: I('box', 'Program Control', 'Return from Subroutine', '', { out: true }),
     SBR: I('box', 'Program Control', 'Subroutine', ''),
@@ -536,7 +560,7 @@
     }
     const c = parseNumber(s);
     if (c) {
-      if (kind === 'num' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
+      if (kind === 'num' || kind === 'fsrc' || (kind === 'int' && !c.real)) return new Const(c.v, c.real);
       return kind === 'int' ? BAD_TYPE : 'Immediate value not allowed';
     }
     const r = ref(M, P, s);
@@ -550,6 +574,12 @@
       case 'timer': return r.type === 'TIMER' && one ? r : BAD_TYPE;
       case 'counter': return r.type === 'COUNTER' && one ? r : BAD_TYPE;
       case 'struct': return ['TIMER', 'COUNTER', 'CONTROL'].includes(r.type) && one ? r : BAD_TYPE;
+      case 'control': return r.type === 'CONTROL' && one ? writable() : BAD_TYPE;
+      case 'darr': if (!arrEl(r)) return 'Operand must be an array element, e.g. Bits[0]'; return r.type === 'DINT' ? writable() : BAD_TYPE;
+      case 'farr': if (!arrEl(r)) return 'Operand must be an array element, e.g. Fifo[0]'; return r.type !== 'BOOL' ? writable() : BAD_TYPE;
+      case 'fsrc': return one && r.bit < 0 && r.type !== 'BOOL' ? r : BAD_TYPE;
+      case 'fdst': return one && r.bit < 0 && r.type !== 'BOOL' ? writable() : BAD_TYPE;
+      case 'ddest': return r.type === 'DINT' && one ? writable() : BAD_TYPE;
       case 'num': return isNum(r.type) && one ? r : BAD_TYPE;
       case 'int': return isInt(r.type) && one ? r : BAD_TYPE;
       case 'dest': return isNum(r.type) && one ? writable() : BAD_TYPE;
@@ -598,6 +628,12 @@
         break;
       }
       case 'SWPB': if (x[0].type === 'SINT' || x[2].type === 'SINT') bad(BAD_TYPE, x[0].type === 'SINT' ? 0 : 2); break;
+      // a number Source / Dest is converted to the type of the array; a structure must be the array's own type
+      case 'FFL': case 'FFU': case 'LFL': case 'LFU': {
+        const ld = e.t.endsWith('L'), arr = ld ? x[1] : x[0], o = ld ? x[0] : x[1];
+        if (isNum(arr.type) ? !isNum(o.type) : o.type !== arr.type) bad(BAD_TYPE, ld ? 0 : 1);
+        break;
+      }
       case 'LBL':
         if (!first) bad('LBL must be the first instruction of the rung', 0);
         if (R.labels.has(x[0].label)) bad(`Label '${e.a[0]}' is defined more than once`, 0); else R.labels.set(x[0].label, n);
@@ -607,6 +643,11 @@
     if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && ok) {
       // the preset and accum of the rung text are written into the tag
       try { const s = x[0].obj(); s.PRE = x[1].c; s.ACC = x[2].c; } catch (err) { if (!(err instanceof Fault)) throw err; }
+    }
+    if (d.live && ok) {
+      // Length / Position are the .LEN / .POS of the CONTROL: whole numbers, written into the tag (as a timer's preset)
+      for (const k in d.live) if (x[k] && x[k].type === 'REAL') bad(`${OPN[e.t][k]} must be a whole number`, +k);
+      if (ok) try { const s = x[d.ctl].obj(); for (const k in d.live) s[d.live[k]] = x[k].c; } catch (err) { if (!(err instanceof Fault)) throw err; }
     }
     if ((e.t === 'OTE' || e.t === 'OTL' || e.t === 'OTU') && x[0].input) W('Writing to an input image: the next input update overwrites it', e.t, 0);
     if (e.t === 'OTE' && x[0].norm) {
@@ -746,6 +787,16 @@
   // the project name is the file's name: an upload saved under another name still holds the same logic
   const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
+  /* the .EM / .DN of a FIFO or LIFO from its .POS and .LEN (RM003 flow charts, Prescan and false): .LEN <= 0 or
+     .POS < 0 set both; else .EM while .POS = 0 and .DN while .POS >= .LEN */
+  function fstat(c) {
+    if (c.LEN <= 0 || c.POS < 0) { c.EM = c.DN = 1; return; }
+    c.EM = c.POS === 0 ? 1 : 0; c.DN = c.POS >= c.LEN ? 1 : 0;
+  }
+
+  // a sequencer Mask: a SINT or INT is zero extended to a DINT (RM003, SQI Mask)
+  const maskOf = r => { const v = i32(r.get()); return r.type === 'SINT' ? v & 0xFF : r.type === 'INT' ? v & 0xFFFF : v; };
+
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -833,6 +884,13 @@
               case 'RTO': { const s = x[0].obj(); s.EN = s.TT = 0; break; }
               case 'CTU': x[0].obj().CU = 1; break;
               case 'CTD': x[0].obj().CD = 1; break;
+              case 'BSL': case 'BSR': { const c = x[1].obj(); c.EN = c.DN = c.ER = 0; c.POS = 0; break; }
+              // .EN (load) / .EU (unload) set, so a true rung does not load or unload on the first scan
+              case 'FFL': case 'LFL': { const c = x[2].obj(); c.EN = 1; fstat(c); break; }
+              case 'FFU': case 'LFU': { const c = x[2].obj(); c.EU = 1; fstat(c); break; }
+              // .EN set: a rung that is true at the change to Run does not step on the first scan (it stays at .POS)
+              case 'SQO': x[3].obj().EN = 1; break;
+              case 'SQL': x[2].obj().EN = 1; break;
             }
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
@@ -877,7 +935,7 @@
         const r = this.refOf(t.name, prog);
         if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || dimText(r.dims) !== dimText(t.dim)) return;
         const v = this.read(t.name, prog);
-        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER') kept.push([t.name, prog, v]); }
+        if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER' || (r.type === 'CONTROL' && !r.dim)) kept.push([t.name, prog, v, r.type === 'CONTROL' ? 'LEN' : 'PRE']); }
       });
       keep(p.tags, null);
       (p.tasks || []).forEach(k => (k.programs || []).forEach(g => keep(g.tags, g.name)));
@@ -890,8 +948,9 @@
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
-      // a timer or a counter keeps its accum and bits: only the preset comes from the (maybe edited) rung
-      kept.forEach(([name, prog, v]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { PRE: o.PRE }); } });
+      // a timer or a counter keeps its accum and bits, a CONTROL its position and bits: only the preset (.LEN) comes
+      // from the (maybe edited) rung
+      kept.forEach(([name, prog, v, k]) => { const r = this.refOf(name, prog); if (typeof r !== 'string') { const o = r.obj(); Object.assign(o, v, { [k]: o[k] }); } });
       this.emit('download');
       return res;
     }
@@ -1090,6 +1149,11 @@
           }
           e.v = p; return p;
         }
+        case 'BSL': case 'BSR': this.bitShift(e.t, x, p); e.v = p; return p;
+        case 'FFL': case 'LFL': this.load(e.t, x, p); e.v = p; return p;
+        case 'FFU': case 'LFU': this.unload(e.t, x, p); e.v = p; return p;
+        case 'SQO': case 'SQL': this.sequencer(e.t, x, p); e.v = p; return p;
+        case 'SQI': { if (!p) { e.v = false; return false; } e.v = this.seqIn(x); return e.v; }
         case 'JSR': {
           if (p) {
             if (this.d >= 32) throw new Fault(4, 31, 'JSR nesting too deep');
@@ -1130,6 +1194,103 @@
         default: if (b === 0) { r = real ? NaN : a; ov = true; } else r = real ? a - b * Math.trunc(a / b) : a % b;
       }
       this.put(D, r, ov, c);
+    }
+    /* BSL / BSR (1756-RM003, Bit Shift Left / Right): on a false-to-true rung .EN is set and the other bits cleared,
+       then .LEN bits from Array bit 0 shift one place (left: the top bit goes to .UL and Source Bit into bit 0; right:
+       bit 0 goes to .UL and Source Bit into the top bit), .DN set and .POS = .LEN. .LEN = 0: .DN set and .UL = Source
+       Bit; .LEN < 0: .ER set; .LEN past the end of the array: major fault 4/20. A false rung clears .EN .DN .ER .POS */
+    bitShift(t, x, p) {
+      const c = x[1].obj();
+      if (!p) { c.EN = c.DN = c.ER = 0; c.POS = 0; return; }
+      if (c.EN) return;
+      c.EN = 1; c.EU = c.DN = c.EM = c.ER = c.UL = c.IN = c.FD = 0;
+      const len = c.LEN, src = x[2].get() ? 1 : 0;
+      if (len === 0) { c.DN = 1; c.POS = 0; c.UL = src; return; }
+      if (len < 0) { c.ER = 1; return; }
+      const A = file(x[0]);
+      if (len > A.n * 32) throw new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN ${len} is past the end of the array)`);
+      const get = i => (A.g(i >> 5) >>> (i & 31)) & 1;
+      const put = (i, v) => { const w = A.g(i >> 5), m = 1 << (i & 31); A.s(i >> 5, v ? (w | m) | 0 : (w & ~m) | 0); };
+      if (t === 'BSL') { c.UL = get(len - 1); for (let i = len - 1; i > 0; i--) put(i, get(i - 1)); put(0, src); }
+      else { c.UL = get(0); for (let i = 0; i < len - 1; i++) put(i, get(i + 1)); put(len - 1, src); }
+      c.DN = 1; c.POS = len;
+    }
+    /* FFL and LFL (1756-RM003, FIFO / LIFO Load flow charts: the same steps): on a false-to-true rung .EN is set and .POS + 1; while .POS <= .LEN the
+       Source goes into the element .POS - 1 (the next free one), converted to the array's type; past .LEN the FIFO is
+       full and .POS goes back. A false rung clears .EN. .EM and .DN follow .POS and .LEN on every scan (fstat). */
+    load(t, x, p) {
+      const c = x[2].obj();
+      if (!p) { c.EN = 0; fstat(c); return; }
+      if (c.LEN <= 0 || c.POS < 0) { c.EM = c.DN = 1; return; }
+      c.EM = c.DN = 0;
+      if (c.EN) { fstat(c); return; }
+      c.EN = 1; c.POS++;
+      if (c.POS >= c.LEN) c.DN = 1;
+      if (c.POS > c.LEN) { c.POS--; return; }
+      const F = file(x[1]);
+      if (c.POS > F.n) throw new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .POS is past the end of the array)`);
+      const v = take(x[0]);
+      F.s(c.POS - 1, ATOMIC[x[1].type] ? store(x[1].type, v) : v);
+      OV = false;
+    }
+    /* FFU (FIFO Unload flow charts): on a false-to-true rung .EU is set; with data (.POS >= 1) element 0 goes to Dest,
+       the others move down one place and .POS - 1; an empty FIFO puts 0 in Dest. LFU (LIFO Unload): the last loaded
+       element (.POS - 1, .POS limited to .LEN) goes to Dest and 0 is stored in its place. .LEN past the end of the
+       array is a major fault 4/20. A false rung clears .EU. */
+    unload(t, x, p) {
+      const c = x[2].obj();
+      if (!p) { c.EU = 0; fstat(c); return; }
+      if (c.LEN <= 0 || c.POS < 0) { c.EM = c.DN = 1; return; }
+      c.EM = c.DN = 0;
+      if (c.EU) { fstat(c); return; }
+      c.EU = 1;
+      const F = file(x[0]), D = x[1], lifo = t === 'LFU', past = () => new Fault(4, 20, `Array subscript too large, or less than 0 (${t}: .LEN is past the end of the array)`);
+      if (!lifo && c.LEN > F.n) throw past();
+      if (c.POS <= 1) c.EM = 1;
+      const put = v => { if (ATOMIC[D.type]) D.set(v); else { D.at(); PP[PK] = clone(v); } OV = false; };
+      if (c.POS < 1) { put(ATOMIC[D.type] ? 0 : zero(D.obj())); return; }
+      if (lifo) {
+        if (c.POS > c.LEN) c.POS = c.LEN;
+        c.POS--;
+        if (c.LEN > F.n) throw past();
+        const v = F.g(c.POS);
+        put(v); F.s(c.POS, zero(v));
+        return;
+      }
+      c.POS--;
+      put(F.g(0));
+      for (let i = 1; i < c.LEN; i++) F.s(i - 1, clone(F.g(i)));
+    }
+    /* SQO / SQL (1756-RM003, Sequencer Output / Load flow charts): on a false-to-true rung .EN is set, .ER and .DN
+       cleared and .POS steps (+1, or back to 1 at .LEN); .DN is set at .POS = .LEN, .ER past .LEN. While the rung is
+       true, SQO writes Dest = (Dest AND NOT Mask) OR (Array[.POS] AND Mask) and SQL writes Array[.POS] = Source.
+       .LEN <= 0 or .POS < 0: .ER set. .POS past the end of the array: SQO sets .ER, SQL is a major fault 4/20. */
+    sequencer(t, x, p) {
+      const c = x[t === 'SQL' ? 2 : 3].obj();
+      if (!p) { c.EN = 0; return; }
+      if (!(c.LEN > 0 && c.POS >= 0)) { c.EN = 1; c.ER = 1; c.DN = c.POS === c.LEN ? 1 : 0; return; }
+      if (!c.EN) { c.EN = 1; c.ER = 0; c.DN = 0; c.POS = c.POS < c.LEN ? c.POS + 1 : 1; } else c.DN = 0;
+      if (c.POS === c.LEN) c.DN = 1;
+      else if (c.POS > c.LEN) { c.ER = 1; return; }
+      const A = file(x[0]);
+      if (c.POS >= A.n) {
+        if (t === 'SQL') throw new Fault(4, 20, 'Array subscript too large, or less than 0 (SQL: .POS is past the end of the array)');
+        c.ER = 1; return;
+      }
+      if (t === 'SQL') A.s(c.POS, store('DINT', x[1].get()));
+      else { const m = maskOf(x[1]); x[2].set((i32(x[2].get()) & ~m) | (A.g(c.POS) & m)); }
+      OV = false;
+    }
+    /* SQI (Sequencer Input flow chart): .ER cleared; with .LEN > 0 and 0 <= .POS <= .LEN the rung-condition-out is
+       (Source AND Mask) = (Array[.POS] AND Mask); otherwise, or past the end of the array, .ER is set and it is false */
+    seqIn(x) {
+      const c = x[3].obj();
+      c.ER = 0;
+      if (!(c.LEN > 0 && c.POS >= 0 && c.POS <= c.LEN)) { c.ER = 1; return false; }
+      const A = file(x[0]);
+      if (c.POS >= A.n) { c.ER = 1; return false; }
+      const m = maskOf(x[1]);
+      return (i32(x[2].get()) & m) === (A.g(c.POS) & m);
     }
     /* ACC = ACC + (now - last scan), from the scan after the timer is enabled. Setting DN pauses a TON / RTO, clearing
        it pauses a TOF (reference help). */

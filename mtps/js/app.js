@@ -119,6 +119,8 @@
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
     'File/Misc': ['COP', 'FLL'],
+    'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
+    Sequencer: ['SQI', 'SQO', 'SQL'],
     'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
@@ -1184,7 +1186,7 @@
   const markOf = (r, err) => (!r.z ? '' : r.z === 'i' && err ? 'e' : r.z);
   function ladderRungs() {
     const R = liveRoutine(), map = R ? liveIdx() : null;
-    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } };
+    const tag = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(tag)); else if (L.OPN[e.t] && /^(timer|counter)$/.test((INSTR[e.t].args[0] || ''))) { try { e.bv = { ...e.x[0].obj() }; } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t] && INSTR[e.t].ctl != null) { try { e.bv = { ...e.x[INSTR[e.t].ctl].obj() }; } catch (err) { /* ignore */ } } };
     return rungs().map((r, i) => {
       const pr = E.parseRung(r.t), err = S.errRungs.has(i) || !!pr.err;
       const base = { c: r.c, err, mk: markOf(r, err), ro: roRung(r), dash: !!(S.online && r.z === 'i'), dx: r.dx };
@@ -1667,7 +1669,10 @@
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
     num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
+    control: ['CONTROL'], darr: ['DINT'], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
   };
+  // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
+  const ARRK = ['elem', 'elemw', 'darr', 'farr'];
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
   const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || ((S.p.dataTypes || []).find(d => U(d.name) === U(ty)) || {}).members || null;
@@ -1802,7 +1807,7 @@
     if (kind === 'imm' || kind === 'order') return kind === 'order' ? ['REVERSE', 'WORD', 'HIGH/LOW'].map(n => ({ name: n, type: '', desc: '' })) : [];
     const types = KIND_TYPES[kind];
     let list = candidates();
-    if (kind === 'elem' || kind === 'elemw') list = list.filter(c => /\[\d+\]$/.test(c.name));
+    if (ARRK.includes(kind)) list = list.filter(c => /\[\d+\]$/.test(c.name) && (!types || types.includes(c.type)));
     else if (types) list = list.filter(c => types.includes(c.type) && !c.dim);
     if (q) list = list.filter(c => U(c.name).includes(q)).sort((a, b) => (U(a.name).startsWith(q) ? 0 : 1) - (U(b.name).startsWith(q) ? 0 : 1));
     return list.slice(0, 120);
@@ -1841,7 +1846,7 @@
     const r = (S.prefs.recent || []).filter(x => !list.some(y => U(y) === U(x)));
     S.prefs.recent = list.concat(r).slice(0, RECENT_MAX); savePrefs();
   }
-  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER' })[kind] || 'DINT';
+  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER', control: 'CONTROL' })[kind] || 'DINT';
   function openEditor(ri, path, focusIdx) {
     const elems = parsed(ri), e = elems && getEl(elems, path);
     if (!e || e.t === 'BR') return;
@@ -2787,7 +2792,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = w.querySelector(`rect.tap[data-rn][data-ri="${ri}"]`);
     if (r) { const y = +r.getAttribute('y'); if (y < w.scrollTop + 20 || y > w.scrollTop + w.clientHeight - 60) w.scrollTop = Math.max(0, y - 40); }
   }
-  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct'];
+  const DESTR = ['bitw', 'dest', 'idest', 'elemw', 'timer', 'counter', 'struct', 'control', 'darr', 'farr', 'fdst', 'ddest'];
   /* Cross Reference, as the reference's window (Search > Cross Reference, Ctrl+E): Type, Scope, Name (with * as a
      wildcard), Show (All, Destructive, Non-Destructive) and Refresh at the top; a Logic tab with the columns Element,
      Container, Routine, Location, Reference, BaseTag, Destructive, Description (sorted by a click on a header; a
@@ -2874,7 +2879,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       } });
   }
   const HELP = E.HELP || { H: {}, TIPS: { en: [], tl: [] } }, HREF = E.HELPREF || { R: {}, KIND: {} };
-  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['Program Control', 'Program Control Instructions']];
+  const HGRP = [['Bit', 'Bit Instructions'], ['Timer/Counter', 'Timer and Counter Instructions'], ['Compare', 'Compare Instructions'], ['Compute/Math', 'Compute/Math Instructions'], ['Move/Logical', 'Move/Logical Instructions'], ['File/Misc', 'File/Misc. Instructions'], ['File/Shift', 'Array (File)/Shift Instructions'], ['Sequencer', 'Sequencer Instructions'], ['Program Control', 'Program Control Instructions']];
   const hlang = () => (S.prefs.helpLang === 'tl' ? 'tl' : 'en');
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
      instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
@@ -4587,7 +4592,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   function liveSig() {
     if (!S.online) { ladPart = ''; return 'off|' + chassisSig(); }
     const R = liveRoutine(), parts = [ctl.mode, ctl.key, ctl.fault ? 1 : 0, ctl.forceState()];
-    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
+    if (R) { const w = e => { if (!e) return; if (e.t === 'BR') e.legs.forEach(l => l.forEach(w)); else { parts.push(e.v ? 1 : 0); if (e.x && e.x[0] && e.x[0].obj && /^(timer|counter)$/.test(INSTR[e.t].args[0] || '')) { try { const s = e.x[0].obj(); parts.push(s.ACC, s.DN); } catch (err) { /* ignore */ } } else if (e.x && INSTR[e.t].ctl != null) { try { const s = e.x[INSTR[e.t].ctl].obj(); parts.push(s.POS, s.LEN, s.EN, s.EU, s.DN, s.EM, s.ER); } catch (err) { /* ignore */ } } } }; R.rungs.forEach(r => r.elems.forEach(w)); }
     ladPart = parts.join(',');
     const io = [];
     ctl.M && ctl.M.mods.forEach((m, s) => { const im = ctl.ioImage(s); io.push(JSON.stringify(im)); });
