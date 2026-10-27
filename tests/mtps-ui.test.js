@@ -153,7 +153,7 @@ function check(name, cond, info = '') {
   console.log('Online, I/O panel, forces');
   await ev(() => MTPS.App.run('online'));
   await page.waitForTimeout(100);
-  check('Go Online with an empty controller: Connected To Go Online, "contains no project", no Upload', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('contains no project') && !(await page.$$eval('#layer .btn', b => b.map(x => x.textContent.trim()))).includes('Upload…'));
+  check('Go Online with an empty controller: Connected To Go Online, "There is no project loaded in the controller.", no Upload', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('There is no project loaded in the controller.') && !(await page.$$eval('#layer .btn', b => b.map(x => x.textContent.trim()))).includes('Upload…'));
   await page.click('#layer .btn.pri');
   await page.waitForTimeout(120);
   check('Download… opens the Download dialog with the path', (await dlgTitle()) === 'Download' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('Emulate\\127.0.0.1\\Backplane\\0'));

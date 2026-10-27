@@ -158,6 +158,46 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     check('tablet (touch): Task Properties sets the watchdog', await tp.evaluate(() => MTPS.App.state.p.tasks[0].watchdog === 250));
     await tp.close();
   }
+  console.log('Wave 2 D: Connected To Go Online (v37 help: Options tab; Correlate a project with a controller)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    const goOnline = async () => { await ev(() => MTPS.App.run('online')); await page.waitForFunction(() => { const b = document.querySelector('#layer .dlg .dh b'); return MTPS.App.state.online || (b && b.textContent === 'Connected To Go Online'); }, null, { timeout: 4000 }).catch(() => {}); await wait(100); };
+    const cond = () => page.$eval('#layer .corr-cond', e => e.textContent).catch(() => '');
+    const through = async (pg = page, tap = false) => { for (let k = 0; k < 6 && !(await pg.evaluate(() => MTPS.App.state.online)); k++) { const b2 = await pg.$('#layer .dlg .btn.pri'); if (b2) { if (tap) await b2.tap(); else await b2.click(); } await pg.waitForTimeout(300); } };
+    await goOnline();
+    check('an empty controller: "There is no project loaded in the controller.", Controller Name <no name>, no Upload', (await cond()) === 'There is no project loaded in the controller.' && /Controller Name<no name>/.test(await dlgText()) && !(await dlgBtns()).includes('Upload…'));
+    const t0 = await dlgText();
+    check('Connected Controller (Name, Type, Comm Path, Serial Number, Security) and Offline Project (Name, Type, File, Revision)', ['Connected Controller', 'Controller TypePLC-CPU', 'Comm Path', 'Serial Number', 'SecurityNo Protection', 'Offline Project', 'File', 'Revision1.0'].every(x => t0.includes(x)), t0);
+    await shot('correlate-empty');
+    await clickBtn('Download…'); await through();
+    check('Download: online', await ev(() => MTPS.App.state.online));
+    await ev(() => MTPS.App.run('offline')); await wait(100);
+    await ev(() => MTPS.App.run('rung')); await wait(100);
+    await goOnline();
+    check('offline changes: "Offline changes have been made to the open project."', (await cond()) === 'Offline changes have been made to the open project.' && (await dlgBtns()).join('|') === 'Cancel|Select File…|Upload…|Download…', await cond());
+    await shot('correlate-offline-changes');
+    await page.keyboard.press('Escape'); await wait(100);
+    await ev(() => { MTPS.App.state.dirty = false; });
+    await goOnline();
+    check('another copy of the project (no unsaved changes): "You need to upload or download in order to go online using the open project."', (await cond()) === 'You need to upload or download in order to go online using the open project.', await cond());
+    await clickBtn('Upload…'); await wait(150); await through();
+    check("Upload: the controller's project opens here and goes online", await ev(() => MTPS.App.state.online && MTPS.App.state.p.controller.name === 'Motor_Demo'));
+    await page.keyboard.press('Escape'); await wait(100);
+    await ev(() => MTPS.App.run('offline')); await wait(100);
+    await open(page, () => MTPS.App.openProject(MTPS.App.blank('Other_Line')));
+    await goOnline();
+    check('another project: "The open project doesn\'t match the project in the controller."', (await cond()) === "The open project doesn't match the project in the controller." && /Controller NameMotor_Demo/.test(await dlgText()) && /Controller NameOther_Line/.test(await dlgText()), await cond());
+    await page.keyboard.press('Escape'); await wait(100);
+    // phone, touch: the dialog fits and Download is tapped
+    const tp = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 390, height: 844 }); await open(tp, () => MTPS.App.openProject(MTPS.App.example()));
+    await tp.evaluate(() => MTPS.App.run('online')); await tp.waitForFunction(() => document.querySelector('#layer .corr-cond'), null, { timeout: 4000 }).catch(() => {});
+    check('phone (touch): Connected To Go Online shows the condition, no sideways scroll', (await tp.$eval('#layer .corr-cond', e => e.textContent).catch(() => '')) === 'There is no project loaded in the controller.' && await tp.evaluate(() => document.querySelector('#layer .dlg').scrollWidth <= innerWidth + 1));
+    await shot('correlate-phone', tp);
+    await clickBtn('Download…', tp, true); await through(tp, true);
+    check('phone (touch): Download goes online', await tp.evaluate(() => MTPS.App.state.online));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {

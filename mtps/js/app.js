@@ -3901,12 +3901,19 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     if (ctl.M && (ctl.holds(S.p) || (zonesIn(S.p) && (ctl.holds(newLogic(S.p)) || ctl.holds(logicOf(S.p, 'old')))) || (S.ed && S.ed.ctl === ctl))) { online(); toast(`Online with ${ctl.name}`); return; }
     const inCtl = ctl.M ? JSON.parse(ctl.copy) : null;
     const facts = p => { const progs = p.tasks.flatMap(t => t.programs); return `${progs.reduce((n, g) => n + g.routines.length, 0)} routine(s), ${progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0)} rung(s), ${p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0)} tag(s)`; };
-    const files = index().filter(x => inCtl && U(x.name) === U(inCtl.controller.name) && x.name !== S.p.controller.name);
+    /* the condition (v37 help, Correlate a project with a controller), then the connected controller and the offline
+       project, as the Options tab of the Connected To Go Online dialog shows them */
+    const cond = !inCtl ? ['There is no project loaded in the controller.', 'Download a project to the controller to go online.']
+      : U(inCtl.controller.name) !== U(S.p.controller.name) ? ['The open project doesn\'t match the project in the controller.', 'Check the communications path. If it is right, the wrong project file is open: Select File opens the right one, or Upload copies the controller\'s project into a new file.']
+      : S.dirty ? ['Offline changes have been made to the open project.', 'Offline changes to the logic and configuration cannot be correlated: Download them to the controller, or discard them with Upload.']
+      : ['You need to upload or download in order to go online using the open project.', 'The controller holds another copy of this project (or online changes this copy does not have): Upload makes both copies the same; Download replaces the controller\'s.'];
+    const ctlType = c => esc((c && c.controller && c.controller.type) || 'PLC-CPU') + ' (emulated)';
+    const files = [];
     dialog({ title: 'Connected To Go Online', size: 'md',
-      body: `<p>${inCtl ? (U(inCtl.controller.name) === U(S.p.controller.name) ? 'The project in the controller is another version of the open project.' : 'The controller holds another project.') : 'The controller contains no project.'}</p>
-        <div class="grp" style="background:none;padding-left:0">Controller</div>${kv('Path', esc(curPath()))}${kv('Name', inCtl ? esc(inCtl.controller.name) : '(none)')}${kv('Mode', MODE())}${inCtl ? kv('Contents', facts(inCtl)) : ''}
-        <div class="grp" style="background:none;padding-left:0">Offline project</div>${kv('Name', esc(S.p.controller.name))}${kv('Contents', facts(S.p))}
-        <p class="help"><b>Select File</b> opens another project on this device that matches the controller. <b>Upload</b> copies the controller's project to this device. <b>Download</b> replaces the controller's project with the open one.</p>`,
+      body: `<div class="grp" style="background:none;padding-left:0">Condition</div><p class="corr-cond"><b>${esc(cond[0])}</b></p><p class="help">${esc(cond[1])}</p>
+        <div class="grp" style="background:none;padding-left:0">Connected Controller</div>${kv('Controller Name', inCtl ? esc(inCtl.controller.name) : '&lt;no name&gt;')}${kv('Controller Type', ctlType(inCtl))}${kv('Comm Path', esc(curPath()))}${kv('Serial Number', '<span class="muted">-</span>')}${kv('Security', 'No Protection')}${inCtl ? kv('Contents', facts(inCtl)) : ''}${kv('Mode', MODE())}
+        <div class="grp" style="background:none;padding-left:0">Offline Project</div>${kv('Controller Name', esc(S.p.controller.name))}${kv('Controller Type', ctlType(S.p))}${kv('File', esc(S.file ? S.file.path : ''))}${kv('Revision', esc(S.p.controller.rev || '1.0'))}${kv('Serial Number', '<span class="muted">-</span>')}${kv('Security', 'No Protection')}${kv('Contents', facts(S.p))}
+        <p class="help"><b>Select File</b> opens another project file (or names a new one to upload into). <b>Upload</b> copies the controller's project into the open project, then goes online. <b>Download</b> replaces the controller's project with the open one, then goes online.</p>`,
       buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
     void files;
   }
