@@ -230,6 +230,72 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     check('tablet (touch): the Project tab opens', (await tp.$eval('#layer [data-pane="proj"]', e => !e.hidden && /Created/.test(e.textContent)).catch(() => false)));
     await tp.close();
   }
+  console.log('Wave 2 D: Select Module Type (v37 help: Catalog tab, Search, Filters, Close on Create; Create opens New Module)');
+  {
+    await fresh(); await open(page, () => { const p = MTPS.App.blank('Mods'); p.rack.modules = []; MTPS.App.openProject(p); });
+    await shot('select-module-type-before');
+    await page.click('.nd[data-org="io"]', { button: 'right' }).catch(() => {}); await wait(100);
+    await pick('New Module…'); await wait(150);
+    check('I/O Configuration > New Module… opens Select Module Type', (await dlgTitle()) === 'Select Module Type', await dlgTitle());
+    const rows = () => page.$$eval('#layer tr[data-smt]', r => r.map(x => x.dataset.smt));
+    const found = () => page.$eval('#smt-n', e => e.textContent);
+    check('Catalog Results: Catalog Number, Description, Vendor, Category', (await page.$$eval('#layer [data-smtsort]', t => t.map(x => x.textContent.replace(/ [▲▼]$/, '')).join('|'))) === 'Catalog Number|Description|Vendor|Category');
+    check('all 6 module types, "6 of 6 Module Types Found"', (await rows()).length === 6 && (await found()) === '6 of 6 Module Types Found', await found());
+    await shot('select-module-type');
+    await page.click('#smt-q'); await page.keyboard.type('outp');
+    check('incremental search "outp": the 3 output modules', (await rows()).join() === 'PLC-AO4,PLC-DO16-24V,PLC-DO16-RLY' && (await found()) === '3 of 6 Module Types Found', (await rows()).join());
+    await page.fill('#smt-q', ''); await page.keyboard.type('16*dc');
+    check('wildcard "16*dc": 16 DC inputs and outputs', (await rows()).join() === 'PLC-DI16-24V,PLC-DO16-24V', (await rows()).join());
+    check('the search leaves out the Category column ("digital" finds nothing)', await (async () => { await page.fill('#smt-q', 'digital'); await page.dispatchEvent('#smt-q', 'input'); return (await rows()).length === 0; })());
+    await page.fill('#smt-q', 'analog'); await page.dispatchEvent('#smt-q', 'input');
+    check('search "analog": the Digital category is grayed out', await page.$eval('#layer [data-smtcat="Digital"]', c => c.closest('label').classList.contains('muted')) && !(await page.$eval('#layer [data-smtcat="Analog"]', c => c.closest('label').classList.contains('muted'))));
+    await page.click('#smt-clr'); await wait(50);
+    check('Clear Filter: the search and the filters are back to the start', (await page.$eval('#smt-q', e => e.value)) === '' && (await rows()).length === 6);
+    await page.click('#layer [data-smtcat="Digital"]'); await wait(50);
+    check('Category filter: Digital cleared leaves the 2 analog modules', (await rows()).join() === 'PLC-AI4,PLC-AO4' && (await found()) === '2 of 6 Module Types Found');
+    check('All is cleared when one category is cleared', !(await page.$eval('#layer [data-smtall="cat"]', c => c.checked)));
+    await page.click('#layer [data-smtall="cat"]'); await wait(50);
+    check('All checked: every module type again', (await rows()).length === 6);
+    await page.click('#layer [data-smtall="cat"]'); await wait(50);
+    check('All cleared: the list is empty', (await rows()).length === 0 && (await found()) === '0 of 6 Module Types Found');
+    await page.click('#layer [data-smtall="cat"]'); await wait(50);
+    await page.click('#layer [data-smtvend="MT PLC Studio"]'); await wait(50);
+    check('Vendor filter cleared: none', (await rows()).length === 0);
+    await page.click('#layer [data-smtvend="MT PLC Studio"]'); await wait(50);
+    await page.click('#layer [data-smtsort="0"]'); await wait(50);
+    check('a click on Catalog Number sorts it descending (▼), again ascending', (await rows())[0] === 'PLC-DO16-RLY' && /▼/.test(await page.$eval('#layer [data-smtsort="0"]', e => e.textContent)) && await (async () => { await page.click('#layer [data-smtsort="0"]'); await wait(50); return (await rows())[0] === 'PLC-AI4'; })());
+    await page.click('#smt-sh'); await wait(50);
+    check('Hide Filters hides both filter lists; Show Filters brings them back', await page.$eval('#layer .smt-f', e => e.hidden) && (await page.$eval('#smt-sh', e => e.textContent)).startsWith('Show Filters') && await (async () => { await page.click('#smt-sh'); await wait(50); return page.$eval('#layer .smt-f', e => !e.hidden); })());
+    await page.click('#layer tr[data-smt="PLC-DI16-24V"]'); await page.click('#smt-fav'); await wait(50);
+    await page.click('#layer [data-smttab="fav"]'); await wait(50);
+    check('Add to Favorites: the Favorites tab lists PLC-DI16-24V', (await rows()).join() === 'PLC-DI16-24V');
+    await page.click('#layer [data-smttab="cat"]'); await wait(50);
+    // Close on Create cleared: Select Module Type stays (comes back after New Module)
+    await page.click('#smt-close');
+    await page.dblclick('#layer tr[data-smt="PLC-DO16-24V"]'); await wait(150);
+    check('double-click a module type: New Module with Type, Vendor, Parent, Name, Description, Slot', (await dlgTitle()) === 'New Module' && await (async () => { const t = await dlgText(); return ['TypePLC-DO16-24V', 'VendorMT PLC Studio', 'ParentLocal', 'Name', 'Description', 'Slot', 'Open Module Properties'].every(x => t.includes(x)); })(), await dlgText());
+    await shot('new-module');
+    await page.fill('#mn2', 'Valve_Out'); await page.fill('#nm-d', 'valves'); await page.selectOption('#ms', '3'); await clickBtn('OK'); await wait(150);
+    check('OK: module added (slot 3, description kept)', await ev(() => { const m = MTPS.App.state.p.rack.modules.find(x => x.slot === 3); return m && m.name === 'Valve_Out' && m.type === 'PLC-DO16-24V' && m.desc === 'valves'; }));
+    check('Close on Create cleared: Select Module Type is back', (await dlgTitle()) === 'Select Module Type');
+    await page.click('#smt-close'); await page.click('#layer tr[data-smt="PLC-AI4"]'); await clickBtn('Create'); await wait(150);
+    await page.fill('#mn2', 'Valve_Out'); await clickBtn('OK'); await wait(80);
+    check('a name already used is refused', /exists/.test(await page.$eval('#me', e => e.textContent)));
+    await page.fill('#mn2', 'Temps'); await page.click('#nm-op'); await clickBtn('OK'); await wait(200);
+    check('Close on Create checked and Open Module Properties: Module Properties opens, not Select Module Type', /^Module Properties - \[\d\] PLC-AI4/.test(await dlgTitle()), await dlgTitle());
+    await page.keyboard.press('Escape'); await wait(80);
+    // phone, touch
+    const tp = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await fresh(tp, { width: 390, height: 844 }); await open(tp, () => { const p = MTPS.App.blank('Mods'); p.rack.modules = []; MTPS.App.openProject(p); });
+    await tp.evaluate(() => MTPS.App.run('newmod')); await tp.waitForTimeout(200);
+    await tp.tap('#smt-q'); await tp.keyboard.type('relay'); await tp.waitForTimeout(80);
+    check('phone (touch): search "relay" finds PLC-DO16-RLY, no sideways page scroll', (await tp.$$eval('#layer tr[data-smt]', r => r.map(x => x.dataset.smt).join())) === 'PLC-DO16-RLY' && await tp.evaluate(() => document.querySelector('#layer .dlg').scrollWidth <= innerWidth + 1));
+    await shot('select-module-type-phone', tp);
+    await tp.tap('#layer tr[data-smt="PLC-DO16-RLY"]'); await clickBtn('Create', tp, true); await tp.waitForTimeout(150);
+    await clickBtn('OK', tp, true); await tp.waitForTimeout(150);
+    check('phone (touch): Create, OK adds the relay module', await tp.evaluate(() => MTPS.App.state.p.rack.modules.some(m => m.type === 'PLC-DO16-RLY')));
+    await tp.close();
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {

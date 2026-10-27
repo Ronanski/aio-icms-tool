@@ -3686,23 +3686,93 @@ ${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Typ
     if (g.main === rn) { toast('The main routine cannot be deleted.', 'err'); return; }
     confirmDlg('Delete Routine', `Delete <b>${esc(rn)}</b> and its rungs?`, 'Delete', () => { edit(() => { g.routines = g.routines.filter(x => x.name !== rn); if (g.fault === rn) delete g.fault; if (S.routine === rn) { S.routine = g.main; S.sel = null; S.selRung = 0; } }); }, true);
   }
+  /* Select Module Type (v37 help: Select Module Type dialog box - Catalog tab; Create modules; Search for modules):
+     a Search box (incremental, up to 4 terms separated by *, over every column but Category), the Catalog Results
+     (Catalog Number, Description, Vendor, Category; a click on a heading sorts it, ascending first), "N of M Module
+     Types Found", the Module Type Category and Vendor Filters (All, grayed out when the search leaves none), Clear
+     Filter, Show/Hide Filters, Add to Favorites (Favorites tab) and Close on Create. Create opens New Module (the
+     fields of the General tab of Module Properties). Module Discovery (online browse) is not emulated. */
+  const SMTCAT = { di: 'Digital', do: 'Digital', ai: 'Analog', ao: 'Analog' }, SMTVEND = 'MT PLC Studio';
+  const smt = { tab: 'cat', q: '', cats: {}, vends: {}, sort: 0, dir: 1, close: true, filt: true, sel: '' };
+  const smtTypes = () => Object.keys(E.MODULES).filter(t => !E.MODULES[t].emuOnly && E.MODULES[t].kind !== 'enet')
+    .map(t => ({ t, cols: [t, MODNAMES[t] || '', SMTVEND, SMTCAT[E.MODULES[t].kind] || 'Other'] }));
+  const smtHit = (r, q) => { const terms = q.toLowerCase().split('*').map(x => x.trim()).filter(Boolean).slice(0, 4), hay = r.cols.slice(0, 3).join(' ').toLowerCase(); return terms.every(x => hay.includes(x)); };
   function newModule() {
     if (!offline()) { toast('Go offline to add a module.'); return; }
     const used = new Set(S.p.rack.modules.map(m => m.slot).concat(ctlSlot())), free = [];
     for (let s = 0; s < S.p.rack.size; s++) if (!used.has(s)) free.push(s);
     if (!free.length) { toast('The rack is full.', 'err'); return; }
-    const types = Object.keys(E.MODULES).filter(t => !E.MODULES[t].emuOnly && E.MODULES[t].kind !== 'enet');
-    dialog({ title: 'New Module',
-      body: `<div class="frow"><label>Module</label><select class="inp" id="mt">${types.map(t => `<option value="${t}">${t} · ${esc(MODNAMES[t] || '')}</option>`).join('')}</select></div>
-        <div class="frow"><label>Name</label><input class="inp" id="mn2" value="MOD_${free[0]}" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+    const all = smtTypes(), favs = () => (S.prefs.favMods || []).filter(t => all.some(r => r.t === t));
+    const box = (k, list, on, hit) => `<div class="smt-fl"><label class="ck"><input type="checkbox" data-smtall="${k}"${list.every(x => on[x] !== false) ? ' checked' : ''}> <b>All</b></label>${list.map(x => `<label class="ck${hit.has(x) ? '' : ' muted'}"><input type="checkbox" data-smt${k}="${esc(x)}"${on[x] !== false ? ' checked' : ''}> ${esc(x)}</label>`).join('')}</div>`;
+    const body = () => {
+      const fav = smt.tab === 'fav', src = fav ? all.filter(r => favs().includes(r.t)) : all, hits = src.filter(r => smtHit(r, smt.q));
+      const rows = hits.filter(r => smt.cats[r.cols[3]] !== false && smt.vends[r.cols[2]] !== false)
+        .sort((a, b) => smt.dir * a.cols[smt.sort].localeCompare(b.cols[smt.sort]) || a.t.localeCompare(b.t));
+      if (!rows.some(r => r.t === smt.sel)) smt.sel = rows.length ? rows[0].t : '';
+      const cats = [...new Set(src.map(r => r.cols[3]))].sort(), vends = [...new Set(src.map(r => r.cols[2]))].sort();
+      return `<table class="rltab smt-t"><thead><tr>${['Catalog Number', 'Description', 'Vendor', 'Category'].map((h, n) => `<th data-smtsort="${n}">${h}${smt.sort === n ? (smt.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r => `<tr data-smt="${r.t}"${r.t === smt.sel ? ' class="on"' : ''}>${r.cols.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="4" class="muted">${fav ? 'No favorites: select a module type on the Catalog tab and choose Add to Favorites.' : 'No module type matches.'}</td></tr>`}</tbody></table>
+        <div class="smt-n" id="smt-n">${rows.length} of ${src.length} Module Types Found</div>
+        <div class="smt-f"${smt.filt ? '' : ' hidden'}><div><div class="grp">Module Type Category Filters</div>${box('cat', cats, smt.cats, new Set(hits.map(r => r.cols[3])))}</div>
+        <div><div class="grp">Module Type Vendor Filters</div>${box('vend', vends, smt.vends, new Set(hits.map(r => r.cols[2])))}</div></div>`;
+    };
+    const create = () => { if (!smt.sel) { toast('Select a module type.', 'err'); return false; } newModule2(smt.sel, free, smt.close ? null : newModule); return false; }; // false: New Module has replaced this layer
+    dialog({ title: 'Select Module Type', size: 'lg',
+      body: `<div class="fchips dtabs"><span class="fchip${smt.tab === 'cat' ? ' on' : ''}" data-smttab="cat">Catalog</span><span class="fchip${smt.tab === 'fav' ? ' on' : ''}" data-smttab="fav">Favorites</span></div>
+        <div class="smt-bar"><input class="inp" id="smt-q" type="search" maxlength="40" placeholder="Search" value="${esc(smt.q)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off">
+        <button class="btn" id="smt-clr">Clear Filter</button><button class="btn" id="smt-sh">${smt.filt ? 'Hide Filters ▲' : 'Show Filters ▼'}</button></div>
+        <div id="smt-b">${body()}</div>
+        <div class="smt-bar"><label class="ck"><input type="checkbox" id="smt-close"${smt.close ? ' checked' : ''}> Close on Create</label><span class="grow"></span><button class="btn" id="smt-fav">Add to Favorites</button></div>`,
+      buttons: [{ l: 'Close' }, { l: 'Create', pri: true, run: create }],
+      mount: el => {
+        const q = el.querySelector('#smt-q'), draw = () => { el.querySelector('#smt-b').innerHTML = body(); el.querySelector('#smt-sh').textContent = smt.filt ? 'Hide Filters ▲' : 'Show Filters ▼'; el.querySelectorAll('[data-smttab]').forEach(c => c.classList.toggle('on', c.dataset.smttab === smt.tab)); el.querySelector('#smt-fav').textContent = smt.tab === 'fav' ? 'Remove from Favorites' : 'Add to Favorites'; };
+        // the help: alphanumeric text up to 40 characters, without ! @ # $ ^ ( ) _ + = ~ ` / | { } [ ]
+        q.oninput = () => { const v = q.value.replace(/[!@#$^()_+=~`/|{}[\]]/g, ''); if (v !== q.value) q.value = v; smt.q = v; draw(); };
+        el.querySelector('#smt-clr').onclick = () => { smt.q = q.value = ''; smt.cats = {}; smt.vends = {}; draw(); };
+        el.querySelector('#smt-sh').onclick = () => { smt.filt = !smt.filt; draw(); };
+        el.querySelector('#smt-close').onchange = e => { smt.close = e.target.checked; };
+        el.querySelector('#smt-fav').onclick = () => {
+          if (!smt.sel) return;
+          const f = favs().filter(t => t !== smt.sel); if (smt.tab !== 'fav') f.push(smt.sel);
+          S.prefs.favMods = f; savePrefs(); toast(smt.tab === 'fav' ? `${smt.sel} removed from the Favorites.` : `${smt.sel} added to the Favorites.`); draw();
+        };
+        el.addEventListener('click', e => {
+          const tb = e.target.closest('[data-smttab]'), th = e.target.closest('[data-smtsort]'), tr = e.target.closest('tr[data-smt]');
+          if (tb) { smt.tab = tb.dataset.smttab; draw(); }
+          else if (th) { const n = +th.dataset.smtsort; smt.dir = smt.sort === n ? -smt.dir : 1; smt.sort = n; draw(); }
+          else if (tr) { smt.sel = tr.dataset.smt; el.querySelectorAll('tr[data-smt]').forEach(x => x.classList.toggle('on', x === tr)); }
+        });
+        el.addEventListener('dblclick', e => { const tr = e.target.closest('tr[data-smt]'); if (tr) { smt.sel = tr.dataset.smt; create(); } });
+        el.addEventListener('change', e => {
+          const a = e.target.dataset.smtall, c = e.target.dataset.smtcat, v = e.target.dataset.smtvend;
+          if (a) { const o = a === 'cat' ? smt.cats : smt.vends; el.querySelectorAll(`[data-smt${a}]`).forEach(x => { o[x.getAttribute('data-smt' + a)] = e.target.checked; }); draw(); }
+          else if (c != null) { smt.cats[c] = e.target.checked; draw(); }
+          else if (v != null) { smt.vends[v] = e.target.checked; draw(); }
+        });
+      } });
+  }
+  /* New Module (help: the same information as the General tab of Module Properties): Type, Vendor, Parent, Name,
+     Description, Slot; Open Module Properties opens Module Properties after OK. back: Close on Create was cleared,
+     so Select Module Type comes back after this dialog. */
+  function newModule2(type, free, back) {
+    const n0 = (() => { let k = free[0], n = 'MOD_' + k; while (S.p.rack.modules.some(m => U(m.name) === U(n))) n = 'MOD_' + ++k; return n; })();
+    dialog({ title: 'New Module', size: 'md', onClose: back ? () => setTimeout(back, 0) : null,
+      body: `<div class="frow"><label>Type</label><span><span class="mono" id="nm-t">${esc(type)}</span> <span class="muted">${esc(MODNAMES[type] || '')}</span></span></div>
+        <div class="frow"><label>Vendor</label><span>${SMTVEND}</span></div>
+        <div class="frow"><label>Parent</label><span>Local</span></div>
+        <div class="frow"><label>Name</label><input class="inp" id="mn2" value="${esc(n0)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="nm-d" rows="2"></textarea></div>
         <div class="frow"><label>Slot</label><select class="inp" id="ms">${free.map(s => `<option>${s}</option>`).join('')}</select></div>
+        <label class="ck"><input type="checkbox" id="nm-op"> Open Module Properties</label>
         <div class="errtx" id="me"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        const type = el.querySelector('#mt').value, slot = +el.querySelector('#ms').value, name = el.querySelector('#mn2').value.trim();
+      buttons: [{ l: 'Cancel', run: () => { if (back) setTimeout(back, 0); } }, { l: 'OK', pri: true, run: el => {
+        const slot = +el.querySelector('#ms').value, name = el.querySelector('#mn2').value.trim(), d = el.querySelector('#nm-d').value.trim(), op = el.querySelector('#nm-op').checked;
         if (!E.validName(name)) { el.querySelector('#me').textContent = 'Use letters, digits and _.'; return false; }
-        const m = { slot, type, name };
-        edit(() => { S.p.rack.modules.push(m); });
+        if (S.p.rack.modules.some(m => U(m.name) === U(name))) { el.querySelector('#me').textContent = 'A module with that name exists.'; return false; }
+        const m = { slot, type, name }; if (d) m.desc = d;
+        edit(() => { S.p.rack.modules.push(m); S.orgSel = 'mod:' + slot; });
         toast(`Module ${type} added in slot ${slot}: its tags are ${['C', 'I', 'O'].filter(k => (E.MODULES[type] || {})[k]).map(k => `Local:${slot}:${k}`).join(', ')}`);
+        if (op) setTimeout(() => moduleProps(slot), 0); else if (back) setTimeout(back, 0);
       } }] });
   }
   function deleteModule(slot) {

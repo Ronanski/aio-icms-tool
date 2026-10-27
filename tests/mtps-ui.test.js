@@ -974,9 +974,9 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   await ev(() => { const p = MTPS.App.blank('Motor_SealIn'); p.controller.slot = 2; p.rack.modules = []; MTPS.App.openProject(p); });
   await page.waitForTimeout(150);
-  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.selectOption('#layer #mt', type); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
+  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.fill('#layer #smt-q', type); await page.click(`#layer tr[data-smt="${type}"]`); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
   await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150);
-  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer #mt option', o => o.map(x => x.value))).some(v => /GENERIC|SIM/.test(v)) && !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'));
+  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer tr[data-smt]', o => o.map(x => x.dataset.smt))).some(v => /GENERIC|SIM/.test(v)) && (await (async () => { await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); return !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'); })()));
   await page.keyboard.press('Escape');
   await newMod('PLC-DI16-24V', 3, 'DI_3'); await newMod('PLC-DO16-24V', 4, 'DO_4');
   check('the I/O configuration: DI16 in slot 3, DO16 in slot 4', await ev(() => MTPS.App.state.p.rack.modules.map(m => m.slot + m.type).join(',') === '3PLC-DI16-24V,4PLC-DO16-24V'));
