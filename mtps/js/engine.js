@@ -353,6 +353,7 @@
 
   /* text → Ref, or the reason it is not one (program tags hide controller tags; aliases are followed) */
   function ref(M, prog, text, depth = 0) {
+    if (/^\s*\\/.test(text)) return directRef(M, String(text).trim(), depth);
     const p = parsePath(text);
     if (!p) return `Undefined tag '${text}'`;
     const bu = U(p.base);
@@ -418,6 +419,24 @@
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
   }
 
+  /* direct access (1756-PM021, Directly accessing program parameters): \Program.Parameter reads or writes an Input,
+     Output or Public parameter of another program. Input and Public are the parameter itself (real time); an Output is
+     its published copy, updated when its program completes. Local tags and InOut parameters cannot be reached. */
+  function directRef(M, s, depth) {
+    const m = /^\\([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)(.*)$/.exec(s);
+    if (!m) return `Undefined tag '${s}'`;
+    const P2 = (M.programs || []).find(x => U(x.name) === U(m[1]));
+    if (!P2) return `Undefined program '${m[1]}' in '${s}'`;
+    const rec = P2.tags.get(U(m[2]));
+    if (!rec) return `Undefined tag '${s}'`;
+    if (!rec.usage || rec.usage === 'InOut') return `'${m[2]}' is ${rec.usage ? 'an InOut parameter' : 'a local tag'} of program '${P2.name}': direct access reaches only Input, Output and Public parameters`;
+    const r = ref(M, P2, m[2] + m[3], depth + 1);
+    if (typeof r === 'string') return r;
+    // an Output is read through its published copy (another data item than the parameter itself)
+    if (rec.usage === 'Output' && !rec.alias) { r.root = P2.pub; if (r.norm) r.norm = '\\' + r.norm; }
+    return r;
+  }
+
   /* ---------- CPT / CMP expressions ---------- */
   /* + - * / MOD ** AND OR XOR NOT, = <> < <= > >=, ( ), SQR ABS NEG SIN COS LN LOG → { get(), type } or an error text.
      Integers only: / and MOD truncate as in the controller; any REAL operand or a float function gives a REAL. */
@@ -434,7 +453,7 @@
       let m;
       if (/^\s/.test(rest)) { i++; continue; }
       if ((m = /^(?:(?:2|8|16)#[0-9A-Fa-f_]+|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+)/.exec(rest))) toks.push({ k: 'num', s: m[0] });
-      else if ((m = /^[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z0-9_]+)*(?:\.[A-Za-z0-9_]+|\[[^\]]*\])*/.exec(rest))) {
+      else if ((m = /^\\?[A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z0-9_]+)*(?:\.[A-Za-z0-9_]+|\[[^\]]*\])*/.exec(rest))) {
         const u = U(m[0]);
         toks.push(['MOD', 'AND', 'OR', 'XOR', 'NOT'].includes(u) ? { k: 'op', s: u } : { k: 'name', s: m[0] });
       } else if ((m = /^(\*\*|<>|<=|>=|[-+*/()=<>])/.exec(rest))) toks.push({ k: 'op', s: m[1] });
@@ -762,13 +781,19 @@
       for (const t of list || []) {
         if (!validName(t.name)) { ctlErr(`Invalid tag name '${t.name}'${where}`); continue; }
         if (map.has(U(t.name))) { ctlErr(`Tag '${t.name}' is defined more than once${where}`); continue; }
-        if (t.alias != null && t.alias !== '') { map.set(U(t.name), { name: t.name, alias: String(t.alias).trim(), desc: t.desc || '' }); continue; }
+        const usage = P && PUSAGE.includes(t.usage) ? t.usage : null, conn = usage && Array.isArray(t.conn) ? t.conn.map(x => String(x).trim()).filter(Boolean) : [];
+        if (t.usage && !usage && U(t.usage) !== 'LOCAL') ctlErr(`Tag '${t.name}'${where}: unknown usage '${t.usage}' (Local, Input, Output, InOut or Public)`);
+        if (usage === 'InOut') {
+          if (conn.length !== 1) { ctlErr(`InOut parameter '${t.name}'${where} needs exactly one connection (it has ${conn.length})`); continue; }
+          map.set(U(t.name), { name: t.name, alias: conn[0], usage, conn, declType: t.type, constant: !!t.constant, desc: t.desc || '' }); continue;
+        }
+        if (t.alias != null && t.alias !== '') { map.set(U(t.name), { name: t.name, alias: String(t.alias).trim(), usage, conn, desc: t.desc || '' }); continue; }
         const type = canon(types, t.type);
         if (!type) { ctlErr(`Tag '${t.name}': Undefined data type '${t.type}'`); continue; }
         const dims = dimsOf(Array.isArray(t.dim) ? t.dim : t.dim > 0 ? Math.floor(t.dim) : 0);
         if (!dims) { ctlErr(`Tag '${t.name}': invalid array dimensions [${String(t.dim)}] (1 to 3 dimensions, each 1 or more)`); continue; }
         const dim = dims.reduce((x, y) => x * y, dims.length ? 1 : 0);
-        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '' });
+        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '', usage, conn });
         vals[t.name] = conform(types, type, dim, t.value);
       }
     };
@@ -818,6 +843,7 @@
     };
     aliases(M.tags, null);
     M.programs.forEach(P => aliases(P.tags, P));
+    params(M, types, ctlErr);
 
     for (const P of M.programs) for (const R of P.routines.values()) {
       const want = !filter || ((!filter.program || U(filter.program) === U(P.name)) && (!filter.routine || U(filter.routine) === U(R.name)));
@@ -1246,8 +1272,84 @@
   XEL.SSV = XEL.GSV;
   // the program being scanned (THIS, its fault records) and its scan time in µs; its task's StartTime
   const msNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); return msNow(); }
-  function progEnd(P, p0) { P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+  function progStart(c, P) { c.curP = P; if (P.task) P.task.start = wct(c); if (P.pin) parIn(P); return msNow(); }
+  function progEnd(P, p0) { if (P.pout) parOut(P); P.us = Math.round((msNow() - p0) * 1000); P.maxUs = Math.max(P.maxUs || 0, P.us); }
+
+  /* ---------- program parameters (1756-PM021, Connecting program parameters) ----------
+     Input: passed by value, copied from its one source before each scan of its program. Output: passed by value, its
+     published copy and the tags it connects to are written when its program completes (any number of connections).
+     InOut: a reference to its one connection, like an alias. Public: the data itself, read and written in real time by
+     the programs connected to it; it cannot connect to a controller tag. A connection joins two endpoints of the same
+     data type; two parameters of the same usage do not connect. */
+  const PUSAGE = ['Input', 'Output', 'InOut', 'Public'];
+  // a value copied in place (a structure or an array member by member), so references into it stay good
+  function into(o, k, v) {
+    if (v && typeof v === 'object' && o[k] && typeof o[k] === 'object') { for (const j of Object.keys(v)) into(o[k], j, v[j]); return; }
+    o[k] = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
+  }
+  function pcopy(a, b) {
+    if (a.bit >= 0 || b.bit >= 0 || (!a.dim && ATOMIC[a.type])) { b.set(a.get()); return; }
+    a.at(); const v = PP[PK]; b.at(); into(PP, PK, v);
+  }
+  function parIn(P) { for (const [a, b] of P.pin) pcopy(a, b); }
+  function parOut(P) { for (const k of P.pubKeys) into(P.pub, k, P.vals[k]); for (const [a, b] of P.pout) pcopy(a, b); }
+  function params(M, types, err) {
+    const id = e => (e.P ? `\\${e.P.name}.${e.rec.name}` : e.text);
+    const sameType = (a, b) => U(a.type) === U(b.type) && (a.dim || 0) === (b.dim || 0);
+    // an endpoint: { P, rec } (a parameter) or { text, r } (a controller tag)
+    const endOf = s => {
+      if (s[0] === '\\') {
+        const m = /^\\([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(s), P = m && M.programs.find(x => U(x.name) === U(m[1])), rec = P && P.tags.get(U(m[2]));
+        if (!rec) return `'${s}' is not a parameter of a program in the project`;
+        if (!rec.usage) return `'${s}' is a local tag: only a parameter can be connected`;
+        return { P, rec };
+      }
+      const r = ref(M, null, s);
+      return typeof r === 'string' ? `'${s}': ${r}` : { text: s, r };
+    };
+    const edges = new Map();
+    for (const P of M.programs) {
+      P.pub = {}; P.pin = []; P.pout = []; P.pubKeys = [];
+      for (const rec of P.tags.values()) if (rec.usage === 'Output' && !rec.alias) { P.pubKeys.push(rec.name); P.pub[rec.name] = JSON.parse(JSON.stringify(P.vals[rec.name])); }
+    }
+    for (const P of M.programs) for (const rec of P.tags.values()) {
+      if (!rec.usage) continue;
+      const me = { P, rec }, where = `Parameter '${rec.name}' of program '${P.name}'`;
+      for (const c of rec.conn || []) {
+        const o = endOf(c);
+        if (typeof o === 'string') { err(`${where}: connection ${o}`); continue; }
+        const ou = o.P ? o.rec.usage : 'controller';
+        if (o.P === P) { err(`${where}: a parameter cannot connect to its own program ('${c}')`); continue; }
+        if (ou === rec.usage) { err(`${where}: an ${rec.usage} parameter cannot connect to another ${rec.usage} parameter ('${c}')`); continue; }
+        if (rec.usage === 'InOut') {
+          if (ou === 'Input') err(`${where}: an InOut parameter cannot connect to an Input parameter ('${c}')`);
+          else if (ou === 'Output' && !rec.constant) err(`${where}: an InOut parameter connects to an Output parameter only when it is Constant ('${c}')`);
+          continue;
+        }
+        if (ou === 'InOut') continue;   // checked on the InOut side
+        if (rec.usage === 'Public' && ou === 'controller') { err(`${where}: a Public parameter cannot connect to a controller tag ('${c}'); use an alias`); continue; }
+        // the direction: the Input is the destination; an Output is the source
+        const [src, dst] = rec.usage === 'Input' || ou === 'Output' ? [o, me] : [me, o];
+        const k = id(src) + '>' + id(dst);
+        if (!edges.has(k)) edges.set(k, { src, dst, where, c });
+      }
+    }
+    const fanIn = new Map();
+    for (const { src, dst, where, c } of edges.values()) {
+      const rs = src.P ? ref(M, null, id(src)) : src.r;
+      const rd = dst.P ? ref(M, dst.P, dst.rec.name) : dst.r;
+      if (typeof rs === 'string' || typeof rd === 'string') { err(`${where}: connection '${c}': ${typeof rs === 'string' ? rs : rd}`); continue; }
+      if (!sameType(rs, rd)) { err(`${where}: connection '${c}': the data types do not match (${rs.type}${rs.dim ? `[${rs.dim}]` : ''} and ${rd.type}${rd.dim ? `[${rd.dim}]` : ''})`); continue; }
+      if (dst.P && dst.rec.usage === 'Input') {
+        const n = (fanIn.get(id(dst)) || 0) + 1; fanIn.set(id(dst), n);
+        if (n > 1) { err(`Input parameter '${dst.rec.name}' of program '${dst.P.name}' has more than one source connection (an Input parameter takes one)`); continue; }
+        dst.P.pin.push([rs, rd]);
+      } else if (src.P) src.P.pout.push([ref(M, src.P, src.rec.name), rd]);   // an Output writes a controller tag or a Public parameter
+    }
+    // an InOut parameter takes the data type of its connection
+    for (const P of M.programs) for (const rec of P.tags.values()) if (rec.usage === 'InOut' && rec.type && rec.declType && U(canon(types, rec.declType) || '') !== U(rec.type)) err(`InOut parameter '${rec.name}' of program '${P.name}': its data type ${rec.declType} does not match its connection '${rec.alias}' (${rec.type})`);
+    for (const P of M.programs) { if (!P.pin.length) P.pin = null; if (!P.pout.length && !P.pubKeys.length) P.pout = null; }
+  }
 
   /* ---------- PID (RM018A chapter 13, Special): the PID structure; .EN … .PVHA are bits of .CTL (bit 31 down to 7) ---------- */
   const PIDBITS = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };

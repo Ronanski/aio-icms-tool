@@ -1534,9 +1534,9 @@ console.log('Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v3
   c = go(multi([D('Ord')], ['NOP();'], [{ type: 'periodic', period: 50, priority: 8, rungs: ['MUL(Ord,10,Ord)ADD(Ord,1,Ord);'] }, { type: 'periodic', period: 50, priority: 3, rungs: ['MUL(Ord,10,Ord)ADD(Ord,2,Ord);'] }]));
   scans(c, 1); eq('priority 3 runs before priority 8', c.read('Ord'), 21);
   // preemption: a periodic task interrupts a long continuous scan between two rungs
-  c = go(multi([D('I'), D('Seen'), D('Runs')], loop(400000), [{ type: 'periodic', period: 1, priority: 1, rungs: ['MOV(I,Seen)ADD(Runs,1,Runs);'] }]));
+  c = go(multi([D('I'), D('Mid'), D('Runs')], loop(400000), [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,400000)ADD(Mid,1,Mid);'] }]));
   scans(c, 1);
-  check('a periodic task interrupts the continuous task in the middle of its scan', c.read('Seen') > 0 && c.read('Seen') < 400000 && c.read('Runs') > 2, `Seen ${c.read('Seen')} Runs ${c.read('Runs')}`);
+  check('a periodic task interrupts the continuous task in the middle of its scan', c.read('Mid') > 0 && c.read('Runs') > 2, `Mid ${c.read('Mid')} Runs ${c.read('Runs')}`);
   // overlap: a periodic task that runs longer than its period
   c = go(multi([D('I'), D('Ov'), D('St')], ['GSV(Task,Slow,OverlapCount,Ov)GSV(Task,Slow,Status,St);'], [{ name: 'Slow', type: 'periodic', period: 0.5, priority: 2, rungs: loop(200000) }]));
   scans(c, 3);
@@ -1575,6 +1575,57 @@ console.log('Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v3
   check('at most 32 tasks', /supports 32 tasks/.test(errs(multi([], ['NOP();'], Array.from({ length: 32 }, () => ({ type: 'periodic', rungs: ['NOP();'] }))))));
   // a project without a periodic or event task keeps the plain scan
   check('a project with only the continuous task does not take the timed path', !go(proj({ rungs: ['NOP();'] })).M.timed);
+}
+
+console.log('Wave 3 B: program parameters, Input / Output / InOut / Public and direct access (1756-PM021)');
+{
+  // MainProgram (in the proj helper) and B, both in MainTask; B runs after MainProgram
+  const two = (mainTags, mainRungs, bTags, bRungs, ctags) => {
+    const p = proj({ tags: ctags || [], ptags: mainTags, rungs: mainRungs });
+    p.tasks[0].programs.push({ name: 'B', main: 'Main', tags: bTags, routines: [{ name: 'Main', rungs: bRungs.map(t => ({ t })) }] });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  const D = (n, x) => T(n, 'DINT', x);
+  // Output -> Input: the Input of B is copied from the published Output before B runs
+  let c = go(two([D('Out', { usage: 'Output', conn: ['\\B.In'] })], ['ADD(Out,1,Out);'], [D('In', { usage: 'Input' }), D('Seen')], ['MOV(In,Seen);']));
+  scans(c, 3);
+  eq('Output -> Input: B sees the Output of MainProgram of the same scan', [c.read('Out', 'MainProgram'), c.read('Seen', 'B')], [3, 3]);
+  // Input from a controller tag, by value: a write to the tag during the program does not change it
+  c = go(two([D('In', { usage: 'Input', conn: ['Level'] }), D('A'), D('Bv')], ['MOV(In,A);', 'MOV(99,Level);', 'MOV(In,Bv);'], [], ['NOP();'], [D('Level', { value: 7 })]));
+  scans(c, 1);
+  eq('Input from a controller tag: copied before the scan, passed by value', [c.read('A', 'MainProgram'), c.read('Bv', 'MainProgram')], [7, 7]);
+  scans(c, 1); eq('… and refreshed before the next scan', c.read('A', 'MainProgram'), 99);
+  // Output to controller tags: fan-out, written when the program completes
+  c = go(two([D('Out', { usage: 'Output', conn: ['T1', 'T2'] })], ['MOV(5,Out);', 'MOV(T1,Mid);'], [], ['NOP();'], [D('T1'), D('T2'), D('Mid')]));
+  scans(c, 1);
+  eq('Output to two controller tags at the end of the program (not during it)', [c.read('T1'), c.read('T2'), c.read('Mid')], [5, 5, 0]);
+  // InOut: by reference
+  c = go(two([D('Io', { usage: 'InOut', conn: ['Shared'] })], ['ADD(Io,1,Io);', 'MOV(Io,Copy);'], [], ['NOP();'], [D('Shared', { value: 10 }), D('Copy')]));
+  scans(c, 1);
+  eq('InOut: a reference to the controller tag (read and written at once)', [c.read('Shared'), c.read('Copy')], [11, 11]);
+  // Public and direct access
+  c = go(two([D('Pub', { usage: 'Public' }), D('OutP', { usage: 'Output' }), D('Loc')], ['ADD(Pub,1,Pub);', 'MOV(Pub,OutP);'], [D('X'), D('Y')], ['MOV(\\MainProgram.Pub,X);', 'ADD(\\MainProgram.OutP,100,Y);']));
+  scans(c, 2);
+  eq('direct access \\Program.Parameter: a Public and an Output parameter of another program', [c.read('X', 'B'), c.read('Y', 'B')], [2, 102]);
+  c = go(two([D('Pub', { usage: 'Public' })], ['NOP();'], [], ['MOV(42,\\MainProgram.Pub);']));
+  scans(c, 1); eq('direct access writes a Public parameter', c.read('Pub', 'MainProgram'), 42);
+  c = go(two([D('Pub', { usage: 'Public' }), D('R')], ['CPT(R,\\B.Q*2);'], [D('Q', { usage: 'Public', value: 4 })], ['NOP();']));
+  scans(c, 1); eq('direct access in a CPT expression', c.read('R', 'MainProgram'), 8);
+  // structures pass by value too
+  c = go(two([T('Ot', 'TIMER', { usage: 'Output', conn: ['\\B.It'] })], ['MOV(1234,Ot.PRE);'], [T('It', 'TIMER', { usage: 'Input' }), D('P')], ['MOV(It.PRE,P);']));
+  scans(c, 1); eq('a TIMER Output to a TIMER Input: copied member by member', c.read('P', 'B'), 1234);
+  // the rules of the connections (verify)
+  check('direct access to a local tag is an error', /local tag of program 'MainProgram'/.test(errs(two([D('Loc')], ['NOP();'], [D('X')], ['MOV(\\MainProgram.Loc,X);']))));
+  check('an Input takes one source connection', /more than one source connection/.test(errs(two([D('In', { usage: 'Input', conn: ['A1', 'A2'] })], ['NOP();'], [], ['NOP();'], [D('A1'), D('A2')]))));
+  check('a Public parameter cannot connect to a controller tag', /Public parameter cannot connect to a controller tag/.test(errs(two([D('Pub', { usage: 'Public', conn: ['A1'] })], ['NOP();'], [], ['NOP();'], [D('A1')]))));
+  check('two parameters of the same usage do not connect (Output - Output)', /cannot connect to another Output parameter/.test(errs(two([D('O1', { usage: 'Output', conn: ['\\B.O2'] })], ['NOP();'], [D('O2', { usage: 'Output' })], ['NOP();']))));
+  check('the data types of a connection must match', /data types do not match \(DINT and REAL\)/.test(errs(two([D('Out', { usage: 'Output', conn: ['\\B.In'] })], ['NOP();'], [T('In', 'REAL', { usage: 'Input' })], ['NOP();']))));
+  check('an InOut needs exactly one connection', /needs exactly one connection/.test(errs(two([D('Io', { usage: 'InOut' })], ['NOP();'], [], ['NOP();']))));
+  check('an InOut connects to an Output only when it is Constant', /only when it is Constant/.test(errs(two([D('Io', { usage: 'InOut', conn: ['\\B.O'] })], ['NOP();'], [D('O', { usage: 'Output' })], ['NOP();']))));
+  check('a connection to a tag that does not exist is an error', /connection 'Nope'/.test(errs(two([D('In', { usage: 'Input', conn: ['Nope'] })], ['NOP();'], [], ['NOP();']))));
+  check('a project without parameters has no parameter copies', go(proj({ rungs: ['NOP();'] })).M.programs.every(P => !P.pin && !P.pout));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

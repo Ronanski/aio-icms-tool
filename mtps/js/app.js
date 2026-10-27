@@ -4878,15 +4878,17 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       <label class="ck"><input type="checkbox" id="pp-i"${g.inhibit ? ' checked' : ''}${dis}> Inhibit program</label>
       <p class="help">The main routine runs each scan; it calls the other routines with JSR.</p>`;
     const mon = `${kv('Routines', g.routines.length)}${kv('Rungs', g.routines.reduce((n, r) => n + r.rungs.length, 0))}${kv('Program tags', (g.tags || []).length)}`;
+    const PAR = TK.params(g);
     dialog({ title: 'Program Properties - ' + g.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['mon', 'Monitor', mon]], 'gen'),
+      body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['par', 'Parameters', PAR.html()], ['mon', 'Monitor', mon]], 'gen'),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!editable()) return;
         const d = el.querySelector('#pp-d').value.trim(), m = el.querySelector('#pp-m').value, fr = el.querySelector('#pp-f').value, inh = el.querySelector('#pp-i').checked;
-        if (d === (g.desc || '') && m === (g.main || '') && fr === (g.fault || '') && inh === !!g.inhibit) return;
-        edit(() => { if (d) g.desc = d; else delete g.desc; g.main = m || undefined; if (!m) delete g.main; if (fr) g.fault = fr; else delete g.fault; if (inh) g.inhibit = true; else delete g.inhibit; });
+        const pc = PAR.changed();
+        if (d === (g.desc || '') && m === (g.main || '') && fr === (g.fault || '') && inh === !!g.inhibit && !pc) return;
+        edit(() => { if (pc) PAR.apply(); if (d) g.desc = d; else delete g.desc; g.main = m || undefined; if (!m) delete g.main; if (fr) g.fault = fr; else delete g.fault; if (inh) g.inhibit = true; else delete g.inhibit; });
       } }],
-      mount: bindTabs });
+      mount: el => { bindTabs(el); PAR.mount(el); } });
   }
   /* Routine Properties: General (name, description, type, program, rungs) */
   function routineProps(key) {

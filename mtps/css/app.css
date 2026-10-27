@@ -1304,3 +1304,11 @@ i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inlin
 .tphint { margin: -4px 0 8px 128px; }
 .phone .tphint { margin-left: 0; }
 .tpmon { width: 120px; display: inline-block; text-align: right; }
+/* Program Properties > Parameters: the parameter and connection grids */
+.pargrid { border: 1px solid var(--border); border-radius: var(--r-sm); max-height: 220px; overflow: auto; margin-bottom: 8px; }
+.pargrid tr.on { background: var(--sel, var(--surface-2)); }
+.pargrid .inp { min-width: 0; width: 100%; }
+.pargrid td { vertical-align: middle; }
+.phone .pargrid td { white-space: normal; }
+.pargrid select.inp { min-width: 96px; }
+.pargrid #pa-n { min-width: 96px; }

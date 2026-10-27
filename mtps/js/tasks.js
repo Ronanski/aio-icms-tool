@@ -288,6 +288,78 @@
         } });
     }
 
+    /* Program Properties > Parameters (help v37: Edit program parameter and connection properties; 1756-PM021): the
+       program's parameters (Name, Usage, Data Type, Connections) with a create row at the bottom; the Connections grid
+       of the selected parameter (Name, Usage, Data Type of each endpoint: a controller tag or \Program.Parameter) with
+       its own create row. Usage switches between Input, Output, InOut and Public here; a parameter becomes a Local tag in
+       the Tag Editor. Offline only (the help: operations on the tab are restricted online). Connections that another
+       program's parameter makes to this one show too, read-only. The edits apply with OK. */
+    const PU = ['Input', 'Output', 'InOut', 'Public'];
+    function params(g) {
+      const can = editable() && offline(), dis = can ? '' : ' disabled';
+      const st = { tags: JSON.parse(JSON.stringify(g.tags || [])), sel: null };
+      const isPar = t => PU.includes(t.usage);
+      const me = n => `\\${g.name}.${n}`;
+      // the endpoint's usage and data type, from the project (a parameter of a program, else a controller tag)
+      const endInfo = c => {
+        const m = /^\\([A-Za-z_]\w*)\.([A-Za-z_]\w*)$/.exec(c);
+        if (m) {
+          const pg = U(m[1]) === U(g.name) ? { tags: st.tags } : progOf(allProgs().map(x => x.name).find(n => U(n) === U(m[1])) || '');
+          const t = pg && (pg.tags || []).find(x => U(x.name) === U(m[2]));
+          return t ? [t.usage && PU.includes(t.usage) ? t.usage : 'Local', t.type || ''] : ['?', ''];
+        }
+        const t = (S.p.tags || []).find(x => U(x.name) === U(c.split(/[.[]/)[0]));
+        return t ? ['<controller>', c.includes('.') || c.includes('[') ? '' : t.type || ''] : ['?', ''];
+      };
+      // connections other programs make to this parameter
+      const reverse = n => allProgs().filter(x => x !== g).flatMap(x => (x.tags || []).filter(t => isPar(t) && (t.conn || []).some(c => U(c) === U(me(n)))).map(t => `\\${x.name}.${t.name}`));
+      const summary = t => { const n = (t.conn || []).length + reverse(t.name).length; return !n ? '' : n === 1 ? esc((t.conn || [])[0] || reverse(t.name)[0]) : `{${n}:${n}} Connections`; };
+      const grid = () => {
+        const pars = st.tags.filter(isPar), T = st.tags.find(t => t.name === st.sel);
+        const rows = pars.map(t => `<tr data-par="${esc(t.name)}"${t.name === st.sel ? ' class="on"' : ''}><td class="mono">${esc(t.name)}</td><td><select class="inp" data-pu="${esc(t.name)}"${dis}>${PU.map(u => `<option${u === t.usage ? ' selected' : ''}>${u}</option>`).join('')}</select></td><td class="mono">${esc(t.type || '')}</td><td class="mono">${summary(t)}</td></tr>`).join('');
+        const conns = T ? [...(T.conn || []).map(c => [c, true]), ...reverse(T.name).map(c => [c, false])] : [];
+        return `<div class="grp">Parameters</div><div class="pargrid"><table class="xrt"><thead><tr><th>Name</th><th>Usage</th><th>Data Type</th><th>Connections</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No parameters.</td></tr>'}
+          <tr class="parnew"><td><input class="inp" id="pa-n" placeholder="New parameter" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"${dis}></td><td><select class="inp" id="pa-u"${dis}>${PU.map(u => `<option>${u}</option>`).join('')}</select></td><td><input class="inp" id="pa-t" value="DINT" maxlength="40" spellcheck="false" autocapitalize="off"${dis}></td><td><button class="btn" id="pa-add"${dis}>Add</button></td></tr></tbody></table></div>
+          <div class="grp">Connections${T ? ' - ' + esc(T.name) : ''}</div>${!T ? '<p class="help">Select a parameter to see and add its connections.</p>' : `<div class="pargrid"><table class="xrt"><thead><tr><th>Name</th><th>Usage</th><th>Data Type</th><th></th></tr></thead><tbody>${conns.map(([c, own]) => { const [u, ty] = endInfo(c); return `<tr><td class="mono">${esc(c)}</td><td>${esc(u)}</td><td class="mono">${esc(ty)}</td><td>${own ? `<button class="btn" data-pcdel="${esc(c)}" title="Delete the connection" aria-label="Delete the connection ${esc(c)}"${dis}>Delete</button>` : '<span class="muted">from that parameter</span>'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">No connections.</td></tr>'}
+            <tr class="parnew"><td colspan="3"><input class="inp" id="pa-cn" placeholder="Controller tag or \\Program.Parameter" maxlength="120" autocomplete="off" spellcheck="false" autocapitalize="off"${dis}></td><td><button class="btn" id="pa-cadd"${dis}>Add</button></td></tr></tbody></table></div>`}
+          <p class="help">Input: copied in before each scan, one source. Output: copied out when the program completes, any number of connections. InOut: a reference to one connection. Public: shared in real time; it cannot connect to a controller tag. Other programs can also use \\${esc(g.name)}.Parameter directly in logic.${can ? '' : ' Go offline to change the parameters.'}</p><div class="errtx" id="pa-e"></div>`;
+      };
+      let box = null;
+      const draw = () => { box.innerHTML = grid(); };
+      const er = t => { const e = box.querySelector('#pa-e'); if (e) e.textContent = t; };
+      function mount(el) {
+        box = el.querySelector('#pp-par'); if (!box) return;
+        box.addEventListener('change', ev => { const s = ev.target.closest('[data-pu]'); if (!s || !can) return; const t = st.tags.find(x => x.name === s.dataset.pu); t.usage = s.value; if (t.usage !== 'InOut') delete t.alias; draw(); });
+        box.addEventListener('click', ev => {
+          if (ev.target.closest('select, input')) return;
+          const row = ev.target.closest('[data-par]'), b = ev.target.closest('button');
+          if (row && !b) { st.sel = row.dataset.par; draw(); return; }
+          if (!b || b.disabled || !can) return;
+          if (b.id === 'pa-add') {
+            const n = box.querySelector('#pa-n').value.trim(), u = box.querySelector('#pa-u').value, ty = box.querySelector('#pa-t').value.trim();
+            if (!E.validName(n)) return er('Name: letters, digits and _, starting with a letter or _, up to 40 characters.');
+            if (st.tags.some(t => U(t.name) === U(n))) return er(`A tag named ${n} already exists in ${g.name}.`);
+            if (!/^[A-Za-z_][A-Za-z0-9_:]*$/.test(ty)) return er('Data Type: the name of a data type, e.g. DINT or TIMER.');
+            st.tags.push({ name: n, type: ty, usage: u, conn: [] }); st.sel = n; draw();
+          } else if (b.id === 'pa-cadd') {
+            const c = box.querySelector('#pa-cn').value.trim(), T = st.tags.find(t => t.name === st.sel);
+            if (!/^(\\[A-Za-z_]\w*\.[A-Za-z_]\w*|[A-Za-z_][\w:]*(?:\.\w+|\[[^\]]*\])*)$/.test(c)) return er('Connection: a controller tag (e.g. Tank_Level) or a parameter of another program (e.g. \\Mixer.Speed).');
+            if ((T.conn || []).some(x => U(x) === U(c))) return er(`${T.name} is already connected to ${c}.`);
+            if (T.usage === 'Input' && (T.conn || []).length + reverse(T.name).length >= 1) return er('An Input parameter takes one source connection.');
+            if (T.usage === 'InOut' && (T.conn || []).length >= 1) return er('An InOut parameter takes one connection.');
+            T.conn = [...(T.conn || []), c]; draw();
+          } else if (b.dataset.pcdel != null) {
+            const T = st.tags.find(t => t.name === st.sel); T.conn = (T.conn || []).filter(x => x !== b.dataset.pcdel); draw();
+          }
+        });
+      }
+      return {
+        html: () => `<div id="pp-par">${grid()}</div>`,
+        mount, changed: () => JSON.stringify(st.tags) !== JSON.stringify(g.tags || []),
+        apply: () => { g.tags = st.tags.map(t => { if (t.conn && !t.conn.length) delete t.conn; return t; }); },
+      };
+    }
+
     /* the organizer's right-click items this file adds (Studio 5000: Tasks folder > New Task; a task > Add > New
        Program; Unscheduled Programs > New Program; a program or a task > Delete) */
     function orgMore(key, items) {
@@ -307,6 +379,6 @@
     const typeText = T => ({ continuous: 'Continuous task', periodic: 'Periodic task', event: 'Event task' })[T.type || 'continuous'] || T.type;
     const quick = T => T.type === 'periodic' ? [['Period', (T.period || 10) + ' ms'], ['Priority', T.priority == null ? 10 : T.priority]]
       : T.type === 'event' ? [['Trigger', (TRIGGERS.find(x => x[0] === (T.trigger || 'event')) || [0, ''])[1] + (T.trigger === 'input' ? ` (${T.tag})` : '')], ['Priority', T.priority == null ? 10 : T.priority]] : [];
-    return { typeText, quick, newProgram, deleteProgram, newTask, deleteTask, taskProps, orgMore, unscheduled, userTasks };
+    return { params, typeText, quick, newProgram, deleteProgram, newTask, deleteTask, taskProps, orgMore, unscheduled, userTasks };
   };
 })();

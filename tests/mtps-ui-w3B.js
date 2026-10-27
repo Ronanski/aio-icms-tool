@@ -219,4 +219,66 @@ module.exports = async function w3B({ browser, page, URL, check }) {
       await tp.close();
     }
   }
+  {
+    console.log('Wave 3 B: Program Properties > Parameters (help v37: Edit program parameter and connection properties; 1756-PM021)');
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    // a second program in MainTask, with a routine
+    await page.click('.nd[data-org="task:MainTask"]', { button: 'right' }); await pick('New Program…');
+    await page.fill('#np-n', 'Consumer'); await clickBtn('OK');
+    await page.click('.nd[data-org="prog:Consumer"]', { button: 'right' }); await pick('New Routine…');
+    await page.fill('#layer #p1', 'CMain'); await clickBtn('OK');
+    await page.click('.nd[data-org="prog:Consumer"]', { button: 'right' }); await pick('Properties…');
+    check('Program Properties tabs: General, Configuration, Parameters, Monitor', (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent).join('|'))) === 'General|Configuration|Parameters|Monitor');
+    await page.click('#layer [data-dt="par"]'); await wait(80);
+    check('Parameters: an empty grid with a create row (Name, Usage, Data Type)', /No parameters/.test(await dlgText()) && !!(await page.$('#pa-n')) && (await page.$$eval('#pa-u option', o => o.map(x => x.textContent).join('|'))) === 'Input|Output|InOut|Public');
+    await page.fill('#pa-n', 'In'); await page.selectOption('#pa-u', 'Input'); await hit('#pa-add');
+    check('Add: the Input parameter In (DINT) is in the grid and selected', (await page.$$eval('#pp-par [data-par]', r => r.map(x => x.textContent).join(','))).startsWith('InInput') && (await page.$eval('#pp-par [data-par="In"]', r => r.classList.contains('on'))));
+    await clickBtn('OK');
+    check('OK: Consumer has the parameter In with usage Input', await ev(() => { const g = MTPS.App.state.p.tasks[0].programs.find(x => x.name === 'Consumer'); return g.tags.some(t => t.name === 'In' && t.usage === 'Input' && t.type === 'DINT'); }));
+    // MainProgram: an Output connected to \Consumer.In
+    await page.click('.nd[data-org="prog:MainProgram"]', { button: 'right' }); await pick('Properties…');
+    await page.click('#layer [data-dt="par"]'); await wait(80);
+    await page.fill('#pa-n', 'Count'); await page.selectOption('#pa-u', 'Output'); await hit('#pa-add');
+    await page.fill('#pa-cn', 'Consumer In'); await hit('#pa-cadd');
+    check('a connection that is neither a tag nor \\Program.Parameter is refused', /Connection:/.test(await page.$eval('#pa-e', e => e.textContent)) && /No connections/.test(await dlgText()));
+    await page.fill('#pa-cn', '\\Consumer.In'); await hit('#pa-cadd');
+    check('Connections grid of Count: \\Consumer.In, Usage Input, DINT', /\\Consumer\.InInputDINT/.test(await page.$eval('#pp-par', e => e.textContent)));
+    await shot('after-progprops-parameters');
+    await clickBtn('OK');
+    check('OK: Count is an Output with the connection', await ev(() => { const t = MTPS.App.state.p.tasks[0].programs[0].tags.find(x => x.name === 'Count'); return t && t.usage === 'Output' && t.conn.join() === '\\Consumer.In'; }));
+    await page.click('.nd[data-org="prog:Consumer"]', { button: 'right' }); await pick('Properties…');
+    await page.click('#layer [data-dt="par"]'); await wait(80);
+    await hit('#pp-par [data-par="In"] td');
+    check('the Input shows the connection that MainProgram.Count makes to it (read-only)', /\\MainProgram\.Count/.test(await page.$eval('#pp-par', e => e.textContent)) && /from that parameter/.test(await page.$eval('#pp-par', e => e.textContent)));
+    await page.fill('#pa-cn', 'Other'); await hit('#pa-cadd');
+    check('an Input takes one source: a second connection is refused', /one source/.test(await page.$eval('#pa-e', e => e.textContent)));
+    await clickBtn('Cancel');
+    // run it in the engine: Consumer sees Count of the same scan
+    const got = await ev(() => {
+      const p = MTPS.App.state.p, g0 = p.tasks[0].programs[0], g1 = p.tasks[0].programs.find(x => x.name === 'Consumer');
+      g1.tags.push({ name: 'Seen', type: 'DINT' });
+      g0.routines[0].rungs.push({ t: 'ADD(Count,1,Count);' }); g1.routines[0].rungs = [{ t: 'MOV(In,Seen);' }];
+      const v = MTPS.verify(p); if (v.errors.length) return v.errors.map(e => e.text).join(' | ');
+      const c = new MTPS.Controller(); c.download(JSON.parse(JSON.stringify(p))); c.setMode('remrun'); for (let k = 0; k < 4; k++) c.scan(10);
+      return c.read('Seen', 'Consumer');
+    });
+    check('verify passes and Consumer.In follows MainProgram.Count each scan', got === 4, String(got));
+  }
+  {
+    // touch: tablet and phone, Program Properties > Parameters, add a Public parameter
+    for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {
+      const tp = await browser.newPage({ viewport: vp, hasTouch: true, isMobile: true });
+      await fresh(tp, vp); await open(tp, () => MTPS.App.openProject(MTPS.App.example()));
+      if (n === 'tablet') await tp.tap('[data-drawer="1"]'); else await tp.tap('.pnav [data-go="project"]');
+      await tp.waitForTimeout(300);
+      await hold(tp, '.nd[data-org="prog:MainProgram"]'); await pick('Properties…', tp, true);
+      await hit('#layer [data-dt="par"]', tp, true);
+      await tp.fill('#pa-n', 'Shared'); await tp.selectOption('#pa-u', 'Public'); await hit('#pa-add', tp, true);
+      if (n === 'phone') await shot('after-progprops-parameters-phone', tp);
+      const fits = await tp.$eval('#layer .dlg', d => d.getBoundingClientRect().right <= window.innerWidth + 1);
+      await clickBtn('OK', tp, true);
+      check(`${n} (touch): Parameters, Add: a Public parameter; the dialog fits`, fits && await tp.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].tags.some(t => t.name === 'Shared' && t.usage === 'Public')));
+      await tp.close();
+    }
+  }
 };
