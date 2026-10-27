@@ -352,4 +352,42 @@ module.exports = async function w2A({ browser, page, URL, check, only }) {
     check('tablet (touch): Show Rung Comments off hides the comments', await tp.evaluate(() => document.querySelectorAll('#ladwrap svg text.cm').length === 0 && MTPS.App.state.prefs.lad.cm === false));
     await tctx.close();
   }
+  if (want('helpc')) {
+    console.log('Help > Contents (help v37: the help window, Contents / Index / Search)');
+    await fresh(); await ev(() => { MTPS.App.openProject(MTPS.App.example(), true); MTPS.App.render(); });
+    const hm = (await menu('Help')).map(x => x[0]);
+    check('Help menu: Contents first', hm[0] === 'Contents' && hm.includes('Instruction Help'), hm.join('|'));
+    await pick('Contents');
+    const rows = (pg = page) => pg.$$eval('#hl [data-ht]', r => r.map(x => x.textContent.trim()));
+    const topic = (pg = page) => pg.$eval('#hc h3', h => h.textContent).catch(() => '');
+    check('the Help window: Contents, Index, Search tabs; Getting Started shown', (await dlgTitle()) === 'Help' && (await page.$$eval('[data-hct]', b => b.map(x => x.textContent).join(','))) === 'Contents,Index,Search' && (await topic()) === 'Getting Started');
+    const r0 = await rows();
+    check('Contents: Getting Started, Keyboard Shortcuts, Instructions with its groups', r0[0] === 'Getting Started' && r0[1] === 'Keyboard Shortcuts' && r0[2] === '−Instructions' && r0.includes('+Bit Instructions') && r0.includes('+Timer and Counter Instructions'), r0.join('|'));
+    await page.click('#hl [data-ht="g:Timer/Counter"]'); await wait(60);
+    check('+ opens a group: its instructions', (await rows()).includes('Timer On Delay (TON)'));
+    await page.click('#hl [data-ht="i:TON"]'); await wait(60);
+    check('an instruction: its help page (Operands, Execution, Example)', (await topic()) === 'Timer On Delay (TON)' && /Operands[\s\S]*Execution[\s\S]*Example/.test(await page.$eval('#hc', c => c.textContent)));
+    await page.click('#hl [data-ht="keys"]'); await wait(60);
+    check('Keyboard Shortcuts: the keys of the commands', (await topic()) === 'Keyboard Shortcuts' && /Ctrl\+H\s*Replace/.test(await page.$eval('#hc', c => c.textContent)));
+    await page.click('[data-hct="index"]'); await page.fill('#hq', 'one'); await wait(60);
+    check('Index: type a keyword, the list goes to it', (await rows()).some(x => /^One Shot/.test(x)), (await rows()).join('|'));
+    await page.keyboard.press('Enter'); await wait(60);
+    check('Enter: the first topic of the list', /^One Shot/.test(await topic()), await topic());
+    await page.click('[data-hct="search"]'); await page.fill('#hq', 'accumulated preset'); await page.click('#hgo'); await wait(60);
+    const r2 = await rows();
+    check('Search: List Topics, the topics with all the words', r2.join('|') === 'Timer On Delay (TON)|Timer Off Delay (TOF)|Retentive Timer On (RTO)', r2.join('|'));
+    await page.fill('#hq', 'zzqq'); await page.click('#hgo');
+    check('Search: none found', /No topics found/.test(await page.$eval('#hl', l => l.textContent)));
+    await clickBtn('Close');
+    // tablet (touch): Help > Contents from the folding menu
+    const tctx = await browser.newContext({ viewport: { width: 800, height: 1280 }, hasTouch: true, isMobile: true });
+    const tp = await tctx.newPage();
+    await tp.goto(URL); await tp.waitForTimeout(300); await tp.keyboard.press('Escape');
+    await tp.evaluate(() => MTPS.App.openProject(MTPS.App.example())); await tp.waitForTimeout(150);
+    await tp.tap('[data-allmenu]'); await tp.waitForTimeout(150); await tp.tap('[data-fold="Help"]'); await tp.waitForTimeout(150);
+    await pick('Contents', tp, true); await tp.waitForTimeout(150);
+    await tp.tap('#hl [data-ht="g:Bit"]'); await tp.waitForTimeout(80); await tp.tap('#hl [data-ht="i:XIC"]'); await tp.waitForTimeout(80);
+    check('tablet (touch): Contents, tap Bit, tap XIC: its page', /\(XIC\)$/.test(await topic(tp)) && await tp.$eval('#hl', l => l.offsetHeight > 0), await topic(tp));
+    await tctx.close();
+  }
 };

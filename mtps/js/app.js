@@ -922,6 +922,7 @@
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
+    helpc: { l: 'Contents', i: 'help', run: () => helpContents() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
     tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
@@ -934,7 +935,7 @@
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
-    ['Help', ['help', 'tips', 'about']],
+    ['Help', ['helpc', 'help', 'tips', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
   const ONLINE_ONLY = ['toggle', 'fon', 'foff', 'frem', 'prog', 'runm', 'clear', 'fen', 'fdis', 'fall'];
@@ -3095,13 +3096,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   /* Instruction Help, laid out as the reference software's instruction help: contents on the left; for the
      instruction, its operands, description, arithmetic status flags, fault conditions, execution and an example
      rung. A plain-language summary (English or Taglish) is at the end, folded. */
-  function instrHelp(start) {
-    const e = curEl();
-    let mn = typeof start === 'string' && INSTR[start] ? start : e && INSTR[e.t] ? e.t : 'XIC';
+  // one instruction's help page (Instruction Help and Help > Contents)
+  function instrPage(mn) {
     const grpOf = g => (HGRP.find(x => x[0] === g) || [g, g])[1];
-    const groups = [...new Set(Object.values(INSTR).map(d => d.grp))];
-    const toc = groups.map(g => `<div class="ihg">${esc(grpOf(g))}</div>${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<div class="ihi" data-ih="${k}">${k}<span>${esc(INSTR[k].name)}</span></div>`).join('')}`).join('');
-    const pick = `<select class="inp hpick" aria-label="Instruction">${groups.map(g => `<optgroup label="${esc(grpOf(g))}">${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<option value="${k}">${k} - ${esc(INSTR[k].name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
     const example = () => {
       const h = (HELP.H[mn] || {}).en; if (!h) return '';
       const parts = h[2].split(';').map(x => x.trim()).filter(Boolean), rungsX = [], notes = [];
@@ -3126,6 +3123,16 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
           <div class="frow"><label>Language</label><select class="inp" data-hlsel="1" style="width:auto"><option value="en"${lang === 'en' ? ' selected' : ''}>English</option><option value="tl"${lang === 'tl' ? ' selected' : ''}>Filipino (Taglish)</option></select></div>
           <p><b>${lang === 'tl' ? 'Sa madaling salita' : 'In short'}:</b> ${esc(h[0])}</p><p>${esc(h[1])}</p><p><b>${lang === 'tl' ? 'Maihahambing sa' : 'Comparable to'}:</b> ${esc(h[3])}</p></details>` : ''}`;
     };
+    return page();
+  }
+  function instrHelp(start) {
+    const e = curEl();
+    let mn = typeof start === 'string' && INSTR[start] ? start : e && INSTR[e.t] ? e.t : 'XIC';
+    const grpOf = g => (HGRP.find(x => x[0] === g) || [g, g])[1];
+    const groups = [...new Set(Object.values(INSTR).map(d => d.grp))];
+    const toc = groups.map(g => `<div class="ihg">${esc(grpOf(g))}</div>${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<div class="ihi" data-ih="${k}">${k}<span>${esc(INSTR[k].name)}</span></div>`).join('')}`).join('');
+    const pick = `<select class="inp hpick" aria-label="Instruction">${groups.map(g => `<optgroup label="${esc(grpOf(g))}">${Object.keys(INSTR).filter(k => INSTR[k].grp === g).map(k => `<option value="${k}">${k} - ${esc(INSTR[k].name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
+    const page = () => instrPage(mn);
     dialog({ title: 'Instruction Help', size: 'lg', flush: true,
       body: `<div class="ihelp"><aside class="ihl">${toc}</aside><div class="ihr"><div class="ihpick">${pick}</div><article class="ihc">${page()}</article></div></div>`,
       buttons: [{ l: 'Close', pri: true }],
@@ -3138,6 +3145,55 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         el.addEventListener('change', ev => { if (ev.target.dataset.hlsel) { S.prefs.helpLang = ev.target.value; S.prefs.helpPlain = true; savePrefs(); art.innerHTML = page(); } });
         el.addEventListener('toggle', ev => { if (ev.target.matches && ev.target.matches('details.ipl')) { S.prefs.helpPlain = ev.target.open; savePrefs(); } }, true);
       } });
+  }
+  /* Help > Contents: the help window of the reference (help v37 opens on Contents, with Index and Search) over the
+     help this app has: Getting Started, the keyboard shortcuts and every instruction's page. Contents is a tree of
+     topics; Index lists keywords (type to find one); Search lists the topics that have all the words typed. */
+  function helpTopics() {
+    const grpOf = g => (HGRP.find(x => x[0] === g) || [g, g])[1], T = [];
+    const tips = HELP.TIPS.en || [];
+    T.push({ id: 'start', t: 'Getting Started', lv: 0, html: () => `<h3>Getting Started</h3><table class="iht"><tbody>${tips.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`, txt: tips.flat().join(' '), kw: tips.map(x => x[0]) });
+    const keys = Object.keys(C).filter(k => C[k].k).map(k => [C[k].k, C[k].l.replace(/…$/, '')]);
+    T.push({ id: 'keys', t: 'Keyboard Shortcuts', lv: 0, html: () => `<h3>Keyboard Shortcuts</h3><table class="iht"><thead><tr><th>Keys</th><th>Command</th></tr></thead><tbody>${keys.map(([k, l]) => `<tr><td class="mono">${esc(k)}</td><td>${esc(l)}</td></tr>`).join('')}</tbody></table>`, txt: keys.flat().join(' '), kw: ['keyboard shortcuts', 'shortcut keys'] });
+    T.push({ id: 'ins', t: 'Instructions', lv: 0, folder: true });
+    [...new Set(Object.values(INSTR).map(d => d.grp))].forEach(g => {
+      T.push({ id: 'g:' + g, t: grpOf(g), lv: 1, folder: true });
+      Object.keys(INSTR).filter(k => INSTR[k].grp === g).forEach(k => { const r = HREF.R[k] || {}; T.push({ id: 'i:' + k, t: `${INSTR[k].name} (${k})`, lv: 2, up: 'g:' + g, html: () => instrPage(k), txt: [k, INSTR[k].name, r.desc || '', (r.ops || []).join(' '), r.members || '', (r.exec || []).flat().join(' ')].join(' '), kw: [k, INSTR[k].name] }); });
+    });
+    return T;
+  }
+  function helpContents(tab, q0) {
+    const T = helpTopics(), pages = T.filter(x => x.html);
+    let on = 'start', at = tab === 'index' || tab === 'search' ? tab : 'contents';
+    const open = new Set(['ins']);
+    const KW = pages.flatMap(x => x.kw.map(k => [k, x.id])).sort((a, b) => a[0].localeCompare(b[0], 'en', { sensitivity: 'base' }));
+    const side = (el) => {
+      const q = (el && el.querySelector('#hq') || {}).value || q0 || '';
+      if (at === 'contents') return T.filter(x => x.lv === 0 || (x.lv === 1 && open.has('ins')) || (x.lv === 2 && open.has('ins') && open.has(x.up))).map(x => `<div class="row${x.id === on ? ' on' : ''}" data-ht="${x.id}" style="padding-left:${8 + x.lv * 16}px">${x.folder ? `<span class="blx">${open.has(x.id) ? '−' : '+'}</span>` : '<span class="blx"></span>'}${esc(x.t)}</div>`).join('');
+      if (at === 'index') { const u = q.trim().toLowerCase(); return KW.filter(([k]) => !u || k.toLowerCase().startsWith(u) || k.toLowerCase().includes(u)).map(([k, id]) => `<div class="row${id === on ? ' on' : ''}" data-ht="${id}">${esc(k)}</div>`).join('') || '<div class="empty">No keyword.</div>'; }
+      const w = q.toLowerCase().split(/\s+/).filter(Boolean);
+      if (!w.length) return '<div class="empty">Type the words to find, then List Topics.</div>';
+      const hit = pages.filter(x => w.every(y => (x.t + ' ' + x.txt).toLowerCase().includes(y)));
+      return hit.map(x => `<div class="row${x.id === on ? ' on' : ''}" data-ht="${x.id}">${esc(x.t)}</div>`).join('') || '<div class="empty">No topics found.</div>';
+    };
+    const head = () => at === 'contents' ? '' : at === 'index' ? `<label for="hq">Type in the keyword to find:</label><input class="inp" id="hq" value="${esc(q0 || '')}" autocomplete="off">` : `<label for="hq">Type in the word(s) to search for:</label><div class="hqrow"><input class="inp" id="hq" value="${esc(q0 || '')}" autocomplete="off"><button type="button" class="btn" id="hgo">List Topics</button></div>`;
+    const el = dialog({ title: 'Help', size: 'lg', flush: true,
+      body: `<div class="ihelp hcont"><aside class="ihl"><div class="xrtabs">${[['contents', 'Contents'], ['index', 'Index'], ['search', 'Search']].map(([k, l]) => `<button class="xtab${k === at ? ' on' : ''}" data-hct="${k}">${l}</button>`).join('')}</div><div class="hqh" id="hqh">${head()}</div><div class="gwl hlist" id="hl"></div></aside><div class="ihr"><article class="ihc" id="hc"></article></div></div>`,
+      buttons: [{ l: 'Close', pri: true }] });
+    const q = x => el.querySelector(x);
+    const list = () => { q('#hl').innerHTML = side(el); };
+    const show = id => { const x = pages.find(p => p.id === id); if (!x) return; on = id; q('#hc').innerHTML = x.html(); q('#hc').scrollTop = 0; el.querySelectorAll('#hl [data-ht]').forEach(r => r.classList.toggle('on', r.dataset.ht === id)); };
+    list(); show(on); q0 = '';
+    el.addEventListener('click', ev => {
+      const tb = ev.target.closest('[data-hct]'); if (tb) { at = tb.dataset.hct; el.querySelectorAll('[data-hct]').forEach(b => b.classList.toggle('on', b === tb)); q('#hqh').innerHTML = head(); list(); const i = q('#hq'); if (i) i.focus(); return; }
+      if (ev.target.id === 'hgo') { list(); return; }
+      const r = ev.target.closest('#hl [data-ht]'); if (!r) return;
+      const x = T.find(t => t.id === r.dataset.ht);
+      if (x.folder) { if (open.has(x.id)) open.delete(x.id); else open.add(x.id); list(); return; }
+      show(x.id);
+    });
+    el.addEventListener('input', ev => { if (ev.target.id === 'hq' && at === 'index') list(); });
+    el.addEventListener('keydown', ev => { if (ev.target.id === 'hq' && ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); list(); const f = q('#hl [data-ht]'); if (f && at === 'index') show(f.dataset.ht); } });
   }
   /* Getting Started: how to work the editor and the emulator (Help > Getting Started) */
   function tipsDlg() {
