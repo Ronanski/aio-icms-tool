@@ -37,6 +37,18 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     await wait(50, pg);
   }
 
+  // Go Online through its dialogs (Connected To Go Online > Download > Download), as a user answers them
+  async function online(pg = page) {
+    await ev(() => MTPS.App.run('online'), null, pg);
+    for (let k = 0; k < 10 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'), null, pg)); k++) {
+      await wait(150, pg);
+      const b = await pg.$('#layer .dlg .btn.pri'); if (b && !(await pg.$('#layer .dlg .prog'))) await b.click(); else await wait(400, pg);
+    }
+    return ev(() => MTPS.App.state.online, null, pg);
+  }
+  const addTag = (name, type, pg = page) => ev(([n, t]) => { MTPS.App.state.p.tags.push({ name: n, type: t }); MTPS.App.render(); }, [name, type], pg);
+  const cellText = (sel, pg = page) => pg.$eval(sel, e => e.textContent).catch(() => null);
+
   /* ---------- 1. Data Type Editor ---------- */
   console.log('Wave 2 B: Data Type Editor (v37 help: Using user-defined data types; Data Type Editor)');
   await fresh();
@@ -115,6 +127,74 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     await shot('1-udt-phone', pp);
     await clickBtn('OK', pp, true);
     check('phone (touch): the type is saved', (await dt(pp)).map(d => d.name).join() === 'Tank');
+    check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
+    await pp.context().close();
+  }
+
+  /* ---------- 2. STRING and Data Types > Strings ---------- */
+  console.log('Wave 2 B: STRING and the Strings folder (1756-PM004; v37 help: String Browser, Using user-defined data types)');
+  await fresh();
+  await page.click('.org [data-org="dts"] [data-tw]'); await wait(80);
+  const dtFolders = () => page.$$eval('.org [data-org^="dt:"]', r => r.filter(x => !/^dt:[usmp]:/.test(x.dataset.org)).map(x => x.textContent.trim()).join('|'));
+  check('Data Types lists User-Defined, Strings, then Predefined and Module-Defined', (await dtFolders()).startsWith('User-Defined|Strings|'), await dtFolders());
+  await page.click('.org [data-org="dt:str"]', { button: 'right' }); await wait(120);
+  await pick('New String Type…');
+  check('New String Type: Name, Description, Maximum Characters, Data Type Size', (await dlgTitle()) === 'New String Type' && (await page.$('#stl')) !== null && (await page.$('#sts')) !== null);
+  await page.fill('#stn', 'STR20'); await page.fill('#stl', '0'); await clickBtn('OK');
+  check('Maximum Characters 0 is refused (1 to 65535)', /1 to 65535/.test(await cellText('#ste')));
+  await page.fill('#stl', '20'); await clickBtn('OK');
+  check('the string type is saved', JSON.stringify(await dt()) === JSON.stringify([{ name: 'STR20', family: 'string', len: 20 }]));
+  if (!(await page.$('.org [data-org="dt:s:STRING"]'))) { await page.click('.org [data-org="dt:str"] [data-tw]'); await wait(80); }
+  check('Strings lists STRING and STR20', (await page.$$eval('.org [data-org^="dt:s:"]', r => r.map(x => x.textContent.trim()).join(','))) === 'STRING,STR20');
+  await page.dblclick('.org [data-org="dt:s:STRING"]'); await wait(150);
+  check('STRING opens read-only: 82 characters, 88 bytes', (await dlgTitle()) === 'String Type: STRING' && (await page.$eval('#stl', i => i.value + (i.readOnly ? ' ro' : ''))) === '82 ro' && (await cellText('#sts')) === '88 bytes');
+  await clickBtn('Close');
+  await addTag('Msg', 'STRING');
+  await ev(() => MTPS.App.run('tagsmon')); await wait(150);
+  check('Monitor Tags: a STRING shows its text in Value', (await cellText('#tagrows tr[data-tag="Msg"] td.val')) === "''");
+  await page.click('#tagrows tr[data-tag="Msg"] td.val'); await wait(150);
+  check("a click on the value opens the String Browser (the tag's name, Count n of 82)", (await dlgTitle()) === 'Msg' && /0 of 82/.test(await cellText('#sbc')));
+  await page.fill('#sbx', "It's"); await clickBtn('OK');
+  check("a quote inside the string must be written $'", /\$'/.test(await cellText('#sbe')) && (await dlgTitle()) === 'Msg *');
+  await page.fill('#sbx', "It$'s ok$R"); await wait(50);
+  check("Count follows the text ($' and $R are one character each)", /8 of 82/.test(await cellText('#sbc')), await cellText('#sbc'));
+  await clickBtn('OK');
+  check("offline it is the start value: 'It$'s ok$R'", (await cellText('#tagrows tr[data-tag="Msg"] td.val')) === "'It$'s ok$R'" && (await ev(() => MTPS.App.state.p.tags.find(t => t.name === 'Msg').value.LEN)) === 8);
+  await page.click('#tagrows tr[data-tag="Msg"] [data-texp]'); await wait(80);
+  check('the string opens to LEN (8) and DATA', (await page.$$eval('#tagrows tr.mem', r => r.map(x => x.dataset.tag).join(','))) === 'Msg.LEN,Msg.DATA' && (await cellText('#tagrows tr[data-tag="Msg.LEN"] td.val')) === '8');
+  await page.click('#tagrows tr[data-tag="Msg.DATA"] [data-texp]'); await wait(80);
+  check("DATA shows each character in ASCII ('I', '$'')", (await cellText('#tagrows tr[data-tag="Msg.DATA[0]"] td.val')) === "'I'" && (await cellText('#tagrows tr[data-tag="Msg.DATA[2]"] td.val')) === "'$''");
+  await shot('2-string-offline');
+  check('online: Go Online with the string', await online());
+  await page.click('#tagrows tr[data-tag="Msg"] td.val'); await wait(150);
+  await page.fill('#sbx', 'Hello'); await clickBtn('OK'); await wait(200);
+  check("online the String Browser writes the controller: 'Hello'", (await ev(() => MTPS.App.racks[0].controller(0).read('Msg').LEN)) === 5 && (await cellText('#tagrows tr[data-tag="Msg"] td.val')) === "'Hello'");
+  await shot('2-string-online');
+  await ev(() => MTPS.App.run('offline')); await wait(100);
+  const sx = await ev(() => { const x = MTPS.App.toL5X(MTPS.App.state.p), p = MTPS.App.fromL5X(x); return { x: /<DataType Name="STR20" Family="StringFamily" Class="User">.*Name="DATA" DataType="SINT" Dimension="20" Radix="ASCII"/.test(x), d: p.dataTypes[0] }; });
+  check('L5X: the string type goes out as a StringFamily type and comes back', sx.x && JSON.stringify(sx.d) === JSON.stringify({ name: 'STR20', family: 'string', len: 20 }), JSON.stringify(sx));
+  {
+    const tp = await touchPage(800, 1280);
+    await fresh(tp);
+    await addTag('Txt', 'STRING', tp);
+    await ev(() => MTPS.App.run('tagsmon'), null, tp); await wait(200, tp);
+    await tp.tap('#tagrows [data-tag="Txt"] [data-tv]'); await wait(200, tp);
+    await tp.tap('#sbx'); await tp.keyboard.type('Tap'); await clickBtn('OK', tp, true);
+    check("tablet (touch): tap the value, type, OK: 'Tap'", (await cellText('#tagrows [data-tag="Txt"] [data-tv]', tp)) === "'Tap'");
+    check('tablet: no JS errors', tp._errs.length === 0, tp._errs.join(' | '));
+    await tp.context().close();
+  }
+  {
+    const pp = await touchPage(390, 844);
+    await fresh(pp);
+    await addTag('Txt', 'STRING', pp);
+    await pp.tap('[data-go="tags"]'); await wait(200, pp);
+    check("phone: the Tags page shows the string's text", (await cellText('#tagrows [data-tag="Txt"] [data-tv]', pp)) === "''");
+    await pp.tap('#tagrows [data-tag="Txt"]'); await wait(200, pp);
+    await pp.tap('#sbx'); await pp.keyboard.type('Ok'); await clickBtn('OK', pp, true);
+    check("phone (touch): tap the string, type, OK: 'Ok'", (await cellText('#tagrows [data-tag="Txt"] [data-tv]', pp)) === "'Ok'");
+    await pp.tap('[data-go="more"]'); await wait(150, pp); await pp.tap('.page [data-cmd="newstr"]'); await wait(150, pp);
+    check('phone: More > New String Type…', (await dlgTitle(pp)) === 'New String Type');
     check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
     await pp.context().close();
   }

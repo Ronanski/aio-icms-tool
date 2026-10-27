@@ -15,7 +15,12 @@
     TIMER: members('PRE:DINT ACC:DINT EN:BOOL TT:BOOL DN:BOOL'),
     COUNTER: members('PRE:DINT ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL'),
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
+    // the string type of the controller (1756-PM004): LEN, the number of characters, and DATA, 82 of them as SINTs
+    STRING: [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }],
   };
+  /* a string type of the project (Data Types > Strings > New String Type): { name, family: 'string', len } has the
+     members of STRING with DATA[len]; Maximum Characters is 1 to 65535 (v37 help: Using user-defined data types) */
+  const strMembers = n => [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: n }];
   /* the module-defined data types, named as Studio 5000 names them (help: 1756 discrete / analog module-defined data
      types): the digital cards are 1756-IB16 / -IA16 (AB:1756_DI) and 1756-OB16E / -OW16I (AB:1756_DO); the analog input
      card is a 1756-IF8 in differential float mode (4 channels: AB:1756_IF4_Float), the analog output card a 1756-OF4
@@ -82,12 +87,16 @@
   function typeTable(project, err) {
     const t = new Map(), e = err || (() => {});
     const add = (name, mem, kind) => t.set(U(name), { name, kind, members: mem.map(m => ({ ...m })), map: new Map() });
-    for (const n in PREDEF) add(n, PREDEF[n], 'predefined');
+    for (const n in PREDEF) add(n, PREDEF[n], n === 'STRING' ? 'string' : 'predefined');
     for (const n in MODTYPES) add(n, MODTYPES[n], 'module');
     for (const d of (project && project.dataTypes) || []) {
       if (!validName(d.name)) { e(`Invalid data type name '${d.name}'`); continue; }
       if (t.has(U(d.name)) || ATOMIC[U(d.name)]) { e(`Data type '${d.name}' is defined more than once`); continue; }
-      add(d.name, d.members || [], 'user');
+      if (d.family === 'string') {
+        const n = Math.floor(+d.len);
+        if (!(n >= 1 && n <= 65535)) { e(`String type '${d.name}': Maximum Characters must be 1 to 65535`); continue; }
+        add(d.name, strMembers(n), 'string');
+      } else add(d.name, d.members || [], 'user');
     }
     for (const d of t.values()) {
       d.members = d.members.filter(m => {
@@ -779,7 +788,7 @@
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {
     const t = typeTable(project), of = k => [...t.values()].filter(d => d.kind === k).map(d => d.name);
-    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
+    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user'), strings: of('string') };
   }
   /* the size of a data type in bytes, as a Logix controller lays a structure out (general knowledge, not quoted): the
      members in order, each on its own boundary (SINT 1, INT 2, DINT and REAL 4 bytes); BOOL members in a row share a

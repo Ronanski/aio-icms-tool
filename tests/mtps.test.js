@@ -898,5 +898,19 @@ console.log('Wave 2 B: user-defined data types, size (Data Type Editor, v37 help
   check('UDT members run in logic: P1.Hours = 5, L1.E[33] on, L1.P[1].Hours = 5', c.read('P1.Hours') === 5 && c.read('L1.E[33]') === 1 && c.read('L1.P[1].Hours') === 5);
 }
 
+console.log('Wave 2 B: STRING and the string types of Data Types > Strings (1756-PM004; v37 help: Using user-defined data types)');
+{
+  const p = proj({ dataTypes: [{ name: 'STR20', family: 'string', len: 20 }], tags: [T('S1', 'STRING', { value: { LEN: 2, DATA: [72, 105] } }), T('S2', 'STRING'), T('Short', 'STR20')], rungs: ['COP(S1,S2,1);', 'MOV(S1.LEN,Short.LEN)MOV(S1.DATA[0],Short.DATA[0])MOV(S1.DATA[1],Short.DATA[1]);'] });
+  const dt = MTPS.dataTypes(p);
+  check('Strings lists STRING and the project\'s string types; Predefined no longer lists STRING', dt.strings.join() === 'STRING,STR20' && !dt.predefined.includes('STRING') && dt.predefined.includes('TIMER'));
+  eq('STRING is LEN (DINT) and DATA (SINT[82])', MTPS.PREDEF.STRING, [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }]);
+  eq('sizes: STRING 88 bytes, STR20 24 bytes', [MTPS.typeSize(p, 'STRING'), MTPS.typeSize(p, 'STR20')], [88, 24]);
+  check('a project with STRING tags verifies (COP of a string, its LEN and DATA)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); scans(c, 1);
+  check('COP copies the string; LEN and DATA move into a STR20', c.read('S2.LEN') === 2 && c.read('S2.DATA[1]') === 105 && c.read('Short.LEN') === 2 && c.read('Short.DATA[0]') === 72);
+  check('a whole string is written (as the String Browser does)', c.write('S2', { LEN: 3, DATA: [65, 66, 67] }, undefined, true) && c.read('S2.LEN') === 3 && c.read('S2.DATA[2]') === 67 && c.read('S2').DATA.length === 82);
+  check('Maximum Characters must be 1 to 65535', /Maximum Characters must be 1 to 65535/.test(MTPS.verify(proj({ dataTypes: [{ name: 'S0', family: 'string', len: 0 }] })).errors.map(e => e.text).join()));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

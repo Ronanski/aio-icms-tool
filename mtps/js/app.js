@@ -821,6 +821,7 @@
     newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
     newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
+    newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
@@ -1099,7 +1100,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}${b('newdt')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
@@ -1123,6 +1124,7 @@
     const dt = E.dataTypes(S.p);
     add('dts', 0, 'Data Types', 'folder', {}, () => {
       add('dt:user', 1, 'User-Defined', 'type', {}, () => dt.userDefined.forEach(n => add('dt:u:' + n, 2, n, 'type')));
+      add('dt:str', 1, 'Strings', 'type', {}, () => dt.strings.forEach(n => add('dt:s:' + n, 2, n, 'type')));
       add('dt:pre', 1, 'Predefined', 'type', {}, () => dt.predefined.forEach(n => add('dt:p:' + n, 2, n, 'type')));
       add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
     });
@@ -1722,7 +1724,7 @@
   const ARRK = ['elem', 'elemw', 'darr', 'farr'];
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
-  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || ((S.p.dataTypes || []).find(d => U(d.name) === U(ty)) || {}).members || null;
+  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || (d => (d && d.family === 'string' ? strMems(d.len) : d && d.members))((S.p.dataTypes || []).find(d => U(d.name) === U(ty))) || null;
   const NBITS = { SINT: 8, INT: 16, DINT: 32 };
   /* the data type of a tag address, as the reference reads it: Name[Element].Member.Bit, or Location:Slot:Type.Member.Bit
      for the I/O tags of a module; null when the address names nothing in the project */
@@ -2390,7 +2392,7 @@
   function tagRows(mode, scope, q) {
     const rows = [];
     tagWalk(scope || '', q, (e, depth, kids, open) => {
-      const v = aggr(e) ? null : rowVal(e.path, e.ty, scope, e.t);
+      const v = aggr(e) && !strRow(e) ? null : rowVal(e.path, e.ty, scope, e.t);
       const sub = e.t ? (e.t.alias ? '<' + e.t.alias + '>  ' : '') + (e.t.desc || '') : !e.member && e.mod ? `[${e.mod.slot}] ${e.mod.name} (module-defined)` : '';
       rows.push(`<div class="row${depth ? ' mem' : ''}${e.mod ? ' modtag' : ''}" data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}${depth ? ` style="padding-left:${20 + depth * 18}px"` : ''}><span class="exp"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span><div class="grow"><div class="nm">${esc(e.path)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
         ${mode === 'mon' && v ? `<span class="val${v.cls}" data-tv="${esc(e.path)}">${esc(v.t)}</span>` : ''}<span class="ty">${esc(tyText(e))}</span></div>`);
@@ -2398,6 +2400,7 @@
     return rows.join('') || '<div class="empty">No tags yet. Use + to add one.</div>';
   }
   function rowVal(path, ty, scope, t) {
+    const sv = strVal(path, ty, scope, t); if (sv) return sv;
     if (S.online && ctl.M) {
       const v = ctl.read(path, scope || undefined), f = ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null;
       return { t: fmtSt(v, ty, t), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
@@ -2446,7 +2449,7 @@
   function tagTableRows() {
     const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
     tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
-      const t = e.t && !e.member ? e.t : null, ag = aggr(e);
+      const t = e.t && !e.member ? e.t : null, ag = aggr(e) && !strRow(e);
       const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : '', S.tagAll && !depth ? 'all' : ''].filter(Boolean).join(' ');
       const head = `<tr${cls ? ` class="${cls}"` : ''} data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}><td class="ex"></td>`
         + `<td class="nm" style="padding-left:${4 + depth * 16}px"><span class="tx"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span>${esc(e.path)}</td>`;
@@ -2490,6 +2493,7 @@
       if (slot != null) toast(`${name.split(/[.[]/)[0]} is a module-defined tag: it comes with the module in slot ${slot}. Change the module in the I/O Configuration.`);
       return;
     }
+    if (isStrTy(ty) && !(t && t.dim)) { editString(name, ty, scope, t); return; }
     if (membersOf(ty) || /\[[\d,]+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
       if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined, true)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
@@ -3948,10 +3952,15 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   /* the organizer's data type nodes: double-click (or tap again) opens the editor; their right-click menus */
   function dtOpen(k) {
     if (k.startsWith('dt:u:')) { dataTypeEditor(k.slice(5)); return true; }
+    if (k.startsWith('dt:s:')) { stringTypeEditor(k.slice(5)); return true; }
     return false;
   }
   function dtMenu(k) {
-    if (k === 'dts' || k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }];
+    const nst = { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), dis: !editable() };
+    if (k === 'dts') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }, nst];
+    if (k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }];
+    if (k === 'dt:str') return [nst];
+    if (k.startsWith('dt:s:')) { const n = k.slice(5); return [{ l: 'Open', run: () => stringTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() || U(n) === 'STRING' }]; }
     if (k.startsWith('dt:u:')) { const n = k.slice(5); return [{ l: 'Open', run: () => dataTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() }]; }
     return null;
   }
@@ -3962,6 +3971,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     if (!list.length) return '<DataTypes/>';
     const mem = (m, extra) => `<Member Name="${x(m.name)}" DataType="${x(m.type)}" Dimension="${m.dim > 0 ? m.dim : 0}" Radix="${x(stylesOf(m.type).length ? (stylesOf(m.type).includes(m.style) ? m.style : defStyle(m.type)) : 'NullType')}" Hidden="false"${extra || ''} ExternalAccess="${x(accessOf(m))}">${m.desc ? `<Description>${cd(m.desc)}</Description>` : ''}</Member>`;
     return `<DataTypes>\n${list.map(d => {
+      if (d.family === 'string') return `<DataType Name="${x(d.name)}" Family="StringFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members><Member Name="LEN" DataType="DINT" Dimension="0" Radix="Decimal" Hidden="false" ExternalAccess="Read/Write"/><Member Name="DATA" DataType="SINT" Dimension="${d.len}" Radix="ASCII" Hidden="false" ExternalAccess="Read/Write"/></Members></DataType>`;
       let host = null, bit = 8, n = 0;
       const ms = (d.members || []).map(m => {
         if (U(m.type) === 'BOOL' && !(m.dim > 0)) {
@@ -3974,11 +3984,128 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members>${ms}</Members></DataType>`;
     }).join('\n')}\n</DataTypes>`;
   }
+  /* ---------- strings: STRING (LEN, DATA[82], 1756-PM004) and the string types of Data Types > Strings ----------
+     New String Type: Name, Description, Maximum Characters (1 to 65535, v37 help: Using user-defined data types), the
+     size. A string shows its text in Monitor Tags ('Hello'), $ marks the special characters as the String Browser
+     writes them ($$ $' $L $N $P $R $T $hh; v37 help: Failed to modify the String data) */
+  const strMems = n => [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: n }];
+  const strTypeOf = ty => (U(ty) === 'STRING' ? { name: 'STRING', len: 82, family: 'string' } : (S.p.dataTypes || []).find(d => d.family === 'string' && U(d.name) === U(ty)) || null);
+  const isStrTy = ty => !!ty && !!strTypeOf(ty);
+  const strRow = e => isStrTy(e.ty) && !E.dimN(e.dim);
+  const SESC = { 36: '$$', 39: "$'", 10: '$L', 12: '$P', 13: '$R', 9: '$T' };
+  function strText(o) {
+    const d = (o && o.DATA) || [], n = Math.max(0, Math.min(o && o.LEN | 0, d.length));
+    let x = '';
+    for (let k = 0; k < n; k++) { const c = d[k] & 255; x += SESC[c] || (c > 31 && c < 127 ? String.fromCharCode(c) : '$' + c.toString(16).toUpperCase().padStart(2, '0')); }
+    return `'${x}'`;
+  }
+  // the text a user typed, with or without the quotes → { LEN, DATA } or the reason it is not a string
+  function parseStr(txt, max) {
+    let s = String(txt);
+    if (s.startsWith("'")) {
+      // the ending quote must be there and not written $' (an odd number of $ before it)
+      const dl = s.length >= 2 && s.endsWith("'") ? (/\$*'$/.exec(s.slice(1))[0].length - 1) : 1;
+      if (dl % 2) return 'Missing string termination character: put the ending quote on the data.';
+      s = s.slice(1, -1);
+    }
+    const out = [];
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === "'") return "String literal contains an invalid character combination: a quote inside the string is written $'.";
+      if (ch !== '$') { const c = ch.charCodeAt(0); if (c > 255) return `'${ch}' is not an ASCII character.`; out.push(c); continue; }
+      const a = s[i + 1] || '', b = s[i + 2] || '', u = a.toUpperCase();
+      if (a === '$' || a === "'") { out.push(a.charCodeAt(0)); i++; continue; }
+      if (u === 'L') { out.push(10); i++; continue; }
+      if (u === 'N') { out.push(13, 10); i++; continue; }
+      if (u === 'P') { out.push(12); i++; continue; }
+      if (u === 'R') { out.push(13); i++; continue; }
+      if (u === 'T') { out.push(9); i++; continue; }
+      if (/^[0-9A-Fa-f]{2}$/.test(a + b)) { out.push(parseInt(a + b, 16)); i += 2; continue; }
+      return `String literal contains an invalid character combination: '$${a}${b}'.`;
+    }
+    if (out.length > max) return `Too much character information provided: ${out.length} characters, at most ${max}.`;
+    const DATA = new Array(max).fill(0); out.forEach((c, k) => { DATA[k] = c > 127 ? c - 256 : c; });
+    return { LEN: out.length, DATA };
+  }
+  // the value at a member path inside a start value (Tag.DATA[3] in { LEN, DATA })
+  const valAt = (v, rest) => { let o = v; const re = /\.(\w+)|\[(\d+)\]/g; let m; while (o != null && (m = re.exec(rest))) o = m[1] != null ? o[m[1]] : o[+m[2]]; return o; };
+  /* the Value of a string row (the text), and of a DATA element (ASCII, as the reference shows a string's DATA) */
+  function strVal(path, ty, scope, t) {
+    const on = S.online && ctl.M;
+    if (isStrTy(ty)) {
+      if (t && t.dim) return null;
+      const o = on ? ctl.read(path, scope || undefined) : t && t.value && typeof t.value === 'object' ? t.value : offStart(path, scope);
+      return { t: strText(o), cls: '' };
+    }
+    const m = /^(.*)\.DATA\[(\d+)\]$/.exec(path);
+    if (U(ty) === 'SINT' && m && isStrTy(addrType(m[1]) || '')) {
+      const v = on ? ctl.read(path, scope || undefined) : valAt(offStart(m[1], scope), `.DATA[${m[2]}]`);
+      return { t: styled(Number(v) || 0, 'SINT', 'ASCII'), cls: '' };
+    }
+    const ml = /^(.*)\.LEN$/.exec(path);
+    if (!on && ml && isStrTy(addrType(ml[1]) || '')) return { t: String(Number(valAt(offStart(ml[1], scope), '.LEN')) || 0), cls: '' };
+    return null;
+  }
+  // a start value inside a base tag (offline), for a member path
+  const offStart = (path, scope) => { const b = /^([A-Za-z_]\w*)(.*)$/.exec(path); const t = b && scopeTags(scope || '').find(x => U(x.name) === U(b[1])); return t && t.value && typeof t.value === 'object' ? valAt(t.value, b[2]) : null; };
+  /* the String Browser (v37 help: String Browser Dialog Box Overview): the tag's name as the title (* once it is
+     edited), the edit field, and Count (characters typed of the maximum). Online it writes the controller, offline
+     the start value of a base tag. */
+  function editString(name, ty, scope, t) {
+    const max = strTypeOf(ty).len, on = S.online && ctl.M;
+    if (!on && !t) { toast('Start values can be set for base tags only.'); return; }
+    if (!on && t.alias) { toast('Start values can be set for base tags only.'); return; }
+    const cur = on ? ctl.read(name, scope || undefined) : t.value;
+    const txt = strText(cur).slice(1, -1);
+    dialog({ title: name, size: 'md', focus: true,
+      body: `<textarea class="inp mono" id="sbx" rows="4" spellcheck="false" autocapitalize="off" aria-label="String data">${esc(txt)}</textarea>
+        <div class="kv"><span>Count</span><span class="v" id="sbc"></span></div><p class="help">$$ is $, $' a quote, $L line feed, $N new line, $P form feed, $R return, $T tab, $hh a character in hex.</p><div class="errtx" id="sbe"></div>`,
+      mount: el => {
+        const x = el.querySelector('#sbx'), cnt = () => { const r = parseStr(x.value, 65535); el.querySelector('#sbc').textContent = `${typeof r === 'string' ? '?' : r.LEN} of ${max}`; };
+        x.addEventListener('input', () => { el.querySelector('.dh b').textContent = name + ' *'; cnt(); }); cnt();
+      },
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const r = parseStr(el.querySelector('#sbx').value, max);
+        if (typeof r === 'string') { el.querySelector('#sbe').textContent = 'Failed to modify the String data. ' + r; return false; }
+        if (on) { if (!ctl.write(name, r, scope || undefined, true)) { el.querySelector('#sbe').textContent = 'This tag cannot be written (read-only).'; return false; } live(true); refreshTags(); return; }
+        edit(() => { t.value = r; });
+      } }] });
+  }
+  function stringTypeEditor(name) {
+    const pre = name && U(name) === 'STRING', d0 = name ? strTypeOf(name) : null;
+    if (name && !d0) return;
+    const ro = pre || (S.online && !!d0 && typeUsers(d0.name).length > 0);
+    const R = ro ? ' readonly' : '';
+    dialog({ title: d0 ? `String Type: ${d0.name}` : 'New String Type', size: 'md',
+      body: `<div class="frow"><label for="stn">Name</label><input class="inp mono" id="stn" value="${esc(d0 ? d0.name : '')}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"${R}></div>
+        <div class="frow"><label for="std">Description</label><textarea class="inp" id="std" rows="2" maxlength="512"${R}>${esc(pre ? 'The string type of the controller: LEN and DATA[82]' : d0 ? d0.desc || '' : '')}</textarea></div>
+        <div class="frow"><label for="stl">Maximum Characters</label><input class="inp" id="stl" type="number" min="1" max="65535" inputmode="numeric" value="${d0 ? d0.len : 82}"${R}></div>
+        <div class="frow"><label>Data Type Size</label><span id="sts">${d0 ? sizeText(d0.name) : '(worked out when the type is saved)'}</span></div>
+        ${pre ? '<p class="help">STRING is the predefined string type: it cannot be changed. Make a string type of another length with New String Type.</p>' : ro ? '<p class="help">The controller is online and this string type is in use: change it offline.</p>' : ''}<div class="errtx" id="ste"></div>`,
+      buttons: ro ? [{ l: 'Close' }] : [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const n = el.querySelector('#stn').value.trim(), desc = el.querySelector('#std').value.trim(), len = +el.querySelector('#stl').value;
+        const err = m => { el.querySelector('#ste').textContent = m; return false; };
+        if (!E.validName(n)) return err('Name: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.');
+        const taken = E.ATOMIC.concat(Object.keys(E.PREDEF), Object.keys(E.MODTYPES), (S.p.dataTypes || []).filter(d => d !== d0).map(d => d.name));
+        if (taken.some(t => U(t) === U(n))) return err(`A data type named ${n} already exists.`);
+        if (!(Number.isInteger(len) && len >= 1 && len <= 65535)) return err('Maximum Characters: a whole number from 1 to 65535.');
+        const nd = { name: n, family: 'string', len }; if (desc) nd.desc = desc;
+        edit(() => {
+          S.p.dataTypes = S.p.dataTypes || [];
+          if (d0) {
+            S.p.dataTypes[S.p.dataTypes.indexOf(d0)] = nd;
+            if (d0.name !== n) { const fix = t => { if (!t.alias && U(t.type || '') === U(d0.name)) t.type = n; }; S.p.tags.forEach(fix); allProgs().forEach(g => g.tags.forEach(fix)); S.p.dataTypes.forEach(d => (d.members || []).forEach(x => { if (U(x.type) === U(d0.name)) x.type = n; })); }
+          } else S.p.dataTypes.push(nd);
+        });
+        toast(`String type ${n} saved (${sizeText(n)})`);
+      } }] });
+  }
   function l5xTypesIn(c) {
     const dts = [...c.children].find(k => k.tagName === 'DataTypes');
     return (dts ? [...dts.children].filter(k => k.tagName === 'DataType') : []).map(g => {
       const o = { name: g.getAttribute('Name'), members: [] }, ds = [...g.children].find(k => k.tagName === 'Description');
       if (ds && ds.textContent.trim()) o.desc = ds.textContent.trim();
+      if (g.getAttribute('Family') === 'StringFamily') { const dm = g.querySelector('Members > Member[Name="DATA"]'); delete o.members; o.family = 'string'; o.len = parseInt(dm && dm.getAttribute('Dimension'), 10) || 82; return o; }
       const ms = [...g.querySelectorAll('Members > Member')].filter(m => m.getAttribute('Hidden') !== 'true');
       ms.forEach(m => {
         const ty = m.getAttribute('DataType') === 'BIT' ? 'BOOL' : m.getAttribute('DataType'), mo = { name: m.getAttribute('Name'), type: ty };
