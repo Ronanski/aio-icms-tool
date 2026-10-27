@@ -2159,7 +2159,7 @@ function check(name, cond, info = '') {
     let p = await node(page, '01, PLC-DI16-24V');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
     const its = await page.$$eval('#layer .rlctx .it', t => t.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent));
-    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|+Module Statistics|-Station Diagnostics|+Driver Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
+    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|+Module Statistics|+Station Diagnostics|+Driver Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
     let k = await kv();
@@ -2167,7 +2167,7 @@ function check(name, cond, info = '') {
     await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(80);
     p = await node(page, '00, PLC-CPU');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
-    check('a controller also lists Data Monitor and Configure New DDE/OPC Topic (greyed)', (await page.$$eval('#layer .rlctx .it.dis', t => t.map(x => x.textContent).join('|'))).includes('Data Monitor|Configure New DDE/OPC Topic'));
+    check('a controller also lists Data Monitor, Set Time… and Configure New DDE/OPC Topic', (await page.$$eval('#layer .rlctx .it', t => t.map(x => x.textContent).join('|'))).includes('Data Monitor|Set Time…|Configure New DDE/OPC Topic'));
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     k = await kv();
     check('Device Properties of the controller: Programmable Logic Controller, its name and mode', k['Product Type'] === 'Programmable Logic Controller (14)' && k['Product Name'] === 'PLC-CPU Emulator' && !!k.Status, JSON.stringify(k));
@@ -2223,7 +2223,7 @@ function check(name, cond, info = '') {
     const mode = () => ev(() => MTPS.App.racks[0].controller(0).mode);
     await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('Workstation')).click()); await page.waitForTimeout(80);
     await page.click('#layer [data-rlm="Station"]'); await page.waitForTimeout(60);
-    check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Data Monitor|+Change Mode…|-Set Time');
+    check('Station: Change Mode… is on, the rest greyed', (await page.$$eval('#layer .rlpop .it', i => i.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent).join('|'))) === '-Diagnostics|-Freeze|-Unfreeze|-Reset Diagnostic Counters|-Data Monitor|+Change Mode…|-Set Time…');
     await page.click('#layer .rlpop [data-rlmi="chmode"]'); await page.waitForTimeout(80);
     check('Change Mode with no controller selected: a message, no dialog', (await page.$('#layer .rlov2')) === null);
     await page.evaluate(() => [...document.querySelectorAll('#rltree [data-rln]')].find(n => n.textContent.startsWith('00, PLC-CPU')).click()); await page.waitForTimeout(80);

@@ -1193,3 +1193,13 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .rldtab td.mono:last-child { text-align: right; width: 120px; }
 .rldtab.rlwide th:last-child, .rldtab.rlwide td:last-child { width: auto; }
 .phone .rlbox.rldg { height: 100%; }
+/* Data Monitor: the file list and the data table fill the window, a status bar under them */
+.rldg .rldmw { max-height: none; min-height: 0; height: calc(100% - 34px); }
+.rldm th[data-rlsort] { cursor: pointer; user-select: none; }
+.rldm td { cursor: default; white-space: nowrap; }
+.rldm select.inp { height: 26px; padding: 0 4px; min-width: 88px; }
+.rldm th:last-child, .rldm td:last-child { width: auto; }
+.rldms { display: flex; gap: 14px; padding: 6px 2px 0; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.rldms .grow { overflow: hidden; text-overflow: ellipsis; }
+.rldmb { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.tab .rldm select.inp, .phone .rldm select.inp { height: 40px; }

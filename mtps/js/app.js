@@ -3158,6 +3158,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlDiagBody(md) {
     if (md.k === 'cipdiag') return rlCipBody(md);
     if (md.k === 'mstat') { const n = rlFind(rlTree(), md.key); return n && n.m ? rlMsBody(md, n.m) : '<p class="help">The device does not answer.</p>'; }
+    if (md.k === 'dmon') return rlDmBody(md);
+    if (md.k === 'settime') { const n = rlDmCtl(md), c = n && n.m.ctl; return c ? kv('Controller time', esc(rlNowOf(c).toLocaleString())) + kv('Workstation time', esc(new Date().toLocaleString())) : ''; }
     if (md.k === 'drvdiag' && !md.name) return `<div class="rltabw"><table class="rltab" id="rldl"><thead><tr><th>Driver</th><th>Status</th></tr></thead><tbody>${drivers.map(d => `<tr class="${d.name === md.sel ? 'on' : ''}" data-rldp="${esc(d.name)}"><td><span class="mono">${esc(d.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === d.type) || [, , , d.type])[3])}</span></td><td class="${d.run ? 'run' : ''}">${d.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers are configured.</td></tr>'}</tbody></table></div><p class="help">Pick a configured driver to see its counters.</p>`;
     return rlDrvBody(md);
   }
@@ -3180,12 +3182,17 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
     ['View', [['Toolbar', 'tb'], ['Status Bar', 'sb'], '-', ['Options…']]],
     ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag'], '-', ['Configure Gateway…']]],
-    ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode…', 'chmode'], ['Set Time']]],
+    ['Station', [['Diagnostics', 'stdiag', () => !!rlSelDev()], '-', ['Freeze', 'frz', () => !!(rlS.modal && rlS.modal.st && !rlS.modal.snap)], ['Unfreeze', 'unfrz', () => !!(rlS.modal && rlS.modal.st && rlS.modal.snap)], ['Reset Diagnostic Counters', 'rst', () => !!(rlS.modal && rlS.modal.st)], '-',
+      ['Data Monitor', 'dmon', () => !!rlSelCpu()], ['Change Mode…', 'chmode'], ['Set Time…', 'settime', () => !!rlSelCpu()]]],
     ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
     ['Security', [['Network Security…'], ['Change Password…']]],
     ['Window', [['Cascade'], ['Tile Horizontal'], ['Tile Vertical'], '-', ['Arrange Icons']]],
     ['Help', [['Contents'], ['Rockwell Automation on the Web'], '-', ['About RSLinx Classic…']]]];
   const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true };
+  // the device / the controller picked in RSWho (the Station menu works on it)
+  const rlSelDev = () => { const n = rlFind(rlTree(), rlS.sel); return n && n.m ? n : null; };
+  const rlSelCpu = () => { const n = rlSelDev(); return n && n.m.ctl ? n : null; };
+  const rlMiOn = it => !!it[1] && (!it[2] || it[2]());
   const ctlMode = c => (c.fault ? 'Faulted' : { prog: 'Program', run: 'Run', remprog: 'Rem Prog', remrun: 'Rem Run', remtest: 'Rem Test' }[c.mode]);
   /* the RSWho tree: what each running driver reaches, built from the same chassis data as Who Active */
   function rlTree() {
@@ -3290,7 +3297,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (n && !n.m && /^d:[^/]+$/.test(n.k)) return rlDrvCtx(c);
     if (!n || !n.m) return '';
     const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
-    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}${it('Module Statistics', 'mstat')}<hr>${it('Station Diagnostics')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}${it('Module Statistics', 'mstat')}<hr>${it('Station Diagnostics', 'stdiag')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor', 'dmon') + it('Set Time…', 'settime') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
   }
   // right-click a driver in RSWho: Driver Diagnostics
   const rlDrvCtx = c => `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px"><div class="it" data-rlci="drvdiag"><span>Driver Diagnostics</span></div></div>`;
@@ -3310,9 +3317,85 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       <div class="lbl">Station Mapping</div><div class="rltabw"><table class="rltab" id="rlmap"><thead><tr><th>Station</th><th>Host Name</th></tr></thead><tbody>${st.map(([n, ip, nm]) => `<tr><td>${n}</td><td class="mono">${esc(ip)} <span class="muted">${esc(nm)}</span></td></tr>`).join('') || '<tr><td colspan="2" class="muted">No emulated controller has an IP address.</td></tr>'}</tbody></table></div>
       <p class="help">The host names are the IP addresses of the emulated controllers (Emulator > Controller > IP Address).</p>${bf}`;
   }
+  /* Data Monitor (right-click a controller, or Station > Data Monitor; RSLinx Classic help): the data file list (File,
+     Type, Elements, Length in bytes, sortable, loaded with a progress and Stop), then a file's data table: one row per
+     element with its Radix (Binary, Octal, Decimal, Hex, ASCII), Type and Access Rights, polled at the poll rate (250 ms
+     to 34560000 ms; above 1000 ms it is polled at 1000 ms). It only reads. A Logix controller has tags, not data files:
+     each atomic controller tag (or array of them) is one file here. */
+  const RLBY = { BOOL: 1, SINT: 1, INT: 2, DINT: 4, REAL: 4 }, RLRX = ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'];
+  function rlFiles(c) {
+    if (!c || !c.M) return [];
+    return [...c.M.tags.values()].filter(r => RLBY[r.type] && !r.alias).map(r => {
+      const n = r.dims && r.dims.length ? r.dims.reduce((a, b) => a * b, 1) : r.dim || 1;
+      return { f: r.name, t: r.type + (r.dim ? `[${(r.dims && r.dims.length ? r.dims : [r.dim]).join(',')}]` : ''), n, b: n * RLBY[r.type], rec: r };
+    });
+  }
+  // the addresses of a file's elements (at most 256 shown)
+  function rlAddrs(rec) {
+    if (!rec.dim) return [rec.name];
+    const ds = rec.dims && rec.dims.length ? rec.dims : [rec.dim], out = [], idx = ds.map(() => 0);
+    for (let k = 0; k < 256; k++) {
+      out.push(`${rec.name}[${idx.join(',')}]`);
+      let j = ds.length - 1; while (j >= 0 && ++idx[j] >= ds[j]) idx[j--] = 0;
+      if (j < 0) break;
+    }
+    return out;
+  }
+  function rlRadix(v, rx, type) {
+    if (type === 'REAL') return Number(v).toPrecision(7).replace(/\.?0+$/, '').replace(/\.?0+e/, 'e');
+    const bits = { BOOL: 1, SINT: 8, INT: 16, DINT: 32 }[type] || 32, u = bits === 32 ? v >>> 0 : (v & ((1 << bits) - 1));
+    if (rx === 'Binary') return u.toString(2).padStart(bits, '0');
+    if (rx === 'Octal') return u.toString(8);
+    if (rx === 'Hex') return u.toString(16).toUpperCase().padStart(Math.ceil(bits / 4), '0');
+    if (rx === 'ASCII') { let s = ''; for (let b = Math.ceil(bits / 8) - 1; b >= 0; b--) { const ch = (u >>> (b * 8)) & 255; s += ch >= 32 && ch < 127 ? String.fromCharCode(ch) : '.'; } return `'${s}'`; }
+    return String(v);
+  }
+  const rlDmCtl = md => { const n = rlFind(rlTree(), md.key); return n && n.m && n.m.ctl ? n : null; };
+  function rlDmRead(md) {
+    const n = rlDmCtl(md), c = n && n.m.ctl, f = c && rlFiles(c).find(x => x.f === md.file);
+    if (!f || !c.powered) return false;
+    md.vals = rlAddrs(f.rec).map(a => { try { return Number(c.read(a)); } catch (e) { return 0; } });
+    rlAsk(n);
+    return true;
+  }
+  function rlDmBody(md) {
+    const n = rlDmCtl(md), c = n && n.m.ctl;
+    if (!c || !c.powered) return '<p class="help">The device does not answer.</p>';
+    const fs = rlFiles(c);
+    if (!md.file) {
+      const key = { File: 'f', Type: 't', Elements: 'n', 'Length (bytes)': 'b' }[md.sort] || 'f', s = fs.slice().sort((a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0) * (md.desc ? -1 : 1)).slice(0, md.loaded);
+      return `<div class="rltabw rldmw"><table class="rltab rldm" id="rldmf"><thead><tr>${['File', 'Type', 'Elements', 'Length (bytes)'].map(h => `<th data-rlsort="${h}">${h}${md.sort === h ? (md.desc ? ' ▼' : ' ▲') : ''}</th>`).join('')}</tr></thead><tbody>${s.map(x => `<tr class="${x.f === md.fsel ? 'on' : ''}" data-rldf="${esc(x.f)}"><td class="mono">${esc(x.f)}</td><td>${esc(x.t)}</td><td class="mono">${x.n}</td><td class="mono">${x.b}</td></tr>`).join('') || `<tr><td colspan="4" class="muted">${c.M ? 'No data files.' : 'The controller holds no project.'}</td></tr>`}</tbody></table></div>
+        <div class="rldms"><span class="grow">${md.loaded < fs.length && !md.stop ? `Loading data files… ${Math.round(md.loaded / Math.max(1, fs.length) * 100)}%` : md.stop && md.loaded < fs.length ? `Stopped: ${md.loaded} of ${fs.length} files` : 'Complete'}</span></div>`;
+    }
+    if (md.pp) return `<div class="frow"><label for="rldmr">Poll rate (ms)</label><input class="inp num" id="rldmr" type="number" min="250" max="34560000" value="${esc(md.pp.v)}"></div><p class="help">From 250 to 34560000 ms. A rate above 1000 ms is polled at 1000 ms.</p><div class="errtx" id="rlerr">${esc(md.pp.err || '')}</div>
+      <div class="rldmb"><button class="btn" data-rldx="ppcancel">Cancel</button><button class="btn pri" data-rldx="ppok">OK</button></div>`;
+    const f = fs.find(x => x.f === md.file);
+    if (!f) return '<p class="help">The file is gone (the controller holds another project).</p>';
+    const ro = f.rec.constant || (f.rec.io && f.rec.io.dir === 'I'), vals = md.vals || [];
+    return `<div class="rltabw rldmw"><table class="rltab rldm" id="rldmt"><thead><tr><th>Address</th><th>Value</th><th>Radix</th><th>Type</th><th>Access Rights</th></tr></thead><tbody>${rlAddrs(f.rec).map((a, i) => { const rx = md.rx[i] || 'Decimal'; return `<tr class="${md.selr === a ? 'on' : ''}" data-rldr="${esc(a)}"><td class="mono">${esc(a)}</td><td class="mono">${esc(rlRadix(vals[i] || 0, rx, f.rec.type))}</td><td><select class="inp" data-rlrx="${i}"${f.rec.type === 'REAL' ? ' disabled' : ''}>${RLRX.map(r => `<option${r === rx ? ' selected' : ''}>${r}</option>`).join('')}</select></td><td>${esc(f.rec.type)}</td><td>${ro ? 'Read Only' : 'Read/Write'}</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="rldms"><span>Status: ${md.active ? 'active' : 'inactive'}</span><span class="grow">Selection: ${esc(md.selr || '')}</span><span>Poll rate: ${md.rate} ms</span></div>`;
+  }
+  function rlDmHTML(md) {
+    const n = rlDmCtl(md), nm = n ? n.l.replace(/^\d+, /, '') : '';
+    const foot = !md.file ? `<button class="btn" data-rldx="dmstop"${md.stop || !n || md.loaded >= rlFiles(n.m.ctl).length ? ' disabled' : ''}>Stop</button><span class="grow"></span>`
+      : md.pp ? '<span class="grow"></span>' : `<button class="btn" data-rldx="dmprop">Properties…</button><button class="btn" data-rldx="dmref">Refresh</button><button class="btn" data-rldx="dmact">${md.active ? 'Deactivate' : 'Activate'}</button><span class="grow"></span>`;
+    return rlWin(`Data Monitor - ${nm}${md.file ? ' - ' + md.file : ''}`, '', rlDiagBody(md), foot) + (md.gm ? `<div class="menu rlpop rlctx" role="menu" style="left:${md.gm.x}px;top:${md.gm.y}px">${[['Properties…', 'dmprop'], ['Refresh', 'dmref'], ['Activate', 'dmon1'], ['Deactivate', 'dmoff']].map(([l, a]) => `<div class="it${(a === 'dmon1' && md.active) || (a === 'dmoff' && !md.active) ? ' dis' : ''}" data-rldx="${a}"><span>${l}</span></div>`).join('')}</div>` : '');
+  }
+  /* Set Time: the date and time of the controller's clock, set from the workstation's or typed in */
+  const rlNowOf = c => new Date(Date.now() + (c.wallOff || 0));
+  const rlDt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  function rlStHTML(md) {
+    const n = rlDmCtl(md), c = n && n.m.ctl;
+    return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Set Time"><div class="bh">Set Time - ${esc(n ? n.l : '')}</div><div class="bb">${c && c.powered ? `<div data-rldg>${rlDiagBody(md)}</div>
+      <div class="frow"><label for="rlstv">New controller time</label><input class="inp" id="rlstv" type="datetime-local" step="1" value="${esc(md.v || rlDt(rlNowOf(c)))}"></div>
+      <button class="btn" data-rldx="stnow">Set to Workstation Time</button>` : '<p class="help">The device does not answer.</p>'}<div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="stok"${c && c.powered ? '' : ' disabled'}>OK</button></div></div></div>`;
+  }
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'dmon') return rlDmHTML(md);
+    if (md.k === 'settime') return rlStHTML(md);
     if (md.k === 'drvdiag' || md.k === 'cipdiag') return rlDiagHTML(md);
     if (md.k === 'mstat') return rlMsHTML(md);
     if (md.k === 'mode') {
@@ -3356,7 +3439,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
           <div class="rlwho"><div class="rltree tree" id="rltree">${rlTreeHTML(root, lim)}</div><div class="rlpane" id="rlpane">${rlPaneHTML(root)}</div></div></div>
         <div class="rlst"${rlS.sb ? '' : ' hidden'}><span class="ell grow">${sel && sel.path ? 'Path: ' + esc(sel.path) : 'For Help, press F1'}</span><span>Drivers running: ${drivers.filter(d => d.run).length} of ${drivers.length}</span></div>
         ${rlS.view === 'drivers' ? `<div class="rlov">${rlDrvHTML()}</div>` : ''}${rlS.modal ? rlModalHTML() : ''}${rlS.ctx ? rlCtxHTML(root) : ''}
-        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${it[1] ? '' : ' dis'}"${it[1] ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' ? `<span class="ck">${rlS[it[1]] ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
+        ${rlS.menu ? `<div class="menu rlpop" role="menu">${RLMENUS.find(m => m[0] === rlS.menu)[1].map(it => (it === '-' ? '<hr>' : `<div class="it${rlMiOn(it) ? '' : ' dis'}"${rlMiOn(it) ? ` data-rlmi="${it[1]}"` : ''}>${it[1] === 'tb' || it[1] === 'sb' ? `<span class="ck">${rlS[it[1]] ? '✓' : ''}</span>` : ''}<span>${esc(it[0])}</span></div>`)).join('')}</div>` : ''}`;
       if (rlS.menu) {
         const b = box.querySelector(`[data-rlm="${rlS.menu}"]`), p = box.querySelector('.rlpop');
         p.style.top = (b.offsetTop + b.offsetHeight + 2) + 'px';
@@ -3371,6 +3454,14 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     let ltick = 0;
     const rlLive = md => {
       if (md.k === 'drvdiag' && md.tab === 'act' && ltick % 8) return false;
+      if (md.k === 'dmon') {
+        // the file list loads a few files at a time; the data table is polled at its rate (1000 ms at most)
+        if (md.gm) return false;
+        if (!md.file) { const n = rlDmCtl(md), all = n ? rlFiles(n.m.ctl).length : 0; if (md.stop || md.loaded >= all) return false; md.loaded = fastComm() ? all : Math.min(all, md.loaded + 2); return true; }
+        if (md.pp || !md.active || (ltick * 250) % Math.min(1000, md.rate) >= 250) return false;
+        rlDmRead(md); return true;
+      }
+      if (md.k === 'settime') return ltick % 4 === 0;
       if (md.k === 'mstat') {
         // Module Statistics polls the module once a second (an unconnected request through its driver)
         if (ltick % 4) return false;
@@ -3392,18 +3483,58 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const rlAct = a => {
       if (a === 'drvdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: null, sel: (drivers[0] || {}).name, tab: 'gen', live: true }; draw(); return true; }
       if (a === 'cipdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'cipdiag', tab: 'disp', live: true }; draw(); return true; }
+      // Station Diagnostics: the counters of the station's driver, with Station > Freeze, Unfreeze and Reset Diagnostic
+      // Counters (Reset keeps the last four counters of an Ethernet driver, the connection counts)
+      if (a === 'stdiag') { const n = rlSelDev(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: drvOfKey(n.k), title: `Station Diagnostics - ${n.l}`, tab: 'gen', live: true, st: true }; } draw(); return true; }
+      if (a === 'frz' && rlS.modal) { rlS.modal.snap = JSON.parse(JSON.stringify({ d: rlStat.d, cur: rlCur })); draw(); return true; }
+      if (a === 'unfrz' && rlS.modal) { rlS.modal.snap = null; draw(); return true; }
+      if (a === 'rst' && rlS.modal) {
+        const s = rlD(rlS.modal.name), keep = ['Connections open', 'Total connections initiated', 'Server connections open', 'Total connections accepted'];
+        s.c = Object.fromEntries(Object.entries(s.c).filter(([k]) => keep.includes(k))); s.rate = [0, 0]; s.prev = rlTot(drivers.find(x => x.name === rlS.modal.name), s);
+        if (rlS.modal.snap) rlS.modal.snap = JSON.parse(JSON.stringify({ d: rlStat.d, cur: rlCur }));
+        draw(); return true;
+      }
+      if (a === 'dmon') { const n = rlSelCpu(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'dmon', key: n.k, sort: 'File', desc: false, loaded: fastComm() ? 1e9 : 0, file: null, rx: {}, rate: 1000, active: true, live: true }; } draw(); return true; }
+      if (a === 'settime') { const n = rlSelCpu(); if (n) { rlS.view = 'rswho'; rlS.modal = { k: 'settime', key: n.k, live: true }; } draw(); return true; }
       return false;
     };
     const drvOfKey = k => (k ? k.slice(2).split('/')[0] : '');
     const rlCtxAct = (a, k) => {
       if (a === 'drvdiag') { rlS.modal = { k: 'drvdiag', name: drvOfKey(k), tab: 'gen', live: true }; return; }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: k, tab: 'gen', live: true }; return; }
+      if (a === 'stdiag' || a === 'dmon' || a === 'settime') { rlS.sel = k; rlAct(a); return; }
       rlS.modal = { k: 'props', key: k };
     };
     const rlDx = a => {
       const md = rlS.modal;
       if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
+      if (md.k === 'dmon') {
+        md.gm = null;
+        if (a === 'dmstop') md.stop = true;
+        if (a === 'dmprop') md.pp = { v: md.rate };
+        if (a === 'ppcancel') md.pp = null;
+        if (a === 'ppok') {
+          const v = box.querySelector('#rldmr').value.trim(), n = +v;
+          if (!/^\d+$/.test(v) || n < 250 || n > 34560000) { md.pp = { v, err: 'Enter a poll rate from 250 to 34560000 ms.' }; draw(); return; }
+          md.rate = n; md.pp = null;
+        }
+        if (a === 'dmref') rlDmRead(md);
+        if (a === 'dmact') md.active = !md.active;
+        if (a === 'dmon1') md.active = true;
+        if (a === 'dmoff') md.active = false;
+        draw();
+      }
+      if (md.k === 'settime') {
+        const c = rlDmCtl(md) && rlDmCtl(md).m.ctl, i = box.querySelector('#rlstv');
+        if (!c || !i) return;
+        if (a === 'stnow') { md.v = rlDt(new Date()); md.err = ''; draw(); return; }
+        if (a === 'stok') {
+          const t = new Date(i.value);
+          if (!i.value || isNaN(t)) { md.v = i.value; md.err = 'Enter a date and a time.'; draw(); return; }
+          c.wallOff = t.getTime() - Date.now(); rlAsk(rlDmCtl(md)); rlS.modal = null; toast('The controller\'s clock is set.', 'ok'); draw();
+        }
+      }
       // Lock Counters holds the values shown (the module goes on counting); Reset Counters sets them to 0
       if (md.k === 'mstat' && (a === 'lock' || a === 'reset')) {
         const n = rlFind(rlTree(), md.key), m = n && n.m;
@@ -3464,6 +3595,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     };
     const modalAct = ok => {
       const md = rlS.modal;
+      // Close of a data table goes back to the data file list
+      if (!ok && md.k === 'dmon' && md.file) { md.file = null; md.pp = null; md.gm = null; draw(); return; }
       if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
       if (md.k === 'add') { addOk(); return; }
       if (md.k === 'mode') {
@@ -3534,6 +3667,14 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       // picking a driver marks its row in place (a redraw would split a double-click)
       if ((x = t.closest('[data-rldp]')) && rlS.modal) { rlS.modal.sel = x.dataset.rldp; box.querySelectorAll('[data-rldp]').forEach(r => r.classList.toggle('on', r === x)); const b = box.querySelector('[data-rldx="dpick"]'); if (b) b.disabled = false; return; }
       if ((x = t.closest('[data-rldx]')) && rlS.modal) { rlDx(x.dataset.rldx, x); return; }
+      if (rlS.modal && rlS.modal.k === 'dmon') {
+        const md = rlS.modal;
+        if (md.gm) { md.gm = null; draw(); return; }
+        if ((x = t.closest('[data-rlsort]'))) { md.desc = md.sort === x.dataset.rlsort ? !md.desc : false; md.sort = x.dataset.rlsort; draw(); return; }
+        // a file: a click picks it, a double-click (or a tap on the picked one) opens its data table
+        if ((x = t.closest('[data-rldf]'))) { if (md.fsel === x.dataset.rldf && ev.pointerType !== 'mouse' && ev.detail < 2) { rlDmOpen(md, x.dataset.rldf); return; } md.fsel = x.dataset.rldf; box.querySelectorAll('[data-rldf]').forEach(r => r.classList.toggle('on', r === x)); return; }
+        if ((x = t.closest('[data-rldr]')) && !t.closest('select')) { md.selr = x.dataset.rldr; draw(); return; }
+      }
       if (rlS.modal) return;
       if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
       if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
@@ -3556,7 +3697,16 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (t.closest('[data-rlcfg]') && d) { rlS.modal = { k: 'cfg', name: d.name }; draw(); }
     });
     box.addEventListener('dblclick', ev => { const x = ev.target.closest('[data-rldp]'); if (x && rlS.modal) { rlS.modal.sel = x.dataset.rldp; rlDx('dpick'); } });
+    const rlDmOpen = (md, f) => { md.file = f; md.fsel = f; md.selr = null; md.rx = {}; md.vals = null; rlDmRead(md); draw(); };
+    box.addEventListener('dblclick', ev => { const x = ev.target.closest('[data-rldf]'); if (x && rlS.modal && rlS.modal.k === 'dmon') rlDmOpen(rlS.modal, x.dataset.rldf); });
+    // right-click the data table: Properties, Refresh, Activate, Deactivate
+    box.addEventListener('contextmenu', ev => {
+      const md = rlS.modal; if (!md || md.k !== 'dmon' || !md.file || md.pp || !ev.target.closest('#rldmt')) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const b = box.getBoundingClientRect(); md.gm = { x: Math.max(4, Math.min(ev.clientX - b.left, b.width - 200)), y: Math.max(4, Math.min(ev.clientY - b.top, b.height - 170)) }; draw();
+    }, true);
     box.addEventListener('change', ev => {
+      if (ev.target.dataset.rlrx && rlS.modal && rlS.modal.k === 'dmon') { rlS.modal.rx[+ev.target.dataset.rlrx] = ev.target.value; draw(); return; }
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
