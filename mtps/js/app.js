@@ -816,11 +816,11 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
-    // File > New Component (reference order); Program, Task, Data Type and Trend are listed but not in this version yet
+    // File > New Component (reference order); Program and Task are listed but not in this version yet
     newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
     newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
     newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
-    newdt: { l: 'New Data Type…', i: 'tags', run: () => {}, on: () => false },
+    newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
     toggle: { l: 'Toggle Bit', k: 'Ctrl+T', i: 'toggle', run: toggleSel, on: () => S.online && selIsBool() },
     fon: { l: 'Force On', i: 'force', run: () => forceSel(1), on: selForceable },
@@ -1099,7 +1099,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('xref')}${b('tagsedit')}${b('newdt')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
@@ -1592,6 +1592,7 @@
     openMenu(renamed(menuItems(ids), { cut: 'Cut Rung', copy: 'Copy Rung', del: 'Delete Rung' }), { x, y }, `Rung ${t.ri}`);
   }
   function orgMenu(key, x, y) {
+    const dm = dtMenu(key); if (dm) { openMenu(dm, { x, y }); return; }
     const items = [];
     if (key.startsWith('rt:')) { items.push({ l: 'Open', run: () => openRoutine(key) }, '-', { l: 'Rename…', run: () => renameRoutine(key), dis: !editable() }, { l: 'Delete', run: () => deleteRoutine(key), dis: !editable() }, '-', { l: 'Verify', run: () => { openRoutine(key); verifyCmd(true); } }, { l: 'Properties…', run: () => routineProps(key) }); }
     else if (key.startsWith('prog:')) items.push({ l: 'New Routine…', run: () => newRoutine(key.slice(5)), dis: !editable() }, { l: 'Program Tags', run: () => tagEditor('mon', key.slice(5)) }, '-', { l: 'Properties…', run: () => progProps(key.slice(5)) });
@@ -3503,7 +3504,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
 <Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="1756-L85E" MajorRev="37" MinorRev="11">
-${p.controller.desc ? `<Description>${cd(p.controller.desc)}</Description>` : ''}<DataTypes/>
+${p.controller.desc ? `<Description>${cd(p.controller.desc)}</Description>` : ''}${l5xTypes(p, x, cd)}
 <Modules>
 <Module Name="Local" CatalogNumber="1756-L85E" Vendor="1" ParentModule="Local" ParentModPortId="1"><Ports><Port Id="1" Address="0" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
 ${p.rack.modules.map(m => `<Module Name="${x(m.name)}" CatalogNumber="${CAT[m.type] || m.type}" Vendor="1" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}"><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports></Module>`).join('\n')}
@@ -3549,6 +3550,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       if (!o.desc) delete o.desc;
       return o;
     });
+    p.dataTypes = l5xTypesIn(c);
     p.tags = tagsOf(kids(c, 'Tags')[0]);
     const mods = [], kindOf = cat => /-I[ABCGMNV]\d|-IB\d|-IA\d|-IV\d/i.test(cat) ? 'PLC-DI16-24V' : /-O[ABWVX]\d|-OB\d|-OW\d/i.test(cat) ? 'PLC-DO16-24V' : /-IF\d|-IR\d|-IT\d/i.test(cat) ? 'PLC-AI4' : /-OF\d/i.test(cat) ? 'PLC-AO4' : null;
     const ms = kids(c, 'Modules')[0];
@@ -3814,6 +3816,181 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         if (cm) cm.onclick = () => { ctl.clearFault(); live(true); render(); controllerProps('maj'); };
         if (cn) cn.onclick = () => { ctl.clearMinors(); controllerProps('min'); };
       } });
+  }
+
+  /* ---------- data types: the Data Type Editor (v37 help: Using user-defined data types; Data Type Editor) ----------
+     Data Types > User-Defined > New Data Type: Name (40 characters), Description (512), the members (Name, Data Type,
+     Style, Description, External Access; a new row is added as one is typed), Size (read-only, worked out when the
+     type is saved), then Apply (save, keep editing) or OK (save and close). A member array has one dimension
+     (1756-PM004). The members are kept as { name, type, dim, desc, style, access } in project.dataTypes. */
+  const udtOf = n => (S.p.dataTypes || []).find(d => U(d.name) === U(n) && d.family !== 'string');
+  // the tags (any scope) and the user types whose members use a data type: a type in use cannot be deleted
+  function typeUsers(n) {
+    const u = U(n), out = [];
+    S.p.tags.forEach(t => { if (!t.alias && U(t.type || '') === u) out.push(t.name); });
+    allProgs().forEach(g => g.tags.forEach(t => { if (!t.alias && U(t.type || '') === u) out.push(g.name + '/' + t.name); }));
+    (S.p.dataTypes || []).forEach(d => (d.members || []).forEach(m => { if (U(m.type) === u) out.push(d.name + '.' + m.name); }));
+    return out;
+  }
+  const sizeText = n => { const b = E.typeSize(S.p, n); return b == null ? '' : `${b} byte${b === 1 ? '' : 's'}`; };
+  const memTypeText = m => m.type + (m.dim > 0 ? `[${m.dim}]` : '');
+  function dataTypeEditor(name) {
+    const d0 = name ? udtOf(name) : null;
+    if (name && !d0) return;
+    let cur = d0;   // the type as last saved (Apply / OK)
+    const ro = S.online && !!d0 && typeUsers(d0.name).length > 0;
+    const accSel = a => `<select class="cin" data-mf="access" aria-label="External Access"${ro ? ' disabled' : ''}>${ACCESS.map(x => `<option${x === (a || 'Read/Write') ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
+    const stySel = (ty, st) => { const l = ty ? stylesOf(ty) : []; return `<select class="cin" data-mf="style" aria-label="Style"${!l.length || ro ? ' disabled' : ''}>${l.map(x => `<option${x === (l.includes(st) ? st : defStyle(ty)) ? ' selected' : ''}>${x}</option>`).join('')}</select>`; };
+    const rowHTML = m => `<tr data-mrow="1"><td><input class="cin mono" data-mf="name" value="${esc(m.name || '')}" placeholder="${m.name ? '' : 'Add Member…'}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Member Name"${ro ? ' readonly' : ''}></td>
+      <td><span class="cdt"><input class="cin mono" data-mf="type" value="${esc(m.type ? memTypeText(m) : '')}" list="dtel" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Data Type"${ro ? ' readonly' : ''}><button class="cdtb" type="button" data-mdt="1" title="Select Data Type" aria-label="Select Data Type"${ro ? ' disabled' : ''}>…</button></span></td>
+      <td>${stySel(m.type || '', m.style)}</td><td><input class="cin" data-mf="desc" value="${esc(m.desc || '')}" aria-label="Description"${ro ? ' readonly' : ''}></td><td>${accSel(m.access)}</td>
+      <td class="ck"><button class="ib" type="button" data-mdel="1" title="Delete Member" aria-label="Delete Member"${ro ? ' disabled' : ''}>${ic('close')}</button></td></tr>`;
+    const body = `<div class="frow"><label for="dten">Name</label><input class="inp mono" id="dten" value="${esc(d0 ? d0.name : '')}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"${ro ? ' readonly' : ''}></div>
+      <div class="frow"><label for="dted">Description</label><textarea class="inp" id="dted" rows="2" maxlength="512"${ro ? ' readonly' : ''}>${esc(d0 ? d0.desc || '' : '')}</textarea></div>
+      <div class="frow"><label>Members</label><span class="muted" id="dtes">Data Type Size: ${d0 ? sizeText(d0.name) : '(worked out when the type is saved)'}</span></div>
+      <div class="tagtbl dtegrid"><table><thead><tr><th>Name</th><th>Data Type</th><th>Style</th><th>Description</th><th>External Access</th><th></th></tr></thead><tbody id="dterows">${(d0 ? d0.members : []).map(rowHTML).join('')}${ro ? '' : rowHTML({})}</tbody></table></div>
+      <datalist id="dtel">${tagTypes().map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+      ${ro ? '<p class="help">The controller is online and this data type is in use: change it offline.</p>' : ''}<div class="errtx" id="dtee"></div>`;
+    const grab = el => [...el.querySelectorAll('#dterows tr')].map(tr => { const f = k => tr.querySelector(`[data-mf="${k}"]`); return { name: f('name').value.trim(), type: f('type').value.trim(), style: f('style').value, desc: f('desc').value.trim(), access: f('access').value }; }).filter(m => m.name || m.type);
+    // check and save the type; the text of the first problem, or '' when it was saved
+    const save = el => {
+      const name = el.querySelector('#dten').value.trim(), desc = el.querySelector('#dted').value.trim(), rows = grab(el);
+      if (!E.validName(name)) return 'Name: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.';
+      const taken = E.ATOMIC.concat(Object.keys(E.PREDEF), Object.keys(E.MODTYPES), (S.p.dataTypes || []).filter(d => d !== cur).map(d => d.name));
+      if (taken.some(t => U(t) === U(name))) return `A data type named ${name} already exists.`;
+      const mems = [], seen = new Set();
+      for (const r of rows) {
+        if (!E.validName(r.name)) return `Member '${r.name || '?'}': letters, digits and _, starting with a letter or _, up to 40 characters.`;
+        if (seen.has(U(r.name))) return `Member ${r.name} is defined more than once.`;
+        seen.add(U(r.name));
+        const m = /^([A-Za-z_][\w:]*)\s*(?:\[\s*(\d+)\s*\])?$/.exec(r.type);
+        if (!m) return `Member ${r.name}: type a data type, e.g. DINT or DINT[10] (a member array has one dimension).`;
+        const ty = tagTypes().concat(Object.keys(E.MODTYPES)).find(x => U(x) === U(m[1]));
+        if (!ty) return `Member ${r.name}: '${m[1]}' is not a data type of this project.`;
+        if (U(ty) === U(name) || (cur && U(ty) === U(cur.name))) return `Member ${r.name}: a data type cannot contain itself.`;
+        const o = { name: r.name, type: ty };
+        if (m[2] != null) { if (!(+m[2] > 0)) return `Member ${r.name}: the array size must be 1 or more.`; o.dim = +m[2]; }
+        if (r.desc) o.desc = r.desc;
+        if (r.style && r.style !== defStyle(ty) && stylesOf(ty).includes(r.style)) o.style = r.style;
+        if (r.access && r.access !== 'Read/Write') o.access = r.access;
+        mems.push(o);
+      }
+      // a type that holds this one, directly or deeper, cannot become one of its members
+      const holds = (t, seen2 = new Set()) => { const d = udtOf(t); if (!d || seen2.has(U(t))) return false; seen2.add(U(t)); return d.members.some(x => (cur && U(x.type) === U(cur.name)) || holds(x.type, seen2)); };
+      const loop = mems.find(x => holds(x.type));
+      if (loop) return `Member ${loop.name}: ${loop.type} contains ${name}, so ${name} cannot contain it.`;
+      const nd = { name, members: mems }; if (desc) nd.desc = desc;
+      const was = cur;
+      const ok = edit(() => {
+        S.p.dataTypes = S.p.dataTypes || [];
+        if (was) {
+          S.p.dataTypes[S.p.dataTypes.indexOf(was)] = nd;
+          // a renamed type: the tags and the members that use it follow
+          if (U(was.name) !== U(name) || was.name !== name) {
+            const fix = t => { if (!t.alias && U(t.type || '') === U(was.name)) t.type = name; };
+            S.p.tags.forEach(fix); allProgs().forEach(g => g.tags.forEach(fix));
+            S.p.dataTypes.forEach(d => (d.members || []).forEach(x => { if (U(x.type) === U(was.name)) x.type = name; }));
+          }
+        } else S.p.dataTypes.push(nd);
+      });
+      if (!ok) return 'The data type could not be saved.';
+      cur = nd;
+      return '';
+    };
+    const el = dialog({
+      title: d0 ? `Data Type: ${d0.name}` : 'New Data Type', size: 'lg', body,
+      noEnter: ev => !!ev.target.closest('#dterows'),
+      mount: el => {
+        const tb = el.querySelector('#dterows');
+        const err = el.querySelector('#dtee');
+        // the last row is the new-member row: typing in it adds the next blank row
+        tb.addEventListener('input', ev => {
+          const tr = ev.target.closest('tr');
+          if (ev.target.dataset.mf === 'type') { const s = tr.querySelector('[data-mf="style"]'), ty = ev.target.value.replace(/\[.*$/, '').trim(); s.outerHTML = stySel(ty, s.value); }
+          if (tr === tb.lastElementChild && !ro && ev.target.value.trim()) { tr.querySelector('[data-mf="name"]').placeholder = ''; tb.insertAdjacentHTML('beforeend', rowHTML({})); }
+        });
+        tb.addEventListener('click', ev => {
+          const tr = ev.target.closest('tr'); if (!tr) return;
+          if (ev.target.closest('[data-mdel]')) { if (tr !== tb.lastElementChild) tr.remove(); else tr.querySelectorAll('input').forEach(i => { i.value = ''; }); return; }
+          if (ev.target.closest('[data-mdt]')) {
+            const f = tr.querySelector('[data-mf="type"]');
+            selectDataType(f.value, v => { f.value = v.replace(/\[(\d+),.*\]$/, '[$1]'); f.dispatchEvent(new Event('input', { bubbles: true })); f.focus(); }, () => f.focus());
+          }
+        });
+        tb.addEventListener('keydown', ev => {
+          if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT') return;
+          ev.preventDefault();
+          const tr = ev.target.closest('tr'), nx = tr.nextElementSibling; if (nx) nx.querySelector('[data-mf="name"]').focus();
+        });
+        el._err = err;
+      },
+      buttons: [{ l: 'Cancel' },
+        { l: 'Apply', run: el => {
+          if (ro) return false;
+          const e = save(el); el.querySelector('#dtee').textContent = e;
+          if (!e) { el.querySelector('#dtes').textContent = 'Data Type Size: ' + sizeText(cur.name); el.querySelector('.dh b').textContent = 'Data Type: ' + cur.name; toast(`Data type ${cur.name} saved`); }
+          return false;
+        } },
+        { l: 'OK', pri: true, run: el => {
+          if (ro) return;
+          const e = save(el); if (e) { el.querySelector('#dtee').textContent = e; return false; }
+          toast(`Data type ${cur.name} saved (${sizeText(cur.name)})`);
+        } }],
+    });
+    return el;
+  }
+  function deleteDataType(n) {
+    const d = (S.p.dataTypes || []).find(x => U(x.name) === U(n)); if (!d) return;
+    const users = typeUsers(d.name);
+    if (users.length) { toast(`Data type ${d.name} is used by ${users.slice(0, 3).join(', ')}${users.length > 3 ? '…' : ''}: it cannot be deleted.`, 'err'); return; }
+    confirmDlg('Delete Data Type', `Delete the data type <b>${esc(d.name)}</b>? Yes removes it from the controller; No leaves it as it is.`, 'Yes', () => { edit(() => { S.p.dataTypes.splice(S.p.dataTypes.indexOf(d), 1); }); toast(`Data type ${d.name} deleted`); }, true);
+  }
+  /* the organizer's data type nodes: double-click (or tap again) opens the editor; their right-click menus */
+  function dtOpen(k) {
+    if (k.startsWith('dt:u:')) { dataTypeEditor(k.slice(5)); return true; }
+    return false;
+  }
+  function dtMenu(k) {
+    if (k === 'dts' || k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }];
+    if (k.startsWith('dt:u:')) { const n = k.slice(5); return [{ l: 'Open', run: () => dataTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() }]; }
+    return null;
+  }
+  /* L5X: the user-defined types as the L5X reference writes them (general knowledge, not checked against an export):
+     BOOL members are bits (DataType="BIT") of a hidden SINT member named ZZZZZZZZZZ<type><n> */
+  function l5xTypes(p, x, cd) {
+    const list = (p.dataTypes || []);
+    if (!list.length) return '<DataTypes/>';
+    const mem = (m, extra) => `<Member Name="${x(m.name)}" DataType="${x(m.type)}" Dimension="${m.dim > 0 ? m.dim : 0}" Radix="${x(stylesOf(m.type).length ? (stylesOf(m.type).includes(m.style) ? m.style : defStyle(m.type)) : 'NullType')}" Hidden="false"${extra || ''} ExternalAccess="${x(accessOf(m))}">${m.desc ? `<Description>${cd(m.desc)}</Description>` : ''}</Member>`;
+    return `<DataTypes>\n${list.map(d => {
+      let host = null, bit = 8, n = 0;
+      const ms = (d.members || []).map(m => {
+        if (U(m.type) === 'BOOL' && !(m.dim > 0)) {
+          let h = '';
+          if (bit >= 8) { host = `ZZZZZZZZZZ${d.name}${n++}`; bit = 0; h = `<Member Name="${x(host)}" DataType="SINT" Dimension="0" Radix="Decimal" Hidden="true" ExternalAccess="Read/Write"/>`; }
+          return h + mem({ ...m, type: 'BIT' }, ` Target="${x(host)}" BitNumber="${bit++}"`).replace(' Radix="NullType"', ' Radix="Decimal"');
+        }
+        bit = 8; return mem(m);
+      }).join('');
+      return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members>${ms}</Members></DataType>`;
+    }).join('\n')}\n</DataTypes>`;
+  }
+  function l5xTypesIn(c) {
+    const dts = [...c.children].find(k => k.tagName === 'DataTypes');
+    return (dts ? [...dts.children].filter(k => k.tagName === 'DataType') : []).map(g => {
+      const o = { name: g.getAttribute('Name'), members: [] }, ds = [...g.children].find(k => k.tagName === 'Description');
+      if (ds && ds.textContent.trim()) o.desc = ds.textContent.trim();
+      const ms = [...g.querySelectorAll('Members > Member')].filter(m => m.getAttribute('Hidden') !== 'true');
+      ms.forEach(m => {
+        const ty = m.getAttribute('DataType') === 'BIT' ? 'BOOL' : m.getAttribute('DataType'), mo = { name: m.getAttribute('Name'), type: ty };
+        const dim = parseInt(m.getAttribute('Dimension'), 10); if (dim > 0) mo.dim = dim;
+        const md = [...m.children].find(k => k.tagName === 'Description'); if (md && md.textContent.trim()) mo.desc = md.textContent.trim();
+        const ra = m.getAttribute('Radix'), ea = m.getAttribute('ExternalAccess');
+        if (ra && stylesOf(ty).includes(ra) && ra !== defStyle(ty)) mo.style = ra;
+        if (ea && ACCESS.includes(ea) && ea !== 'Read/Write') mo.access = ea;
+        o.members.push(mo);
+      });
+      return o;
+    });
   }
 
   /* ---------- online ---------- */
@@ -5069,6 +5246,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
         const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
         S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
+        if (dbl && dtOpen(k)) return;
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
           if (!k.startsWith('rt:')) { const c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); }

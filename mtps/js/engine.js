@@ -781,6 +781,36 @@
     const t = typeTable(project), of = k => [...t.values()].filter(d => d.kind === k).map(d => d.name);
     return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
   }
+  /* the size of a data type in bytes, as a Logix controller lays a structure out (general knowledge, not quoted): the
+     members in order, each on its own boundary (SINT 1, INT 2, DINT and REAL 4 bytes); BOOL members in a row share a
+     hidden SINT, 8 to a byte; a BOOL array takes whole DINTs (32 bits); a structure is 4-byte aligned and its size
+     a multiple of 4. TIMER, COUNTER and CONTROL come out at 12 bytes, as on the controller. */
+  const SIZES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
+  function layout(types, name, memo) {
+    const u = U(name);
+    if (SIZES[u]) return { size: SIZES[u], align: SIZES[u] };
+    if (u === 'BOOL') return { size: 1, align: 1 };
+    if (memo.has(u)) return memo.get(u);
+    const d = types.get(u);
+    memo.set(u, { size: 0, align: 4 });
+    let off = 0, al = 4, bits = 8;
+    for (const m of d ? d.members : []) {
+      const t = U(m.type);
+      if (t === 'BOOL' && !(m.dim > 0)) { if (bits >= 8) { off += 1; bits = 0; } bits++; continue; }
+      bits = 8;
+      const e = t === 'BOOL' ? { size: 4, align: 4 } : layout(types, t, memo), n = t === 'BOOL' ? Math.ceil(m.dim / 32) : m.dim > 0 ? m.dim : 1;
+      off = Math.ceil(off / e.align) * e.align + e.size * n;
+      al = Math.max(al, e.align);
+    }
+    const r = { size: Math.ceil(off / al) * al, align: al };
+    memo.set(u, r);
+    return r;
+  }
+  function typeSize(project, name) {
+    const t = typeTable(project), u = U(name);
+    if (!ATOMIC[u] && !t.has(u)) return null;
+    return layout(t, u, new Map()).size;
+  }
 
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
      nor is a tag's Style, which only sets how a value is shown */
@@ -1601,7 +1631,7 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, typeSize, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

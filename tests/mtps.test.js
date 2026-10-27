@@ -883,5 +883,20 @@ console.log('Download clears the controller memory first (v37 help, Download dia
   check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
 }
 
+console.log('Wave 2 B: user-defined data types, size (Data Type Editor, v37 help: Using user-defined data types)');
+{
+  const pump = { name: 'Pump', members: [{ name: 'Running', type: 'BOOL' }, { name: 'Speed', type: 'REAL', style: 'Exponential' }, { name: 'Hours', type: 'DINT', desc: 'run hours', access: 'Read Only' }] };
+  const p = proj({ dataTypes: [pump, { name: 'Line', members: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'BOOL' }, { name: 'C', type: 'SINT' }, { name: 'D', type: 'INT' }, { name: 'E', type: 'BOOL', dim: 40 }, { name: 'P', type: 'Pump', dim: 2 }] }],
+    tags: [T('P1', 'Pump'), T('L1', 'Line')], rungs: ['XIC(P1.Running)MOV(5,P1.Hours)OTE(L1.E[33]);', 'MOV(P1.Hours,L1.P[1].Hours);'] });
+  eq('BOOLs share a hidden SINT, REAL and DINT 4-byte aligned: Pump is 12 bytes', MTPS.typeSize(p, 'Pump'), 12);
+  eq('TIMER, COUNTER, CONTROL are 12 bytes; DINT 4', [MTPS.typeSize(p, 'TIMER'), MTPS.typeSize(p, 'COUNTER'), MTPS.typeSize(p, 'CONTROL'), MTPS.typeSize(p, 'DINT')], [12, 12, 12, 4]);
+  eq('two BOOLs, SINT, INT, BOOL[40] (2 DINTs) and Pump[2]: 12 + 24 = 36 bytes', MTPS.typeSize(p, 'Line'), 36);
+  check('an unknown type has no size', MTPS.typeSize(p, 'Nope') === null);
+  check('a project with UDT tags verifies (members, a member array, a nested UDT array)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); c.write('P1.Running', 1);
+  scans(c, 2);
+  check('UDT members run in logic: P1.Hours = 5, L1.E[33] on, L1.P[1].Hours = 5', c.read('P1.Hours') === 5 && c.read('L1.E[33]') === 1 && c.read('L1.P[1].Hours') === 5);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

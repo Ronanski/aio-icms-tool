@@ -1164,3 +1164,9 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
   .phone .strip .warn { padding: 0 8px; }
 }
 @media (max-width: 380px) { .phone .strip .sbox { font-size: 12px; padding: 0 6px; } .phone .strip { gap: 3px; } }
+
+/* ---------- Wave 2 B: Data Type Editor, Strings, tag filter and columns, Watch, Quick View, Trends ---------- */
+.dtegrid { flex: none; max-height: 300px; border: 1px solid var(--border); margin-bottom: 8px; }
+.dtegrid td { padding: 1px 3px; }
+.dtegrid td .ib { width: 24px; height: 22px; min-width: 24px; }
+.dtegrid .cdt { display: flex; gap: 2px; }

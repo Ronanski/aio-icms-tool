@@ -137,7 +137,7 @@ module.exports = async function menus({ browser, page, URL, check }) {
   f = await menu('File');
   const nc = f.findIndex(x => x[0] === '#New Component'), ncs = f.slice(nc + 1, nc + 8);
   check('New Component: Data Type, Module, Program, Routine, Tag, Task, Trend in the reference order', ncs.map(x => x[0]).join('|') === 'New Data Type…|New Module…|New Program…|New Routine…|New Tag…|New Task…|New Trend…', ncs.map(x => x[0]).join('|'));
-  check('Routine, Tag and Module work; Program, Task, Data Type and Trend are listed but off', ncs.filter(x => x[1]).map(x => x[0]).join('|') === 'New Data Type…|New Program…|New Task…|New Trend…');
+  check('Data Type, Routine, Tag and Module work; Program, Task and Trend are listed but off', ncs.filter(x => x[1]).map(x => x[0]).join('|') === 'New Program…|New Task…|New Trend…');
   await page.keyboard.press('Escape');
   await page.click('.org [data-org="prog:MainProgram"]'); await wait(450);
   await menu('File', 'New Routine…');
