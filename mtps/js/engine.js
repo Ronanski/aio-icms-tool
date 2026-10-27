@@ -641,7 +641,7 @@
         return kind === 'elemw' ? writable() : r;
       }
     }
-    if (XKIND[kind]) return XKIND[kind](r, writable, one);
+    if (XKIND[kind]) return XKIND[kind](r, writable, one, M);
     return r;
   }
 
@@ -1321,6 +1321,127 @@
     setb('INI', 1);
     e.v = true; return true;
   };
+
+  /* ---------- ASCII string and ASCII conversion instructions (1756-RM018A-EN-P chapters 17 and 18) ----------
+     Operands: str / strw a string tag (STRING or a string type of the project) to read / to write; Start and
+     Quantity are SINT, INT or DINT (immediate or tag); Result an integer tag. Every one executes while the rung is
+     true (nothing on a false rung or in prescan). Faults (type 4): 51 the LEN of a string is more than its DATA size
+     (also CONCAT: Source A + Source B longer than Dest), 52 the result does not fit in Dest, 53 a STOD / STOR number
+     beyond the limits of Dest, 56 the Start or Quantity is not valid. RM018A lists them under "Major/Minor Faults";
+     the app raises them as instruction faults (a fault routine can clear them), like 4/20. */
+  const isStrT = (M, t) => { const d = M.types.get(U(t)); return !!d && d.kind === 'string'; };
+  XKIND.str = (r, writable, one, M) => (one && r.bit < 0 && isStrT(M, r.type) ? r : 'Operand must be a string tag (STRING or a string type)');
+  XKIND.strw = (r, writable, one, M) => (one && r.bit < 0 && isStrT(M, r.type) ? writable() : 'Operand must be a string tag (STRING or a string type)');
+  XKIND.ntag = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) && r.type !== 'LREAL' ? r : BAD_TYPE);
+  XKIND.rtag = (r, writable, one) => (one && r.bit < 0 && r.type === 'REAL' ? r : BAD_TYPE);
+  const STRI = {
+    FIND: ['ASCII String', 'Find String', 'str str int idest', ['Source', 'Search', 'Start', 'Result']],
+    INSERT: ['ASCII String', 'Insert String', 'str str int strw', ['Source A', 'Source B', 'Start', 'Dest']],
+    MID: ['ASCII String', 'Middle String', 'str int int strw', ['Source', 'Quantity', 'Start', 'Dest']],
+    CONCAT: ['ASCII String', 'String Concatenate', 'str str strw', ['Source A', 'Source B', 'Dest']],
+    DELETE: ['ASCII String', 'String Delete', 'str int int strw', ['Source', 'Quantity', 'Start', 'Dest']],
+    DTOS: ['ASCII Conversion', 'DINT to String', 'ntag strw', ['Source', 'Dest']],
+    RTOS: ['ASCII Conversion', 'REAL to String', 'rtag strw', ['Source', 'Dest']],
+    STOD: ['ASCII Conversion', 'String to DINT', 'str idest', ['Source', 'Dest']],
+    STOR: ['ASCII Conversion', 'String to REAL', 'str rdest', ['Source', 'Dest']],
+    UPPER: ['ASCII Conversion', 'Upper Case', 'str strw', ['Source', 'Dest']],
+    LOWER: ['ASCII Conversion', 'Lower Case', 'str strw', ['Source', 'Dest']],
+  };
+  for (const k in STRI) { const [g, n, a, o] = STRI[k]; INSTR[k] = I('box', g, n, a, { out: true }); OPN[k] = o; }
+  // the characters of a string tag (codes 0-255); LEN past the DATA size is fault 4/51
+  const sGet = (r, t, lax) => {
+    const o = r.obj(), n = o.DATA.length;
+    if (!lax && (o.LEN > n || o.LEN < 0)) throw new Fault(4, 51, `${t}: the LEN value of the string tag is greater than the DATA size of the string tag`);
+    return o.DATA.slice(0, Math.max(0, Math.min(o.LEN, n))).map(c => c & 255);
+  };
+  // a result into a string tag: more characters than its DATA size is fault 4/52; the rest of DATA is cleared
+  const sPut = (r, codes, t, lax) => {
+    const o = r.obj(), n = o.DATA.length;
+    if (codes.length > n) { if (lax) codes = codes.slice(0, n); else throw new Fault(4, 52, `${t}: the output string is larger than the destination (${codes.length} characters, Dest holds ${n})`); }
+    for (let k = 0; k < n; k++) o.DATA[k] = k < codes.length ? (codes[k] << 24) >> 24 : 0;
+    o.LEN = codes.length;
+  };
+  const codesOf = s => [...String(s)].map(c => c.charCodeAt(0) & 255);
+  const bad56 = t => new Fault(4, 56, `${t}: the Start or Quantity value is invalid`);
+  // STOD / STOR: skip leading characters that are not numeric (a minus sign in front of a number counts), then the
+  // first group of digits (STOR: with its decimal point)
+  const numText = (c, real) => {
+    const s = String.fromCharCode(...c), m = (real ? /-?(?:\d+\.?\d*|\.\d+)/ : /-?\d+/).exec(s);
+    return m ? m[0] : '';
+  };
+  /* RTOS: the REAL as text. RM018A does not give the format; the app writes the shortest text that gives the REAL
+     back (up to 8 significant digits), in exponent form (1.2345678e+009) outside 1e-5 to 1e8 */
+  function realText(v) {
+    if (!isFinite(v)) return v !== v ? '1.#QNAN' : v > 0 ? '1.#INF' : '-1.#INF';
+    if (v === 0) return '0.0';
+    let p = 1, s;
+    for (; p <= 8; p++) { s = (+v.toPrecision(p)); if (Math.fround(s) === Math.fround(v)) break; }
+    const a = Math.abs(v);
+    if (a >= 1e8 || a < 1e-5) { const t = v.toExponential(Math.min(p, 8) - 1).split('e'), x = +t[1]; return t[0] + 'e' + (x < 0 ? '-' : '+') + String(Math.abs(x)).padStart(3, '0'); }
+    s = String(+v.toPrecision(Math.min(p, 8)));
+    return /[.e]/.test(s) ? s : s + '.0';
+  }
+  XEL.CONCAT = function (e, x, p) {
+    if (p) { const a = sGet(x[0], e.t), b = sGet(x[1], e.t), d = x[2].obj(); if (a.length + b.length > d.DATA.length) throw new Fault(4, 51, 'CONCAT: the sum length of Source A and Source B is greater than the DATA size of the Dest string tag'); sPut(x[2], a.concat(b), e.t); }
+    e.v = p; return p;
+  };
+  XEL.MID = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), q = Math.trunc(x[1].get()), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || !(q >= 1) || st + q > s.length + 1) throw bad56(e.t);
+      sPut(x[3], s.slice(st - 1, st - 1 + q), e.t);
+    }
+    e.v = p; return p;
+  };
+  XEL.FIND = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), f = sGet(x[1], e.t), st = Math.trunc(x[2].get());
+      if (!s.length || !(st >= 1 && st <= x[0].obj().DATA.length)) throw bad56(e.t);
+      const S = String.fromCharCode(...s), F = String.fromCharCode(...f), i = st > s.length ? -1 : S.indexOf(F, st - 1);
+      x[3].set(i < 0 ? 0 : i + 1); OV = false;
+    }
+    e.v = p; return p;
+  };
+  XEL.INSERT = function (e, x, p) {
+    if (p) {
+      const a = sGet(x[0], e.t), b = sGet(x[1], e.t), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || st > a.length + 1) throw bad56(e.t);
+      sPut(x[3], a.slice(0, st - 1).concat(b, a.slice(st - 1)), e.t);
+    }
+    e.v = p; return p;
+  };
+  XEL.DELETE = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), q = Math.trunc(x[1].get()), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || !(q >= 1) || st + q > s.length + 1) throw bad56(e.t);
+      sPut(x[3], s.slice(0, st - 1).concat(s.slice(st - 1 + q)), e.t);
+    }
+    e.v = p; return p;
+  };
+  // DTOS: a REAL Source is converted to a DINT first (rounded, as a move into a DINT)
+  XEL.DTOS = function (e, x, p) { if (p) { const v = x[0].get(); sPut(x[1], codesOf(String(isReal(x[0].type) ? store('DINT', v) : v)), e.t); OV = false; } e.v = p; return p; };
+  XEL.RTOS = function (e, x, p) { if (p) sPut(x[1], codesOf(realText(x[0].get())), e.t); e.v = p; return p; };
+  // STOD: Dest is cleared, then the number goes in (S:Z / S:N in ladder); a number beyond the type of Dest is 4/53
+  XEL.STOD = function (e, x, p) {
+    if (p) {
+      const t = numText(sGet(x[0], e.t), false), v = t ? +t : 0, h = HALF[x[1].type] || HALF.DINT;
+      x[1].set(0);
+      if (v >= h || v < -h) throw new Fault(4, 53, `STOD: the output number is beyond the limits of the destination data type (${x[1].type})`);
+      this.put(x[1], v);
+    }
+    e.v = p; return p;
+  };
+  XEL.STOR = function (e, x, p) {
+    if (p) {
+      const t = numText(sGet(x[0], e.t), true), v = t && t !== '-' ? +t : 0;
+      if (!isFinite(Math.fround(v))) throw new Fault(4, 53, 'STOR: the output number is beyond the limits of the destination data type (REAL)');
+      this.put(x[1], v);
+    }
+    e.v = p; return p;
+  };
+  // UPPER / LOWER: only the letters change ("None specific to this instruction": no string fault)
+  const caseOp = up => function (e, x, p) { if (p) sPut(x[1], sGet(x[0], e.t, true).map(c => (up ? (c >= 97 && c <= 122 ? c - 32 : c) : (c >= 65 && c <= 90 ? c + 32 : c))), e.t, true); e.v = p; return p; };
+  XEL.UPPER = caseOp(true); XEL.LOWER = caseOp(false);
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off

@@ -1497,5 +1497,50 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
+console.log('Wave 3 E: ASCII string and conversion instructions (1756-RM018A chapters 17, 18)');
+{
+  const sv = t => ({ LEN: t.length, DATA: [...t].map(c => c.charCodeAt(0)) });
+  const txt = (c, n) => { const o = c.read(n); return String.fromCharCode(...o.DATA.slice(0, o.LEN).map(x => x & 255)); };
+  const dts = [{ name: 'S5', family: 'string', len: 5 }];
+  const st = (name, t, type = 'STRING') => T(name, type, t == null ? {} : { value: sv(t) });
+  const sr = (tags, rr) => run({ dataTypes: dts, tags, rungs: rr });
+  const c1 = sr([st('A', 'Hello'), st('B', ' World'), st('D'), st('E'), T('N', 'DINT'), st('Bar', 'ABC123456789XYZ')],
+    ['CONCAT(A,B,D);', 'MID(D,5,7,E);', 'FIND(D,B,1,N);']);
+  c1.scan(10);
+  eq('CONCAT: Source A then Source B into Dest', txt(c1, 'D'), 'Hello World');
+  eq('MID(Source,Qty,Start,Dest): 5 characters from position 7', txt(c1, 'E'), 'World');
+  eq('FIND: the position of Search in Source (1-based)', c1.read('N'), 6);
+  check('… Source A is unchanged', txt(c1, 'A') === 'Hello' && c1.read('D').LEN === 11);
+  const c2 = sr([st('A', 'AB'), st('B', 'CD'), st('D'), st('X', 'ABCDEF'), st('Y'), st('Z', 'abc-XYZ 9'), st('U'), st('L'), T('N', 'DINT', { value: 7 })],
+    ['INSERT(A,B,2,D);', 'DELETE(X,2,3,Y);', 'UPPER(Z,U);', 'LOWER(Z,L);', 'FIND(X,B,4,N);']);
+  c2.scan(10);
+  eq('INSERT: Source B at position Start of Source A', txt(c2, 'D'), 'ACDB');
+  eq('DELETE(Source,Qty,Start,Dest): 2 characters from position 3', txt(c2, 'Y'), 'ABEF');
+  eq('UPPER / LOWER change only the letters', [txt(c2, 'U'), txt(c2, 'L')], ['ABC-XYZ 9', 'abc-xyz 9']);
+  eq('FIND past the Search string: Result 0', c2.read('N'), 0);
+  // conversions
+  const c3 = sr([st('S1', '$-123/45'), st('S2', 'x 98.25 kg'), st('S3', 'none'), T('D1', 'DINT', { value: 5 }), T('I1', 'INT'), T('R1', 'REAL'), T('R2', 'REAL', { value: -2.5 }), T('D2', 'DINT', { value: -42 }), st('O1'), st('O2'), st('O3'), T('R3', 'REAL', { value: 7.6 })],
+    ['STOD(S1,D1);', 'STOR(S2,R1);', 'STOD(S3,I1);', 'DTOS(D2,O1);', 'RTOS(R2,O2);', 'DTOS(R3,O3);']);
+  c3.scan(10);
+  eq('STOD: skips non-numeric characters, keeps the minus sign, stops at the delimiter', c3.read('D1'), -123);
+  eq('STOR: the first group of digits with its decimal point', c3.read('R1'), 98.25);
+  check('STOD: no digits gives 0 (Dest is cleared first)', c3.read('I1') === 0);
+  eq('DTOS / RTOS: the value as text; a REAL into DTOS is converted to a DINT first', [txt(c3, 'O1'), txt(c3, 'O2'), txt(c3, 'O3')], ['-42', '-2.5', '8']);
+  // faults
+  const fl = (rr, tags) => { const c = sr(tags, rr); c.scan(10); return c.fault ? c.fault.type + '/' + c.fault.code : null; };
+  eq('CONCAT longer than the Dest DATA size: fault 4/51', fl(['CONCAT(A,B,D);'], [st('A', 'abc'), st('B', 'def'), st('D', null, 'S5')]), '4/51');
+  eq('MID result larger than Dest: fault 4/52', fl(['MID(A,6,1,D);'], [st('A', 'abcdefgh'), st('D', null, 'S5')]), '4/52');
+  eq('MID Start + Quantity past the length + 1: fault 4/56', fl(['MID(A,3,4,D);'], [st('A', 'abcd'), st('D')]), '4/56');
+  eq('FIND in an empty Source: fault 4/56', fl(['FIND(A,B,1,N);'], [st('A', ''), st('B', 'x'), T('N', 'DINT')]), '4/56');
+  eq('STOD beyond the limits of an INT Dest: fault 4/53', fl(['STOD(A,I);'], [st('A', '99999'), T('I', 'INT')]), '4/53');
+  const big = sr([st('A', 'abc'), st('D')], ['MOV(90,A.LEN);', 'UPPER(A,D);', 'CONCAT(A,A,D);']); big.scan(10);
+  eq('a LEN past the DATA size: fault 4/51 (UPPER has no string fault)', big.fault && big.fault.type + '/' + big.fault.code, '4/51');
+  const nf = sr([st('A', 'ab'), st('D'), T('B', 'BOOL')], ['XIC(B)CONCAT(A,A,D);']); nf.scan(10);
+  eq('a false rung does nothing', nf.read('D').LEN, 0);
+  // verify
+  const v = MTPS.verify(proj({ tags: [st('A', 'x'), T('N', 'DINT'), T('R', 'REAL')], rungs: ['CONCAT(A,N,A);', 'RTOS(N,A);', 'STOD(A,R);', 'MID(A,1,1,N);', 'DTOS(5,A);'] }));
+  eq('verify: string operands must be string tags, RTOS a REAL, STOD an integer Dest, DTOS a tag', v.errors.map(e => e.rung), [0, 1, 2, 3, 4]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

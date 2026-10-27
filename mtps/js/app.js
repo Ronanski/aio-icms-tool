@@ -128,6 +128,9 @@
     'Trig Functions': ['SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN'],
     'Advanced Math': ['LN', 'LOG', 'XPY'],
     'Math Conversions': ['DEG', 'RAD', 'TOD', 'FRD', 'TRN'],
+    // Wave 3 (1756-RM018A chapters 17 and 18)
+    'ASCII String': ['CONCAT', 'DELETE', 'FIND', 'INSERT', 'MID'],
+    'ASCII Conversion': ['STOD', 'STOR', 'DTOS', 'RTOS', 'UPPER', 'LOWER'],
   };
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
@@ -1815,6 +1818,10 @@
     control: ['CONTROL'], darr: ['DINT'], real: ['REAL'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], farr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fdst: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], ddest: ['DINT'],
     aelem: ['SINT', 'INT', 'DINT', 'REAL'], aelemw: ['SINT', 'INT', 'DINT', 'REAL'], rdest: ['REAL'], gdest: ['SINT', 'INT', 'DINT', 'REAL'], gsrc: ['SINT', 'INT', 'DINT', 'REAL'], pid: ['PID'], pidm: ['PID'], bit0: ['BOOL'],
   };
+  // Wave 3: string operands (STRING and the project's string types), numeric / REAL tags only
+  const strTypes = () => ['STRING'].concat(((S.p && S.p.dataTypes) || []).filter(d => d.family === 'string').map(d => d.name));
+  ['str', 'strw'].forEach(k => Object.defineProperty(KIND_TYPES, k, { get: strTypes }));
+  Object.assign(KIND_TYPES, { ntag: ['SINT', 'INT', 'DINT', 'LINT', 'REAL'], rtag: ['REAL'] });
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr', 'aelem', 'aelemw'];
   /* the name operands that are picked from a list, as the reference editor offers them (Mode of FAL / FSC, the class,
@@ -2013,7 +2020,7 @@
     const r = (S.prefs.recent || []).filter(x => !list.some(y => U(y) === U(x)));
     S.prefs.recent = list.concat(r).slice(0, RECENT_MAX); savePrefs();
   }
-  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER', control: 'CONTROL' })[kind] || 'DINT';
+  const defaultType = kind => ({ bit: 'BOOL', bitw: 'BOOL', timer: 'TIMER', counter: 'COUNTER', struct: 'TIMER', control: 'CONTROL', str: 'STRING', strw: 'STRING', rtag: 'REAL', msg: 'MESSAGE' })[kind] || 'DINT';
   function openEditor(ri, path, focusIdx) {
     const elems = parsed(ri), e = elems && getEl(elems, path);
     if (!e || e.t === 'BR') return;
