@@ -887,6 +887,10 @@
       rec.cons = { producer: peer.name, slot: peer.slot, remote: c.remote, rpi };
       M.cons.push({ name: rec.name, u: U(rec.name), type: rec.type, dim: rec.dim, size: n, slot: peer.slot, remote: c.remote, rpi });
     }
+    // Map PLC/SLC Messages (1756-RM094, Map Tags): a file number (not 0, 1, 2) to a controller array of INT, DINT or REAL
+    const pm = pj.plcMap || {}, arr = (n, ok) => { const r = M.tags.get(U(n || '')); return !!r && !r.alias && r.dim > 0 && (!ok || ok.includes(U(r.type))); };
+    for (const x of pm.files || []) if (!(Number.isInteger(x.file) && x.file >= 3 && x.file <= 999) || !arr(x.tag, ['INT', 'DINT', 'REAL'])) ctlErr(`PLC/SLC mapping: file ${x.file} to '${x.tag}': map files 3 to 999 to a controller array tag of INT, DINT or REAL`);
+    if (pm.plc2 && !arr(pm.plc2)) ctlErr(`PLC/SLC mapping: PLC 2 Mapping '${pm.plc2}' is not a controller array tag`);
   }
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {

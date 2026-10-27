@@ -913,6 +913,8 @@
     assemble: { l: 'Assemble Accepted Edits', i: 'check', run: assembleEdits, on: () => edPhase() === 'tested' },
     tagsmon: { l: 'Monitor Tags', i: 'tags', run: () => tagEditor('mon') },
     tagsedit: { l: 'Edit Tags', i: 'tags', run: () => tagEditor('edit') },
+    prodtags: { l: 'Produced Tags…', i: 'tags', run: () => PCX.producedTags(), on: () => !S.noProj },
+    mapplc: { l: 'Map PLC/SLC Messages…', i: 'tags', run: () => PCX.mapPlc(), on: () => !S.noProj },
     who: { l: 'Who Active', i: 'search', run: () => whoActive() },
     recentpath: { l: 'Select Recent Path…', i: 'net', run: recentPathDlg, on: () => !S.noProj && (S.prefs.paths || []).length > 0 },
     newmod: { l: 'New Module…', i: 'io', run: () => newModule(), on: () => offline() },
@@ -954,7 +956,7 @@
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
     ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
-    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
+    ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'prodtags', 'mapplc', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', 'updates']],
     ['Help', ['helpc', 'help', 'tips', 'about']],
@@ -5529,7 +5531,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
      kinds are left out: this app has no program parameters) and Include Data Types, Clear Filter, OK. Filtering is
      applied to the base tags only. Hide and Show Columns: right-click a column name, Hide Column or Toggle Column, or
      View > Toggle Column; the Tag Editor and the Data Monitor keep their own columns. */
-  const FILTER_ON = ['<all>', 'Unused', 'Produced', 'Consumed', 'Can Be Forced', 'Alias'];
+  const FILTER_ON = ['<all>', 'Unused', 'Produced', 'Consumed', 'Can Be Forced', 'Alias', 'Mapped'];
   const tagShow = () => { const f = S.prefs.tagShow; return f && FILTER_ON.includes(f.on) ? { on: f.on, types: Array.isArray(f.types) ? f.types : [] } : { on: '<all>', types: [] }; };
   const showAll = f => f.on === '<all>' && !f.types.length;
   const showText = f => (showAll(f) ? 'All Tags' : [f.on !== '<all>' ? f.on : '', f.types.join(', ')].filter(Boolean).join('; '));
@@ -5555,6 +5557,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         case 'Consumed': return !!(e.t && !e.member && e.t.cons);
         case 'Can Be Forced': return e.mod ? /:[IO]$/.test(e.path) : !!(e.t && e.t.alias && /^Local:\d+:[IO]\./i.test(baseTagOf(e.t.alias)));
         case 'Alias': return !!(e.t && e.t.alias);
+        case 'Mapped': return !!(e.t && !e.member && !scope && PCX.mapped(e.t));
       }
       return true;
     };
@@ -7487,7 +7490,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   });
 
   /* produced and consumed tags, Logic > Produced Tags, Map PLC/SLC Messages, Logix Echo (pc.js) */
-  const PCX = E.PCUI({ S, E, U, esc, kv, dialog, over: overDlg, toast, edit, tabbed, bindTabs, confirm: confirmDlg, ctl: () => ctl });
+  const PCX = E.PCUI({ S, E, U, esc, ic, kv, dialog, over: overDlg, toast, edit, tabbed, bindTabs, confirm: confirmDlg, ctl: () => ctl });
 
   /* ---------- start ---------- */
   function start() {

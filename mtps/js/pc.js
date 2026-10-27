@@ -139,6 +139,70 @@
     const treeLabel = c => `[${c.slot}] PLC-CPU ${c.name}`;
     const treeFlag = c => { const s = peerState(c.slot); return s && s.code ? '⚠' : ''; };
 
-    return { kindOf, typeOpts, tagRows, tagHook, connDlg, peerRow, newPeer, peerProps, peerDelete, treeLabel, treeFlag, ctls };
+    /* ---------- Logic > Produced Tags (v37 help: "shows all tags produced by this controller. From the dialog box
+       that appears, you can modify the maximum number of consumers that are allowed"). The columns are the app's. */
+    function producedTags() {
+      const list = S.p.tags.filter(t => t.prod), ed = !S.online;
+      X.dialog({ title: 'Produced Tags', size: 'md',
+        body: list.length ? `<table class="rltab pct"><thead><tr><th>Name</th><th>Data Type</th><th>Description</th><th>Max Consumers</th></tr></thead>
+          <tbody>${list.map((t, k) => `<tr data-pct="${esc(t.name)}"><td class="mono">${esc(t.name)}</td><td class="mono">${esc(t.type + (E.dimText(t.dim) ? '[' + E.dimText(t.dim) + ']' : ''))}</td><td>${esc(t.desc || '')}</td>
+            <td><input class="inp" type="number" min="1" max="255" step="1" data-pcmax="${k}" value="${t.prod.max == null ? 1 : t.prod.max}" aria-label="Max Consumers of ${esc(t.name)}"${ed ? '' : ' disabled'}></td></tr>`).join('')}</tbody></table>
+          <p class="help">${ed ? 'Max Consumers: 1 to 255. Each consumer uses a connection of the controller.' : 'Go offline to change Max Consumers.'}</p><div class="errtx" id="pct-e"></div>`
+          : '<p class="help">This controller produces no tags. In New Tag or Tag Properties, set Type to Produced.</p>',
+        buttons: list.length && ed ? [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+          const v = [...el.querySelectorAll('[data-pcmax]')].map(i => Number(i.value));
+          if (v.some(n => !(Number.isInteger(n) && n >= 1 && n <= 255))) { el.querySelector('#pct-e').textContent = 'Max Consumers: a whole number from 1 to 255.'; return false; }
+          if (v.every((n, k) => n === (list[k].prod.max == null ? 1 : list[k].prod.max))) return;
+          X.edit(() => list.forEach((t, k) => { const i = S.p.tags.indexOf(t); if (i >= 0) S.p.tags[i] = Object.assign({}, t, { prod: Object.assign({}, t.prod, { max: v[k] }) }); }));
+        } }] : [{ l: 'Close', pri: true }] });
+    }
+
+    /* ---------- Logic > Map PLC/SLC Messages (v37 help: "map a tag from this controller to a PLC/SLC file"; the
+       rules of 1756-RM094, Map Tags: only the file numbers messages use, controller tags only, not files 0, 1 and 2
+       (the Output, Input and Status files of a PLC-5), arrays of INT (file N or B), DINT (L) or REAL (F)). The
+       mapping is kept with the project in plcMap { files: [{ file, tag }], plc2 }. The layout (File Number, Tag
+       Name, PLC 2 Mapping) and file numbers 3 to 999 are general knowledge, not quoted. */
+    const MAPTY = { INT: 'N or B', DINT: 'L', REAL: 'F' };
+    const mapErr = (file, tag) => {
+      if (!/^\d+$/.test(String(file)) || +file < 3 || +file > 999) return `File Number ${file}: use 3 to 999 (files 0, 1 and 2 are the Output, Input and Status files of a PLC-5).`;
+      const t = S.p.tags.find(x => U(x.name) === U(tag || ''));
+      if (!t) return `'${tag}' is not a controller tag.`;
+      if (t.alias || !MAPTY[U(t.type || '')] || !E.dimN(t.dim)) return `'${t.name}': map an array tag of INT, DINT or REAL.`;
+      return '';
+    };
+    function mapPlc() {
+      const m0 = S.p.plcMap || { files: [], plc2: '' }, ed = !S.online;
+      const arrs = S.p.tags.filter(t => !t.alias && MAPTY[U(t.type || '')] && E.dimN(t.dim)).map(t => t.name);
+      const row = (f, tag) => `<tr data-maprow="1"><td><input class="inp" type="number" min="3" max="999" data-mapf="1" value="${esc(f)}" aria-label="File Number"${ed ? '' : ' disabled'}></td>
+        <td><input class="inp mono" data-mapt="1" value="${esc(tag)}" list="mapl" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Tag Name"${ed ? '' : ' disabled'}></td>
+        <td class="ck"><button class="ib" type="button" data-mapx="1" title="Delete Map" aria-label="Delete Map"${ed ? '' : ' disabled'}>${X.ic('trash')}</button></td></tr>`;
+      X.dialog({ title: 'PLC/SLC Mapping', size: 'md',
+        body: `<table class="rltab mapt"><thead><tr><th>File Number</th><th>Tag Name</th><th></th></tr></thead><tbody id="mapb">${m0.files.map(x => row(x.file, x.tag)).join('')}</tbody></table>
+          ${ed ? '<button class="btn" type="button" id="mapadd">Add File</button>' : ''}<datalist id="mapl">${arrs.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+          <div class="frow"><label for="map2">PLC 2 Mapping</label><input class="inp mono" id="map2" value="${esc(m0.plc2 || '')}" list="mapl" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Tag Name"${ed ? '' : ' disabled'}></div>
+          <p class="help">Map only the file numbers that messages from a PLC-5 or SLC 500 use, each to a controller array tag: INT (file N or B), DINT (L) or REAL (F). This app has no MSG instruction: the map is kept with the project.</p><div class="errtx" id="map-e"></div>`,
+        mount: el => {
+          const b = el.querySelector('#mapb');
+          if (el.querySelector('#mapadd')) el.querySelector('#mapadd').onclick = () => { const used = [...b.querySelectorAll('[data-mapf]')].map(i => +i.value); let n = 7; while (used.includes(n)) n++; b.insertAdjacentHTML('beforeend', row(n, '')); b.lastElementChild.querySelector('[data-mapt]').focus(); };
+          b.addEventListener('click', e => { const x = e.target.closest('[data-mapx]'); if (x) x.closest('tr').remove(); });
+        },
+        buttons: ed ? [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+          const err = m => { el.querySelector('#map-e').textContent = m; return false; };
+          const files = [...el.querySelectorAll('[data-maprow]')].map(r => ({ file: r.querySelector('[data-mapf]').value.trim(), tag: r.querySelector('[data-mapt]').value.trim() })).filter(x => x.file || x.tag);
+          for (const x of files) { const e = mapErr(x.file, x.tag); if (e) return err(e); }
+          const dup = files.find((x, k) => files.findIndex(y => +y.file === +x.file) !== k); if (dup) return err(`File Number ${dup.file} is mapped twice.`);
+          const p2 = el.querySelector('#map2').value.trim();
+          if (p2) { const t = S.p.tags.find(x => U(x.name) === U(p2)); if (!t || t.alias || !E.dimN(t.dim)) return err(`PLC 2 Mapping: '${p2}' is not a controller array tag.`); }
+          const out = { files: files.map(x => ({ file: +x.file, tag: S.p.tags.find(t => U(t.name) === U(x.tag)).name })).sort((a, b) => a.file - b.file) };
+          if (p2) out.plc2 = S.p.tags.find(x => U(x.name) === U(p2)).name;
+          if (JSON.stringify(out) === JSON.stringify({ files: m0.files, ...(m0.plc2 ? { plc2: m0.plc2 } : {}) })) return;
+          X.edit(() => { if (out.files.length || out.plc2) S.p.plcMap = out; else delete S.p.plcMap; });
+          X.toast(out.files.length || out.plc2 ? `PLC/SLC mapping: ${out.files.map(x => `file ${x.file} → ${x.tag}`).concat(out.plc2 ? [`PLC 2 → ${out.plc2}`] : []).join(', ')}` : 'PLC/SLC mapping cleared');
+        } }] : [{ l: 'Close', pri: true }] });
+    }
+    // the tag filter's Mapped (v37 help, Filter the tag list): a tag of the PLC/SLC mapping
+    const mapped = t => { const m = S.p.plcMap; return !!(m && t && ((m.files || []).some(x => U(x.tag) === U(t.name)) || (m.plc2 && U(m.plc2) === U(t.name)))); };
+
+    return { kindOf, typeOpts, tagRows, tagHook, connDlg, peerRow, newPeer, peerProps, peerDelete, treeLabel, treeFlag, ctls, producedTags, mapPlc, mapped };
   };
 })(typeof window !== 'undefined' ? window : globalThis);

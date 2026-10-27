@@ -1298,3 +1298,6 @@ i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inlin
 .pcled { display: flex; align-items: center; gap: 8px; min-height: 28px; }
 .pcdlg .afor .muted, #tpc .muted { font-size: 12px; white-space: nowrap; }
 #tpc .afor { align-items: center; gap: 8px; }
+.pct .inp { width: 90px; }
+.mapt .inp { width: 100%; min-width: 0; }
+.mapt td:first-child { width: 110px; }

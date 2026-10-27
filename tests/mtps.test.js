@@ -1516,5 +1516,14 @@ console.log('Produced and consumed tags: verify (1756-PM011, v37 help Tag Editor
   check('the model knows the producers (by slot) and the consumed tags', c.M.peers.get(0).name === 'Line_A' && c.M.cons.length === 1 && c.M.cons[0].remote === 'Out_A' && c.M.cons[0].slot === 0);
 }
 
+console.log('Map PLC/SLC Messages: verify (1756-RM094, Map Tags)');
+{
+  const pm = map => Object.assign(proj({ tags: [T('N7', 'INT', { dim: 10 }), T('L9', 'DINT', { dim: 4 }), T('One', 'DINT'), T('Tm', 'TIMER', { dim: 2 })] }), { plcMap: map });
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('files 3 to 999 mapped to controller arrays of INT, DINT or REAL verify', errs(pm({ files: [{ file: 7, tag: 'N7' }, { file: 9, tag: 'L9' }], plc2: 'N7' })).length === 0);
+  check('file 2 (the Status file of a PLC-5), a tag that is not an array and an array of TIMER do not', errs(pm({ files: [{ file: 2, tag: 'N7' }, { file: 10, tag: 'One' }, { file: 11, tag: 'Tm' }] })).length === 3);
+  check('a mapped tag that was deleted shows an error', /PLC\/SLC mapping: file 12 to 'Gone'/.test(errs(pm({ files: [{ file: 12, tag: 'Gone' }] }))[0] || ''));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
