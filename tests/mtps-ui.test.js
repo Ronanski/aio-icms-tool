@@ -672,7 +672,7 @@ function check(name, cond, info = '') {
   const n1 = await page.$$eval('#layer .it.fold', i => i.length), v0 = await page.$$eval('#layer .it.sub', i => i.filter(x => x.offsetParent !== null).length);
   await page.click('#layer [data-fold="Communications"]');
   await page.waitForTimeout(120);
-  check('the menu is an accordion: 8 menus, a tap opens one in place', n1 === 8 && v0 === 0 && (await page.$$eval('#layer .it.sub', i => i.filter(x => x.offsetParent !== null).length)) > 5 && (await page.$('#layer .menu')) !== null);
+  check('the menu is an accordion: 9 menus (Window too), a tap opens one in place', n1 === 9 && v0 === 0 && (await page.$$eval('#layer .it.sub', i => i.filter(x => x.offsetParent !== null).length)) > 5 && (await page.$('#layer .menu')) !== null);
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1194, height: 834 });
   await page.waitForFunction(() => innerWidth === 1194, null, { timeout: 3000 }).catch(() => {});
@@ -2342,6 +2342,7 @@ function check(name, cond, info = '') {
   await require('./mtps-ui-w3D')({ browser, page, URL, check });
   await require('./mtps-ui-w3B')({ browser, page, URL, check });
   await require('./mtps-ui-w3E')({ browser, page, URL, check });
+  await require('./mtps-ui-w3A')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

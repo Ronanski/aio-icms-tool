@@ -33,18 +33,20 @@
        Folder, Schedule In, Inhibit Program. Parent and Use as Folder belong to the Logical Organizer, which this app
        does not have, so they stay <none> and cleared. Schedule In lists the tasks and the two handlers; <none> leaves
        the program in Unscheduled Programs. A program put in a handler that has one makes that one unscheduled. */
-    function newProgram(into) {
+    /* parent, asFolder: from the Logical Organizer (A.logical: its folders and parents, app.js); without it Parent and
+       Use as Folder are off */
+    function newProgram(into, parent, asFolder) {
       if (!editable() || !offlineOnly('New Program')) return;
-      const names = new Set(allProgs().map(g => U(g.name)));
+      const LG = A.logical || null, names = new Set(allProgs().map(g => U(g.name)).concat(LG ? LG.names() : []));
       let n = 'Program1';
       for (let k = 1; names.has(U(n)); ) n = 'Program' + ++k;
       const opts = [['', '<none>'], ...userTasks().map(t => [t.name, t.name]), ['@fault', HANDLERS.fault], ['@powerup', HANDLERS.powerup]];
       const pre = into == null ? '' : into;
-      dialog({ title: 'New Program', size: 'md', focus: true,
+      const dl = dialog({ title: 'New Program', size: 'md', focus: true,
         body: `<div class="frow"><label for="np-n">Name</label><input class="inp" id="np-n" value="${esc(n)}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
           <div class="frow"><label for="np-d">Description</label><textarea class="inp" id="np-d" rows="2" maxlength="512"></textarea></div>
-          <div class="frow"><label for="np-par">Parent</label><select class="inp" id="np-par" disabled><option>&lt;none&gt;</option></select></div>
-          <label class="ck"><input type="checkbox" id="np-fold" disabled> Use as Folder</label>
+          <div class="frow"><label for="np-par">Parent</label><select class="inp" id="np-par"${LG ? '' : ' disabled'}><option value="">&lt;none&gt;</option>${LG ? LG.parents().map(x => `<option${x === parent ? ' selected' : ''}>${esc(x)}</option>`).join('') : ''}</select></div>
+          <label class="ck"><input type="checkbox" id="np-fold"${LG ? '' : ' disabled'}${asFolder ? ' checked' : ''}> Use as Folder</label>
           <div class="frow"><label for="np-s">Schedule In</label><select class="inp" id="np-s">${opts.map(([v, l]) => `<option value="${esc(v)}"${v === pre ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
           <label class="ck"><input type="checkbox" id="np-i"> Inhibit Program</label>
           <p class="help">A program runs only when a task schedules it: with Schedule In &lt;none&gt; it goes to Unscheduled Programs and does not run. Add a routine to it with New Routine; its first routine becomes the main routine.</p><div class="errtx" id="np-e"></div>`,
@@ -53,6 +55,9 @@
           const er = t => { el.querySelector('#np-e').textContent = t; return false; };
           if (!E.validName(v)) return er('Name: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.');
           if (names.has(U(v))) return er(`A program named ${v} already exists.`);
+          const par = el.querySelector('#np-par').value;
+          // a folder groups programs in the Logical Organizer only: it is not scheduled
+          if (LG && el.querySelector('#np-fold').checked) { LG.addFolder(v, d, par); return; }
           const T = s && s[0] !== '@' ? S.p.tasks.find(t => t.name === s) : null;
           if (T && T.programs.length >= MAXPROGS) return er(`The task ${T.name} already schedules ${MAXPROGS} programs.`);
           edit(() => {
@@ -70,10 +75,13 @@
             } else if (T) { T.programs.push(g); openFolder('task:' + T.name); openFolder('tasks'); }
             else { unsTask(true).programs.push(g); openFolder('unsch'); openFolder('tasks'); }
             S.orgSel = 'prog:' + v;
+            if (LG && par) LG.setParent(v, par);
             fixCur();
           });
           toast(`Program ${v} added${s ? ` to ${s[0] === '@' ? HANDLERS[s.slice(1)] : s}` : ' to Unscheduled Programs'}. Add a routine with New Routine.`, 'ok');
         } }] });
+      const sync = () => { const f = dl.querySelector('#np-fold').checked; dl.querySelector('#np-s').disabled = f; dl.querySelector('#np-i').disabled = f; };
+      dl.querySelector('#np-fold').addEventListener('change', sync); sync();
     }
     /* Delete a program (help: Delete a program): offline, from the organizer, with a Yes / No confirmation; its
        routines and tags go with it. The project keeps at least one routine to open. */

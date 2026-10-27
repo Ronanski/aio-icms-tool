@@ -259,7 +259,8 @@
       if (R.dash) dashes.push([rungTop - 4, rungBot]);
       const selR = o.selRung === ri || !!o.selAll;
       if (selR) out += `<rect class="rsel" x="0" y="${rungTop - 4}" width="${LM - 4}" height="${rungBot - rungTop + 4}"/>`;
-      if (!o.noNums) out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri}</text>`;
+      // o.n0: the number of the first rung drawn (a printed range of rungs keeps the routine's numbers)
+      if (!o.noNums) out += `<text class="rn${selR ? ' on' : ''}" x="${LM - 8}" y="${rungTop + LH + 6}" text-anchor="end">${ri + (o.n0 || 0)}</text>`;
       // a bookmark (Bookmark toolbar): a small mark at the left of the rung number
       if (R.bm) out += `<path class="bmk" d="M3 ${rungTop + 2}h7v11l-3.5-3-3.5 3z"><title>Bookmark</title></path>`;
       if (R.err) out += `<text class="err" x="${LM - 8}" y="${rungTop + 2 * LH + 14}" text-anchor="end">⊗</text>`;

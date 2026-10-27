@@ -2407,5 +2407,84 @@ console.log('Wave 3 E: Add-On Instructions (1756-PM010)');
   check('the instruction table has the Add-On Instruction (group Add-On, its operands, Fault as a flag on the right)', MTPS.INSTR.MOTOR_CTL && MTPS.INSTR.MOTOR_CTL.grp === 'Add-On' && MTPS.OPN.MOTOR_CTL.join() === 'Motor_Ctl,Start,Stop,Run,Cfg' && MTPS.INSTR.MOTOR_CTL.bits.join() === 'Fault' && MTPS.INSTR.MOTOR_CTL.extra.join() === 'Gain');
 }
 
+console.log('Wave 3 (A): Compare (Logix Designer Compare Tool), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const a = proj({ tags: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'DINT', value: 3 }], rungs: ['XIC(A)OTE(A);', 'NOP();', { t: 'XIC(A)NOP();', c: 'x' }] });
+  const same = R.compare(a, JSON.parse(JSON.stringify(a)));
+  check('the same project: no differences', same.same && same.rows.length === 0);
+  const b = JSON.parse(JSON.stringify(a));
+  b.tags[1].value = 4; b.tags.push({ name: 'C', type: 'REAL' }); b.tags = b.tags.filter(t => t.name !== 'A').concat([{ name: 'A', type: 'BOOL', desc: 'now with text' }]);
+  const rr = b.tasks[0].programs[0].routines[0].rungs; rr.splice(1, 0, { t: 'XIO(A)OTE(A);' }); rr[3].c = 'y';
+  b.rack.modules.pop(); b.controller.rev = '2.0';
+  const r = R.compare(a, b);
+  const find = n => r.rows.find(x => x.name === n);
+  check('a tag only on the right: st right', find('C') && find('C').st === 'right');
+  check('a changed description: st diff with the property', find('A') && find('A').st === 'diff' && find('A').d.some(d => d[0] === 'desc' && d[2] === 'now with text'));
+  check('values are not compared by default', !find('B'));
+  check('… but are with values: true', !!R.compare(a, b, { values: true }).rows.find(x => x.name === 'B'));
+  check('a module only on the left', !!r.rows.find(x => x.cat === 'I/O Configuration' && x.st === 'left'));
+  check('the controller revision differs', !!r.rows.find(x => x.cat === 'Controller' && x.d.some(d => d[0] === 'Revision')));
+  const rt = r.rows.find(x => x.cat === 'Routines');
+  eq('rungs: one inserted on the right (1), one comment changed (2 / 3)', rt.rungs.map(g => [g.st, g.a, g.b]), [['right', undefined, 1], ['diff', 2, 3]]);
+  eq('rungDiff: same rungs give nothing', R.rungDiff([{ t: 'A;' }], [{ t: 'A;' }]), []);
+  eq('rungDiff: one deleted in the middle', R.rungDiff([{ t: 'A;' }, { t: 'B;' }, { t: 'C;' }], [{ t: 'A;' }, { t: 'C;' }]).map(g => [g.st, g.a]), [['left', 1]]);
+}
+
+console.log('Wave 3 (A): the printed report (Generate Report, Print), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const p = proj({ tags: [{ name: 'Zed', type: 'BOOL' }, { name: 'Alpha', type: 'DINT', desc: 'a<b' }], ptags: [{ name: 'Mid', type: 'REAL' }], rungs: ['XIC(Zed)OTE(Zed);', 'MOV(1,Alpha);', 'NOP();'] });
+  const all = Object.fromEntries(R.REPORTS.map(x => [x[0], true]));
+  const r = R.report(p, all, {}, { now: 'T' });
+  check('every report of the Report Selection is made', ['Controller Organizer Listing', 'Controller Properties Listing', 'Tag Listing', 'Task Properties Listing', 'Program/Phase Properties Listing', 'Routine Listing: MainProgram - MainRoutine', 'Routine Properties Listing: MainProgram - MainRoutine', 'Data Type Listing', 'Module Properties Listing'].every(t => r.titles.includes(t)), r.titles.join(', '));
+  check('the table of contents comes at the end (the reference default)', r.html.indexOf('<h3>Table of Contents') > r.html.indexOf('<h3>Module Properties Listing'));
+  check('text is escaped', r.html.includes('a&lt;b') && !r.html.includes('a<b'));
+  const byName = R.report(p, { tags: true }, { sort: 'name' }, {}).html;
+  check('Tag Listing sorted by name: one list, Alpha before Mid before Zed', byName.indexOf('>Alpha<') < byName.indexOf('>Mid<') && byName.indexOf('>Mid<') < byName.indexOf('>Zed<'));
+  const byScope = R.report(p, { tags: true }, { sort: 'scope' }, {}).html;
+  check('Tag Listing sorted by scope: one list per scope', byScope.includes('Controller Tags') && byScope.includes('Program Tags: MainProgram'));
+  const unused = R.report(p, { tags: true }, { unused: false }, { used: () => new Set(['ZED']) }).html;
+  check('Include Unused Tags cleared: only the tags used in logic', unused.includes('>Zed<') && !unused.includes('>Alpha<'));
+  const rng = R.report(p, { routines: true }, { range: [1, 2] }, { ladder: (list, g, n0) => `<svg data-n0="${n0}" data-n="${list.length}"></svg>` }).html;
+  check('a range of rungs: the ladder gets the rungs and the number of the first', rng.includes('data-n0="1" data-n="2"'));
+  const sp = R.report(p, { routines: true }, { space: true, lines: 3 }, { ladder: (list, g, n0, more) => `<svg data-n0="${n0}" data-more="${!!more}"></svg>` }).html;
+  check('extra space between rungs: each rung on its own, a 3-line gap', (sp.match(/<svg/g) || []).length === 3 && (sp.match(/rptgap/g) || []).length === 2 && sp.includes('height:3.6em') && sp.includes('data-more="true"'));
+  const xr = R.report(p, { routines: true }, { xref: true }, { ops: t => (t.match(/\((\w+)/g) || []).map(x => x.slice(1)).filter(x => /^[A-Z][a-z]/.test(x)) }).html;
+  check('embedded cross reference: the tags of each rung and the rungs that use them', xr.includes('Rung 0: cross reference') && xr.includes('<td>Zed</td><td>0</td>'));
+  check('the footer text is on each report, up to 128 characters', R.report(p, { ctl: true, tags: true }, { footer: 'F'.repeat(200) }, {}).html.split('F'.repeat(128) + '<').length === 3);
+  check('a routine scope limits the routines', R.report(p, { routines: true }, {}, {}, { routines: ['Other/X'] }).count === 0);
+}
+
+console.log('Wave 3 (A): the sample projects (Help > Vendor Sample Projects), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  eq('four samples', R.SAMPLES.map(x => x.name), ['Motor_Demo', 'Traffic_Light', 'Tank_Level', 'Conveyor_Sort']);
+  R.SAMPLES.forEach(x => { const p = x.make(), v = MTPS.verify(p); check(`${x.name}: verifies with no errors and no warnings`, v.errors.length === 0 && v.warnings.length === 0, JSON.stringify(v.errors.concat(v.warnings).slice(0, 2).map(e => e.text))); });
+  check('each make() gives a new copy', R.SAMPLES[0].make() !== R.SAMPLES[0].make());
+  const tl = R.SAMPLES[1].make(), c = run({ tags: tl.tags, ptags: tl.tasks[0].programs[0].tags, rungs: tl.tasks[0].programs[0].routines[0].rungs.map(r => r.t), routines: [{ name: 'Cycle', rungs: tl.tasks[0].programs[0].routines[1].rungs.map(r => r.t) }] });
+  c.setInputs(1, 0b01); c.scan(10);
+  check('Traffic_Light runs: at 0 s north-south green and east-west red', c.read('NS_Green') === 1 && c.read('EW_Red') === 1 && c.read('NS_Red') === 0);
+  scans(c, 900);
+  check('… at 9 s north-south amber, east-west still red', c.read('NS_Amber') === 1 && c.read('NS_Green') === 0 && c.read('EW_Red') === 1);
+  scans(c, 200);
+  check('… at 11 s north-south red, east-west green', c.read('NS_Red') === 1 && c.read('EW_Green') === 1);
+  c.setInputs(1, 0b11); c.scan(10);
+  check('… the lamp test turns every lamp on', ['NS_Red', 'NS_Amber', 'NS_Green', 'EW_Red', 'EW_Amber', 'EW_Green'].every(t => c.read(t) === 1));
+}
+
+console.log('Wave 3 (A): the release notes (Help > Release Notes), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const fs = require('fs'), path = require('path');
+  const ver = (fs.readFileSync(path.join(__dirname, '../mtps/js/app.js'), 'utf8').match(/const VERSION = '([^']+)'/) || [])[1];
+  const N = R.NOTES || [];
+  check('the newest release note is this version', N.length > 0 && N[0].v === ver, `${N[0] && N[0].v} / ${ver}`);
+  check('every release note has a version, a date, a channel and notes', N.every(n => /^\d+\.\d+\.\d+(-beta\.\d+)?$/.test(n.v) && /^\d{4}-\d\d-\d\d$/.test(n.d) && (n.ch === 'Stable' || n.ch === 'Beta') && n.n.length > 0));
+  check('the release notes are newest first, each version once', N.every((n, i) => !i || N[i - 1].d >= n.d) && new Set(N.map(n => n.v)).size === N.length);
+  const log = fs.readFileSync(path.join(__dirname, '../CHANGELOG.md'), 'utf8');
+  check('every version in the release notes is in the changelog', N.every(n => log.includes(`MT PLC Studio ${n.v}`)), N.filter(n => !log.includes(`MT PLC Studio ${n.v}`)).map(n => n.v).join(', '));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

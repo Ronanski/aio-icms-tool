@@ -237,7 +237,7 @@
     try { places = await FS.places(); } catch (e) { toast('The files of this device cannot be reached: ' + (e.message || e), 'err'); return; }
     const st = { dir: store.get('lastDir', null) || places[0].path, data: null, sel: null, type: types[0] };
     const el = dialog({ title: o.title, size: 'lg', flush: true, focus: o.mode === 'save',
-      body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div><div class="row" data-fbex="1">${ic('ladder')}<span class="ell">Motor_Demo</span></div>` : ''}</aside>
+      body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div>${E.Report.SAMPLES.map(x => `<div class="row" data-fbex="${esc(x.name)}" title="${esc(x.desc)}">${ic('ladder')}<span class="ell">${esc(x.name)}</span></div>`).join('')}` : ''}</aside>
         <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
           <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
           <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}${o.descField ? '<label for="fbd">File description</label><input class="inp" id="fbd" autocomplete="off">' : ''}
@@ -272,7 +272,7 @@
     };
     el.addEventListener('click', ev => {
       const p = ev.target.closest('[data-fbp]'); if (p) { show(p.dataset.fbp); return; }
-      if (ev.target.closest('[data-fbex]')) { closeLayer(); o.onExample && o.onExample(); return; }
+      const ex = ev.target.closest('[data-fbex]'); if (ex) { closeLayer(); if (o.onExample) o.onExample(ex.dataset.fbex); return; }
       if (ev.target.closest('[data-fbup]')) { if (st.data && st.data.parent != null) show(st.data.parent); return; }
       if (ev.target.closest('[data-fbnew]')) {
         const n = prompt1Inline(el, 'New folder name', 'New Folder', async v => { if (!v || /[\\/:*?"<>|]/.test(v)) return 'Type a folder name.'; await FS.mkdir(FS.join(st.dir, v)); show(st.dir); });
@@ -325,7 +325,7 @@
   }
   function rememberFile(path) { if (!/\.mtp$/i.test(path)) return; S.prefs.files = [path].concat((S.prefs.files || []).filter(x => x !== path)).slice(0, 8); savePrefs(); }
   function cmdOpen() {
-    const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
+    const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: n => openSample(n) });
     saveChanges(go);
   }
   /* File > Close: the project closes (offline first) and the Start Page shows, as at the first start */
@@ -432,7 +432,7 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'info' || k === 'noDocs' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'info' || k === 'noDocs' || k === 'logical' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
   /* edit zones on the rungs (Studio 5000 "Edit ladder logic in run mode"): rung.z is
      i: the editable copy made by Start Pending Rung Edits, or a new rung (shown e while it has errors);
      r: the original below it, read-only; after Accept they become I (insert zone) and R (replace zone);
@@ -889,10 +889,10 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
-    // File > New Component (reference order); Task is listed but not in this version yet
+    // File > New Component (reference order)
     newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
-    newprog: { l: 'New Program…', i: 'tree', run: () => TK.newProgram((S.orgSel || '').startsWith('task:') ? S.orgSel.slice(5) : ''), on: () => editable() && offline() },
-    newtask: { l: 'New Task…', i: 'tree', run: () => TK.newTask(), on: () => editable() && offline() },
+    newprog: { l: 'New Program…', i: 'prog', run: () => TK.newProgram((S.orgSel || '').startsWith('task:') ? S.orgSel.slice(5) : ''), on: () => editable() && offline() },
+    newtask: { l: 'New Task…', i: 'task', run: () => TK.newTask(), on: () => editable() && offline() },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
@@ -954,6 +954,11 @@
     fen: { l: 'Enable All I/O Forces', i: 'force', run: () => { ctl.enableForces(true); live(true); }, on: () => S.online && ctl.forceState() === 'disabled' },
     fdis: { l: 'Disable All I/O Forces', i: 'force', run: () => { ctl.enableForces(false); live(true); }, on: () => S.online && ctl.forceState() === 'enabled' },
     fall: { l: 'Remove All I/O Forces', i: 'close', run: () => { ctl.removeForces(); live(true); }, on: () => S.online && ctl.forceState() !== 'none' },
+    // View > Toolbars, Full Screen, Start Page
+    vtb: { l: 'Toolbars…', i: 'gear', run: () => toolbarsDlg() },
+    vfull: { l: 'Full Screen', i: 'dockr', run: () => fullScreen(), on: () => !!(document.fullscreenEnabled && document.documentElement.requestFullscreen), ck: () => !!document.fullscreenElement },
+    vstart: { l: 'Start Page', i: 'info', run: () => { S.view = 'start'; S.area = 'ladder'; S.sel = null; render(); }, on: () => !S.noProj, ck: () => S.noProj || S.view === 'start' },
+    vlorg: { l: 'Logical Organizer', i: 'tree', run: () => toggleLogical(), on: () => !S.noProj, ck: () => !!S.prefs.lorg },
     vorg: { l: 'Controller Organizer', i: 'tree', run: () => { S.prefs.org = !S.prefs.org; S.drawer = !S.drawer; savePrefs(); render(); }, ck: () => S.prefs.org },
     verr: { l: 'Errors', i: 'warn', run: () => { if (S.layout === 'desktop') { S.prefs.err = !S.prefs.err; savePrefs(); } else S.errOpen = !S.errOpen; render(); }, ck: () => S.prefs.err },
     vio: { l: 'Emulator Panel', i: 'rack', run: () => { if (S.layout === 'phone' && innerWidth <= innerHeight) { S.area = 'ladder'; S.phoneEmu = !S.phoneEmu; } else { S.prefs.emu = !S.prefs.emu; savePrefs(); } render(); }, ck: () => S.prefs.emu },
@@ -961,22 +966,46 @@
     vcols: { l: 'Toggle Column…', i: 'tags', run: () => colMenu($('#tagpage .tagtbl thead') || $('#tagpage'), null), on: () => !S.noProj && S.view === 'tags' && !!$('#tagpage .tagtbl') },
     zin: { l: 'Zoom In', i: 'zin', run: () => zoom(1.12) },
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
+    // Window (help v37 Window menu): New Window, Split, Reset Window Layout, Close, Close All, Close Routine, then the open windows
+    wnew: { l: 'New Window', i: 'file', run: () => {}, on: () => false },
+    wsplit: { l: 'Split', i: 'dockr', run: () => {}, on: () => false },
+    wreset: { l: 'Reset Window Layout', i: 'dockr', run: () => winReset() },
+    wclose: { l: 'Close', k: 'Ctrl+F4', i: 'close', run: () => closeTab(winAct()), on: () => !!winAct() },
+    wcloseall: { l: 'Close All', i: 'close', run: () => winCloseAll(), on: () => !S.noProj && S.tabs.length > 0 },
+    wclosertn: { l: 'Close Routine', i: 'ladder', run: () => closeTab(winAct()), on: () => S.view === 'ladder' && !!winAct() },
+    wnext: { l: 'Next Window', k: 'Ctrl+F6', i: 'right', run: () => winStep(1), on: () => S.tabs.length > 1 },
+    wprev: { l: 'Previous Window', k: 'Ctrl+Shift+F6', i: 'back', run: () => winStep(-1), on: () => S.tabs.length > 1 },
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
+    cmptool: { l: 'Compare Tool…', i: 'xref', run: () => compareTool(), on: () => !S.noProj },
+    // File > Generate Report, Print > …, Print Options (help v37 File menu)
+    genrep: { l: 'Generate Report…', i: 'file', run: () => genReport(), on: () => !S.noProj },
+    print: { l: 'Print…', k: 'Ctrl+P', i: 'file', run: () => printHere(), on: () => !S.noProj },
+    prtrtn: { l: 'Routine…', i: 'ladder', run: () => printDlg('routine'), on: () => !S.noProj && S.view === 'ladder' },
+    prttags: { l: 'Tags…', i: 'tags', run: () => printDlg('tags'), on: () => !S.noProj },
+    prtdt: { l: 'Data Type…', i: 'type', run: () => printDlg('dts'), on: () => !S.noProj },
+    prtmod: { l: 'Module Properties…', i: 'rack', run: () => printDlg('mods'), on: () => !S.noProj },
+    prtorg: { l: 'Controller Organizer…', i: 'tree', run: () => printDlg('org'), on: () => !S.noProj },
+    prtctl: { l: 'Controller Properties…', i: 'chip', run: () => printDlg('ctl'), on: () => !S.noProj },
+    prtall: { l: 'Entire Project…', i: 'file', run: () => printDlg('all'), on: () => !S.noProj },
+    prtopts: { l: 'Print Options…', i: 'gear', run: () => printOptions() },
     helpc: { l: 'Contents', i: 'help', run: () => helpContents() },
+    samples: { l: 'Vendor Sample Projects…', i: 'ladder', run: () => samplesDlg() },
+    relnotes: { l: 'Release Notes', i: 'file', run: () => releaseNotes() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
     tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
   };
   const MENUS = [
-    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newaoi', 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
+    ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newaoi', 'newdt', 'newmod', 'newprog', 'newrtn', 'newstr', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'genrep', { hd: 'Print' }, 'prtrtn', 'prttags', 'prtmod', 'prtdt', 'prtorg', 'prtctl', 'prtall', 'prtopts', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
-    ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
+    ['View', ['vtb', '-', 'vorg', 'verr', 'vwatch', 'vlorg', 'vio', '-', 'vstart', 'vfull', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'prodtags', 'mapplc', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
-    ['Tools', ['options', 'updates']],
-    ['Help', ['helpc', 'help', 'tips', 'about']],
+    ['Tools', ['options', '-', 'cmptool', '-', 'updates']],
+    ['Window', ['wnew', 'wsplit', '-', 'wreset', '-', 'wclose', 'wcloseall', 'wclosertn', '-', 'wnext', 'wprev', 'wlist']],
+    ['Help', ['helpc', 'help', 'relnotes', 'tips', '-', 'samples', '-', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()) && !(LADONLY.has(id) && stOn()); };
   const ONLINE_ONLY = ['toggle', 'fon', 'foff', 'frem', 'prog', 'runm', 'clear', 'fen', 'fdis', 'fall'];
@@ -989,6 +1018,7 @@
   }
   /* menu rows made when the menu opens: the recent projects of File (up to eight, as the reference's Recent Projects) */
   const DYN = {
+    wlist: () => (S.noProj || !S.tabs.length ? [] : ['-', ...S.tabs.slice(0, 9).map((k, n) => ({ l: `${n + 1} ${tabTitle(k)}`, ck: k === winAct(), run: () => openTab(k) }))]),
     recent: () => { const f = S.prefs.files || []; return f.length ? [{ hd: 'Recent Projects' }, ...f.slice(0, 8).map((p, n) => ({ l: `${n + 1} ${baseName(p)}`, i: 'file', run: () => saveChanges(() => loadFile(p)) })), '-'] : []; },
   };
   const menuItems = ids => ids.flatMap(id => (DYN[id] ? DYN[id]() : [id])).filter(id => typeof id === 'object' || id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' || typeof id === 'object' ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
@@ -1024,13 +1054,14 @@
     }
     render();
   }
-  const emptyWs = () => (S.noProj ? startPage() : '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>');
+  const emptyWs = () => (S.noProj || S.view === 'start' ? startPage() : '<div class="emptyws"><p><b>No routine open.</b></p><p class="help">Double-click (or tap) a routine in the Controller Organizer to open it here.</p></div>');
   /* the start page while no project is open: New Project, Open Project, the files opened lately (paths only) */
   function startPage() {
     const rec = (S.prefs.files || []).slice(0, 8);
     return `<div class="startpg"><div class="sph"><b>MT PLC Studio</b><span class="muted">v${VERSION}</span></div>
       <div class="spb"><button class="spc" data-cmd="new">${ic('file')}<span><b>New Project</b><small>Pick the controller, the chassis and the I/O, then save it as a .mtp file</small></span></button>
       <button class="spc" data-cmd="open">${ic('open')}<span><b>Open Project</b><small>Open a .mtp or .L5X file from this device's storage</small></span></button></div>
+      <div class="grp">Sample projects</div><div class="spb spx">${E.Report.SAMPLES.map(x => `<button class="spc" data-sample="${esc(x.name)}">${ic('ladder')}<span><b>${esc(x.title)}</b><small>${esc(x.desc)}</small></span></button>`).join('')}</div>
       ${rec.length ? `<div class="grp">Recent projects</div>${rec.map(p => `<div class="row" data-recent="${esc(p)}">${ic('file')}<span class="grow ell"><b>${esc(baseName(p))}</b><small class="muted"> ${esc(p)}</small></span></div>`).join('')}` : ''}
       <p class="help">Projects are not kept inside the app: save your work with Save or Save As.</p></div>`;
   }
@@ -1047,7 +1078,7 @@
     // on <body> too, so menus, sheets and dialogs (in #layer, outside #app) take the layout's sizes
     const dens = S.prefs.density === 'compact' ? ' dense' : S.prefs.density === 'touch' ? ' roomy' : '';
     const cls = (lay === 'desktop' ? 'desk' : lay === 'tablet' ? 'tab' : 'phone') + (innerHeight > innerWidth ? ' port' : ' land') + dens;
-    if (app.className !== cls) app.className = cls;
+    if (app.className !== cls + tbCls()) app.className = cls + tbCls();
     if (document.body.className !== cls) document.body.className = cls;
     const html = (upInfo ? upbar() : '') + (pending() ? editbar() : '') + (lay === 'desktop' ? desktop() : lay === 'tablet' ? tablet() : phone());
     // the ladder stays in place when the new frame has it too: the rest of the screen is brought up to date around it
@@ -1119,7 +1150,7 @@
         <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span>${commHTML(true)}</span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
-      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>` : ''}
+      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">${orgTitle()}</div>${orgPane()}${quickViewHTML()}</aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${sfcOn() ? SFCUI().html() : S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
           ${descBarHTML()}${ladWrap()}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
@@ -1131,7 +1162,7 @@
   function tablet() {
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
-    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>`;
+    const orgAside = c => `<aside class="org${c}"><div class="ph">${orgTitle()}<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div>${orgPane()}${quickViewHTML()}</aside>`;
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>${esc(ctlLabel(S.p))}</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
@@ -1167,7 +1198,7 @@
   function phone() {
     const a = S.area, nErr = S.verify ? S.verify.errors.length : 0;
     let body = '';
-    if (a === 'ladder' && S.noProj) body = `<div class="page" style="display:flex;flex-direction:column">${startPage()}</div>`;
+    if (a === 'ladder' && (S.noProj || S.view === 'start')) body = `<div class="page" style="display:flex;flex-direction:column">${startPage()}</div>`;
     else if (a === 'ladder') {
       const pland = innerWidth > innerHeight, emuTab = !pland && S.phoneEmu;
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
@@ -1177,7 +1208,7 @@
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
-    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)"><div class="tree">${treeHTML()}</div>${quickViewHTML()}</div>`;
+    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)">${orgPane()}${quickViewHTML()}</div>`;
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
@@ -1198,9 +1229,11 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}${b('newprog')}${b('newtask')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
-      <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
+      <div class="card">${b('samples', 'Sample Projects…')}${b('vlorg')}${b('vstart')}${C.vfull.on() ? b('vfull') : ''}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
+      <div class="card">${b('wnext')}${b('wcloseall')}${b('wreset')}</div>
+      <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('relnotes')}${b('tips')}${b('about')}</div>`;
   }
 
   /* ---------- organizer tree ---------- */
@@ -1735,6 +1768,7 @@
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
     else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
     TK.orgMore(key, items);
+    printCtx(key, items);
     if (items.length) openMenu(items, { x, y });
   }
 
@@ -3367,10 +3401,342 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const rows = (HELP.TIPS.en || []);
     dialog({ title: 'Getting Started', size: 'md', body: `<table class="iht"><tbody>${rows.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join('')}</tbody></table>`, buttons: [{ l: 'Close', pri: true }] });
   }
+  /* ---------- Help > About MT PLC Studio, as About Logix Designer (help v37 Help menu: the version history, the
+     installed components and the installed controller and firmware support) ---------- */
+  const COMPS = { 'js/engine.js': 'Controller engine (PLC-CPU, the scan, the instruction set)', 'js/ladder.js': 'Ladder Diagram editor and drawing', 'js/update.js': 'Updates', 'js/help.js': 'Instruction Help', 'js/help-ref.js': 'Instruction Help reference pages', 'js/report.js': 'Compare Tool, reports, sample projects, release notes', 'js/app.js': 'Logix Designer workspace, RSLinx Classic, Logix Emulate' };
   function about() {
-    dialog({ title: 'About MT PLC Studio', body: `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
-      <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`, buttons: [{ l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
+    const notes = (E.Report && E.Report.NOTES) || [];
+    const tabs = [['gen', 'General'], ['hist', 'Version History'], ['comp', 'Installed Components'], ['ctl', 'Controller Support']];
+    const tbl = (h, rows) => `<table class="cmpt"><thead><tr>${h.map(x => `<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const page = k => (k === 'hist' ? tbl(['Version', 'Date', 'Channel'], notes.map(n => [esc(n.v), esc(n.d), esc(n.ch)]))
+      : k === 'comp' ? tbl(['Component', 'File'], [...document.scripts].map(x => x.getAttribute('src')).filter(Boolean).map(x => [esc(COMPS[x] || x.replace(/^js\/|\.js$/g, '')), `<span class="mono">${esc(x)}</span>`]))
+      : k === 'ctl' ? tbl(['Controller', 'Description', 'Major revisions'], CTYPES.map(([t, d, v]) => [esc(t), esc(d) + (t === 'PLC-CPU' ? ' (download and go online)' : ' (L5X export)'), esc(v.join(', '))]))
+      : `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
+      <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`);
+    let at = 'gen';
+    const el = dialog({ title: 'About MT PLC Studio', body: `<div class="xrtabs">${tabs.map(([k, l]) => `<button class="xtab${k === at ? ' on' : ''}" data-abt="${k}">${l}</button>`).join('')}</div><div id="abtb" style="padding-top:8px">${page(at)}</div>`,
+      buttons: [{ l: 'Release Notes', run: () => { setTimeout(releaseNotes, 0); } }, { l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
+    el.addEventListener('click', ev => {
+      const t = ev.target.closest('[data-abt]'); if (!t) return;
+      at = t.dataset.abt; el.querySelectorAll('[data-abt]').forEach(x => x.classList.toggle('on', x === t)); el.querySelector('#abtb').innerHTML = page(at);
+    });
   }
+  /* ---------- Help > Release Notes: the release notes of this app, newest first (MTPS.Report.NOTES, from the
+     changelog); the beta releases are shown on request ---------- */
+  function releaseNotes() {
+    const notes = (E.Report && E.Report.NOTES) || [];
+    let beta = false;
+    const body = () => notes.filter(n => beta || n.ch !== 'Beta').map(n => `<div class="grp">${esc(n.v)}${n.v === VERSION ? ' (this version)' : ''}<span class="grow"></span><span class="muted">${esc(n.d)} · ${esc(n.ch)}</span></div><ul class="relnl" data-relv="${esc(n.v)}">${n.n.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
+    const el = dialog({ title: 'Release Notes', size: 'lg', body: `<label class="ck"><input type="checkbox" id="relb"> Show the beta releases</label><div id="relbody">${body()}</div>`, buttons: [{ l: 'Close', pri: true }] });
+    el.addEventListener('change', ev => { if (ev.target.id !== 'relb') return; beta = ev.target.checked; el.querySelector('#relbody').innerHTML = body(); });
+  }
+  /* ---------- Tools > Compare Tool (as the Logix Designer Compare Tool: the open project on the left, a .mtp or .L5X
+     file on the right; the differences listed by component, MTPS.Report.compare) ---------- */
+  async function projectFromFile(f) {
+    let t;
+    try { t = await FS.read(f); } catch (e) { toast('That file could not be read: ' + (e.message || e), 'err'); return null; }
+    if (/\.l5x$/i.test(f) || /^\s*<\?xml|<RSLogix5000Content/i.test(t)) return fromL5X(t, true);
+    let p = null; try { p = JSON.parse(t); } catch (e) { /* not JSON */ }
+    if (!validProject(p)) { toast('That file is not an MT PLC Studio project.', 'err'); return null; }
+    return p;
+  }
+  function compareTool() { fileDialog({ mode: 'open', title: 'Compare Tool: pick the project to compare with', types: ['mtp', 'l5x'], onPick: async f => { const q = await projectFromFile(f); if (q) compareResults(q, baseName(f)); } }); }
+  const CMPST = { left: ['−', 'Only in the left project'], right: ['+', 'Only in the right project'], diff: ['≠', 'Different'] };
+  function compareResults(q, fname) {
+    const st = { values: false, open: new Set() };
+    const body = () => {
+      const r = E.Report.compare(S.p, q, { values: st.values }), cats = [...new Set(r.rows.map(x => x.cat))];
+      const det = (x, i) => !st.open.has(i) ? '' : `<div class="cmpd">${x.d.length ? `<table class="cmpt"><thead><tr><th>Property</th><th>Left</th><th>Right</th></tr></thead><tbody>${x.d.map(([f, a, b]) => `<tr><td>${esc(f)}</td><td class="mono">${esc(a)}</td><td class="mono">${esc(b)}</td></tr>`).join('')}</tbody></table>` : ''}
+        ${x.rungs ? `<table class="cmpt"><thead><tr><th>Rung</th><th>Left</th><th>Right</th></tr></thead><tbody>${x.rungs.map(g => `<tr class="cmp-${g.st}"><td>${CMPST[g.st][0]} ${g.a != null ? 'Rung ' + g.a : ''}${g.a != null && g.b != null && g.a !== g.b ? ' / ' : ''}${g.b != null && g.b !== g.a ? 'Rung ' + g.b : ''}</td><td class="mono pre">${esc(g.ta || '')}</td><td class="mono pre">${esc(g.tb || '')}</td></tr>`).join('')}</tbody></table>` : ''}${!x.d.length && !x.rungs ? `<p class="help">${esc(CMPST[x.st][1])}.</p>` : ''}</div>`;
+      return `<div class="cmph"><div><span class="muted">Left:</span> <b>${esc(S.p.controller.name)}</b> <span class="muted">(${esc(S.file ? S.file.name : 'open project')})</span></div><div><span class="muted">Right:</span> <b>${esc(q.controller.name)}</b> <span class="muted">(${esc(fname)})</span></div>
+        <label class="ck"><input type="checkbox" id="cmpv"${st.values ? ' checked' : ''}> Compare tag values</label></div>
+        <div class="cmps" id="cmps">${r.same ? 'The projects are the same.' : `${r.diff} different, ${r.left} only in the left project, ${r.right} only in the right project`}</div>
+        <div class="cmpl">${cats.map(c => `<div class="grp">${esc(c)}</div>${r.rows.map((x, i) => [x, i]).filter(([x]) => x.cat === c).map(([x, i]) => `<div class="row cmp-${x.st}${st.open.has(i) ? ' on' : ''}" data-cmpr="${i}" title="${esc(CMPST[x.st][1])}"><span class="cmpm">${CMPST[x.st][0]}</span><span class="grow ell">${esc(x.name)}</span><span class="sub">${x.st === 'diff' ? (x.d.length + (x.rungs ? x.rungs.length : 0)) + ' difference(s)' : esc(CMPST[x.st][1])}</span></div>${det(x, i)}`).join('')}`).join('')}</div>`;
+    };
+    const el = dialog({ title: 'Compare Results', size: 'lg', body: `<div id="cmpb">${body()}</div>`, buttons: [{ l: 'Compare Another…', run: () => { setTimeout(compareTool, 0); } }, { l: 'Close', pri: true }] });
+    const redraw = () => { el.querySelector('#cmpb').innerHTML = body(); };
+    el.addEventListener('click', ev => { const r = ev.target.closest('[data-cmpr]'); if (!r) return; const i = +r.dataset.cmpr; if (st.open.has(i)) st.open.delete(i); else st.open.add(i); redraw(); });
+    el.addEventListener('change', ev => { if (ev.target.id === 'cmpv') { st.values = ev.target.checked; st.open.clear(); redraw(); } });
+  }
+  /* ---------- sample projects (help v37: Help > Vendor Sample Projects opens the list of sample projects; here they
+     are part of the app, MTPS.Report.SAMPLES): from the Help menu, the start page and the Examples of Open ---------- */
+  function openSample(n) {
+    const x = E.Report.SAMPLES.find(s => s.name === n) || E.Report.SAMPLES[0];
+    closeLayer(); openProject(x.make(), true); S.dirty = false; render();
+    toast(`Opened the sample project ${x.name}: Save As keeps a copy of it.`);
+  }
+  function samplesDlg() {
+    let on = E.Report.SAMPLES[0].name;
+    const el = dialog({ title: 'Sample Projects', size: 'md',
+      body: `<p class="help" style="margin-top:0">Ready projects that use the features of the app. Open one, then Save As to keep your own copy.</p><div class="gwl" id="spl">${E.Report.SAMPLES.map(x => `<div class="row${x.name === on ? ' on' : ''}" data-spl="${esc(x.name)}">${ic('ladder')}<span class="grow"><b>${esc(x.title)}</b> <span class="mono muted">${esc(x.name)}</span><br><small class="muted">${esc(x.desc)}</small></span></div>`).join('')}</div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Open', pri: true, run: () => { const n = on; setTimeout(() => saveChanges(() => openSample(n)), 0); } }] });
+    el.addEventListener('click', ev => {
+      const r = ev.target.closest('[data-spl]'); if (!r) return;
+      if (r.dataset.spl === on && r.dataset.clicked) { const n = on; closeLayer(); saveChanges(() => openSample(n)); return; }
+      on = r.dataset.spl; el.querySelectorAll('[data-spl]').forEach(x => x.classList.toggle('on', x === r));
+      r.dataset.clicked = '1'; setTimeout(() => { delete r.dataset.clicked; }, 450);
+    });
+  }
+  /* ---------- File > Generate Report, File > Print, File > Print Options (help v37: Reports, Print a report, Generate
+     Report dialog box settings, Print dialog box settings, Print Options dialog box settings, Change General / Ladder
+     Listing / Tag Listing report preferences). The report is laid out in the page (#printout, shown only on paper)
+     and printed with the browser's print, where the printer, the copies and the pages are picked. ---------- */
+  const PRDEF = { footerOn: false, footer: '', xref: false, space: false, lines: 5, sort: 'name', unused: true };
+  const prOpts = () => Object.assign({}, PRDEF, S.prefs.print || {});
+  function tagOps(t) {
+    const pr = E.parseRung(t || ''), out = [];
+    const walk = e => { if (e.t === 'BR') e.legs.forEach(l => l.forEach(walk)); else (e.a || []).forEach(a => { if (isTagText(a)) out.push(String(a)); }); };
+    if (!pr.err) pr.elems.forEach(walk);
+    return [...new Set(out)];
+  }
+  const usedTags = p => new Set(p.tasks.flatMap(t => t.programs.flatMap(g => g.routines.flatMap(r => r.rungs.flatMap(x => tagOps(x.t).map(a => U(a.split(/[.[]/)[0])))))));
+  // a routine drawn for paper: the ladder of the editor, offline, with the program's tags for the descriptions
+  function printLadder(list, g, n0, more) {
+    const was = S.prog; S.prog = g.name;
+    try {
+      const svg = L.render(list.map(r => { const pr = E.parseRung(r.t); return { c: r.c, elems: pr.err ? [] : pr.elems, err: !!pr.err }; }), { W: 1000, cell: 96, font: 11, descLines: 2, ...ladShow(), rdesc: '', tag: tagFor, desc: opDesc, n0 }).svg;
+      // a rung drawn on its own with more to follow: no (End) under it
+      return more ? svg.replace(/<text class="rn"[^>]*>\(End\)<\/text>/, '') : svg;
+    } finally { S.prog = was; }
+  }
+  function buildReport(sel, scope, range) {
+    const o = prOpts();
+    return E.Report.report(S.p, sel, { footer: o.footerOn ? o.footer : '', xref: o.xref, space: o.space, lines: o.lines, sort: o.sort, unused: o.unused, range },
+      { ladder: printLadder, ops: tagOps, used: usedTags, ctlType: ctlLabel }, scope);
+  }
+  function doPrint(rep) {
+    if (!rep.count) { toast('Nothing to print: pick a report.', 'err'); return; }
+    let d = $('#printout');
+    if (!d) { d = document.createElement('div'); d.id = 'printout'; document.body.appendChild(d); }
+    d.innerHTML = rep.html;
+    S.printed = { count: rep.count, titles: rep.titles };
+    try { window.print(); } catch (e) { toast('This device cannot print from the app.', 'err'); }
+  }
+  /* the Print dialog of one component: Print Range (All, Selection, a range of rungs for a routine), Print Options */
+  const PRKIND = { routine: 'Routine', tags: 'Tags', org: 'Controller Organizer', ctl: 'Controller Properties', dts: 'Data Type', mods: 'Module Properties', all: 'Entire Project' };
+  function printDlg(kind, key) {
+    let g = curProg(), r = curRoutine();
+    if (kind === 'routine' && key && key.startsWith('rt:')) { const [gn, rn] = key.slice(3).split('/'); g = allProgs().find(x => x.name === gn) || g; r = g.routines.find(x => x.name === rn) || r; }
+    const n = r.rungs.length, sr = kind === 'routine' && S.view === 'ladder' && g === curProg() && r === curRoutine() ? curSelRung() : null;
+    const rng = kind === 'routine' ? `<div class="grp">Print Range</div><label class="ck"><input type="radio" name="prr" value="all" checked> All</label>
+      <label class="ck"><input type="radio" name="prr" value="sel"${sr == null ? ' disabled' : ''}> Selection${sr == null ? '' : ` (rung ${sr})`}</label>
+      <label class="ck"><input type="radio" name="prr" value="rng"> Rungs <input class="inp prn" id="prf" type="number" min="0" max="${Math.max(0, n - 1)}" value="0" inputmode="numeric" aria-label="From rung"> to <input class="inp prn" id="prt" type="number" min="0" max="${Math.max(0, n - 1)}" value="${Math.max(0, n - 1)}" inputmode="numeric" aria-label="To rung"></label>` : '';
+    const what = kind === 'routine' ? `${g.name} - ${r.name}` : kind === 'tags' ? (S.tagScope ? `Program Tags: ${S.tagScope}` : 'Controller Tags') : PRKIND[kind];
+    dialog({ title: `Print - ${PRKIND[kind]}`, size: 'sm',
+      body: `<p style="margin-top:0"><b>${esc(what)}</b></p>${rng}<p class="help">The printer, the number of copies and the pages are chosen in the print dialog of this device.</p><div class="errtx" id="pre"></div>`,
+      buttons: [{ l: 'Print Options…', run: () => { setTimeout(() => printOptions(() => printDlg(kind, key)), 0); } }, { l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        let range = null;
+        if (kind === 'routine') {
+          const v = (el.querySelector('[name="prr"]:checked') || {}).value;
+          if (v === 'sel') range = [sr, sr];
+          if (v === 'rng') { const a = +el.querySelector('#prf').value, b = +el.querySelector('#prt').value; if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b >= n || a > b) { el.querySelector('#pre').textContent = `Rungs: from 0 to ${n - 1}, the first not after the last.`; return false; } range = [a, b]; }
+        }
+        const sel = kind === 'routine' ? { routines: true } : kind === 'all' ? Object.fromEntries(E.Report.REPORTS.map(x => [x[0], true])) : { [kind]: true };
+        const scope = kind === 'routine' ? { routines: [g.name + '/' + r.name] } : null;
+        setTimeout(() => doPrint(buildReport(sel, scope, range)), 0);
+      } }] });
+  }
+  /* Generate Report: Component Selection (Project > Controller, Tags, Routines > tasks > programs > routines, Data Types,
+     I/O Configuration) and Report Selection (only the reports of the components picked); Print Options, Print */
+  function genReport() {
+    const tasks = S.p.tasks;
+    const st = { comp: new Set(['ctl', 'tags', 'dts', 'io', ...tasks.flatMap(t => t.programs.flatMap(g => g.routines.map(r => 'r:' + g.name + '/' + r.name)))]), rep: new Set(['toc', 'org', 'ctl', 'tags', 'tasks', 'progs', 'routines', 'dts', 'mods']) };
+    const rts = () => [...st.comp].filter(k => k.startsWith('r:'));
+    const avail = () => { const c = st.comp, a = ['toc']; if (c.has('ctl')) a.push('org', 'ctl'); if (c.has('tags')) a.push('tags'); if (rts().length) a.push('tasks', 'progs', 'routines', 'rprops'); if (c.has('dts')) a.push('dts'); if (c.has('io')) a.push('mods'); return a; };
+    const cb = (k, l, lvl, on, part) => `<label class="ck grgrow" style="padding-left:${lvl * 18}px"><input type="checkbox" data-grc="${esc(k)}"${on ? ' checked' : ''}${part ? ' class="part"' : ''}> ${esc(l)}</label>`;
+    const comp = () => {
+      const allR = tasks.flatMap(t => t.programs.flatMap(g => g.routines.map(r => 'r:' + g.name + '/' + r.name))), onR = allR.filter(k => st.comp.has(k)).length;
+      return cb('ctl', 'Controller ' + S.p.controller.name, 0, st.comp.has('ctl')) + cb('tags', 'Tags', 0, st.comp.has('tags')) + cb('routines', 'Routines', 0, onR === allR.length, onR > 0 && onR < allR.length)
+        + tasks.map(t => `<div class="grgt">${esc(HANDLERS[t.type] || t.name)}</div>${t.programs.map(g => `<div class="grgt" style="padding-left:36px">${esc(g.name)}</div>${g.routines.map(r => cb('r:' + g.name + '/' + r.name, r.name, 3, st.comp.has('r:' + g.name + '/' + r.name))).join('')}`).join('')}`).join('')
+        + cb('dts', 'Data Types', 0, st.comp.has('dts')) + cb('io', 'I/O Configuration', 0, st.comp.has('io'));
+    };
+    const reps = () => { const a = avail(); return E.Report.REPORTS.filter(x => a.includes(x[0])).map(([k, l]) => `<label class="ck"><input type="checkbox" data-grr="${k}"${st.rep.has(k) ? ' checked' : ''}> ${esc(l)}</label>`).join(''); };
+    const el = dialog({ title: 'Generate Report', size: 'md',
+      body: `<div class="grep"><div><div class="grp">Component Selection</div><div class="grcl" id="grc">${comp()}</div></div><div><div class="grp">Report Selection</div><div class="grcl" id="grr">${reps()}</div></div></div>`,
+      buttons: [{ l: 'Print Options…', run: () => { setTimeout(() => printOptions(genReport), 0); } }, { l: 'Cancel' }, { l: 'Print', pri: true, run: () => {
+        const a = avail(), sel = Object.fromEntries([...st.rep].filter(k => a.includes(k)).map(k => [k, true]));
+        const rep = buildReport(sel, { routines: rts().map(k => k.slice(2)) });
+        setTimeout(() => doPrint(rep), 0);
+      } }] });
+    const redraw = () => { el.querySelector('#grc').innerHTML = comp(); el.querySelector('#grr').innerHTML = reps(); el.querySelectorAll('#grc input.part').forEach(x => { x.indeterminate = true; }); };
+    redraw();
+    el.addEventListener('change', ev => {
+      const c = ev.target.dataset.grc, r = ev.target.dataset.grr, on = ev.target.checked;
+      if (c === 'routines') tasks.forEach(t => t.programs.forEach(g => g.routines.forEach(x => st.comp[on ? 'add' : 'delete']('r:' + g.name + '/' + x.name))));
+      else if (c) st.comp[on ? 'add' : 'delete'](c);
+      if (r) st.rep[on ? 'add' : 'delete'](r);
+      redraw();
+    });
+  }
+  /* Print Options: the categories (General, Ladder Listing, Tag Listing); a changed category gets a *; Reset Category,
+     OK, Cancel, Apply. Kept on this device (prefs.print). */
+  function printOptions(back) {
+    const o = prOpts(), was = JSON.stringify(o), CATS = [['gen', 'General'], ['lad', 'Ladder Listing'], ['tag', 'Tag Listing']], keys = { gen: ['footerOn', 'footer'], lad: ['xref', 'space', 'lines'], tag: ['sort', 'unused'] };
+    let cat = 'gen';
+    const page = () => cat === 'gen' ? `<label class="ck"><input type="checkbox" id="po-fo"${o.footerOn ? ' checked' : ''}> Include footer text</label><input class="inp" id="po-ft" maxlength="128" value="${esc(o.footer)}" aria-label="Footer text"${o.footerOn ? '' : ' disabled'}>`
+      : cat === 'lad' ? `<label class="ck"><input type="checkbox" id="po-x"${o.xref ? ' checked' : ''}> Print embedded cross reference</label><label class="ck"><input type="checkbox" id="po-s"${o.space ? ' checked' : ''}> Print extra space between rungs</label><div class="frow"><label for="po-l">Number of lines</label><input class="inp" id="po-l" type="number" min="1" max="20" inputmode="numeric" value="${o.lines}"${o.space ? '' : ' disabled'}></div>`
+        : `<div class="frow"><label for="po-so">Sort By</label><select class="inp" id="po-so"><option value="name"${o.sort === 'name' ? ' selected' : ''}>Name</option><option value="scope"${o.sort === 'scope' ? ' selected' : ''}>Scope</option></select></div><label class="ck"><input type="checkbox" id="po-u"${o.unused ? ' checked' : ''}> Include Unused Tags, Structure Members, and Array Elements</label>`;
+    const changed = k => keys[k].some(x => JSON.stringify(o[x]) !== JSON.stringify(JSON.parse(was)[x]));
+    const side = () => CATS.map(([k, l]) => `<div class="row${k === cat ? ' on' : ''}" data-poc="${k}">${esc(l)}${changed(k) ? ' *' : ''}</div>`).join('');
+    const apply = () => { S.prefs.print = Object.assign({}, o); savePrefs(); };
+    const el = dialog({ title: 'Print Options', size: 'md',
+      body: `<div class="pogrid"><div class="gwl" id="poc">${side()}</div><div><div id="pop">${page()}</div><button class="btn" id="po-r" style="margin-top:12px">Reset Category</button></div></div>`,
+      buttons: [{ l: 'Cancel', run: () => { if (back) setTimeout(back, 0); } }, { l: 'Apply', run: () => { apply(); return false; } }, { l: 'OK', pri: true, run: () => { apply(); if (back) setTimeout(back, 0); } }] });
+    const draw = () => { el.querySelector('#poc').innerHTML = side(); el.querySelector('#pop').innerHTML = page(); };
+    el.addEventListener('click', ev => {
+      const c = ev.target.closest('[data-poc]'); if (c) { cat = c.dataset.poc; draw(); return; }
+      if (ev.target.id === 'po-r') { keys[cat].forEach(k => { o[k] = PRDEF[k]; }); draw(); }
+    });
+    el.addEventListener('change', ev => {
+      const t = ev.target;
+      if (t.id === 'po-fo') o.footerOn = t.checked; if (t.id === 'po-ft') o.footer = t.value.slice(0, 128);
+      if (t.id === 'po-x') o.xref = t.checked; if (t.id === 'po-s') o.space = t.checked; if (t.id === 'po-l') o.lines = Math.max(1, Math.min(20, Math.round(+t.value) || 5));
+      if (t.id === 'po-so') o.sort = t.value; if (t.id === 'po-u') o.unused = t.checked;
+      draw();
+    });
+  }
+  // File > Print (Ctrl+P): the component in front; a routine window prints the routine
+  const printHere = () => printDlg(S.view === 'ladder' ? 'routine' : S.view === 'tags' ? 'tags' : 'org');
+  // the organizer's right-click menu: Print for a routine, the tags, the controller, the I/O configuration
+  function printCtx(key, items) {
+    const k = key.startsWith('rt:') ? ['routine', key] : key === 'ctags' ? ['tags'] : key === 'ctl' ? ['ctl'] : key === 'io' || key === 'bp' || key.startsWith('mod:') ? ['mods'] : key === 'dts' || key === 'dt:user' ? ['dts'] : null;
+    if (k) items.push('-', { l: 'Print…', i: 'file', run: () => printDlg(k[0], k[1]) });
+    if (/^(lroot|lfold:|lprog:|lpt:)/.test(key)) logMenu(key, items);
+  }
+  /* the Logical Organizer's side of New Program (tasks.js): a folder, or the parent of a new program. A program made
+     from the Logical Organizer is scheduled in the task of its parent program, or the first task */
+  const LOGNP = {
+    names: () => logi().folders.map(x => x.name),
+    parents: () => logi().folders.map(x => x.name).concat(logProgs().map(g => g.name)),
+    addFolder(v, d, par) { edit(() => { const L0 = logEdit(), x = { name: v }; if (d) x.desc = d; L0.folders.push(x); if (par) L0.parent[v] = par; S.orgSel = 'lfold:' + v; }); toast(`Folder ${v} added to the Logical Organizer.`, 'ok'); },
+    setParent(v, par) { logEdit().parent[v] = par; },
+  };
+  const logNewProg = (parent, asFolder) => { const ts = S.p.tasks.filter(t => !HANDLERS[t.type] && t.type !== 'unscheduled'), T = ts.find(t => t.programs.some(g => g.name === parent)) || ts[0]; TK.newProgram(T ? T.name : '', parent, asFolder); };
+  /* ---------- View > Toolbars (help v37: Toolbars command, Toolbars, Standard toolbar): show or hide the toolbars
+     this app has: Standard (New, Open, Save, Cut, Copy, Paste, Undo, Redo, Find, Cross Reference, Verify, Monitor Tags,
+     the Emulator panel), Path (the communications path), Online (the indicators, the key switch and the mode, forces and
+     edits boxes), Language Element (the instruction toolbar) and Bookmark. Desktop layout; kept on this device.
+     View > Full Screen (the window over the whole screen) and View > Start Page (the start page in the workspace). */
+  const TBS = [['std', 'Standard'], ['path', 'Path'], ['online', 'Online'], ['lang', 'Language Element'], ['bmk', 'Bookmark']];
+  const tbOn = k => !(S.prefs.tbOff || []).includes(k);
+  const tbCls = () => (S.prefs.tbOff || []).filter(k => TBS.some(x => x[0] === k)).map(k => ' notb-' + k).join('');
+  function toolbarsDlg() {
+    const was = (S.prefs.tbOff || []).slice();
+    const el = dialog({ title: 'Toolbars', size: 'sm',
+      body: `<div class="grp">Toolbars</div>${TBS.map(([k, l]) => `<label class="ck tbck"><input type="checkbox" data-tbk="${k}"${tbOn(k) ? ' checked' : ''}> ${esc(l)}</label>`).join('')}<p class="help">The toolbars of the desktop layout. The tablet and the phone keep their own bars.</p>`,
+      buttons: [{ l: 'Cancel', run: () => { S.prefs.tbOff = was; savePrefs(); render(); } }, { l: 'OK', pri: true }] , onClose: () => {} });
+    el.addEventListener('change', ev => {
+      const k = ev.target.dataset.tbk; if (!k) return;
+      const off = new Set(S.prefs.tbOff || []); if (ev.target.checked) off.delete(k); else off.add(k);
+      S.prefs.tbOff = [...off]; savePrefs(); render();
+    });
+  }
+  function fullScreen() {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else document.documentElement.requestFullscreen().catch(e => toast('Full Screen is not allowed here: ' + (e.message || e), 'err'));
+    } catch (e) { toast('Full Screen is not available on this device.', 'err'); }
+  }
+  document.addEventListener('fullscreenchange', () => { if (S.p) render(); });
+  /* ---------- the Window menu: the open routine and tag windows are the workspace tabs (S.tabs). Close All closes
+     them and keeps the project and the Controller Organizer; Reset Window Layout puts back the default panes and
+     toolbars; Next / Previous Window step through the tabs. New Window and Split are greyed: one window per routine. */
+  const winAct = () => (S.noProj ? '' : S.view === 'tags' ? 'tags' : S.view === 'ladder' && S.tabs.includes(S.prog + '/' + S.routine) ? S.prog + '/' + S.routine : '');
+  function winCloseAll() { S.tabs = []; S.view = 'none'; S.sel = null; S.selAll = null; render(); }
+  function winStep(d) {
+    if (S.tabs.length < 2) return;
+    const i = S.tabs.indexOf(winAct());
+    openTab(S.tabs[((i < 0 ? 0 : i + d) + S.tabs.length) % S.tabs.length]);
+  }
+  function winReset() {
+    Object.assign(S.prefs, { org: true, err: true, emu: true, emuH: 260, emuW: 380, emuHp: 330, tbOff: [], lorg: false });
+    S.drawer = false; S.errOpen = false; savePrefs(); render(); toast('Window layout reset.');
+  }
+  /* ---------- View > Logical Organizer (help v37: Logical Organizer, Use the Logical Organizer, Move items in the
+     Logical Organizer): the programs in a tree of folders and parent programs, apart from the tasks that run them. The
+     root is the controller; each program holds Parameters and Local Tags, its routines and its child programs. The
+     fault and power-up handlers are not in it. Folders and parents are kept in the project (p.logical: folders [{name,
+     desc}], parent {program or folder: its parent}); a parent that is gone puts the item back under the root. Moving an
+     item never changes the tasks. Not written to L5X. ---------- */
+  const logi = () => { const L0 = (S.p && S.p.logical) || {}; return { folders: Array.isArray(L0.folders) ? L0.folders : [], parent: L0.parent && typeof L0.parent === 'object' ? L0.parent : {} }; };
+  const logEdit = () => { const L0 = logi(); S.p.logical = L0; return L0; };
+  const logProgs = () => S.p.tasks.filter(t => !HANDLERS[t.type]).flatMap(t => t.programs);
+  const logItems = () => logi().folders.map(x => ({ k: 'f', name: x.name })).concat(logProgs().map(g => ({ k: 'p', name: g.name, g })));
+  function logParent(name) { const p = logi().parent[name]; return p && logItems().some(x => x.name === p && x.name !== name) ? p : ''; }
+  const logKids = parent => logItems().filter(x => logParent(x.name) === parent);
+  // the item and everything under it (a move cannot go into its own branch)
+  function logBranch(name) { const out = new Set([name]); let more = true; while (more) { more = false; logItems().forEach(x => { if (!out.has(x.name) && out.has(logParent(x.name))) { out.add(x.name); more = true; } }); } return out; }
+  function logicalTreeHTML() {
+    if (S.noProj) return '<div class="empty">No project open: New Project or Open Project.</div>';
+    const col = new Set(S.prefs.collapsed);
+    let h = '';
+    const node = (key, lvl, txt, icon, kids, on) => {
+      const has = !!kids, open = has && !col.has(key);
+      h += `<div class="nd${on ? ' on' : ''}" data-org="${esc(key)}" style="padding-left:${4 + lvl * 16}px"><span class="tw" data-tw="${esc(key)}">${has ? ic(open ? 'down' : 'right') : ''}</span>${ic(icon, 'i ti')}<span class="ell">${esc(txt)}</span></div>`;
+      if (has && open) kids();
+    };
+    const walk = (parent, lvl, seen) => logKids(parent).forEach(x => {
+      if (seen.has(x.name)) return;
+      const s2 = new Set(seen).add(x.name);
+      if (x.k === 'f') node('lfold:' + x.name, lvl, x.name, 'folder', logKids(x.name).length ? () => walk(x.name, lvl + 1, s2) : null);
+      else node('lprog:' + x.name, lvl, x.name, 'prog', () => { node('lpt:' + x.name, lvl + 1, 'Parameters and Local Tags', 'tag'); x.g.routines.forEach(r => node('rt:' + x.name + '/' + r.name, lvl + 1, r.name, 'ladder', null, x.name === S.prog && r.name === S.routine)); walk(x.name, lvl + 1, s2); });
+    });
+    node('lroot', 0, 'Controller ' + S.p.controller.name, 'chip', () => walk('', 1, new Set()));
+    return h;
+  }
+  // the organizer pane: the Controller Organizer, and the Logical Organizer in a tab beside it while it is shown
+  const orgTitle = () => (S.prefs.lorg && S.orgTab === 'log' ? 'Logical Organizer' : 'Controller Organizer');
+  const orgPane = () => (S.prefs.lorg ? `<div class="otabs orgtabs"><button class="otab${S.orgTab !== 'log' ? ' on' : ''}" data-orgtab="ctl">Controller Organizer</button><button class="otab${S.orgTab === 'log' ? ' on' : ''}" data-orgtab="log">Logical Organizer</button></div>` : '')
+    + `<div class="tree">${S.prefs.lorg && S.orgTab === 'log' ? logicalTreeHTML() : treeHTML()}</div>`;
+  function toggleLogical() {
+    S.prefs.lorg = !S.prefs.lorg; S.orgTab = S.prefs.lorg ? 'log' : 'ctl';
+    if (S.prefs.lorg) { if (S.layout === 'desktop') S.prefs.org = true; else if (S.layout === 'tablet') S.drawer = true; else S.area = 'project'; }
+    savePrefs(); render();
+  }
+  // a tap on a node of the Logical Organizer: double-tap a program for its properties, the tags for Monitor Tags
+  function logTap(k, dbl) {
+    if (!/^(lprog|lpt|lfold|lroot)/.test(k)) return false;
+    if (k.startsWith('lpt:')) { tagEditor('mon', k.slice(4)); return true; }
+    if (dbl && k.startsWith('lprog:')) { const c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); progProps(k.slice(6)); return true; }
+    if (dbl && k === 'lroot') { controllerProps(); return true; }
+    return false;
+  }
+  // Move To: under the root, a folder or a program that is not in the item's own branch
+  function logMoveDlg(name) {
+    const br = logBranch(name), to = logItems().filter(x => !br.has(x.name)), cur = logParent(name);
+    dialog({ title: `Move ${name}`, size: 'sm',
+      body: `<div class="frow"><label for="lmv">Move under</label><select class="inp" id="lmv"><option value="">Controller ${esc(S.p.controller.name)}</option>${to.map(x => `<option value="${esc(x.name)}"${x.name === cur ? ' selected' : ''}>${esc(x.name)}${x.k === 'f' ? ' (folder)' : ''}</option>`).join('')}</select></div><p class="help">The tasks do not change: the program runs as before.</p>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { const v = el.querySelector('#lmv').value; edit(() => { const L0 = logEdit(); if (v) L0.parent[name] = v; else delete L0.parent[name]; }); } }] });
+  }
+  function logRenameFolder(name) {
+    prompt1('Rename Folder', 'Name', name, v => {
+      if (!E.validName(v)) return 'Name: letters, digits and _ (starting with a letter or _), up to 40 characters.';
+      if (U(v) !== U(name) && (allProgs().some(g => U(g.name) === U(v)) || logi().folders.some(x => U(x.name) === U(v)))) return `A program or folder named ${v} exists.`;
+      edit(() => { const L0 = logEdit(); L0.folders.find(x => x.name === name).name = v; Object.keys(L0.parent).forEach(k => { if (L0.parent[k] === name) L0.parent[k] = v; }); if (L0.parent[name] != null) { L0.parent[v] = L0.parent[name]; delete L0.parent[name]; } });
+      return '';
+    });
+  }
+  // Delete a folder: what it holds moves up to the folder's parent
+  function logDeleteFolder(name) {
+    confirmDlg('Delete Folder', `Delete the folder <b>${esc(name)}</b>? What it holds moves up one level.`, 'Delete', () => edit(() => {
+      const L0 = logEdit(), up = logParent(name);
+      Object.keys(L0.parent).forEach(k => { if (L0.parent[k] === name) { if (up) L0.parent[k] = up; else delete L0.parent[k]; } });
+      L0.folders = L0.folders.filter(x => x.name !== name); delete L0.parent[name];
+    }), true);
+  }
+  // the right-click menu of a node of the Logical Organizer
+  function logMenu(key, items) {
+    const ed = !editable();
+    if (key === 'lroot') items.push({ l: 'New Program…', i: 'prog', run: () => logNewProg(''), dis: ed }, { l: 'New Folder…', i: 'folder', run: () => logNewProg('', true), dis: ed }, '-', { l: 'Properties…', run: () => controllerProps() });
+    else if (key.startsWith('lfold:')) { const n = key.slice(6); items.push({ l: 'New Program…', i: 'prog', run: () => logNewProg(n), dis: ed }, { l: 'New Folder…', i: 'folder', run: () => logNewProg(n, true), dis: ed }, '-', { l: 'Move To…', run: () => logMoveDlg(n), dis: ed }, { l: 'Rename…', run: () => logRenameFolder(n), dis: ed }, { l: 'Delete', i: 'trash', run: () => logDeleteFolder(n), dis: ed }); }
+    else if (key.startsWith('lprog:')) {
+      const n = key.slice(6);
+      items.push({ l: 'New Routine…', i: 'ladder', run: () => newRoutine(n), dis: ed }, { l: 'New Program…', i: 'prog', run: () => logNewProg(n), dis: ed }, '-', { l: 'Move To…', run: () => logMoveDlg(n), dis: ed },
+        { l: 'Find in Controller Organizer', i: 'tree', run: () => { S.orgTab = 'ctl'; S.orgSel = 'prog:' + n; const c = new Set(S.prefs.collapsed); c.delete('tasks'); S.p.tasks.forEach(t => { if (t.programs.some(g => g.name === n)) c.delete('task:' + t.name); }); c.delete('prog:' + n); S.prefs.collapsed = [...c]; savePrefs(); render(); const el = $(`[data-org="prog:${n}"]`); if (el) { el.classList.add('on'); el.scrollIntoView({ block: 'nearest' }); } } },
+        '-', { l: 'Properties…', run: () => progProps(n) });
+    } else if (key.startsWith('lpt:')) items.push({ l: 'Monitor Tags', run: () => tagEditor('mon', key.slice(4)) }, { l: 'Edit Tags', run: () => tagEditor('edit', key.slice(4)) });
+  }
+
   /* Tools > Options, as the Workstation Options dialog (help v37): the Categories list on the left (a changed
      category gets a * after its name), the page of the category, Reset Category; OK, Cancel, Apply. The pages are the
      options this app has: Application, Ladder Editor, Ladder Editor > Display, and the app's own Appearance. */
@@ -3615,29 +3981,56 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   const RLMENUS = [['File', [['Open Project…', 'na:open'], ['Select Default Project…', 'na:defproj'], ['Compact Harmony…', 'na:harmony'], '-', ['Exit', 'exit']]],
     ['Edit', [['Copy DDE/OPC Link to the Clipboard', 'na:copylink']]],
     ['View', [['RSWho', 'rswho'], ['Event Log…', 'evlog'], '-', ['Options…', 'opts']]],
-    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…', 'na:shortcuts'], ['Configure Client Application(s)…', 'na:clients'], ['Configure CIP Options…', 'na:cipopts'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…', 'shortcuts'], ['Configure Client Application(s)…', 'na:clients'], ['Configure CIP Options…', 'na:cipopts'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag']]],
     ['Station', [['Diagnostics', 'stdiag', () => !!rlSelDev()], '-', ['Freeze', 'frz', () => !!(rlS.modal && rlS.modal.st && !rlS.modal.snap)], ['Unfreeze', 'unfrz', () => !!(rlS.modal && rlS.modal.st && rlS.modal.snap)], ['Reset Diagnostic Counters', 'rst', () => !!(rlS.modal && rlS.modal.st)], '-',
       ['Data Monitor', 'dmon', () => !!rlSelCpu()], ['Change Mode…', 'chmode'], ['Set Time…', 'settime', () => !!rlSelCpu()]]],
     ['DDE/OPC', [['Topic Configuration…', 'na:dde.1'], ['Alias Topic Configuration…', 'na:dde.2'], ['Active Topics/Items…', 'na:dde.3'], ['Communication Events…', 'na:dde.4'], ['Optimized Packets…', 'na:dde.5'], ['Server Diagnostics…', 'na:dde.6'], ['DDE Client Diagnostics…', 'na:dde.7'], ['OPC Group Diagnostics…', 'na:dde.8'], '-', ['Update ControlLogix Tag Info', 'na:dde.9'], '-', ['Options…', 'na:dde.10']]],
     ['Security', [['Set Security User…', 'na:sec.11'], ['Show Security Access…', 'na:sec.12']]],
     ['Window', [['Cascade', 'wcas'], ['Tile', 'wtile'], ['Arrange Icons', 'warr'], ['Close All', 'wclose']]],
-    ['Help', [['RSLinx Classic Help', 'na:help'], ['Release Notes', 'na:notes'], ['Quick Start', 'na:quick'], '-', ['About RSLinx Classic…', 'about']]]];
+    ['Help', [['RSLinx Classic Help', 'help'], ['Release Notes', 'help:rn'], ['Quick Start', 'help:qs'], '-', ['About RSLinx Classic…', 'about']]]];
   const RLNA = {
     open: 'Open Project opens an RSLinx Classic project (the drivers, topics and settings saved as a file). In emulation the drivers are kept with MT PLC Studio: Configure Drivers holds them.',
     defproj: 'Select Default Project picks the RSLinx Classic project loaded at startup. In emulation the drivers are kept with MT PLC Studio.',
     harmony: 'Compact Harmony compacts the Harmony files of the RSWho browse. The emulated browse keeps no Harmony files.',
     copylink: 'Copy DDE/OPC Link to the Clipboard copies a link for a DDE/OPC client (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation.',
-    shortcuts: 'Configure Shortcuts names the paths that DDE/OPC topics and FactoryTalk applications use. There are no DDE/OPC clients in emulation: the project path is set in Who Active.',
     clients: 'Configure Client Application(s) sets up the client programs of RSLinx Classic on this computer. They are not part of the emulation.',
     cipopts: 'Configure CIP Options sets the CIP connection options of RSLinx Classic. The emulation uses fixed values.',
     dde: 'The DDE/OPC server of RSLinx Classic serves controller data to Windows programs (a spreadsheet, an HMI). There are no DDE/OPC clients in emulation: use Data Monitor, or the Watch and Monitor Tags windows of the programming software.',
     sec: 'RSLinx Classic security comes from FactoryTalk Security on a Windows network. It is not part of the emulation: everyone has full access.',
-    help: 'The RSLinx Classic help is not part of the emulation. The help of MT PLC Studio (F1) explains these windows.',
-    notes: 'The release notes of RSLinx Classic are not part of the emulation. Help > About RSLinx Classic shows the version.',
-    quick: 'The Quick Start of RSLinx Classic is not part of the emulation. In short: Communications > Configure Drivers, add a driver, then RSWho.',
     eds: 'Upload EDS file from device reads the EDS file a device holds. The emulated modules are known to RSLinx already: there is nothing to upload.',
     topic: 'Configure New DDE/OPC Topic makes a DDE/OPC topic for this controller. There are no DDE/OPC clients in emulation: use Data Monitor.' };
-  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true, gone: new Set(), bg: [] };
+  const rlS = { view: 'rswho', sel: 'ws', shut: new Set(), auto: true, dsel: 0, dtype: 'vbp', menu: '', modal: null, tb: true, sb: true, gone: new Set(), bg: [], arr: '' };
+  /* View > Options (RSLinx Classic 4.60 help: Options, General tab; Options, DDE/OPC tab), kept on this device. The
+     DDE/OPC settings are kept but have no DDE/OPC client to act on; Save communication errors to a file writes the
+     events of this session (View > Event Log) to that file when OK is pressed. */
+  const RLOPT0 = { topics: false, logerr: false, adderr: false, eng: false, tofile: false, file: '/MT PLC Studio Projects/RSLinx Errors.log', clean: false, every: 60 };
+  const rlOpts = () => Object.assign({}, RLOPT0, store.get('rlopts', {}));
+  /* Help > RSLinx Classic Help: the books of the RSLinx Classic 4.60 help (Overview, Quick Start, How To..., Troubleshooting,
+     Glossary) with the topics that apply to this emulation; a topic about a part that is not emulated says so.
+     [book, [[id, title, paragraphs or null]]] */
+  const RLHELP = [
+    ['Overview', [['ov', 'Overview of RSLinx Classic', ['RSLinx Classic is the communication server between the programming software, HMI and OPC/DDE clients and the controllers. It holds the drivers (the networks this computer can reach) and browses them in RSWho.', 'In this emulation it reaches the emulated chassis through two drivers: Virtual Backplane and Emulate Ethernet. Who Active, Go Online and Download of the programming software use the same drivers.']],
+      ['explore', 'Explore RSLinx Classic', ['The menu bar: File, Edit, View, Communications, Station, DDE/OPC, Security, Window and Help. The toolbar opens RSWho and Configure Drivers; the status bar shows the path of the device picked in RSWho.', 'View > Options shows or hides the toolbar and the status bar (General tab) and holds the DDE/OPC settings (DDE/OPC tab).', 'Window > Cascade and Tile arrange RSWho and the diagnostic window in front; Close All closes them; the open windows are listed at the end of the Window menu.']],
+      ['dtm', 'Data table monitor', ['Station > Data Monitor lists the data files of the controller picked in RSWho. Double-click a file (or tap the picked one) to see its values; right-click the table for Properties (the poll rate), Refresh, Activate and Deactivate.']],
+      ['opc', 'RSLinx Classic OPC servers', null], ['dcom', 'Application authentication level for DCOM security', null]]],
+    ['Quick Start', [['qs', 'Quick start', ['The main tasks to use RSLinx Classic, in four steps:', '1. Configure a driver. 2. Configure a topic. 3. Copy a link to the clipboard. 4. Paste a link from the clipboard.', 'In this emulation step 1 is the one that matters: the programming software goes online through the driver. Steps 2 to 4 serve DDE/OPC clients, which are not part of the emulation.']],
+      ['qs1', 'Configure a driver (Step 1 of 4)', ['Communications > Configure Drivers. Pick the driver type in Available Driver Types and press Add New. Enter a name (15 characters maximum) and press OK. The driver starts; RSWho lists what it reaches.', 'Virtual Backplane reaches the controllers of the emulated chassis by slot; Emulate Ethernet reaches them by IP address.']],
+      ['qs2', 'Configure a topic (Step 2 of 4)', null], ['qs3', 'Copy a link (Step 3 of 4)', null], ['qs4', 'Paste a link (Step 4 of 4)', null]]],
+    ['How To...', [['drv', 'Use drivers and bridge devices', ['Configure Drivers lists the configured drivers with their status. Start and Stop run or stop a driver; Configure sets the slot of a Virtual Backplane driver; Delete removes it. Only one driver of each type can be configured.', 'Communications > Driver Diagnostics shows the counters of a driver; Station > Diagnostics those of the device picked in RSWho.']],
+      ['net', 'Set up networks', ['RSWho shows each running driver with the chassis and the devices it reaches. Right-click a device for Device Properties, Module Statistics, Station Diagnostics and Data Monitor.', 'Network shortcuts: Communications > Configure Shortcuts. Press New, type a name (1 to 15 characters), pick the network or chassis in the RSWho tree of the dialog (the path shows in Shortcut points to this network or chassis) and press Apply. The shortcut shows under the workstation in RSWho and opens that network. To delete it, select it in the Shortcuts list and press Delete.']],
+      ['install', 'Install and start RSLinx Classic', null], ['eds', 'Register EDS files of devices', null], ['fts', 'Secure RSLinx Classic with FactoryTalk Security', null]]],
+    ['Troubleshooting', [['faq', 'Frequently asked questions (FAQ)', ['RSWho shows no devices: check that a driver is running (Communications > Configure Drivers) and that the emulated chassis is on.', 'A device has a red X: it does not answer. Power the controller on in the emulator, then Refresh.']],
+      ['drverr', 'Driver configuration errors', ['A driver name is 1 to 15 characters: letters, digits, - and _, starting with a letter, and not the name of another driver.', 'A Virtual Backplane driver needs a free slot for its own card.']], ['ddeerr', 'DDE/OPC communication event errors', null]]],
+    ['Glossary', [['gl', 'A-W', ['Driver: the software that connects RSLinx Classic to one network.', 'Path: the route from this computer to a device, driver first, then the chassis and the slot (for example AB_VBP-1\\1).', 'RSWho: the window that browses the networks of the running drivers.', 'Topic: a named path to a controller that DDE/OPC clients use.']]]],
+    ['Release Notes', [['rn', 'Release Notes', ['This RSLinx Classic window is part of MT PLC Studio. Its changes are in the release notes of MT PLC Studio (Help > Release Notes in the programming software).']]]]];
+  const rlHelpT = id => RLHELP.flatMap(b => b[1]).find(x => x[0] === id) || RLHELP[0][1][0];
+  function rlHelpHTML(md) {
+    const t = rlHelpT(md.t);
+    const toc = RLHELP.map(([b, ts]) => `<div class="rlhbk">${ic('file', 'i')}<b>${esc(b)}</b></div>${ts.map(([id, l]) => `<div class="rlht${id === t[0] ? ' on' : ''}" data-rlht="${id}">${esc(l)}</div>`).join('')}`).join('');
+    const body = t[2] ? t[2].map(p => `<p>${esc(p)}</p>`).join('') : '<p class="help">This topic is about a part of RSLinx Classic that is not emulated (DDE/OPC clients, installation, EDS files, FactoryTalk Security). See the RSLinx Classic help that comes with the product.</p>';
+    return `<div class="rlov rlov2"><div class="rlbox rlhelp" role="dialog" aria-label="RSLinx Classic Help"><div class="bh">RSLinx Classic Help</div><div class="bb rlhw"><nav class="rlhc" aria-label="Contents">${toc}</nav><article class="rlhx" id="rlhx"><h3>${esc(t[1])}</h3>${body}</article></div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
+  }
   // the device / the controller picked in RSWho (the Station menu works on it)
   const rlSelDev = () => { const n = rlFind(rlTree(), rlS.sel); return n && n.m ? n : null; };
   const rlSelCpu = () => { const n = rlSelDev(); return n && n.m.ctl ? n : null; };
@@ -3672,7 +4065,31 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       }));
       return { k, l: `${d.name}, Ethernet`, i: 'online', kids: ips };
     });
-    return { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
+    const root = { k: 'ws', l: 'Workstation, MT PLC Studio', i: 'chip', kids };
+    // the network shortcuts (Communications > Configure Shortcuts): one node each, while what it points to is there
+    rlShorts().forEach(x => { if (rlFind(root, x.key)) kids.push({ k: 'sc:' + x.name, l: `${x.name}, Shortcut`, i: 'net', sc: x.key, kids: [] }); });
+    return root;
+  }
+  /* Communications > Configure Shortcuts (RSLinx Classic 4.60 help: Configure Shortcuts to Remote Networks, Configure a
+     shortcut, Delete a shortcut): a name (1 to 15 characters) for a network or a chassis picked with RSWho; kept on
+     this device [{name, key}] */
+  const rlShorts = () => { const v = store.get('rlshort', []); return Array.isArray(v) ? v.filter(x => x && x.name && x.key) : []; };
+  const rlKeyPath = (root, key) => {
+    const walk = (n, acc) => { const a = acc.concat(n.k === 'ws' ? [] : [String(n.l).split(',')[0].trim()]); if (n.k === key) return a; for (const c of n.kids) { const r = walk(c, a); if (r) return r; } return null; };
+    const p = walk(root, []); return p ? (p.length ? p.join('\\') : 'Workstation') : '';
+  };
+  function rlShortHTML(md) {
+    const root = rlTree(), list = rlShorts();
+    const net = (n, d) => (n.m || n.sc ? '' : `<div class="nd${n.k === md.key ? ' on' : ''}" data-rlsp="${esc(n.k)}" style="padding-left:${6 + d * 16}px"><span class="tw"></span>${ic(n.i, 'i ti')}<span class="ell">${esc(n.l)}</span></div>${n.kids.map(c => net(c, d + 1)).join('')}`);
+    const edit = md.isNew || md.sel != null;
+    return `<div class="rlov rlov2"><div class="rlbox rlshort" role="dialog" aria-label="Configure Shortcuts to Remote Networks"><div class="bh">Configure Shortcuts to Remote Networks</div><div class="bb rlscw">
+      <fieldset><legend>Shortcuts</legend><div class="rlscl">${list.map(x => `<div class="nd${x.name === md.sel ? ' on' : ''}" data-rlsc="${esc(x.name)}">${ic('net', 'i ti')}<span class="ell">${esc(x.name)}</span></div>`).join('') || '<div class="nd dim">No shortcuts.</div>'}</div>
+        ${edit ? `<input class="inp mono" id="rlscn" value="${esc(md.name || '')}" maxlength="15" aria-label="Shortcut name" placeholder="Shortcut name" autocomplete="off" spellcheck="false">` : ''}
+        <div class="rlscb"><button class="btn" data-rldx="scnew">New</button><button class="btn" data-rldx="scdel"${md.sel != null ? '' : ' disabled'}>Delete</button><button class="btn" data-rldx="scapply"${edit ? '' : ' disabled'}>Apply</button></div></fieldset>
+      <fieldset><legend>RSWho</legend><div class="rltree tree rlsct">${net(root, 0)}</div>
+        <div class="muted" style="margin-top:6px">Shortcut points to this network or chassis:</div><div class="mono rlscp" id="rlscp">${esc(md.key ? rlKeyPath(root, md.key) : '')}</div></fieldset>
+      <div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
+      <div class="bf"><button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
   }
   const rlFind = (n, k) => { if (n.k === k) return n; for (const c of n.kids) { const f = rlFind(c, k); if (f) return f; } return null; };
   const rlCount = n => 1 + n.kids.reduce((s, c) => s + rlCount(c), 0);
@@ -3693,7 +4110,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     return row(root, 0) + (root.kids.length ? '' : '<div class="nd dim" style="padding-left:38px">No driver is running: Communications &gt; Configure Drivers…</div>');
   }
   function rlPaneHTML(root) {
-    const n = rlFind(root, rlS.sel) || root;
+    let n = rlFind(root, rlS.sel) || root;
+    if (n.sc) n = rlFind(root, n.sc) || n;
     if (n.kids.length) return `<div class="rltiles">${n.kids.map(c => `<button class="rltile${c.dim ? ' dim' : ''}" data-rlk="${esc(c.k)}">${ic(c.i)}<span>${esc(c.l)}${c.dim ? ' · off' : ''}</span></button>`).join('')}</div>`;
     if (!n.m) return `<p class="help" style="padding:12px">${n.k === 'ws' ? 'No driver is running. Add one in Communications &gt; Configure Drivers…' : 'Nothing found on this node.'}</p>`;
     const m = n.m, c = m.ctl, kv = (a, b) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`;
@@ -3859,8 +4277,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         <div class="rltabw"><table class="rltab rldtab rlwide"><thead><tr><th>Time</th><th>Driver</th><th>Event</th></tr></thead><tbody>${ev.slice(0, 100).map(e => `<tr><td class="mono">${esc(new Date(e.t).toLocaleTimeString())}</td><td class="mono">${esc(e.d)}</td><td>${esc(`Node ${e.node}: ${e.err}`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No events.</td></tr>'}</tbody></table></div>`);
     }
     if (md.k === 'opts') {
-      const gen = `<label class="frow rlck2"><input type="checkbox" id="rlo-sb"${md.sb ? ' checked' : ''}><span>Show Status Bar</span></label><label class="frow rlck2"><input type="checkbox" id="rlo-tb"${md.tb ? ' checked' : ''}><span>Show Toolbar</span></label>`;
-      const dde = `<p class="help" style="margin:0">${esc(RLNA.dde)}</p>`;
+      const o = md.o, cb = (k, l, x) => `<label class="frow rlck2"><input type="checkbox" data-rlo="${k}"${o[k] ? ' checked' : ''}${x || ''}><span>${l}</span></label>`;
+      const gen = `<label class="frow rlck2"><input type="checkbox" id="rlo-sb"${md.sb ? ' checked' : ''}><span>Show Status Bar</span></label><label class="frow rlck2"><input type="checkbox" id="rlo-tb"${md.tb ? ' checked' : ''}><span>Show Toolbar</span></label>${cb('topics', 'Create DDE/OPC topics from RSLogix programs')}`;
+      const dde = `${cb('logerr', 'Log communication errors')}${cb('adderr', 'Display addressing errors')}${cb('eng', 'Use English language for DDE conversations')}${cb('tofile', 'Save communication errors to a file')}
+        <div class="frow rlfile"><input class="inp mono" data-rlo="file" value="${esc(o.file)}"${o.tofile ? '' : ' disabled'} aria-label="Log file" spellcheck="false"></div>
+        ${cb('clean', 'Enable Automatic Client Connection Cleanup')}<label class="frow rlfile"><span>Interval</span><input class="inp mono" data-rlo="every" value="${esc(o.every)}"${o.clean ? '' : ' disabled'} inputmode="numeric" style="width:90px"></label>
+        <p class="help" style="margin-bottom:0">${esc(RLNA.dde)}</p><div class="errtx" id="rlerr">${esc(md.err || '')}</div>`;
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Options"><div class="bh">Options</div>${rlTabs(md, [['gen', 'General'], ['dde', 'DDE/OPC']])}<div class="bb">${md.tab === 'dde' ? dde : gen}</div>
         <div class="bf"><button class="btn" data-rlpx="cancel">Cancel</button><button class="btn pri" data-rldx="optok">OK</button></div></div></div>`;
     }
@@ -3869,6 +4291,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'help') return rlHelpHTML(md);
+    if (md.k === 'short') return rlShortHTML(md);
     const misc = rlMiscHTML(md); if (misc) return misc;
     if (md.k === 'dmon') return rlDmHTML(md);
     if (md.k === 'settime') return rlStHTML(md);
@@ -3922,6 +4346,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         p.style.left = Math.max(4, Math.min(b.offsetLeft - box.querySelector('.rlmb').scrollLeft, box.clientWidth - p.offsetWidth - 4)) + 'px';
       }
       if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+      box.classList.toggle('rl-cas', rlS.arr === 'cas'); box.classList.toggle('rl-tile', rlS.arr === 'tile'); const rlch = box.querySelector('.rlchild'); if (rlch && !rlch.hidden) box.style.setProperty('--rlcht', (rlch.offsetTop - 8) + 'px');
       box.style.setProperty('--rlmbh', box.querySelector('.rlmb').offsetHeight + 'px');
       const dg = box.querySelector('[data-rldg]'); if (dg) dg.dataset.h = dg.innerHTML;
     };
@@ -3964,9 +4389,13 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         rlS.modal = { k: 'note', t: it ? it[0].replace(/…$/, '') : 'RSLinx Classic', x: RLNA[a.slice(3).split('.')[0]] }; draw(); return true;
       }
       if (a === 'about' || a === 'evlog') { rlS.modal = { k: a }; draw(); return true; }
-      if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb }; draw(); return true; }
-      // Window: one child window shows at a time here, so Cascade, Tile and Arrange Icons leave it as it is
-      if (a === 'wcas' || a === 'wtile' || a === 'warr') { draw(); return true; }
+      if (a === 'opts') { rlS.modal = { k: 'opts', tab: 'gen', tb: rlS.tb, sb: rlS.sb, o: rlOpts() }; draw(); return true; }
+      if (a === 'shortcuts') { rlS.modal = { k: 'short', sel: null, name: '', key: null }; draw(); return true; }
+      if (a === 'help' || a.startsWith('help:')) { rlS.modal = { k: 'help', t: a.slice(5) || 'ov' }; draw(); return true; }
+      /* Window: Cascade stacks the diagnostic window in front over RSWho with the RSWho title in view; Tile puts them
+         side by side, both usable. Arrange Icons has no icons to arrange (no window is minimized here). */
+      if (a === 'wcas' || a === 'wtile') { rlS.arr = a === 'wcas' ? 'cas' : 'tile'; draw(); return true; }
+      if (a === 'warr') { draw(); return true; }
       if (a === 'wclose') { rlS.modal = null; rlS.bg = []; rlS.nochild = true; draw(); return true; }
       if (a.startsWith('wsel:')) {
         const w = a.slice(5), cur = rlS.modal && rlS.modal.live ? rlS.modal : null;
@@ -4004,7 +4433,29 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
       if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
       if (a === 'rmok') { rlS.gone.add(md.key); if (rlS.sel === md.key) rlS.sel = 'ws'; rlS.modal = null; draw(); }
-      if (a === 'optok') { const sb = box.querySelector('#rlo-sb'), tb = box.querySelector('#rlo-tb'); if (sb) rlS.sb = sb.checked; if (tb) rlS.tb = tb.checked; rlS.modal = null; draw(); }
+      if (md.k === 'short') {
+        const i = box.querySelector('#rlscn'); if (i) md.name = i.value;
+        md.err = '';
+        if (a === 'scnew') { md.isNew = true; md.sel = null; md.name = ''; md.key = null; }
+        if (a === 'scdel' && md.sel != null) { store.set('rlshort', rlShorts().filter(x => x.name !== md.sel)); md.sel = null; md.isNew = false; md.name = ''; md.key = null; }
+        if (a === 'scapply') {
+          const v = String(md.name || '').trim(), list = rlShorts();
+          md.err = !v ? 'Type a name for the shortcut.' : v.length > 15 ? 'A shortcut name has 1 to 15 characters.' : list.some(x => x.name.toUpperCase() === v.toUpperCase() && x.name !== md.sel) ? `A shortcut named ${v} already exists.` : !md.key ? 'Pick the network or chassis in RSWho.' : '';
+          if (!md.err) { store.set('rlshort', list.filter(x => x.name !== md.sel).concat([{ name: v, key: md.key }])); md.sel = v; md.name = v; md.isNew = false; }
+        }
+        draw(); if (a === 'scnew') { const n = box.querySelector('#rlscn'); if (n) n.focus(); }
+        return;
+      }
+      if (a === 'optok') {
+        const o = md.o || rlOpts(), n = +o.every;
+        const err = o.tofile && !String(o.file).trim() ? 'Enter the file for the communication errors.' : o.clean && !(Number.isInteger(n) && n > 0) ? 'Enter the cleanup interval as a whole number above 0.' : '';
+        if (err) { md.err = err; md.tab = 'dde'; draw(); return; }
+        rlS.sb = md.sb; rlS.tb = md.tb; store.set('rlopts', Object.assign(o, { every: n || RLOPT0.every })); rlS.modal = null; draw();
+        if (o.tofile) {
+          const ev = []; drivers.forEach(d => (rlStat.d[d.name] ? rlStat.d[d.name].ev : []).forEach(e => ev.push(`${new Date(e.t).toISOString()}\t${d.name}\tNode ${e.node}: ${e.err}`)));
+          FS.write(String(o.file).trim(), ev.join('\r\n') + (ev.length ? '\r\n' : '')).then(() => toast(`Communication errors saved to ${baseName(String(o.file).trim())}.`), e => toast('The file could not be written: ' + (e.message || e), 'err'));
+        }
+      }
       if (md.k === 'dmon') {
         md.gm = null;
         if (a === 'dmstop') md.stop = true;
@@ -4094,7 +4545,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const md = rlS.modal;
       // Close of a data table goes back to the data file list
       if (!ok && md.k === 'dmon' && md.file) { md.file = null; md.pp = null; md.gm = null; draw(); return; }
-      if (!ok || md.k === 'props') { rlS.modal = null; draw(); return; }
+      if (!ok || md.k === 'props' || md.k === 'help' || md.k === 'short') { rlS.modal = null; draw(); return; }
+      if (md.k === 'opts') { rlDx('optok'); return; }
       if (md.k === 'add') { addOk(); return; }
       if (md.k === 'mode') {
         // the same controller code as Studio's Run / Program / Test Mode (Controller.setMode, REM key only)
@@ -4161,6 +4613,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
       if ((x = t.closest('[data-rltab]')) && rlS.modal) { rlS.modal.tab = x.dataset.rltab; draw(); return; }
+      if ((x = t.closest('[data-rlsc]')) && rlS.modal && rlS.modal.k === 'short') { const md = rlS.modal, sc = rlShorts().find(y => y.name === x.dataset.rlsc); if (sc) { md.sel = sc.name; md.name = sc.name; md.key = sc.key; md.isNew = false; md.err = ''; } draw(); return; }
+      if ((x = t.closest('[data-rlsp]')) && rlS.modal && rlS.modal.k === 'short') { const md = rlS.modal, i = box.querySelector('#rlscn'); if (i) md.name = i.value; md.key = x.dataset.rlsp; if (md.sel == null && !md.isNew) md.isNew = true; draw(); return; }
+      if ((x = t.closest('[data-rlht]')) && rlS.modal && rlS.modal.k === 'help') { rlS.modal.t = x.dataset.rlht; draw(); const h = box.querySelector('#rlhx'); if (h) h.scrollTop = 0; return; }
       // picking a driver marks its row in place (a redraw would split a double-click)
       if ((x = t.closest('[data-rldp]')) && rlS.modal) { rlS.modal.sel = x.dataset.rldp; box.querySelectorAll('[data-rldp]').forEach(r => r.classList.toggle('on', r === x)); const b = box.querySelector('[data-rldx="dpick"]'); if (b) b.disabled = false; return; }
       if ((x = t.closest('[data-rldx]')) && rlS.modal) { rlDx(x.dataset.rldx, x); return; }
@@ -4172,7 +4627,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         if ((x = t.closest('[data-rldf]'))) { if (md.fsel === x.dataset.rldf && ev.pointerType !== 'mouse' && ev.detail < 2) { rlDmOpen(md, x.dataset.rldf); return; } md.fsel = x.dataset.rldf; box.querySelectorAll('[data-rldf]').forEach(r => r.classList.toggle('on', r === x)); return; }
         if ((x = t.closest('[data-rldr]')) && !t.closest('select')) { md.selr = x.dataset.rldr; draw(); return; }
       }
-      if (rlS.modal) return;
+      if (rlS.modal && !(rlS.modal.live && rlS.arr === 'tile' && t.closest('.rlchild'))) return;
       if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
       if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
       if ((x = t.closest('[data-rln]'))) { rlS.sel = x.dataset.rln; rlS.shut.delete(rlS.sel); draw(); return; }
@@ -4204,11 +4659,17 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     }, true);
     box.addEventListener('change', ev => {
       if ((ev.target.id === 'rlo-sb' || ev.target.id === 'rlo-tb') && rlS.modal && rlS.modal.k === 'opts') { rlS.modal[ev.target.id.slice(4)] = ev.target.checked; return; }
+      if (ev.target.dataset.rlo && rlS.modal && rlS.modal.k === 'opts') {
+        const k = ev.target.dataset.rlo; rlS.modal.o[k] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value;
+        if (k === 'tofile' || k === 'clean') draw();
+        return;
+      }
       if (ev.target.dataset.rlrx && rlS.modal && rlS.modal.k === 'dmon') { rlS.modal.rx[+ev.target.dataset.rlrx] = ev.target.value; draw(); return; }
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
     });
     layerKey = ev => {
+      if (ev.key === 'F1') { ev.preventDefault(); rlS.menu = ''; rlS.ctx = null; rlAct('help'); return; }
       if (ev.key === 'Escape' && rlS.ctx) { ev.preventDefault(); rlS.ctx = null; draw(); return; }
       if (ev.key === 'Escape') { ev.preventDefault(); if (rlS.modal) { rlS.modal = null; draw(); } else if (rlS.menu) { rlS.menu = ''; draw(); } else { quit(); closeLayer(); } }
       if (ev.key === 'Enter' && rlS.modal) { ev.preventDefault(); modalAct(true); }
@@ -7288,6 +7749,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
         if (E.App.aoiOrg && E.App.aoiOrg(k, dbl)) return;
+        if (logTap(k, dbl)) return;
         if (dbl && dtOpen(k)) return;
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
@@ -7307,6 +7769,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
+      if ((el = t.closest('[data-orgtab]'))) { S.orgTab = el.dataset.orgtab; render(); return; }
+      if ((el = t.closest('[data-sample]'))) { const n = el.dataset.sample; saveChanges(() => openSample(n)); return; }
       if ((el = t.closest('[data-recent]'))) { const f = el.dataset.recent; saveChanges(() => loadFile(f)); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
       if ((el = t.closest('[data-msgt]')) && !t.closest('[data-cmd]')) { S.errOpen = !S.errOpen; render(); return; }
@@ -7467,7 +7931,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   /* more of the keyboard table (help v37, Use the keyboard to navigate): Alt+Enter the active routine's properties;
      Alt+F, E, V, S, L, C, T, H the main menu; Ctrl+PageDown / Ctrl+PageUp, Ctrl+Tab / Shift+Ctrl+Tab and Ctrl+F6 the
      next or previous routine window (tab); Ctrl+F4 closes it; Ctrl+D on a rung edits its comment */
-  const ALTM = { KeyF: 'File', KeyE: 'Edit', KeyV: 'View', KeyS: 'Search', KeyL: 'Logic', KeyC: 'Communications', KeyT: 'Tools', KeyH: 'Help' };
+  const ALTM = { KeyF: 'File', KeyE: 'Edit', KeyV: 'View', KeyS: 'Search', KeyL: 'Logic', KeyC: 'Communications', KeyT: 'Tools', KeyW: 'Window', KeyH: 'Help' };
   function tableKey(ev, k, ctrl) {
     if (S.noProj && !ev.altKey) return false;
     if (ev.altKey && !ctrl && k === 'Enter') { if (S.view === 'ladder') routineProps('rt:' + S.prog + '/' + S.routine); return true; }
@@ -7501,6 +7965,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (tableKey(ev, k, ctrl)) { ev.preventDefault(); return; }
     const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'insmode' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
+    if (ctrl && !ev.shiftKey && k.toLowerCase() === 'p') { ev.preventDefault(); run('print'); return; }
+    if (ev.ctrlKey && (k === 'F4' || k === 'F6')) { ev.preventDefault(); run(k === 'F4' ? 'wclose' : ev.shiftKey ? 'wprev' : 'wnext'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
     if (k === 'Delete') { run('del'); return; }
@@ -7557,7 +8023,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   if (E.ST && E.ST.ui) E.ST.ui.init({ S, edit, render, run, curRoutine, curProg, liveRoutine, editable, get ctl() { return ctl; } });
   if (SFCUI()) SFCUI().bind({ S, dialog, openMenu, toast, esc, ic, edit, render, run, curProg, curRoutine, ctl: () => ctl, prompt1, savePrefs, editable });
   // tasks and programs (tasks.js): New Program, Unscheduled Programs, Task Properties
-  const TK = E.TasksUI({ S, E, esc, U, kv, tabbed, bindTabs, dialog, confirmDlg, toast, edit, editable, offline, render, allProgs, HANDLERS, savePrefs, get ctl() { return ctl; } });
+  const TK = E.TasksUI({ S, E, esc, U, kv, tabbed, bindTabs, dialog, confirmDlg, toast, edit, editable, offline, render, allProgs, HANDLERS, savePrefs, logical: LOGNP, get ctl() { return ctl; } });
   E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll, tasks: TK };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   // the FBD editor (fbd.js) works through these helpers of the app

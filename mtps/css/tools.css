@@ -1,0 +1,112 @@
+/* MT PLC Studio: Compare Tool, Generate Report / Print, sample projects, Logical Organizer, Window and View menus,
+   Release Notes (js/report.js and its part of js/app.js). Uses the theme tokens of app.css / themes.css. */
+
+/* Compare Results */
+.cmph { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.cmph .ck { margin-left: auto; }
+.cmps { padding: 8px 0; font-weight: 600; }
+.cmpl { max-height: 56vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.cmpl .grp { padding: 6px 8px; }
+.cmpl .row { cursor: pointer; gap: 8px; }
+.cmpl .row.on { background: var(--accent-soft); }
+.cmpm { width: 1.4em; text-align: center; font-weight: 700; font-family: var(--mono); }
+.cmp-left .cmpm, tr.cmp-left td:first-child { color: var(--danger); }
+.cmp-right .cmpm, tr.cmp-right td:first-child { color: var(--ok); }
+.cmp-diff .cmpm, tr.cmp-diff td:first-child { color: var(--warn-text); }
+.cmpd { padding: 4px 8px 10px 30px; background: var(--surface-2); }
+.cmpt { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; table-layout: fixed; }
+.cmpt th, .cmpt td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.cmpt th:first-child, .cmpt td:first-child { width: 28%; }
+body.phone .cmpl { max-height: none; }
+.cmpt td.pre { white-space: pre-wrap; }
+
+/* Generate Report, Print, Print Options */
+.grep { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grcl { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 4px 6px; }
+.grcl .ck { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.grgt { padding: 3px 0 3px 18px; color: var(--muted); }
+.prn { width: 5.5em; display: inline-block; padding: 2px 6px; }
+.pogrid { display: grid; grid-template-columns: 150px 1fr; gap: 12px; min-height: 160px; }
+.pogrid .ck { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
+#printout { display: none; }
+@media print {
+  body > *:not(#printout) { display: none !important; }
+  #printout { display: block; color: #000; background: #fff; font: 11px Arial, sans-serif;
+    --text: #000; --muted: #333; --lad-bg: #fff; --lad-wire: #000; --lad-desc: #333; --lad-alias: #0B4A8A; --accent: #0B5CAD; --border: #999; }
+  #printout .rpts { break-before: page; }
+  #printout .rpts:first-of-type { break-before: auto; }
+  #printout .rpth { display: flex; gap: 16px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-bottom: 8px; }
+  #printout .rptlad svg.lad { width: 100%; height: auto; }
+  #printout table.rptt, #printout table.rptkv { border-collapse: collapse; width: 100%; margin: 4px 0 10px; }
+  #printout .rptt th, #printout .rptt td, #printout .rptkv th, #printout .rptkv td { border: 1px solid #999; padding: 2px 5px; text-align: left; vertical-align: top; }
+  #printout .rptkv th { width: 30%; background: #eee; }
+  #printout .rptpre { font: 10px "Courier New", monospace; white-space: pre-wrap; }
+  #printout .rptfoot { margin-top: 10px; border-top: 1px solid #999; font-size: 9px; }
+  #printout caption { text-align: left; font-weight: 700; padding-top: 4px; }
+  #printout tr, #printout svg g[data-rg] { break-inside: avoid; }
+}
+
+/* sample projects */
+.startpg .spx { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.startpg .spx .spc { padding: 10px 12px; }
+.startpg .spx .spc svg { width: 22px; height: 22px; }
+#spl .row { align-items: flex-start; padding: 8px; cursor: pointer; }
+#spl .row.on { background: var(--accent-soft); }
+
+/* Logical Organizer: its tab beside the Controller Organizer */
+.orgtabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface-2); flex: none; }
+.orgtabs .otab { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* View > Toolbars: a toolbar the user hid (desktop) */
+#app.notb-std .dtb > .ib, #app.notb-std .dtb > .vsep { display: none; }
+#app.notb-path .dtb .pathbar { display: none; }
+#app.notb-online .dbar2 .donline { display: none; }
+#app.notb-lang .dbar2 .dinstr { display: none; }
+#app.notb-online.notb-lang .dbar2 { display: none; }
+#app.notb-bmk .rtb [data-cmd^="bm"] { display: none; }
+.tbck { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+/* Help > Release Notes, Help > About */
+#relbody .grp { display: flex; gap: 8px; text-transform: none; font-size: 12px; color: var(--text); }
+#relbody .grp .muted { font-weight: 400; }
+.relnl { margin: 6px 0 12px 22px; padding: 0; line-height: 1.45; }
+#abtb .cmpt { width: 100%; }
+.xrtabs:has([data-abt]) { overflow-x: auto; }
+[data-abt] { white-space: nowrap; }
+/* RSLinx Classic: View > Options (the log file and the cleanup interval under their boxes) */
+.rlfile { grid-template-columns: auto 1fr; padding-left: 26px; }
+.phone .rlfile { grid-template-columns: auto 1fr; }
+.rlfile > .inp:only-child { grid-column: 1 / -1; width: 100%; }
+/* RSLinx Classic: Help (the books on the left, the topic on the right) */
+.rlbox.rlhelp { width: min(820px, 100%); height: min(560px, 100%); }
+.rlhw { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px 1fr; gap: 0; padding: 0 !important; }
+.rlhc { overflow: auto; border-right: 1px solid var(--border); padding: 6px 0; background: var(--surface-2); }
+.rlhbk { display: flex; align-items: center; gap: 6px; padding: 6px 10px 2px; font-size: 12px; }
+.rlht { padding: 5px 10px 5px 30px; cursor: pointer; font-size: 13px; }
+.rlht:hover { background: var(--surface-3); }
+.rlht.on { background: var(--accent-soft, var(--surface-3)); font-weight: 600; }
+.rlhx { overflow: auto; padding: 10px 16px; line-height: 1.5; }
+.rlhx h3 { margin: 4px 0 8px; font-size: 15px; }
+.phone .rlbox.rlhelp { height: 100%; }
+.phone .rlhw { grid-template-columns: 1fr; grid-template-rows: 40% 1fr; }
+.phone .rlhc { border-right: 0; border-bottom: 1px solid var(--border); }
+/* RSLinx Classic: Window > Cascade (the window in front offset over RSWho) and Tile (side by side, both usable) */
+.rl.rl-cas .rldgo, .rl.rl-tile .rldgo { background: none; pointer-events: none; }
+.rl.rl-cas .rldgo > .rlbox, .rl.rl-tile .rldgo > .rlbox { pointer-events: auto; }
+.rl.rl-cas .rldgo { top: var(--rlcht, 72px); place-items: start; padding: 30px 8px 8px 40px; }
+.rl.rl-tile .rldgo { top: var(--rlcht, 72px); left: 50%; padding: 8px 8px 30px 4px; place-items: stretch; }
+.rl.rl-tile .rldgo > .rlbox.rldg { width: 100%; height: auto; }
+.rl.rl-tile:has(.rldgo) .rlchild { margin-right: calc(50% + 4px); }
+.phone .rl.rl-cas .rldgo, .phone .rl.rl-tile .rldgo { top: var(--rlmbh, 32px); left: 0; padding: 0; place-items: stretch; }
+.phone .rl.rl-tile:has(.rldgo) .rlchild { margin-right: 0; }
+/* RSLinx Classic: Communications > Configure Shortcuts */
+.rlbox.rlshort { width: min(760px, 100%); }
+.rlscw { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.rlscw fieldset { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rlscw .errtx { grid-column: 1 / -1; }
+.rlscl, .rlsct { min-height: 160px; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
+.rlscl .nd, .rlsct .nd { cursor: pointer; }
+.rlscb { display: flex; gap: 6px; flex-wrap: wrap; }
+.rlscp { min-height: 1.4em; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); word-break: break-all; }
+.phone .rlbox.rlshort { height: 100%; }
+.phone .rlscw { grid-template-columns: 1fr; overflow: auto; }
