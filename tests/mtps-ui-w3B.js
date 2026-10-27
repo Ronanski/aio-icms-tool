@@ -281,4 +281,60 @@ module.exports = async function w3B({ browser, page, URL, check }) {
       await tp.close();
     }
   }
+  {
+    console.log('Wave 3 B: UID, UIE, EVENT, IOT in the editor (1756-RM018A chapters 11 and 4)');
+    const ADD = [['Program Control', 'UID', []], ['Program Control', 'EVENT', ['Alarm_Task']], ['Program Control', 'UIE', []], ['Input/Output', 'IOT', ['Local:2:O']]];
+    const LAYS = [{ n: 'desktop', vp: { width: 1440, height: 900 } }, { n: 'tablet', vp: { width: 800, height: 1280 }, touch: true }, { n: 'phone', vp: { width: 390, height: 844 }, touch: true }];
+    for (const lay of LAYS) {
+      const pg = lay.touch ? await browser.newPage({ viewport: lay.vp, hasTouch: true, isMobile: true }) : page;
+      await fresh(pg, lay.vp);
+      const tp = sel => (lay.touch ? pg.tap(sel) : pg.click(sel));
+      await pg.evaluate(() => { const A = MTPS.App, p = A.blank('Events'); p.tasks.push({ name: 'Alarm_Task', type: 'event', trigger: 'event', priority: 5, programs: [] }); A.openProject(p); });
+      await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
+      const bad = [];
+      for (const [tab, mn, ops] of ADD) {
+        await pg.evaluate(() => { const S = MTPS.App.state, rr = S.p.tasks[0].programs[0].routines[0].rungs; if (rr[rr.length - 1].t) rr.push({ t: '' }); S.sel = null; S.selRung = rr.length - 1; MTPS.App.render(); });
+        const ri = await pg.evaluate(() => MTPS.App.state.selRung);
+        if (lay.n === 'desktop') { await tp(`[data-tab="${tab}"]`); await pg.waitForTimeout(100); await tp(`.gbtn[data-mn="${mn}"]`); }
+        else {
+          // touch: the Add Ladder Element box, the group, then the instruction (a second tap adds it)
+          if (await pg.$('.fab')) await tp('.fab'); else await pg.evaluate(() => MTPS.App.run('ins'));
+          await pg.waitForTimeout(150);
+          if (!(await pg.$(`#layer [data-pk="${mn}"]`))) await tp(`#layer [data-pgrp="${tab}"]`).catch(() => {});
+          await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`); await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`).catch(() => {});
+        }
+        await pg.waitForTimeout(250);
+        if (ops.length) {
+          if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
+          await tp('#layer [data-op="0"]'); await pg.waitForTimeout(120);
+          if (mn === 'EVENT' && lay.n === 'desktop') {
+            const sug = await pg.$$eval('#sg [data-pick]', x => x.map(y => y.textContent).join('|')).catch(() => '');
+            if (!/Alarm_Task/.test(sug)) bad.push(`EVENT: the Task list does not offer Alarm_Task (${sug.slice(0, 80)})`);
+          }
+          await pg.fill('#layer [data-op="0"]', ops[0]);
+          await tp('#layer .df .btn.pri'); await pg.waitForTimeout(200);
+          if (await pg.$('#layer .dlg')) { bad.push(`${mn}: the operand box stayed open`); await pg.keyboard.press('Escape'); await pg.waitForTimeout(80); }
+        } else if (await pg.$('#layer .dlg')) { await pg.keyboard.press('Escape'); await pg.waitForTimeout(80); }
+        const t = await pg.evaluate(i => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[i].t, ri);
+        if (t !== `${mn}(${ops.join(',')});`) bad.push(`${mn}: rung "${t}"`);
+      }
+      check(`${lay.n}${lay.touch ? ' (touch)' : ''}: UID, EVENT, UIE and IOT added with their operands`, !bad.length, bad.join(' | '));
+      const ver = await pg.evaluate(() => MTPS.verify(MTPS.App.state.p).errors.map(e => e.text));
+      check(`${lay.n}: the rungs verify`, !ver.length, ver.join(' | '));
+      if (lay.n === 'desktop') {
+        await pg.click('[data-tab="Input/Output"]'); await pg.waitForTimeout(80);
+        const io = await pg.$$eval('.gbtn[data-mn]', b => b.map(x => x.dataset.mn).join(','));
+        await pg.click('[data-tab="Program Control"]'); await pg.waitForTimeout(80);
+        const pc = await pg.$$eval('.gbtn[data-mn]', b => b.map(x => x.dataset.mn).join(','));
+        check('the Program Control tab ends with UID, UIE, EVENT; Input/Output has IOT', pc.endsWith('TND,UID,UIE,EVENT') && io.includes('IOT'), pc + ' / ' + io);
+        await shot('after-program-control-tab', pg);
+        await pg.evaluate(() => MTPS.App.select({ ri: 1, path: [0] })); await pg.keyboard.press('F1'); await pg.waitForTimeout(150);
+        const ih = await pg.$eval('.ihc', p => p.textContent).catch(() => '');
+        check('Instruction Help for EVENT: Trigger Event Task, Program Control Instructions, the TASK operand, the overlap rule', ih.includes('Trigger Event Task (EVENT)') && ih.includes('Program Control Instructions') && ih.includes('TASK') && /overlap/.test(ih), ih.slice(0, 120));
+        await shot('after-help-event', pg);
+        await pg.keyboard.press('Escape');
+      }
+      if (lay.touch) await pg.close();
+    }
+  }
 };

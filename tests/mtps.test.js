@@ -1628,5 +1628,46 @@ console.log('Wave 3 B: program parameters, Input / Output / InOut / Public and d
   check('a project without parameters has no parameter copies', go(proj({ rungs: ['NOP();'] })).M.programs.every(P => !P.pin && !P.pout));
 }
 
+console.log('Wave 3 B: UID, UIE, EVENT, IOT (1756-RM018A chapters 11 and 4)');
+{
+  const prog = (name, rungs) => ({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] });
+  const multi = (tags, cont, tasks) => {
+    const p = proj({ tags, rungs: cont });
+    tasks.forEach((t, k) => { const o = Object.assign({ name: 'T' + k }, t, { programs: [prog('P' + k, t.rungs)] }); delete o.rungs; p.tasks.push(o); });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  const D = n => T(n, 'DINT');
+  eq('the four instructions: Program Control and Input/Output', ['UID', 'UIE', 'EVENT', 'IOT'].map(m => MTPS.INSTR[m].grp), ['Program Control', 'Program Control', 'Program Control', 'Input/Output']);
+  // EVENT: one run of the event task each time it executes; Status bit 0
+  let c = go(multi([D('E'), D('St'), T('Go', 'BOOL'), T('Os', 'BOOL')], ['XIC(Go)ONS(Os)EVENT(Shut_Down);', 'GSV(Task,Shut_Down,Status,St);'], [{ name: 'Shut_Down', type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('EVENT: the event task does not run before it executes', c.read('E'), 0);
+  c.write('Go', 1); scans(c, 3);
+  check('EVENT on a true rung (with ONS): the task runs once; Status bit 0 is set', c.read('E') === 1 && (c.read('St') & 1) === 1, `E ${c.read('E')} St ${c.read('St')}`);
+  // an EVENT each scan on a task of a lower priority than ... the event task runs each scan
+  c = go(multi([D('E')], ['EVENT(T0);'], [{ type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 5); eq('EVENT each scan: the event task runs each scan', c.read('E'), 5);
+  // a second trigger while it waits or runs: an overlap, not a second run
+  c = go(multi([D('E'), D('Ov')], ['NOP();'], [{ type: 'event', trigger: 'event', priority: 5, rungs: ['ADD(E,1,E);'] }, { type: 'periodic', period: 10, priority: 15, rungs: ['EVENT(T0)EVENT(T0)GSV(Task,T0,OverlapCount,Ov);'] }]));
+  // T1 (priority 15) is below T0 (5): T0 interrupts at the next rung, so two EVENTs in one rung overlap
+  scans(c, 3);
+  check('two EVENTs before the task can run: one run, one overlap counted', c.read('E') === 3 && c.read('Ov') >= 2, `E ${c.read('E')} Ov ${c.read('Ov')}`);
+  c = go(multi([D('E'), D('S')], ['EVENT(T0);', 'ADD(S,1,S);'], [{ type: 'periodic', period: 1000, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('EVENT on a task that is not an event task: it is not run', c.read('E'), 1);
+  check('EVENT names a task that exists', /Undefined task 'Nope'/.test(errs(multi([], ['EVENT(Nope);'], []))));
+  // UID / UIE: no interruption between them
+  c = go(multi([D('I'), D('Mid'), D('Runs')], ['MOV(0,I);', 'UID();', 'LBL(Lp)ADD(I,1,I);', 'LES(I,300000)JMP(Lp);', 'UIE();'], [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,300000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 2);
+  check('UID … UIE: the 1 ms task does not interrupt the rungs between them; it runs after UIE', c.read('Mid') === 0 && c.read('Runs') > 0, `Mid ${c.read('Mid')} Runs ${c.read('Runs')}`);
+  c = go(multi([D('I'), D('Mid'), D('Runs')], ['MOV(0,I);', 'UID();', 'UID();', 'UIE();', 'LBL(Lp)ADD(I,1,I);', 'LES(I,300000)JMP(Lp);', 'UIE();'], [{ type: 'periodic', period: 1, priority: 1, rungs: ['ADD(Runs,1,Runs)GRT(I,0)LES(I,300000)ADD(Mid,1,Mid);'] }]));
+  scans(c, 1); eq('UID / UIE nest: two UID need two UIE', c.read('Mid'), 0);
+  // IOT
+  c = go(multi([], ['IOT(Local:2:O);'], []));
+  scans(c, 4); eq('IOT on the output tag of an output module: each true rung sends the outputs', c.iots, 4);
+  check('IOT takes only the output tag of an I/O module', /output tag of an I\/O module/.test(errs(multi([], ['IOT(Local:1:I);'], []))) && /output tag of an I\/O module/.test(errs(multi([], ['IOT(Local:2:O.Data);'], []))));
+  check('UID and UIE take no operands; EVENT takes one', !errs(multi([], ['UID();', 'UIE();'], [])) && !!errs(multi([], ['UID(MainTask);'], [])));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

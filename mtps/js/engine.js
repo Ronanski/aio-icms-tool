@@ -1351,6 +1351,26 @@
     for (const P of M.programs) { if (!P.pin.length) P.pin = null; if (!P.pout.length && !P.pubKeys.length) P.pout = null; }
   }
 
+  /* ---------- UID, UIE, EVENT (1756-RM018A chapter 11, Program Control) and IOT (chapter 4, Input/Output) ----------
+     UID stops tasks of a higher priority from interrupting this one (a nesting counter: each UID adds one, each UIE takes
+     one away; at 0 the task can be interrupted again); fault routines still run. EVENT triggers one run of an event task
+     (any trigger type); a task that is not an event task is not run; a trigger while the task runs or waits counts an
+     overlap. IOT sends the output data of an I/O module at once: the outputs of this controller are always current,
+     so it counts the update (the connection must be open). All four: N/A at prescan and on a false rung. */
+  Object.assign(OPN, { EVENT: ['Task'], IOT: ['Update Tag'] });
+  Object.assign(INSTR, {
+    UID: I('box', 'Program Control', 'User Interrupt Disable', '', { out: true }),
+    UIE: I('box', 'Program Control', 'User Interrupt Enable', '', { out: true }),
+    EVENT: I('box', 'Program Control', 'Trigger Event Task', 'task', { out: true }),
+    IOT: I('box', 'Input/Output', 'Immediate Output', 'iot', { out: true }),
+  });
+  XNAME.task = (s, M) => (M.tasks || []).find(t => U(t.name) === U(s) && !['fault', 'powerup', 'unscheduled'].includes(t.type)) || `Undefined task '${s}'`;
+  XKIND.iot = r => (r.io && r.io.dir === 'O' && !r.steps.length && r.bit < 0 ? r : 'Update Tag must be the output tag of an I/O module (e.g. Local:2:O)');
+  XEL.UID = function (e, x, p) { if (p) this.uid = (this.uid | 0) + 1; e.v = p; return p; };
+  XEL.UIE = function (e, x, p) { if (p && this.uid > 0) this.uid--; e.v = p; return p; };
+  XEL.EVENT = function (e, x, p) { if (p) this.trigger(x[0], 1); e.v = p; return p; };
+  XEL.IOT = function (e, x, p) { if (p && !this.pulled.has(x[0].io.slot)) this.iots = (this.iots || 0) + 1; e.v = p; return p; };
+
   /* ---------- PID (RM018A chapter 13, Special): the PID structure; .EN … .PVHA are bits of .CTL (bit 31 down to 7) ---------- */
   const PIDBITS = { EN: 31, CT: 30, CL: 29, PVT: 28, DOE: 27, SWM: 26, CA: 25, MO: 24, PE: 23, NDF: 22, NOBC: 21, NOZC: 20, INI: 15, SPOR: 14, OLL: 13, OLH: 12, EWD: 11, DVNA: 10, DVPA: 9, PVLA: 8, PVHA: 7 };
   PREDEF.PID = [{ name: 'CTL', type: 'DINT' }, ...Object.keys(PIDBITS).map(name => ({ name, type: 'BOOL', of: 'CTL', bit: PIDBITS[name] })),

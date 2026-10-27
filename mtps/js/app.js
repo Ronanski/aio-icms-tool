@@ -115,14 +115,14 @@
     Favorites: ['RUNG', 'BR', 'BRL', 'XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'TON', 'CTU', 'RES'],
     Bit: ['XIC', 'XIO', 'OTE', 'OTL', 'OTU', 'ONS', 'OSR', 'OSF'],
     'Timer/Counter': ['TON', 'TOF', 'RTO', 'CTU', 'CTD', 'RES'],
-    'Input/Output': ['GSV', 'SSV'],
+    'Input/Output': ['GSV', 'SSV', 'IOT'],
     Compare: ['EQU', 'NEQ', 'LES', 'LEQ', 'GRT', 'GEQ', 'LIM', 'MEQ', 'CMP'],
     'Compute/Math': ['ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'SQR', 'NEG', 'ABS', 'CPT'],
     'Move/Logical': ['MOV', 'MVM', 'CLR', 'AND', 'OR', 'XOR', 'NOT', 'BTD', 'SWPB'],
     'File/Misc': ['FAL', 'FSC', 'COP', 'CPS', 'FLL', 'AVE', 'SRT', 'STD', 'SIZE'],
     'File/Shift': ['BSL', 'BSR', 'FFL', 'FFU', 'LFL', 'LFU'],
     Sequencer: ['SQI', 'SQO', 'SQL'],
-    'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND'],
+    'Program Control': ['JSR', 'RET', 'SBR', 'JMP', 'LBL', 'MCR', 'AFI', 'NOP', 'TND', 'UID', 'UIE', 'EVENT'],
     Debug: ['BPT', 'TPT'],
     Special: ['PID'],
     'Trig Functions': ['SIN', 'COS', 'TAN', 'ASN', 'ACS', 'ATN'],
@@ -1836,6 +1836,9 @@
       const O = E.GSVOBJ[Object.keys(E.GSVOBJ).find(k => PCTX && U(k) === U(PCTX.ops[0] || ''))];
       return O ? Object.entries(O.attrs).filter(([, a]) => PCTX.mn !== 'SSV' || a[2]).map(([name, a]) => ({ name, type: a[0] + (a[1] > 1 ? `[${a[1]}]` : ''), desc: a[2] ? 'GSV / SSV' : 'GSV' })) : [];
     } },
+    // EVENT: the tasks (the event tasks first); IOT: the output tags of the output modules
+    task: { title: 'Tasks (EVENT runs an event task)', list: () => S.p.tasks.filter(t => !HANDLERS[t.type]).sort((a, b) => (b.type === 'event') - (a.type === 'event')).map(t => ({ name: t.name, type: '', desc: TK.typeText(t) })) },
+    iot: { title: 'Output tags of the I/O modules', list: () => S.p.rack.modules.filter(m => ['do', 'ao'].includes((E.MODULES[m.type] || {}).kind)).map(m => ({ name: `Local:${m.slot}:O`, type: '', desc: `[${m.slot}] ${MODNAMES[m.type] || m.type}` })) },
     adim: { title: 'Dimension to vary (the order is array[0,1,2])', list: () => [['0', 'The first dimension'], ['1', 'The second dimension'], ['2', 'The third dimension']].map(([name, desc]) => ({ name, type: '', desc })) },
   };
   const PICKK = Object.keys(PICKS);
