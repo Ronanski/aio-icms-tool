@@ -2486,5 +2486,93 @@ console.log('Wave 3 (A): the release notes (Help > Release Notes), js/report.js'
   check('every version in the release notes is in the changelog', N.every(n => log.includes(`MT PLC Studio ${n.v}`)), N.filter(n => !log.includes(`MT PLC Studio ${n.v}`)).map(n => n.v).join(', '));
 }
 
+console.log('Engine audit 2026-10-27 (owner GO ENGINE AUDIT): timers, counters, one-shots, prescan, rung logic, MCR, JMP, math, by the Logix instruction rules (1756-RM003)');
+{
+  const B = n => T(n, 'BOOL'), D = n => T(n, 'DINT');
+  let c; const r = n => c.read(n);
+  {
+// TON
+c = run({ tags: [B('a'), T('t', 'TIMER')], rungs: ['XIC(a)TON(t,100,0);'] });
+c.write('a', 1); c.scan(10); eq('TON first true scan EN TT DN', [r('t.EN'), r('t.TT'), r('t.DN')], [1, 1, 0]);
+scans(c, 12); eq('TON done: ACC=PRE, DN, TT off', [r('t.ACC'), r('t.DN'), r('t.TT'), r('t.EN')], [100, 1, 0, 1]);
+c.write('a', 0); c.scan(10); eq('TON false: reset', [r('t.ACC'), r('t.EN'), r('t.TT'), r('t.DN')], [0, 0, 0, 0]);
+// TOF
+c = run({ tags: [B('a'), T('t', 'TIMER')], rungs: ['XIC(a)TOF(t,100,0);'] });
+c.scan(10); eq('TOF rung false at start (after prescan): DN off, ACC=PRE', [r('t.DN'), r('t.ACC'), r('t.TT')], [0, 100, 0]);
+c.write('a', 1); c.scan(10); eq('TOF true: EN DN on, ACC 0', [r('t.EN'), r('t.DN'), r('t.ACC'), r('t.TT')], [1, 1, 0, 0]);
+c.write('a', 0); c.scan(10); eq('TOF false: TT on, DN still on', [r('t.EN'), r('t.TT'), r('t.DN')], [0, 1, 1]);
+scans(c, 12); eq('TOF timed out: DN off, TT off, ACC=PRE', [r('t.DN'), r('t.TT'), r('t.ACC')], [0, 0, 100]);
+// RTO
+c = run({ tags: [B('a'), B('rs'), T('t', 'TIMER')], rungs: ['XIC(a)RTO(t,100,0);', 'XIC(rs)RES(t);'] });
+c.write('a', 1); scans(c, 5); c.write('a', 0); c.scan(10); const acc = r('t.ACC');
+eq('RTO keeps ACC when false', [acc > 0, r('t.EN'), r('t.TT')], [true, 0, 0]);
+c.write('a', 1); scans(c, 12); c.write('a', 0); c.scan(10); eq('RTO DN stays when false', [r('t.DN'), r('t.ACC')], [1, 100]);
+c.write('rs', 1); c.scan(10); eq('RES clears RTO', [r('t.DN'), r('t.ACC')], [0, 0]);
+// CTU / CTD / overflow
+c = run({ tags: [B('a'), T('k', 'COUNTER', { value: { PRE: 2, ACC: 0 } })], rungs: ['XIC(a)CTU(k,2,0);'] });
+c.scan(10); c.write('a', 1); c.scan(10); c.scan(10); eq('CTU counts the edge once', r('k.ACC'), 1);
+c.write('a', 0); c.scan(10); c.write('a', 1); c.scan(10); eq('CTU DN at ACC>=PRE, CU follows rung', [r('k.ACC'), r('k.DN'), r('k.CU')], [2, 1, 1]);
+c = run({ tags: [B('a'), T('k', 'COUNTER')], rungs: ['XIC(a)CTU(k,5,2147483647);'] });
+c.scan(10); c.write('k.ACC', 2147483647); c.write('a', 1); c.scan(10); eq('CTU overflow wraps, OV set', [r('k.ACC'), r('k.OV')], [-2147483648, 1]);
+c = run({ tags: [B('a'), T('k', 'COUNTER')], rungs: ['XIC(a)CTD(k,0,0);'] });
+c.scan(10); c.write('a', 1); c.scan(10); eq('CTD decrements, DN = ACC>=PRE (0>=... -1>=0 false)', [r('k.ACC'), r('k.DN'), r('k.CD')], [-1, 0, 1]);
+c.write('k.ACC', -2147483648); c.write('a', 0); c.scan(10); c.write('a', 1); c.scan(10); eq('CTD underflow wraps, UN set', [r('k.ACC'), r('k.UN')], [2147483647, 1]);
+// prescan: CTU with rung true at Run start must not count; ONS must not pulse
+c = new MTPS.Controller(); c.download(proj({ tags: [B('a'), B('o'), B('s'), T('k', 'COUNTER')], rungs: ['XIC(a)CTU(k,5,0);', 'XIC(a)ONS(s)OTE(o);'] }));
+c.write('a', 1); c.setMode('remrun'); c.scan(10); eq('Run with rung already true: CTU no count, ONS no pulse (prescan)', [r('k.ACC'), r('o')], [0, 0]);
+// OTE / OTL / OTU and prescan of OTE
+c = new MTPS.Controller(); c.download(proj({ tags: [B('a'), B('o', { value: 1 }), B('l')], rungs: ['XIC(a)OTE(o);', 'XIC(a)OTL(l);'] }));
+c.setMode('remrun'); c.scan(10); eq('prescan clears OTE; OTL keeps', [r('o'), r('l')], [0, 0]);
+c.write('a', 1); c.scan(10); c.write('a', 0); c.scan(10); eq('OTL retentive when rung false', r('l'), 1);
+// ONS / OSR / OSF
+c = run({ tags: [B('a'), B('s'), B('o'), B('s2'), B('o2'), B('s3'), B('o3')], rungs: ['XIC(a)ONS(s)OTE(o);', 'XIC(a)OSR(s2,o2);', 'XIC(a)OSF(s3,o3);'] });
+c.scan(10); c.write('a', 1); c.scan(10); const f1 = [r('o'), r('o2'), r('o3')]; c.scan(10); const f2 = [r('o'), r('o2'), r('o3')]; c.write('a', 0); c.scan(10); const f3 = [r('o'), r('o2'), r('o3')]; c.scan(10);
+eq('ONS/OSR/OSF: rise pulse one scan, fall pulse OSF', [f1, f2, f3, [r('o'), r('o2'), r('o3')]], [[1, 1, 0], [0, 0, 0], [0, 0, 1], [0, 0, 0]]);
+// math
+c = run({ tags: [D('x'), D('y'), T('f', 'REAL'), D('d')], rungs: ['ADD(2147483647,1,x);', 'MOV(2.5,d);', 'DIV(7,2,y);'] });
+c.scan(10); eq('ADD DINT overflow wraps', r('x'), -2147483648);
+eq('MOV REAL 2.5 to DINT rounds to even', r('d'), 2);
+eq('DIV DINT 7/2 integers truncate', r('y'), 3);
+c = run({ tags: [D('d'), D('e')], rungs: ['MOV(3.5,d);', 'MOV(-2.5,e);'] }); c.scan(10); eq('MOV 3.5 -> 4, -2.5 -> -2', [r('d'), r('e')], [4, -2]);
+c = run({ tags: [D('y')], rungs: ['DIV(5,0,y);'] }); c.scan(10); eq('DIV by 0 (DINT): S:V, S:MINOR, dest = Source A', [c.read('S:V'), c.read('S:MINOR'), r('y')], [1, 1, 5]);
+c = run({ tags: [T('z', 'REAL')], rungs: ['DIV(5.0,0.0,z);'] }); c.scan(10); eq('DIV REAL by 0: +INF', String(r('z')), 'Infinity');
+c = run({ tags: [D('m')], rungs: ['MOD(7,3,m);'] }); c.scan(10); eq('MOD 7 3', r('m'), 1);
+c = run({ tags: [D('m')], rungs: ['MOD(-7,3,m);'] }); c.scan(10); eq('MOD -7 3 = -1', r('m'), -1);
+c = run({ tags: [T('s', 'SINT')], rungs: ['MOV(200,s);'] }); c.scan(10); eq('MOV 200 to SINT truncates bits -> -56', r('s'), -56);
+  }
+  {
+// output in the middle of a rung passes the rung condition on
+c = run({ tags: [B('a'), B('b'), B('x'), B('y')], rungs: ['XIC(a)OTE(x)XIC(b)OTE(y);'] }); c.scan(10);
+c.write('a', 1); c.write('b', 1); c.scan(10); eq('OTE in the middle: both on', [r('x'), r('y')], [1, 1]);
+c.write('b', 0); c.scan(10); eq('… b off: x on, y off', [r('x'), r('y')], [1, 0]);
+// nested branches
+c = run({ tags: [B('a'), B('b'), B('c'), B('d'), B('o')], rungs: ['[XIC(a)[XIC(b),XIC(c)],XIC(d)]OTE(o);'] }); c.scan(10);
+const cases = [[1,0,0,0,0],[1,1,0,0,1],[1,0,1,0,1],[0,1,1,0,0],[0,0,0,1,1]].map(([a,b,cc,d]) => { c.write('a',a);c.write('b',b);c.write('c',cc);c.write('d',d); c.scan(10); return r('o'); });
+eq('nested branch truth table', cases, [0,1,1,0,1]);
+// outputs on parallel branches
+c = run({ tags: [B('a'), B('x'), B('y')], rungs: ['XIC(a)[OTE(x),OTE(y)];'] }); c.scan(10); c.write('a', 1); c.scan(10); eq('parallel outputs', [r('x'), r('y')], [1, 1]);
+// sequential: a bit written on rung 0 is read by rung 1 in the same scan
+c = run({ tags: [B('a'), B('x'), B('y')], rungs: ['XIC(a)OTE(x);', 'XIC(x)OTE(y);'] }); c.scan(10); c.write('a', 1); c.scan(10); eq('same-scan sequence', r('y'), 1);
+c = run({ tags: [B('a'), B('x'), B('y')], rungs: ['XIC(x)OTE(y);', 'XIC(a)OTE(x);'] }); c.scan(10); c.write('a', 1); c.scan(10); eq('reverse order: one scan late', [r('x'), r('y')], [1, 0]); c.scan(10); eq('… next scan', r('y'), 1);
+// double coil: last one wins
+c = run({ tags: [B('a'), B('b'), B('x')], rungs: ['XIC(a)OTE(x);', 'XIC(b)OTE(x);'] }); c.scan(10); c.write('a', 1); c.scan(10); eq('double OTE: last rung wins (0)', r('x'), 0);
+// MCR zone
+c = run({ tags: [B('m'), B('a'), B('x'), B('l')], rungs: ['XIC(m)MCR();', 'XIC(a)OTE(x);', 'XIC(a)OTL(l);', 'MCR();'] }); c.scan(10);
+c.write('a', 1); c.write('m', 1); c.scan(10); eq('MCR on: zone runs', [r('x'), r('l')], [1, 1]);
+c.write('m', 0); c.scan(10); eq('MCR off: OTE false, OTL keeps', [r('x'), r('l')], [0, 1]);
+// JMP / LBL skip
+c = run({ tags: [B('j'), B('a'), B('x')], rungs: ['XIC(j)JMP(Q1);', 'XIC(a)OTE(x);', 'LBL(Q1)NOP();'] }); c.scan(10);
+c.write('a', 1); c.scan(10); c.write('j', 1); c.write('a', 0); c.scan(10); eq('JMP skips: x keeps its last value', r('x'), 1);
+// AFI
+c = run({ tags: [B('x')], rungs: ['AFI()OTE(x);'] }); c.scan(10); eq('AFI: always false', r('x'), 0);
+// TON preset negative: major fault
+c = run({ tags: [B('a'), T('t', 'TIMER')], rungs: ['XIC(a)TON(t,100,0);'] }); c.scan(10); c.write('t.PRE', -5); c.write('a', 1); c.scan(10);
+eq('TON negative PRE: major fault type 4 code 34', c.fault ? [c.fault.type, c.fault.code] : null, [4, 34]);
+// TON ACC accuracy with odd scan times
+c = run({ tags: [B('a'), T('t', 'TIMER')], rungs: ['XIC(a)TON(t,1000,0);'] }); c.scan(10); c.write('a', 1); for (let k = 0; k < 70; k++) c.scan(7); eq('TON: timing starts on the false-to-true scan, so 70 scans of 7 ms count 69 intervals (483 ms)', r('t.ACC'), 483);
+// I/O: OTE to an output point reaches the module; input point read
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

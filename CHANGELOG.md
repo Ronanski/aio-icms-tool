@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Fixed (MT PLC Studio)
+- Touch: one tap on a "?" (or on any operand) now edits that operand in place with the tag list, as a double-click does in the reference; before, a tap only selected and a slow tap opened the instruction menu. The menu (the right-click) now needs a held finger of 0.55 s.
 - Ladder on a tablet or phone: an instruction left with "?" could not get its tag, because a tap again on the instruction only edited its mnemonic (XIC) and the operand line is too small to hit with a finger. A tap again on the selected instruction now opens its editor: the instruction, its operands and the tag list, as when it is added from a tile. A double-click with the mouse still edits in place, as in Studio 5000.
 - Emulator: the I/O button of a module showed the points of every module of the chassis, so an output module (DO) showed inputs to switch too. It now shows only that module; the outputs of an output module are lamps that light while the controller drives them on, with a line that says so.
 - The tag browser says what each module tag holds: for an output module, Local:slot:O is the outputs and Local:slot:I is its status (Fault and the output echo, as in a 1756 output module), not inputs.
