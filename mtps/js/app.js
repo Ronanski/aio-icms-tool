@@ -3050,6 +3050,116 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   }
   const configureDrivers = () => rslinx('drivers');
 
+  /* ---------- RSLinx Classic diagnostic counters (Driver Diagnostics, CIP Diagnostics, Station Diagnostics) ----------
+     What the drivers carry is counted the way RSLinx Classic counts it (RSLinx Classic help, Driver Diagnostics and
+     CIP Diagnostics): an RSWho browse or poll is one unconnected request and its reply per device, Go Online opens a
+     CIP connection (a Forward Open), and while online the tag updates go as connected packets, 4 a second each way.
+     The labels are the ones of the help; Packets/second is worked out every second. */
+  const RLDIAG = {
+    vbp: [['gen', 'General', ['Unconnected requests sent', 'Unconnected responses sent', 'Connected packets sent', 'Unsendable packets', 'Sends failed', 'Unconnected requests received', 'Unconnected responses received', 'Connected packets received', 'Unrecognized receipts']],
+      ['perf', 'Performance', null], ['vb', 'Virtual Backplane', ['Packets received', 'Untraceable packets']]],
+    eth: [['gen', 'General', ['Commands Sent', 'Replies Received', 'Unsol. Received', 'Unsol. Replied', 'Broadcast Sent', 'Broadcast Received', 'Communication Errors', 'Commands canceled', 'Commands timed out', 'Connections open', 'Total connections initiated', 'Server connections open', 'Total connections accepted']],
+      ['perf', 'Performance', null], ['log', 'Connection Event Log', null], ['act', 'Active Connections', null]],
+    cip: [['disp', 'CIP Dispatching', ['"Fast" PCCC requests via Messaging', '"Slow" PCCC requests via Messaging', '"Fast" PCCC requests via DHRIO', '"Slow" PCCC requests via DHRIO', 'Requests canceled', 'Requests not sent', 'Requests sent unconnected', 'Requests sent connected', 'Requests timed out unconnected', 'Requests timed out on connection', 'Requests failed with connection', 'CIP error responses received', 'PCCC responses received', 'Connections open', 'Connections attempted', 'Connections established', 'Connections rejected', 'Connections closed', 'Connections timed out', 'Connections dropped']],
+      ['msg', 'Messaging', ['PCCC requests received', 'PCCC replies canceled', 'PCCC replies returned', 'CIP requests received', 'CIP replies canceled', 'CIP replies returned', 'MR connections open', 'MR connections requested', 'MR connections accepted', 'MR connections closed', 'MR connections timed out', 'MR connection receipts', 'MR connection sends', 'Unconnected requests outstanding', 'Unconnected requests sent', 'Unconnected requests failed', 'Unconnected requests canceled', 'Unconnected requests completed', 'Unconnected requests timed out', 'Fragmentation NAKs received']],
+      ['conn', 'Connections', ['Originated connections', 'Bridged connections', 'Accepted connections', 'Connection open attempts', 'Open attempts rejected', 'Connection close attempts', 'Close attempts rejected', 'Connections established', 'Connections closed', 'Connections timed out sending', 'Connections timed out receiving', 'Connections dropped', 'Packet send attempts', 'Packets written', 'Packets overwritten', 'Packets sent', 'Packets resent', 'Packets received', 'Invalid receipts', 'Duplicate receipts']]] };
+  const rlStat = { d: {}, cip: {}, m: {} };
+  let rlCur = null;   // the CIP connection open now: { drv, path, node, host, bs, br }
+  const rlD = n => rlStat.d[n] || (rlStat.d[n] = { c: {}, ev: [], rate: [0, 0], prev: [0, 0] });
+  const rlInc = (o, k, n = 1) => { o[k] = (o[k] || 0) + n; };
+  const rlEth = d => !!d && d.type !== 'vbp';
+  const rlDrvOf = path => { const x = parsePath(path); return x ? drivers.find(d => d.run && d.type === (x.vbp ? 'vbp' : 'emulate')) || null : null; };
+  // the station number of an address on the Ethernet driver: its row in the station mapping (Configure…)
+  const rlStation = ip => { const st = []; racks.forEach(r => r.controllers().forEach(m => { if (m.ip && !st.includes(m.ip)) st.push(m.ip); })); const i = st.indexOf(ip); return i < 0 ? st.length : i; };
+  function rlEvt(d, node, err) { const s = rlD(d.name); s.ev.unshift({ t: Date.now(), node, err }); if (s.ev.length > 255) s.ev.length = 255; }
+  // one unconnected request to a device (a browse, a poll, Device Properties); ok false: the device does not answer
+  function rlUnc(d, ok, node) {
+    if (!d) return;
+    const c = rlD(d.name).c, x = rlStat.cip;
+    if (rlEth(d)) { rlInc(c, 'Commands Sent'); if (ok) rlInc(c, 'Replies Received'); else { rlInc(c, 'Commands timed out'); rlInc(c, 'Communication Errors'); rlEvt(d, node, 'Command timed out: no reply from the node'); } }
+    else { rlInc(c, 'Unconnected requests sent'); if (ok) { rlInc(c, 'Unconnected responses received'); rlInc(c, 'Packets received'); } else rlInc(c, 'Sends failed'); }
+    rlInc(x, 'msg:Unconnected requests sent'); rlInc(x, ok ? 'msg:Unconnected requests completed' : 'msg:Unconnected requests timed out');
+  }
+  // an RSWho node found by a browse (or polled by Autobrowse): its driver is the first part of its key
+  function rlAsk(n) {
+    if (!n || !n.m) return;
+    const d = drivers.find(x => x.name === n.k.slice(2).split('/')[0]), ip = (/\/ip:([\d.]+)/.exec(n.k) || [])[1];
+    rlUnc(d, !n.m.ctl || n.m.ctl.powered, ip ? rlStation(ip) : n.m.slot);
+  }
+  // n packets each way on the open connection (the tag updates while online)
+  function rlPkt(n) {
+    const d = rlCur && drivers.find(x => x.name === rlCur.drv && x.run);
+    if (!d) return;
+    const c = rlD(d.name).c;
+    if (rlEth(d)) { rlInc(c, 'Commands Sent', n); rlInc(c, 'Replies Received', n); } else { rlInc(c, 'Connected packets sent', n); rlInc(c, 'Connected packets received', n); rlInc(c, 'Packets received', n); }
+    ['Packet send attempts', 'Packets written', 'Packets sent', 'Packets received'].forEach(k => rlInc(rlStat.cip, 'conn:' + k, n));
+    rlCur.bs += n * jitter(60, 90); rlCur.br += n * jitter(90, 260);
+  }
+  // Go Online, Download, Upload: the connection to the controller at the path (one at a time, as the project has one path)
+  function rlOpen(path) {
+    if (rlCur && rlCur.path === path) return;
+    rlClose(false);
+    const d = rlDrvOf(path), x = parsePath(path);
+    if (!d || !x) return;
+    rlUnc(d, true, x.vbp ? x.slot : rlStation(x.ip));
+    ['Connection open attempts', 'Connections established'].forEach(k => rlInc(rlStat.cip, 'conn:' + k));
+    if (rlEth(d)) rlInc(rlD(d.name).c, 'Total connections initiated');
+    rlCur = { drv: d.name, path, node: x.vbp ? x.slot : rlStation(x.ip), host: x.vbp ? `${x.vbp}\\${x.slot}` : x.ip, bs: 0, br: 0 };
+  }
+  function rlClose(lost) {
+    if (!rlCur) return;
+    const d = drivers.find(x => x.name === rlCur.drv);
+    rlInc(rlStat.cip, 'conn:Connection close attempts'); rlInc(rlStat.cip, lost ? 'conn:Connections timed out receiving' : 'conn:Connections closed');
+    if (lost && rlEth(d)) rlEvt(d, rlCur.node, 'Connection timed out: the node stopped answering');
+    rlCur = null;
+  }
+  // no controller answers at the path: the open attempt is rejected (the Ethernet driver logs it)
+  function rlRefused(path) {
+    const d = rlDrvOf(path), x = parsePath(path);
+    if (!d || !x) return;
+    rlUnc(d, false, x.vbp ? x.slot : rlStation(x.ip));
+    rlInc(rlStat.cip, 'conn:Connection open attempts'); rlInc(rlStat.cip, 'conn:Open attempts rejected');
+  }
+  setInterval(() => {
+    if (!rlCur) return;
+    const x = resolve(rlCur.path);
+    if (!x || !x.ctl || !drivers.some(d => d.name === rlCur.drv && d.run)) { rlClose(true); return; }
+    if (S.online && ctl !== NOCTL) rlPkt(1); else if (!linked || performance.now() - linked.t > 15000) rlClose(false);
+  }, 250);
+  const rlTot = (d, s) => (rlEth(d) ? [s.c['Commands Sent'] || 0, s.c['Replies Received'] || 0] : [(s.c['Unconnected requests sent'] || 0) + (s.c['Connected packets sent'] || 0) + (s.c['Unconnected responses sent'] || 0), (s.c['Unconnected responses received'] || 0) + (s.c['Connected packets received'] || 0) + (s.c['Unconnected requests received'] || 0)]);
+  setInterval(() => drivers.forEach(d => { const s = rlD(d.name), t = rlTot(d, s); s.rate = [Math.max(0, t[0] - s.prev[0]), Math.max(0, t[1] - s.prev[1])]; s.prev = t; }), 1000);
+  /* the diagnostic windows: a table of counters per tab; md.snap holds them while the window is frozen */
+  const rlNum = v => `<td class="mono">${(v || 0).toLocaleString('en-US')}</td>`;
+  const rlCtab = (labels, get) => `<table class="rltab rldtab"><thead><tr><th>Counter</th><th>Value</th></tr></thead><tbody>${labels.map(l => `<tr><td>${esc(l)}</td>${rlNum(get(l))}</tr>`).join('')}</tbody></table>`;
+  function rlDrvBody(md) {
+    const src = md.snap || { d: rlStat.d, cur: rlCur }, d = drivers.find(x => x.name === md.name);
+    if (!d) return '<p class="help">The driver was deleted.</p>';
+    const s = src.d[d.name] || { c: {}, ev: [], rate: [0, 0] }, tabs = RLDIAG[rlEth(d) ? 'eth' : 'vbp'], tab = tabs.find(t => t[0] === md.tab) || tabs[0];
+    const cur = src.cur && src.cur.drv === d.name ? src.cur : null, gauge = { 'Connections open': cur ? 1 : 0 };
+    if (tab[0] === 'perf') return `${rlCtab(['Packets Sent/second', 'Packets received/second'], l => s.rate[l.startsWith('Packets Sent') ? 0 : 1])}<p class="help">${d.run ? `${esc(d.name)} is running.` : `${esc(d.name)} is stopped: nothing goes through it.`}</p>`;
+    if (tab[0] === 'log') return `<table class="rltab rldtab rlwide"><thead><tr><th>Time</th><th>Node</th><th>Error Description</th></tr></thead><tbody>${s.ev.map(e => `<tr><td class="mono">${esc(new Date(e.t).toLocaleTimeString())}</td><td class="mono">${esc(String(e.node))}</td><td>${esc(e.err)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No connection events.</td></tr>'}</tbody></table><p class="help">The last 255 events are kept.</p>`;
+    if (tab[0] === 'act') return `<table class="rltab rldtab rlwide"><thead><tr><th>Node</th><th>Station</th><th>Host Name</th><th>Bytes sent</th><th>Bytes Received</th></tr></thead><tbody>${cur ? `<tr><td class="mono">${esc(String(cur.node))}</td><td class="mono">${esc(String(cur.node))}</td><td class="mono">${esc(cur.host)}</td>${rlNum(cur.bs)}${rlNum(cur.br)}</tr>` : '<tr><td colspan="5" class="muted">No active connections.</td></tr>'}</tbody></table><p class="help">Updated every 2 seconds.</p>`;
+    return rlCtab(tab[2], l => (l in gauge ? gauge[l] : s.c[l]));
+  }
+  function rlCipBody(md) {
+    const src = md.snap || { cip: rlStat.cip, cur: rlCur }, tab = RLDIAG.cip.find(t => t[0] === md.tab) || RLDIAG.cip[0];
+    const gauge = { 'conn:Originated connections': src.cur ? 1 : 0 };
+    return rlCtab(tab[2], l => { const k = tab[0] + ':' + l; return k in gauge ? gauge[k] : src.cip[k]; });
+  }
+  const rlTabs = (md, tabs) => `<div class="fchips dtabs rldt">${tabs.map(([k, l]) => `<span class="fchip${k === md.tab ? ' on' : ''}" data-rltab="${k}">${esc(l)}</span>`).join('')}</div>`;
+  const rlWin = (title, tabs, body, foot) => `<div class="rlov rlov2 rldgo"><div class="rlbox rldg" role="dialog" aria-label="${esc(title)}"><div class="bh">${esc(title)}</div>${tabs}<div class="bb" data-rldg>${body}</div><div class="bf">${foot || ''}<button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
+  function rlDiagBody(md) {
+    if (md.k === 'cipdiag') return rlCipBody(md);
+    if (md.k === 'drvdiag' && !md.name) return `<div class="rltabw"><table class="rltab" id="rldl"><thead><tr><th>Driver</th><th>Status</th></tr></thead><tbody>${drivers.map(d => `<tr class="${d.name === md.sel ? 'on' : ''}" data-rldp="${esc(d.name)}"><td><span class="mono">${esc(d.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === d.type) || [, , , d.type])[3])}</span></td><td class="${d.run ? 'run' : ''}">${d.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers are configured.</td></tr>'}</tbody></table></div><p class="help">Pick a configured driver to see its counters.</p>`;
+    return rlDrvBody(md);
+  }
+  function rlDiagHTML(md) {
+    if (md.k === 'cipdiag') return rlWin('CIP Diagnostics', rlTabs(md, RLDIAG.cip), rlDiagBody(md), md.snap ? '<span class="grow muted">Frozen</span>' : '');
+    if (md.k === 'drvdiag' && !md.name) return rlWin('Driver Diagnostics', '', rlDiagBody(md), `<button class="btn" data-rldx="dpick"${md.sel ? '' : ' disabled'}>OK</button>`);
+    const d = drivers.find(x => x.name === md.name);
+    return rlWin(md.title || `Driver Diagnostics - ${md.name}`, d ? rlTabs(md, RLDIAG[rlEth(d) ? 'eth' : 'vbp']) : '', rlDiagBody(md), (md.foot || '') + (md.snap ? '<span class="grow muted">Frozen</span>' : ''));
+  }
+
   /* ---------- RSLinx Classic: one window with the menu bar, RSWho and Configure Drivers (RSLinx Classic 4.40) ----------
      It works on the same drivers list as Who Active, Go Online and Download (drivers, saveDrivers, relink): a driver
      added, stopped or deleted here is what they see. Only Communications > RSWho and Configure Drivers work; the other
@@ -3061,7 +3171,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   const RLMENUS = [['File', [['Open Project…'], ['Save Project'], ['Save Project As…'], '-', ['Exit', 'exit']]],
     ['Edit', [['Cut'], ['Copy'], ['Paste'], ['Delete']]],
     ['View', [['Toolbar', 'tb'], ['Status Bar', 'sb'], '-', ['Options…']]],
-    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics'], ['CIP Diagnostics'], '-', ['Configure Gateway…']]],
+    ['Communications', [['RSWho', 'rswho'], ['Configure Drivers…', 'drivers'], ['Configure Shortcuts…'], ['Configure Client Applications…'], ['Configure CIP Options…'], '-', ['Driver Diagnostics', 'drvdiag'], ['CIP Diagnostics', 'cipdiag'], '-', ['Configure Gateway…']]],
     ['Station', [['Diagnostics'], ['Data Monitor'], ['Change Mode…', 'chmode'], ['Set Time']]],
     ['DDE/OPC', [['Topic Configuration…'], ['Alias Topic Configuration…'], ['Online DDE/OPC Test…']]],
     ['Security', [['Network Security…'], ['Change Password…']]],
@@ -3142,10 +3252,13 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   }
   function rlCtxHTML(root) {
     const c = rlS.ctx, n = rlFind(root, c.k);
+    if (n && !n.m && /^d:[^/]+$/.test(n.k)) return rlDrvCtx(c);
     if (!n || !n.m) return '';
     const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
-    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
   }
+  // right-click a driver in RSWho: Driver Diagnostics
+  const rlDrvCtx = c => `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px"><div class="it" data-rlci="drvdiag"><span>Driver Diagnostics</span></div></div>`;
   /* Configure… of a driver. Virtual Backplane: the Configure Virtual Backplane window, Slot Number (the slot of the
      RSLinx Classic module in the virtual chassis, slot 0 by default; LGEM5K-GR016M chapter 6). Emulate Ethernet: the
      station mapping of an Ethernet devices driver, one station per emulated controller with an IP address. */
@@ -3165,6 +3278,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlModalHTML() {
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
+    if (md.k === 'drvdiag' || md.k === 'cipdiag') return rlDiagHTML(md);
     if (md.k === 'mode') {
       const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, cur = c && { prog: 'remprog', run: 'remrun' }[c.mode] || (c && c.mode);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Change Mode"><div class="bh">Change Mode</div><div class="bb">${c ? `<p style="margin-top:0"><b>${esc(n.l)}</b><br>Current mode: ${esc(ctlMode(c))} · key switch ${esc(c.key)}</p>
@@ -3191,7 +3305,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (!drivers[rlS.dsel]) rlS.dsel = 0;
     let treeKey = '', lim = Infinity, btimer = 0;
     const stopBrowse = () => { if (btimer) { clearTimeout(btimer); btimer = 0; busyComm(-1); } };
-    const quit = () => { clearInterval(timer); stopBrowse(); };
+    const quit = () => { clearInterval(timer); clearInterval(ltimer); stopBrowse(); };
     const el = dialog({ title: 'RSLinx Classic', size: 'lg rlw', flush: true, body: '<div class="rl" id="rl"></div>', onClose: () => quit() });
     const bstat = root => (lim < rlCount(root) ? browseSt(order(root)[lim - 1].l) : rlS.auto ? 'Browsing - done' : 'Not browsing');
     const box = el.querySelector('#rl');
@@ -3213,6 +3327,38 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         p.style.left = Math.max(4, Math.min(b.offsetLeft - box.querySelector('.rlmb').scrollLeft, box.clientWidth - p.offsetWidth - 4)) + 'px';
       }
       if (rlS.modal && rlS.modal.k === 'add') { const i = box.querySelector('#rlname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+      box.style.setProperty('--rlmbh', box.querySelector('.rlmb').offsetHeight + 'px');
+      const dg = box.querySelector('[data-rldg]'); if (dg) dg.dataset.h = dg.innerHTML;
+    };
+    /* the diagnostic windows are live: their counters are read 4 times a second (Active Connections every 2 seconds),
+       while the window is not frozen; a menu or a right-click menu over them holds them */
+    let ltick = 0;
+    const rlLive = md => {
+      if (md.k === 'drvdiag' && md.tab === 'act' && ltick % 8) return false;
+      return true;
+    };
+    const ltimer = setInterval(() => {
+      if (!el.isConnected) { clearInterval(ltimer); return; }
+      ltick++;
+      const md = rlS.modal;
+      if (!md || !md.live || rlS.menu || rlS.ctx || rlLive(md) === false) return;
+      const b = box.querySelector('[data-rldg]'); if (!b) return;
+      const h = rlDiagBody(md);
+      if (b.dataset.h !== h) { b.innerHTML = h; b.dataset.h = b.innerHTML; }
+    }, 250);
+    const rlAct = a => {
+      if (a === 'drvdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'drvdiag', name: null, sel: (drivers[0] || {}).name, tab: 'gen', live: true }; draw(); return true; }
+      if (a === 'cipdiag') { rlS.view = 'rswho'; rlS.modal = { k: 'cipdiag', tab: 'disp', live: true }; draw(); return true; }
+      return false;
+    };
+    const drvOfKey = k => (k ? k.slice(2).split('/')[0] : '');
+    const rlCtxAct = (a, k) => {
+      if (a === 'drvdiag') { rlS.modal = { k: 'drvdiag', name: drvOfKey(k), tab: 'gen', live: true }; return; }
+      rlS.modal = { k: 'props', key: k };
+    };
+    const rlDx = a => {
+      const md = rlS.modal;
+      if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
     };
     // a browse step redraws only the tree, its pane and the status (the scroll position and the menus stay)
     const drawTree = () => {
@@ -3233,13 +3379,14 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (!el.isConnected) { busyComm(-1); return; }
       const all = order(rlTree());
       lim++;
+      rlAsk(all[lim - 1]);
       if (lim >= all.length) { lim = Infinity; busyComm(-1); drawTree(); return; }
       drawTree();
       btimer = setTimeout(step, all[lim] && all[lim].m ? jitter(150, 400) : jitter(80, 160));
     };
     const browse = () => {
       stopBrowse();
-      if (fastComm()) { lim = Infinity; drawTree(); return; }
+      if (fastComm()) { lim = Infinity; order(rlTree()).forEach(rlAsk); drawTree(); return; }
       lim = 2; busyComm(1); drawTree();
       btimer = setTimeout(step, jitter(150, 300));
     };
@@ -3247,6 +3394,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     // quietly: only a change redraws it, and it is not browsed again
     const timer = setInterval(() => {
       if (!el.isConnected) { quit(); return; }
+      // Autobrowse polls every device it found, once a second
+      if (rlS.auto && lim === Infinity) order(rlTree()).forEach(rlAsk);
       if (!rlS.auto || rlS.menu || rlS.modal || rlS.ctx || lim !== Infinity) return;
       if (JSON.stringify(rlTree(), (k, v) => (k === 'm' ? undefined : v)) !== treeKey) drawTree();
     }, 1000);
@@ -3292,7 +3441,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       rlS.ctx = { k, x: Math.max(4, Math.min(cx - b.left, b.width - 230)), y: Math.max(4, Math.min(cy - b.top, b.height - 220)) };
       rlS.sel = k; draw();
     };
-    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && n.m ? k : null; };
+    const devAt = t => { const x = t.closest('[data-rln],[data-rlk]'); const k = x && (x.dataset.rln || x.dataset.rlk); const n = k && rlFind(rlTree(), k); return n && (n.m || /^d:[^/]+$/.test(n.k)) ? k : null; };
     box.addEventListener('contextmenu', ev => { const k = devAt(ev.target); if (!k || rlS.modal || rlS.view !== 'rswho') return; ev.preventDefault(); rlS.menu = ''; ctxAt(k, ev.clientX, ev.clientY); });
     let rlLp = null;
     box.addEventListener('pointerdown', ev => {
@@ -3311,7 +3460,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         const it = t.closest('[data-rlci]'), k = rlS.ctx.k;
         if (!it && t.closest('.rlctx')) return;
         rlS.ctx = null;
-        if (it) rlS.modal = { k: 'props', key: k };
+        if (it) rlCtxAct(it.dataset.rlci, k);
         draw();
         return;
       }
@@ -3322,10 +3471,15 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         // View > Toolbar / Status Bar: show or hide them (kept while the app runs)
         if (a === 'tb' || a === 'sb') { rlS[a] = !rlS[a]; draw(); return; }
         if (a === 'chmode') { const n = rlFind(rlTree(), rlS.sel); if (n && n.m && n.m.ctl) { rlS.view = 'rswho'; rlS.modal = { k: 'mode', key: rlS.sel }; } else toast('Select a controller in RSWho first.', 'err'); draw(); return; }
+        if (rlAct(a)) return;
         rlS.view = a; draw(); return;
       }
       if (rlS.menu) { if (!t.closest('.rlpop')) { rlS.menu = ''; draw(); } return; }
       if ((x = t.closest('[data-rlpx]'))) { modalAct(x.dataset.rlpx === 'ok'); return; }
+      if ((x = t.closest('[data-rltab]')) && rlS.modal) { rlS.modal.tab = x.dataset.rltab; draw(); return; }
+      // picking a driver marks its row in place (a redraw would split a double-click)
+      if ((x = t.closest('[data-rldp]')) && rlS.modal) { rlS.modal.sel = x.dataset.rldp; box.querySelectorAll('[data-rldp]').forEach(r => r.classList.toggle('on', r === x)); const b = box.querySelector('[data-rldx="dpick"]'); if (b) b.disabled = false; return; }
+      if ((x = t.closest('[data-rldx]')) && rlS.modal) { rlDx(x.dataset.rldx, x); return; }
       if (rlS.modal) return;
       if ((x = t.closest('[data-rlv]'))) { rlS.view = x.dataset.rlv; draw(); return; }
       if ((x = t.closest('[data-rltw]'))) { const k = x.dataset.rltw; if (rlS.shut.has(k)) rlS.shut.delete(k); else rlS.shut.add(k); draw(); return; }
@@ -3347,6 +3501,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       if (t.closest('[data-rldel]') && d) { rlS.modal = { k: 'del', name: d.name }; draw(); return; }
       if (t.closest('[data-rlcfg]') && d) { rlS.modal = { k: 'cfg', name: d.name }; draw(); }
     });
+    box.addEventListener('dblclick', ev => { const x = ev.target.closest('[data-rldp]'); if (x && rlS.modal) { rlS.modal.sel = x.dataset.rldp; rlDx('dpick'); } });
     box.addEventListener('change', ev => {
       if (ev.target.id === 'rlauto') { rlS.auto = ev.target.checked; draw(); }
       if (ev.target.id === 'rldt') { rlS.dtype = ev.target.value; draw(); }
@@ -3962,11 +4117,11 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      offline). Then the checks of reachable(). fastComm, or a path just reached, skips the wait. */
   function connect(then, what) {
     const path = curPath();
-    if (fastComm() || S.online || (linked && linked.path === path && linked.ctl === ctl && performance.now() - linked.t < 15000)) { if (reachable()) { linked = { path, ctl, t: performance.now() }; then(); } return; }
+    if (fastComm() || S.online || (linked && linked.path === path && linked.ctl === ctl && performance.now() - linked.t < 15000)) { if (reachable()) { linked = { path, ctl, t: performance.now() }; rlOpen(path); then(); } return; }
     transfer({ title: what || 'Go Online', kind: 'connect', ms: jitter(600, 1000), sub: path,
       steps: [{ t: `Connecting to the controller at ${path}…`, w: 3 }, { t: 'Checking the controller: type, revision and project…', w: 1 }],
       cancelled: () => toast('Connecting was cancelled.'),
-      done: () => { if (!reachable()) { linked = null; return; } linked = { path, ctl, t: performance.now() }; then(); } });
+      done: () => { if (!reachable()) { linked = null; return; } linked = { path, ctl, t: performance.now() }; rlOpen(path); then(); } });
   }
   /* Upload Tag Values: the controller's current values become the project's values (not an edit) */
   function uploadTags(say) {
@@ -4001,6 +4156,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       : !x.m ? `Slot ${x.slot} of chassis ${esc(x.rack.name)} is empty.`
         : !x.m.ctl ? `Slot ${x.slot} holds an I/O card (${esc(x.m.type)}), not a controller.`
           : `The controller in slot ${x.slot} (${esc(x.m.name)}) is off.`;
+    rlRefused(curPath());
     dialog({ title: 'Failed to go online', body: `<p>No controller answers at the path <b class="mono">${esc(curPath())}</b>.</p>
         <p class="help">${why} Pick a controller in Who Active, or add or turn one on in the Emulator.</p>`,
       buttons: [{ l: 'Close' }, { l: 'Emulator…', run: () => { setTimeout(chassisMonitor, 0); } }, { l: 'Who Active…', pri: true, run: () => { setTimeout(whoActive, 0); } }] });
@@ -4144,7 +4300,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const back = S.ed.orig;
     confirmDlg('Cancel Accepted Edits', 'Remove the accepted edits? The project goes back to the logic the controller runs.', 'Remove', () => { S.ed = null; edit(() => { S.p = JSON.parse(back); S.sel = null; S.selRung = 0; }, true); }, true);
   }
-  function goOffline() { S.online = false; linked = null; toast('Offline. The controller keeps running.'); render(); commLed(); }
+  function goOffline() { S.online = false; linked = null; rlClose(false); toast('Offline. The controller keeps running.'); render(); commLed(); }
   /* Communications > Select Recent Path (reference: go online using a recent communications path) */
   function recentPathDlg() {
     let sel = (S.prefs.paths || []).includes(curPath()) ? curPath() : (S.prefs.paths || [])[0];

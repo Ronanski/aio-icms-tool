@@ -1182,3 +1182,14 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .emu.compact { grid-template-rows: auto minmax(0, 1fr) auto; }
 .emu.compact .emcomp { display: none; }
 .phone .emst > span:not(.grow):not(:nth-child(4)) { display: none; }
+/* RSLinx Classic diagnostic windows (Driver / CIP / Station Diagnostics, Module Statistics, Data Monitor): child windows
+   under the menu bar, so the Station and Window menus stay in reach */
+.rldgo { top: var(--rlmbh, 32px); }
+.rlbox.rldg { width: min(620px, 100%); height: min(560px, 100%); }
+.rldg .rldt { padding: 8px 14px 0; flex: none; }
+.rldg .bb { flex: 1; }
+.rldg .bf .grow { align-self: center; }
+.rldtab td { cursor: default; }
+.rldtab td.mono:last-child { text-align: right; width: 120px; }
+.rldtab.rlwide th:last-child, .rldtab.rlwide td:last-child { width: auto; }
+.phone .rlbox.rldg { height: 100%; }

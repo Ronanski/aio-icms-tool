@@ -142,5 +142,63 @@ module.exports = async function w2E({ browser, page, URL, check }) {
     await tp.close();
   }
 
+  console.log('RSLinx Classic: Driver Diagnostics and CIP Diagnostics (RSLinx Classic help, Communications menu)');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; const A = MTPS.App; A.openProject(A.example()); const c = A.racks[0].controller(0); c.setKey('REM'); c.download(A.state.p); A.run('online'); });
+    await wait(300);
+    check('the project is online (a CIP connection to the controller)', await ev(() => MTPS.App.state.online));
+    await ev(() => MTPS.App.run('rswho')); await wait(300);
+    const menu = async (m, item) => { await page.click(`#layer [data-rlm="${m}"]`); await wait(60); await page.evaluate(t => [...document.querySelectorAll('#layer .rlpop .it')].find(x => x.textContent === t).click(), item); await wait(120); };
+    const bh = () => page.$eval('#layer .rldg .bh', b => b.textContent).catch(() => '');
+    const cnt = () => page.$$eval('#layer [data-rldg] .rldtab tbody tr', r => Object.fromEntries(r.map(x => [x.children[0].textContent, +x.children[1].textContent.replace(/,/g, '')])));
+    await menu('Communications', 'Driver Diagnostics');
+    check('Communications > Driver Diagnostics: the configured drivers to pick from', (await bh()) === 'Driver Diagnostics' && (await page.$eval('#rldl tbody', b => b.textContent)).includes('EMULATE-1'));
+    await page.dblclick('#rldl [data-rldp="EMULATE-1"]'); await wait(150);
+    const tabs = await page.$$eval('#layer .rldg [data-rltab]', t => t.map(x => x.textContent).join(','));
+    check('a double-click opens its counters: General, Performance, Connection Event Log, Active Connections (an Ethernet driver)', (await bh()) === 'Driver Diagnostics - EMULATE-1' && tabs === 'General,Performance,Connection Event Log,Active Connections', tabs);
+    let k = await cnt();
+    check('General: Commands Sent and Replies Received count the browse and the online packets; one connection open', k['Commands Sent'] > 0 && k['Replies Received'] > 0 && k['Connections open'] === 1 && k['Total connections initiated'] >= 1 && 'Unsol. Received' in k && 'Commands timed out' in k, JSON.stringify(k));
+    await wait(1100);
+    const k2 = await cnt();
+    check('the counters are live: they go up while the window is open', k2['Commands Sent'] > k['Commands Sent'], k['Commands Sent'] + ' -> ' + k2['Commands Sent']);
+    await page.click('#layer [data-rltab="perf"]'); await wait(1100);
+    k = await cnt();
+    check('Performance: packets sent and received per second', k['Packets Sent/second'] >= 4 && k['Packets received/second'] >= 4, JSON.stringify(k));
+    await page.click('#layer [data-rltab="act"]'); await wait(150);
+    check('Active Connections: the open connection with its host name and bytes', /127\.0\.0\.1/.test(await page.$eval('[data-rldg] tbody', b => b.textContent)) && (await page.$$eval('[data-rldg] tbody tr td', t => +t[3].textContent.replace(/,/g, ''))) > 0);
+    await ev(() => MTPS.App.racks[0].controller(0).power(false)); await wait(600);
+    await page.click('#layer [data-rltab="log"]'); await wait(150);
+    check('the controller turned off: the connection times out and the Connection Event Log has it (time, node, error)', (await page.$eval('[data-rldg] tbody', b => b.textContent)).includes('Connection timed out') && (await page.$$eval('[data-rldg] thead th', t => t.map(x => x.textContent).join(','))) === 'Time,Node,Error Description');
+    await ev(() => MTPS.App.racks[0].controller(0).power(true)); await wait(100);
+    await page.click('#layer .rldg [data-rlpx="cancel"]'); await wait(100);
+    check('Close closes it', (await page.$('#layer .rldg')) === null);
+    await menu('Communications', 'CIP Diagnostics');
+    const ct = await page.$$eval('#layer .rldg [data-rltab]', t => t.map(x => x.textContent).join(','));
+    check('Communications > CIP Diagnostics: CIP Dispatching, Messaging, Connections', (await bh()) === 'CIP Diagnostics' && ct === 'CIP Dispatching,Messaging,Connections', ct);
+    k = await cnt();
+    check('CIP Dispatching: the PCCC counters (none: the emulated controllers talk CIP)', '"Fast" PCCC requests via Messaging' in k && k['Connections dropped'] === 0);
+    await page.click('#layer [data-rltab="msg"]'); await wait(100);
+    k = await cnt();
+    check('Messaging: the unconnected requests sent and completed', k['Unconnected requests sent'] > 0 && k['Unconnected requests completed'] > 0 && 'Fragmentation NAKs received' in k);
+    await page.click('#layer [data-rltab="conn"]'); await wait(100);
+    k = await cnt();
+    check('Connections: open attempts, established, timed out receiving, packets sent and received', k['Connection open attempts'] >= 1 && k['Connections established'] >= 1 && k['Connections timed out receiving'] >= 1 && k['Packets sent'] > 0 && k['Packets received'] > 0, JSON.stringify(k));
+    await page.keyboard.press('Escape'); await wait(80);
+    const dn = await page.evaluate(() => { const n = [...document.querySelectorAll('#rltree [data-rln]')].find(x => x.textContent.startsWith('EMULATE-1')); const r = n.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }; });
+    await page.mouse.click(dn.x, dn.y, { button: 'right' }); await wait(100);
+    await page.click('#layer .rlctx [data-rlci="drvdiag"]'); await wait(150);
+    check('right-click a driver in RSWho: Driver Diagnostics of that driver', (await bh()) === 'Driver Diagnostics - EMULATE-1');
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => MTPS.App.run('offline'));
+    const tp = await touchPage(390, 844, () => MTPS.App.run('rswho'));
+    await tp.tap('#layer [data-rlm="Communications"]'); await tp.waitForTimeout(100);
+    await tp.evaluate(() => { [...document.querySelectorAll('#layer .rlpop .it')].find(x => x.textContent === 'CIP Diagnostics').dataset.wapick = '1'; });
+    await tp.tap('#layer [data-wapick]'); await tp.waitForTimeout(150);
+    await tp.tap('#layer [data-rltab="conn"]'); await tp.waitForTimeout(100);
+    check('phone (touch): CIP Diagnostics, the Connections tab, no sideways scrolling', await tp.$eval('#layer [data-rltab="conn"]', t => t.classList.contains('on')) && await tp.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('.rldg').getBoundingClientRect().right <= innerWidth + 1));
+    await tp.close();
+  }
+
   check('Wave 2 (E): no JS errors in the touch pages', errors.length === 0, errors.join(' | '));
 };
