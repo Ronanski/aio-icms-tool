@@ -112,6 +112,27 @@ module.exports = async function w3G({ browser, page, URL, check }) {
     await shot('sfc-chart');
   }
 
+  console.log('SFC online: the active step is highlighted, its timer (.T) counts, the actions run');
+  {
+    await ev(() => MTPS.App.run('online'));
+    for (let k = 0; k < 8 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) {
+      await wait(150);
+      const b = await page.$('#layer .dlg .btn.pri'); if (b && !(await page.$('#layer .dlg .prog'))) await b.click(); else await wait(500);
+    }
+    await ev(() => MTPS.App.run('runm')); await wait(500);
+    const s0 = (named(await chart(), 'Step_000')).id, s1 = named(await chart(), 'Step_001').id;
+    check('online in Run: the initial step is active (highlighted) and its action runs (Run_Lamp)', await ev(() => MTPS.App.state.online && MTPS.App.ctl.running) && !!(await page.$(`#sfcwrap .step.on [data-el="${s0}"]`)) && await ev(() => MTPS.App.ctl.read('Run_Lamp') === 1));
+    const t1 = +(await page.$eval(`[data-tm="${s0}"]`, t => t.textContent.replace(/\D/g, ''))); await wait(400);
+    const t2 = +(await page.$eval(`[data-tm="${s0}"]`, t => t.textContent.replace(/\D/g, '')));
+    check('the step timer counts live in the step (T, ms)', t2 > t1 && t2 > 0, `${t1} → ${t2}`);
+    await shot('sfc-online-step0');
+    await ev(() => MTPS.App.ctl.write('Motor_Run', 1)); await wait(400);
+    check('the transition true: Step_001 becomes the active step, Step_000 is not highlighted any more', !!(await page.$(`#sfcwrap .step.on [data-el="${s1}"]`)) && !(await page.$(`#sfcwrap .step.on [data-el="${s0}"]`)));
+    check("Don't scan (default): the N action is not scanned again, Run_Lamp keeps its value", await ev(() => MTPS.App.ctl.read('Run_Lamp') === 1));
+    await shot('sfc-online-step1');
+    await ev(() => MTPS.App.run('offline')); await wait(200);
+  }
+
   console.log('SFC editor on a tablet with touch: tap to select, the toolbar adds and connects, hold for the menu, double tap to edit');
   {
     const setup = () => { const A = MTPS.App, p = A.example(), g = p.tasks[0].programs[0]; document.querySelector('#layer').innerHTML = ''; A.openProject(p); const ch = MTPS.SFC.ui.newChart(g, A.state.p); A.state.p.tasks[0].programs[0].routines.push({ name: 'Chart', type: 'SFC', rungs: [], sfc: ch }); A.state.routine = 'Chart'; A.state.view = 'ladder'; A.render(); };

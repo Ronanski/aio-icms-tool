@@ -7056,6 +7056,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   let lastFault = null;
   function live(force) {
+    if (S.online && sfcOn()) SFCUI().live();   // the SFC window: its own signature and pace (sfc.js)
     const s = liveSig();
     if (!force && s === sig) return;
     sig = s;
