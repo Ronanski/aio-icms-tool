@@ -35,7 +35,7 @@ module.exports = async function w3G({ browser, page, URL, check }) {
     await page.click('.org [data-org="prog:MainProgram"]', { button: 'right' }); await wait(150);
     await pick('New Routine…');
     const types = await page.$$eval('#nr-t option', o => o.map(x => x.textContent));
-    check('New Routine: Type offers Ladder Diagram and Sequential Function Chart', (await dlgTitle()) === 'New Routine' && types.join('|') === 'Ladder Diagram|Sequential Function Chart', types.join('|'));
+    check('New Routine: Type offers Sequential Function Chart', (await dlgTitle()) === 'New Routine' && types.join('|') === 'Ladder Diagram|Sequential Function Chart|Function Block Diagram|Structured Text', types.join('|'));
     await page.fill('#p1', 'Fill'); await page.selectOption('#nr-t', 'SFC'); await page.selectOption('#nr-a', 'main');
     await shot('new-routine-sfc');
     await clickBtn('OK'); await wait(150);

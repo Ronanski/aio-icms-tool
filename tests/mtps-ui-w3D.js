@@ -29,7 +29,7 @@ module.exports = async function w3D({ browser, page, URL, check }) {
     await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); }); await wait(150);
     await page.click('.nd[data-org="prog:MainProgram"]', { button: 'right' }); await wait(100);
     await page.click('#layer .it:has-text("New Routine")'); await wait(150);
-    check('New Routine: the Type list has Ladder Diagram and Function Block Diagram', (await page.$$eval('#nr-t option', o => o.map(x => x.textContent).join(','))) === 'Ladder Diagram,Function Block Diagram');
+    check('New Routine: the Type list has Function Block Diagram', (await page.$$eval('#nr-t option', o => o.map(x => x.textContent).join(','))) === 'Ladder Diagram,Sequential Function Chart,Function Block Diagram,Structured Text');
     await page.fill('#p1', 'Lamp_FBD'); await page.selectOption('#nr-t', 'FBD'); await page.selectOption('#nr-a', 'main');
     await page.click('#layer .df .btn.pri'); await wait(200);
     let r = await R();

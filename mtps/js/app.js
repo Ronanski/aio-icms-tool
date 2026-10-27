@@ -4672,7 +4672,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'New Routine', size: 'md', focus: true,
       body: `<div class="frow"><label>Name</label><input class="inp" id="p1" value="${esc(n)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="nr-d" rows="2"></textarea></div>
-        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option><option value="ST">Structured Text</option>${SFCUI() ? '<option value="SFC">Sequential Function Chart</option>' : ''}${E.FBD ? '<option value="FBD">Function Block Diagram</option>' : ''}</select></div>
+        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option>${SFCUI() ? '<option value="SFC">Sequential Function Chart</option>' : ''}${E.FBD ? '<option value="FBD">Function Block Diagram</option>' : ''}<option value="ST">Structured Text</option></select></div>
         <div class="frow"><label>In Program</label><select class="inp" disabled><option>${esc(g.name)}</option></select></div>
         <div class="frow"><label>Assignment</label><select class="inp" id="nr-a"><option value=""${g.main ? ' selected' : ''}>&lt;none&gt;</option><option value="main"${g.main ? '' : ' selected'}>Main</option><option value="fault">Fault</option></select></div>
         <p class="help">Call a routine from the main routine with JSR. A Fault routine runs when an instruction of this program faults; it clears the fault by setting Type and Code of the program's MajorFaultRecord to 0.</p><div class="errtx" id="p1e"></div>`,

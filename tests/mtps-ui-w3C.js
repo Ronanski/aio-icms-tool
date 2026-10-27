@@ -40,7 +40,7 @@ module.exports = async function w3c({ browser, URL, check }) {
     check(`${lay.n}: New Routine opens from ${lay.n === 'phone' ? 'the routine picker' : 'File > New Component'}`, opened && !!(await pg.$('#layer #nr-t')));
     if (lay.n === 'desktop') await pg.screenshot({ path: `${SHOTS}/after-new-routine-desktop.png` }).catch(() => {});
     const opts = await pg.$$eval('#layer #nr-t option', o => o.map(x => x.textContent).join(','));
-    check(`${lay.n}: its Type has Ladder Diagram and Structured Text`, opts === 'Ladder Diagram,Structured Text', opts);
+    check(`${lay.n}: its Type has the four languages, in the reference order`, opts === 'Ladder Diagram,Sequential Function Chart,Function Block Diagram,Structured Text', opts);
     await pg.selectOption('#layer #nr-t', 'ST');
     await tp('#layer #p1'); await pg.fill('#layer #p1', 'Calc');
     await tp('#layer .dlg .btn.pri'); await wait(250);
