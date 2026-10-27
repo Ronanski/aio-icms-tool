@@ -790,7 +790,7 @@
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
-        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map() });
+        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null });
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
@@ -824,6 +824,17 @@
         out.lines.push(text);
       };
       const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      // a Structured Text routine (st.js): errors and warnings name the line and column of the text
+      if (R.st != null) {
+        const say = (kind, ln, col, msg) => {
+          if (!want) return;
+          const text = `${kind}: Line ${ln}${col ? ', Column ' + col : ''}: ${dot(msg)}`;
+          (kind === 'Error' ? out.errors : out.warnings).push({ program: P.name, routine: R.name, line: ln, col, msg: dot(msg), text });
+          out.lines.push(text);
+        };
+        if (MTPS.ST) R.stc = MTPS.ST.compile(M, P, R, say); else say('Error', 1, 0, 'Structured Text is not available');
+        continue;
+      }
       R.src.forEach((src, n) => {
         const text = String(src && (src.t != null ? src.t : src.text) || '');
         const rung = { n, text, c: (src && src.c) || '', elems: [] };
@@ -1516,7 +1527,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
-      for (const P of this.M.programs) for (const R of P.routines.values()) for (const r of R.rungs) walk(r.elems);
+      for (const P of this.M.programs) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.stc) R.stc.pre(this); }
     }
 
     /* ---------- project ---------- */
@@ -1678,6 +1689,7 @@
     /* a routine: rungs in order; JMP goes to its LBL rung, RET and TND end the routine. The MCR override (every rung
        false) is toggled by an MCR with rung-condition-in false, and is reset when the routine ends. */
     routine(R) {
+      if (R.stc) { R.stc.run(this); this.tnd = this.ret = false; return; }
       const rungs = R.rungs, mcr0 = this.mcr;
       let jumps = 0;
       this.mcr = false;
@@ -2345,6 +2357,8 @@
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt, FBDI, FBDT, FBDN, fbdPrescan });
   MTPS.GSVOBJ = GSVOBJ;
+  // the parts the Structured Text compiler (st.js) builds on
+  MTPS._k = { ref, parseNumber, compileElem, Fault, Halt, isInt, isReal, isNum, ATOMIC, XPRE, INSTR, FBDI, FBDT, fbdPrescan };
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);
