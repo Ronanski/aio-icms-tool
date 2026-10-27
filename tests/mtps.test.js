@@ -1497,5 +1497,29 @@ console.log('Wave 2 (C): PID (1756-RM003 / -RM018A chapter 13)');
   check('prescan: .EN cleared and the PID structure initialized (.INI cleared)', pr.read('Loop.EN') === 0 && pr.read('Loop.INI') === 0);
 }
 
+console.log('Wave 3 (A): Compare (Logix Designer Compare Tool), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  const a = proj({ tags: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'DINT', value: 3 }], rungs: ['XIC(A)OTE(A);', 'NOP();', { t: 'XIC(A)NOP();', c: 'x' }] });
+  const same = R.compare(a, JSON.parse(JSON.stringify(a)));
+  check('the same project: no differences', same.same && same.rows.length === 0);
+  const b = JSON.parse(JSON.stringify(a));
+  b.tags[1].value = 4; b.tags.push({ name: 'C', type: 'REAL' }); b.tags = b.tags.filter(t => t.name !== 'A').concat([{ name: 'A', type: 'BOOL', desc: 'now with text' }]);
+  const rr = b.tasks[0].programs[0].routines[0].rungs; rr.splice(1, 0, { t: 'XIO(A)OTE(A);' }); rr[3].c = 'y';
+  b.rack.modules.pop(); b.controller.rev = '2.0';
+  const r = R.compare(a, b);
+  const find = n => r.rows.find(x => x.name === n);
+  check('a tag only on the right: st right', find('C') && find('C').st === 'right');
+  check('a changed description: st diff with the property', find('A') && find('A').st === 'diff' && find('A').d.some(d => d[0] === 'desc' && d[2] === 'now with text'));
+  check('values are not compared by default', !find('B'));
+  check('… but are with values: true', !!R.compare(a, b, { values: true }).rows.find(x => x.name === 'B'));
+  check('a module only on the left', !!r.rows.find(x => x.cat === 'I/O Configuration' && x.st === 'left'));
+  check('the controller revision differs', !!r.rows.find(x => x.cat === 'Controller' && x.d.some(d => d[0] === 'Revision')));
+  const rt = r.rows.find(x => x.cat === 'Routines');
+  eq('rungs: one inserted on the right (1), one comment changed (2 / 3)', rt.rungs.map(g => [g.st, g.a, g.b]), [['right', undefined, 1], ['diff', 2, 3]]);
+  eq('rungDiff: same rungs give nothing', R.rungDiff([{ t: 'A;' }], [{ t: 'A;' }]), []);
+  eq('rungDiff: one deleted in the middle', R.rungDiff([{ t: 'A;' }, { t: 'B;' }, { t: 'C;' }], [{ t: 'A;' }, { t: 'C;' }]).map(g => [g.st, g.a]), [['left', 1]]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

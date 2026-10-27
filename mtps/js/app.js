@@ -944,6 +944,7 @@
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
+    cmptool: { l: 'Compare Tool…', i: 'xref', run: () => compareTool(), on: () => !S.noProj },
     helpc: { l: 'Contents', i: 'help', run: () => helpContents() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
     tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
@@ -956,7 +957,7 @@
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
-    ['Tools', ['options', 'updates']],
+    ['Tools', ['options', '-', 'cmptool', '-', 'updates']],
     ['Help', ['helpc', 'help', 'tips', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
@@ -1173,6 +1174,7 @@
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
+      <div class="card">${b('cmptool')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -3300,6 +3302,34 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function about() {
     dialog({ title: 'About MT PLC Studio', body: `<div style="display:flex;gap:14px;align-items:center"><img src="icons/icon-192.png" width="64" height="64" alt=""><div><b style="font-size:16px">MT PLC Studio</b><br>Version ${VERSION}${BUILD !== 'dev' ? ` <span class="muted">(${esc(BUILD)})</span>` : ''}<br><span class="muted">Tag-based PLC ladder programming and simulation.</span></div></div>
       <p class="help">Built-in controller PLC-CPU 1.0. Instruction behaviour follows the reference software's instruction help. Not affiliated with any PLC manufacturer.</p>`, buttons: [{ l: 'Updates…', run: () => { setTimeout(() => C.updates.run(), 0); } }, { l: 'Close', pri: true }] });
+  }
+  /* ---------- Tools > Compare Tool (as the Logix Designer Compare Tool: the open project on the left, a .mtp or .L5X
+     file on the right; the differences listed by component, MTPS.Report.compare) ---------- */
+  async function projectFromFile(f) {
+    let t;
+    try { t = await FS.read(f); } catch (e) { toast('That file could not be read: ' + (e.message || e), 'err'); return null; }
+    if (/\.l5x$/i.test(f) || /^\s*<\?xml|<RSLogix5000Content/i.test(t)) return fromL5X(t, true);
+    let p = null; try { p = JSON.parse(t); } catch (e) { /* not JSON */ }
+    if (!validProject(p)) { toast('That file is not an MT PLC Studio project.', 'err'); return null; }
+    return p;
+  }
+  function compareTool() { fileDialog({ mode: 'open', title: 'Compare Tool: pick the project to compare with', types: ['mtp', 'l5x'], onPick: async f => { const q = await projectFromFile(f); if (q) compareResults(q, baseName(f)); } }); }
+  const CMPST = { left: ['−', 'Only in the left project'], right: ['+', 'Only in the right project'], diff: ['≠', 'Different'] };
+  function compareResults(q, fname) {
+    const st = { values: false, open: new Set() };
+    const body = () => {
+      const r = E.Report.compare(S.p, q, { values: st.values }), cats = [...new Set(r.rows.map(x => x.cat))];
+      const det = (x, i) => !st.open.has(i) ? '' : `<div class="cmpd">${x.d.length ? `<table class="cmpt"><thead><tr><th>Property</th><th>Left</th><th>Right</th></tr></thead><tbody>${x.d.map(([f, a, b]) => `<tr><td>${esc(f)}</td><td class="mono">${esc(a)}</td><td class="mono">${esc(b)}</td></tr>`).join('')}</tbody></table>` : ''}
+        ${x.rungs ? `<table class="cmpt"><thead><tr><th>Rung</th><th>Left</th><th>Right</th></tr></thead><tbody>${x.rungs.map(g => `<tr class="cmp-${g.st}"><td>${CMPST[g.st][0]} ${g.a != null ? 'Rung ' + g.a : ''}${g.a != null && g.b != null && g.a !== g.b ? ' / ' : ''}${g.b != null && g.b !== g.a ? 'Rung ' + g.b : ''}</td><td class="mono pre">${esc(g.ta || '')}</td><td class="mono pre">${esc(g.tb || '')}</td></tr>`).join('')}</tbody></table>` : ''}${!x.d.length && !x.rungs ? `<p class="help">${esc(CMPST[x.st][1])}.</p>` : ''}</div>`;
+      return `<div class="cmph"><div><span class="muted">Left:</span> <b>${esc(S.p.controller.name)}</b> <span class="muted">(${esc(S.file ? S.file.name : 'open project')})</span></div><div><span class="muted">Right:</span> <b>${esc(q.controller.name)}</b> <span class="muted">(${esc(fname)})</span></div>
+        <label class="ck"><input type="checkbox" id="cmpv"${st.values ? ' checked' : ''}> Compare tag values</label></div>
+        <div class="cmps" id="cmps">${r.same ? 'The projects are the same.' : `${r.diff} different, ${r.left} only in the left project, ${r.right} only in the right project`}</div>
+        <div class="cmpl">${cats.map(c => `<div class="grp">${esc(c)}</div>${r.rows.map((x, i) => [x, i]).filter(([x]) => x.cat === c).map(([x, i]) => `<div class="row cmp-${x.st}${st.open.has(i) ? ' on' : ''}" data-cmpr="${i}" title="${esc(CMPST[x.st][1])}"><span class="cmpm">${CMPST[x.st][0]}</span><span class="grow ell">${esc(x.name)}</span><span class="sub">${x.st === 'diff' ? (x.d.length + (x.rungs ? x.rungs.length : 0)) + ' difference(s)' : esc(CMPST[x.st][1])}</span></div>${det(x, i)}`).join('')}`).join('')}</div>`;
+    };
+    const el = dialog({ title: 'Compare Results', size: 'lg', body: `<div id="cmpb">${body()}</div>`, buttons: [{ l: 'Compare Another…', run: () => { setTimeout(compareTool, 0); } }, { l: 'Close', pri: true }] });
+    const redraw = () => { el.querySelector('#cmpb').innerHTML = body(); };
+    el.addEventListener('click', ev => { const r = ev.target.closest('[data-cmpr]'); if (!r) return; const i = +r.dataset.cmpr; if (st.open.has(i)) st.open.delete(i); else st.open.add(i); redraw(); });
+    el.addEventListener('change', ev => { if (ev.target.id === 'cmpv') { st.values = ev.target.checked; st.open.clear(); redraw(); } });
   }
   /* Tools > Options, as the Workstation Options dialog (help v37): the Categories list on the left (a changed
      category gets a * after its name), the page of the category, Reset Category; OK, Cancel, Apply. The pages are the

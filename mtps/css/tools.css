@@ -1,0 +1,21 @@
+/* MT PLC Studio: Compare Tool, Generate Report / Print, sample projects, Logical Organizer, Window and View menus,
+   Release Notes (js/report.js and its part of js/app.js). Uses the theme tokens of app.css / themes.css. */
+
+/* Compare Results */
+.cmph { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.cmph .ck { margin-left: auto; }
+.cmps { padding: 8px 0; font-weight: 600; }
+.cmpl { max-height: 56vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.cmpl .grp { padding: 6px 8px; }
+.cmpl .row { cursor: pointer; gap: 8px; }
+.cmpl .row.on { background: var(--accent-soft); }
+.cmpm { width: 1.4em; text-align: center; font-weight: 700; font-family: var(--mono); }
+.cmp-left .cmpm, tr.cmp-left td:first-child { color: var(--danger); }
+.cmp-right .cmpm, tr.cmp-right td:first-child { color: var(--ok); }
+.cmp-diff .cmpm, tr.cmp-diff td:first-child { color: var(--warn-text); }
+.cmpd { padding: 4px 8px 10px 30px; background: var(--surface-2); }
+.cmpt { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; table-layout: fixed; }
+.cmpt th, .cmpt td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.cmpt th:first-child, .cmpt td:first-child { width: 28%; }
+body.phone .cmpl { max-height: none; }
+.cmpt td.pre { white-space: pre-wrap; }
