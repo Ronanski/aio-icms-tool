@@ -77,6 +77,32 @@ module.exports = async function w2D({ browser, page, URL, check }) {
     await page.keyboard.press('Escape'); await wait(80);
     await ev(() => { MTPS.App.ctl.clearFault(); MTPS.App.run('offline'); }); await wait(100);
   }
+  console.log('Wave 2 D: Power-Up Handler (1756-PM014; v37 help, Configure a Power-Up Handler program)');
+  {
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    await page.click('.nd[data-org="puh"]', { button: 'right' }); await wait(150);
+    await pick('New Program…'); await clickBtn('OK');
+    await page.click('.nd[data-org="prog:PowerUp"]', { button: 'right' }); await wait(150);
+    await pick('New Routine…'); await clickBtn('OK');
+    check('Power-Up Handler program PowerUp with its main routine Routine1', await ev(() => { const g = MTPS.App.state.p.tasks.find(t => t.type === 'powerup').programs[0]; return g.name === 'PowerUp' && g.main === 'Routine1' && g.routines[0].rungs.length === 1; }));
+    // a handler that does not clear the fault (a NOP rung, as typed by the user)
+    await ev(() => { MTPS.App.state.p.tasks.find(t => t.type === 'powerup').programs[0].routines[0].rungs = [{ t: 'NOP();' }]; MTPS.App.render(); });
+    const on = await online(); await ev(() => MTPS.App.run('runm')); await wait(300);
+    check('Go Online with a Download, Run', on && await ev(() => MTPS.App.ctl.running));
+    await ev(() => MTPS.App.run('chassis')); await wait(150);
+    const pow = async on => { await page.evaluate(v => { const b = [...document.querySelectorAll(`[data-epow="0:0:${v}"]`)].find(x => x.offsetParent); if (b) b.dataset.wapick = '1'; }, on); await page.click('[data-wapick]'); await page.evaluate(() => document.querySelectorAll('[data-wapick]').forEach(x => delete x.dataset.wapick)); await wait(200); };
+    await pow(0);
+    check('the emulated controller is turned off in Run', await ev(() => !MTPS.App.racks[0].controller(0).powered));
+    await pow(1);
+    check('back on: the empty Power-Up Handler leaves major fault type 1 code 1 (power up in Run mode)', await ev(() => { const c = MTPS.App.ctl; return c.powered && !!c.fault && c.fault.type === 1 && c.fault.code === 1; }));
+    await page.keyboard.press('Escape'); await wait(100);
+    check('Go Online again: the same project, online at once', await online());
+    await ev(() => MTPS.App.run('gofaults')); await wait(200);
+    check('Go To Faults: Controller Properties, Major Faults shows Type 1, Code 1', (await dlgTitle()).startsWith('Controller Properties') && /Type 1, Code 1/.test(await dlgText()));
+    await shot('puh-major-fault');
+    await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => { MTPS.App.ctl.clearFault(); MTPS.App.run('offline'); }); await wait(100);
+  }
   {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold the folder, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {

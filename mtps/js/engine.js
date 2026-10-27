@@ -943,6 +943,13 @@
       const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M ? 'remrun' : 'remprog';
       this.mode = to;
       if (RUN(to) && this.M) this.prescan();
+      /* power lost in Run, back in Run or Remote Run: with a Power-Up Handler program the controller powers up with
+         major fault type 1 code 1, and that program runs; it clears the fault to resume (an empty handler leaves the
+         controller faulted). Without one, the controller goes back to Run (1756-PM014, help: Power-Up Handler). */
+      if ((to === 'run' || to === 'remrun') && this.M && this.wasRun && this.M.puh) {
+        const f = new Fault(1, 1, 'The controller powered up in Run mode after a power loss (Power-Up Handler)');
+        if (!this.handle(this.M.puh, f)) this.majorFault(f.type, f.code, f.message);
+      }
       this.emit('power'); this.emit('mode');
     }
     /* online edit (Accept Edits): the new logic replaces the old without a Download. The mode, the forces and the

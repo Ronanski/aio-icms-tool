@@ -918,5 +918,31 @@ const clearsIn = (c, rname) => { const r0 = c.routine; c.routine = function (R) 
   check('not cleared: the I/O fault faults the controller (type 3 code 16), the handler ran', !!c5.fault && c5.fault.type === 3 && c5.fault.code === 16 && c5.read('Seen') === 1);
 }
 
+console.log('Wave 2 D: Power-Up Handler (1756-PM014: power up in Run after a power loss, major fault type 1 code 1)');
+{
+  const base = rungs => { const p = proj({ tags: [T('Boot', 'DINT'), T('Cnt', 'DINT')], rungs: ['ADD(Cnt,1,Cnt);'] }); if (rungs) p.tasks.push(handlerTask('powerup', 'PowerUp', rungs)); return p; };
+  const cycle = c => { c.power(false); c.power(true); };
+  const c = new MTPS.Controller(); c.download(base(['ADD(Boot,1,Boot);'])); c.setMode('remrun'); scans(c, 2); cycle(c);
+  check('power lost in Remote Run, back on: the Power-Up Handler ran; not cleared, major fault type 1 code 1', c.read('Boot') === 1 && !!c.fault && c.fault.type === 1 && c.fault.code === 1 && c.mode === 'remrun' && !c.running);
+  scans(c, 2);
+  check('faulted: the logic does not run', c.read('Cnt') === 2);
+  const rec = c.majorFaultRecord('PowerUp');
+  check('the handler program\'s MajorFaultRecord holds type 1 code 1', (rec[2] & 0xFFFF) === 1 && rec[2] >> 16 === 1);
+  c.clearFault();
+  check('Clear Faults: no fault, Remote Program (as any cleared major fault)', !c.fault && c.mode === 'remprog');
+  const c2 = new MTPS.Controller(); c2.download(base(['ADD(Boot,1,Boot);'])); c2.setMode('remrun'); clearsIn(c2, 'Main'); cycle(c2); scans(c2, 1);
+  check('the handler clears the fault: the controller resumes Run at once', c2.read('Boot') === 1 && !c2.fault && c2.running && c2.read('Cnt') === 1);
+  const c3 = new MTPS.Controller(); c3.download(base(null)); c3.setMode('remrun'); cycle(c3);
+  check('no Power-Up Handler program: the controller goes back to Run without a fault', !c3.fault && c3.running);
+  const c4 = new MTPS.Controller(); c4.download(base(['ADD(Boot,1,Boot);'])); cycle(c4);
+  check('power lost in Program mode: the handler does not run, no fault', c4.read('Boot') === 0 && !c4.fault && c4.mode === 'remprog');
+  const c5 = new MTPS.Controller(); c5.download(base(['ADD(Boot,1,Boot);'])); c5.setKey('RUN'); cycle(c5);
+  check('key switch in RUN, power lost in Run: the handler runs too', c5.read('Boot') === 1 && c5.fault && c5.fault.type === 1);
+  const c6 = new MTPS.Controller(); const p6 = base(['ADD(Boot,1,Boot);']); p6.tasks[1].programs[0].routines = []; delete p6.tasks[1].programs[0].main;
+  c6.download(p6); c6.setMode('remrun'); cycle(c6);
+  check('an empty Power-Up Handler (no routine): power up faulted, type 1 code 1 (PM014)', !!c6.fault && c6.fault.type === 1 && c6.fault.code === 1);
+  check('the Power-Up Handler is not scanned with the tasks', (() => { const x = new MTPS.Controller(); x.download(base(['ADD(Boot,1,Boot);'])); x.setMode('remrun'); scans(x, 3); return x.read('Boot') === 0; })());
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
