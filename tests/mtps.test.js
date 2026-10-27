@@ -3,6 +3,7 @@
    Usage: node tests/mtps.test.js */
 'use strict';
 const MTPS = require('../mtps/js/engine.js');
+require('../mtps/js/sfc.js');
 
 let failed = 0, passed = 0;
 function check(name, cond, info = '') {
@@ -1747,6 +1748,149 @@ console.log('Logix Echo controller in the chassis (9310-GR001D, Add an emulated 
   check('the Echo type, firmware revision and subnet mask are kept with the chassis (and the power switch)', m.echo.type === 'ControlLogix 5580' && m.echo.rev === '37' && m.mask === '255.255.255.0' && m.ip === '127.0.0.2' && !m.ctl.powered);
   const m2 = new MTPS.Chassis(8); m2.insert(0, 'PLC-CPU', 'E');
   check('a Logix Emulate controller has none', m2.module(0).echo === undefined && m2.toJSON().mods[0].echo === undefined);
+}
+
+console.log('Sequential Function Chart routines (1756-PM006, v37 help): verify, steps, transitions, branches, actions, SFC Execution');
+{
+  /* a project whose main routine is an SFC: els / ln as the chart, the tags of its elements from the chart; o.tags:
+     more program tags, o.sub: ladder routines, o.cfg: Controller Properties > SFC Execution */
+  const sfcProj = (els, ln, o = {}) => {
+    const ch = { els, ln, pri: o.pri };
+    const tags = MTPS.SFC.tagsOf(ch).map(([name, type]) => ({ name, type })).concat(o.tags || []);
+    return { format: 'mt-plc-studio', version: 1, controller: { name: 'Test', type: 'PLC-CPU', rev: '1.0', sfc: o.cfg },
+      rack: { size: 8, modules: [] }, dataTypes: [], tags,
+      tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: o.main || 'Chart', tags: [],
+        routines: [{ name: 'Chart', type: 'SFC', rungs: [], sfc: ch }, ...(o.sub || []).map(r => ({ name: r.name, rungs: r.rungs.map(t => ({ t })) }))] }] }] };
+  };
+  const st = (n, x, y, more) => ({ id: n, k: 'step', n: 'Step_' + String(n).padStart(3, '0'), x, y, acts: [], ...more });
+  const tr = (n, c, x, y) => ({ id: 100 + n, k: 'tran', n: 'Tran_' + String(n).padStart(3, '0'), x, y, c });
+  const go = (p, n = 1) => { const c = new MTPS.Controller(); const r = c.download(p); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); scans(c, n); return c; };
+  // a sequence: Step_000 (initial) → Tran_000 (Go) → Step_001 → Tran_001 (Back) → wired back to Step_000
+  const seq = (acts0 = [], acts1 = [], o = {}) => sfcProj([st(0, 100, 50, { init: true, acts: acts0 }), tr(0, 'Go', 100, 120), st(1, 100, 190, { acts: acts1, pre: o.pre, al: o.al, lh: o.lh, ll: o.ll }), tr(1, 'Back', 100, 260)],
+    [[0, 100], [100, 1], [1, 101], [101, 0]], { tags: [T('Go', 'BOOL'), T('Back', 'BOOL'), T('M', 'DINT'), T('F', 'DINT'), T('K', 'DINT'), T('B1', 'BOOL')].concat(o.tags || []), cfg: o.cfg, sub: o.sub });
+
+  // types and verify
+  check('SFC_STEP, SFC_ACTION and SFC_STOP are predefined data types (their BOOLs are bits of Status)', ['SFC_STEP', 'SFC_ACTION', 'SFC_STOP'].every(n => MTPS.dataTypes({}).predefined.includes(n)) && MTPS.PREDEF.SFC_STEP.find(m => m.name === 'X').bit === 31 && MTPS.PREDEF.SFC_ACTION.find(m => m.name === 'Q').bit === 30);
+  const ok = MTPS.verify(seq());
+  check('a chart with an initial step, transitions with BOOL expressions and wires verifies', ok.errors.length === 0, ok.lines.join(' | '));
+  check('verify lists the SFC routine like a ladder routine', ok.lines.includes("Verifying routine 'Chart' of program 'MainProgram'..."));
+  const bad = MTPS.verify(sfcProj([st(0, 100, 50), tr(0, 'Go AND', 100, 120), st(1, 100, 190)], [[0, 100], [100, 1]], { tags: [T('Go', 'BOOL')] }));
+  const txt = bad.errors.map(e => e.text).join(' | ');
+  check('verify: no initial step, a condition that is not complete, a step without a transition', /no initial step/.test(txt) && /Tran_000: The expression ends too early/.test(txt) && /Step_001: The step is not followed by a transition/.test(txt), txt);
+  const nt = sfcProj([st(0, 100, 50, { init: true }), tr(0, 'Go', 100, 120)], [[0, 100], [100, 0]]); nt.tags = [];
+  check('verify: an element needs its backing tag (SFC_STEP for a step, BOOL for a transition)', /Undefined tag 'Step_000'/.test(MTPS.verify(nt).errors.map(e => e.text).join()));
+  check('verify: a transition must be a BOOL expression', /must be a BOOL expression/.test(MTPS.verify(sfcProj([st(0, 1, 1, { init: true }), tr(0, 'M + 1', 1, 2)], [[0, 100], [100, 0]], { tags: [T('M', 'DINT')] })).errors.map(e => e.text).join()));
+
+  // a sequence and the SFC_STEP members
+  const c = go(seq([{ n: 'Action_000', q: 'N', b: 'F := Step_000.FS; K := K + 1;' }]), 1);
+  check('the initial step is active after the download and Run: .X on, .Count 1; its N action runs', c.read('Step_000.X') === 1 && c.read('Step_000.Count') === 1 && c.read('K') === 1);
+  check('.FS is on while the step runs its first scan, then off', c.read('F') === 1 && c.read('Step_000.FS') === 0);
+  scans(c, 1);
+  check('.SA on after the first scan; .FS read in the action is 0 now', c.read('Step_000.SA') === 1 && c.read('F') === 0);
+  c.write('Go', 1); scans(c, 1);
+  check('a true transition: its BOOL tag is 1; the step stays active until its last scan on the next scan', c.read('Tran_000') === 1 && c.read('Step_000.X') === 1 && c.read('Step_001.X') === 0);
+  scans(c, 1);
+  check('next scan: the last scan of Step_000, then Step_001 is active (.X), Step_000 off and its .TMax set', c.read('Step_000.X') === 0 && c.read('Step_001.X') === 1 && c.read('Step_000.TMax') >= 20);
+  c.write('Go', 0); scans(c, 3);
+  check('.T counts in milliseconds while the step is active', c.read('Step_001.T') === 30, c.read('Step_001.T'));
+  c.write('Back', 1); scans(c, 2); c.write('Back', 0);
+  check('the wire back to Step_000 (a loop): Step_000 active again, .Count 2', c.read('Step_000.X') === 1 && c.read('Step_000.Count') === 2 && c.read('Step_001.X') === 0);
+  const ck = c.read('Step_001.T'); scans(c, 3);
+  check('an inactive step keeps its .T', c.read('Step_001.T') === ck);
+
+  // preset and alarms
+  const pa = go(seq([], [], { pre: 50, al: true, lh: 80, ll: 200 }), 1);
+  pa.write('Go', 1); scans(pa, 2); pa.write('Go', 0); scans(pa, 4);
+  const dn0 = pa.read('Step_001.DN'); scans(pa, 2);
+  check('.DN turns on when .T reaches .PRE (the Preset of Step Properties)', dn0 === 0 && pa.read('Step_001.DN') === 1 && pa.read('Step_001.PRE') === 50);
+  scans(pa, 3);
+  check('.AlarmHigh turns on at .LimitHigh (with .AlarmEn)', pa.read('Step_001.AlarmHigh') === 1 && pa.read('Step_001.AlarmEn') === 1);
+  pa.write('Back', 1); scans(pa, 2); pa.write('Back', 0);
+  check('.AlarmLow: the step went off before .LimitLow; .DN stays on until the step is active again', pa.read('Step_001.AlarmLow') === 1 && pa.read('Step_001.DN') === 1 && pa.read('Step_001.X') === 0);
+
+  // selection branch and simultaneous branch
+  const sel = sfcProj([st(0, 150, 50, { init: true }), tr(0, 'A', 100, 120), tr(1, 'B', 200, 120), st(1, 100, 190), st(2, 200, 190), tr(2, 'FALSE', 100, 260), tr(3, 'FALSE', 200, 260)],
+    [[0, 100], [0, 101], [100, 1], [101, 2], [1, 102], [2, 103], [102, 0], [103, 0]], { tags: [T('A', 'BOOL'), T('B', 'BOOL')] });
+  const s1 = go(sel, 1); s1.write('A', 1); s1.write('B', 1); scans(s1, 2);
+  check('selection branch: both transitions true, the left path is taken (checked left to right)', s1.read('Step_001.X') === 1 && s1.read('Step_002.X') === 0);
+  sel.tasks[0].programs[0].routines[0].sfc.pri = { 0: [101, 100] };
+  const s2 = go(sel, 1); s2.write('A', 1); s2.write('B', 1); scans(s2, 2);
+  check('Set Sequence Priorities: the path set first is checked first', s2.read('Step_002.X') === 1 && s2.read('Step_001.X') === 0);
+  const sim = sfcProj([st(0, 150, 50, { init: true }), tr(0, 'Go', 150, 120), st(1, 100, 190), st(2, 200, 190), tr(1, 'A', 200, 260), st(3, 200, 330), tr(2, 'Done', 150, 400)],
+    [[0, 100], [100, 1], [100, 2], [2, 101], [101, 3], [1, 102], [3, 102], [102, 0]], { tags: [T('Go', 'BOOL'), T('A', 'BOOL'), T('Done', 'BOOL')] });
+  const sm = go(sim, 1); sm.write('Go', 1); sm.write('Done', 1); scans(sm, 2);
+  check('simultaneous branch: both paths are active at once', sm.read('Step_001.X') === 1 && sm.read('Step_002.X') === 1);
+  scans(sm, 3);
+  check('the transition that ends the branch waits for the last step of every path (Step_003 not yet reached)', sm.read('Step_001.X') === 1 && sm.read('Step_000.X') === 0);
+  sm.write('A', 1); scans(sm, 3);
+  check('… then it is checked and the chart leaves the branch', sm.read('Step_000.X') === 1 && sm.read('Step_001.X') === 0 && sm.read('Step_003.X') === 0);
+
+  // qualifiers
+  const q = (qq, pre, b = 'K := K + 1;') => ({ n: 'Action_' + qq, q: qq, pre, b });
+  const qc = go(seq([q('P1'), { n: 'Action_P0', q: 'P0', b: 'F := F + 1;' }]), 3);
+  check('P1 runs once on the step\'s first scan; P0 not yet', qc.read('K') === 1 && qc.read('F') === 0);
+  qc.write('Go', 1); scans(qc, 2);
+  check('P0 runs once on the last scan of the step', qc.read('F') === 1 && qc.read('K') === 1);
+  const lc = go(seq([q('L', 30)]), 6);
+  check('L (Time Limited): active only until .PRE of the action', lc.read('K') === 3 && lc.read('Action_L.A') === 0 && lc.read('Action_L.PRE') === 30, lc.read('K'));
+  const dc = go(seq([q('D', 30)]), 6);
+  check('D (Time Delayed): active once the step has been active for .PRE', dc.read('K') === 3 && dc.read('Action_D.Q') === 1 && dc.read('Action_D.Count') === 1, dc.read('K'));
+  const sr = go(seq([{ n: 'Fan', q: 'S', b: 'K := K + 1;' }], [{ n: 'Fan', q: 'R' }]), 2);
+  sr.write('Go', 1); scans(sr, 2); sr.write('Go', 0);
+  check('S (Stored): the action stays active after its step is left', sr.read('Step_000.X') === 0 && sr.read('Fan.A') === 1 && sr.read('K') >= 3);
+  scans(sr, 2);
+  check('R (Reset) in the next step turns the stored action off', sr.read('Fan.A') === 0 && sr.read('Fan.Q') === 0);
+  const bo = go(seq([{ n: 'Action_B', q: 'N', bool: true }]), 2);
+  check('a Boolean action only sets its bits (Q, A)', bo.read('Action_B.Q') === 1 && bo.read('Action_B.A') === 1);
+  bo.write('Go', 1); scans(bo, 3);
+  check('… and they go off after the action', bo.read('Action_B.Q') === 0 && bo.read('Action_B.A') === 0);
+
+  // Last Scan of Active Steps
+  const lastScan = last => { const l2 = go(seq([{ n: 'Action_N', q: 'N', b: 'IF Step_000.LS THEN F := 7; END_IF; M [:=] 5; B1 := 1;' }], [], { cfg: { last } }), 2); l2.write('Go', 1); scans(l2, 3); return [l2.read('M'), l2.read('F'), l2.read('B1')]; };
+  eq("Don't scan (default): the action is not scanned again: data keeps its values", lastScan('dontscan'), [5, 0, 1]);
+  eq("Programmatic reset: one more scan with the step's .LS on", lastScan('programmatic'), [5, 7, 1]);
+  eq('Automatic reset: a postscan, the [:=] (non-retentive) tag is cleared, := keeps its value', lastScan('auto'), [0, 0, 1]);
+  const js = go(seq([{ n: 'Action_J', q: 'N', b: 'JSR(Sub);' }], [], { cfg: { last: 'auto' }, sub: [{ name: 'Sub', rungs: ['XIC(Go)OTE(B1);'] }] }), 1);
+  js.write('Go', 1); scans(js, 1);
+  check('an action calls a ladder routine with JSR', js.read('B1') === 1);
+  scans(js, 2);
+  check('Automatic reset postscans the called routine: its OTE goes off', js.read('B1') === 0 && js.read('Step_001.X') === 1);
+
+  // Execution Control
+  const chain = cfg => sfcProj([st(0, 1, 1, { init: true }), tr(0, 'TRUE', 1, 2), st(1, 1, 3), tr(1, 'TRUE', 1, 4), st(2, 1, 5), tr(2, 'Stay', 1, 6), st(3, 1, 7), tr(3, 'FALSE', 1, 8)],
+    [[0, 100], [100, 1], [1, 101], [101, 2], [2, 102], [102, 3], [3, 103], [103, 0]], { tags: [T('Stay', 'BOOL')], cfg });
+  const one = go(chain(), 2);
+  check('Execute current active steps only: one step further each scan', one.read('Step_001.X') === 1);
+  const all = go(chain({ exec: 'untilFalse' }), 1);
+  check('Execute until FALSE transition: in one scan the chart goes on to the step whose transition is false', all.read('Step_002.X') === 1 && all.read('Step_001.Count') === 1);
+
+  // Restart Position
+  const rp = restart => { const r = go(seq([], [], { cfg: { restart } }), 1); r.write('Go', 1); scans(r, 2); r.write('Go', 0); r.setMode('remprog'); r.setMode('remrun'); scans(r, 1); return [r.read('Step_000.X'), r.read('Step_001.X'), r.read('Step_000.Count')]; };
+  eq('Restart at most recently executed step (default): Program → Run goes on at Step_001', rp('recent'), [0, 1, 1]);
+  eq('Restart at initial step: back at the initial step, the counts cleared', rp('initial'), [1, 0, 1]);
+
+  // stop, SFC as a subroutine, online edit, major fault
+  const sp = go(sfcProj([st(0, 1, 1, { init: true }), tr(0, 'Go', 1, 2), { id: 50, k: 'stop', n: 'Stop_000', x: 1, y: 3 }], [[0, 100], [100, 50]], { tags: [T('Go', 'BOOL')] }), 1);
+  sp.write('Go', 1); scans(sp, 3);
+  check('a stop: its .X turns on and the chart stops (no step active)', sp.read('Stop_000.X') === 1 && sp.read('Step_000.X') === 0 && sp.read('Stop_000.Count') === 1);
+  const sb = sfcProj([st(0, 1, 1, { init: true, acts: [{ n: 'Action_000', q: 'N', b: 'K := K + 1;' }] }), tr(0, 'FALSE', 1, 2)], [[0, 100], [100, 0]], { tags: [T('K', 'DINT'), T('Call', 'BOOL')], main: 'Main', sub: [{ name: 'Main', rungs: ['XIC(Call)JSR(Chart);'] }] });
+  const sc = go(sb, 3);
+  check('an SFC called by JSR runs only while it is called', sc.read('K') === 0);
+  sc.write('Call', 1); scans(sc, 3);
+  check('… then one pass each time the JSR executes', sc.read('K') === 3 && sc.read('Step_000.X') === 1);
+  const oe = seq([{ n: 'Action_000', q: 'N', b: 'K := K + 1;' }]);
+  const ec = go(oe, 1); ec.write('Go', 1); scans(ec, 2); ec.write('Go', 0);
+  oe.tasks[0].programs[0].routines[0].sfc.els[0].acts[0].b = 'K := K + 10;';
+  const er = ec.edit(oe); scans(ec, 1);
+  check('an online edit of an action keeps the active step (Maintain active SFC step)', er.ok && ec.read('Step_001.X') === 1 && ec.read('Step_000.X') === 0);
+  oe.tasks[0].programs[0].routines[0].sfc.ln.push([0, 101]);
+  ec.edit(oe); scans(ec, 1);
+  check('an edit of the wiring starts the chart again at its initial step', ec.read('Step_000.X') === 1 && ec.read('Step_001.X') === 0);
+  const mf = go(seq(), 1);
+  mf.write('Go', 1); scans(mf, 2); mf.write('Go', 0);
+  mf.majorFault(4, 20, 'test'); mf.clearFault(); mf.setMode('remrun'); scans(mf, 1);
+  check('after a major fault is cleared the chart restarts at the initial step', mf.read('Step_000.X') === 1 && mf.read('Step_001.X') === 0);
+  check('the SFC settings default to the reference (current active steps, most recent step, Don\'t scan)', JSON.stringify(MTPS.SFC.cfgOf(undefined)) === JSON.stringify({ exec: 'current', restart: 'recent', last: 'dontscan' }));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

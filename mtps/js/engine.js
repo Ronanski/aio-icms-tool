@@ -730,6 +730,7 @@
     if (!validName(ctl.name)) ctlErr(`Invalid controller name '${ctl.name || ''}'`);
     const types = typeTable(pj, ctlErr);
     const M = { name: ctl.name || '', types, tags: new Map(), vals: {}, S: { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 }, mods: new Map(), programs: [], otes: new Map() };
+    M.sfcCfg = ctl.sfc || null;   // Controller Properties > SFC Execution (sfc.js)
 
     const rack = pj.rack || {};
     const okSize = n => RACKS.includes(n) || OLDRACKS.includes(n);
@@ -790,7 +791,7 @@
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
-        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null });
+        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null, sfc: r.type === 'SFC' ? r.sfc || {} : null });
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
@@ -834,6 +835,12 @@
           out.lines.push(text);
         };
         if (MTPS.ST) R.stc = MTPS.ST.compile(M, P, R, say); else say('Error', 1, 0, 'Structured Text is not available');
+        continue;
+      }
+      // a Sequential Function Chart routine (sfc.js): its elements are verified and compiled there, not as rungs
+      if (R.sfc) {
+        const sr = (list, kind) => (el, msg) => { if (want) { const text = `${kind}: ${el ? el + ': ' : ''}${dot(msg)}`; list.push({ program: P.name, routine: R.name, el, msg: dot(msg), text }); out.lines.push(text); } };
+        if (MTPS.SFC) MTPS.SFC.compile(M, P, R, sr(out.errors, 'Error'), sr(out.warnings, 'Warning')); else sr(out.errors, 'Error')(null, 'Sequential Function Chart routines need sfc.js');
         continue;
       }
       R.src.forEach((src, n) => {
@@ -1527,6 +1534,7 @@
     }
     majorFault(type, code, text) {
       faultRec(this, true, type, code);
+      this.sfcInit = true;   // after a major fault an SFC restarts at its initial step (1756-PM006)
       this.fault = { type, code, text, at: Date.now() };
       this.majors.unshift(this.fault);
       this.majors.length = Math.min(this.majors.length, 10);
@@ -1552,6 +1560,7 @@
     /* Program → Run: OTE bits off, TON reset, one-shot storage set so a true input does not fire at start */
     prescan() {
       this.first = true; this.held = false;
+      if (MTPS.SFC && this.M) MTPS.SFC.prescan(this);
       const walk = arr => {
         for (const e of arr) {
           if (!e) continue;
@@ -1651,6 +1660,7 @@
       Object.assign(r.model.S, this.S);
       // a program that was inhibited and is not any more gets S:FS on its next scan
       r.model.programs.forEach(P => { const o = this.M.programs.find(x => U(x.name) === U(P.name)); if (o && o.inhibit && !P.inhibit) P.fs = true; });
+      if (MTPS.SFC) MTPS.SFC.carry(this.M, r.model);
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
@@ -1743,12 +1753,13 @@
        false) is toggled by an MCR with rung-condition-in false, and is reset when the routine ends. */
     routine(R) {
       if (R.stc) { R.stc.run(this); this.tnd = this.ret = false; return; }
+      if (R.sfc) { MTPS.SFC.run(this, R); return; }
       const rungs = R.rungs, mcr0 = this.mcr;
       let jumps = 0;
       this.mcr = false;
       for (let i = 0; i < rungs.length;) {
         if ((++this.wdN & 255) === 0) this.wdCheck();
-        this.seq(rungs[i].elems, !this.mcr);
+        this.seq(rungs[i].elems, !this.mcr && !this.post);   // post: a postscan (SFC automatic reset) runs every rung false
         if (this.tnd || this.ret) { this.tnd = this.ret = false; break; }
         if (this.jmp !== null) {
           const to = R.labels.get(this.jmp);
@@ -2458,6 +2469,8 @@
   MTPS.GSVOBJ = GSVOBJ;
   // the parts the Structured Text compiler (st.js) builds on
   MTPS._k = { ref, parseNumber, compileElem, Fault, Halt, isInt, isReal, isNum, ATOMIC, XPRE, INSTR, FBDI, FBDT, fbdPrescan };
+  // for sfc.js: tag references, faults and numbers as the engine compiles them
+  MTPS.core = { ref, Fault, parseNumber, store, validName, dot, U };
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

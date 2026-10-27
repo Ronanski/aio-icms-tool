@@ -409,7 +409,10 @@
   const handlerProg = kind => { const t = handlerTask(kind); return t && t.programs[0] || null; };
   const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
-  const rungs = () => curRoutine().rungs;
+  // an SFC routine has no rungs: the ladder commands see an empty list (sfc.js edits the chart)
+  const rungs = () => { const r = curRoutine(); return r.type === 'SFC' ? [] : r.rungs; };
+  const SFCUI = () => (E.SFC && E.SFC.ui) || null;
+  const sfcOn = () => !!SFCUI() && SFCUI().on();
   // a Structured Text routine opens in the ST editor of st.js (in #stwrap) where a ladder routine has #ladwrap
   const stOn = () => !S.noProj && S.view === 'ladder' && curRoutine().type === 'ST' && !!(E.ST && E.ST.ui);
   const ladWrap = () => (stOn() ? '<div class="stwrap" id="stwrap"></div>' : '<div class="ladwrap" id="ladwrap" tabindex="0"></div>');
@@ -1045,6 +1048,7 @@
     const nl = $('#ladwrap');
     if (nl) { renderLadder(); if (st && !kept) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     if (stOn()) E.ST.ui.mount(stv);
+    if (sfcOn()) SFCUI().mount();
     if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
   }
@@ -1104,7 +1108,7 @@
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
       <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
-          ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
+          ${sfcOn() ? SFCUI().html() : S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
           ${descBarHTML()}${ladWrap()}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
       ${P.err ? `<div class="derr"><div class="ph">Errors<span class="grow"></span><button class="ib" data-cmd="verr" title="Close">${ic('close')}</button></div>${errorsHTML()}</div>` : ''}
       <div class="dstatus"><span id="stmsg">${esc(S.msg || 'Ready')}</span><span>${S.online ? 'Online: ' + modeText() : 'Offline'}</span><span>Rung ${curSelRung() == null ? '-' : curSelRung()} of ${rc}</span><span>v${VERSION}</span></div>`;
@@ -1123,8 +1127,8 @@
       <div class="tstat" id="olbar">${tabStatHTML()}</div>
       <div class="tbody">${pinned ? orgAside('') : ''}
         <section class="ed"><div class="rtabs">${pinned ? '' : `<button class="ib" data-drawer="1" title="Controller Organizer">${ic('tree')}</button>`}<span class="tabsx">${rtabsHTML()}</span><span class="grow"></span>${S.view === 'ladder' ? tbtn('zout') + tbtn('zin') : ''}<button class="ib" data-more="ladder" title="More">${ic('more')}</button></div>
-          ${port && S.view === 'ladder' && !stOn() ? `<div class="ibar top"><div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div></div>` : ''}
-          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${S.view === 'ladder' ? `${descBarHTML()}${ladWrap()}
+          ${port && S.view === 'ladder' && !stOn() && !sfcOn() ? `<div class="ibar top"><div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div></div>` : ''}
+          <div class="edmain">${!pinned && S.drawer ? orgAside(' over') : ''}${sfcOn() ? SFCUI().html() : S.view === 'ladder' ? `${descBarHTML()}${ladWrap()}
           ${stOn() ? '' : selbarHTML(e)}` : S.view === 'tags' ? tagWsHTML() : emptyWs()}</div>
           ${S.prefs.emu && dockSide(port) === 'bottom' ? dockHTML('bottom') : ''}
           ${port ? msgPane() : `<div class="ibar">${land ? `<div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}${errHandle()}</div>` : `<div class="glyphs one">${gbtns('Favorites')}<button class="gbtn more" data-cmd="ins" title="All instructions">${ic('plus')}<span>All…</span></button></div>${errHandle()}`}</div>`}</section>
@@ -1155,7 +1159,7 @@
       const tabs = pland ? '' : `<div class="ptabs"><button class="${emuTab ? '' : 'on'}" data-ptab="0">Ladder</button><button class="${emuTab ? 'on' : ''}" data-ptab="1">Emulator${S.online && ctl.running ? ' ●' : ''}</button></div>`;
       if (emuTab) { body = tabs + dockHTML('full'); }
       else body = tabs + `<div class="pbar"><span class="rt grow" data-routines="1"><span class="tt">${esc(curRoutine().name)}<small>${esc(curProg().name)}</small></span>${ic('down')}</span>${tbtn('undo')}${tbtn('find')}<button class="ib" data-more="ladder">${ic('more')}</button></div>
-        <div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">${descBarHTML()}${ladWrap()}${stOn() ? '' : `<button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button>`}</div>${stOn() ? '' : selbarHTML(curEl())}`;
+        ${sfcOn() ? SFCUI().html() : `<div style="position:relative;flex:1;display:flex;flex-direction:column;min-height:0">${descBarHTML()}${ladWrap()}${stOn() ? '' : `<button class="fab" data-cmd="ins" title="Add instruction"${editable() ? '' : ' disabled'}>${ic('plus')}</button>`}</div>${stOn() ? '' : selbarHTML(curEl())}`}`;
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
@@ -4663,7 +4667,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'New Routine', size: 'md', focus: true,
       body: `<div class="frow"><label>Name</label><input class="inp" id="p1" value="${esc(n)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="nr-d" rows="2"></textarea></div>
-        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option><option value="ST">Structured Text</option></select></div>
+        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option><option value="ST">Structured Text</option>${SFCUI() ? '<option value="SFC">Sequential Function Chart</option>' : ''}</select></div>
         <div class="frow"><label>In Program</label><select class="inp" disabled><option>${esc(g.name)}</option></select></div>
         <div class="frow"><label>Assignment</label><select class="inp" id="nr-a"><option value=""${g.main ? ' selected' : ''}>&lt;none&gt;</option><option value="main"${g.main ? '' : ' selected'}>Main</option><option value="fault">Fault</option></select></div>
         <p class="help">Call a routine from the main routine with JSR. A Fault routine runs when an instruction of this program faults; it clears the fault by setting Type and Code of the program's MajorFaultRecord to 0.</p><div class="errtx" id="p1e"></div>`,
@@ -4671,7 +4675,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         const v = el.querySelector('#p1').value.trim(), d = el.querySelector('#nr-d').value.trim(), as = el.querySelector('#nr-a').value, ty = el.querySelector('#nr-t').value, er = t => { el.querySelector('#p1e').textContent = t; return false; };
         if (!E.validName(v)) return er('Use letters, digits and _ (up to 40).');
         if (g.routines.some(r => U(r.name) === U(v))) return er('A routine with that name exists.');
-        edit(() => { const r = ty === 'ST' ? { name: v, type: 'ST', st: '', rungs: [] } : { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
+        edit(() => { const r = ty === 'ST' ? { name: v, type: 'ST', st: '', rungs: [] } : ty === 'SFC' ? { name: v, type: 'SFC', rungs: [], sfc: SFCUI().newChart(g, S.p) } : { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
       } }] });
   }
   /* New Program in the Controller Fault Handler or Power-Up Handler folder (1756-PM014; help: the handler program cannot
@@ -4950,7 +4954,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'Routine Properties - ' + r.name, size: 'md',
       body: `<div class="frow"><label>Name</label><input class="inp" id="rp-n" value="${esc(r.name)}"${dis}></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="rp-d" rows="3"${dis}>${esc(r.desc || '')}</textarea></div>
-        ${kv('Type', r.type === 'ST' ? 'Structured Text' : 'Ladder Diagram')}${kv('In program', esc(g.name))}${r.type === 'ST' ? kv('Number of lines', String(r.st || '').split('\n').length) : kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
+        ${kv('Type', r.type === 'ST' ? 'Structured Text' : r.type === 'SFC' ? 'Sequential Function Chart' : 'Ladder Diagram')}${kv('In program', esc(g.name))}${r.type === 'ST' ? kv('Number of lines', String(r.st || '').split('\n').length) : kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!editable()) return;
         const n = el.querySelector('#rp-n').value.trim(), d = el.querySelector('#rp-d').value.trim();
@@ -5493,7 +5497,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', 'Continuous task'], ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
     if (k.startsWith('prog:')) { const g = prog(k.slice(5)); return g && [g.name, [['Type', 'Program'], ['Description', g.desc || ''], ['Main Routine', g.main || '<none>'], ['Routines', g.routines.length], ['Tags', g.tags.length]]]; }
     if (k.startsWith('ptags:')) { const g = prog(k.slice(6)); return g && ['Program Tags', [['Type', 'Tags of the program scope'], ['Program', g.name], ['Tags', g.tags.length]]]; }
-    if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', R.type === 'ST' ? 'Structured Text routine' : 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
+    if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', R.type === 'ST' ? 'Structured Text routine' : R.type === 'SFC' ? 'Sequential Function Chart routine' : 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
     if (k === 'dts' || k === 'dt:user' || k === 'dt:str' || k === 'dt:aod' || k === 'dt:pre' || k === 'dt:mod') {
       const d = E.dataTypes(P), L = { dts: ['Data Types', null], 'dt:user': ['User-Defined', d.userDefined], 'dt:str': ['Strings', d.strings], 'dt:aod': ['Add-On-Defined', d.addOnDefined || []], 'dt:pre': ['Predefined', d.predefined], 'dt:mod': ['Module-Defined', d.moduleDefined] }[k];
       return [L[0], [['Type', 'Folder']].concat(L[1] ? [['Data types', L[1].length]] : [])];
@@ -7089,6 +7093,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   let lastFault = null;
   function live(force) {
+    if (S.online && sfcOn()) SFCUI().live();   // the SFC window: its own signature and pace (sfc.js)
     const s = liveSig();
     if (!force && s === sig) return;
     sig = s;
@@ -7471,6 +7476,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k === 'Enter' && ev.target.dataset && ev.target.dataset.errq) { rememberErrQ(ev.target.value); return; }
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
+    if (sfcOn() && SFCUI().key(ev)) { ev.preventDefault(); return; }
     if (ev.key === 'Escape' && S.descEd) { ev.preventDefault(); closeDescBar(false); return; }
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
@@ -7532,6 +7538,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   if (E.ST && E.ST.ui) E.ST.ui.init({ S, edit, render, run, curRoutine, curProg, liveRoutine, editable, get ctl() { return ctl; } });
+  if (SFCUI()) SFCUI().bind({ S, dialog, openMenu, toast, esc, ic, edit, render, run, curProg, curRoutine, ctl: () => ctl, prompt1, savePrefs, editable });
   E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
   start();
