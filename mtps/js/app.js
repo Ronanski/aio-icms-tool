@@ -4334,7 +4334,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const pick = racks.length > 1 ? `<select class="inp dksel" data-dkr="1" aria-label="Chassis">${racks.map((r, i) => `<option value="${i}"${r === chassis ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select>` : `<span class="muted">${esc(chassis.name)} · ${chassis.size} slots</span>`;
     return `${where === 'full' ? '' : `<div class="split ${where}" data-split="${where}" title="Drag to resize"></div>`}<div class="dock ${where}" id="dock" style="${size}">
       <div class="ph"><b>Emulator</b>${pick}<span class="grow"></span><button class="ib" data-cmd="chassis" title="Emulator dashboard (Device Status, chassis, snapshots)">${ic('gear')}</button>${S.layout !== 'phone' ? `<button class="ib" data-dkpop="1" title="Open in its own window">${ic('goto')}</button>` : ''}${where === 'full' ? '' : `${innerWidth > innerHeight ? `<button class="ib" data-dkat="${where === 'side' ? 'bottom' : 'right'}" title="${where === 'side' ? 'Move the panel under the ladder' : 'Move the panel to the right of the ladder'}">${ic(where === 'side' ? 'dockb' : 'dockr')}</button>` : ''}<button class="ib" data-dkmin="1" title="Fold the emulator panel">${ic(where === 'side' ? 'right' : 'down')}</button>`}</div>
-      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div></div>`;
+      ${emuMenuBar('dock')}<div class="dockb" id="iob">${dockBody()}</div><div class="emst" id="emst-dock">${emuStatus(Math.max(0, racks.indexOf(chassis)))}</div></div>`;
   }
   /* the Chassis Monitor menu bar (Logix Emulate, LGEM5K-GR016M chapters 3-5): Slot > Create Module / Remove Module /
      Properties, View, Options, All Modules > Run / Program, Help; the right-click menus stay as they are */
@@ -4347,7 +4347,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const cur = emuSel.k === 'm' && emuSel.ri === ri && r.module(emuSel.slot) ? emuSel.slot : null;
     const P = S.prefs, tog = k => () => { P[k] = !P[k]; savePrefs(); chassisLive(true); render(); backToEmu(was); };
     const items = {
-      File: [{ l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
+      File: [{ l: 'Chassis Properties…', i: 'gear', run: () => chassisProps(ri, 'gen', was) }, '-', { l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
       Slot: [{ l: 'Create Module…', i: 'plus', dis: !free.length, run: () => insertCard(ri, free[0]) }, { l: 'Remove Module…', i: 'trash', dis: !used.length, run: () => removeModuleDlg(ri, cur, was) }, '-',
         { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (r.module(cur).ctl) { emuProps(ri + ':' + cur, 'gen', was); return; } if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
       View: [{ l: 'Compact', ck: !!P.emuCompact, run: tog('emuCompact') }, { l: 'Hide Slots 9-16', ck: false, dis: true }],
@@ -4443,7 +4443,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      wraps into a second row. */
   const rackHTML = ri => {
     const r = racks[ri], row = Array.from({ length: r.size }, (_, s) => s);
-    return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
+    return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}" data-chas="${ri}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
       <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div></div>`;
   };
   /* ---------- Module I/O window: the I/O of a chassis in one small window that stays open, inputs and outputs
@@ -4768,6 +4768,50 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
   // Enable Periodic Save: the chassis (programs, data, configuration) is saved every Periodic Save Interval
   let lastPSave = Date.now();
   setInterval(() => { const due = racks.some(r => r.controllers().some(m => m.ctl.emu.psaveOn && Date.now() - lastPSave >= m.ctl.emu.psave * 60000)); if (due) { lastPSave = Date.now(); saveChassis(); } }, 15000);
+  /* the Chassis Monitor's Computer box (hidden by View > Compact, LGEM5K-GR016M chapter 3) and its status bar: the
+     selected module on the left; the slots in use, the controllers running and the slot of the RSLinx Classic module
+     (Configure Virtual Backplane) on the right */
+  const computerName = () => (location.hostname || 'localhost').toUpperCase();
+  function emuStatus(ri) {
+    const r = racks[ri];
+    if (!r) return '<span class="grow">Ready</span>';
+    const cs = r.controllers(), run = cs.filter(m => m.ctl.powered && m.ctl.running).length, d = drivers.find(x => x.type === 'vbp');
+    const m = emuSel.k === 'm' && emuSel.ri === ri ? r.module(emuSel.slot) : null;
+    const left = m ? `Slot ${m.slot}: ${m.ctl ? 'PLC-CPU' : m.type} ${m.name}${m.ctl ? ' · ' + (m.ctl.powered ? modeName(m.ctl) + (m.ctl.bp ? ' · Breakpoint' : '') : 'Off') : m.fault ? ' · Faulted' : ''}` : 'Ready';
+    return `<span class="grow ell">${esc(left)}</span><span>${esc(r.name)}</span><span>${r.mods.size} of ${r.size} slots used</span><span>${run} of ${cs.length} controller${cs.length === 1 ? '' : 's'} running</span>${d ? `<span>RSLinx: ${esc(d.name)}, slot ${d.slot || 0}</span>` : ''}`;
+  }
+  /* chassis Properties (File > Chassis Properties…, or right-click the power supply): General (name, description,
+     slots, computer) and Slots (what each slot holds) */
+  function chassisProps(ri, tab, was) {
+    const r = racks[ri];
+    if (!r) return;
+    const d = drivers.find(x => x.type === 'vbp');
+    const gen = `<div class="frow"><label for="cp-n">Name</label><input class="inp" id="cp-n" value="${esc(r.name)}" autocomplete="off" spellcheck="false"></div>
+      <div class="frow"><label for="cp-d">Description</label><input class="inp" id="cp-d" value="${esc(r.desc || '')}"></div>
+      <div class="frow"><label for="cp-z">Slots</label><select class="inp" id="cp-z">${E.RACKS.concat(E.RACKS.includes(r.size) ? [] : [r.size]).map(n => `<option${n === r.size ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+      ${kv('Computer', esc(computerName()))}${kv('Virtual Backplane', d ? `${esc(d.name)} · the RSLinx Classic module in slot ${d.slot || 0}` : 'No Virtual Backplane driver (RSLinx Classic > Configure Drivers)')}`;
+    const slots = `<div class="rltabw"><table class="rltab" id="cp-slots"><thead><tr><th>Slot</th><th>Module</th><th>Name</th><th>Status</th></tr></thead><tbody>${Array.from({ length: r.size }, (_, s) => {
+      const m = r.module(s), st = !m ? '' : m.ctl ? (m.ctl.powered ? modeName(m.ctl) : 'Off') : m.fault ? 'Faulted' : r.owner(s) ? 'Running' : 'OK';
+      return `<tr><td>${s}</td><td>${m ? esc(m.ctl ? 'PLC-CPU' : m.type) : d && (d.slot || 0) === s ? 'RSLinx Classic' : '<span class="muted">Empty</span>'}</td><td>${m ? esc(m.name) : ''}</td><td>${esc(st)}</td></tr>`; }).join('')}</tbody></table></div>`;
+    dialog({ title: `Chassis Properties - ${r.name}`, size: 'md', onClose: () => backToEmu(was),
+      body: tabbed([['gen', 'General', gen], ['slots', 'Slots', slots]], tab || 'gen'),
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const n = e2.querySelector('#cp-n').value.trim(), z = +e2.querySelector('#cp-z').value;
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        if (racks.some(x => x !== r && U(x.name) === U(n))) { toast('Another chassis has that name.', 'err'); return false; }
+        if (z !== r.size) { const rz = r.resize(z); if (!rz.ok) { toast(rz.msg, 'err'); return false; } }
+        r.name = n; r.desc = e2.querySelector('#cp-d').value.trim(); saveChassis(); relink(); chassisLive(true); render(); backToEmu(was);
+      } }],
+      mount: bindTabs });
+  }
+  // right-click (or long-press) the power supply of a chassis: its Properties
+  document.addEventListener('contextmenu', ev => {
+    const ps = ev.target.closest && ev.target.closest('.rkps'), ch = ps && ps.closest('[data-chas]');
+    if (!ch) return;
+    ev.preventDefault();
+    const ri = +ch.dataset.chas, was = emuOpen();
+    openMenu([{ l: 'Properties…', i: 'gear', run: () => chassisProps(ri, 'gen', was) }], { x: ev.clientX, y: ev.clientY }, racks[ri] ? racks[ri].name : '');
+  });
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');
@@ -4811,15 +4855,16 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     }));
     return rows.join('') || '<p class="help" style="padding:8px">No emulated controllers. Add one.</p>';
   }
-  const emuHTML = () => `${emuMenuBar('win')}<div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
+  const emuHTML = () => `${emuMenuBar('win')}<div class="emcomp">Computer: <b>${esc(computerName())}</b></div><div class="emudev"><div class="ph">Devices<span class="grow"></span><button class="btn" data-emu="add">${ic('plus')}Add</button></div><div class="tree" id="emudev" tabindex="-1" autofocus>${devicesHTML()}</div></div>
     <div class="emumain" id="emumain">${detailsHTML()}</div>
-    <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div>`;
+    <div class="emustat"><div class="ph">Device Status</div><div id="emustat">${statusHTML()}</div></div><div class="emst">${emuStatus(Math.min(emuSel.ri || 0, racks.length - 1))}</div>`;
   const chassisSig = () => racks.map(r => r.name + ':' + [...r.mods.values()].map(m => (m.ctl ? [m.slot, m.name, m.ip, m.ctl.powered, m.ctl.key, m.ctl.mode, !!m.ctl.fault, m.ctl.name, m.ctl.forceState(), m.ctl.ioOk(), m.ctl.running].join(',') : [m.slot, m.name, m.fault, JSON.stringify(m.field), JSON.stringify(r.outputs(m.slot))].join(','))).join('|')).join('#') + curPath();
   /* the emulator in the app and in its own window follows the controllers; a form being typed in is left alone */
   function chassisLive(force) {
     const docs = [document];
     if (chasWin && !chasWin.closed) docs.push(chasWin.document); else chasWin = null;
-    const sg = chassisSig();
+    const sg = chassisSig(), est = $('#emst-dock');
+    if (est) setHTML(est, emuStatus(Math.max(0, racks.indexOf(chassis))));
     docs.forEach(d => {
       const b = d.getElementById('emubody');
       if (!b || (!force && b.dataset.sig === sg)) return;
@@ -5085,6 +5130,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const ob = $('#olbar');
     if (ob) setHTML(ob, S.layout === 'desktop' ? onlineBarHTML() : S.layout === 'tablet' ? tabStatHTML() : `${modeBox()}${forcesBox()}${editsBox()}${S.verify && S.verify.errors.length ? `<span class="warn" data-go="more">${ic('warn')}${S.verify.errors.length}</span>` : ''}`);
     const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) setHTML(iob, iob.classList.contains('dockb') ? dockBody() : ioHTML()); chassisLive(false); ioWinsLive();
+    const est = $('#emst-dock'); if (est) setHTML(est, emuStatus(Math.max(0, racks.indexOf(chassis))));
     // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
     if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();

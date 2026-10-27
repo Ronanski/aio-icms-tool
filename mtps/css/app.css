@@ -1174,3 +1174,11 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .trset .row { display: flex; gap: 8px; align-items: center; padding: 4px 8px; min-height: 30px; cursor: default; }
 .trset .row.on { background: var(--accent-soft); }
 .tab .trset .row, .phone .trset .row, .tab .trbtns .btn, .phone .trbtns .btn { min-height: 44px; }
+/* Chassis Monitor: the Computer box (View > Compact hides it) and the status bar */
+.emcomp { grid-column: 1 / -1; padding: 3px 10px; font-size: 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.emst { grid-column: 1 / -1; flex: none; display: flex; gap: 14px; align-items: center; min-width: 0; overflow: hidden; padding: 3px 10px; font-size: 11px; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); white-space: nowrap; }
+.emst > span:not(.grow) { border-left: 1px solid var(--border); padding-left: 10px; }
+.emu { grid-template-rows: auto auto minmax(0, 1fr) minmax(92px, auto) auto; }
+.emu.compact { grid-template-rows: auto minmax(0, 1fr) auto; }
+.emu.compact .emcomp { display: none; }
+.phone .emst > span:not(.grow):not(:nth-child(4)) { display: none; }

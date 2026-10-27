@@ -107,5 +107,40 @@ module.exports = async function w2E({ browser, page, URL, check }) {
     await tp.close();
   }
 
+  console.log('Logix Emulate: the Chassis Monitor status bar, Computer box and chassis Properties');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.openProject(MTPS.App.example()); MTPS.App.state.prefs.emuMin = false; MTPS.App.state.prefs.emuCompact = false; MTPS.App.render(); });
+    await wait(200);
+    const st = (s = '#emst-dock') => page.$eval(s, b => b.textContent).catch(() => '');
+    check('the emulator panel has a status bar: Ready, the chassis, the slots used, the controllers running', /^Ready/.test(await st()) && /of 8 slots used/.test(await st()) && /controller.* running/.test(await st()) , await st());
+    await page.click('#iob [data-ccpu="0:0"] .mname'); await wait(150);
+    check('a click on a module shows it on the left of the status bar', /^Slot 0: PLC-CPU/.test(await st()), await st());
+    await ev(() => MTPS.App.run('chassis')); await wait(200);
+    check('the Emulator window: the Computer box under the menu bar, and the status bar', (await page.$eval('#layer .emcomp', b => b.textContent)).startsWith('Computer: ') && (await st('#layer .emu .emst')).includes('slots used'));
+    await page.click('#layer [data-emb="win:View"]'); await wait(80); await page.click('#layer .it:has-text("Compact")'); await wait(200);
+    check('View > Compact hides the Computer box (the status bar stays)', await page.$eval('#layer .emcomp', b => getComputedStyle(b).display === 'none') && await page.$eval('#layer .emu .emst', b => b.offsetParent !== null));
+    await page.click('#layer [data-emb="win:View"]'); await wait(80); await page.click('#layer .it:has-text("Compact")'); await wait(200);
+    await page.click('#layer [data-emb="win:File"]'); await wait(80);
+    await page.click('#layer .it:has-text("Chassis Properties")'); await wait(150);
+    check('File > Chassis Properties…: General (name, description, slots, computer, Virtual Backplane) and Slots', (await dlgTitle()) === 'Chassis Properties - Chassis' && (await page.$$eval('#layer .dtabs [data-dt]', t => t.map(x => x.textContent).join(','))) === 'General,Slots' && (await page.$eval("#layer .dlg", d => d.textContent)).includes("Virtual Backplane"));
+    await page.click('#layer [data-dt="slots"]'); await wait(50);
+    check('Slots: every slot with its module, name and status', (await page.$$eval('#cp-slots tbody tr', r => r.length)) === 8 && (await page.$eval('#cp-slots tbody', b => b.textContent)).includes('PLC-CPU'));
+    await page.click('#layer [data-dt="gen"]'); await page.fill('#cp-n', 'Line_A'); await page.click('#layer .df .btn.pri'); await wait(200);
+    check('OK renames the chassis', (await ev(() => MTPS.App.racks[0].name)) === 'Line_A');
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; MTPS.App.render(); }); await wait(150);
+    await page.click('#iob .rkps', { button: 'right' }); await wait(80);
+    await page.click('#layer .it:has-text("Properties")'); await wait(150);
+    check('right-click the power supply: Properties… opens the chassis Properties', (await dlgTitle()) === 'Chassis Properties - Line_A');
+    await page.fill('#cp-n', 'Chassis'); await page.click('#layer .df .btn.pri'); await wait(150);
+    const tp = await touchPage(390, 844, () => { MTPS.App.state.prefs.emuMin = false; MTPS.App.render(); });
+    await tp.tap('[data-ptab="1"]'); await tp.waitForTimeout(200);
+    const ph = await tp.evaluate(() => { const b = document.querySelector('#emst-dock'); return !!b && b.offsetParent !== null && document.documentElement.scrollWidth <= innerWidth + 1 && /running/.test(b.textContent); });
+    await tp.tap('#dock [data-emb="dock:File"]'); await tp.waitForTimeout(150);
+    const fi = await tp.$$eval('#layer .it', t => t.map(x => x.textContent.trim()));
+    check('phone (touch): the status bar shows without sideways scrolling; File holds Chassis Properties…', ph && fi[0] === 'Chassis Properties…', JSON.stringify(fi));
+    await tp.close();
+  }
+
   check('Wave 2 (E): no JS errors in the touch pages', errors.length === 0, errors.join(' | '));
 };
