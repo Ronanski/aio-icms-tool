@@ -116,7 +116,7 @@ module.exports = async function w3E({ browser, page, URL, check }) {
     await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
     await ev(msgProject); await wait(200);
     await page.click('[data-tab="Input/Output"]'); await wait(100);
-    check('the Input/Output tab starts with MSG: MSG GSV SSV', (await page.$$eval('.gbtn[data-mn]', b => b.map(x => x.dataset.mn).join(','))) === 'MSG,GSV,SSV');
+    check('the Input/Output tab starts with MSG: MSG GSV SSV IOT', (await page.$$eval('.gbtn[data-mn]', b => b.map(x => x.dataset.mn).join(','))) === 'MSG,GSV,SSV,IOT');
     const t1 = await addInstr(page, 'MSG', ['Msg_A']);
     check('desktop: MSG from Add Ladder Element with its Message Control', t1 === 'MSG(Msg_A);', t1);
     const ri = String((await rungsOf(page)).length - 1);
