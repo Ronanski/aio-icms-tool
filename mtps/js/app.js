@@ -4294,7 +4294,7 @@ ${only ? rtn(only.routine, 'Target') : g.routines.map(r => rtn(r)).join('\n')}
     return { x, cd, dsc, tag, udt, order, mod, prog };
   }
   function toL5X(p) {
-    const { x, dsc, tag, udt, order, mod, prog } = l5xKit(p);
+    const { x, cd, dsc, tag, udt, order, mod, prog } = l5xKit(p);
     const emu = emuCtl(p), pt = emu ? '1756-L85E' : ctype(p.controller.type)[0], mj = emu ? '37' : ctlLabel(p).split(' ')[1], mn = emu ? '11' : '0';
     const progs = p.tasks.flatMap(t => t.programs), cslot = Number.isInteger(p.controller.slot) ? p.controller.slot : 0;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
