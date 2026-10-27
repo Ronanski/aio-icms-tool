@@ -85,7 +85,8 @@ function check(name, cond, info = '') {
   await ev(() => MTPS.App.select({ ri: 1, path: [0] }));
   await page.click('.gbtn[data-mn="XIO"]');
   await page.waitForTimeout(150);
-  check('a toolbar click inserts after the selection and opens the operand editor', (await page.$('#layer .dlg')) !== null && (await rungTexts())[1] === 'XIC(Motor_Run)XIO(?)OTE(Motor_Cmd);');
+  check('a toolbar click inserts after the selection with no window: the "?" is edited in place', (await page.$('#inl')) !== null && (await page.$('#layer .dlg')) === null && (await rungTexts())[1] === 'XIC(Motor_Run)XIO(?)OTE(Motor_Cmd);');
+  if (await page.$('#inl')) { await page.keyboard.press('Escape'); await page.evaluate(() => MTPS.App.run('edit')); await page.waitForTimeout(150); } 
   await page.fill('#layer [data-op="0"]', 'Fault_Stop');
   await page.waitForTimeout(100);
   check('an unknown name offers New "name"', (await page.$('#layer [data-newtag="Fault_Stop"]')) !== null);
@@ -429,6 +430,7 @@ function check(name, cond, info = '') {
   check('tapping the empty level selects it', (await S()).sel && (await S()).sel.leg === true);
   await page.click('.ibar .gbtn[data-mn="XIO"]');
   await page.waitForTimeout(150);
+  if (await page.$('#inl')) { await page.keyboard.press('Escape'); await page.evaluate(() => MTPS.App.run('edit')); await page.waitForTimeout(150); } 
   check('an instruction from the toolbar goes into the selected level, and its editor stays open', (await rungTexts())[0] === '[XIC(A),XIO(?)]OTE(B);' && (await page.$('#layer .dlg [data-op="0"]')) !== null);
   check('the tag list is grouped: a contact shows Inputs first', (await page.$$eval('#layer .sgg', g => g.map(x => x.textContent.split(' ')[0]).join(','))) === 'Inputs,Outputs,System');
   await page.keyboard.press('Escape');
@@ -918,6 +920,7 @@ function check(name, cond, info = '') {
   await page.waitForTimeout(150);
   await ev(() => MTPS.App.insertMn('XIC'));
   await page.waitForTimeout(150);
+  if (await page.$('#inl')) { await page.keyboard.press('Escape'); await page.evaluate(() => MTPS.App.run('edit')); await page.waitForTimeout(150); } 
   await page.fill('#layer [data-op="0"]', 'Start_PB');
   await page.waitForTimeout(80);
   check('the New tag row shows no Ctrl+W hint in a browser (there Ctrl+W closes the tab)', !(await page.$eval('#layer [data-newtag]', r => r.textContent)).includes('Ctrl+W'));
@@ -954,6 +957,7 @@ function check(name, cond, info = '') {
   await ev(() => { if (MTPS.App.state.online) MTPS.App.run('offline'); const p = MTPS.App.blank('Acc'); p.tags.push({ name: 'Lamp_delay1', type: 'TIMER' }); MTPS.App.openProject(p); MTPS.App.state.selRung = 0; });
   await ev(() => MTPS.App.insertMn('TON'));
   await page.waitForTimeout(200);
+  if (await page.$('#inl')) { await page.keyboard.press('Escape'); await page.evaluate(() => MTPS.App.run('edit')); await page.waitForTimeout(150); } 
   check('a new TON asks for the timer and the preset; Accum starts at 0', (await page.$eval('#layer [data-op="2"]', i => i.value)) === '0' && (await page.$eval('#layer [data-op="1"]', i => i.value)) === '?');
   await page.keyboard.press('Escape');
   await ev(() => { const p = MTPS.App.state.p; p.tasks[0].programs[0].routines[0].rungs = [{ t: 'XIC(Local:1:I.Data.0)TON(Lamp_delay1,5000,?);' }]; MTPS.App.openProject(p, true); MTPS.App.run('verifyc'); });
@@ -1991,7 +1995,7 @@ function check(name, cond, info = '') {
           await tp(`.gbtn[data-mn="${mn}"]`);
         }
         await pg.waitForTimeout(250);
-        if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
+        if (await pg.$('#inl')) { await pg.keyboard.press('Escape'); await pg.evaluate(() => MTPS.App.run('edit')); await pg.waitForTimeout(150); } if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
         for (let i = 0; i < ops.length; i++) { await tp(`#layer [data-op="${i}"]`); await pg.fill(`#layer [data-op="${i}"]`, ops[i]); }
         await tp('#layer .df .btn.pri'); await pg.waitForTimeout(200);
         if (await pg.$('#layer .dlg')) { bad.push(`${mn}: the operand box stayed open`); await pg.keyboard.press('Escape'); await pg.waitForTimeout(80); }

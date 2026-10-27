@@ -70,7 +70,7 @@ module.exports = async function w2c({ browser, URL, check }) {
         await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`); await pg.waitForTimeout(80); await tp(`#layer [data-pk="${mn}"]`);
       }
       await pg.waitForTimeout(250);
-      if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
+      if (await pg.$('#inl')) { await pg.keyboard.press('Escape'); await pg.evaluate(() => MTPS.App.run('edit')); await pg.waitForTimeout(150); } if (!(await pg.$('#layer [data-op="0"]'))) { bad.push(`${mn}: the operand box did not open`); await pg.keyboard.press('Escape'); continue; }
       const labels = await pg.$$eval('#layer .frow label', l => l.map(x => x.textContent));
       const want = await pg.evaluate(m => MTPS.OPN[m], mn);
       if (!want.every(w => labels.some(l => l.startsWith(w)))) bad.push(`${mn}: operand prompts ${labels.join('/')}`);

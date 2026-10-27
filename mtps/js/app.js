@@ -649,7 +649,7 @@
     if (mn === 'RUNG') return addRung();
     if (mn === 'BR') return addBranch(at);
     if (mn === 'BRL') return addLevel(true);
-    insert(newEl(mn), at, true);
+    insert(newEl(mn), at, 'inline');   // as the reference: no window, the "?" is edited in place with the tag list
   }
   function addRung() {
     edit(() => {
@@ -2291,9 +2291,12 @@
       return m;
     };
     const draw = () => {
-      const its = items().slice(0, 150);
-      list.innerHTML = its.length ? its.map((c, i) => `<div class="row${i === act ? ' act' : ''}${U(c.name) === U(inp.value.trim()) ? ' on' : ''}" data-ipk="${esc(c.name)}" role="option"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div>${c.type ? `<span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span>` : ''}</div>`).join('')
-        : `<div class="empty">${kind === 'imm' ? 'Type a number, e.g. 5000' : mn ? 'No instruction starts with that' : 'No matching tags: type a new name, then New Tag (Ctrl+W)'}</div>`;
+      const its = items().slice(0, 150), nw = inp.value.trim();
+      // a name that is no tag yet: New "name" (Ctrl+W in the reference) sets it on the operand and makes the tag
+      const add = !mn && kind !== 'imm' && kind !== 'expr' && !SEL_KIND.test(kind) && E.validName(nw) && !tagFor(nw)
+        ? `<div class="row new" data-inew="${esc(nw)}" role="option">${ic('newtag')}<div class="grow"><div class="nm">New "${esc(nw)}"</div><div class="sub">Make the tag (Ctrl+W): type, alias, description</div></div></div>` : '';
+      list.innerHTML = add + (its.length ? its.map((c, i) => `<div class="row${i === act ? ' act' : ''}${U(c.name) === U(inp.value.trim()) ? ' on' : ''}" data-ipk="${esc(c.name)}" role="option"><div class="grow"><div class="nm">${esc(c.name)}</div>${c.desc ? `<div class="sub">${esc(c.desc)}</div>` : ''}</div>${c.type ? `<span class="ty">${esc(c.type)}${c.dim ? '[' + c.dim + ']' : ''}</span>` : ''}</div>`).join('')
+        : `<div class="empty">${kind === 'imm' ? 'Type a number, e.g. 5000' : mn ? 'No instruction starts with that' : 'No matching tags'}</div>`);
     };
     const openList = on => { list.hidden = !on; box.setAttribute('aria-expanded', on ? 'true' : 'false'); if (on) { act = -1; draw(); const o = list.querySelector('.row.on'); if (o) o.scrollIntoView({ block: 'nearest' }); } };
     const fail = m => { er.textContent = m; er.hidden = false; inp.classList.add('bad'); inp.focus(); return false; };
@@ -2323,7 +2326,17 @@
     const pick = name => { inp.value = name; openList(false); accept(true); };
     inp.addEventListener('input', () => { er.hidden = true; inp.classList.remove('bad'); openList(true); });
     $('#inldd').addEventListener('click', () => { openList(list.hidden); inp.focus(); });
-    list.addEventListener('click', ev => { const rw = ev.target.closest('[data-ipk]'); if (rw) pick(rw.dataset.ipk); });
+    list.addEventListener('click', ev => {
+      const nw = ev.target.closest('[data-inew]');
+      if (nw) {
+        const n = nw.dataset.inew, more = op + 1 < INSTR[e.t].args.length;
+        inp.value = n; openList(false); accept(false);
+        // the tag made, a box goes on with its next operand (Preset of a TON), as Enter does
+        newTag({ name: n, kind, after: () => { render(); if (more) setTimeout(() => inlineEdit(ri, path, op + 1), 0); } });
+        return;
+      }
+      const rw = ev.target.closest('[data-ipk]'); if (rw) pick(rw.dataset.ipk);
+    });
     // a click (a press) anywhere else, or scrolling, drops the edit
     const sc = l.querySelector('[data-iscrim]');
     sc.addEventListener('pointerdown', ev => { if (!freshLayer()) { ev.preventDefault(); cancel(); } });
