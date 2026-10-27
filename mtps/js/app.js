@@ -5104,12 +5104,12 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   function dtMenu(k) {
     const nst = { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), dis: !editable() };
     if (k === 'dts') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }, nst];
-    if (k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }];
+    if (k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }, { l: 'Import Data Type…', i: 'upload', run: () => { S.orgSel = k; importComponent('DataType'); }, dis: !editable() || !offline() }];
     if (k === 'dt:str') return [nst];
     if (k === 'trends') return [{ l: 'New Trend…', i: 'xref', run: () => trendDialog(), dis: S.noProj }];
     if (k.startsWith('trend:')) { const n = k.slice(6); return [{ l: 'Open', run: () => openTrend(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteTrend(n) }, '-', { l: 'Properties…', run: () => trendDialog(n) }]; }
     if (k.startsWith('dt:s:')) { const n = k.slice(5); return [{ l: 'Open', run: () => stringTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() || U(n) === 'STRING' }]; }
-    if (k.startsWith('dt:u:')) { const n = k.slice(5); return [{ l: 'Open', run: () => dataTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() }]; }
+    if (k.startsWith('dt:u:')) { const n = k.slice(5); const d = (S.p.dataTypes || []).find(x => x.name === n); return [{ l: 'Open', run: () => dataTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() }, '-', { l: 'Export Data Type…', i: 'download', run: () => exportComponent('DataType', { d }), dis: !d }]; }
     return null;
   }
   /* L5X: the user-defined types as the L5X reference writes them (general knowledge, not checked against an export):
