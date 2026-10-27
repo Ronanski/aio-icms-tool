@@ -356,7 +356,7 @@
   }
   function validProject(p) {
     return p && p.format === 'mt-plc-studio' && p.controller && E.validName(p.controller.name) && Array.isArray(p.tasks) && p.tasks.length &&
-      p.tasks.every(t => Array.isArray(t.programs) && t.programs.every(g => Array.isArray(g.routines) && g.routines.length));
+      p.tasks.every(t => Array.isArray(t.programs) && t.programs.every(g => Array.isArray(g.routines) && (g.routines.length || HANDLERS[t.type])));
   }
 
   /* ---------- state ---------- */
@@ -382,6 +382,11 @@
     S.prefs.themes = 1; savePrefs();
   }
   const allProgs = () => S.p.tasks.flatMap(t => t.programs);
+  /* the Controller Fault Handler and the Power-Up Handler folders (1756-PM014): kept as a task of type fault / powerup
+     that holds at most one program, which is never scheduled (it runs on a major fault, or at power-up) */
+  const HANDLERS = { fault: 'Controller Fault Handler', powerup: 'Power-Up Handler' };
+  const handlerTask = kind => S.p.tasks.find(t => t.type === kind);
+  const handlerProg = kind => { const t = handlerTask(kind); return t && t.programs[0] || null; };
   const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
   const rungs = () => curRoutine().rungs;
@@ -1114,12 +1119,17 @@
     };
     let h = '';
     const add = (key, lvl, txt, icon, o, kids) => { const n = N(key, lvl, txt, icon, { ...o, kids }); h += n.html; if (kids && n.open) kids(); };
-    add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => { add('ctags', 1, 'Controller Tags', 'tag'); });
-    add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => add('prog:' + g.name, 2, g.name, 'prog', {}, () => {
-      add('ptags:' + g.name, 3, 'Program Tags', 'tag');
-      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, 3, r.name + (r.name === g.main ? '' : ''), 'ladder', { on: g.name === S.prog && r.name === S.routine,
+    const progNode = (g, lvl) => add('prog:' + g.name, lvl, g.name, 'prog', {}, () => {
+      add('ptags:' + g.name, lvl + 1, 'Program Tags', 'tag');
+      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, lvl + 1, r.name + (r.name === g.main ? '' : ''), 'ladder', { on: g.name === S.prog && r.name === S.routine,
         f: S.verify && S.verify.errors.some(e => e.program === g.name && e.routine === r.name) ? '⊗' : '' }));
-    })))));
+    });
+    add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => {
+      add('ctags', 1, 'Controller Tags', 'tag');
+      add('cfh', 1, HANDLERS.fault, 'folder', {}, () => { const g = handlerProg('fault'); if (g) progNode(g, 2); });
+      add('puh', 1, HANDLERS.powerup, 'folder', {}, () => { const g = handlerProg('powerup'); if (g) progNode(g, 2); });
+    });
+    add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.filter(t => !HANDLERS[t.type]).forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => progNode(g, 2)))));
     const dt = E.dataTypes(S.p);
     add('dts', 0, 'Data Types', 'folder', {}, () => {
       add('dt:user', 1, 'User-Defined', 'type', {}, () => dt.userDefined.forEach(n => add('dt:u:' + n, 2, n, 'type')));
@@ -1601,6 +1611,7 @@
     else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
+    else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
     if (items.length) openMenu(items, { x, y });
   }
 
@@ -3524,7 +3535,7 @@ ${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '')
 </Program>`).join('\n')}
 </Programs>
 <Tasks>
-${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
+${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
 </Tasks>
 </Controller>
 </RSLogix5000Content>
@@ -3612,8 +3623,41 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     prompt1('New Routine', 'Name', 'Routine' + (g.routines.length + 1), v => {
       if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
       if (g.routines.some(r => U(r.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { g.routines.push({ name: v, rungs: [{ t: '' }] }); S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
+      edit(() => { g.routines.push({ name: v, rungs: [{ t: '' }] }); if (!g.main) g.main = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
     }, 'Call it from the main routine with JSR.');
+  }
+  /* New Program in the Controller Fault Handler or Power-Up Handler folder (1756-PM014; help: the handler program cannot
+     be created or changed in Remote Run or Run). The handler holds one program; its first routine becomes its main
+     routine (New Routine, Assignment Main). */
+  function newHandlerProgram(kind) {
+    if (handlerProg(kind)) { toast(`The ${HANDLERS[kind]} already has a program.`, 'err'); return; }
+    if (S.online && ctl.M && (ctl.mode === 'run' || ctl.mode === 'remrun')) {
+      toast(kind === 'fault' ? 'Failed to create the program as the Controller Fault Handler program. Not allowed in the current mode: change the controller mode (Remote Run, Run) first.'
+        : 'Failed to create the program as the Power Up Handler program. The current mode (Remote Run, Run) prevents it: change the controller mode first.', 'err');
+      return;
+    }
+    const names = new Set(allProgs().map(g => U(g.name)));
+    let n = kind === 'fault' ? 'FaultHandler' : 'PowerUp', k = 1;
+    while (names.has(U(n))) n = (kind === 'fault' ? 'FaultHandler' : 'PowerUp') + ++k;
+    dialog({ title: 'New Program', size: 'md', focus: true,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="np2-n" value="${esc(n)}" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="np2-d" rows="2"></textarea></div>
+        <div class="frow"><label>Schedule in</label><select class="inp" id="np2-s" disabled><option>${HANDLERS[kind]}</option></select></div>
+        <p class="help">${kind === 'fault' ? 'This program runs when a major fault occurs, or a program fault is not cleared by a fault routine.' : 'This program runs at power-up after the power was lost in Run mode.'} Add a routine to it with New Routine; to clear the fault, set Type and Code of its MajorFaultRecord to 0.</p><div class="errtx" id="np2-e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const v = el.querySelector('#np2-n').value.trim(), d = el.querySelector('#np2-d').value.trim();
+        if (!E.validName(v)) { el.querySelector('#np2-e').textContent = 'Use letters, digits and _ (up to 40).'; return false; }
+        if (names.has(U(v))) { el.querySelector('#np2-e').textContent = 'A program with that name exists.'; return false; }
+        edit(() => {
+          let t = handlerTask(kind);
+          if (!t) { t = { name: HANDLERS[kind], type: kind, programs: [] }; S.p.tasks.push(t); }
+          const g = { name: v, tags: [], routines: [] }; if (d) g.desc = d;
+          t.programs.push(g);
+          S.orgSel = 'prog:' + v;
+          const c = new Set(S.prefs.collapsed); c.delete(kind === 'fault' ? 'cfh' : 'puh'); c.delete('ctl'); S.prefs.collapsed = [...c]; savePrefs();
+        });
+        toast(`Program ${v} added to the ${HANDLERS[kind]}. Add a routine with New Routine.`, 'ok');
+      } }] });
   }
   function renameRoutine(key) {
     const [gn, rn] = key.slice(3).split('/'), g = allProgs().find(x => x.name === gn), r = g.routines.find(x => x.name === rn);
@@ -3785,7 +3829,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       <p class="help">The name is also the project name.</p>`;
     const offMsg = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
     const dateTab = `${kv('Controller time', new Date().toLocaleString())}<p class="help">The emulated controller uses the clock of this device.</p>`;
-    const advTab = `${kv('Controller fault handler', '&lt;none&gt;')}${kv('Power-up handler', '&lt;none&gt;')}${kv('System overhead time slice', '20 %')}${kv('Scan period', (ctl.period || 10) + ' ms')}`;
+    const advTab = `${kv('Controller Fault Handler', esc((handlerProg('fault') || {}).name || '<none>'))}${kv('Power-Up Handler', esc((handlerProg('powerup') || {}).name || '<none>'))}${kv('System overhead time slice', '20 %')}${kv('Scan period', (ctl.period || 10) + ' ms')}`;
     const fileTab = `${kv('File', esc(S.file ? S.file.path : '(not saved yet)'))}${kv('Changes', S.dirty ? 'Not saved' : 'Saved')}`;
     const allR = allProgs().flatMap(g => g.routines);
     const memTab = `${kv('Programs', allProgs().length)}${kv('Routines', allR.length)}${kv('Rungs', allR.reduce((n, r) => n + r.rungs.length, 0))}${kv('Controller tags', S.p.tags.length)}${kv('Program tags', allProgs().reduce((n, g) => n + (g.tags || []).length, 0))}${kv('I/O modules', S.p.rack.modules.length)}`;

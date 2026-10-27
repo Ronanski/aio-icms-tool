@@ -883,5 +883,40 @@ console.log('Download clears the controller memory first (v37 help, Download dia
   check('a download after it works as usual', c.download(p).ok && c.holds(p) && c.read('N') === 3);
 }
 
+console.log('Wave 2 D: fault handling (1756-PM014: Controller Fault Handler, fault routine, Power-Up Handler, watchdog)');
+/* a handler program (Controller Fault Handler: kind 'fault', Power-Up Handler: 'powerup') holding one routine */
+const handlerTask = (kind, name, rungs, extra) => ({ name: kind === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler', type: kind, programs: [Object.assign({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] }, extra || {})] });
+/* SSV(Program, THIS, MajorFaultRecord) with Type and Code 0, run after the named routine (the GSV/SSV instructions
+   are not in this file's scope: the engine API is the same one they use) */
+const clearsIn = (c, rname) => { const r0 = c.routine; c.routine = function (R) { r0.call(this, R); if (R.name === rname) { const a = this.majorFaultRecord('THIS'); a[2] = 0; this.setMajorFaultRecord('THIS', a); } }; };
+{
+  const base = () => proj({ tags: [T('Idx', 'DINT', { value: 5 }), T('Arr', 'DINT', { dim: 3 }), T('After', 'BOOL'), T('Seen', 'BOOL'), T('Cnt', 'DINT')], rungs: ['MOV(1,Arr[Idx])OTE(After);', 'ADD(Cnt,1,Cnt);'] });
+  const p = base(); p.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);']));
+  const c = new MTPS.Controller(); check('a project with a Controller Fault Handler program downloads', c.download(p).ok); c.setMode('remrun');
+  const p0 = proj({ tags: [T('Seen', 'BOOL')], rungs: ['NOP();'] }); p0.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);']));
+  const c0 = new MTPS.Controller(); c0.download(p0); c0.setMode('remrun'); scans(c0, 3);
+  check('the Controller Fault Handler is not scanned with the tasks', c0.read('Seen') === 0 && !c0.fault);
+  scans(c, 1);
+  check('a fault the handler does not clear: the handler ran, then the controller faults (type 4 code 20)', c.read('Seen') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20);
+  const rec = c.majorFaultRecord('FaultProg');
+  check('the handler program\'s MajorFaultRecord holds the fault: DINT[11], Type and Code in DINT 2', rec.length === 11 && (rec[2] & 0xFFFF) === 4 && rec[2] >> 16 === 20 && (rec[0] !== 0 || rec[1] !== 0));
+  const c2 = new MTPS.Controller(); c2.download(p); c2.setMode('remrun'); clearsIn(c2, 'Main'); scans(c2, 2);
+  check('the handler clears the fault (Type and Code 0): no fault, the faulted instruction is skipped and the next one runs', !c2.fault && c2.read('After') === 1 && c2.read('Cnt') === 2 && c2.read('Arr').every(v => v === 0));
+  const p2 = base(); p2.tasks.push(handlerTask('fault', 'F1', ['NOP();'])); p2.tasks[1].programs.push({ name: 'F2', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'NOP();' }] }] });
+  check('Verify: only one program can be in the Controller Fault Handler', MTPS.verify(p2).errors.some(e => /Only one program can be in the Controller Fault Handler/.test(e.msg)));
+  const p3 = base(); p3.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);'])); p3.tasks[1].programs[0].routines = []; delete p3.tasks[1].programs[0].main;
+  const c3 = new MTPS.Controller(); check('a handler program without a routine verifies', c3.download(p3).ok); c3.setMode('remrun'); scans(c3, 1);
+  check('a handler program without a main routine does nothing: the controller faults', !!c3.fault && c3.fault.code === 20);
+  check('MajorFaultRecord of an unknown program: null; SSV of it is refused', c.majorFaultRecord('Nope') === null && !c.setMajorFaultRecord('Nope', []));
+  // I/O: connection lost with Major Fault On Controller set (type 3 code 16) goes to the handler once
+  const p4 = proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1', majorOnFail: true }], tags: [T('Seen', 'DINT')], rungs: ['NOP();'] });
+  p4.tasks.push(handlerTask('fault', 'FaultProg', ['ADD(Seen,1,Seen);']));
+  const c4 = new MTPS.Controller(); c4.download(p4); c4.setMode('remrun'); clearsIn(c4, 'Main'); scans(c4, 1);
+  c4.setModuleFault(1, true); scans(c4, 3);
+  check('an I/O connection fault (type 3 code 16) the handler clears: no fault, the handler ran once', !c4.fault && c4.read('Seen') === 1);
+  const c5 = new MTPS.Controller(); c5.download(p4); c5.setMode('remrun'); scans(c5, 1); c5.setModuleFault(1, true); scans(c5, 1);
+  check('not cleared: the I/O fault faults the controller (type 3 code 16), the handler ran', !!c5.fault && c5.fault.type === 3 && c5.fault.code === 16 && c5.read('Seen') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

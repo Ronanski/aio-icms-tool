@@ -719,7 +719,10 @@
     for (const task of pj.tasks || []) for (const pg of task.programs || []) {
       if (!validName(pg.name) || progNames.has(U(pg.name))) { ctlErr(`Invalid or repeated program name '${pg.name}'`); continue; }
       progNames.add(U(pg.name));
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit) };
+      // the Controller Fault Handler and the Power-Up Handler (1756-PM014) hold one program each, never scheduled in a task
+      const hd = task.type === 'fault' || task.type === 'powerup' ? task.type : null;
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd };
+      if (hd) { const k = hd === 'fault' ? 'cfh' : 'puh'; if (M[k]) ctlErr(`Only one program can be in the ${hd === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler'} ('${M[k].name}' is)`); else M[k] = P; }
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
@@ -816,6 +819,7 @@
       this.pulled = new Set();     // slots whose card is taken out (a simulated module fault)
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
+      this.curP = null; this.inHandler = false; this.ioCleared = new Set();   // fault handling (1756-PM014)
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
       this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
       this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
@@ -912,7 +916,7 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
-      this.copy = JSON.stringify(project); this.dlAt = Date.now();
+      this.copy = JSON.stringify(project); this.dlAt = Date.now(); this.ioCleared.clear();
       this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear();
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
@@ -990,11 +994,13 @@
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
-      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
+      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; this.routine(P.main); }
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
-        this.majorFault(e.type, e.code, e.message);
+        // a fault that no fault routine cleared goes to the Controller Fault Handler; not cleared there, the controller faults
+        if (e.tried || !this.handle(this.M.cfh, e)) this.majorFault(e.type, e.code, e.message);
       }
+      this.curP = null;
       this.S.FS = 0;
       this.first = false;
       this.scans++;
@@ -1025,9 +1031,14 @@
         if (this.pulled.has(m.slot)) {
           // no connection: Fault is set, the input data holds and can be overwritten (as on an emulated controller)
           if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = -1;
-          if (m.majorOnFail && this.running) this.majorFault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+          // a fault the Controller Fault Handler cleared is not raised again until the connection comes back
+          if (m.majorOnFail && this.running && !this.ioCleared.has(m.slot)) {
+            const f = new Fault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+            if (this.handle(this.M.cfh, f)) this.ioCleared.add(m.slot); else this.majorFault(f.type, f.code, f.message);
+          }
           continue;
         }
+        this.ioCleared.delete(m.slot);
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
         else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
@@ -1056,9 +1067,50 @@
     }
     // a true JMP, RET or TND leaves the rung at once: the rest of it is not scanned
     get leave() { return this.jmp !== null || this.ret || this.tnd; }
+    /* an instruction that faults is skipped: when a fault routine clears the fault, execution goes on with the next
+       instruction (1756-PM014, Recover from a major fault) */
     seq(arr, p) {
-      for (let k = 0; k < arr.length; k++) { p = this.el(arr[k], p); if (this.leave) break; }
+      for (let k = 0; k < arr.length; k++) {
+        try { p = this.el(arr[k], p); } catch (e) { if (!(e instanceof Fault) || !this.recover(e)) throw e; }
+        if (this.leave) break;
+      }
       return p;
+    }
+    /* an instruction fault (type 4): the Controller Fault Handler runs; it is tried once, at the instruction that faulted */
+    recover(e) {
+      if (e.tried || e.type !== 4 || !this.M) return false;
+      e.tried = true;
+      return this.handle(this.M.cfh, e);
+    }
+    /* run a fault-handling routine for fault e: the program's MajorFaultRecord holds the fault while it runs, and the
+       fault is cleared when the routine leaves Type and Code at 0 (GSV / SSV MajorFaultRecord). A fault inside the
+       routine leaves the fault as it was. */
+    handle(P, e, R = P && P.main) {
+      if (!P || !R || this.inHandler) return false;
+      const us = Date.now() * 1000, keep = [this.curP, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS];
+      P.mfr = { Time_Low: (us % 4294967296) | 0, Time_High: Math.floor(us / 4294967296), Type: e.type, Code: e.code, Info: [0, 0, 0, 0, 0, 0, 0, 0] };
+      this.inHandler = true; this.curP = P; this.jmp = null; this.ret = this.tnd = this.mcr = false; this.d = 0;
+      let ok = true;
+      try { this.routine(R); } catch (x) { if (!(x instanceof Fault)) throw x; ok = false; } finally {
+        this.inHandler = false;
+        [this.curP, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS] = keep;
+      }
+      return ok && P.mfr.Type === 0 && P.mfr.Code === 0;
+    }
+    /* the MajorFaultRecord attribute of a Program object (1756-PM014: DINT[11], the layout of FAULTRECORD:
+       Time_Low, Time_High, Type and Code (two INTs in one DINT), Info[8]), as GSV reads it and SSV writes it.
+       prog: a program name, or THIS for the program that runs now. */
+    progOf(prog) { return !this.M ? null : U(prog) === 'THIS' ? this.curP : this.M.programs.find(P => U(P.name) === U(prog)) || null; }
+    majorFaultRecord(prog) {
+      const P = this.progOf(prog); if (!P) return null;
+      const r = P.mfr || { Time_Low: 0, Time_High: 0, Type: 0, Code: 0, Info: [0, 0, 0, 0, 0, 0, 0, 0] };
+      return [r.Time_Low, r.Time_High, (r.Type & 0xFFFF) | (r.Code << 16)].concat(r.Info);
+    }
+    setMajorFaultRecord(prog, a) {
+      const P = this.progOf(prog); if (!P || !Array.isArray(a)) return false;
+      const d = k => i32(a[k] || 0);
+      P.mfr = { Time_Low: d(0), Time_High: d(1), Type: (d(2) << 16) >> 16, Code: d(2) >> 16, Info: [3, 4, 5, 6, 7, 8, 9, 10].map(d) };
+      return true;
     }
     el(e, p) {
       if (e.t === 'BR') {
