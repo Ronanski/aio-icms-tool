@@ -152,7 +152,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def != null ? m.def : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.def: a start value (FBD EnableIn)
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.init != null && !m.dim ? m.init : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.init: its default (FBD EnableIn)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +160,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def != null && s[m.name] === undefined ? m.def : conform(types, m.type, m.dim, s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name] === undefined ? m.init : s[m.name]);
     return o;
   }
 
@@ -791,7 +791,8 @@
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
-        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null, sfc: r.type === 'SFC' ? r.sfc || {} : null });
+        // a Function Block Diagram routine (Type FBD) keeps its sheets; fbd.js compiles and runs it
+        P.routines.set(U(r.name), { name: r.name, src: r.rungs || [], rungs: [], labels: new Map(), st: r.type === 'ST' ? String(r.st == null ? '' : r.st) : null, sfc: r.type === 'SFC' ? r.sfc || {} : null, fbd: r.type === 'FBD' ? r : null });
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
@@ -841,6 +842,12 @@
       if (R.sfc) {
         const sr = (list, kind) => (el, msg) => { if (want) { const text = `${kind}: ${el ? el + ': ' : ''}${dot(msg)}`; list.push({ program: P.name, routine: R.name, el, msg: dot(msg), text }); out.lines.push(text); } };
         if (MTPS.SFC) MTPS.SFC.compile(M, P, R, sr(out.errors, 'Error'), sr(out.warnings, 'Warning')); else sr(out.errors, 'Error')(null, 'Sequential Function Chart routines need sfc.js');
+        continue;
+      }
+      if (R.fbd) {
+        // FBD errors name the sheet and the element: "Error: Sheet 1, ADD_01: ..."
+        const fr = (list, kind) => (sh, id, what, msg) => { if (!want) return; const text = `${kind}: Sheet ${sh + 1}${what ? ', ' + what : ''}: ${dot(msg)}`; list.push({ program: P.name, routine: R.name, sheet: sh, el: id, msg: dot(msg), text }); out.lines.push(text); };
+        if (MTPS.FBD) MTPS.FBD.compile(M, P, R, fr(out.errors, 'Error'), fr(out.warnings, 'Warning')); else fr(out.errors, 'Error')(0, null, '', 'Function Block Diagram routines are not available');
         continue;
       }
       R.src.forEach((src, n) => {
@@ -1398,9 +1405,9 @@
      DN, Status (.0 InstructFault, .1 PresetInv). FBD_COUNTER: EnableIn, CUEnable, CDEnable, PRE, Reset; EnableOut,
      ACC, CU, CD, DN, OV, UN. A timer adds the time since it was last scanned (ACC = ACC + current_time - last_time);
      the last time and the counter's CUEnable / CDEnable of the last scan are hidden, kept per structure here. */
-  PREDEF.FBD_TIMER = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, ...members('TimerEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT EN:BOOL TT:BOOL DN:BOOL Status:DINT'),
+  PREDEF.FBD_TIMER = [{ name: 'EnableIn', type: 'BOOL', init: 1 }, ...members('TimerEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT EN:BOOL TT:BOOL DN:BOOL Status:DINT'),
     { name: 'InstructFault', type: 'BOOL', of: 'Status', bit: 0 }, { name: 'PresetInv', type: 'BOOL', of: 'Status', bit: 1 }];
-  PREDEF.FBD_COUNTER = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, ...members('CUEnable:BOOL CDEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL')];
+  PREDEF.FBD_COUNTER = [{ name: 'EnableIn', type: 'BOOL', init: 1 }, ...members('CUEnable:BOOL CDEnable:BOOL PRE:DINT Reset:BOOL EnableOut:BOOL ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL')];
   const FBH = new WeakMap(), fbh = s => FBH.get(s) || (FBH.set(s, {}), FBH.get(s));
   /* one execution with EnableIn set (ST always executes so): c is the controller (c.clock, the time in ms), s the
      structure. A negative PRE sets PresetInv and InstructFault and the timer does not run. */
@@ -1589,7 +1596,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
-      for (const P of this.M.programs) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.stc) R.stc.pre(this); }
+      for (const P of this.M.programs) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.stc) R.stc.pre(this); if (R.fx) MTPS.FBD.prescan(this, R); }
     }
 
     /* ---------- project ---------- */
@@ -1754,6 +1761,7 @@
     routine(R) {
       if (R.stc) { R.stc.run(this); this.tnd = this.ret = false; return; }
       if (R.sfc) { MTPS.SFC.run(this, R); return; }
+      if (R.fbd) { if (R.fx) MTPS.FBD.exec(this, R); return; }
       const rungs = R.rungs, mcr0 = this.mcr;
       let jumps = 0;
       this.mcr = false;
@@ -2471,6 +2479,8 @@
   MTPS._k = { ref, parseNumber, compileElem, Fault, Halt, isInt, isReal, isNum, ATOMIC, XPRE, INSTR, FBDI, FBDT, fbdPrescan };
   // for sfc.js: tag references, faults and numbers as the engine compiles them
   MTPS.core = { ref, Fault, parseNumber, store, validName, dot, U };
+  // for the other languages (fbd.js): tag references, a number into a type, the controller's faults, a constant
+  MTPS.X = { ref, store, Fault, Const, isInt, isReal, dot };
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

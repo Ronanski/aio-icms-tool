@@ -1893,5 +1893,150 @@ console.log('Sequential Function Chart routines (1756-PM006, v37 help): verify, 
   check('the SFC settings default to the reference (current active steps, most recent step, Don\'t scan)', JSON.stringify(MTPS.SFC.cfgOf(undefined)) === JSON.stringify({ exec: 'current', restart: 'recent', last: 'dontscan' }));
 }
 
+console.log('Function Block Diagram routines (1756-PM009, 1756-RM018A)');
+{
+  require('../mtps/js/fbd.js');
+  const F = MTPS.FBD;
+  // an FBD main routine: els / wires on sheet 1 (and more sheets), the block tags in the program
+  const fproj = (sheets, o = {}) => { const p = proj(o); p.tasks[0].programs[0].routines[0] = { name: 'MainRoutine', type: 'FBD', rungs: [], sheets: sheets.map(s => ({ desc: '', els: s.els, wires: s.wires || [] })) }; return p; };
+  const B = (id, t, tag, x = 0, y = 0) => ({ id, k: 'BLK', t, tag, x, y });
+  const W = (a, ap, b, bp, ada) => ({ a, ap, b, bp, ...(ada ? { ada: 1 } : {}) });
+  const frun = (sheets, o) => { const c = new MTPS.Controller(); const r = c.download(fproj(sheets, o)); if (!r.ok) throw new Error('download failed: ' + r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  check('the FBD data types are predefined with the members of RM018A', ['FBD_TIMER', 'FBD_COUNTER', 'FBD_MATH', 'FBD_COMPARE', 'FBD_BOOLEAN_AND', 'FBD_LOGICAL'].every(t => MTPS.dataTypes({}).predefined.includes(t)) &&
+    MTPS.PREDEF.FBD_TIMER.map(m => m.name).join(' ') === 'EnableIn TimerEnable PRE Reset EnableOut ACC EN TT DN Status InstructFault PresetInv' &&
+    MTPS.PREDEF.FBD_COUNTER.map(m => m.name).join(' ') === 'EnableIn CUEnable CDEnable PRE Reset EnableOut ACC CU CD DN OV UN');
+  // IREF A + IREF 2.5 → ADD → OREF Sum ; GRT(Sum, 10) → OREF Big
+  const tags = [T('A', 'REAL'), T('Sum', 'REAL'), T('Big', 'BOOL'), T('Run', 'BOOL'), T('Done', 'BOOL'), T('Acc', 'DINT'), T('Up', 'BOOL'), T('Dn', 'BOOL'), T('Rst', 'BOOL'), T('Cnt', 'DINT')];
+  // the block tags at controller scope here (read and written without a program name)
+  const ptags = [], btags = [T('ADD_01', 'FBD_MATH'), T('GRT_01', 'FBD_COMPARE'), T('TONR_01', 'FBD_TIMER'), T('TOFR_01', 'FBD_TIMER'), T('RTOR_01', 'FBD_TIMER'), T('CTUD_01', 'FBD_COUNTER'), T('BAND_01', 'FBD_BOOLEAN_AND'), T('OSRI_01', 'FBD_ONESHOT'), T('MUL_01', 'FBD_MATH'), T('SUB_01', 'FBD_MATH')];
+  tags.push(...btags);
+  const s1 = { els: [{ id: 1, k: 'IREF', op: 'A' }, { id: 2, k: 'IREF', op: '2.5' }, B(3, 'ADD', 'ADD_01'), { id: 4, k: 'OREF', op: 'Sum' }, { id: 5, k: 'IREF', op: '10' }, B(6, 'GRT', 'GRT_01'), { id: 7, k: 'OREF', op: 'Big' }],
+    wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceB'), W(3, 'Dest', 4, 'In'), W(3, 'Dest', 6, 'SourceA'), W(5, 'Out', 6, 'SourceB'), W(6, 'Dest', 7, 'In')] };
+  const v0 = MTPS.verify(fproj([s1], { tags, ptags }));
+  check('a wired FBD routine verifies with no errors', v0.errors.length === 0, v0.lines.join(' | '));
+  const c = frun([s1], { tags, ptags });
+  c.write('A', 4); c.scan(10);
+  check('IREF → ADD → OREF: Sum = A + 2.5 (FBD_MATH, REAL)', c.read('Sum') === 6.5 && c.read('ADD_01.Dest') === 6.5 && c.read('ADD_01.SourceA') === 4);
+  check('a wired input is copied into the block tag; GRT 6.5 > 10 is false', c.read('Big') === 0 && c.read('GRT_01.EnableOut') === 1);
+  c.write('A', 9); c.scan(10);
+  check('the data flow orders the blocks: ADD runs before GRT in the same scan (Big at once)', c.read('Big') === 1);
+  c.write('ADD_01.EnableIn', 0); c.write('A', 0); c.scan(10);
+  check('EnableIn cleared: the block does not run and its outputs are not updated (EnableOut 0)', c.read('ADD_01.Dest') === 11.5 && c.read('ADD_01.EnableOut') === 0);
+  // execution order on a feedback loop: MUL → SUB → MUL needs Assume Data Available on one wire
+  const loop = ada => [{ els: [{ id: 1, k: 'IREF', op: 'A' }, B(2, 'MUL', 'MUL_01'), B(3, 'SUB', 'SUB_01'), { id: 4, k: 'OREF', op: 'Sum' }],
+    wires: [W(1, 'Out', 2, 'SourceA'), W(3, 'Dest', 2, 'SourceB', ada === 'fb' || ada === 'all'), W(2, 'Dest', 3, 'SourceA', ada === 'all'), W(3, 'Dest', 4, 'In')] }];
+  const vl = MTPS.verify(fproj(loop(''), { tags, ptags }));
+  check('a loop without Assume Data Available is an error (unresolved loop)', vl.errors.length === 2 && vl.errors.every(e => /Unresolved loop/.test(e.msg) && e.sheet === 0 && (e.el === 2 || e.el === 3)), vl.lines.join(' | '));
+  check('FBD errors name the sheet and the block', /^Error: Sheet 1, (MUL MUL_01|SUB SUB_01): Unresolved loop/.test(vl.errors[0].text), vl.errors[0].text);
+  check('with the feedback wire marked Assume Data Available the loop verifies', MTPS.verify(fproj(loop('fb'), { tags, ptags })).errors.length === 0);
+  check('every wire of the loop marked: the loop cannot be resolved', MTPS.verify(fproj(loop('all'), { tags, ptags })).errors.some(e => /all of its wires use Assume Data Available/.test(e.msg)));
+  const cl = frun(loop('fb'), { tags, ptags });
+  cl.write('MUL_01.SourceB', 0); cl.write('SUB_01.SourceB', -1); cl.write('A', 2); cl.scan(10);
+  check('the marked wire gives last scan\'s value: MUL uses SUB.Dest of the previous scan (one scan delay)', cl.read('MUL_01.Dest') === 0 && cl.read('Sum') === 1);
+  cl.scan(10);
+  check('… and the new value on the next scan', cl.read('MUL_01.Dest') === 2 && cl.read('Sum') === 3);
+  const two = [{ els: [B(1, 'ADD', 'ADD_01'), B(2, 'SUB', 'SUB_01')], wires: [W(1, 'Dest', 2, 'SourceA', true), W(1, 'Dest', 2, 'SourceB')] }];
+  check('two wires between the same two blocks with different indicators are an error', MTPS.verify(fproj(two, { tags, ptags })).errors.some(e => /same data flow indicator/.test(e.msg)));
+  // IREF latching (PM009 Data latching): an IREF and an OREF of the same tag
+  const lat = [{ els: [{ id: 1, k: 'IREF', op: 'A' }, B(2, 'ADD', 'ADD_01'), { id: 3, k: 'OREF', op: 'A' }, { id: 4, k: 'IREF', op: 'A' }, B(5, 'SUB', 'SUB_01'), { id: 6, k: 'OREF', op: 'Sum' }],
+    wires: [W(1, 'Out', 2, 'SourceA'), W(2, 'Dest', 3, 'In'), W(2, 'Dest', 5, 'SourceB'), W(4, 'Out', 5, 'SourceA'), W(5, 'Dest', 6, 'In')] }];
+  const cla = frun(lat, { tags, ptags });
+  cla.write('ADD_01.SourceB', 10); cla.write('A', 25); cla.scan(10);
+  check('IREF values are latched at the start of the routine: the OREF writing A does not change the IREF of A in that scan', cla.read('A') === 35 && cla.read('Sum') === -10);
+  // timers and counters (FBD_TIMER, FBD_COUNTER)
+  const tm = (t, tag) => [{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'IREF', op: 'Rst' }, B(3, t, tag), { id: 4, k: 'OREF', op: 'Done' }, { id: 5, k: 'OREF', op: 'Acc' }],
+    wires: [W(1, 'Out', 3, 'TimerEnable'), W(2, 'Out', 3, 'Reset'), W(3, 'DN', 4, 'In'), W(3, 'ACC', 5, 'In')] }];
+  const ct = frun(tm('TONR', 'TONR_01'), { tags, ptags });
+  ct.write('TONR_01.PRE', 50); ct.write('Run', 1); scans(ct, 3);
+  check('TONR: TimerEnable set, ACC counts in ms, EN and TT on, DN off', ct.read('TONR_01.EN') === 1 && ct.read('TONR_01.TT') === 1 && ct.read('Acc') === 20 && ct.read('Done') === 0);
+  scans(ct, 5);
+  check('TONR: DN at ACC = PRE (TT off)', ct.read('Done') === 1 && ct.read('Acc') === 50 && ct.read('TONR_01.TT') === 0);
+  ct.write('Run', 0); ct.scan(10);
+  check('TONR: TimerEnable cleared resets it (not retentive)', ct.read('Acc') === 0 && ct.read('Done') === 0 && ct.read('TONR_01.EN') === 0);
+  ct.write('Run', 1); scans(ct, 3); ct.write('Rst', 1); ct.scan(10);
+  check('TONR: Reset clears EN, TT, DN and sets ACC = 0', ct.read('Acc') === 0 && ct.read('TONR_01.EN') === 0 && ct.read('TONR_01.TT') === 0);
+  ct.write('Rst', 0); scans(ct, 3);
+  check('TONR: TimerEnable still set when Reset clears: it times again', ct.read('Acc') === 20 && ct.read('TONR_01.EN') === 1);
+  ct.write('TONR_01.PRE', -1); ct.scan(10);
+  check('TONR: a PRE below 0 sets Status.InstructFault and .PresetInv and the timer does not run', ct.read('TONR_01.InstructFault') === 1 && ct.read('TONR_01.PresetInv') === 1 && ct.read('TONR_01.Status') === 3 && ct.read('Acc') === 20);
+  const cr = frun(tm('RTOR', 'RTOR_01'), { tags, ptags });
+  cr.write('RTOR_01.PRE', 100); cr.write('Run', 1); scans(cr, 4); cr.write('Run', 0); cr.scan(10);
+  check('RTOR: TimerEnable cleared keeps ACC (retentive), EN and TT off', cr.read('Acc') === 30 && cr.read('RTOR_01.EN') === 0 && cr.read('RTOR_01.TT') === 0);
+  cr.write('Run', 1); scans(cr, 9);
+  check('RTOR: timing goes on from the kept ACC to DN', cr.read('Acc') === 100 && cr.read('Done') === 1);
+  cr.write('Run', 0); cr.scan(10);
+  check('RTOR: DN stays with TimerEnable off', cr.read('Done') === 1 && cr.read('Acc') === 100);
+  cr.write('Rst', 1); cr.scan(10);
+  check('RTOR: only Reset clears it (ACC 0, DN off)', cr.read('Acc') === 0 && cr.read('Done') === 0);
+  const cf = frun(tm('TOFR', 'TOFR_01'), { tags, ptags });
+  cf.write('TOFR_01.PRE', 30); cf.write('Run', 1); cf.scan(10);
+  check('TOFR: TimerEnable set: EN and DN on, ACC 0', cf.read('TOFR_01.EN') === 1 && cf.read('Done') === 1 && cf.read('Acc') === 0);
+  cf.write('Run', 0); scans(cf, 3);
+  check('TOFR: TimerEnable cleared: TT on while it times, DN still on', cf.read('TOFR_01.TT') === 1 && cf.read('Done') === 1 && cf.read('Acc') === 20);
+  scans(cf, 2);
+  check('TOFR: at ACC = PRE DN clears (off delay done)', cf.read('Done') === 0 && cf.read('Acc') === 30 && cf.read('TOFR_01.TT') === 0);
+  cf.write('Run', 1); cf.scan(10); cf.write('Rst', 1); cf.scan(10);
+  check('TOFR: Reset clears EN, TT, DN and sets ACC = PRE', cf.read('Acc') === 30 && cf.read('Done') === 0 && cf.read('TOFR_01.EN') === 0);
+  const cu = frun([{ els: [{ id: 1, k: 'IREF', op: 'Up' }, { id: 2, k: 'IREF', op: 'Dn' }, { id: 3, k: 'IREF', op: 'Rst' }, B(4, 'CTUD', 'CTUD_01'), { id: 5, k: 'OREF', op: 'Cnt' }, { id: 6, k: 'OREF', op: 'Done' }],
+    wires: [W(1, 'Out', 4, 'CUEnable'), W(2, 'Out', 4, 'CDEnable'), W(3, 'Out', 4, 'Reset'), W(4, 'ACC', 5, 'In'), W(4, 'DN', 6, 'In')] }], { tags, ptags });
+  cu.write('CTUD_01.PRE', 2); cu.write('Up', 1); cu.scan(10);
+  check('CTUD: a CUEnable already set at the first scan does not count (needs a 0 → 1 transition)', cu.read('Cnt') === 0 && cu.read('CTUD_01.CU') === 1);
+  const pulse = (n, k = 1) => { for (let i = 0; i < k; i++) { cu.write(n, 0); cu.scan(10); cu.write(n, 1); cu.scan(10); } };
+  pulse('Up', 2);
+  check('CTUD: counts up on each false-to-true CUEnable; DN at ACC >= PRE', cu.read('Cnt') === 2 && cu.read('Done') === 1);
+  cu.write('Dn', 1); cu.scan(10);
+  check('CTUD: counts down on a false-to-true CDEnable', cu.read('Cnt') === 1 && cu.read('Done') === 0);
+  cu.write('Up', 0); cu.write('Dn', 0); cu.scan(10); cu.write('Up', 1); cu.write('Dn', 1); cu.scan(10);
+  check('CTUD: both in one scan: up, then down (ACC unchanged)', cu.read('Cnt') === 1);
+  cu.write('CTUD_01.ACC', 2147483647); cu.write('Up', 0); cu.scan(10); cu.write('Up', 1); cu.scan(10);
+  check('CTUD: past 2,147,483,647 ACC rolls over to -2,147,483,648 and OV is set', cu.read('Cnt') === -2147483648 && cu.read('CTUD_01.OV') === 1);
+  cu.write('Rst', 1); cu.scan(10);
+  check('CTUD: Reset clears CU, CD, DN, OV, UN and ACC', cu.read('Cnt') === 0 && cu.read('CTUD_01.OV') === 0 && cu.read('CTUD_01.CU') === 0 && cu.read('CTUD_01.DN') === 0);
+  // Boolean blocks, one-shot, connectors across sheets
+  const sA = { els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'IREF', op: 'Up' }, B(3, 'BAND', 'BAND_01'), { id: 4, k: 'OCON', name: 'Both' }], wires: [W(1, 'Out', 3, 'In1'), W(2, 'Out', 3, 'In2'), W(3, 'Out', 4, 'In')] };
+  const sB = { els: [{ id: 5, k: 'ICON', name: 'Both' }, B(6, 'OSRI', 'OSRI_01'), { id: 7, k: 'OREF', op: 'Done' }, { id: 8, k: 'ICON', name: 'Both' }, { id: 9, k: 'OREF', op: 'Big' }], wires: [W(5, 'Out', 6, 'InputBit'), W(6, 'OutputBit', 7, 'In'), W(8, 'Out', 9, 'In')] };
+  const cb = frun([sA, sB], { tags, ptags });
+  check('BAND: In3..In8 are set on download (an unwired input does not block the AND)', cb.read('BAND_01.In8') === 1 && cb.read('BAND_01.EnableIn') === 1);
+  cb.write('Run', 1); cb.write('Up', 1); cb.scan(10);
+  check('an OCON on sheet 1 feeds ICONs on sheet 2; several ICONs read one OCON', cb.read('Big') === 1);
+  check('OSRI: the first scan needs a false-to-true InputBit', cb.read('Done') === 0);
+  cb.write('Up', 0); cb.scan(10); cb.write('Up', 1); cb.scan(10);
+  check('OSRI: OutputBit is set for one execution on the rising InputBit', cb.read('Done') === 1);
+  cb.scan(10);
+  check('… and cleared on the next', cb.read('Done') === 0);
+  // Verify errors (PM009 rules)
+  const verr = (sheets, re) => { const v = MTPS.verify(fproj(sheets, { tags, ptags })); return v.errors.some(e => re.test(e.msg)) ? true : v.lines.join(' | '); };
+  const ok = (name, r) => check(name, r === true, r);
+  ok('an OCON without an ICON of the same name is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OCON', name: 'X1' }], wires: [W(1, 'Out', 2, 'In')] }], /needs at least one ICON/));
+  ok('two OCONs with one name are an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OCON', name: 'X1' }, { id: 3, k: 'OCON', name: 'X1' }, { id: 4, k: 'ICON', name: 'X1' }], wires: [W(1, 'Out', 2, 'In'), W(1, 'Out', 3, 'In')] }], /unique name/));
+  ok('an ICON with no OCON of its name is an error', verr([{ els: [{ id: 1, k: 'ICON', name: 'Nope' }] }], /No OCON named 'Nope'/));
+  ok('an IREF of an undefined tag is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Ghost' }, { id: 2, k: 'OREF', op: 'Big' }], wires: [W(1, 'Out', 2, 'In')] }], /Undefined tag 'Ghost'/));
+  ok('an OREF with a constant is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'Run' }, { id: 2, k: 'OREF', op: '5' }], wires: [W(1, 'Out', 2, 'In')] }], /needs a tag, not a constant/));
+  ok('an OREF without an input wire is an error', verr([{ els: [{ id: 2, k: 'OREF', op: 'Big' }] }], /has no input wire/));
+  ok('a block whose tag is of another type is an error', verr([{ els: [B(1, 'TONR', 'CTUD_01')] }], /TONR needs a FBD_TIMER/));
+  ok('a block with an undefined tag is an error', verr([{ els: [B(1, 'ADD', 'NoSuchTag')] }], /Undefined tag 'NoSuchTag'/));
+  ok('two wires into one input pin are an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'A' }, { id: 2, k: 'IREF', op: 'A' }, B(3, 'ADD', 'ADD_01')], wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceA')] }], /more than one wire/));
+  ok('an IREF of a structure is an error', verr([{ els: [{ id: 1, k: 'IREF', op: 'GRT_01' }, B(2, 'ADD', 'ADD_01')], wires: [W(1, 'Out', 2, 'SourceA')] }], /an IREF needs a BOOL/));
+  check('an unwired IREF is a warning', MTPS.verify(fproj([{ els: [{ id: 1, k: 'IREF', op: 'A' }] }], { tags, ptags })).warnings.some(w => /not wired/.test(w.msg)));
+  check('a download with an FBD error is refused', !new MTPS.Controller().download(fproj(loop(''), { tags, ptags })).ok);
+  // JSR to an FBD routine from a ladder routine
+  const pj = fproj([s1], { tags, ptags }); const pg = pj.tasks[0].programs[0];
+  pg.routines[0].name = 'Calc'; pg.routines.unshift({ name: 'MainRoutine', rungs: [{ t: 'XIC(Run)JSR(Calc,0);' }] });
+  const cj = new MTPS.Controller(); cj.download(pj); cj.setMode('remrun'); cj.write('A', 1); cj.scan(10);
+  check('JSR runs an FBD routine only when called', cj.read('Sum') === 0);
+  cj.write('Run', 1); cj.scan(10);
+  check('… and the FBD routine runs from the JSR', cj.read('Sum') === 3.5);
+  // live values for the editor
+  const lv = F.liveOf(c, 'MainProgram', 'MainRoutine');
+  check('the live values of an FBD routine: IREF value, block pins, OREF value', lv && lv[1].Out === 0 && lv[3].Dest === 11.5 && lv[4].In === 11.5, JSON.stringify(lv));
+  // DIV by 0 in FBD: 1.#INF and S:V (minor fault)
+  const cd = frun([{ els: [{ id: 1, k: 'IREF', op: '1' }, { id: 2, k: 'IREF', op: '0' }, B(3, 'DIV', 'ADD_01'), { id: 4, k: 'OREF', op: 'Sum' }], wires: [W(1, 'Out', 3, 'SourceA'), W(2, 'Out', 3, 'SourceB'), W(3, 'Dest', 4, 'In')] }], { tags, ptags });
+  cd.scan(10);
+  check('DIV by zero in FBD: Dest is infinite (1.#INF), S:V and a minor fault', cd.read('Sum') === Infinity && cd.read('S:V') === 1);
+  // prescan: Program → Run restarts the first-scan rules
+  ct.write('Rst', 0); ct.write('TONR_01.PRE', 1000); ct.write('Run', 1); scans(ct, 3); ct.setMode('remprog'); ct.setMode('remrun'); ct.scan(10);
+  check('Program → Run: TONR starts as on a first scan (ACC 0, EN TT DN cleared, then times)', ct.read('Acc') === 0 && ct.read('TONR_01.EN') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

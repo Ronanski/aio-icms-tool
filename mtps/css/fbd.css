@@ -1,0 +1,57 @@
+/* MT PLC Studio: the Function Block Diagram editor (js/fbd.js). Colours come from the theme (themes.css). */
+.fbdbar { min-height: 30px; display: flex; align-items: center; gap: 2px; padding: 0 4px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; overflow-x: auto; scrollbar-width: none; }
+.fbdbar::-webkit-scrollbar { display: none; }
+.fbdbar .fsh { padding: 0 6px; white-space: nowrap; cursor: pointer; font-weight: 600; }
+.fbdbar .fsel { min-width: 60px; padding: 0 8px; color: var(--muted); white-space: nowrap; }
+.fbdbar .fpick { white-space: nowrap; }
+.tab .fbdbar, .phone .fbdbar { min-height: 48px; }
+.fbdwrap { flex: 1; overflow: auto; background: var(--lad-bg); position: relative; outline: none; touch-action: none; overscroll-behavior: contain; min-height: 0; }
+svg.fbd { display: block; user-select: none; -webkit-user-select: none; font-family: Arial, Roboto, Helvetica, sans-serif; font-size: 11px; }
+svg.fbd text { fill: var(--text); pointer-events: none; }
+svg.fbd .fgl { fill: none; stroke: var(--border); stroke-width: .5; opacity: .6; }
+svg.fbd .fbg { cursor: grab; }
+svg.fbd .fbx { fill: var(--lad-bg); stroke: var(--lad-wire); stroke-width: 1; cursor: move; }
+svg.fbd .fbx.iref, svg.fbd .fbx.oref { fill: var(--surface-2); }
+svg.fbd .fbx.icon, svg.fbd .fbx.ocon { fill: var(--surface-3); }
+svg.fbd .fe.sel .fbx { stroke: var(--accent); stroke-width: 2.2; }
+svg.fbd .fe.err .fbx { stroke: var(--danger); stroke-width: 2; stroke-dasharray: 5 3; }
+svg.fbd .ftag { font-weight: 700; fill: var(--lad-alias); }
+svg.fbd .fmn { font-weight: 700; }
+svg.fbd .fds { fill: var(--muted); font-size: 9px; }
+svg.fbd .fop { font-family: var(--mono); }
+svg.fbd .fkd { fill: var(--muted); font-size: 8px; }
+svg.fbd .fpn { font-size: 10px; }
+svg.fbd .fst { stroke: var(--lad-wire); stroke-width: 1; fill: none; }
+svg.fbd .fpb { fill: var(--surface-3); stroke: var(--border-strong); cursor: pointer; }
+svg.fbd .fpt { font-size: 10px; font-weight: 700; }
+svg.fbd .fpd { fill: var(--lad-wire); pointer-events: none; }
+svg.fbd .fpd.arm { fill: var(--accent); r: 5; }
+svg.fbd .fph { fill: transparent; cursor: crosshair; }
+svg.fbd .fw { stroke: var(--lad-wire); stroke-width: 1.2; fill: none; pointer-events: none; }
+svg.fbd .fw.sel { stroke: var(--accent); stroke-width: 2.6; }
+svg.fbd .fw.rub { stroke: var(--accent); stroke-dasharray: 4 3; }
+/* online: a BOOL wire is solid and thick when 1, dashed when 0 */
+svg.fbd .fw.t1 { stroke: var(--lad-on); stroke-width: 2.4; }
+svg.fbd .fw.t0 { stroke-dasharray: 4 3; }
+svg.fbd .fwh { stroke: transparent; stroke-width: 12; fill: none; cursor: pointer; }
+.tab svg.fbd .fwh, .phone svg.fbd .fwh { stroke-width: 20; }
+.tab svg.fbd .fph, .phone svg.fbd .fph { transform-box: fill-box; transform-origin: center; transform: scale(1.5); }
+svg.fbd .fada { fill: var(--accent); pointer-events: none; }
+svg.fbd .fv { fill: var(--lad-online); font-family: var(--mono); font-size: 10px; }
+.fpk .fpg { margin-bottom: 8px; }
+.fpk .fpgh { font-weight: 700; padding: 4px 2px; border-bottom: 1px solid var(--border); }
+.fpk .row { display: flex; gap: 10px; align-items: center; padding: 6px 4px; cursor: pointer; border-radius: var(--r-sm); }
+.fpk .row:hover { background: var(--surface-2); }
+.fpk .row b { min-width: 44px; }
+.tab .fpk .row, .phone .fpk .row { min-height: 44px; }
+.fptw { overflow: auto; max-height: 60vh; }
+.fptbl { border-collapse: collapse; width: 100%; }
+.fptbl th, .fptbl td { border-bottom: 1px solid var(--border); padding: 3px 6px; text-align: left; white-space: nowrap; }
+.fptbl th { background: var(--surface-2); font-weight: 600; }
+.gbtn svg .fgt { stroke: none; fill: currentColor; font-family: Arial, Roboto, sans-serif; font-weight: 700; }
+/* phone: the sheet tools are in the menu of "Sheet n of m", Add Element is the + button */
+.phone .fbdbar :is(.fpick, .fsel, .vsep, [data-fbd="add"], [data-fbd="desc"], [data-fbd="delsheet"]) { display: none; }
+.phone .fbdbar .ib { min-width: 42px; }
+.phone .fbdbar .fsh { flex: 1; }
+/* the ladder's rung buttons have no meaning in an FBD routine (zoom and Delete stay) */
+.ed:has(#fbdwrap) .rtb :is([data-cmd="rtext"], [data-cmd="comment"], [data-cmd="rung"], [data-cmd="bmprev"], [data-cmd="bmnext"], [data-cmd="bmtog"], [data-cmd="bmall"]) { display: none; }

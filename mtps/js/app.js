@@ -415,7 +415,7 @@
   const sfcOn = () => !!SFCUI() && SFCUI().on();
   // a Structured Text routine opens in the ST editor of st.js (in #stwrap) where a ladder routine has #ladwrap
   const stOn = () => !S.noProj && S.view === 'ladder' && curRoutine().type === 'ST' && !!(E.ST && E.ST.ui);
-  const ladWrap = () => (stOn() ? '<div class="stwrap" id="stwrap"></div>' : '<div class="ladwrap" id="ladwrap" tabindex="0"></div>');
+  const ladWrap = () => (fbdOn() ? E.FBD.html() : stOn() ? '<div class="stwrap" id="stwrap"></div>' : '<div class="ladwrap" id="ladwrap" tabindex="0"></div>');
   const LADONLY = new Set(['rtext', 'comment', 'rung', 'del', 'bmprev', 'bmnext', 'bmtog', 'bmall', 'ins', 'cut', 'copy', 'paste', 'selall', 'insmode', 'edit', 'rstart', 'raccept']);
   const parsed = i => { const r = rungs()[i]; if (!r) return null; const pr = E.parseRung(r.t); return pr.err ? null : pr.elems; };
   // the ladder and the tags can be edited offline and online (online edits wait for Accept Edits); modules only offline
@@ -974,6 +974,7 @@
   function run(id) {
     const c = C[id];
     if (!c) return;
+    if (E.FBD && E.FBD.cmd && E.FBD.cmd(id)) return;
     if (can(id)) { c.run(); return; }
     if (!S.online && ONLINE_ONLY.includes(id)) toast(`${c.l} works online: press Go Online first.`);
   }
@@ -1049,6 +1050,7 @@
     if (nl) { renderLadder(); if (st && !kept) { nl.scrollTop = st[0]; nl.scrollLeft = st[1]; } watchLadder(nl); }
     if (stOn()) E.ST.ui.mount(stv);
     if (sfcOn()) SFCUI().mount();
+    if (fbdOn()) E.FBD.mount();
     if (dsel) { const ntx = $('#desctx'); if (ntx) { ntx.focus(); ntx.setSelectionRange(dsel[0], dsel[1]); } }
     title();
   }
@@ -1093,8 +1095,10 @@
     return L4.map(([c, t]) => `<div><i class="led ${c}"></i>${t}</div>`).join('');
   }
   const keyHTML = () => `<span class="key" title="Key switch">${['PROG', 'REM', 'RUN'].map(k => `<span data-key="${k}" class="${ctl.key === k ? 'on' : ''}">${k}</span>`).join('')}</span>`;
-  const gbtns = tab => TABS[tab].map(m => `<button class="gbtn" data-mn="${m}" title="${esc(NAME(m))}"${editable() && !stOn() ? '' : ' disabled'}>${L.icon(m)}<span>${m === 'RUNG' ? 'Rung' : m === 'BR' ? 'Branch' : m === 'BRL' ? 'Level' : m}</span></button>`).join('');
-  const itabs = () => Object.keys(TABS).map(t => `<span data-tab="${esc(t)}" class="${t === S.prefs.tab ? 'on' : ''}">${t}</span>`).join('');
+  // the routine's drawing: the ladder, or the Function Block Diagram editor (fbd.js) for a routine of Type FBD
+  const fbdOn = () => !!(E.FBD && E.FBD.on && E.FBD.on());
+  const gbtns = tab => fbdOn() ? E.FBD.glyphs() : TABS[tab].map(m => `<button class="gbtn" data-mn="${m}" title="${esc(NAME(m))}"${editable() && !stOn() ? '' : ' disabled'}>${L.icon(m)}<span>${m === 'RUNG' ? 'Rung' : m === 'BR' ? 'Branch' : m === 'BRL' ? 'Level' : m}</span></button>`).join('');
+  const itabs = () => fbdOn() ? '' : Object.keys(TABS).map(t => `<span data-tab="${esc(t)}" class="${t === S.prefs.tab ? 'on' : ''}">${t}</span>`).join('');
   const tbtn = (id, n) => `<button class="ib" data-cmd="${id}" title="${esc(C[id].l + (C[id].k ? ' (' + C[id].k + ')' : ''))}"${can(id) ? '' : ' disabled'}>${ic(n || C[id].i)}</button>`;
 
   const tbtT = (id, t) => `<button class="tbt" data-cmd="${id}" title="${esc(C[id].l)}"${can(id) ? '' : ' disabled'}>${ic(C[id].i)}<span>${t}</span></button>`;
@@ -1143,6 +1147,7 @@
   }
   const errHandle = () => { const n = S.verify ? S.verify.errors.length : 0; return `<span class="errh${n ? '' : ' ok'}" data-errh="1">${ic(n ? 'warn' : 'check')}<b>${n}</b> Errors${ic('down')}</span>`; };
   function selbarHTML(e) {
+    if (fbdOn()) return E.FBD.selbar();
     const ri = curSelRung();
     const tag = e && e.a && e.a[0] ? tagFor(e.a[0]) : null;
     return `<div class="selbar">${e ? `<span class="mn">${esc(e.t)}</span><span class="op ell" style="max-width:40%">${esc(e.a.join(', '))}</span>` : `<span class="muted">${ri == null ? 'Tap a rung or an instruction' : 'Rung ' + ri}</span>`}
@@ -1201,7 +1206,7 @@
     const add = (key, lvl, txt, icon, o, kids) => { const n = N(key, lvl, txt, icon, { ...o, kids }); h += n.html; if (kids && n.open) kids(); };
     const progNode = (g, lvl) => add('prog:' + g.name, lvl, g.name, 'prog', {}, () => {
       add('ptags:' + g.name, lvl + 1, 'Program Tags', 'tag');
-      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, lvl + 1, r.name + (r.name === g.main ? '' : ''), r.type === 'ST' ? 'st' : 'ladder', { on: g.name === S.prog && r.name === S.routine,
+      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, lvl + 1, r.name + (r.name === g.main ? '' : ''), r.type === 'ST' ? 'st' : r.type === 'FBD' ? 'fbd' : 'ladder', { on: g.name === S.prog && r.name === S.routine,
         f: S.verify && S.verify.errors.some(e => e.program === g.name && e.routine === r.name) ? '⊗' : '' }));
     });
     add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => {
@@ -4667,7 +4672,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'New Routine', size: 'md', focus: true,
       body: `<div class="frow"><label>Name</label><input class="inp" id="p1" value="${esc(n)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="nr-d" rows="2"></textarea></div>
-        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option><option value="ST">Structured Text</option>${SFCUI() ? '<option value="SFC">Sequential Function Chart</option>' : ''}</select></div>
+        <div class="frow"><label>Type</label><select class="inp" id="nr-t"><option value="">Ladder Diagram</option><option value="ST">Structured Text</option>${SFCUI() ? '<option value="SFC">Sequential Function Chart</option>' : ''}${E.FBD ? '<option value="FBD">Function Block Diagram</option>' : ''}</select></div>
         <div class="frow"><label>In Program</label><select class="inp" disabled><option>${esc(g.name)}</option></select></div>
         <div class="frow"><label>Assignment</label><select class="inp" id="nr-a"><option value=""${g.main ? ' selected' : ''}>&lt;none&gt;</option><option value="main"${g.main ? '' : ' selected'}>Main</option><option value="fault">Fault</option></select></div>
         <p class="help">Call a routine from the main routine with JSR. A Fault routine runs when an instruction of this program faults; it clears the fault by setting Type and Code of the program's MajorFaultRecord to 0.</p><div class="errtx" id="p1e"></div>`,
@@ -4675,7 +4680,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         const v = el.querySelector('#p1').value.trim(), d = el.querySelector('#nr-d').value.trim(), as = el.querySelector('#nr-a').value, ty = el.querySelector('#nr-t').value, er = t => { el.querySelector('#p1e').textContent = t; return false; };
         if (!E.validName(v)) return er('Use letters, digits and _ (up to 40).');
         if (g.routines.some(r => U(r.name) === U(v))) return er('A routine with that name exists.');
-        edit(() => { const r = ty === 'ST' ? { name: v, type: 'ST', st: '', rungs: [] } : ty === 'SFC' ? { name: v, type: 'SFC', rungs: [], sfc: SFCUI().newChart(g, S.p) } : { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
+        edit(() => { const r = ty === 'ST' ? { name: v, type: 'ST', st: '', rungs: [] } : ty === 'FBD' ? { name: v, ...E.FBD.blank() } : ty === 'SFC' ? { name: v, type: 'SFC', rungs: [], sfc: SFCUI().newChart(g, S.p) } : { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
       } }] });
   }
   /* New Program in the Controller Fault Handler or Power-Up Handler folder (1756-PM014; help: the handler program cannot
@@ -4954,7 +4959,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     dialog({ title: 'Routine Properties - ' + r.name, size: 'md',
       body: `<div class="frow"><label>Name</label><input class="inp" id="rp-n" value="${esc(r.name)}"${dis}></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="rp-d" rows="3"${dis}>${esc(r.desc || '')}</textarea></div>
-        ${kv('Type', r.type === 'ST' ? 'Structured Text' : r.type === 'SFC' ? 'Sequential Function Chart' : 'Ladder Diagram')}${kv('In program', esc(g.name))}${r.type === 'ST' ? kv('Number of lines', String(r.st || '').split('\n').length) : kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
+        ${kv('Type', r.type === 'ST' ? 'Structured Text' : r.type === 'SFC' ? 'Sequential Function Chart' : r.type === 'FBD' ? 'Function Block Diagram' : 'Ladder Diagram')}${kv('In program', esc(g.name))}${r.type === 'ST' ? kv('Number of lines', String(r.st || '').split('\n').length) : r.type === 'FBD' ? kv('Number of sheets', (r.sheets || []).length) : kv('Number of rungs', r.rungs.length)}${kv('Main routine', g.main === r.name ? 'Yes' : 'No')}`,
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!editable()) return;
         const n = el.querySelector('#rp-n').value.trim(), d = el.querySelector('#rp-d').value.trim();
@@ -5497,7 +5502,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', 'Continuous task'], ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
     if (k.startsWith('prog:')) { const g = prog(k.slice(5)); return g && [g.name, [['Type', 'Program'], ['Description', g.desc || ''], ['Main Routine', g.main || '<none>'], ['Routines', g.routines.length], ['Tags', g.tags.length]]]; }
     if (k.startsWith('ptags:')) { const g = prog(k.slice(6)); return g && ['Program Tags', [['Type', 'Tags of the program scope'], ['Program', g.name], ['Tags', g.tags.length]]]; }
-    if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', R.type === 'ST' ? 'Structured Text routine' : R.type === 'SFC' ? 'Sequential Function Chart routine' : 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
+    if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', R.type === 'ST' ? 'Structured Text routine' : R.type === 'SFC' ? 'Sequential Function Chart routine' : R.type === 'FBD' ? 'Function Block Diagram routine' : 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
     if (k === 'dts' || k === 'dt:user' || k === 'dt:str' || k === 'dt:aod' || k === 'dt:pre' || k === 'dt:mod') {
       const d = E.dataTypes(P), L = { dts: ['Data Types', null], 'dt:user': ['User-Defined', d.userDefined], 'dt:str': ['Strings', d.strings], 'dt:aod': ['Add-On-Defined', d.addOnDefined || []], 'dt:pre': ['Predefined', d.predefined], 'dt:mod': ['Module-Defined', d.moduleDefined] }[k];
       return [L[0], [['Type', 'Folder']].concat(L[1] ? [['Data types', L[1].length]] : [])];
@@ -7094,6 +7099,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   let lastFault = null;
   function live(force) {
     if (S.online && sfcOn()) SFCUI().live();   // the SFC window: its own signature and pace (sfc.js)
+    if (E.FBD && E.FBD.live) E.FBD.live(force);
     const s = liveSig();
     if (!force && s === sig) return;
     sig = s;
@@ -7477,6 +7483,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
     if (inField) return;
     if (sfcOn() && SFCUI().key(ev)) { ev.preventDefault(); return; }
+    if (!ctrl && !ev.altKey && E.FBD && E.FBD.key && E.FBD.key(ev)) return;
     if (ev.key === 'Escape' && S.descEd) { ev.preventDefault(); closeDescBar(false); return; }
     if (k === 'Enter' && ctrl) { ev.preventDefault(); if (S.descEd) closeDescBar(true); return; }
     if (ev.altKey && !ctrl && (ev.code === 'Digit0' || ev.code === 'Numpad0')) { ev.preventDefault(); showOrg(); return; }
@@ -7541,5 +7548,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   if (SFCUI()) SFCUI().bind({ S, dialog, openMenu, toast, esc, ic, edit, render, run, curProg, curRoutine, ctl: () => ctl, prompt1, savePrefs, editable });
   E.App = { VERSION, BUILD, state: S, render, run, insertMn, quick, openProject, example, blank, racks, get chassis() { return chassis; }, mountChassis, toL5X, fromL5X, select: t => { select(t); render(); }, openEditor, toast, xref, findAll };
   Object.defineProperty(E.App, 'ctl', { get: () => ctl });
+  // the FBD editor (fbd.js) works through these helpers of the app
+  if (E.FBD && E.FBD.init) E.FBD.init({ S, IC, ctl: () => ctl, curProg, curRoutine, edit, render, toast, dialog, openMenu, closeLayer, prompt1, confirm: confirmDlg, candidates, editable, ic });
   start();
 })();
