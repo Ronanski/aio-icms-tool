@@ -136,6 +136,9 @@
   // the Add-On tab: the Add-On Instructions of the project
   Object.defineProperty(TABS, 'Add-On', { enumerable: true, get: () => Object.keys(INSTR).filter(k => INSTR[k].aoi && S.p && (S.p.aois || []).some(a => U(a.name) === k)) });
   const NAME = mn => (mn === 'RUNG' ? 'Rung' : mn === 'BR' ? 'Branch' : mn === 'BRL' ? 'Branch Level' : (INSTR[mn] || {}).name || mn);
+  // what each I/O tag of a module holds, for the tag browsers: an output module's input tag holds its Fault word and
+  // the output data echo (1756-UM058: the data the module is driving), not field inputs
+  const IOROLE = { diI: 'field inputs', doO: 'outputs (the program writes these)', doI: 'status: Fault and output echo, not inputs', diC: 'configuration', doC: 'configuration' };
   const MODNAMES = { 'PLC-DI16-24V': '16 DC inputs', 'PLC-DI16-120V': '16 AC inputs', 'PLC-DO16-24V': '16 DC outputs', 'PLC-DO16-RLY': '16 relay outputs', 'PLC-AI4': '4 analog inputs', 'PLC-AO4': '4 analog outputs', 'PLC-ENET': 'Ethernet' };
 
   /* ---------- projects ---------- */
@@ -1441,8 +1444,16 @@
     select(t);
     render();
     if (!dbl || !t) return;
-    // as in the reference: a double-click on an operand edits it in place, on the instruction itself its mnemonic
-    if (t.path && !t.br && !t.leg) { if (editable()) inlineEdit(t.ri, t.path, t.op != null ? t.op : 'mn'); }
+    // as in the reference: a double-click on an operand edits it in place, on the instruction itself its mnemonic.
+    // By touch the operand row is too small to hit, so a second tap on the instruction opens its editor (the
+    // instruction and its operands with the tag list, as when it was added from a tile; owner 2026-10-27: a "?" could
+    // not be set on the tablet)
+    if (t.path && !t.br && !t.leg) {
+      if (!editable()) return;
+      const e = touch && t.op == null ? getEl(parsed(t.ri) || [], t.path) : null;
+      if (e && INSTR[e.t] && INSTR[e.t].args.length) openEditor(t.ri, t.path, 0);
+      else inlineEdit(t.ri, t.path, t.op != null ? t.op : 'mn');
+    }
     else if (t.rn) { if (editable()) rungText(t.ri); }
   }
   /* ---------- drag and drop (Studio 5000 "Edit Ladder Elements", Dragging and Dropping) ----------
@@ -1978,7 +1989,7 @@
         return n;
       };
       const ioRows = [];
-      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}${IOROLE[d.kind + k] ? ' · ' + IOROLE[d.kind + k] : ''}`; ioRows.push(n); } }); });
       groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
       const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = tyDims(typeOf(t), t.dim); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
       groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
@@ -6897,15 +6908,17 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     return `<div class="chasrow"><div class="chas" style="--n:${row.length}" data-slots="${row.length}" data-chas="${ri}"><div class="rkps" aria-label="Power supply"><b>PS</b><i class="led g"></i><span>PWR</span><div class="vents"></div></div>
       <div class="rkbay"><div class="rkrail top">${row.map(() => '<i></i>').join('')}</div><div class="rkslots">${row.map(s => cardHTML(ri, s)).join('')}</div><div class="rkrail bot">${row.map(s => `<span>${s}</span>`).join('')}</div></div></div></div>`;
   };
-  /* ---------- Module I/O window: the I/O of a chassis in one small window that stays open, inputs and outputs
-     together. Each input point is a button that switches it; each output point lights while it is on; analog
-     channels have a value box. The module that opened it is marked. ---------- */
+  /* ---------- Module I/O window: the points of the one module that opened it, in a small window that stays open
+     (one window per chassis; another module's I/O button shows that module in it). An input module's points are
+     buttons that switch the field input; an output module's points only light while the output is on (the
+     controller drives them, there is nothing to switch); analog channels have a value box (inputs) or show the
+     value (outputs). ---------- */
   const ioWins = new Map();   // rack index → element
   function ioWinHTML(ri, focus) {
     const r = racks[ri];
     if (!r) return '<p class="help">The chassis is gone.</p>';
-    const mods = [...r.mods.values()].filter(m => !m.ctl).sort((x, y) => x.slot - y.slot);
-    if (!mods.length) return '<p class="help">No I/O modules in this chassis.</p>';
+    const mods = [...r.mods.values()].filter(m => !m.ctl && (focus == null || m.slot === focus));
+    if (!mods.length) return `<p class="help">${focus == null ? 'No I/O modules in this chassis.' : 'No I/O module in this slot.'}</p>`;
     const names = r === chassis && S.p ? aliasNames() : {};
     return mods.map(m => {
       const s = m.slot, dir = m.kind === 'di' || m.kind === 'ai' ? 'I' : 'O', inp = dir === 'I';
@@ -6922,7 +6935,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
           ? `<label><span>Ch${c}</span><input class="inp num" type="number" step="0.5" value="${(+v).toFixed(1)}" data-anan="${ri}:${s}:${c}" aria-label="Channel ${c} value"></label>`
           : `<span><span>Ch${c}</span><b class="mono">${(+v).toFixed(1)}</b></span>`).join('')}</div>`;
       }
-      return `<div class="iom${s === focus ? ' cur' : ''}" data-iom="${s}">${head}${body}</div>`;
+      const note = inp ? '' : '<p class="help iono">The controller drives these outputs; a point lights while it is ON.</p>';
+      return `<div class="iom${s === focus ? ' cur' : ''}" data-iom="${s}">${head}${body}${note}</div>`;
     }).join('');
   }
   function openIoWin(id, doc, near) {
@@ -6940,7 +6954,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       w.dataset.place = '1';
     }
     w.dataset.focus = String(s);
-    w.innerHTML = `<div class="iowh" data-iodrag="1"><b>Module I/O · ${esc(r.name)}</b><span class="grow"></span><button class="ib" data-iox="${ri}" aria-label="Close">${ic('close')}</button></div><div class="iowb">${ioWinHTML(ri, s)}</div>`;
+    const m0 = r.module(s);
+    w.innerHTML = `<div class="iowh" data-iodrag="1"><b>Module I/O · ${m0 ? `[${s}] ${esc(m0.name)}` : esc(r.name)}</b><span class="grow"></span><button class="ib" data-iox="${ri}" aria-label="Close">${ic('close')}</button></div><div class="iowb">${ioWinHTML(ri, s)}</div>`;
     if (w.dataset.place) {
       // first opening: beside the module (left of it if there is room, else right), inside the window
       delete w.dataset.place;
