@@ -142,7 +142,7 @@
   const ctlSlot = () => (S.p && Number.isInteger(S.p.controller.slot) ? S.p.controller.slot : 0);
   function blank(name) {
     return {
-      format: 'mt-plc-studio', version: 1, controller: { name, type: 'PLC-CPU', rev: '1.0' },
+      format: 'mt-plc-studio', version: 1, controller: { name, type: 'PLC-CPU', rev: '1.0' }, info: { created: Date.now() },
       rack: { size: 8, modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
       dataTypes: [], tags: [],
       tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [{ t: '' }] }] }] }],
@@ -292,6 +292,8 @@
   }
   const mtpText = () => JSON.stringify(S.p, null, 1);
   async function writeTo(path) {
+    // Controller Properties > Project: Created (kept from the first save) and Edited (each save)
+    const now = Date.now(); S.p.info = Object.assign({ created: now }, S.p.info || {}, { edited: now });
     try { await FS.write(path, mtpText()); } catch (e) { toast('Could not save: ' + (e.message || e), 'err'); return false; }
     S.file = { path, name: baseName(path) }; S.dirty = false; rememberFile(path); saveProject(); render();
     toast(`Saved ${S.file.name}`, 'ok');
@@ -368,7 +370,7 @@
   }
   function validProject(p) {
     return p && p.format === 'mt-plc-studio' && p.controller && E.validName(p.controller.name) && Array.isArray(p.tasks) && p.tasks.length &&
-      p.tasks.every(t => Array.isArray(t.programs) && t.programs.every(g => Array.isArray(g.routines) && g.routines.length));
+      p.tasks.every(t => Array.isArray(t.programs) && t.programs.every(g => Array.isArray(g.routines) && (g.routines.length || HANDLERS[t.type])));
   }
 
   /* ---------- state ---------- */
@@ -394,6 +396,11 @@
     S.prefs.themes = 1; savePrefs();
   }
   const allProgs = () => S.p.tasks.flatMap(t => t.programs);
+  /* the Controller Fault Handler and the Power-Up Handler folders (1756-PM014): kept as a task of type fault / powerup
+     that holds at most one program, which is never scheduled (it runs on a major fault, or at power-up) */
+  const HANDLERS = { fault: 'Controller Fault Handler', powerup: 'Power-Up Handler' };
+  const handlerTask = kind => S.p.tasks.find(t => t.type === kind);
+  const handlerProg = kind => { const t = handlerTask(kind); return t && t.programs[0] || null; };
   const curProg = () => allProgs().find(p => p.name === S.prog) || allProgs()[0];
   const curRoutine = () => { const P = curProg(); return P.routines.find(r => r.name === S.routine) || P.routines[0]; };
   const rungs = () => curRoutine().rungs;
@@ -405,7 +412,7 @@
      controller then keeps the old logic until the accepted edits are tested, and testing can be undone (Untest)
      until they are assembled. In Program, accepting finalizes them. S.ed = { ctl, orig, base, tested }:
      orig = the controller's project before the edits, base = the accepted project (both JSON). */
-  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const lkey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'info' || k === 'noDocs' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
   /* edit zones on the rungs (Studio 5000 "Edit ladder logic in run mode"): rung.z is
      i: the editable copy made by Start Pending Rung Edits, or a new rung (shown e while it has errors);
      r: the original below it, read-only; after Accept they become I (insert zone) and R (replace zone);
@@ -1174,12 +1181,17 @@
     };
     let h = '';
     const add = (key, lvl, txt, icon, o, kids) => { const n = N(key, lvl, txt, icon, { ...o, kids }); h += n.html; if (kids && n.open) kids(); };
-    add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => { add('ctags', 1, 'Controller Tags', 'tag'); });
-    add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => add('prog:' + g.name, 2, g.name, 'prog', {}, () => {
-      add('ptags:' + g.name, 3, 'Program Tags', 'tag');
-      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, 3, r.name + (r.name === g.main ? '' : ''), 'ladder', { on: g.name === S.prog && r.name === S.routine,
+    const progNode = (g, lvl) => add('prog:' + g.name, lvl, g.name, 'prog', {}, () => {
+      add('ptags:' + g.name, lvl + 1, 'Program Tags', 'tag');
+      g.routines.forEach(r => add('rt:' + g.name + '/' + r.name, lvl + 1, r.name + (r.name === g.main ? '' : ''), 'ladder', { on: g.name === S.prog && r.name === S.routine,
         f: S.verify && S.verify.errors.some(e => e.program === g.name && e.routine === r.name) ? '⊗' : '' }));
-    })))));
+    });
+    add('ctl', 0, 'Controller ' + S.p.controller.name, 'chip', { f: S.online && ctl.fault ? '⚠' : '' }, () => {
+      add('ctags', 1, 'Controller Tags', 'tag');
+      add('cfh', 1, HANDLERS.fault, 'folder', {}, () => { const g = handlerProg('fault'); if (g) progNode(g, 2); });
+      add('puh', 1, HANDLERS.powerup, 'folder', {}, () => { const g = handlerProg('powerup'); if (g) progNode(g, 2); });
+    });
+    add('tasks', 0, 'Tasks', 'folder', {}, () => S.p.tasks.filter(t => !HANDLERS[t.type]).forEach(t => add('task:' + t.name, 1, t.name, 'task', {}, () => t.programs.forEach(g => progNode(g, 2)))));
     const dt = E.dataTypes(S.p);
     add('dts', 0, 'Data Types', 'folder', {}, () => {
       // a folder shows the expand icon only when it has content (v37 help: Controller Organizer); Add-On-Defined
@@ -1680,6 +1692,7 @@
     else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
     else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
+    else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
     if (items.length) openMenu(items, { x, y });
   }
 
@@ -3602,7 +3615,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function rlDevice(m) {
     const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
     return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
-      ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
+      ['Revision', m.ctl ? '1.0' : m.rev || E.REV0], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
       ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']], [['Faults', rlFaults(m)]]);
   }
   // the fault information a device reports (Device Properties, Module Statistics > General)
@@ -4244,6 +4257,20 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   // module firmware revision and connection, as a new module of that catalog number gets them (not checked in the VM)
   const L5XMOD = { di: ['3', '1', 'StandardInput', 'Input'], do: ['3', '1', 'StandardOutput', 'Output'], ai: ['1', '1', 'Float', 'Input'], ao: ['1', '1', 'Float', 'Output'] };
   const l5xIdx = (k, dims) => { const out = []; for (let d = dims.length - 1; d >= 0; d--) { out.unshift(k % dims[d]); k = Math.floor(k / dims[d]); } return out.join(','); };
+  /* the L5X of a module and of a rung, as 1756-RM014D describes them. Module: Name, CatalogNumber, Vendor, ProductType
+     (7 discrete, 14 controller; 10 analog is not confirmed), ProductCode (this app's own numbers), Major, Minor,
+     ParentModule, ParentModPortId, Inhibited, MajorFault; then Description, <EKey State="CompatibleModule|ExactMatch|
+     Disabled"/>, <Ports> (Port Id, Address = slot, Type ICP, Upstream) and <Communications><Connections> (Connection
+     Name, RPI in microseconds, Type Input or Output, EventID). Rung Type: N normal; this app's pending edit (the copy i
+     above the original r) is er above rN, a pending insert e; an accepted edit (I above R) is IR above R, an accepted
+     insert I; D delete. Import reads them back (d, a pending delete, as D; rI and rR as r). */
+  const L5XKEY = { exact: 'ExactMatch', compat: 'CompatibleModule', off: 'Disabled' };
+  const l5xZone = (rs, i) => { const z = rs[i].z || '', nx = (rs[i + 1] || {}).z; return z === 'i' ? (nx === 'r' ? 'er' : 'e') : z === 'r' ? 'rN' : z === 'I' ? (nx === 'R' ? 'IR' : 'I') : z === 'R' || z === 'D' ? z : 'N'; };
+  const l5xZoneIn = ty => ({ e: 'i', er: 'i', rN: 'r', rI: 'r', rR: 'r', IR: 'I', I: 'I', R: 'R', D: 'D', d: 'D', i: 'i', r: 'r' })[ty] || '';
+  function l5xModule(m, x, cd) {
+    const d = E.MODULES[m.type] || {}, [M1, n1] = String(m.rev || E.REV0).split('.'), out = d.kind === 'do' || d.kind === 'ao';
+    return `<Module Name="${x(m.name)}" CatalogNumber="${L5XCAT[m.type] || m.type}" Vendor="1" ProductType="${E.PTYPE[d.kind] || 0}" ProductCode="${Object.keys(E.MODULES).indexOf(m.type) + 2}" Major="${+M1}" Minor="${+n1}" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}" MajorFault="${m.majorOnFail ? 'true' : 'false'}">${m.desc ? `<Description>${cd(m.desc)}</Description>` : ''}<EKey State="${L5XKEY[m.key] || 'CompatibleModule'}"/><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports><Communications><Connections><Connection Name="${out ? 'Output' : 'Input'}" RPI="${Math.round((m.rpi || 20) * 1000)}" Type="${out ? 'Output' : 'Input'}" EventID="0"/></Connections></Communications></Module>`;
+  }
   function l5xKit(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
@@ -4275,14 +4302,11 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     udts.forEach(d => visit(d));
     // a user-defined or string type, as l5xTypes writes it
     const udt = d => l5xTypes({ dataTypes: [d] }, x, cd).replace(/^<DataTypes>\n|\n<\/DataTypes>$/g, '');
-    const mod = m => {
-      const k = (E.MODULES[m.type] || {}).kind, r = L5XMOD[k] || ['1', '1', 'Data', 'Input'];
-      return `<Module Name="${x(m.name)}" CatalogNumber="${L5XCAT[m.type] || x(m.type)}" Vendor="1" Major="${r[0]}" Minor="${r[1]}" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}" MajorFault="${m.majorOnFail ? 'true' : 'false'}">${dsc(m.desc)}<EKey State="CompatibleModule"/><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports><Communications><Connections><Connection Name="${r[2]}" RPI="${(m.rpi || 20) * 1000}" Type="${r[3]}"/></Connections></Communications></Module>`;
-    };
+    const mod = m => l5xModule(m, x, cd);
     // a routine and a program; use: the Use attribute of a component export (Target or Context)
     const rtn = (r, use) => `<Routine${use ? ` Use="${use}"` : ''} Name="${x(r.name)}" Type="RLL">${dsc(r.desc)}
 <RLLContent>
-${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${/^[iIrRD]$/.test(u.z || '') ? u.z : 'N'}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
+${r.rungs.map((u, i) => `<Rung Number="${i}" Type="${l5xZone(r.rungs, i)}">${u.c ? `<Comment>${cd(u.c)}</Comment>` : ''}<Text>${cd(u.t || '')}</Text></Rung>`).join('\n')}
 </RLLContent>
 </Routine>`;
     const prog = (g, use, only) => `<Program${use ? ` Use="${use}"` : ''} Name="${x(g.name)}" TestEdits="false" MainRoutineName="${x(g.main || '')}"${g.fault ? ` FaultRoutineName="${x(g.fault)}"` : ''} Disabled="${g.inhibit ? 'true' : 'false'}" UseAsFolder="false">${dsc(g.desc)}
@@ -4296,13 +4320,13 @@ ${only ? rtn(only.routine, 'Target') : g.routines.map(r => rtn(r)).join('\n')}
   function toL5X(p) {
     const { x, cd, dsc, tag, udt, order, mod, prog } = l5xKit(p);
     const emu = emuCtl(p), pt = emu ? '1756-L85E' : ctype(p.controller.type)[0], mj = emu ? '37' : ctlLabel(p).split(' ')[1], mn = emu ? '11' : '0';
-    const progs = p.tasks.flatMap(t => t.programs), cslot = Number.isInteger(p.controller.slot) ? p.controller.slot : 0;
+    const progs = p.tasks.flatMap(t => t.programs), hp = k => { const t = p.tasks.find(y => y.type === k); return t && t.programs[0] ? t.programs[0].name : ''; }, cslot = Number.isInteger(p.controller.slot) ? p.controller.slot : 0;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
-${emu ? '<!--MT PLC Studio: PLC-CPU 1.0-->\n' : ''}<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="${pt}" MajorRev="${mj}" MinorRev="${mn}">
+${emu ? '<!--MT PLC Studio: PLC-CPU 1.0-->\n' : ''}<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="${pt}" MajorRev="${mj}" MinorRev="${mn}"${hp('fault') ? ` MajorFaultProgram="${x(hp('fault'))}"` : ''}${hp('powerup') ? ` PowerLossProgram="${x(hp('powerup'))}"` : ''}>
 ${dsc(p.controller.desc)}${l5xTypes({ dataTypes: order }, x, cd)}
 <Modules>
-<Module Name="Local" CatalogNumber="${pt}" Vendor="1" ParentModule="Local" ParentModPortId="1"><Ports><Port Id="1" Address="${cslot}" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
+<Module Name="Local" CatalogNumber="${pt}" Vendor="1" ProductType="14" Major="${mj}" Minor="${mn}" ParentModule="Local" ParentModPortId="1" Inhibited="false" MajorFault="true"><EKey State="CompatibleModule"/><Ports><Port Id="1" Address="${cslot}" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
 ${p.rack.modules.map(mod).join('\n')}
 </Modules>
 <Tags>
@@ -4312,7 +4336,7 @@ ${p.tags.map(tag).join('\n')}
 ${progs.map(g => prog(g)).join('\n')}
 </Programs>
 <Tasks>
-${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.watchdog || 500}" DisableUpdateOutputs="${t.noOutputs ? 'true' : 'false'}" InhibitTask="${t.inhibit ? 'true' : 'false'}">${dsc(t.desc)}<ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
+${p.tasks.filter(t => !HANDLERS[t.type]).map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.watchdog || 500}" DisableUpdateOutputs="${t.noOutputs ? 'true' : 'false'}" InhibitTask="${t.inhibit ? 'true' : 'false'}">${dsc(t.desc)}<ScheduledPrograms>${t.programs.map(g => `<ScheduledProgram Name="${x(g.name)}"/>`).join('')}</ScheduledPrograms></Task>`).join('\n')}
 </Tasks>
 </Controller>
 </RSLogix5000Content>
@@ -4370,13 +4394,16 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
     (ms ? kids(ms, 'Module') : []).forEach(m => {
       const cat = m.getAttribute('CatalogNumber') || '', port = m.querySelector('Port'), slot = parseInt(port && port.getAttribute('Address'), 10);
       const type = kindOf(cat);
-      if (!type || !(slot >= 0) || slot === p.controller.slot || m.getAttribute('ParentModule') !== 'Local' || m.getAttribute('Name') === 'Local') return;
-      const o = { slot, type, name: (m.getAttribute('Name') || type).replace(/[^A-Za-z0-9_]/g, '_') };
-      if (desc(m)) o.desc = desc(m);
-      const cn = m.querySelector('Connection'), rpi = cn ? Math.round(+cn.getAttribute('RPI') / 1000) : 0;
-      if (rpi && rpi !== 20) o.rpi = Math.max(2, Math.min(750, rpi));
-      if (yes(m, 'Inhibited')) o.inhibit = true;
-      if (yes(m, 'MajorFault')) o.majorOnFail = true;
+      const exact = Object.keys(L5XCAT).find(k => L5XCAT[k] === cat.toUpperCase()), mt = exact || type;
+      if (!mt || !(slot >= 0) || slot === p.controller.slot || m.getAttribute('ParentModule') !== 'Local' || m.getAttribute('Name') === 'Local') return;
+      const o = { slot, type: mt, name: (m.getAttribute('Name') || mt).replace(/[^A-Za-z0-9_]/g, '_') }, a = k => m.getAttribute(k), ek = m.querySelector('EKey'), cx = m.querySelector('Connections > Connection'), ds = txt(kids(m, 'Description')[0]).trim();
+      const st = ek && ek.getAttribute('State'), key = Object.keys(L5XKEY).find(k => L5XKEY[k] === st), M1 = (ek && st === 'Custom' && ek.getAttribute('Major')) || a('Major'), n1 = (ek && st === 'Custom' && ek.getAttribute('Minor')) || a('Minor');
+      if (ds) o.desc = ds;
+      if (key && key !== 'compat') o.key = key;
+      if (/^\d+$/.test(M1 || '') && /^\d+$/.test(n1 || '') && `${+M1}.${+n1}` !== E.REV0) o.rev = `${+M1}.${+n1}`;
+      if (a('Inhibited') === 'true') o.inhibit = true;
+      if (a('MajorFault') === 'true') o.majorOnFail = true;
+      const rpi = cx && +cx.getAttribute('RPI') / 1000; if (rpi >= E.RPI[0] && rpi <= E.RPI[1] && rpi !== 20) o.rpi = rpi;
       mods.push(o);
     });
     p.rack.size = E.fitRack(E.RACKS.find(n => n >= size) || size, mods.map(m => m.slot).concat(p.controller.slot || 0));
@@ -4384,19 +4411,21 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
     const progs = kids(c, 'Programs')[0];
     const list = (progs ? kids(progs, 'Program') : []).map(g => {
       const routines = kids(kids(g, 'Routines')[0] || g, 'Routine').filter(r => (r.getAttribute('Type') || 'RLL') === 'RLL').map(r => {
-        const o = { name: r.getAttribute('Name'), rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; const ty = u.getAttribute('Type'); if (/^[iIrRD]$/.test(ty || '')) o.z = ty; else if (ty === 'e') o.z = 'i'; return o; }) };
+        const o = { name: r.getAttribute('Name'), rungs: [...r.querySelectorAll('RLLContent > Rung')].map(u => { const o = { t: txt(u.querySelector('Text')).trim() }; const cm = txt(u.querySelector('Comment')).trim(); if (cm) o.c = cm; const z = l5xZoneIn(u.getAttribute('Type')); if (z) o.z = z; return o; }) };
         if (desc(r)) o.desc = desc(r);
         return o;
       });
       routines.forEach(r => { if (!r.rungs.length) r.rungs = [{ t: '' }]; });
       const o = { name: g.getAttribute('Name'), main: g.getAttribute('MainRoutineName') || (routines[0] && routines[0].name) || 'MainRoutine', tags: tagsOf(kids(g, 'Tags')[0]), routines: routines.length ? routines : [{ name: 'MainRoutine', rungs: [{ t: '' }] }] };
-      if (g.getAttribute('FaultRoutineName')) o.fault = g.getAttribute('FaultRoutineName');
+      const fr = g.getAttribute('FaultRoutineName'); if (fr && routines.some(r => r.name === fr)) o.fault = fr;
       if (yes(g, 'Disabled')) o.inhibit = true;
       if (desc(g)) o.desc = desc(g);
       return o;
     });
     // the tasks and the programs they schedule; a program no task schedules goes in the first task
-    const tk = kids(c, 'Tasks')[0], used = new Set();
+    // the Controller Fault Handler and Power-Up Handler programs (Controller MajorFaultProgram, PowerLossProgram)
+    const hand = [['fault', c.getAttribute('MajorFaultProgram')], ['powerup', c.getAttribute('PowerLossProgram')]].map(([k, n]) => [k, n && list.find(g => g.name === n)]).filter(([, g]) => g);
+    const tk = kids(c, 'Tasks')[0], used = new Set(hand.map(([, g]) => g));
     const tasks = (tk ? kids(tk, 'Task') : []).map(x => {
       const o = { name: x.getAttribute('Name'), type: 'continuous', programs: [] }, w = parseInt(x.getAttribute('Watchdog'), 10);
       if (w && w !== 500) o.watchdog = w;
@@ -4409,7 +4438,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
     if (list.length) {
       if (!tasks.length) tasks.push({ name: 'MainTask', type: 'continuous', programs: [] });
       tasks[0].programs.push(...list.filter(g => !used.has(g)));
-      p.tasks = tasks.filter(o => o.programs.length);
+      p.tasks = tasks.filter(o => o.programs.length).concat(hand.map(([k, g]) => ({ name: HANDLERS[k], type: k, programs: [g] })));
     }
     const n = list.reduce((k, g) => k + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0);
     if (!quiet) setTimeout(() => toast(`Imported ${name}: ${list.length} program(s), ${n} rung(s), ${p.tags.length} controller tag(s). Run Verify to see what this app does not support.`, 'ok'), 50);
@@ -4561,44 +4590,161 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const k = S.orgSel || '', g = k.startsWith('prog:') ? k.slice(5) : k.startsWith('rt:') ? k.slice(3).split('/')[0] : '';
     return allProgs().some(x => x.name === g) ? g : curProg().name;
   }
+  /* New Routine (help v37; 1756-PM014, Create a fault routine for a program): Name, Description, Type, In Program,
+     Assignment (Main, Fault or none). The first routine of a program without a main routine is Main by default. */
   function newRoutine(gname) {
     const g = allProgs().find(x => x.name === gname);
-    prompt1('New Routine', 'Name', 'Routine' + (g.routines.length + 1), v => {
-      if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
-      if (g.routines.some(r => U(r.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { g.routines.push({ name: v, rungs: [{ t: '' }] }); S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
-    }, 'Call it from the main routine with JSR.');
+    let n = 'Routine' + (g.routines.length + 1);
+    for (let k = g.routines.length + 1; g.routines.some(r => U(r.name) === U(n)); ) n = 'Routine' + ++k;
+    dialog({ title: 'New Routine', size: 'md', focus: true,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="p1" value="${esc(n)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="nr-d" rows="2"></textarea></div>
+        <div class="frow"><label>Type</label><select class="inp" disabled><option>Ladder Diagram</option></select></div>
+        <div class="frow"><label>In Program</label><select class="inp" disabled><option>${esc(g.name)}</option></select></div>
+        <div class="frow"><label>Assignment</label><select class="inp" id="nr-a"><option value=""${g.main ? ' selected' : ''}>&lt;none&gt;</option><option value="main"${g.main ? '' : ' selected'}>Main</option><option value="fault">Fault</option></select></div>
+        <p class="help">Call a routine from the main routine with JSR. A Fault routine runs when an instruction of this program faults; it clears the fault by setting Type and Code of the program's MajorFaultRecord to 0.</p><div class="errtx" id="p1e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const v = el.querySelector('#p1').value.trim(), d = el.querySelector('#nr-d').value.trim(), as = el.querySelector('#nr-a').value, er = t => { el.querySelector('#p1e').textContent = t; return false; };
+        if (!E.validName(v)) return er('Use letters, digits and _ (up to 40).');
+        if (g.routines.some(r => U(r.name) === U(v))) return er('A routine with that name exists.');
+        edit(() => { const r = { name: v, rungs: [{ t: '' }] }; if (d) r.desc = d; g.routines.push(r); if (as === 'main') g.main = v; else if (as === 'fault') g.fault = v; S.prog = g.name; S.routine = v; S.view = 'ladder'; S.sel = null; S.selRung = 0; });
+      } }] });
+  }
+  /* New Program in the Controller Fault Handler or Power-Up Handler folder (1756-PM014; help: the handler program cannot
+     be created or changed in Remote Run or Run). The handler holds one program; its first routine becomes its main
+     routine (New Routine, Assignment Main). */
+  function newHandlerProgram(kind) {
+    if (handlerProg(kind)) { toast(`The ${HANDLERS[kind]} already has a program.`, 'err'); return; }
+    if (S.online && ctl.M && (ctl.mode === 'run' || ctl.mode === 'remrun')) {
+      toast(kind === 'fault' ? 'Failed to create the program as the Controller Fault Handler program. Not allowed in the current mode: change the controller mode (Remote Run, Run) first.'
+        : 'Failed to create the program as the Power Up Handler program. The current mode (Remote Run, Run) prevents it: change the controller mode first.', 'err');
+      return;
+    }
+    const names = new Set(allProgs().map(g => U(g.name)));
+    let n = kind === 'fault' ? 'FaultHandler' : 'PowerUp', k = 1;
+    while (names.has(U(n))) n = (kind === 'fault' ? 'FaultHandler' : 'PowerUp') + ++k;
+    dialog({ title: 'New Program', size: 'md', focus: true,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="np2-n" value="${esc(n)}" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="np2-d" rows="2"></textarea></div>
+        <div class="frow"><label>Schedule in</label><select class="inp" id="np2-s" disabled><option>${HANDLERS[kind]}</option></select></div>
+        <p class="help">${kind === 'fault' ? 'This program runs when a major fault occurs, or a program fault is not cleared by a fault routine.' : 'This program runs at power-up after the power was lost in Run mode.'} Add a routine to it with New Routine; to clear the fault, set Type and Code of its MajorFaultRecord to 0.</p><div class="errtx" id="np2-e"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const v = el.querySelector('#np2-n').value.trim(), d = el.querySelector('#np2-d').value.trim();
+        if (!E.validName(v)) { el.querySelector('#np2-e').textContent = 'Use letters, digits and _ (up to 40).'; return false; }
+        if (names.has(U(v))) { el.querySelector('#np2-e').textContent = 'A program with that name exists.'; return false; }
+        edit(() => {
+          let t = handlerTask(kind);
+          if (!t) { t = { name: HANDLERS[kind], type: kind, programs: [] }; S.p.tasks.push(t); }
+          const g = { name: v, tags: [], routines: [] }; if (d) g.desc = d;
+          t.programs.push(g);
+          S.orgSel = 'prog:' + v;
+          const c = new Set(S.prefs.collapsed); c.delete(kind === 'fault' ? 'cfh' : 'puh'); c.delete('ctl'); S.prefs.collapsed = [...c]; savePrefs();
+        });
+        toast(`Program ${v} added to the ${HANDLERS[kind]}. Add a routine with New Routine.`, 'ok');
+      } }] });
   }
   function renameRoutine(key) {
     const [gn, rn] = key.slice(3).split('/'), g = allProgs().find(x => x.name === gn), r = g.routines.find(x => x.name === rn);
     prompt1('Rename Routine', 'Name', rn, v => {
       if (!E.validName(v)) return 'Use letters, digits and _ (up to 40).';
       if (U(v) !== U(rn) && g.routines.some(x => U(x.name) === U(v))) return 'A routine with that name exists.';
-      edit(() => { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + v : k)); r.name = v; if (g.main === rn) g.main = v; if (S.routine === rn) S.routine = v; });
+      edit(() => { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + v : k)); r.name = v; if (g.main === rn) g.main = v; if (g.fault === rn) g.fault = v; if (S.routine === rn) S.routine = v; });
     });
   }
   function deleteRoutine(key) {
     const [gn, rn] = key.slice(3).split('/'), g = allProgs().find(x => x.name === gn);
     if (g.main === rn) { toast('The main routine cannot be deleted.', 'err'); return; }
-    confirmDlg('Delete Routine', `Delete <b>${esc(rn)}</b> and its rungs?`, 'Delete', () => { edit(() => { g.routines = g.routines.filter(x => x.name !== rn); if (S.routine === rn) { S.routine = g.main; S.sel = null; S.selRung = 0; } }); }, true);
+    confirmDlg('Delete Routine', `Delete <b>${esc(rn)}</b> and its rungs?`, 'Delete', () => { edit(() => { g.routines = g.routines.filter(x => x.name !== rn); if (g.fault === rn) delete g.fault; if (S.routine === rn) { S.routine = g.main; S.sel = null; S.selRung = 0; } }); }, true);
   }
+  /* Select Module Type (v37 help: Select Module Type dialog box - Catalog tab; Create modules; Search for modules):
+     a Search box (incremental, up to 4 terms separated by *, over every column but Category), the Catalog Results
+     (Catalog Number, Description, Vendor, Category; a click on a heading sorts it, ascending first), "N of M Module
+     Types Found", the Module Type Category and Vendor Filters (All, grayed out when the search leaves none), Clear
+     Filter, Show/Hide Filters, Add to Favorites (Favorites tab) and Close on Create. Create opens New Module (the
+     fields of the General tab of Module Properties). Module Discovery (online browse) is not emulated. */
+  const SMTCAT = { di: 'Digital', do: 'Digital', ai: 'Analog', ao: 'Analog' }, SMTVEND = 'MT PLC Studio';
+  const smt = { tab: 'cat', q: '', cats: {}, vends: {}, sort: 0, dir: 1, close: true, filt: true, sel: '' };
+  const smtTypes = () => Object.keys(E.MODULES).filter(t => !E.MODULES[t].emuOnly && E.MODULES[t].kind !== 'enet')
+    .map(t => ({ t, cols: [t, MODNAMES[t] || '', SMTVEND, SMTCAT[E.MODULES[t].kind] || 'Other'] }));
+  const smtHit = (r, q) => { const terms = q.toLowerCase().split('*').map(x => x.trim()).filter(Boolean).slice(0, 4), hay = r.cols.slice(0, 3).join(' ').toLowerCase(); return terms.every(x => hay.includes(x)); };
   function newModule() {
     if (!offline()) { toast('Go offline to add a module.'); return; }
     const used = new Set(S.p.rack.modules.map(m => m.slot).concat(ctlSlot())), free = [];
     for (let s = 0; s < S.p.rack.size; s++) if (!used.has(s)) free.push(s);
     if (!free.length) { toast('The rack is full.', 'err'); return; }
-    const types = Object.keys(E.MODULES).filter(t => !E.MODULES[t].emuOnly && E.MODULES[t].kind !== 'enet');
-    dialog({ title: 'New Module',
-      body: `<div class="frow"><label>Module</label><select class="inp" id="mt">${types.map(t => `<option value="${t}">${t} · ${esc(MODNAMES[t] || '')}</option>`).join('')}</select></div>
-        <div class="frow"><label>Name</label><input class="inp" id="mn2" value="MOD_${free[0]}" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+    const all = smtTypes(), favs = () => (S.prefs.favMods || []).filter(t => all.some(r => r.t === t));
+    const box = (k, list, on, hit) => `<div class="smt-fl"><label class="ck"><input type="checkbox" data-smtall="${k}"${list.every(x => on[x] !== false) ? ' checked' : ''}> <b>All</b></label>${list.map(x => `<label class="ck${hit.has(x) ? '' : ' muted'}"><input type="checkbox" data-smt${k}="${esc(x)}"${on[x] !== false ? ' checked' : ''}> ${esc(x)}</label>`).join('')}</div>`;
+    const body = () => {
+      const fav = smt.tab === 'fav', src = fav ? all.filter(r => favs().includes(r.t)) : all, hits = src.filter(r => smtHit(r, smt.q));
+      const rows = hits.filter(r => smt.cats[r.cols[3]] !== false && smt.vends[r.cols[2]] !== false)
+        .sort((a, b) => smt.dir * a.cols[smt.sort].localeCompare(b.cols[smt.sort]) || a.t.localeCompare(b.t));
+      if (!rows.some(r => r.t === smt.sel)) smt.sel = rows.length ? rows[0].t : '';
+      const cats = [...new Set(src.map(r => r.cols[3]))].sort(), vends = [...new Set(src.map(r => r.cols[2]))].sort();
+      return `<table class="rltab smt-t"><thead><tr>${['Catalog Number', 'Description', 'Vendor', 'Category'].map((h, n) => `<th data-smtsort="${n}">${h}${smt.sort === n ? (smt.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r => `<tr data-smt="${r.t}"${r.t === smt.sel ? ' class="on"' : ''}>${r.cols.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="4" class="muted">${fav ? 'No favorites: select a module type on the Catalog tab and choose Add to Favorites.' : 'No module type matches.'}</td></tr>`}</tbody></table>
+        <div class="smt-n" id="smt-n">${rows.length} of ${src.length} Module Types Found</div>
+        <div class="smt-f"${smt.filt ? '' : ' hidden'}><div><div class="grp">Module Type Category Filters</div>${box('cat', cats, smt.cats, new Set(hits.map(r => r.cols[3])))}</div>
+        <div><div class="grp">Module Type Vendor Filters</div>${box('vend', vends, smt.vends, new Set(hits.map(r => r.cols[2])))}</div></div>`;
+    };
+    const create = () => { if (!smt.sel) { toast('Select a module type.', 'err'); return false; } newModule2(smt.sel, free, smt.close ? null : newModule); return false; }; // false: New Module has replaced this layer
+    dialog({ title: 'Select Module Type', size: 'lg',
+      body: `<div class="fchips dtabs"><span class="fchip${smt.tab === 'cat' ? ' on' : ''}" data-smttab="cat">Catalog</span><span class="fchip${smt.tab === 'fav' ? ' on' : ''}" data-smttab="fav">Favorites</span></div>
+        <div class="smt-bar"><input class="inp" id="smt-q" type="search" maxlength="40" placeholder="Search" value="${esc(smt.q)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off">
+        <button class="btn" id="smt-clr">Clear Filter</button><button class="btn" id="smt-sh">${smt.filt ? 'Hide Filters ▲' : 'Show Filters ▼'}</button></div>
+        <div id="smt-b">${body()}</div>
+        <div class="smt-bar"><label class="ck"><input type="checkbox" id="smt-close"${smt.close ? ' checked' : ''}> Close on Create</label><span class="grow"></span><button class="btn" id="smt-fav">Add to Favorites</button></div>`,
+      buttons: [{ l: 'Close' }, { l: 'Create', pri: true, run: create }],
+      mount: el => {
+        const q = el.querySelector('#smt-q'), draw = () => { el.querySelector('#smt-b').innerHTML = body(); el.querySelector('#smt-sh').textContent = smt.filt ? 'Hide Filters ▲' : 'Show Filters ▼'; el.querySelectorAll('[data-smttab]').forEach(c => c.classList.toggle('on', c.dataset.smttab === smt.tab)); el.querySelector('#smt-fav').textContent = smt.tab === 'fav' ? 'Remove from Favorites' : 'Add to Favorites'; };
+        // the help: alphanumeric text up to 40 characters, without ! @ # $ ^ ( ) _ + = ~ ` / | { } [ ]
+        q.oninput = () => { const v = q.value.replace(/[!@#$^()_+=~`/|{}[\]]/g, ''); if (v !== q.value) q.value = v; smt.q = v; draw(); };
+        el.querySelector('#smt-clr').onclick = () => { smt.q = q.value = ''; smt.cats = {}; smt.vends = {}; draw(); };
+        el.querySelector('#smt-sh').onclick = () => { smt.filt = !smt.filt; draw(); };
+        el.querySelector('#smt-close').onchange = e => { smt.close = e.target.checked; };
+        el.querySelector('#smt-fav').onclick = () => {
+          if (!smt.sel) return;
+          const f = favs().filter(t => t !== smt.sel); if (smt.tab !== 'fav') f.push(smt.sel);
+          S.prefs.favMods = f; savePrefs(); toast(smt.tab === 'fav' ? `${smt.sel} removed from the Favorites.` : `${smt.sel} added to the Favorites.`); draw();
+        };
+        el.addEventListener('click', e => {
+          const tb = e.target.closest('[data-smttab]'), th = e.target.closest('[data-smtsort]'), tr = e.target.closest('tr[data-smt]');
+          if (tb) { smt.tab = tb.dataset.smttab; draw(); }
+          else if (th) { const n = +th.dataset.smtsort; smt.dir = smt.sort === n ? -smt.dir : 1; smt.sort = n; draw(); }
+          else if (tr) { smt.sel = tr.dataset.smt; el.querySelectorAll('tr[data-smt]').forEach(x => x.classList.toggle('on', x === tr)); }
+        });
+        el.addEventListener('dblclick', e => { const tr = e.target.closest('tr[data-smt]'); if (tr) { smt.sel = tr.dataset.smt; create(); } });
+        el.addEventListener('change', e => {
+          const a = e.target.dataset.smtall, c = e.target.dataset.smtcat, v = e.target.dataset.smtvend;
+          if (a) { const o = a === 'cat' ? smt.cats : smt.vends; el.querySelectorAll(`[data-smt${a}]`).forEach(x => { o[x.getAttribute('data-smt' + a)] = e.target.checked; }); draw(); }
+          else if (c != null) { smt.cats[c] = e.target.checked; draw(); }
+          else if (v != null) { smt.vends[v] = e.target.checked; draw(); }
+        });
+      } });
+  }
+  /* New Module (help: the same information as the General tab of Module Properties): Type, Vendor, Parent, Name,
+     Description, Slot; Open Module Properties opens Module Properties after OK. back: Close on Create was cleared,
+     so Select Module Type comes back after this dialog. */
+  function newModule2(type, free, back) {
+    const n0 = (() => { let k = free[0], n = 'MOD_' + k; while (S.p.rack.modules.some(m => U(m.name) === U(n))) n = 'MOD_' + ++k; return n; })();
+    dialog({ title: 'New Module', size: 'md', mount: keyMount, onClose: back ? () => setTimeout(back, 0) : null,
+      body: `<div class="frow"><label>Type</label><span><span class="mono" id="nm-t">${esc(type)}</span> <span class="muted">${esc(MODNAMES[type] || '')}</span></span></div>
+        <div class="frow"><label>Vendor</label><span>${SMTVEND}</span></div>
+        <div class="frow"><label>Parent</label><span>Local</span></div>
+        <div class="frow"><label>Name</label><input class="inp" id="mn2" value="${esc(n0)}" autofocus autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+        <div class="frow"><label>Description</label><textarea class="inp" id="nm-d" rows="2"></textarea></div>
         <div class="frow"><label>Slot</label><select class="inp" id="ms">${free.map(s => `<option>${s}</option>`).join('')}</select></div>
+        ${keyRows({ type }, '')}
+        <label class="ck"><input type="checkbox" id="nm-op"> Open Module Properties</label>
         <div class="errtx" id="me"></div>`,
-      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
-        const type = el.querySelector('#mt').value, slot = +el.querySelector('#ms').value, name = el.querySelector('#mn2').value.trim();
+      buttons: [{ l: 'Cancel', run: () => { if (back) setTimeout(back, 0); } }, { l: 'OK', pri: true, run: el => {
+        const slot = +el.querySelector('#ms').value, name = el.querySelector('#mn2').value.trim(), d = el.querySelector('#nm-d').value.trim(), op = el.querySelector('#nm-op').checked;
         if (!E.validName(name)) { el.querySelector('#me').textContent = 'Use letters, digits and _.'; return false; }
-        const m = { slot, type, name };
-        edit(() => { S.p.rack.modules.push(m); });
+        if (S.p.rack.modules.some(m => U(m.name) === U(name))) { el.querySelector('#me').textContent = 'A module with that name exists.'; return false; }
+        const kr = keyRead(el); if (!kr) return false;
+        const m = { slot, type, name }; if (d) m.desc = d; if (kr.rev !== E.REV0) m.rev = kr.rev; if (kr.key !== 'compat') m.key = kr.key;
+        edit(() => { S.p.rack.modules.push(m); S.orgSel = 'mod:' + slot; });
         toast(`Module ${type} added in slot ${slot}: its tags are ${['C', 'I', 'O'].filter(k => (E.MODULES[type] || {})[k]).map(k => `Local:${slot}:${k}`).join(', ')}`);
+        if (op) setTimeout(() => moduleProps(slot), 0); else if (back) setTimeout(back, 0);
       } }] });
   }
   function deleteModule(slot) {
@@ -4617,6 +4763,20 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   }
   const kv = (k, v) => `<div class="kv"><span>${k}</span><span class="v">${v}</span></div>`;
   const when = t => (t ? new Date(t).toLocaleTimeString() : '');
+  /* Revision (major.minor; the minor revision is chosen, major 0-127 and minor 0-255) and Electronic Keying (Exact
+     Match, Compatible Module, Disable Keying), as on the General tab (help: Module Properties - General for 1756) */
+  function keyRows(m, dis) {
+    const [M1, n1] = String(m.rev || E.REV0).split('.'), k = m.key || 'compat';
+    return `<div class="frow"><label>Revision</label><span><input class="inp" id="mk-M" type="number" min="0" max="127" value="${M1}" style="width:70px"${dis}> . <input class="inp" id="mk-m" type="number" min="0" max="255" value="${n1}" style="width:70px"${dis}></span></div>
+      <div class="frow"><label>Electronic Keying</label><select class="inp" id="mk-k"${dis}>${Object.entries(E.KEYING).map(([v, l]) => `<option value="${v}"${v === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <p class="help" id="mk-h"${k === 'off' ? '' : ' hidden'} style="color:var(--danger)">ATTENTION: Be extremely cautious when using Disable Keying; if used incorrectly, this option can lead to personal injury or death, property damage, or economic loss. With Disable Keying, communication can occur with a device other than the type specified in the project.</p>`;
+  }
+  function keyMount(el) { const k = el.querySelector('#mk-k'); if (k) k.onchange = () => { el.querySelector('#mk-h').hidden = k.value !== 'off'; }; }
+  function keyRead(el) {
+    const M1 = el.querySelector('#mk-M').value.trim(), n1 = el.querySelector('#mk-m').value.trim();
+    if (!/^\d+$/.test(M1) || +M1 > 127 || !/^\d+$/.test(n1) || +n1 > 255) { toast('Revision: major 0 to 127, minor 0 to 255.', 'err'); return null; }
+    return { rev: `${+M1}.${+n1}`, key: el.querySelector('#mk-k').value };
+  }
   /* Module Properties, as in the reference: General, Connection (Inhibit, Major Fault on Controller), Status */
   function moduleProps(slot, tab) {
     const m = S.p.rack.modules.find(x => x.slot === slot);
@@ -4632,8 +4792,9 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       <div class="frow"><label>Name</label><input class="inp" id="mp-n" value="${esc(m.name)}"${dis}></div>
       <div class="frow"><label>Description</label><input class="inp" id="mp-d" value="${esc(m.desc || '')}"${dis}></div>
       <div class="frow"><label>Slot</label><select class="inp" id="mp-s"${dis}>${slots.map(s => `<option${s === slot ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
+      ${keyRows(m, dis)}
       <div class="frow"><label>Tags</label><span class="mono">${['C', 'I', 'O'].filter(x => d[x]).map(x => `Local:${slot}:${x}`).join(', ') || '-'}</span></div>`;
-    const conn = `<div class="frow"><label>RPI (ms)</label><input class="inp" id="mp-r" type="number" min="2" max="750" value="${m.rpi || 20}"${dis}></div>
+    const conn = `<div class="frow"><label>Requested Packet Interval (RPI)</label><span><input class="inp" id="mp-r" type="number" min="${E.RPI[0]}" max="${E.RPI[1]}" step="0.1" value="${m.rpi || 20}" style="width:110px"${dis}> ms <span class="muted">(${E.RPI[0].toFixed(1)} - ${E.RPI[1].toFixed(1)} ms)</span></span></div>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-i"${m.inhibit ? ' checked' : ''}${dis}><span>Inhibit module <span class="muted">(no connection: inputs hold, outputs off)</span></span></label>
       <label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="mp-f"${m.majorOnFail ? ' checked' : ''}${dis}><span>Major fault on controller if the connection fails while in Run</span></label>
       ${st && st.code ? `<div class="kv" style="color:var(--danger)"><span>Module fault</span><span class="v">(Code ${st.code}) ${esc(st.text)}</span></div>` : ''}
@@ -4650,14 +4811,19 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         if (!offline()) return;
         const name = el2.querySelector('#mp-n').value.trim(), ns = +el2.querySelector('#mp-s').value;
         if (!E.validName(name)) { toast('Module name: letters, digits and _.', 'err'); return false; }
-        const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.max(2, Math.min(750, +el2.querySelector('#mp-r').value || 20)), inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked };
+        const rpi = +el2.querySelector('#mp-r').value, kr = keyRead(el2);
+        if (!(rpi >= E.RPI[0] && rpi <= E.RPI[1])) { toast(`Enter an RPI from ${E.RPI[0].toFixed(1)} to ${E.RPI[1].toFixed(1)} ms.`, 'err'); return false; }
+        if (!kr) return false;
+        const nv = { slot: ns, type: m.type, name, desc: el2.querySelector('#mp-d').value.trim(), rpi: Math.round(rpi * 10) / 10, inhibit: el2.querySelector('#mp-i').checked, majorOnFail: el2.querySelector('#mp-f').checked, rev: kr.rev, key: kr.key };
+        if (nv.rev === E.REV0) delete nv.rev;
+        if (nv.key === 'compat') delete nv.key;
         if (!nv.desc) delete nv.desc;
         if (!nv.inhibit) delete nv.inhibit;
         if (!nv.majorOnFail) delete nv.majorOnFail;
         if (JSON.stringify(nv) !== JSON.stringify(m)) edit(() => { S.p.rack.modules.splice(S.p.rack.modules.indexOf(m), 1, nv); });
       } }],
       mount: e2 => {
-        bindTabs(e2);
+        bindTabs(e2); keyMount(e2);
         const x = e2.querySelector('#mp-x');
         if (x) x.onclick = () => { chassis.setFault(slot, !card.fault); chassis.advance(0); live(true); render(); moduleProps(slot, 'st'); };
       } });
@@ -4727,7 +4893,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         if (n !== r.name && g.routines.some(x => U(x.name) === U(n))) { toast('A routine with that name exists.', 'err'); return false; }
         if (n === r.name && d === (r.desc || '')) return;
-        edit(() => { if (n !== r.name) { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + n : k)); if (g.main === rn) g.main = n; if (S.routine === rn && S.prog === gn) S.routine = n; r.name = n; } if (d) r.desc = d; else delete r.desc; });
+        edit(() => { if (n !== r.name) { S.tabs = S.tabs.map(k => (k === gn + '/' + rn ? gn + '/' + n : k)); if (g.main === rn) g.main = n; if (g.fault === rn) g.fault = n; if (S.routine === rn && S.prog === gn) S.routine = n; r.name = n; } if (d) r.desc = d; else delete r.desc; });
       } }] });
   }
   /* Change Controller (Controller Properties > General > Change Controller…, help v37): the type and the revision,
@@ -4763,8 +4929,12 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       <p class="help">The name is also the project name.</p>`;
     const offMsg = '<p class="help">Offline. Go online to see the faults of the controller.</p>';
     const dateTab = `${kv('Controller time', new Date().toLocaleString())}<p class="help">The emulated controller uses the clock of this device.</p>`;
-    const advTab = `${kv('Controller fault handler', '&lt;none&gt;')}${kv('Power-up handler', '&lt;none&gt;')}${kv('System overhead time slice', '20 %')}${kv('Scan period', (ctl.period || 10) + ' ms')}`;
-    const fileTab = `${kv('File', esc(S.file ? S.file.path : '(not saved yet)'))}${kv('Changes', S.dirty ? 'Not saved' : 'Saved')}`;
+    const advTab = `${kv('Controller Fault Handler', esc((handlerProg('fault') || {}).name || '<none>'))}${kv('Power-Up Handler', esc((handlerProg('powerup') || {}).name || '<none>'))}${kv('System overhead time slice', '20 %')}${kv('Scan period', (ctl.period || 10) + ' ms')}`;
+    /* Project tab (v37 help, Controller Properties dialog box - Project tab): the project file, not the controller */
+    const inf = S.p.info || {}, dt = t => (t ? esc(new Date(t).toLocaleString()) : '<span class="muted">-</span>'), fp = S.file ? S.file.path : '';
+    const projTab = `${kv('Name', fp ? esc(baseName(fp)) : '<span class="muted">(not saved yet)</span>')}${kv('Path', fp ? esc(fp.slice(0, fp.length - baseName(fp).length) || '/') : '<span class="muted">-</span>')}${kv('Created', dt(inf.created))}${kv('Edited', dt(inf.edited))}
+      <label class="ck"><input type="checkbox" id="cp-docs"${(on ? ctl.docs !== false : !S.p.noDocs) ? ' checked' : ''}${offline() ? '' : ' disabled'}> Download Project Documentation and Extended Properties</label>
+      <p class="help">${offline() ? 'Cleared: the descriptions and rung comments do not go to the controller, so an upload has none.' : 'Online: the setting of the project in the controller.'} To change the file name or path, use Save As.</p>`;
     const allR = allProgs().flatMap(g => g.routines);
     const memTab = `${kv('Programs', allProgs().length)}${kv('Routines', allR.length)}${kv('Rungs', allR.reduce((n, r) => n + r.rungs.length, 0))}${kv('Controller tags', S.p.tags.length)}${kv('Program tags', allProgs().reduce((n, g) => n + (g.tags || []).length, 0))}${kv('I/O modules', S.p.rack.modules.length)}`;
     const row = f => `<div class="row"><div class="grow"><div class="sub" style="white-space:normal">${when(f.at)} · Type ${f.type} Code ${f.code}: ${esc(f.text)}${f.count > 1 ? ` (×${f.count})` : ''}</div></div></div>`;
@@ -4776,11 +4946,13 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       : (ctl.minors.length ? ctl.minors.map(row).join('') : '<p><b style="color:var(--ok)">No minor faults.</b></p>') +
         `<div class="brow"><button class="btn" id="cp-cn"${ctl.minors.length ? '' : ' disabled'}>Clear Minors</button></div>`;
     dialog({ title: 'Controller Properties - ' + S.p.controller.name, size: 'md',
-      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['file', 'File', fileTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
+      body: tabbed([['gen', 'General', general], ['maj', 'Major Faults' + (on && ctl.fault ? ' ⚠' : ''), majors], ['min', 'Minor Faults', minors], ['dt', 'Date/Time', dateTab], ['adv', 'Advanced', advTab], ['proj', 'Project', projTab], ['mem', 'Memory', memTab]], tab || (on && ctl.fault ? 'maj' : 'gen')),
       buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
         if (!offline()) return;
         const v = el.querySelector('#cp-n').value.trim(), desc = el.querySelector('#cp-d').value.trim(), cs = +el.querySelector('#cp-s').value;
         if (cs !== ctlSlot()) edit(() => { S.p.controller.slot = cs; });
+        const docs = el.querySelector('#cp-docs').checked;
+        if (docs === !!S.p.noDocs) edit(() => { if (docs) delete S.p.noDocs; else S.p.noDocs = true; });
         if (!E.validName(v)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
         const old = S.p.controller.name;
         if (v === old && desc === (S.p.controller.desc || '')) return;
@@ -5562,12 +5734,19 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (ctl.M && (ctl.holds(S.p) || (zonesIn(S.p) && (ctl.holds(newLogic(S.p)) || ctl.holds(logicOf(S.p, 'old')))) || (S.ed && S.ed.ctl === ctl))) { online(); toast(`Online with ${ctl.name}`); return; }
     const inCtl = ctl.M ? JSON.parse(ctl.copy) : null;
     const facts = p => { const progs = p.tasks.flatMap(t => t.programs); return `${progs.reduce((n, g) => n + g.routines.length, 0)} routine(s), ${progs.reduce((n, g) => n + g.routines.reduce((m, r) => m + r.rungs.length, 0), 0)} rung(s), ${p.tags.length + progs.reduce((n, g) => n + g.tags.length, 0)} tag(s)`; };
-    const files = index().filter(x => inCtl && U(x.name) === U(inCtl.controller.name) && x.name !== S.p.controller.name);
+    /* the condition (v37 help, Correlate a project with a controller), then the connected controller and the offline
+       project, as the Options tab of the Connected To Go Online dialog shows them */
+    const cond = !inCtl ? ['There is no project loaded in the controller.', 'Download a project to the controller to go online.']
+      : U(inCtl.controller.name) !== U(S.p.controller.name) ? ['The open project doesn\'t match the project in the controller.', 'Check the communications path. If it is right, the wrong project file is open: Select File opens the right one, or Upload copies the controller\'s project into a new file.']
+      : S.dirty ? ['Offline changes have been made to the open project.', 'Offline changes to the logic and configuration cannot be correlated: Download them to the controller, or discard them with Upload.']
+      : ['You need to upload or download in order to go online using the open project.', 'The controller holds another copy of this project (or online changes this copy does not have): Upload makes both copies the same; Download replaces the controller\'s.'];
+    const ctlType = c => esc((c && c.controller && c.controller.type) || 'PLC-CPU') + ' (emulated)';
+    const files = [];
     dialog({ title: 'Connected To Go Online', size: 'md',
-      body: `<p>${inCtl ? (U(inCtl.controller.name) === U(S.p.controller.name) ? 'The project in the controller is another version of the open project.' : 'The controller holds another project.') : 'The controller contains no project.'}</p>
-        <div class="grp" style="background:none;padding-left:0">Controller</div>${kv('Path', esc(curPath()))}${kv('Name', inCtl ? esc(inCtl.controller.name) : '(none)')}${kv('Mode', MODE())}${inCtl ? kv('Contents', facts(inCtl)) : ''}
-        <div class="grp" style="background:none;padding-left:0">Offline project</div>${kv('Name', esc(S.p.controller.name))}${kv('Contents', facts(S.p))}
-        <p class="help"><b>Select File</b> opens another project on this device that matches the controller. <b>Upload</b> copies the controller's project to this device. <b>Download</b> replaces the controller's project with the open one.</p>`,
+      body: `<div class="grp" style="background:none;padding-left:0">Condition</div><p class="corr-cond"><b>${esc(cond[0])}</b></p><p class="help">${esc(cond[1])}</p>
+        <div class="grp" style="background:none;padding-left:0">Connected Controller</div>${kv('Controller Name', inCtl ? esc(inCtl.controller.name) : '&lt;no name&gt;')}${kv('Controller Type', ctlType(inCtl))}${kv('Comm Path', esc(curPath()))}${kv('Serial Number', '<span class="muted">-</span>')}${kv('Security', 'No Protection')}${inCtl ? kv('Contents', facts(inCtl)) : ''}${kv('Mode', MODE())}
+        <div class="grp" style="background:none;padding-left:0">Offline Project</div>${kv('Controller Name', esc(S.p.controller.name))}${kv('Controller Type', ctlType(S.p))}${kv('File', esc(S.file ? S.file.path : ''))}${kv('Revision', esc(S.p.controller.rev || '1.0'))}${kv('Serial Number', '<span class="muted">-</span>')}${kv('Security', 'No Protection')}${kv('Contents', facts(S.p))}
+        <p class="help"><b>Select File</b> opens another project file (or names a new one to upload into). <b>Upload</b> copies the controller's project into the open project, then goes online. <b>Download</b> replaces the controller's project with the open one, then goes online.</p>`,
       buttons: [{ l: 'Cancel', run: () => { linked = null; } }, { l: 'Select File…', run: () => { setTimeout(selectFile, 0); } }].concat(inCtl ? [{ l: 'Upload…', run: () => { setTimeout(upload, 0); } }] : []).concat([{ l: 'Download…', pri: true, run: () => { setTimeout(download, 0); } }]) });
     void files;
   }
@@ -5754,7 +5933,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         if (ctl.key === 'RUN') { toast('The key switch is in RUN: turn it to REM to download.', 'err'); return false; }
         const wasRun = ctl.running;
         if (wasRun) ctl.setMode('remprog');
-        const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p));
+        const x = xferSteps(S.p, 'Downloading'), to = ctl, copy = JSON.parse(JSON.stringify(S.p, S.p.noDocs ? (k, v) => (k === 'desc' || k === 'c' ? undefined : v) : undefined));
         let r = null, cleared = false;
         // "Before a project is downloaded, the memory of the controller is cleared" (v37 help, Download dialog box)
         x.st[0].run = () => { if (ctl === to) { to.clearMemory(); cleared = true; saveChassis(); } };
@@ -6552,6 +6731,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const m = r.module(emuSel.slot);
     if (!m) return '<p class="help">That slot is empty now.</p>';
     if (!m.ctl) return `<div class="ph" style="background:none">I/O card</div><div class="emuform">${kv('Type', esc(m.type) + ' <span class="muted">· ' + esc(CARDNAMES[m.type] || '') + '</span>')}${kv('Name', esc(m.name))}${kv('Chassis', esc(r.name))}${kv('Slot', m.slot)}${kv('State', m.fault ? '<b style="color:var(--danger)">Faulted</b>' : 'OK')}
+        <div class="frow"><label>Revision</label><span class="seg">${['1.1', '1.2', '2.1'].concat(['1.1', '1.2', '2.1'].includes(m.rev || E.REV0) ? [] : [m.rev]).map(v => `<span data-erev="${emuSel.ri}:${m.slot}:${v}" class="${(m.rev || E.REV0) === v ? 'on' : ''}">${v}</span>`).join('')}</span></div>
+        <p class="help">The firmware revision of the card: the controller checks it against the Revision and Electronic Keying of its I/O configuration.</p>
         <p class="help">An addition of this app: the field devices of a card reach the controller whose project configures the same module in this slot.</p></div><div class="emurack">${rackHTML(emuSel.ri)}</div>`;
     const c = m.ctl, id = emuSel.ri + ':' + m.slot;
     return `<div class="ph" style="background:none">Controller</div><div class="emuform">
@@ -6637,6 +6818,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if ((el = t.closest('[data-ecfg]'))) { configEmulation(el.dataset.ecfg, emuOpen()); if (doc !== document) window.focus(); return true; }
     if ((el = t.closest('[data-cfault]'))) { const [ri, s] = ids(el.dataset.cfault), r = racks[ri]; r.setFault(s, !r.module(s).fault); r.advance(0); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-emode]'))) { const p = el.dataset.emode.split(':'); racks[+p[0]].controller(+p[1]).setKey(p[2]); saveChassis(); chassisLive(true); live(true); render(); return true; }
+    if ((el = t.closest('[data-erev]'))) { const [ri, s, v] = el.dataset.erev.split(':'), r = racks[+ri]; r.setRevision(+s, v); r.advance(0); saveChassis(); chassisLive(true); live(true); render(); refreshIO(); return true; }
     if ((el = t.closest('[data-epow]'))) { const [ri, s, on] = ids(el.dataset.epow); racks[ri].setController(s, { on: !!on }); saveChassis(); chassisLive(true); live(true); return true; }
     if ((el = t.closest('[data-eapply]'))) {
       const [ri, s] = ids(el.dataset.eapply), n = doc.getElementById('ec-n').value.trim();

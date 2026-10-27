@@ -41,11 +41,12 @@
     // the configuration tags (Local:<slot>:C), as in the module profiles: AB:1756_DI:C:0 (help 1756-IB16: the filter
     // times of four groups of 8 points, as the type is shared with the 32-point modules, and change of state),
     // AB:1756_DO:C:0 (help 1756-OB16I / -OW16I), and the floating point analog ones (1756-UM009, Floating Point
-    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel
+    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel; an output
+    // channel has ConfigBits (INT, the channel's individual configuration bits) before HoldForInit (1756-UM009G)
     'AB:1756_DI:C:0': members(['OffOn', 'OnOff'].map(d => ['0_7', '8_15', '16_23', '24_31'].map(g => `Filter${d}_${g}:SINT`).join(' ')).join(' ') + ' COSOnOffEn:DINT COSOffOnEn:DINT'),
     'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
     'AB:1756_NII_Struct:C:0': members('AlarmDisable:BOOL ProcessAlarmLatch:BOOL RateAlarmLatch:BOOL DigitalFilter:INT RateAlarmLimit:INT LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL LAlarmLimit:REAL HAlarmLimit:REAL LLAlarmLimit:REAL HHAlarmLimit:REAL AlarmDeadband:REAL CalBias:REAL'),
-    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
+    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL ConfigBits:INT HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
     'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NII_Struct:C:0`).join(' ')),
     'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NIO_Struct:C:0`).join(' ')),
   };
@@ -61,6 +62,20 @@
     'PLC-ENET': { kind: 'enet' },
   };
   const IODIRS = ['I', 'O', 'C', 'S'];
+  /* Electronic Keying (help: Module Properties - General for 1756; Module Faults 16#0100 - 16#02ff). Product Type as
+     the L5X writes it: 7 discrete I/O, 14 controller (1756-RM014); 10 for analog is not confirmed by a publication.
+     Revision major.minor: major 0 to 127, minor 0 to 255 (default 1). RPI of a 1756 I/O module: 0.2 to 750 ms
+     (1756-UM058 for the digital modules; the same limits are used for analog). */
+  const PTYPE = { di: 7, do: 7, ai: 10, ao: 10, cpu: 14 };
+  const KEYING = { exact: 'Exact Match', compat: 'Compatible Module', off: 'Disable Keying' };
+  const REV0 = '1.1', RPI = [0.2, 750];
+  const revOf = r => { const m = /^(\d+)\.(\d+)$/.exec(String(r == null ? REV0 : r)); return m ? [+m[1], +m[2]] : [1, 1]; };
+  const KEYTEXT = {
+    '16#0109': 'Connection Request Error: Invalid connection size. The connection size is inconsistent with that expected (with Disable Keying, the card in this slot is another kind of module).',
+    '16#0114': 'Electronic Keying Mismatch: Electronic keying product code and/or vendor ID mismatch. The Product Code of the module in the slot does not match the module of the I/O configuration.',
+    '16#0115': 'Electronic Keying Mismatch: Electronic Keying product type mismatch. The Product Type of the module in the slot does not match the module of the I/O configuration.',
+    '16#0116': 'Electronic Keying Mismatch: Major and/or Minor revision invalid or incorrect. The revision of the module in the slot does not match the revision of the I/O configuration (Exact Match or Compatible Module).',
+  };
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
   const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
   /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
@@ -723,7 +738,8 @@
       if (m.slot === cslot) { ctlErr(`Module '${m.name}': slot ${m.slot} holds the controller`); continue; }
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
-      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
+      const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20, key: KEYING[m.key] ? m.key : 'compat', rev: m.rev || REV0 };
+      if (mod.rpi < RPI[0] || mod.rpi > RPI[1]) ctlErr(`Module '${m.name}': RPI ${mod.rpi} ms is not in the range ${RPI[0]} to ${RPI[1]} ms`);
       for (const dir of IODIRS) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
@@ -752,10 +768,16 @@
     addTags(pj.tags, null);
 
     const progNames = new Set();
-    for (const task of pj.tasks || []) for (const pg of task.programs || []) {
+    let tk = 0;
+    for (const task of pj.tasks || []) for (const pg of (tk++, task.programs || [])) {
       if (!validName(pg.name) || progNames.has(U(pg.name))) { ctlErr(`Invalid or repeated program name '${pg.name}'`); continue; }
       progNames.add(U(pg.name));
-      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit) };
+      // the Controller Fault Handler and the Power-Up Handler (1756-PM014) hold one program each, never scheduled in a task
+      const hd = task.type === 'fault' || task.type === 'powerup' ? task.type : null;
+      // the task's watchdog (Task Properties > Configuration: 1 to 2,000,000 ms, 500 by default; 1756-PM005)
+      const wd = Math.floor(+task.watchdog) >= 1 ? Math.min(2000000, Math.floor(+task.watchdog)) : 500;
+      const P = { name: pg.name, tags: new Map(), vals: {}, routines: new Map(), main: null, inhibit: !!(pg.inhibit || task.inhibit), handler: hd, tk, task: task.name || '', wd };
+      if (hd) { const k = hd === 'fault' ? 'cfh' : 'puh'; if (M[k]) ctlErr(`Only one program can be in the ${hd === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler'} ('${M[k].name}' is)`); else M[k] = P; }
       addTags(pg.tags, P);
       for (const r of pg.routines || []) {
         if (!validName(r.name) || P.routines.has(U(r.name))) { ctlErr(`Invalid or repeated routine name '${r.name}' in program '${pg.name}'`); continue; }
@@ -763,6 +785,9 @@
       }
       P.main = P.routines.get(U(pg.main || '')) || null;
       if (pg.main && !P.main) ctlErr(`Program '${pg.name}': the main routine '${pg.main}' does not exist`);
+      // the program's fault routine (Program Properties > Configuration > Fault): runs on an instruction fault in the program
+      P.faultR = P.routines.get(U(pg.fault || '')) || null;
+      if (pg.fault && !P.faultR) ctlErr(`Program '${pg.name}': the fault routine '${pg.fault}' does not exist`);
       M.programs.push(P);
     }
 
@@ -851,7 +876,7 @@
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
      nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'style' || k === 'watch' || k === 'trends' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'style' || k === 'watch' || k === 'trends' || k === 'info' || k === 'noDocs' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* the .EM / .DN of a FIFO or LIFO from its .POS and .LEN (RM003 flow charts, Prescan and false): .LEN <= 0 or
      .POS < 0 set both; else .EM while .POS = 0 and .DN while .POS >= .LEN */
@@ -899,6 +924,9 @@
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // the longest the emulator lets one task run before its watchdog fault, so the app keeps answering (ms)
+  const WDCAP = 5000;
   class Controller {
     constructor() {
       this.key = 'REM';            // PROG | REM | RUN
@@ -915,6 +943,8 @@
       this.pulled = new Set();     // slots whose card is taken out (a simulated module fault)
       this.codes = new Map();      // slot → fault code given by the chassis (no card, wrong card)
       this.majors = []; this.minors = [];   // fault logs for Controller Properties
+      this.curP = null; this.inHandler = false; this.ioCleared = new Set();   // fault handling (1756-PM014)
+      this.wdT0 = 0; this.wdMs = 0; this.wdN = 0; this.wdHit = false; this.wdTask = '';   // task watchdog
       this.powered = true;         // power: an emulated controller that is off keeps its project but does not run or answer
       this.sot = 100;              // Logix Emulate speed of time, % of real time (0 stops execution; timers and the scan follow it)
       this.single = false; this.held = false;   // Logix Emulate Single Scan mode; held: the one scan is done, waiting
@@ -1031,7 +1061,9 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
-      this.copy = JSON.stringify(project); this.dlAt = Date.now();
+      this.copy = JSON.stringify(project); this.dlAt = Date.now(); this.ioCleared.clear();
+      // Download Project Documentation and Extended Properties (Controller Properties > Project)
+      this.docs = !project.noDocs;
       this.fault = null; this.forces.clear(); this.fm = {}; this.forcesOn = false; this.refs.clear(); this.bp = null;
       this.mode = this.key === 'PROG' ? 'prog' : 'remprog';
       this.first = true; this.acc = 0;
@@ -1059,6 +1091,13 @@
       const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M && this.emu.startup !== 'remprog' ? 'remrun' : 'remprog';
       this.mode = to;
       if (RUN(to) && this.M) this.prescan();
+      /* power lost in Run, back in Run or Remote Run: with a Power-Up Handler program the controller powers up with
+         major fault type 1 code 1, and that program runs; it clears the fault to resume (an empty handler leaves the
+         controller faulted). Without one, the controller goes back to Run (1756-PM014, help: Power-Up Handler). */
+      if ((to === 'run' || to === 'remrun') && this.M && this.wasRun && this.M.puh) {
+        const f = new Fault(1, 1, 'The controller powered up in Run mode after a power loss (Power-Up Handler)');
+        if (!this.handle(this.M.puh, f)) this.majorFault(f.type, f.code, f.message);
+      }
       this.emit('power'); this.emit('mode');
     }
     /* online edit (Accept Edits): the new logic replaces the old without a Download. The mode, the forces and the
@@ -1113,12 +1152,19 @@
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
         // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
-      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
+      let tk = -1;
+      for (const P of this.M.programs) if (P.main && !P.inhibit && !P.handler) {
+        // the watchdog timer starts when the task starts and stops when all of its programs have run
+        if (P.tk !== tk) { tk = P.tk; this.wdT0 = now(); this.wdMs = Math.min(P.wd, WDCAP); this.wdSet = P.wd; this.wdTask = P.task; this.wdHit = false; }
+        this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.curP = P; this.routine(P.main); this.wdCheck();
+      }
       } catch (e) {
         if (e instanceof Halt) { this.d = 0; this.mcr = false; }
         else if (!(e instanceof Fault)) throw e;
-        else this.majorFault(e.type, e.code, e.message);
+        // a fault that no fault routine cleared goes to the Controller Fault Handler; not cleared there, the controller faults
+        else if (e.tried || !this.handle(this.M.cfh, e)) this.majorFault(e.type, e.code, e.message);
       }
+      this.curP = null; this.wdMs = 0;
       this.S.FS = 0;
       this.first = false;
       this.scans++;
@@ -1149,9 +1195,14 @@
         if (this.pulled.has(m.slot)) {
           // no connection: Fault is set, the input data holds and can be overwritten (as on an emulated controller)
           if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = -1;
-          if (m.majorOnFail && this.running) this.majorFault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+          // a fault the Controller Fault Handler cleared is not raised again until the connection comes back
+          if (m.majorOnFail && this.running && !this.ioCleared.has(m.slot)) {
+            const f = new Fault(3, 16, `Connection to the I/O module in slot ${m.slot} (${m.name || m.type}) failed`);
+            if (this.handle(this.M.cfh, f)) this.ioCleared.add(m.slot); else this.majorFault(f.type, f.code, f.message);
+          }
           continue;
         }
+        this.ioCleared.delete(m.slot);
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
         else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
@@ -1165,12 +1216,13 @@
       let jumps = 0;
       this.mcr = false;
       for (let i = 0; i < rungs.length;) {
+        if ((++this.wdN & 255) === 0) this.wdCheck();
         this.seq(rungs[i].elems, !this.mcr);
         if (this.tnd || this.ret) { this.tnd = this.ret = false; break; }
         if (this.jmp !== null) {
           const to = R.labels.get(this.jmp);
           this.jmp = null;
-          if (++jumps > 100000) throw new Fault(6, 1, 'Watchdog timeout: the task did not finish in time');
+          if ((++jumps & 255) === 0) this.wdCheck();
           i = to;
           continue;
         }
@@ -1178,11 +1230,64 @@
       }
       this.mcr = mcr0;
     }
+    /* the task watchdog (1756-PM005, Adjust the System Watchdog Time): a task that runs longer than its watchdog time is a
+       major fault type 6 code 1. The Controller Fault Handler can clear it once; the same watchdog fault a second time
+       in the same scan faults the controller anyway. */
+    wdCheck() {
+      if (this.inHandler || !this.wdMs || now() - this.wdT0 <= this.wdMs) return;
+      const f = new Fault(6, 1, `Task watchdog expired: task '${this.wdTask}' did not complete in its watchdog time (${this.wdSet} ms)`);
+      if (!this.wdHit && this.M && this.handle(this.M.cfh, f)) { this.wdHit = true; this.wdT0 = now(); return; }
+      f.tried = true;
+      throw f;
+    }
     // a true JMP, RET or TND leaves the rung at once: the rest of it is not scanned
     get leave() { return this.jmp !== null || this.ret || this.tnd; }
+    /* an instruction that faults is skipped: when a fault routine clears the fault, execution goes on with the next
+       instruction (1756-PM014, Recover from a major fault) */
     seq(arr, p) {
-      for (let k = 0; k < arr.length; k++) { p = this.el(arr[k], p); if (this.leave) break; }
+      for (let k = 0; k < arr.length; k++) {
+        try { p = this.el(arr[k], p); } catch (e) { if (!(e instanceof Fault) || !this.recover(e)) throw e; }
+        if (this.leave) break;
+      }
       return p;
+    }
+    /* an instruction fault (type 4), at the instruction that faulted (tried once): the fault routine of the program
+       runs; when it does not clear the fault, the Controller Fault Handler (1756-PM014, Write a routine to clear the fault) */
+    recover(e) {
+      if (e.tried || e.type !== 4 || !this.M) return false;
+      e.tried = true;
+      const P = this.curP;
+      return (!!P && !!P.faultR && this.handle(P, e, P.faultR)) || this.handle(this.M.cfh, e);
+    }
+    /* run a fault-handling routine for fault e: the program's MajorFaultRecord holds the fault while it runs, and the
+       fault is cleared when the routine leaves Type and Code at 0 (GSV / SSV MajorFaultRecord). A fault inside the
+       routine leaves the fault as it was. */
+    handle(P, e, R = P && P.main) {
+      if (!P || !R || this.inHandler) return false;
+      const us = Date.now() * 1000, keep = [this.curP, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS];
+      P.mfr = { Time_Low: (us % 4294967296) | 0, Time_High: Math.floor(us / 4294967296), Type: e.type, Code: e.code, Info: [0, 0, 0, 0, 0, 0, 0, 0] };
+      this.inHandler = true; this.curP = P; this.jmp = null; this.ret = this.tnd = this.mcr = false; this.d = 0;
+      let ok = true;
+      try { this.routine(R); } catch (x) { if (!(x instanceof Fault)) throw x; ok = false; } finally {
+        this.inHandler = false;
+        [this.curP, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS] = keep;
+      }
+      return ok && P.mfr.Type === 0 && P.mfr.Code === 0;
+    }
+    /* the MajorFaultRecord attribute of a Program object (1756-PM014: DINT[11], the layout of FAULTRECORD:
+       Time_Low, Time_High, Type and Code (two INTs in one DINT), Info[8]), as GSV reads it and SSV writes it.
+       prog: a program name, or THIS for the program that runs now. */
+    progOf(prog) { return !this.M ? null : U(prog) === 'THIS' ? this.curP : this.M.programs.find(P => U(P.name) === U(prog)) || null; }
+    majorFaultRecord(prog) {
+      const P = this.progOf(prog); if (!P) return null;
+      const r = P.mfr || { Time_Low: 0, Time_High: 0, Type: 0, Code: 0, Info: [0, 0, 0, 0, 0, 0, 0, 0] };
+      return [r.Time_Low, r.Time_High, (r.Type & 0xFFFF) | (r.Code << 16)].concat(r.Info);
+    }
+    setMajorFaultRecord(prog, a) {
+      const P = this.progOf(prog); if (!P || !Array.isArray(a)) return false;
+      const d = k => i32(a[k] || 0);
+      P.mfr = { Time_Low: d(0), Time_High: d(1), Type: (d(2) << 16) >> 16, Code: d(2) >> 16, Info: [3, 4, 5, 6, 7, 8, 9, 10].map(d) };
+      return true;
     }
     el(e, p) {
       if (e.t === 'BR') {
@@ -1574,8 +1679,8 @@
       if (m.inhibit) return { state: 'Inhibited', code: null, text: 'The module is inhibited: no connection, its inputs hold and its outputs are off.' };
       if (this.pulled.has(slot)) {
         const code = this.codes.get(slot);
-        if (code === '16#0116') return { state: 'Faulted', code, text: 'Electronic keying mismatch: the card in this slot is not the module of the I/O configuration.' };
-        return { state: 'Faulted', code: '16#0204', text: 'Connection request error: the module does not answer (connection timed out).' };
+        if (KEYTEXT[code]) return { state: 'Faulted', code, text: KEYTEXT[code] };
+        return { state: 'Faulted', code: '16#0204', text: 'Connection Request Error: Connection request timed out. The module does not answer: it is missing from the backplane or faulted.' };
       }
       return { state: 'Running', code: null, text: '' };
     }
@@ -1626,7 +1731,8 @@
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
      (Virtual\Backplane\<slot>). Each controller takes the inputs of the cards its project configures and gets a
-     module fault when the slot is empty (16#0204) or holds another module (16#0116). An output card follows the
+     module fault when the slot is empty (16#0204) or fails the Electronic Keying (16#0114, 16#0115, 16#0116; 16#0109
+     with Disable Keying and another kind of card). An output card follows the
      controller that owns it: the first one, by slot, whose project configures it. */
   const CPU = 'PLC-CPU', TCFG0 = JSON.stringify(new Controller().tcfg);
   class Chassis {
@@ -1641,6 +1747,7 @@
       if (type !== CPU && !MODULES[type]) return { ok: false, msg: `Unknown module type '${type}'.` };
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
+      if (kind !== 'cpu') m.rev = REV0;
       if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
@@ -1692,11 +1799,23 @@
       return true;
     }
     setFault(slot, on) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu') return false; m.fault = !!on; this.emit('fault'); return true; }
-    /* the code a controller gets for a slot of its I/O configuration */
-    codeFor(slot, type) { const m = this.mods.get(slot); return !m || m.fault ? '16#0204' : m.type !== type ? '16#0116' : null; }
+    /* the firmware revision (major.minor) of an I/O card, to try the Electronic Keying */
+    setRevision(slot, rev) { const m = this.mods.get(slot); if (!m || m.kind === 'cpu' || !/^\d{1,3}\.\d{1,3}$/.test(String(rev))) return false; m.rev = String(rev); this.emit('fault'); return true; }
+    /* the code a controller gets for a slot of its I/O configuration (want: the configured module, or its type).
+       Exact Match: type and revision the same. Compatible Module: the same type and major revision, the card's minor
+       revision equal or higher. Disable Keying: no check, but another kind of card cannot take the connection. */
+    codeFor(slot, want) {
+      const w = typeof want === 'string' ? { type: want } : want, m = this.mods.get(slot);
+      if (!m || m.fault) return '16#0204';
+      const a = m.kind, b = (MODULES[w.type] || {}).kind, key = KEYING[w.key] ? w.key : 'compat';
+      if (key === 'off') return a === b ? null : '16#0109';
+      if (m.type !== w.type) return PTYPE[a] !== PTYPE[b] ? '16#0115' : '16#0114';
+      const [M1, n1] = revOf(m.rev), [M2, n2] = revOf(w.rev);
+      return M1 !== M2 || (key === 'exact' ? n1 !== n2 : n1 < n2) ? '16#0116' : null;
+    }
     exchange(c) {
       for (const m of c.M.mods.values()) {
-        const code = this.codeFor(m.slot, m.type);
+        const code = this.codeFor(m.slot, m);
         c.linkFault(m.slot, code);
         if (!code && (m.kind === 'di' || m.kind === 'ai')) c.setInputs(m.slot, this.mods.get(m.slot).field);
       }
@@ -1708,7 +1827,7 @@
     owner(slot) {
       const m = this.mods.get(slot);
       if (!m) return null;
-      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm.type); });
+      const o = this.controllers().find(x => { const pm = x.ctl.powered && x.ctl.M && x.ctl.M.mods.get(slot); return pm && !this.codeFor(slot, pm); });
       return o ? o.ctl : null;
     }
     /* what an output card drives: bits of a discrete card, channel values of an analog card (off without an owner) */
@@ -1720,7 +1839,7 @@
     }
     /* kept across restarts: the cards, their field devices, and what each controller holds (with its values) */
     toJSON() {
-      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
+      return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field, rev: m.rev && m.rev !== REV0 ? m.rev : undefined,
         ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
         tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
@@ -1736,6 +1855,7 @@
         if (!r.ok) return;
         const m = r.module;
         if (x.fault && m.kind !== 'cpu') m.fault = true;
+        if (x.rev && m.kind !== 'cpu') ch.setRevision(x.slot, x.rev);
         if (m.kind === 'di') m.field = Number(x.field) | 0;
         if (m.kind === 'ai' && Array.isArray(x.field)) m.field = [0, 1, 2, 3].map(k => Number(x.field[k]) || 0);
         if (m.ctl) {
@@ -1756,7 +1876,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, PTYPE, KEYING, REV0, RPI, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;

@@ -153,7 +153,7 @@ function check(name, cond, info = '') {
   console.log('Online, I/O panel, forces');
   await ev(() => MTPS.App.run('online'));
   await page.waitForTimeout(100);
-  check('Go Online with an empty controller: Connected To Go Online, "contains no project", no Upload', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('contains no project') && !(await page.$$eval('#layer .btn', b => b.map(x => x.textContent.trim()))).includes('Upload…'));
+  check('Go Online with an empty controller: Connected To Go Online, "There is no project loaded in the controller.", no Upload', (await dlgTitle()) === 'Connected To Go Online' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('There is no project loaded in the controller.') && !(await page.$$eval('#layer .btn', b => b.map(x => x.textContent.trim()))).includes('Upload…'));
   await page.click('#layer .btn.pri');
   await page.waitForTimeout(120);
   check('Download… opens the Download dialog with the path', (await dlgTitle()) === 'Download' && (await page.$eval('#layer .dlg', d => d.textContent)).includes('Emulate\\127.0.0.1\\Backplane\\0'));
@@ -388,7 +388,7 @@ function check(name, cond, info = '') {
   check('an output card pulled from the chassis: module fault 16#0204, I/O not responding', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0204' && !MTPS.App.ctl.ioOk()));
   await ev(() => MTPS.App.chassis.insert(2, 'PLC-DI16-24V', 'Wrong'));
   await page.waitForTimeout(120);
-  check('the wrong card in the slot: keying mismatch 16#0116', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0116'));
+  check('the wrong card in the slot (an input card for an output module): keying mismatch 16#0114', await ev(() => MTPS.App.ctl.moduleStatus(2).code === '16#0114'));
   await ev(() => { MTPS.App.chassis.remove(2); MTPS.App.chassis.insert(2, 'PLC-DO16-24V', 'DO_1'); });
   await page.waitForTimeout(120);
   check('the right card back: running', await ev(() => MTPS.App.ctl.moduleStatus(2).state === 'Running'));
@@ -977,9 +977,9 @@ function check(name, cond, info = '') {
   await page.keyboard.press('Escape');
   await ev(() => { const p = MTPS.App.blank('Motor_SealIn'); p.controller.slot = 2; p.rack.modules = []; MTPS.App.openProject(p); });
   await page.waitForTimeout(150);
-  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.selectOption('#layer #mt', type); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
+  const newMod = async (type, slot, name) => { await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150); await page.fill('#layer #smt-q', type); await page.click(`#layer tr[data-smt="${type}"]`); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); await page.selectOption('#ms', String(slot)); await page.fill('#mn2', name); await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); };
   await ev(() => MTPS.App.run('newmod')); await page.waitForTimeout(150);
-  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer #mt option', o => o.map(x => x.value))).some(v => /GENERIC|SIM/.test(v)) && !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'));
+  check('New Module: no generic module; its slots leave out the controller\'s slot 2', !(await page.$$eval('#layer tr[data-smt]', o => o.map(x => x.dataset.smt))).some(v => /GENERIC|SIM/.test(v)) && (await (async () => { await page.click('#layer .df .btn.pri'); await page.waitForTimeout(100); return !(await page.$$eval('#ms option', o => o.map(x => x.value))).includes('2'); })()));
   await page.keyboard.press('Escape');
   await newMod('PLC-DI16-24V', 3, 'DI_3'); await newMod('PLC-DO16-24V', 4, 'DO_4');
   check('the I/O configuration: DI16 in slot 3, DO16 in slot 4', await ev(() => MTPS.App.state.p.rack.modules.map(m => m.slot + m.type).join(',') === '3PLC-DI16-24V,4PLC-DO16-24V'));
@@ -2166,7 +2166,7 @@ function check(name, cond, info = '') {
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
     let k = await kv();
-    check('Device Properties: vendor, product type, product code, revision, serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.0' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
+    check('Device Properties: vendor, product type, product code, revision (the card: 1.1), serial number, product name', k.Vendor === 'MT PLC Studio' && k['Product Type'] === 'General Purpose Discrete I/O (7)' && k.Revision === '1.1' && /^[0-9A-F]{8}$/.test(k['Serial Number']) && k['Product Name'].startsWith('PLC-DI16-24V'), JSON.stringify(k));
     await page.click('#layer .rlov2 [data-rlpx]'); await page.waitForTimeout(80);
     p = await node(page, '00, PLC-CPU');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
@@ -2324,6 +2324,7 @@ function check(name, cond, info = '') {
   await require('./mtps-ui-w2A')({ browser, page, URL, check });
   await require('./mtps-ui-w2E')({ browser, page, URL, check });
   await require('./mtps-ui-w2B')({ browser, page, URL, check });
+  await require('./mtps-ui-w2D')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

@@ -690,7 +690,7 @@ console.log('Chassis: controller and I/O cards in slots');
   ch.remove(1); ch.advance(20);
   check('an empty slot: 16#0204', c.moduleStatus(1).code === '16#0204');
   ch.insert(1, 'PLC-DO16-24V', 'Wrong'); ch.advance(20);
-  check('another module in the slot: keying mismatch 16#0116', c.moduleStatus(1).code === '16#0116');
+  check('another module of the same product type in the slot: keying mismatch 16#0114 (product code)', c.moduleStatus(1).code === '16#0114');
   ch.remove(1); ch.insert(1, 'PLC-DI16-24V', 'In'); ch.setBit(1, 0, true); ch.advance(30);
   check('the right card back: running, inputs again', c.moduleStatus(1).state === 'Running' && ch.outputs(2) === 8);
   ch.insert(5, 'PLC-CPU', 'Emu2');
@@ -996,6 +996,155 @@ console.log('Wave 2 B: LINT and LREAL (v37 help: Elementary data types, LINT dat
   const q = run({ tags: [T('W', 'LINT', { value: 2 ** 62 }), T('Y', 'LINT')], rungs: ['MUL(W,2,Y);'] });
   scans(q, 1);
   check('LINT overflow wraps to -2^63 and sets S:V (a minor fault)', q.read('Y') === -9223372036854775808 && q.read('S:V') === 1);
+}
+
+console.log('Wave 2 D: fault handling (1756-PM014: Controller Fault Handler, fault routine, Power-Up Handler, watchdog)');
+/* a handler program (Controller Fault Handler: kind 'fault', Power-Up Handler: 'powerup') holding one routine */
+const handlerTask = (kind, name, rungs, extra) => ({ name: kind === 'fault' ? 'Controller Fault Handler' : 'Power-Up Handler', type: kind, programs: [Object.assign({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] }, extra || {})] });
+/* SSV(Program, THIS, MajorFaultRecord) with Type and Code 0, run after the named routine (the GSV/SSV instructions
+   are not in this file's scope: the engine API is the same one they use) */
+const clearsIn = (c, rname) => { const r0 = c.routine; c.routine = function (R) { r0.call(this, R); if (R.name === rname) { const a = this.majorFaultRecord('THIS'); a[2] = 0; this.setMajorFaultRecord('THIS', a); } }; };
+{
+  const base = () => proj({ tags: [T('Idx', 'DINT', { value: 5 }), T('Arr', 'DINT', { dim: 3 }), T('After', 'BOOL'), T('Seen', 'BOOL'), T('Cnt', 'DINT')], rungs: ['MOV(1,Arr[Idx])OTE(After);', 'ADD(Cnt,1,Cnt);'] });
+  const p = base(); p.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);']));
+  const c = new MTPS.Controller(); check('a project with a Controller Fault Handler program downloads', c.download(p).ok); c.setMode('remrun');
+  const p0 = proj({ tags: [T('Seen', 'BOOL')], rungs: ['NOP();'] }); p0.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);']));
+  const c0 = new MTPS.Controller(); c0.download(p0); c0.setMode('remrun'); scans(c0, 3);
+  check('the Controller Fault Handler is not scanned with the tasks', c0.read('Seen') === 0 && !c0.fault);
+  scans(c, 1);
+  check('a fault the handler does not clear: the handler ran, then the controller faults (type 4 code 20)', c.read('Seen') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20);
+  const rec = c.majorFaultRecord('FaultProg');
+  check('the handler program\'s MajorFaultRecord holds the fault: DINT[11], Type and Code in DINT 2', rec.length === 11 && (rec[2] & 0xFFFF) === 4 && rec[2] >> 16 === 20 && (rec[0] !== 0 || rec[1] !== 0));
+  const c2 = new MTPS.Controller(); c2.download(p); c2.setMode('remrun'); clearsIn(c2, 'Main'); scans(c2, 2);
+  check('the handler clears the fault (Type and Code 0): no fault, the faulted instruction is skipped and the next one runs', !c2.fault && c2.read('After') === 1 && c2.read('Cnt') === 2 && c2.read('Arr').every(v => v === 0));
+  const p2 = base(); p2.tasks.push(handlerTask('fault', 'F1', ['NOP();'])); p2.tasks[1].programs.push({ name: 'F2', main: 'Main', tags: [], routines: [{ name: 'Main', rungs: [{ t: 'NOP();' }] }] });
+  check('Verify: only one program can be in the Controller Fault Handler', MTPS.verify(p2).errors.some(e => /Only one program can be in the Controller Fault Handler/.test(e.msg)));
+  const p3 = base(); p3.tasks.push(handlerTask('fault', 'FaultProg', ['OTL(Seen);'])); p3.tasks[1].programs[0].routines = []; delete p3.tasks[1].programs[0].main;
+  const c3 = new MTPS.Controller(); check('a handler program without a routine verifies', c3.download(p3).ok); c3.setMode('remrun'); scans(c3, 1);
+  check('a handler program without a main routine does nothing: the controller faults', !!c3.fault && c3.fault.code === 20);
+  check('MajorFaultRecord of an unknown program: null; SSV of it is refused', c.majorFaultRecord('Nope') === null && !c.setMajorFaultRecord('Nope', []));
+  // I/O: connection lost with Major Fault On Controller set (type 3 code 16) goes to the handler once
+  const p4 = proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1', majorOnFail: true }], tags: [T('Seen', 'DINT')], rungs: ['NOP();'] });
+  p4.tasks.push(handlerTask('fault', 'FaultProg', ['ADD(Seen,1,Seen);']));
+  const c4 = new MTPS.Controller(); c4.download(p4); c4.setMode('remrun'); clearsIn(c4, 'Main'); scans(c4, 1);
+  c4.setModuleFault(1, true); scans(c4, 3);
+  check('an I/O connection fault (type 3 code 16) the handler clears: no fault, the handler ran once', !c4.fault && c4.read('Seen') === 1);
+  const c5 = new MTPS.Controller(); c5.download(p4); c5.setMode('remrun'); scans(c5, 1); c5.setModuleFault(1, true); scans(c5, 1);
+  check('not cleared: the I/O fault faults the controller (type 3 code 16), the handler ran', !!c5.fault && c5.fault.type === 3 && c5.fault.code === 16 && c5.read('Seen') === 1);
+}
+
+console.log('Wave 2 D: Power-Up Handler (1756-PM014: power up in Run after a power loss, major fault type 1 code 1)');
+{
+  const base = rungs => { const p = proj({ tags: [T('Boot', 'DINT'), T('Cnt', 'DINT')], rungs: ['ADD(Cnt,1,Cnt);'] }); if (rungs) p.tasks.push(handlerTask('powerup', 'PowerUp', rungs)); return p; };
+  const cycle = c => { c.power(false); c.power(true); };
+  const c = new MTPS.Controller(); c.download(base(['ADD(Boot,1,Boot);'])); c.setMode('remrun'); scans(c, 2); cycle(c);
+  check('power lost in Remote Run, back on: the Power-Up Handler ran; not cleared, major fault type 1 code 1', c.read('Boot') === 1 && !!c.fault && c.fault.type === 1 && c.fault.code === 1 && c.mode === 'remrun' && !c.running);
+  scans(c, 2);
+  check('faulted: the logic does not run', c.read('Cnt') === 2);
+  const rec = c.majorFaultRecord('PowerUp');
+  check('the handler program\'s MajorFaultRecord holds type 1 code 1', (rec[2] & 0xFFFF) === 1 && rec[2] >> 16 === 1);
+  c.clearFault();
+  check('Clear Faults: no fault, Remote Program (as any cleared major fault)', !c.fault && c.mode === 'remprog');
+  const c2 = new MTPS.Controller(); c2.download(base(['ADD(Boot,1,Boot);'])); c2.setMode('remrun'); clearsIn(c2, 'Main'); cycle(c2); scans(c2, 1);
+  check('the handler clears the fault: the controller resumes Run at once', c2.read('Boot') === 1 && !c2.fault && c2.running && c2.read('Cnt') === 1);
+  const c3 = new MTPS.Controller(); c3.download(base(null)); c3.setMode('remrun'); cycle(c3);
+  check('no Power-Up Handler program: the controller goes back to Run without a fault', !c3.fault && c3.running);
+  const c4 = new MTPS.Controller(); c4.download(base(['ADD(Boot,1,Boot);'])); cycle(c4);
+  check('power lost in Program mode: the handler does not run, no fault', c4.read('Boot') === 0 && !c4.fault && c4.mode === 'remprog');
+  const c5 = new MTPS.Controller(); c5.download(base(['ADD(Boot,1,Boot);'])); c5.setKey('RUN'); cycle(c5);
+  check('key switch in RUN, power lost in Run: the handler runs too', c5.read('Boot') === 1 && c5.fault && c5.fault.type === 1);
+  const c6 = new MTPS.Controller(); const p6 = base(['ADD(Boot,1,Boot);']); p6.tasks[1].programs[0].routines = []; delete p6.tasks[1].programs[0].main;
+  c6.download(p6); c6.setMode('remrun'); cycle(c6);
+  check('an empty Power-Up Handler (no routine): power up faulted, type 1 code 1 (PM014)', !!c6.fault && c6.fault.type === 1 && c6.fault.code === 1);
+  check('the Power-Up Handler is not scanned with the tasks', (() => { const x = new MTPS.Controller(); x.download(base(['ADD(Boot,1,Boot);'])); x.setMode('remrun'); scans(x, 3); return x.read('Boot') === 0; })());
+}
+
+console.log('Wave 2 D: the fault routine of a program (1756-PM014, Create a fault routine for a program)');
+{
+  const base = (fault, extra) => {
+    const p = proj({ tags: [T('Idx', 'DINT', { value: 7 }), T('Arr', 'DINT', { dim: 3 }), T('After', 'BOOL'), T('FR', 'DINT'), T('Seen', 'BOOL')],
+      rungs: ['MOV(1,Arr[Idx])OTE(After);'], routines: [{ name: 'Fault_Routine', rungs: ['ADD(FR,1,FR);'] }, { name: 'Sub', rungs: ['MOV(2,Arr[Idx]);', 'OTL(Seen);'] }] });
+    if (fault) p.tasks[0].programs[0].fault = fault;
+    if (extra) p.tasks.push(extra);
+    return p;
+  };
+  const c = new MTPS.Controller(); c.download(base('Fault_Routine')); c.setMode('remrun'); scans(c, 1);
+  check('an instruction fault in the program runs its fault routine; not cleared, the controller faults (4/20)', c.read('FR') === 1 && !!c.fault && c.fault.type === 4 && c.fault.code === 20);
+  const r = c.majorFaultRecord('MainProgram');
+  check('GSV Program THIS MajorFaultRecord in the fault routine: type 4 code 20 of this program', (r[2] & 0xFFFF) === 4 && r[2] >> 16 === 20);
+  const c2 = new MTPS.Controller(); c2.download(base('Fault_Routine')); c2.setMode('remrun'); clearsIn(c2, 'Fault_Routine'); scans(c2, 3);
+  check('the fault routine clears the fault: no fault, the next instruction runs, every scan', !c2.fault && c2.read('After') === 1 && c2.read('FR') === 3);
+  const p3 = base('Fault_Routine'); p3.tasks[0].programs[0].routines[0].rungs = [{ t: 'JSR(Sub,0);' }];
+  const c3 = new MTPS.Controller(); c3.download(p3); c3.setMode('remrun'); clearsIn(c3, 'Fault_Routine'); scans(c3, 1);
+  check('a fault inside a subroutine: cleared, execution goes on with the next instruction of the subroutine', !c3.fault && c3.read('Seen') === 1 && c3.read('FR') === 1);
+  const c4 = new MTPS.Controller(); c4.download(base(null)); c4.setMode('remrun'); scans(c4, 1);
+  check('no fault routine assigned: the routine is not run on a fault', c4.read('FR') === 0 && !!c4.fault);
+  const c5 = new MTPS.Controller(); c5.download(base('Fault_Routine', handlerTask('fault', 'FaultProg', ['OTL(Seen);']))); c5.setMode('remrun'); scans(c5, 1);
+  check('the fault routine does not clear it: the Controller Fault Handler runs next', c5.read('FR') === 1 && c5.read('Seen') === 1 && !!c5.fault);
+  check('a fault routine that does not exist is a Verify error', MTPS.verify(base('Nope')).errors.some(e => /the fault routine 'Nope' does not exist/.test(e.msg)));
+  check('the fault routine is not scanned unless it faults (or is called with JSR)', (() => { const p = base('Fault_Routine'); p.tags[0].value = 0; const x = new MTPS.Controller(); x.download(p); x.setMode('remrun'); scans(x, 3); return x.read('FR') === 0 && !x.fault; })());
+  // a fault in the fault routine itself: not cleared, the controller faults
+  const p6 = base('Fault_Routine'); p6.tasks[0].programs[0].routines[1].rungs = [{ t: 'MOV(3,Arr[Idx]);' }];
+  const c6 = new MTPS.Controller(); c6.download(p6); c6.setMode('remrun'); scans(c6, 1);
+  check('a fault inside the fault routine: the controller faults', !!c6.fault && c6.fault.type === 4);
+}
+
+console.log('Wave 2 D: task watchdog (1756-PM005, Adjust the System Watchdog Time: major fault type 6 code 1)');
+{
+  const loop = (wd, cond, fh) => { const p = proj({ tags: [T('N', 'DINT'), T('Seen', 'DINT')], rungs: ['LBL(L1)ADD(N,1,N);', `${cond || ''}JMP(L1);`] }); if (wd != null) p.tasks[0].watchdog = wd; if (fh) p.tasks.push(fh); return p; };
+  const time = fn => { const t = Date.now(); fn(); return Date.now() - t; };
+  const c = new MTPS.Controller(); c.download(loop(50)); c.setMode('remrun');
+  const ms = time(() => c.scan(10));
+  check('an endless loop with a 50 ms watchdog: major fault type 6 code 1 after about 50 ms', !!c.fault && c.fault.type === 6 && c.fault.code === 1 && ms >= 45 && ms < 1000, `${ms} ms ${JSON.stringify(c.fault)}`);
+  check('the fault names the task and its watchdog time', /Task watchdog expired: task 'MainTask'.*\(50 ms\)/.test(c.fault.text), c.fault.text);
+  const c2 = new MTPS.Controller(); c2.download(loop(null)); c2.setMode('remrun');
+  const ms2 = time(() => c2.scan(10));
+  check('no watchdog set: the default 500 ms', !!c2.fault && c2.fault.type === 6 && ms2 >= 480 && ms2 < 2000, `${ms2} ms`);
+  const c3 = new MTPS.Controller(); c3.download(loop(500, 'LES(N,300000)')); c3.setMode('remrun'); c3.scan(10);
+  check('a long loop that ends within the watchdog time is not a fault (300000 jumps)', !c3.fault && c3.read('N') === 300000, JSON.stringify(c3.fault));
+  const c4 = new MTPS.Controller(); c4.download(loop(30, '', handlerTask('fault', 'FaultProg', ['ADD(Seen,1,Seen);']))); c4.setMode('remrun'); clearsIn(c4, 'Main');
+  const ms4 = time(() => c4.scan(10));
+  check('the Controller Fault Handler clears the watchdog fault once; the same fault again in that scan faults the controller', c4.read('Seen') === 1 && !!c4.fault && c4.fault.type === 6 && ms4 >= 55, `${ms4} ms Seen ${c4.read('Seen')}`);
+  const p5 = loop(1, 'LES(N,3)'); const c5 = new MTPS.Controller(); c5.download(p5); c5.setMode('remrun'); scans(c5, 5);
+  check('a short task with a 1 ms watchdog runs without a fault', !c5.fault);
+}
+
+console.log('Wave 2 D: Electronic Keying and RPI (help: Module Properties - General for 1756; Module Faults 16#0100 - 16#02ff; 1756-UM058)');
+{
+  const mk = (m, card, rev) => { const ch = new MTPS.Chassis(8); ch.insert(0, 'PLC-CPU', 'E'); const c = ch.controller(0); ch.insert(1, card || 'PLC-DI16-24V', 'X'); if (rev) ch.setRevision(1, rev);
+    c.download(proj({ modules: [Object.assign({ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, m)], tags: [T('Q', 'BOOL')], rungs: ['XIC(Local:1:I.Data.0)OTE(Q);'] })); c.setMode('remrun'); ch.setBit(1, 0, true); ch.advance(30); return { ch, c, st: c.moduleStatus(1) }; };
+  let r = mk({});
+  check('default Compatible Module, revision 1.1 against a 1.1 card: Running, inputs flow', r.st.state === 'Running' && r.c.read('Q') === 1);
+  check('Compatible Module, a card with a higher minor revision (1.2): Running', mk({}, null, '1.2').st.state === 'Running');
+  r = mk({ rev: '1.2' });
+  check('Compatible Module, the card\'s minor revision lower (1.1 < 1.2): 16#0116 Major and/or Minor revision', r.st.code === '16#0116' && /^Electronic Keying Mismatch: Major and\/or Minor revision invalid or incorrect/.test(r.st.text) && r.c.read('Q') === 0, JSON.stringify(r.st));
+  check('Compatible Module, another major revision (2.1): 16#0116', mk({}, null, '2.1').st.code === '16#0116');
+  check('Exact Match, minor 1.2 against 1.1: 16#0116', mk({ key: 'exact' }, null, '1.2').st.code === '16#0116');
+  check('Exact Match, the same revision: Running', mk({ key: 'exact', rev: '1.2' }, null, '1.2').st.state === 'Running');
+  r = mk({}, 'PLC-DI16-120V');
+  check('another catalog number of the same product type: 16#0114 product code mismatch', r.st.code === '16#0114' && /product code and\/or vendor ID mismatch/.test(r.st.text));
+  r = mk({}, 'PLC-AI4');
+  check('an analog card for a digital module: 16#0115 product type mismatch', r.st.code === '16#0115' && /product type mismatch/.test(r.st.text));
+  r = mk({ key: 'off' }, 'PLC-DI16-120V', '2.7');
+  check('Disable Keying: another catalog number and revision of the same kind of card runs, inputs flow', r.st.state === 'Running' && r.c.read('Q') === 1);
+  check('Disable Keying, a card of another kind (output card): 16#0109 invalid connection size', mk({ key: 'off' }, 'PLC-DO16-24V').st.code === '16#0109');
+  check('a missing card: 16#0204 Connection request timed out', (() => { const x = mk({}); x.ch.remove(1); x.ch.advance(20); const s = x.c.moduleStatus(1); return s.code === '16#0204' && /^Connection Request Error: Connection request timed out/.test(s.text); })());
+  const ch2 = MTPS.Chassis.from(JSON.parse(JSON.stringify(mk({}, null, '2.1').ch)));
+  check('the card revision is kept with the chassis', ch2.module(1).rev === '2.1');
+  check('setRevision refuses a controller or a bad value', !ch2.setRevision(0, '1.2') && !ch2.setRevision(1, 'x'));
+  const v = m => MTPS.verify(proj({ modules: [Object.assign({ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, m)] })).errors.map(e => e.msg || e).join(' ');
+  check('RPI 0.2 and 750 ms: no Verify error', !/RPI/.test(v({ rpi: 0.2 })) && !/RPI/.test(v({ rpi: 750 })));
+  check('RPI 0.1 or 751 ms: Verify error "not in the range 0.2 to 750 ms"', /RPI 0\.1 ms is not in the range 0\.2 to 750 ms/.test(v({ rpi: 0.1 })) && /RPI 751 ms/.test(v({ rpi: 751 })), v({ rpi: 0.1 }));
+}
+
+console.log('Wave 2 D: configuration member names (1756-UM009G Floating Point Configuration Tags; 1756-UM058)');
+{
+  const c = new MTPS.Controller(); c.download(proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO' }, { slot: 3, type: 'PLC-AI4', name: 'AI' }, { slot: 4, type: 'PLC-AO4', name: 'AO' }] }));
+  const keys = n => Object.keys(c.read(n)).join(' ');
+  check('an output channel: ConfigBits (INT) before HoldForInit, then the latches, modes, ramps and values', keys('Local:4:C.Ch0Config') === 'AlarmDisable ConfigBits HoldForInit RampAlarmLatch LimitAlarmLatch FaultMode ProgMode RampToRun RampToProg RampToFault MaxRampRate FaultValue ProgValue LowLimit HighLimit LowSignal HighSignal LowEngineering HighEngineering', keys('Local:4:C.Ch0Config'));
+  check('Local:4:C.Ch0Config.ConfigBits is an INT (0)', c.read('Local:4:C.Ch0Config.ConfigBits') === 0);
+  check('an input channel: AlarmDisable, the alarm latches, DigitalFilter, RateAlarmLimit, scaling, alarm limits, AlarmDeadband, CalBias', keys('Local:3:C.Ch0Config') === 'AlarmDisable ProcessAlarmLatch RateAlarmLatch DigitalFilter RateAlarmLimit LowSignal HighSignal LowEngineering HighEngineering LAlarmLimit HAlarmLimit LLAlarmLimit HHAlarmLimit AlarmDeadband CalBias', keys('Local:3:C.Ch0Config'));
+  check('the discrete cards: DO ProgToFaultEn FaultMode FaultValue ProgMode ProgValue; DI COSOnOffEn COSOffOnEn after the filters', keys('Local:2:C') === 'ProgToFaultEn FaultMode FaultValue ProgMode ProgValue' && / COSOnOffEn COSOffOnEn$/.test(keys('Local:1:C')) && /^FilterOffOn_0_7 /.test(keys('Local:1:C')));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
