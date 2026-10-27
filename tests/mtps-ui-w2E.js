@@ -200,5 +200,59 @@ module.exports = async function w2E({ browser, page, URL, check }) {
     await tp.close();
   }
 
+  console.log('RSLinx Classic: Module Statistics (RSWho right-click) and the diagnostics of Device Properties');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; const A = MTPS.App; A.openProject(A.example()); const c = A.racks[0].controller(0); c.setKey('REM'); c.download(A.state.p); A.run('online'); A.run('rswho'); });
+    await wait(300);
+    const node = async (pg, s) => pg.evaluate(s => { const n = [...document.querySelectorAll('#rltree [data-rln]')].find(x => x.textContent.startsWith(s)); const r = n.getBoundingClientRect(); return { x: r.x + 60, y: r.y + r.height / 2 }; }, s);
+    const bh = () => page.$eval('#layer .rldg .bh', b => b.textContent).catch(() => '');
+    const kvs = () => page.$$eval('#layer [data-rldg] .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
+    const cnt = () => page.$$eval('#layer [data-rldg] .rldtab tbody tr', r => Object.fromEntries(r.map(x => [x.children[0].textContent, +x.children[1].textContent.replace(/,/g, '')])));
+    let p = await node(page, '00, PLC-CPU');
+    await page.mouse.click(p.x, p.y, { button: 'right' }); await wait(100);
+    await page.click('#layer .rlctx [data-rlci="mstat"]'); await wait(150);
+    const tabs = await page.$$eval('#layer .rldg [data-rltab]', t => t.map(x => x.textContent).join(','));
+    check('right-click the controller > Module Statistics: General, Connection Manager, Backplane', (await bh()).startsWith('Module Statistics - 00, PLC-CPU') && tabs === 'General,Connection Manager,Backplane', tabs);
+    let k = await kvs();
+    check('General: device name, vendor, product type and code, revision, serial number, faults', k['Device name'] === 'PLC-CPU Emulator' && k.Vendor === 'MT PLC Studio' && k['Product type'].startsWith('Programmable Logic Controller') && /^[0-9A-F]{8}$/.test(k['Serial number']) && k.Faults === 'None', JSON.stringify(k));
+    await page.click('#layer [data-rltab="cm"]'); await wait(100);
+    k = await cnt();
+    check('Connection Manager: the connection of Go Online (requests received, accepted, one open)', k['Connection requests received'] >= 1 && k['Connections accepted'] >= 1 && k['Connections open'] === 1 && k['Unconnected requests received'] > 0, JSON.stringify(k));
+    await wait(1200);
+    const k2 = await cnt();
+    check('the module is polled once a second: Unconnected requests received goes up', k2['Unconnected requests received'] > k['Unconnected requests received'], JSON.stringify([k, k2]));
+    await page.click('#layer [data-rldx="lock"]'); await wait(100);
+    const l1 = await cnt(); await wait(1200); const l2 = await cnt();
+    check('Lock Counters holds the values shown', l1['Unconnected requests received'] === l2['Unconnected requests received'] && await page.$eval('#layer [data-rldx="lock"]', b => b.getAttribute('aria-pressed') === 'true'));
+    await page.click('#layer [data-rldx="lock"]'); await page.click('#layer [data-rldx="reset"]'); await wait(100);
+    k = await cnt();
+    check('Reset Counters sets them back to 0', k['Connection requests received'] === 0 && k['Unconnected requests received'] <= 1, JSON.stringify(k));
+    await page.click('#layer [data-rltab="bp"]'); await wait(100);
+    k = await kvs(); const b = await cnt();
+    check('Backplane: ControlBus Status, Slot Address, Rack Size, serial number, revision, the CRC and bus timeout counters', k['ControlBus Status'] === 'OK' && k['Slot Address'] === '0' && k['Rack Size'] === '8 slots' && b['Received Bad CRC'] === 0 && 'Transmit Retry Limit' in b, JSON.stringify(k));
+    await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => MTPS.App.racks[0].controller(0).majorFault(4, 20, 'Test fault')); await wait(100);
+    p = await node(page, '00, PLC-CPU');
+    await page.mouse.click(p.x, p.y, { button: 'right' }); await wait(100);
+    await page.click('#layer .rlctx [data-rlci="props"]'); await wait(100);
+    const f = await page.$$eval('#layer .rlov2 .kv', r => r.map(x => x.textContent).join('|'));
+    check('Device Properties shows the fault information (Major fault, type and code)', f.includes('FaultsMajor fault: Type 4, Code 20'), f);
+    await page.click('#layer .rlov2 [data-rldx="mstat"]'); await wait(150);
+    check('…and its Module Statistics… button opens Module Statistics', (await bh()).startsWith('Module Statistics'));
+    await ev(() => MTPS.App.racks[0].controller(0).clearFault());
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await wait(80);
+    await ev(() => MTPS.App.run('offline'));
+    const tp = await touchPage(800, 1280, () => MTPS.App.run('rswho'));
+    p = await node(tp, '01, PLC-DI16-24V');
+    const cdp = await tp.context().newCDPSession(tp);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] }); await tp.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await tp.waitForTimeout(150);
+    await tp.tap('#layer .rlctx [data-rlci="mstat"]'); await tp.waitForTimeout(150);
+    await tp.tap('#layer [data-rltab="bp"]'); await tp.waitForTimeout(100);
+    check('tablet (touch): long-press an I/O card > Module Statistics > Backplane', (await tp.$eval('#layer .rldg .bh', b => b.textContent)).startsWith('Module Statistics - 01, PLC-DI16-24V') && (await tp.$eval('#layer [data-rldg]', b => b.textContent)).includes('ControlBus Status'));
+    await tp.close();
+  }
+
   check('Wave 2 (E): no JS errors in the touch pages', errors.length === 0, errors.join(' | '));
 };

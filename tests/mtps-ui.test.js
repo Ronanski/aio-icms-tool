@@ -2159,7 +2159,7 @@ function check(name, cond, info = '') {
     let p = await node(page, '01, PLC-DI16-24V');
     await page.mouse.click(p.x, p.y, { button: 'right' }); await page.waitForTimeout(100);
     const its = await page.$$eval('#layer .rlctx .it', t => t.map(x => (x.classList.contains('dis') ? '-' : '+') + x.textContent));
-    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|-Station Diagnostics|+Driver Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
+    check('right-click an I/O module in RSWho: Device Properties, then the RSLinx services greyed (Station Diagnostics, Upload EDS file from device, Remove)', its.join('|') === '+Device Properties|+Module Statistics|-Station Diagnostics|+Driver Diagnostics|-Upload EDS file from device|-Remove', its.join('|'));
     await page.click('#layer .rlctx [data-rlci="props"]'); await page.waitForTimeout(100);
     const kv = () => page.$$eval('#layer .rlov2 .kv', r => Object.fromEntries(r.map(x => [x.children[0].textContent, x.children[1].textContent])));
     let k = await kv();

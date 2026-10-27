@@ -3083,8 +3083,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   // an RSWho node found by a browse (or polled by Autobrowse): its driver is the first part of its key
   function rlAsk(n) {
     if (!n || !n.m) return;
-    const d = drivers.find(x => x.name === n.k.slice(2).split('/')[0]), ip = (/\/ip:([\d.]+)/.exec(n.k) || [])[1];
-    rlUnc(d, !n.m.ctl || n.m.ctl.powered, ip ? rlStation(ip) : n.m.slot);
+    const d = drivers.find(x => x.name === n.k.slice(2).split('/')[0]), ip = (/\/ip:([\d.]+)/.exec(n.k) || [])[1], ok = !n.m.ctl || n.m.ctl.powered;
+    rlUnc(d, ok, ip ? rlStation(ip) : n.m.slot);
+    if (d && ok) rlInc(rlM(rlRackOf(n.m), n.m), 'Unconnected requests received');
   }
   // n packets each way on the open connection (the tag updates while online)
   function rlPkt(n) {
@@ -3104,6 +3105,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     rlUnc(d, true, x.vbp ? x.slot : rlStation(x.ip));
     ['Connection open attempts', 'Connections established'].forEach(k => rlInc(rlStat.cip, 'conn:' + k));
     if (rlEth(d)) rlInc(rlD(d.name).c, 'Total connections initiated');
+    const t = resolve(path);
+    if (t && t.m) ['Connection requests received', 'Connections accepted'].forEach(k => rlInc(rlM(t.rack, t.m), k));
     rlCur = { drv: d.name, path, node: x.vbp ? x.slot : rlStation(x.ip), host: x.vbp ? `${x.vbp}\\${x.slot}` : x.ip, bs: 0, br: 0 };
   }
   function rlClose(lost) {
@@ -3111,6 +3114,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const d = drivers.find(x => x.name === rlCur.drv);
     rlInc(rlStat.cip, 'conn:Connection close attempts'); rlInc(rlStat.cip, lost ? 'conn:Connections timed out receiving' : 'conn:Connections closed');
     if (lost && rlEth(d)) rlEvt(d, rlCur.node, 'Connection timed out: the node stopped answering');
+    const t = resolve(rlCur.path), x = parsePath(rlCur.path), r = t && t.rack, m = r && x && r.module(x.slot);
+    if (m) rlInc(rlM(r, m), lost ? 'Connections timed out' : 'Connections closed');
     rlCur = null;
   }
   // no controller answers at the path: the open attempt is rejected (the Ethernet driver logs it)
@@ -3119,6 +3124,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (!d || !x) return;
     rlUnc(d, false, x.vbp ? x.slot : rlStation(x.ip));
     rlInc(rlStat.cip, 'conn:Connection open attempts'); rlInc(rlStat.cip, 'conn:Open attempts rejected');
+    const t = resolve(path);
+    if (t && t.m && !t.m.ctl) rlInc(rlM(t.rack, t.m), 'Connections rejected');
   }
   setInterval(() => {
     if (!rlCur) return;
@@ -3150,6 +3157,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   const rlWin = (title, tabs, body, foot) => `<div class="rlov rlov2 rldgo"><div class="rlbox rldg" role="dialog" aria-label="${esc(title)}"><div class="bh">${esc(title)}</div>${tabs}<div class="bb" data-rldg>${body}</div><div class="bf">${foot || ''}<button class="btn pri" data-rlpx="cancel">Close</button></div></div></div>`;
   function rlDiagBody(md) {
     if (md.k === 'cipdiag') return rlCipBody(md);
+    if (md.k === 'mstat') { const n = rlFind(rlTree(), md.key); return n && n.m ? rlMsBody(md, n.m) : '<p class="help">The device does not answer.</p>'; }
     if (md.k === 'drvdiag' && !md.name) return `<div class="rltabw"><table class="rltab" id="rldl"><thead><tr><th>Driver</th><th>Status</th></tr></thead><tbody>${drivers.map(d => `<tr class="${d.name === md.sel ? 'on' : ''}" data-rldp="${esc(d.name)}"><td><span class="mono">${esc(d.name)}</span> <span class="muted">${esc((RLTYPES.find(y => y[0] === d.type) || [, , , d.type])[3])}</span></td><td class="${d.run ? 'run' : ''}">${d.run ? 'Running' : 'Stopped'}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No drivers are configured.</td></tr>'}</tbody></table></div><p class="help">Pick a configured driver to see its counters.</p>`;
     return rlDrvBody(md);
   }
@@ -3248,14 +3256,41 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const r = racks.find(x => x.module(m.slot) === m) || racks[0], pt = RLPTYPE[m.kind] || ['Generic Device', 0];
     return [['Vendor', 'MT PLC Studio'], ['Product Type', `${pt[0]} (${pt[1]})`], ['Product Code', String(m.ctl ? 1 : Object.keys(E.MODULES).indexOf(m.type) + 2)],
       ['Revision', '1.0'], ['Serial Number', rlSerial(r, m)], ['Product Name', m.ctl ? `PLC-CPU ${m.name}` : `${m.type} ${CARDNAMES[m.type] || ''}`.trim()],
-      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']]);
+      ['Address', `${r.name}, slot ${m.slot}`]].concat(m.ctl ? [['Status', m.ctl.powered ? ctlMode(m.ctl) : 'Off']] : [['Status', m.fault ? 'Faulted' : 'OK']], [['Faults', rlFaults(m)]]);
+  }
+  // the fault information a device reports (Device Properties, Module Statistics > General)
+  const rlFaults = m => (m.ctl ? (m.ctl.fault ? `Major fault: Type ${m.ctl.fault.type}, Code ${m.ctl.fault.code}` : m.ctl.minors && m.ctl.minors.length ? `Minor faults: ${m.ctl.minors.length}` : 'None') : m.fault ? 'Module fault' : 'None');
+  /* Module Statistics (right-click a module in RSWho; the ControlLogix Gateway Configuration tool of RSLinx Classic,
+     which supports SoftLogix5800): General, Connection Manager and Backplane, polled once a second, with Lock Counters
+     and Reset Counters. A virtual backplane has no CRC errors or bus timeouts, so those stay at 0. */
+  const RLMS = { cm: ['Unconnected requests received', 'Connection requests received', 'Connections accepted', 'Connections rejected', 'Connections open', 'Connections closed', 'Connections timed out'],
+    bp: ['Received Multicast CRC', 'Received Bad CRC', 'Received Bus Timeouts', 'Transmit Bad CRC', 'Transmit Bus Timeout', 'Multicast CRC Threshold', 'Transmit Retry Limit'] };
+  const rlRackOf = m => racks.find(x => x.module(m.slot) === m) || racks[0];
+  const rlMk = (r, m) => `${r.name}:${m.slot}`;
+  const rlM = (r, m) => rlStat.m[rlMk(r, m)] || (rlStat.m[rlMk(r, m)] = {});
+  const rlMsHTML = md => {
+    const n = rlFind(rlTree(), md.key), m = n && n.m;
+    const body = rlDiagBody(md);
+    return rlWin(`Module Statistics - ${n ? n.l : ''}`, m ? rlTabs(md, [['gen', 'General'], ['cm', 'Connection Manager'], ['bp', 'Backplane']]) : '', body,
+      `<button class="btn${md.lock ? ' on' : ''}" data-rldx="lock" aria-pressed="${md.lock ? 'true' : 'false'}">Lock Counters</button><button class="btn" data-rldx="reset">Reset Counters</button><span class="grow"></span>`);
+  };
+  function rlMsBody(md, m) {
+    const r = rlRackOf(m), on = !m.ctl || m.ctl.powered, c = md.lock || rlM(r, m);
+    if (!on) return `<p class="help">The device does not answer: ${esc(m.name)} is off.</p>`;
+    if (md.tab === 'cm') {
+      const open = rlCur && (() => { const x = resolve(rlCur.path); return x && x.m === m ? 1 : 0; })();
+      return `<div class="lbl">Statistics</div>${rlCtab(RLMS.cm, l => (l === 'Connections open' ? (md.lock ? md.lock[l] : open) : c[l]))}`;
+    }
+    if (md.tab === 'bp') return `${kv('ControlBus Status', 'OK')}${kv('Slot Address', String(m.slot))}${kv('Rack Size', `${r.size} slots`)}${kv('Serial Number', rlSerial(r, { slot: 'chassis', type: r.name }))}${kv('Revision', '1.0')}${rlCtab(RLMS.bp, () => 0)}`;
+    const d = Object.fromEntries(rlDevice(m));
+    return [['Device name', d['Product Name']], ['Vendor', d.Vendor], ['Product type', d['Product Type']], ['Product code', d['Product Code']], ['Revision', d.Revision], ['Serial number', d['Serial Number']], ['Faults', d.Faults]].map(([a, b]) => kv(a, esc(b))).join('');
   }
   function rlCtxHTML(root) {
     const c = rlS.ctx, n = rlFind(root, c.k);
     if (n && !n.m && /^d:[^/]+$/.test(n.k)) return rlDrvCtx(c);
     if (!n || !n.m) return '';
     const cpu = !!n.m.ctl, it = (l, a) => `<div class="it${a ? '' : ' dis'}"${a ? ` data-rlci="${a}"` : ''}><span>${esc(l)}</span></div>`;
-    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}<hr>${it('Station Diagnostics')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
+    return `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px">${it('Device Properties', 'props')}${it('Module Statistics', 'mstat')}<hr>${it('Station Diagnostics')}${it('Driver Diagnostics', 'drvdiag')}${cpu ? it('Data Monitor') + it('Configure New DDE/OPC Topic') : ''}${it('Upload EDS file from device')}<hr>${it('Remove')}</div>`;
   }
   // right-click a driver in RSWho: Driver Diagnostics
   const rlDrvCtx = c => `<div class="menu rlpop rlctx" role="menu" style="left:${c.x}px;top:${c.y}px"><div class="it" data-rlci="drvdiag"><span>Driver Diagnostics</span></div></div>`;
@@ -3279,6 +3314,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const md = rlS.modal;
     if (md.k === 'cfg') return rlCfgHTML(md);
     if (md.k === 'drvdiag' || md.k === 'cipdiag') return rlDiagHTML(md);
+    if (md.k === 'mstat') return rlMsHTML(md);
     if (md.k === 'mode') {
       const n = rlFind(rlTree(), md.key), c = n && n.m && n.m.ctl, cur = c && { prog: 'remprog', run: 'remrun' }[c.mode] || (c && c.mode);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Change Mode"><div class="bh">Change Mode</div><div class="bb">${c ? `<p style="margin-top:0"><b>${esc(n.l)}</b><br>Current mode: ${esc(ctlMode(c))} · key switch ${esc(c.key)}</p>
@@ -3289,7 +3325,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     if (md.k === 'props') {
       const n = rlFind(rlTree(), md.key);
       return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Device Properties"><div class="bh">Device Properties</div><div class="bb rlprops">${n && n.m ? rlDevice(n.m).map(([a, b]) => `<div class="kv"><span>${a}</span><span class="v">${esc(b)}</span></div>`).join('') : '<p class="help">The device does not answer.</p>'}</div>
-      <div class="bf"><button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
+      <div class="bf">${n && n.m ? '<button class="btn" data-rldx="mstat">Module Statistics…</button>' : ''}<button class="btn pri" data-rlpx="cancel">OK</button></div></div></div>`;
     }
     if (md.k === 'add') return `<div class="rlov rlov2"><div class="rlbox rlsm" role="dialog" aria-label="Add New RSLinx Classic Driver"><div class="bh">Add New RSLinx Classic Driver</div><div class="bb">
       <p style="margin-top:0">Choose a name for the new driver.<br>(15 characters maximum)</p><input class="inp mono" id="rlname" value="${esc(md.v)}" autocomplete="off" spellcheck="false"><div class="errtx" id="rlerr">${esc(md.err || '')}</div></div>
@@ -3335,6 +3371,13 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     let ltick = 0;
     const rlLive = md => {
       if (md.k === 'drvdiag' && md.tab === 'act' && ltick % 8) return false;
+      if (md.k === 'mstat') {
+        // Module Statistics polls the module once a second (an unconnected request through its driver)
+        if (ltick % 4) return false;
+        const n = rlFind(rlTree(), md.key);
+        if (n && n.m) rlAsk(n);
+        return true;
+      }
       return true;
     };
     const ltimer = setInterval(() => {
@@ -3354,11 +3397,22 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const drvOfKey = k => (k ? k.slice(2).split('/')[0] : '');
     const rlCtxAct = (a, k) => {
       if (a === 'drvdiag') { rlS.modal = { k: 'drvdiag', name: drvOfKey(k), tab: 'gen', live: true }; return; }
+      if (a === 'mstat') { rlS.modal = { k: 'mstat', key: k, tab: 'gen', live: true }; return; }
       rlS.modal = { k: 'props', key: k };
     };
     const rlDx = a => {
       const md = rlS.modal;
       if (a === 'dpick' && md.sel) { md.name = md.sel; md.tab = 'gen'; draw(); }
+      if (a === 'mstat') { rlS.modal = { k: 'mstat', key: md.key, tab: 'gen', live: true }; draw(); }
+      // Lock Counters holds the values shown (the module goes on counting); Reset Counters sets them to 0
+      if (md.k === 'mstat' && (a === 'lock' || a === 'reset')) {
+        const n = rlFind(rlTree(), md.key), m = n && n.m;
+        if (!m) return;
+        const r = rlRackOf(m);
+        if (a === 'lock') md.lock = md.lock ? null : Object.assign({ 'Connections open': rlCur && resolve(rlCur.path) && resolve(rlCur.path).m === m ? 1 : 0 }, rlM(r, m));
+        else { rlStat.m[rlMk(r, m)] = {}; if (md.lock) md.lock = { 'Connections open': md.lock['Connections open'] }; }
+        draw();
+      }
     };
     // a browse step redraws only the tree, its pane and the status (the scroll position and the menus stay)
     const drawTree = () => {
