@@ -2219,5 +2219,193 @@ console.log('Wave 3 B: Controller Properties > SFC Execution settings (help v37;
   eq('an unknown value takes the default', MTPS.sfcOf({ sfc: { exec: 'x', last: 'programmatic' } }), { exec: 'current', restart: 'recent', last: 'programmatic' });
 }
 
+console.log('Wave 3 E: ASCII string and conversion instructions (1756-RM018A chapters 17, 18)');
+{
+  const sv = t => ({ LEN: t.length, DATA: [...t].map(c => c.charCodeAt(0)) });
+  const txt = (c, n) => { const o = c.read(n); return String.fromCharCode(...o.DATA.slice(0, o.LEN).map(x => x & 255)); };
+  const dts = [{ name: 'S5', family: 'string', len: 5 }];
+  const st = (name, t, type = 'STRING') => T(name, type, t == null ? {} : { value: sv(t) });
+  const sr = (tags, rr) => run({ dataTypes: dts, tags, rungs: rr });
+  const c1 = sr([st('A', 'Hello'), st('B', ' World'), st('D'), st('E'), T('N', 'DINT'), st('Bar', 'ABC123456789XYZ')],
+    ['CONCAT(A,B,D);', 'MID(D,5,7,E);', 'FIND(D,B,1,N);']);
+  c1.scan(10);
+  eq('CONCAT: Source A then Source B into Dest', txt(c1, 'D'), 'Hello World');
+  eq('MID(Source,Qty,Start,Dest): 5 characters from position 7', txt(c1, 'E'), 'World');
+  eq('FIND: the position of Search in Source (1-based)', c1.read('N'), 6);
+  check('… Source A is unchanged', txt(c1, 'A') === 'Hello' && c1.read('D').LEN === 11);
+  const c2 = sr([st('A', 'AB'), st('B', 'CD'), st('D'), st('X', 'ABCDEF'), st('Y'), st('Z', 'abc-XYZ 9'), st('U'), st('L'), T('N', 'DINT', { value: 7 })],
+    ['INSERT(A,B,2,D);', 'DELETE(X,2,3,Y);', 'UPPER(Z,U);', 'LOWER(Z,L);', 'FIND(X,B,4,N);']);
+  c2.scan(10);
+  eq('INSERT: Source B at position Start of Source A', txt(c2, 'D'), 'ACDB');
+  eq('DELETE(Source,Qty,Start,Dest): 2 characters from position 3', txt(c2, 'Y'), 'ABEF');
+  eq('UPPER / LOWER change only the letters', [txt(c2, 'U'), txt(c2, 'L')], ['ABC-XYZ 9', 'abc-xyz 9']);
+  eq('FIND past the Search string: Result 0', c2.read('N'), 0);
+  // conversions
+  const c3 = sr([st('S1', '$-123/45'), st('S2', 'x 98.25 kg'), st('S3', 'none'), T('D1', 'DINT', { value: 5 }), T('I1', 'INT'), T('R1', 'REAL'), T('R2', 'REAL', { value: -2.5 }), T('D2', 'DINT', { value: -42 }), st('O1'), st('O2'), st('O3'), T('R3', 'REAL', { value: 7.6 })],
+    ['STOD(S1,D1);', 'STOR(S2,R1);', 'STOD(S3,I1);', 'DTOS(D2,O1);', 'RTOS(R2,O2);', 'DTOS(R3,O3);']);
+  c3.scan(10);
+  eq('STOD: skips non-numeric characters, keeps the minus sign, stops at the delimiter', c3.read('D1'), -123);
+  eq('STOR: the first group of digits with its decimal point', c3.read('R1'), 98.25);
+  check('STOD: no digits gives 0 (Dest is cleared first)', c3.read('I1') === 0);
+  eq('DTOS / RTOS: the value as text; a REAL into DTOS is converted to a DINT first', [txt(c3, 'O1'), txt(c3, 'O2'), txt(c3, 'O3')], ['-42', '-2.5', '8']);
+  // faults
+  const fl = (rr, tags) => { const c = sr(tags, rr); c.scan(10); return c.fault ? c.fault.type + '/' + c.fault.code : null; };
+  eq('CONCAT longer than the Dest DATA size: fault 4/51', fl(['CONCAT(A,B,D);'], [st('A', 'abc'), st('B', 'def'), st('D', null, 'S5')]), '4/51');
+  eq('MID result larger than Dest: fault 4/52', fl(['MID(A,6,1,D);'], [st('A', 'abcdefgh'), st('D', null, 'S5')]), '4/52');
+  eq('MID Start + Quantity past the length + 1: fault 4/56', fl(['MID(A,3,4,D);'], [st('A', 'abcd'), st('D')]), '4/56');
+  eq('FIND in an empty Source: fault 4/56', fl(['FIND(A,B,1,N);'], [st('A', ''), st('B', 'x'), T('N', 'DINT')]), '4/56');
+  eq('STOD beyond the limits of an INT Dest: fault 4/53', fl(['STOD(A,I);'], [st('A', '99999'), T('I', 'INT')]), '4/53');
+  const big = sr([st('A', 'abc'), st('D')], ['MOV(90,A.LEN);', 'UPPER(A,D);', 'CONCAT(A,A,D);']); big.scan(10);
+  eq('a LEN past the DATA size: fault 4/51 (UPPER has no string fault)', big.fault && big.fault.type + '/' + big.fault.code, '4/51');
+  const nf = sr([st('A', 'ab'), st('D'), T('B', 'BOOL')], ['XIC(B)CONCAT(A,A,D);']); nf.scan(10);
+  eq('a false rung does nothing', nf.read('D').LEN, 0);
+  // verify
+  const v = MTPS.verify(proj({ tags: [st('A', 'x'), T('N', 'DINT'), T('R', 'REAL')], rungs: ['CONCAT(A,N,A);', 'RTOS(N,A);', 'STOD(A,R);', 'MID(A,1,1,N);', 'DTOS(5,A);'] }));
+  eq('verify: string operands must be string tags, RTOS a REAL, STOD an integer Dest, DTOS a tag', v.errors.map(e => e.rung), [0, 1, 2, 3, 4]);
+}
+
+console.log('Wave 3 E: MSG, CIP Data Table Read / Write (1756-RM018A chapter 4, 1756-PM012)');
+{
+  const B = (c, n) => ['EN', 'EW', 'ST', 'DN', 'ER'].filter(b => c.read(n + '.' + b)).join(' ');
+  const cfg = (o, value) => T(o.name || 'Msg', 'MESSAGE', { msg: o.msg, value });
+  // to itself: THIS
+  const c = run({ modules: [], tags: [T('Src', 'DINT', { dim: 5, value: [1, 2, 3, 4, 5] }), T('Dst', 'DINT', { dim: 5 }), T('Go', 'BOOL'),
+    cfg({ msg: { type: 'read', src: 'Src[1]', n: 3, dst: 'Dst[0]', path: 'THIS' } })], rungs: ['XIC(Go)MSG(Msg);'] });
+  c.scan(10);
+  eq('rung false: no bits', B(c, 'Msg'), '');
+  c.write('Go', 1); c.scan(10);
+  eq('rung true: .EN and .EW set (the message is queued)', B(c, 'Msg'), 'EN EW');
+  c.scan(10);
+  eq('next scan: the message is sent, .ST set and .EW cleared', B(c, 'Msg'), 'EN ST');
+  c.scan(10);
+  eq('then done: .DN set, .ST cleared', B(c, 'Msg'), 'EN DN');
+  eq('CIP Data Table Read to THIS: Src[1..3] into Dst[0..2], .DN_LEN 3', [c.read('Dst'), c.read('Msg.DN_LEN'), c.read('Msg.REQ_LEN')], [[2, 3, 4, 0, 0], 3, 3]);
+  c.scan(10);
+  eq('rung still true: .EN stays, no new message', B(c, 'Msg'), 'EN DN');
+  c.write('Msg.DN', 0); c.scan(10);
+  eq('a write to .DN is ignored (the controller keeps its own bits)', B(c, 'Msg'), 'EN DN');
+  c.write('Go', 0); c.scan(10);
+  eq('rung false with .DN set: .EN clears, .DN stays', B(c, 'Msg'), 'DN');
+  c.write('Src[1]', 20); c.write('Go', 1); c.scan(10);
+  eq('false to true again: .DN cleared, .EN .EW set', B(c, 'Msg'), 'EN EW');
+  c.write('Go', 0); c.scan(10); c.scan(10);
+  eq('the transfer goes on with the rung false, then .EN clears', [B(c, 'Msg'), c.read('Dst[0]')], ['DN', 20]);
+  c.setMode('remprog'); c.setMode('remrun');
+  eq('prescan clears .DN (.EW .ST .DN .ER)', B(c, 'Msg'), '');
+  eq('.EN_CC set by Cache Connections, .UnconnectedTimeout 30 s by default (in microseconds)', [c.read('Msg.EN_CC'), c.read('Msg.UnconnectedTimeout')], [1, 30000000]);
+
+  // between two controllers in a chassis: slot 0 and slot 2 (slot 1 holds an input card)
+  const ch = new MTPS.Chassis(8);
+  ch.insert(0, 'PLC-CPU', 'Ctl_A'); ch.insert(1, 'PLC-DI16-24V'); ch.insert(2, 'PLC-CPU', 'Ctl_B');
+  const A = ch.controller(0), Bc = ch.controller(2);
+  const pa = proj({ modules: [], tags: [T('Out', 'REAL', { dim: 2, value: [1.5, -2.25] }), T('In', 'REAL', { dim: 2 }), T('Go', 'BOOL'), T('Mine', 'INT'),
+    cfg({ name: 'Wr', msg: { type: 'write', src: 'Out[0]', n: 2, dst: 'Program:MainProgram.Rx[0]', path: '1,2' } }),
+    cfg({ name: 'Rd', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[1]', path: '1, 2' } }),
+    cfg({ name: 'E1', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '1,5' } }),
+    cfg({ name: 'E2', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '1,1' } }),
+    cfg({ name: 'E3', msg: { type: 'read', src: 'Tx', n: 1, dst: 'In[0]', path: '2,10' } }),
+    cfg({ name: 'E4', msg: { type: 'read', src: 'Nothing', n: 1, dst: 'In[0]', path: '1,2' } }),
+    cfg({ name: 'E5', msg: { type: 'read', src: 'Tx', n: 1, dst: 'Mine', path: '1,2' } }),
+    cfg({ name: 'E6', msg: { type: 'read', src: 'Tx', n: 3, dst: 'In[0]', path: '1,2' } }),
+    cfg({ name: 'E8', msg: { type: 'write', src: 'Go', n: 1, dst: 'Flag', path: '1,2' } }),
+    T('E7', 'MESSAGE')],
+    rungs: ['XIC(Go)MSG(Wr);', 'XIC(Go)MSG(Rd);', 'XIC(Go)MSG(E1);', 'XIC(Go)MSG(E2);', 'XIC(Go)MSG(E3);', 'XIC(Go)MSG(E4);', 'XIC(Go)MSG(E5);', 'XIC(Go)MSG(E6);', 'XIC(Go)MSG(E7);', 'XIC(Go)MSG(E8);'] });
+  const pb = proj({ modules: [], tags: [T('Tx', 'REAL', { value: 9.75 }), T('Flag', 'BOOL')], ptags: [T('Rx', 'REAL', { dim: 4 })], rungs: ['NOP();'] });
+  pb.controller.name = 'Ctl_B'; pb.controller.slot = 2; pb.rack.size = 8; pa.rack.size = 8;
+  check('both controllers take their projects', A.download(pa).ok && Bc.download(pb).ok);
+  A.setMode('remrun'); Bc.setMode('remrun');
+  eq('the configuration is in the tag: .Path $01$02, .RemoteElement', [A.read('Wr.Path').DATA.slice(0, A.read('Wr.Path').LEN), String.fromCharCode(...A.read('Wr.RemoteElement').DATA.slice(0, A.read('Wr.RemoteElement').LEN))], [[1, 2], 'Program:MainProgram.Rx[0]']);
+  A.write('Go', 1); scans(A, 3);
+  eq('CIP Data Table Write over the backplane (path 1,2) into a program tag of the other controller', [B(A, 'Wr'), Bc.read('Rx', 'MainProgram').slice(0, 2)], ['EN DN', [1.5, -2.25]]);
+  eq('CIP Data Table Read from the other controller', [B(A, 'Rd'), A.read('In[1]')], ['EN DN', 9.75]);
+  const er = n => [A.read(n + '.ER'), A.read(n + '.ERR'), A.read(n + '.EXERR')];
+  eq('path to an empty slot: .ER, 16#0001 extended 16#0312 (link address not available)', er('E1'), [1, 0x0001, 0x0312]);
+  eq('path to an I/O card: 16#0008 (service unsupported)', er('E2'), [1, 0x0008, 0]);
+  eq('a port other than the backplane: 16#0001 extended 16#0311 (port not available)', er('E3'), [1, 0x0001, 0x0311]);
+  eq('a remote tag that does not exist: 16#0005 (destination unknown)', er('E4'), [1, 0x0005, 0]);
+  eq('REAL into an INT: 16#00FF extended 16#2107 (type invalid)', er('E5'), [1, 0x00FF, 0x2107]);
+  eq('more elements than the tag holds: 16#00FF extended 16#2105 (out of range)', er('E6'), [1, 0x00FF, 0x2105]);
+  eq('a BOOL is not a supported data type (1756-PM012): 16#00FF extended 16#2107', er('E8'), [1, 0x00FF, 0x2107]);
+  eq('a message never configured: .ER at once, 16#00FD (message uninitialized)', er('E7'), [1, 0x00FD, 0]);
+  check('MTPS.MSG.text gives the description', MTPS.MSG.text(0x0001, 0x0312) === 'Connection failure: link address not available');
+  // the other controller is off: no answer until .UnconnectedTimeout
+  A.write('Go', 0); scans(A, 1);
+  A.write('Rd.UnconnectedTimeout', 50000); Bc.power(false);
+  A.write('Go', 1); scans(A, 3);
+  check('no answer: the message waits (.ST)', B(A, 'Rd') === 'EN ST');
+  scans(A, 5);
+  eq('after .UnconnectedTimeout (50 ms): 16#0001 extended 16#0204', er('Rd'), [1, 0x0001, 0x0204]);
+  Bc.power(true);
+  // .TO stops a message
+  A.write('Go', 0); scans(A, 1); A.write('Go', 1); scans(A, 1); A.write('Wr.TO', 1); scans(A, 1);
+  eq('.TO set by the user: the message stops with .ER (16#00FE, message timeout)', er('Wr'), [1, 0x00FE, 0]);
+  // online: a changed configuration takes effect at once and the controller still holds the project
+  const pa2 = JSON.parse(JSON.stringify(pa)); pa2.tags.find(t => t.name === 'E1').msg.path = '1,2';
+  A.write('Wr.TO', 0);
+  check('setMsg online: the controller still holds the (changed) project', A.setMsg('E1', null, pa2.tags.find(t => t.name === 'E1').msg) && A.holds(pa2));
+  A.write('Go', 0); scans(A, 1); A.write('Go', 1); scans(A, 3);
+  eq('… and the message uses the new path', [B(A, 'E1'), A.read('In[0]')], ['EN DN', 9.75]);
+  // verify
+  const v = MTPS.verify(proj({ tags: [T('D', 'DINT'), T('M', 'MESSAGE', { dim: 2 })], rungs: ['MSG(D);', 'MSG(M[0]);'] }));
+  eq('verify: the operand must be a MESSAGE tag (not another type, not an array element)', v.errors.map(e => e.rung), [0, 1]);
+}
+
+console.log('Wave 3 E: Add-On Instructions (1756-PM010)');
+{
+  // Motor_Ctl: Start / Stop in, Run out (required), Fault a visible BOOL Output, Count a local, Cfg an InOut
+  const aoi = (o = {}) => Object.assign({ name: 'Motor_Ctl', desc: 'Start / stop with seal-in', rev: '1.0', type: 'Ladder Diagram',
+    params: [{ name: 'Start', usage: 'Input', type: 'BOOL', req: true }, { name: 'Stop', usage: 'Input', type: 'BOOL', req: true, def: 1 },
+      { name: 'Run', usage: 'Output', type: 'BOOL', req: true }, { name: 'Fault', usage: 'Output', type: 'BOOL', vis: true },
+      { name: 'Cfg', usage: 'InOut', type: 'DINT', dim: 2 }, { name: 'Gain', usage: 'Input', type: 'REAL', def: 2.5, vis: true }],
+    locals: [{ name: 'Starts', type: 'DINT' }, { name: 'Tmr', type: 'TIMER' }, { name: 'Ons', type: 'BOOL' }],
+    routines: [{ name: 'Logic', rungs: [{ t: '[XIC(Start),XIC(Run)]XIC(Stop)OTE(Run);' }, { t: 'XIC(Start)ONS(Ons)ADD(Starts,1,Starts);' }, { t: 'MOV(Starts,Cfg[1]);' }, { t: 'XIC(Run)TON(Tmr,40,0);' }, { t: 'XIC(Tmr.DN)OTE(Fault);' }] }] }, o);
+  const ap = (o = {}) => { const p = proj({ modules: [], tags: [T('M1', 'Motor_Ctl'), T('Pb', 'BOOL'), T('Sb', 'BOOL', { value: 1 }), T('Lamp', 'BOOL'), T('Arr', 'DINT', { dim: 2 }), T('Go', 'BOOL', { value: 1 }), T('Out2', 'BOOL')].concat(o.tags || []), rungs: o.rungs || ['XIC(Go)MOTOR_CTL(M1,Pb,Sb,Lamp,Arr)OTE(Out2);'] }); p.aois = o.aois || [aoi()]; return p; };
+  eq('Data Types > Add-On-Defined lists the data type of the Add-On Instruction', MTPS.dataTypes(ap()).addOnDefined, ['Motor_Ctl']);
+  const v0 = MTPS.verify(ap());
+  eq('the project verifies, with the logic routine of the Add-On Instruction', [v0.errors.map(e => e.text), v0.lines.some(l => /Verifying routine 'Logic' of Add-On Instruction 'Motor_Ctl'/.test(l))], [[], true]);
+  const c = new MTPS.Controller(); check('download', c.download(ap()).ok); c.setMode('remrun');
+  eq('a new instance tag: EnableIn 1, the parameter defaults (Stop 1, Gain 2.5)', [c.read('M1.EnableIn'), c.read('M1.Stop'), c.read('M1.Gain'), c.read('M1.EnableOut')], [1, 1, 2.5, 0]);
+  check('local tags are hidden members: not reachable from outside', c.read('M1.Starts') === undefined && typeof c.refOf('M1.Starts') === 'string');
+  c.scan(10);
+  eq('rung true: the logic runs, EnableOut set, the rung goes on (Out2 on), Run not yet', [c.read('M1.EnableOut'), c.read('Out2'), c.read('Lamp')], [1, 1, 0]);
+  c.write('Pb', 1); c.scan(10);
+  eq('required Input in (Start), the logic seals in, the required Output out (Lamp)', [c.read('M1.Start'), c.read('M1.Run'), c.read('Lamp')], [1, 1, 1]);
+  eq('the InOut is passed by reference: Cfg[1] = Starts writes Arr[1] of the caller', c.read('Arr'), [0, 1]);
+  c.write('Pb', 0); scans(c, 2);
+  eq('a one-shot in the logic counts once; the seal-in holds', [c.read('Arr[1]'), c.read('Lamp')], [1, 1]);
+  scans(c, 5);
+  eq('a TON in the logic times with its local TIMER (the rung Preset 40 is its default): the visible Output Fault', c.read('M1.Fault'), 1);
+  c.write('Go', 0); c.write('Sb', 0); c.scan(10);
+  eq('rung false: EnableIn 0, EnableOut 0, the Inputs are passed (Stop 0) but no Output is written (Lamp stays on)', [c.read('M1.EnableIn'), c.read('M1.EnableOut'), c.read('M1.Stop'), c.read('Lamp'), c.read('Out2')], [0, 0, 0, 1, 0]);
+  c.write('Go', 1); c.scan(10);
+  eq('rung true with Stop off: the logic drops Run, Lamp off', [c.read('M1.Run'), c.read('Lamp')], [0, 0]);
+  c.write('M1.Gain', 7.5); c.scan(10);
+  check('a visible parameter that is not required is set through the tag (M1.Gain)', c.read('M1.Gain') === 7.5);
+  // two instances keep their own data
+  const c2 = run2();
+  function run2() { const x = new MTPS.Controller(); const p = ap({ tags: [T('M2', 'Motor_Ctl'), T('L2', 'BOOL'), T('A2', 'DINT', { dim: 2 })], rungs: ['MOTOR_CTL(M1,1,1,Lamp,Arr);', 'MOTOR_CTL(M2,0,1,L2,A2);'] }); x.download(p); x.setMode('remrun'); return x; }
+  c2.scan(10);
+  eq('two instances keep their own data (immediate Inputs 1 / 0); the ONS in the logic was prescanned, so no count', [c2.read('Lamp'), c2.read('L2'), c2.read('Arr[1]'), c2.read('A2[1]')], [1, 0, 0, 0]);
+  // prescan: the logic is prescanned with the required parameters passed (OTE cleared)
+  c2.setMode('remprog'); c2.write('M1.Run', 1); c2.setMode('remrun');
+  check('prescan: the logic is prescanned (its OTE Run cleared) and the required Output passed out', c2.read('M1.Run') === 0 && c2.read('Lamp') === 0);
+  // verify errors
+  const errs = p => MTPS.verify(p).errors.map(e => e.msg);
+  check('an Input parameter must be BOOL, SINT, INT, DINT or REAL', errs(ap({ aois: [aoi({ params: [{ name: 'X', usage: 'Input', type: 'TIMER' }] })], rungs: ['NOP();'] })).some(m => /an Input parameter must be BOOL, SINT, INT, DINT or REAL/.test(m)));
+  check('the name must not match a built-in instruction', errs(ap({ aois: [aoi({ name: 'TON' })], rungs: ['NOP();'], tags: [] })).some(m => /must not match a built-in instruction/.test(m)));
+  const vin = MTPS.verify(ap({ aois: [aoi({ routines: [{ name: 'Logic', rungs: [{ t: 'XIC(Pb)OTE(Run);' }, { t: 'JSR(Logic);' }, { t: 'MOTOR_CTL(M1,1,1,Run,Cfg);' }] }] })] }));
+  eq('in the logic: no controller tags (Pb), no JSR, no call to itself', vin.errors.filter(e => e.program === 'aoi:Motor_Ctl').map(e => e.rung), [0, 1, 2]);
+  eq('in a call: the tag must be of the instruction\'s type; an InOut takes the same type and size', MTPS.verify(ap({ rungs: ['MOTOR_CTL(Pb,Pb,Sb,Lamp,Arr);', 'MOTOR_CTL(M1,Pb,Sb,Lamp,Pb);', 'MOTOR_CTL(M1,Pb,Sb);'] })).errors.map(e => [e.rung, e.op]), [[0, 0], [1, 4], [2, undefined]]);
+  // nesting: an Add-On Instruction that calls another
+  const inner = { name: 'Dbl', params: [{ name: 'In', usage: 'Input', type: 'DINT', req: true }, { name: 'Out', usage: 'Output', type: 'DINT', req: true }], locals: [], routines: [{ name: 'Logic', rungs: [{ t: 'MUL(In,2,Out);' }] }] };
+  const outer = { name: 'Quad', params: [{ name: 'In', usage: 'Input', type: 'DINT', req: true }, { name: 'Out', usage: 'Output', type: 'DINT', req: true }], locals: [{ name: 'D1', type: 'Dbl' }, { name: 'Mid', type: 'DINT' }], routines: [{ name: 'Logic', rungs: [{ t: 'DBL(D1,In,Mid)DBL(D1,Mid,Out);' }] }] };
+  const pn = proj({ modules: [], tags: [T('Q', 'Quad'), T('R', 'DINT')], rungs: ['QUAD(Q,5,R);'] }); pn.aois = [inner, outer];
+  const cn = new MTPS.Controller(); check('nested Add-On Instructions download', cn.download(pn).ok); cn.setMode('remrun'); cn.scan(10);
+  eq('Quad(5) through Dbl twice = 20', cn.read('R'), 20);
+  const loop = JSON.parse(JSON.stringify(pn)); loop.aois[0].locals = [{ name: 'Q2', type: 'Quad' }]; loop.aois[0].routines[0].rungs.push({ t: 'QUAD(Q2,1,Out);' });
+  check('Add-On Instructions that call each other in a circle do not verify', MTPS.verify(loop).errors.length > 0);
+  check('the instruction table has the Add-On Instruction (group Add-On, its operands, Fault as a flag on the right)', MTPS.INSTR.MOTOR_CTL && MTPS.INSTR.MOTOR_CTL.grp === 'Add-On' && MTPS.OPN.MOTOR_CTL.join() === 'Motor_Ctl,Start,Stop,Run,Cfg' && MTPS.INSTR.MOTOR_CTL.bits.join() === 'Fault' && MTPS.INSTR.MOTOR_CTL.extra.join() === 'Gain');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

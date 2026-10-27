@@ -106,7 +106,12 @@
           else if (x && typeof x.get === 'function' && x.at && !x.dim && MTPS.ATOMIC.includes(x.type)) { try { val = x.get(); if (x.type === 'REAL' || x.type === 'LREAL') val = +val.toPrecision(6); } catch (err) { val = '?'; } }
         }
         return [names[i] || '', v, val];
-      });
+      }).concat(((INSTR[e.t] || {}).extra || []).map(n => {
+        // an Add-On Instruction: a visible parameter that is not required shows its value only (no operand)
+        let v = '';
+        if (o.live && e.x && e.x[0] && e.x[0].obj) { try { const x = e.x[0].obj()[n]; v = typeof x === 'number' ? +x.toPrecision(6) : ''; } catch (err) { v = ''; } }
+        return [n, v, null];
+      }));
     };
     const boxH = e => 22 + opsOf(e).reduce((s, r) => s + (r[2] !== null ? 2 : 1), 0) * (LH + 3);
     /* place a sequence on the grid: items { e, col, row, path }, branches { col, w, rows[], ends[] } */
@@ -237,6 +242,7 @@
             let yy = cy - 9 + 17 + LH + 2;
             opsOf(e).forEach(([n, , val], i) => {
               const hgt = (val !== null ? 2 : 1) * (LH + 3);
+              if (i >= (e.a || []).length) { yy += hgt; return; }
               if (isSel && o.sel && o.sel.op === i) out += `<rect class="osel" x="${L + 2}" y="${yy - LH}" width="${Rt - L - 4}" height="${hgt}" rx="2"/>`;
               const d = o.desc && e.a[i] ? o.desc(e.a[i]) : '';
               taps += `<rect class="tap" data-ri="${ri}" data-p="${it.path.join('.')}" data-opi="${i}" x="${L}" y="${yy - LH - 1}" width="${Rt - L}" height="${hgt}">${d ? `<title>${esc(n + ': ' + d)}</title>` : ''}</rect>`;
@@ -305,7 +311,7 @@
     const rows = ops.reduce((s, r) => s + (r[2] !== null ? 2 : 1), 0), h = 22 + rows * (LH + 3);
     let s = `<line class="w" x1="${x}" y1="${cy + .5}" x2="${L}" y2="${cy + .5}"/>`;
     s += `<rect class="bx" x="${L + .5}" y="${top + .5}" width="${Rt - L}" height="${h}"/><rect class="bxh" x="${L + .5}" y="${top + .5}" width="${Math.min(52, Rt - L)}" height="17"/>`;
-    s += `<text class="nm b" x="${L + 6}" y="${top + 13}">${e.t}</text>`;
+    s += `<text class="nm b" x="${L + 6}" y="${top + 13}">${esc((INSTR[e.t] || {}).disp || e.t)}</text>`;
     let yy = top + 17 + LH + 2;
     ops.forEach(([n, v, val]) => {
       const room = Rt - L - 12 - (n ? Math.min(70, n.length * 6.2) : 0);

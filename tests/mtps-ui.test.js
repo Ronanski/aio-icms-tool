@@ -2341,6 +2341,7 @@ function check(name, cond, info = '') {
   await require('./mtps-ui-w3G')({ browser, page, URL, check });
   await require('./mtps-ui-w3D')({ browser, page, URL, check });
   await require('./mtps-ui-w3B')({ browser, page, URL, check });
+  await require('./mtps-ui-w3E')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

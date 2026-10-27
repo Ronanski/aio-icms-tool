@@ -119,6 +119,12 @@
         add(d.name, strMembers(n), 'string');
       } else add(d.name, d.members || [], 'user');
     }
+    // the data type of each Add-On Instruction (1756-PM010, Data Type): EnableIn, EnableOut, the Input and Output
+    // parameters in their order, then the local tags as hidden members
+    for (const a of (project && project.aois) || []) {
+      if (!validName(a.name) || t.has(U(a.name)) || ATOMIC[U(a.name)]) continue;
+      add(a.name, aoiMembers(a), 'addon');
+    }
     for (const d of t.values()) {
       d.members = d.members.filter(m => {
         const c = canon(t, m.type);
@@ -131,7 +137,7 @@
     }
     // a user type that leads back to itself could never be built
     for (const d of t.values()) {
-      if (d.kind !== 'user') continue;
+      if (d.kind !== 'user' && d.kind !== 'addon') continue;
       const seen = new Set(), todo = [d];
       let loop = false;
       while (todo.length) for (const m of todo.pop().members) {
@@ -152,7 +158,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = make(types, type, 0); return a; }
     if (ATOMIC[type]) return 0;
     const o = {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.init != null && !m.dim ? m.init : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.init: its default (FBD EnableIn)
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = m.def !== undefined ? conform(types, m.type, m.dim, m.def) : m.init != null && !m.dim ? m.init : make(types, m.type, m.dim);   // m.of: a bit of another member (PID .EN of .CTL); m.def: an Add-On parameter's default; m.init: a default (FBD EnableIn)
     return o;
   }
   /* a saved or written value in the shape of a type; missing parts are 0 */
@@ -160,7 +166,7 @@
     if (dim > 0) { const a = new Array(dim); for (let k = 0; k < dim; k++) a[k] = conform(types, type, 0, Array.isArray(src) ? src[k] : undefined); return a; }
     if (ATOMIC[type]) return store(type, Number(src) || 0);
     const o = {}, s = src && typeof src === 'object' ? src : {};
-    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name] === undefined ? m.init : s[m.name]);
+    for (const m of types.get(U(type)).members) if (!m.of) o[m.name] = conform(types, m.type, m.dim, s[m.name] !== undefined ? s[m.name] : m.def !== undefined ? m.def : m.init);
     return o;
   }
 
@@ -363,7 +369,8 @@
       return new Ref({ root: M.S, key: f, steps: [], type: 'BOOL', dim: 0, bit: -1, ro: f !== 'V' && f !== 'MINOR', norm: 'S:' + f });
     }
     let scope = prog, rec = prog && prog.tags.get(bu);
-    if (!rec) { scope = null; rec = M.tags.get(bu); }
+    // the logic of an Add-On Instruction sees only its parameters and local tags (1756-PM010, Encapsulation)
+    if (!rec) { if (prog && prog.noCtl) return `Undefined tag '${text}'`; scope = null; rec = M.tags.get(bu); }
     if (!rec) return `Undefined tag '${text}'`;
     if (rec.alias) {
       if (depth > 8) return `Alias '${rec.name}' points back to itself`;
@@ -406,7 +413,7 @@
         continue;
       }
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
-      if (!mm) return `Undefined tag '${text}'`;
+      if (!mm || mm.hidden) return `Undefined tag '${text}'`;
       if (mm.of) { steps.push({ m: mm.of }); bit = mm.bit; ptype = 'DINT'; type = 'BOOL'; if (norm) norm += '.' + mm.name; continue; }
       steps.push({ m: mm.name });
       type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
@@ -415,8 +422,9 @@
     const io = rec.io || null;
     const force = io && steps.length === 1 && steps[0].m === 'Data' && bit >= 0 ? `${io.slot}:${io.dir}:${bit}` : null;
     // a constant tag (and its members, elements, bits and aliases) cannot be written by logic (help: Constant)
-    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
+    const out = new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
+    return scope && scope.bind ? scope.bind(out, rec) : out;
   }
 
   /* direct access (1756-PM021, Directly accessing program parameters): \Program.Parameter reads or writes an Input,
@@ -660,12 +668,13 @@
         return kind === 'elemw' ? writable() : r;
       }
     }
-    if (XKIND[kind]) return XKIND[kind](r, writable, one);
+    if (XKIND[kind]) return XKIND[kind](r, writable, one, M);
     return r;
   }
 
   /* checks one instruction and compiles its operands; E / W report an error / warning on it */
   function compileElem(M, P, R, e, n, first, E, W, jumps) {
+    if (M.aois && M.aois.has(e.t)) return aoiElem(M, P, e, E);
     const d = INSTR[e.t];
     if (!d) { E(`Unknown instruction '${e.t}'`); return null; }
     const need = d.args.filter(a => !a.endsWith('?')).length;
@@ -753,6 +762,7 @@
     const types = typeTable(pj, ctlErr);
     const M = { name: ctl.name || '', types, tags: new Map(), vals: {}, S: { FS: 0, N: 0, Z: 0, V: 0, C: 0, MINOR: 0 }, mods: new Map(), programs: [], otes: new Map() };
     M.sfcCfg = ctl.sfc || null;   // Controller Properties > SFC Execution (sfc.js)
+    aoiBuild(M, pj, filter, out, ctlErr);
 
     const rack = pj.rack || {};
     const okSize = n => RACKS.includes(n) || OLDRACKS.includes(n);
@@ -797,7 +807,7 @@
         const dims = dimsOf(Array.isArray(t.dim) ? t.dim : t.dim > 0 ? Math.floor(t.dim) : 0);
         if (!dims) { ctlErr(`Tag '${t.name}': invalid array dimensions [${String(t.dim)}] (1 to 3 dimensions, each 1 or more)`); continue; }
         const dim = dims.reduce((x, y) => x * y, dims.length ? 1 : 0);
-        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '', usage, conn });
+        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '', usage, conn, msg: t.msg || null });
         vals[t.name] = conform(types, type, dim, t.value);
       }
     };
@@ -1596,6 +1606,126 @@
   const FBDI = { TONR: (c, s) => fbdTimer('TONR', c, s), TOFR: (c, s) => fbdTimer('TOFR', c, s), RTOR: (c, s) => fbdTimer('RTOR', c, s), CTUD: fbdCounter };
   const FBDT = { TONR: 'FBD_TIMER', TOFR: 'FBD_TIMER', RTOR: 'FBD_TIMER', CTUD: 'FBD_COUNTER' };
   const FBDN = { TONR: 'Timer On Delay with Reset', TOFR: 'Timer Off Delay with Reset', RTOR: 'Retentive Timer On with Reset', CTUD: 'Count Up/Down' };
+  /* ---------- ASCII string and ASCII conversion instructions (1756-RM018A-EN-P chapters 17 and 18) ----------
+     Operands: str / strw a string tag (STRING or a string type of the project) to read / to write; Start and
+     Quantity are SINT, INT or DINT (immediate or tag); Result an integer tag. Every one executes while the rung is
+     true (nothing on a false rung or in prescan). Faults (type 4): 51 the LEN of a string is more than its DATA size
+     (also CONCAT: Source A + Source B longer than Dest), 52 the result does not fit in Dest, 53 a STOD / STOR number
+     beyond the limits of Dest, 56 the Start or Quantity is not valid. RM018A lists them under "Major/Minor Faults";
+     the app raises them as instruction faults (a fault routine can clear them), like 4/20. */
+  const isStrT = (M, t) => { const d = M.types.get(U(t)); return !!d && d.kind === 'string'; };
+  XKIND.str = (r, writable, one, M) => (one && r.bit < 0 && isStrT(M, r.type) ? r : 'Operand must be a string tag (STRING or a string type)');
+  XKIND.strw = (r, writable, one, M) => (one && r.bit < 0 && isStrT(M, r.type) ? writable() : 'Operand must be a string tag (STRING or a string type)');
+  XKIND.ntag = (r, writable, one) => (one && r.bit < 0 && isNum(r.type) && r.type !== 'LREAL' ? r : BAD_TYPE);
+  XKIND.rtag = (r, writable, one) => (one && r.bit < 0 && r.type === 'REAL' ? r : BAD_TYPE);
+  const STRI = {
+    FIND: ['ASCII String', 'Find String', 'str str int idest', ['Source', 'Search', 'Start', 'Result']],
+    INSERT: ['ASCII String', 'Insert String', 'str str int strw', ['Source A', 'Source B', 'Start', 'Dest']],
+    MID: ['ASCII String', 'Middle String', 'str int int strw', ['Source', 'Quantity', 'Start', 'Dest']],
+    CONCAT: ['ASCII String', 'String Concatenate', 'str str strw', ['Source A', 'Source B', 'Dest']],
+    DELETE: ['ASCII String', 'String Delete', 'str int int strw', ['Source', 'Quantity', 'Start', 'Dest']],
+    DTOS: ['ASCII Conversion', 'DINT to String', 'ntag strw', ['Source', 'Dest']],
+    RTOS: ['ASCII Conversion', 'REAL to String', 'rtag strw', ['Source', 'Dest']],
+    STOD: ['ASCII Conversion', 'String to DINT', 'str idest', ['Source', 'Dest']],
+    STOR: ['ASCII Conversion', 'String to REAL', 'str rdest', ['Source', 'Dest']],
+    UPPER: ['ASCII Conversion', 'Upper Case', 'str strw', ['Source', 'Dest']],
+    LOWER: ['ASCII Conversion', 'Lower Case', 'str strw', ['Source', 'Dest']],
+  };
+  for (const k in STRI) { const [g, n, a, o] = STRI[k]; INSTR[k] = I('box', g, n, a, { out: true }); OPN[k] = o; }
+  // the characters of a string tag (codes 0-255); LEN past the DATA size is fault 4/51
+  const sGet = (r, t, lax) => {
+    const o = r.obj(), n = o.DATA.length;
+    if (!lax && (o.LEN > n || o.LEN < 0)) throw new Fault(4, 51, `${t}: the LEN value of the string tag is greater than the DATA size of the string tag`);
+    return o.DATA.slice(0, Math.max(0, Math.min(o.LEN, n))).map(c => c & 255);
+  };
+  // a result into a string tag: more characters than its DATA size is fault 4/52; the rest of DATA is cleared
+  const sPut = (r, codes, t, lax) => {
+    const o = r.obj(), n = o.DATA.length;
+    if (codes.length > n) { if (lax) codes = codes.slice(0, n); else throw new Fault(4, 52, `${t}: the output string is larger than the destination (${codes.length} characters, Dest holds ${n})`); }
+    for (let k = 0; k < n; k++) o.DATA[k] = k < codes.length ? (codes[k] << 24) >> 24 : 0;
+    o.LEN = codes.length;
+  };
+  const codesOf = s => [...String(s)].map(c => c.charCodeAt(0) & 255);
+  const bad56 = t => new Fault(4, 56, `${t}: the Start or Quantity value is invalid`);
+  // STOD / STOR: skip leading characters that are not numeric (a minus sign in front of a number counts), then the
+  // first group of digits (STOR: with its decimal point)
+  const numText = (c, real) => {
+    const s = String.fromCharCode(...c), m = (real ? /-?(?:\d+\.?\d*|\.\d+)/ : /-?\d+/).exec(s);
+    return m ? m[0] : '';
+  };
+  /* RTOS: the REAL as text. RM018A does not give the format; the app writes the shortest text that gives the REAL
+     back (up to 8 significant digits), in exponent form (1.2345678e+009) outside 1e-5 to 1e8 */
+  function realText(v) {
+    if (!isFinite(v)) return v !== v ? '1.#QNAN' : v > 0 ? '1.#INF' : '-1.#INF';
+    if (v === 0) return '0.0';
+    let p = 1, s;
+    for (; p <= 8; p++) { s = (+v.toPrecision(p)); if (Math.fround(s) === Math.fround(v)) break; }
+    const a = Math.abs(v);
+    if (a >= 1e8 || a < 1e-5) { const t = v.toExponential(Math.min(p, 8) - 1).split('e'), x = +t[1]; return t[0] + 'e' + (x < 0 ? '-' : '+') + String(Math.abs(x)).padStart(3, '0'); }
+    s = String(+v.toPrecision(Math.min(p, 8)));
+    return /[.e]/.test(s) ? s : s + '.0';
+  }
+  XEL.CONCAT = function (e, x, p) {
+    if (p) { const a = sGet(x[0], e.t), b = sGet(x[1], e.t), d = x[2].obj(); if (a.length + b.length > d.DATA.length) throw new Fault(4, 51, 'CONCAT: the sum length of Source A and Source B is greater than the DATA size of the Dest string tag'); sPut(x[2], a.concat(b), e.t); }
+    e.v = p; return p;
+  };
+  XEL.MID = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), q = Math.trunc(x[1].get()), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || !(q >= 1) || st + q > s.length + 1) throw bad56(e.t);
+      sPut(x[3], s.slice(st - 1, st - 1 + q), e.t);
+    }
+    e.v = p; return p;
+  };
+  XEL.FIND = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), f = sGet(x[1], e.t), st = Math.trunc(x[2].get());
+      if (!s.length || !(st >= 1 && st <= x[0].obj().DATA.length)) throw bad56(e.t);
+      const S = String.fromCharCode(...s), F = String.fromCharCode(...f), i = st > s.length ? -1 : S.indexOf(F, st - 1);
+      x[3].set(i < 0 ? 0 : i + 1); OV = false;
+    }
+    e.v = p; return p;
+  };
+  XEL.INSERT = function (e, x, p) {
+    if (p) {
+      const a = sGet(x[0], e.t), b = sGet(x[1], e.t), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || st > a.length + 1) throw bad56(e.t);
+      sPut(x[3], a.slice(0, st - 1).concat(b, a.slice(st - 1)), e.t);
+    }
+    e.v = p; return p;
+  };
+  XEL.DELETE = function (e, x, p) {
+    if (p) {
+      const s = sGet(x[0], e.t), q = Math.trunc(x[1].get()), st = Math.trunc(x[2].get());
+      if (!(st >= 1 && st <= x[0].obj().DATA.length) || !(q >= 1) || st + q > s.length + 1) throw bad56(e.t);
+      sPut(x[3], s.slice(0, st - 1).concat(s.slice(st - 1 + q)), e.t);
+    }
+    e.v = p; return p;
+  };
+  // DTOS: a REAL Source is converted to a DINT first (rounded, as a move into a DINT)
+  XEL.DTOS = function (e, x, p) { if (p) { const v = x[0].get(); sPut(x[1], codesOf(String(isReal(x[0].type) ? store('DINT', v) : v)), e.t); OV = false; } e.v = p; return p; };
+  XEL.RTOS = function (e, x, p) { if (p) sPut(x[1], codesOf(realText(x[0].get())), e.t); e.v = p; return p; };
+  // STOD: Dest is cleared, then the number goes in (S:Z / S:N in ladder); a number beyond the type of Dest is 4/53
+  XEL.STOD = function (e, x, p) {
+    if (p) {
+      const t = numText(sGet(x[0], e.t), false), v = t ? +t : 0, h = HALF[x[1].type] || HALF.DINT;
+      x[1].set(0);
+      if (v >= h || v < -h) throw new Fault(4, 53, `STOD: the output number is beyond the limits of the destination data type (${x[1].type})`);
+      this.put(x[1], v);
+    }
+    e.v = p; return p;
+  };
+  XEL.STOR = function (e, x, p) {
+    if (p) {
+      const t = numText(sGet(x[0], e.t), true), v = t && t !== '-' ? +t : 0;
+      if (!isFinite(Math.fround(v))) throw new Fault(4, 53, 'STOR: the output number is beyond the limits of the destination data type (REAL)');
+      this.put(x[1], v);
+    }
+    e.v = p; return p;
+  };
+  // UPPER / LOWER: only the letters change ("None specific to this instruction": no string fault)
+  const caseOp = up => function (e, x, p) { if (p) sPut(x[1], sGet(x[0], e.t, true).map(c => (up ? (c >= 97 && c <= 122 ? c - 32 : c) : (c >= 65 && c <= 90 ? c + 32 : c))), e.t, true); e.v = p; return p; };
+  XEL.UPPER = caseOp(true); XEL.LOWER = caseOp(false);
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
@@ -1732,6 +1862,7 @@
           } catch (err) { if (!(err instanceof Fault)) throw err; }
         }
       };
+      this.pwalk = walk;   // the logic of an Add-On Instruction is prescanned through it (XPRE of the instruction)
       for (const P of this.M.programs) if (!P.off) for (const R of P.routines.values()) { for (const r of R.rungs) walk(r.elems); if (R.stc) R.stc.pre(this); if (R.fx) MTPS.FBD.prescan(this, R); }
     }
 
@@ -1829,6 +1960,7 @@
       if (!this.running || this.bp) return;
       if (this.M.timed) { this.scanTimed(dt); return; }
       this.clock += this.dt;
+      if (this.msgq && this.msgq.size) this.msgTick();
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
@@ -2600,6 +2732,340 @@
       this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
     },
   });
+  /* ---------- MSG: Message (1756-RM018A chapter 4, Input/Output; 1756-PM012; v37 help: Message Configuration) ----------
+     The emulator carries CIP Data Table Read and CIP Data Table Write between the controllers of the chassis, and
+     from a controller to itself. The configuration (the Message Configuration dialog) is kept with the MESSAGE tag:
+     tag.msg = { type: 'read' | 'write', src, n, dst, path, cache }. At download the path goes into .Path, one byte per
+     number as RM018A shows it (1,2 → $01$02; THIS or an empty path: the controller itself), and the remote element
+     into .RemoteElement, so logic can change them (RM018A, MESSAGE structure). The remote element can name a program
+     tag: Program:<program>.<tag>. The status bits are the controller's own: a change to .EW .ER .DN .ST or .EN is
+     ignored (RM018A); .TO set by the user stops the message with .ER.
+     Timing (RM018A, the MSG timing diagram): rung true with .EN clear: .EN and .EW set, .DN / .ER cleared; the next
+     scan the message is sent (.ST set, .EW cleared); the scan after it, it is done (.DN, or .ER with .ERR and .EXERR)
+     and .ST is cleared. .EN clears on a false rung once .DN or .ER is set. The transfer goes on while the rung is
+     false. Prescan clears .EW .ST .DN .ER. */
+  const MSGB = { EW: 2, ER: 4, DN: 5, ST: 6, EN: 7, TO: 8, EN_CC: 9 }, MSGMASK = (1 << 2) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7);
+  PREDEF.MESSAGE = [{ name: 'FLAGS', type: 'INT' }, ...members('ERR:INT EXERR:INT REQ_LEN:INT DN_LEN:INT'),
+    ...Object.keys(MSGB).map(name => ({ name, type: 'BOOL', of: 'FLAGS', bit: MSGB[name] })),
+    ...members('ERR_SRC:SINT DestinationLink:INT DestinationNode:INT SourceLink:INT Class:INT Attribute:INT Instance:DINT LocalIndex:DINT Channel:SINT Rack:SINT Group:SINT Slot:SINT Path:STRING RemoteIndex:DINT RemoteElement:STRING UnconnectedTimeout:DINT ConnectionRate:DINT TimeoutMultiplier:SINT')];
+  // .UnconnectedTimeout 30 s and .ConnectionRate 7.5 s by default (RM018A); kept in microseconds, as Logix keeps them
+  const MSGTO = 30000000, MSGCR = 7500000;
+  /* the error codes the emulator gives (RM018A, Error Codes): [ERR, EXERR, text]. Which code a case gives is the app's
+     choice from that list: no publication says which code a CIP Data Table message gets for each of these cases */
+  const MSGERR = {
+    uninit: [0x00FD, 0, 'Message uninitialized'],
+    timeout: [0x00FE, 0, 'Message timeout'],
+    port: [0x0001, 0x0311, 'Connection failure: port not available'],
+    link: [0x0001, 0x0312, 'Connection failure: link address not available'],
+    noanswer: [0x0001, 0x0204, 'Connection failure: unconnected message timeout'],
+    service: [0x0008, 0, 'Service unsupported'],
+    ioi: [0x0004, 0, 'IOI syntax error'],
+    unknown: [0x0005, 0, 'Destination unknown, class unsupported, instance undefined or structure element undefined'],
+    range: [0x00FF, 0x2105, 'General error: address and how many out of range'],
+    type: [0x00FF, 0x2107, 'General error: type is invalid or not supported'],
+  };
+  const msgText = (err, ext) => { const k = Object.keys(MSGERR).find(n => MSGERR[n][0] === err && MSGERR[n][1] === ext); return k ? MSGERR[k][2] : ''; };
+  Object.assign(OPN, { MSG: ['Message Control'] });
+  const msgBits = o => { const f = o && o.FLAGS | 0, out = {}; for (const n in MSGB) out[n] = (f >> MSGB[n]) & 1; return out; };
+  INSTR.MSG = I('box', 'Input/Output', 'Message', 'msg', { out: true, bits: ['EN', 'DN', 'ER'], ctl: 0, bvx: msgBits });
+  // a MESSAGE tag, not an element of an array or a member
+  XKIND.msg = (r, writable, one) => (r.type === 'MESSAGE' && one && r.bit < 0 && !r.steps.length ? r : BAD_TYPE);
+  // the path text → bytes: THIS or empty → [] (this controller); '1,2' → [1, 2]; null when it is not valid
+  const msgPath = t => { const s = String(t == null ? '' : t).trim(); if (!s || U(s) === 'THIS') return []; const a = s.split(',').map(x => x.trim()); return a.every(x => /^\d{1,3}$/.test(x) && +x <= 255) ? a.map(Number) : null; };
+  const strOf = o => String.fromCharCode(...o.DATA.slice(0, Math.max(0, Math.min(o.LEN, o.DATA.length))).map(c => c & 255));
+  const strSet = (o, codes) => { const n = Math.min(codes.length, o.DATA.length); for (let k = 0; k < o.DATA.length; k++) o.DATA[k] = k < n ? (codes[k] << 24) >> 24 : 0; o.LEN = n; };
+  // the configuration into the tag: .Path, .RemoteElement, .REQ_LEN, .EN_CC, and the default time outs
+  const msgInit = (o, c) => {
+    if (!(o.UnconnectedTimeout > 0)) o.UnconnectedTimeout = MSGTO;
+    if (!(o.ConnectionRate > 0)) o.ConnectionRate = MSGCR;
+    if (!c) return;
+    strSet(o.Path, msgPath(c.path) || []);
+    strSet(o.RemoteElement, codesOf(c.type === 'write' ? c.dst || '' : c.src || ''));
+    o.REQ_LEN = Math.max(1, Math.floor(+c.n) || 1);
+    o.FLAGS = c.cache === false ? o.FLAGS & ~(1 << MSGB.EN_CC) : o.FLAGS | (1 << MSGB.EN_CC);
+  };
+  const recOf = (M, P, r) => ((P && r.root === P.vals ? P.tags : M.tags).get(U(r.key)));
+  XCHK.MSG = (x, bad, e, M, P) => {
+    const r = x[0], rec = recOf(M, P, r);
+    r.rec = rec;
+    try { msgInit(r.obj(), rec && rec.msg); } catch (err) { if (!(err instanceof Fault)) throw err; }
+  };
+  // the status bits as the controller keeps them (a write to them by logic or a user is ignored)
+  const msgFlags = (c, o) => { const m = c.msgf || (c.msgf = new WeakMap()); if (!m.has(o)) m.set(o, o.FLAGS & MSGMASK); return m.get(o); };
+  const msgStore = (c, o, f) => { c.msgf.set(o, f & MSGMASK); o.FLAGS = (o.FLAGS & ~MSGMASK) | (f & MSGMASK); };
+  XPRE.MSG = function (x) { const o = x[0].obj(); if (this.msgq) this.msgq.delete(o); msgStore(this, o, msgFlags(this, o) & ~((1 << MSGB.EW) | (1 << MSGB.ST) | (1 << MSGB.DN) | (1 << MSGB.ER))); };
+  XEL.MSG = function (e, x, p) {
+    const r = x[0], o = r.obj(), q = this.msgq || (this.msgq = new Map()), B = n => 1 << MSGB[n];
+    let f = msgFlags(this, o);
+    if (!p) {
+      // .EN clears once the message is done or errored; the app also clears it when no message is under way
+      if ((f & B('EN')) && !q.has(o)) f &= ~B('EN');
+    } else if (!(f & B('EN'))) {
+      f = (f | B('EN') | B('EW')) & ~(B('DN') | B('ER') | B('ST'));
+      o.ERR = 0; o.EXERR = 0; o.DN_LEN = 0;
+      const c = r.rec && r.rec.msg;
+      if (!c) { f = (f & ~B('EW')) | B('ER'); o.ERR = MSGERR.uninit[0]; }
+      else { o.REQ_LEN = Math.max(1, Math.floor(+c.n) || 1); q.set(o, { M: this.M, P: this.curP, rec: r.rec, o, ph: 0, at: this.clock }); }
+    }
+    msgStore(this, o, f);
+    e.v = p; return p;
+  };
+  const msgType = r => r.bit < 0 && (['SINT', 'INT', 'DINT', 'LINT', 'REAL'].includes(r.type) || !ATOMIC[r.type]);
+  /* a CIP Data Table Read / Write: { n } done, or { err: [ERR, EXERR] }; null while it waits for an answer */
+  function msgDo(c, s) {
+    const o = s.o, cfg = s.rec.msg, wr = cfg.type === 'write', path = o.Path.DATA.slice(0, Math.max(0, Math.min(o.Path.LEN, o.Path.DATA.length))).map(b => b & 255);
+    const E = k => ({ err: MSGERR[k] });
+    let T = c;
+    if (path.length) {
+      if (path.length !== 2 || path[0] !== 1) return E('port');       // only the backplane (port 1) of the chassis
+      const own = c.slot != null ? c.slot : c.M.slot;
+      if (path[1] !== own) {
+        const ch = c.chassis, m = ch && path[1] < ch.size ? ch.module(path[1]) : null;
+        if (!m) return E('link');
+        if (!m.ctl) return E('service');
+        T = m.ctl;
+      }
+    }
+    if (!T.powered) return (c.clock - s.sent) * 1000 >= (o.UnconnectedTimeout > 0 ? o.UnconnectedTimeout : MSGTO) ? E('noanswer') : null;
+    if (!T.M) return E('unknown');
+    // the local element is in this controller (program tags of the program that ran the MSG first)
+    const local = String((wr ? cfg.src : cfg.dst) || ''), remote = strOf(o.RemoteElement);
+    if (!parsePath(local)) return E('ioi');
+    const L = ref(c.M, s.P, local);
+    if (typeof L === 'string') return E('ioi');
+    let rp = null, rt = remote;
+    const pm = /^Program:([A-Za-z_][A-Za-z0-9_]*)\.(.+)$/i.exec(remote.trim());
+    if (pm) { rp = T.M.programs.find(g => U(g.name) === U(pm[1])); if (!rp) return E('unknown'); rt = pm[2]; }
+    if (!parsePath(rt)) return E('ioi');
+    const R = ref(T.M, rp, rt);
+    if (typeof R === 'string') return E('unknown');
+    // 1756-PM012, Supported data types: SINT, INT, DINT, LINT, REAL and the structures; both ends the same type
+    if (U(L.type) !== U(R.type) || !msgType(L) || !msgType(R)) return E('type');
+    const n = Math.max(1, Math.floor(+cfg.n) || 1), src = wr ? L : R, dst = wr ? R : L;
+    try {
+      const a = file(src), b = file(dst);
+      if (n > a.n || n > b.n) return E('range');
+      const v = []; for (let k = 0; k < n; k++) v.push(clone(a.g(k)));
+      for (let k = 0; k < n; k++) b.s(k, v[k]);
+    } catch (err) { if (err instanceof Fault) return E('range'); throw err; }
+    return { n };
+  }
+  /* each scan, before the logic: the messages under way take their next step */
+  Controller.prototype.msgTick = function () {
+    const B = n => 1 << MSGB[n];
+    for (const [o, s] of this.msgq) {
+      if (s.M !== this.M) { this.msgq.delete(o); continue; }
+      let f = msgFlags(this, o), res = null;
+      if ((o.FLAGS >> MSGB.TO) & 1) res = { err: MSGERR.timeout };
+      else if (!s.ph) { s.ph = 1; s.sent = this.clock; f = (f & ~B('EW')) | B('ST'); msgStore(this, o, f); continue; }
+      else res = msgDo(this, s);
+      if (!res) continue;
+      f &= ~(B('ST') | B('EW'));
+      if (res.err) { f |= B('ER'); o.ERR = res.err[0]; o.EXERR = res.err[1]; } else { f |= B('DN'); o.DN_LEN = res.n; }
+      msgStore(this, o, f);
+      this.msgq.delete(o);
+    }
+  };
+  /* the Message Configuration changed while online: it takes effect at once (the controller keeps its copy) */
+  Controller.prototype.setMsg = function (name, program, cfg) {
+    if (!this.M) return false;
+    const P = program ? this.M.programs.find(g => U(g.name) === U(program)) : null, rec = (P ? P.tags : this.M.tags).get(U(name));
+    if (!rec || rec.type !== 'MESSAGE') return false;
+    rec.msg = cfg ? clone(cfg) : null;
+    try { msgInit(program ? P.vals[rec.name] : this.M.vals[rec.name], rec.msg); } catch (err) { if (!(err instanceof Fault)) throw err; }
+    if (this.copy) {
+      const p = JSON.parse(this.copy), g = program ? (p.tasks || []).flatMap(t => t.programs || []).find(x => U(x.name) === U(program)) : null;
+      const t = ((g ? g.tags : p.tags) || []).find(x => U(x.name) === U(name));
+      if (t) { if (cfg) t.msg = clone(cfg); else delete t.msg; this.copy = JSON.stringify(p); }
+    }
+    return true;
+  };
+
+  /* ---------- Add-On Instructions (1756-PM010, Add-On Instructions Programming Manual) ----------
+     project.aois = [{ name, desc, type, rev, note, vendor, params: [{ name, usage: 'Input' | 'Output' | 'InOut', type,
+     dim, req, vis, def, desc, access }], locals: [{ name, type, dim, def, desc }], routines: [{ name: 'Logic', rungs }] }].
+     Input and Output parameters are BOOL, SINT, INT, DINT or REAL, passed by value; an InOut parameter is any type,
+     passed by reference, always required and visible; a required parameter is visible. The data type of the
+     instruction holds EnableIn, EnableOut, the Input and Output parameters in their order, then the local tags as
+     hidden members. In ladder the instruction takes its tag, then one argument for each required parameter.
+     Execution (PM010, Scan modes, EnableIn and EnableOut): rung true: the required Inputs are passed in, EnableIn
+     set, EnableOut set (the logic can change it), the Logic routine runs, the required Outputs are passed out; the
+     rung out is EnableOut. Rung false: the Inputs are passed, the logic does not run and no output is written,
+     EnableOut is cleared. Prescan: the Logic routine is prescanned with the required parameters passed. The logic sees
+     only the parameters and local tags; JSR, RET and SBR cannot be used in it, nor can it call itself. The Scan Mode
+     routines (Prescan, Postscan, EnableInFalse) are not in this app. */
+  const AOI_IO = ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'], AOI_NO = ['JSR', 'RET', 'SBR'];
+  const aoiParams = a => (a.params || []).filter(x => x && x.name);
+  // EnableIn starts at 1 (the app's choice: a new instance tag executes when its rung is true)
+  function aoiMembers(a) {
+    const m = [{ name: 'EnableIn', type: 'BOOL', def: 1 }, { name: 'EnableOut', type: 'BOOL' }];
+    for (const x of aoiParams(a)) if (x.usage !== 'InOut') m.push({ name: x.name, type: x.type || 'BOOL', def: x.def });
+    for (const x of a.locals || []) if (x && x.name) m.push({ name: x.name, type: x.type || 'BOOL', dim: x.dim > 0 ? Math.floor(x.dim) : 0, def: x.def, hidden: true });
+    return m;
+  }
+  // an InOut parameter inside the logic: a reference to the argument of the call that runs (a bit of an integer too)
+  const aoiSlot = () => ({ p: { v: 0 }, k: 'v', b: -1, t: null,
+    get v() { const x = this.p[this.k]; return this.b < 0 ? x : (x >> this.b) & 1; },
+    set v(n) { if (this.b < 0) this.p[this.k] = n; else { const x = this.p[this.k]; this.p[this.k] = store(this.t || 'DINT', n ? x | (1 << this.b) : x & ~(1 << this.b)); } } });
+  function aoiBuild(M, pj, filter, out, ctlErr) {
+    M.aois = new Map();
+    syncAOIs(pj, false);
+    const list = (pj.aois || []).filter(a => a && typeof a === 'object');
+    for (const a of list) {
+      const u = U(a.name || '');
+      if (!validName(a.name)) { ctlErr(`Invalid Add-On Instruction name '${a.name || ''}'`); continue; }
+      if ((INSTR[u] && !INSTR[u].aoi) || M.aois.has(u)) { ctlErr(`Add-On Instruction '${a.name}': the name must not match a built-in instruction or another Add-On Instruction`); continue; }
+      const d = M.types.get(u);
+      if (!d || d.kind !== 'addon') { ctlErr(`Add-On Instruction '${a.name}': the name is already used by a data type`); continue; }
+      const seen = new Set(['ENABLEIN', 'ENABLEOUT']), params = [], E = m => { ctlErr(`Add-On Instruction '${a.name}': ${m}`); ok = false; };
+      let ok = true;
+      for (const x of aoiParams(a)) {
+        const usage = ['Input', 'Output', 'InOut'].includes(x.usage) ? x.usage : null, ty = canon(M.types, x.type || 'BOOL');
+        if (!validName(x.name) || seen.has(U(x.name))) { E(`invalid or repeated parameter name '${x.name}'`); continue; }
+        seen.add(U(x.name));
+        if (!usage) { E(`parameter '${x.name}': Usage must be Input, Output or InOut`); continue; }
+        if (!ty) { E(`parameter '${x.name}': undefined data type '${x.type}'`); continue; }
+        if (usage !== 'InOut' && (!AOI_IO.includes(ty) || x.dim > 0)) { E(`parameter '${x.name}': an ${usage} parameter must be BOOL, SINT, INT, DINT or REAL (an InOut parameter can be any type)`); continue; }
+        if (U(ty) === u) { E(`parameter '${x.name}': an Add-On Instruction cannot contain itself`); continue; }
+        const req = usage === 'InOut' || !!x.req;
+        params.push({ name: x.name, usage, type: ty, dim: usage === 'InOut' && x.dim > 0 ? Math.floor(x.dim) : 0, req, vis: req || !!x.vis });
+      }
+      for (const x of a.locals || []) {
+        if (!x || !x.name) continue;
+        if (!validName(x.name) || seen.has(U(x.name))) { E(`invalid or repeated local tag name '${x.name}'`); continue; }
+        seen.add(U(x.name));
+        const ty = canon(M.types, x.type || 'BOOL');
+        if (!ty) E(`local tag '${x.name}': undefined data type '${x.type}'`);
+        else if (ty === 'MESSAGE') E(`local tag '${x.name}': a MESSAGE cannot be a local tag; use an InOut parameter`);
+      }
+      if (ok) M.aois.set(u, { name: a.name, params, H: { I: null }, slots: {}, R: null, src: a, def: d, calls: new Set() });
+    }
+    for (const A of M.aois.values()) {
+      const a = A.src, pname = 'aoi:' + a.name;
+      const P = { name: pname, aoi: A, noCtl: true, tags: new Map(), vals: {}, routines: new Map(), main: null };
+      for (const m of A.def.members) P.tags.set(U(m.name), { name: m.name, type: m.type, dim: m.dim || 0, dims: m.dim ? [m.dim] : [] });
+      for (const x of A.params) if (x.usage === 'InOut') {
+        P.tags.set(U(x.name), { name: x.name, type: x.type, dim: x.dim, dims: x.dim ? [x.dim] : [], inout: true });
+        const s = A.slots[x.name] = aoiSlot(); s.p = { v: make(M.types, x.type, x.dim) };
+      }
+      P.bind = (r, rec) => { if (rec.inout) { r.root = A.slots[rec.name]; r.key = 'v'; } else { r.steps.unshift({ m: rec.name }); r.root = A.H; r.key = 'I'; } return r; };
+      const lr = (a.routines || [])[0] || { name: 'Logic', rungs: [] }, R = { name: 'Logic', src: lr.rungs || [], rungs: [], labels: new Map() };
+      P.routines.set('LOGIC', R); P.main = R; A.R = R;
+      // compiled against a default instance: the Preset of a timer in the logic goes into the local tag's default
+      A.H.I = make(M.types, a.name, 0);
+      const want = !filter || ((!filter.program || U(filter.program) === U(pname)) && (!filter.routine || U(filter.routine) === 'LOGIC'));
+      if (want) out.lines.push(`Verifying routine 'Logic' of Add-On Instruction '${a.name}'...`);
+      const report = (lst, kind) => (n, msg, mnem, op) => {
+        if (!want) return;
+        const text = `${kind}: Rung ${n}${mnem ? ', ' + mnem : ''}${op != null ? ', Operand ' + op : ''}: ${dot(msg)}`;
+        lst.push({ program: pname, routine: 'Logic', rung: n, mnem, op, msg: dot(msg), text }); out.lines.push(text);
+      };
+      const err = report(out.errors, 'Error'), warn = report(out.warnings, 'Warning'), jumps = [];
+      R.src.forEach((src, n) => {
+        const text = String(src && (src.t != null ? src.t : src.text) || '');
+        const rung = { n, text, c: (src && src.c) || '', elems: [] };
+        R.rungs.push(rung);
+        const pr = parseRung(text);
+        if (pr.err) { err(n, pr.err); return; }
+        if (!pr.elems.length) { err(n, 'Rung has no instructions'); return; }
+        const walk = (arr, top) => arr.map((e, k) => {
+          if (e.t === 'BR') return { t: 'BR', legs: e.legs.map(l => walk(l, false)) };
+          if (AOI_NO.includes(e.t)) { err(n, `${e.t} cannot be used in an Add-On Instruction`, e.t); return null; }
+          if (e.t === U(a.name)) { err(n, 'An Add-On Instruction cannot call itself', e.t); return null; }
+          if (e.t === 'MCR' && !(top && k === arr.length - 1)) err(n, 'MCR must be the last instruction of the rung', 'MCR');
+          return compileElem(M, P, R, e, n, top && k === 0, (m, mn, op) => err(n, m, mn, op), (m, mn, op) => warn(n, m, mn, op), jumps);
+        });
+        rung.elems = walk(pr.elems, true);
+      });
+      for (const j of jumps) if (!R.labels.has(j.label)) err(j.n, `Undefined label '${j.text}'`, 'JMP', 0);
+      // the values the logic wrote into structured local tags (a timer's Preset) are their defaults
+      for (const m of A.def.members) if (m.hidden && !ATOMIC[m.type]) m.def = clone(A.H.I[m.name]);
+      A.H.I = null;
+    }
+    // Add-On Instructions that call each other in a circle could never finish
+    for (const A of M.aois.values()) {
+      const seen = new Set(), todo = [...A.calls];
+      while (todo.length) { const B = todo.pop(); if (B === A) { ctlErr(`Add-On Instruction '${A.name}' calls itself through another Add-On Instruction`); break; } if (!seen.has(B)) { seen.add(B); todo.push(...B.calls); } }
+    }
+  }
+  /* an Add-On Instruction in the logic: its tag (of its data type), then the required parameters in their order */
+  function aoiElem(M, P, e, E) {
+    const A = M.aois.get(e.t), req = A.params.filter(x => x.req);
+    if (e.a.length !== req.length + 1) { E(`Wrong number of operands (${req.length + 1} expected)`, e.t); return null; }
+    const x = [];
+    let ok = true;
+    const bad = (m, k) => { E(m, e.t, k); ok = false; };
+    const s0 = String(e.a[0]).trim();
+    if (!s0 || s0 === '?') bad('Missing operand', 0);
+    else { const r = ref(M, P, s0); if (typeof r === 'string') bad(r, 0); else if (U(r.type) !== U(A.name) || r.dim || r.bit >= 0) bad(BAD_TYPE, 0); else if (r.konst) bad(`Tag '${r.konst}' is a constant: logic cannot write to it`, 0); else x[0] = r; }
+    req.forEach((pm, i) => {
+      const k = i + 1, s = String(e.a[k] == null ? '' : e.a[k]).trim();
+      if (!s || s === '?' || s === '??') { bad('Missing operand', k); return; }
+      if (pm.usage === 'Input') { const c = parseNumber(s); if (c) { if (pm.type === 'BOOL' && c.v !== 0 && c.v !== 1) bad(BAD_TYPE, k); else x[k] = new Const(c.v, c.real); return; } }
+      const r = ref(M, P, s);
+      if (typeof r === 'string') { bad(r, k); return; }
+      if (pm.usage === 'InOut') { if (U(r.type) !== U(pm.type) || (r.dim || 0) !== pm.dim) bad(BAD_TYPE, k); else x[k] = r; return; }
+      if (r.dim || !ATOMIC[r.type] || (pm.type === 'BOOL') !== (r.type === 'BOOL')) { bad(BAD_TYPE, k); return; }
+      if (pm.usage === 'Output' && (r.ro || r.konst)) { bad(r.ro ? 'Tag is read-only' : `Tag '${r.konst}' is a constant: logic cannot write to it`, k); return; }
+      x[k] = r;
+    });
+    if (P && P.aoi) P.aoi.calls.add(A);
+    return ok ? { t: e.t, a: e.a, x, v: false, aoi: A } : null;
+  }
+  // the InOut arguments of this call; gives back what to restore after it
+  function aoiBind(A, x) {
+    const saved = [];
+    let k = 1;
+    for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'InOut') { const s = A.slots[pm.name], r = x[k]; r.at(); saved.push([s, s.p, s.k, s.b, s.t]); s.p = PP; s.k = PK; s.b = r.bit; s.t = r.ptype; } k++; }
+    return saved;
+  }
+  const aoiUnbind = saved => { for (const [s, p, k, b, t] of saved) { s.p = p; s.k = k; s.b = b; s.t = t; } };
+  const aoiIn = (A, x, inst) => { let k = 1; for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'Input') inst[pm.name] = store(pm.type, x[k].get()); k++; } };
+  const aoiOut = (A, x, inst) => { let k = 1; for (const pm of A.params) { if (!pm.req) continue; if (pm.usage === 'Output') x[k].set(inst[pm.name]); k++; } OV = false; };
+  function aoiRun(e, x, p) {
+    const A = e.aoi, inst = x[0].obj(), I0 = A.H.I;
+    aoiIn(A, x, inst);
+    inst.EnableIn = p ? 1 : 0;
+    if (!p) { inst.EnableOut = 0; e.v = false; return false; }
+    const saved = aoiBind(A, x);
+    A.H.I = inst; inst.EnableOut = 1;
+    try { this.routine(A.R); } finally { A.H.I = I0; aoiUnbind(saved); }
+    aoiOut(A, x, inst);
+    e.v = inst.EnableOut === 1;
+    return e.v;
+  }
+  function aoiPre(x, e) {
+    const A = e && e.aoi;
+    if (!A || !A.R || !this.pwalk) return;
+    const inst = x[0].obj(), I0 = A.H.I;
+    aoiIn(A, x, inst);
+    const saved = aoiBind(A, x);
+    A.H.I = inst;
+    try { for (const r of A.R.rungs) this.pwalk(r.elems); } finally { A.H.I = I0; aoiUnbind(saved); }
+    aoiOut(A, x, inst);
+  }
+  /* the instruction table entries of a project's Add-On Instructions (group Add-On): the ladder box shows the tag,
+     the required parameters as operands, the other visible Input / Output parameters as values, and the visible BOOL
+     Outputs that are not required as the flags on its right. full: also drop those of Add-On Instructions that are gone */
+  const AOIREG = new Set();
+  function syncAOIs(project, full) {
+    const now = new Set();
+    for (const a of (project && project.aois) || []) {
+      if (!a || !validName(a.name)) continue;
+      const u = U(a.name);
+      if (INSTR[u] && !INSTR[u].aoi) continue;
+      const ps = aoiParams(a).filter(x => ['Input', 'Output', 'InOut'].includes(x.usage)), req = ps.filter(x => x.usage === 'InOut' || x.req);
+      const kind = x => (x.usage === 'InOut' ? 'aio' : (x.usage === 'Input' ? 'ai' : 'ao') + (AOI_IO.includes(U(x.type)) ? U(x.type) : 'DINT'));
+      const bits = ps.filter(x => x.usage === 'Output' && U(x.type) === 'BOOL' && x.vis && !x.req).map(x => x.name);
+      const extra = ps.filter(x => x.usage !== 'InOut' && x.vis && !x.req && !bits.includes(x.name)).map(x => x.name);
+      INSTR[u] = I('box', 'Add-On', a.name, ['aoi'].concat(req.map(kind)).join(' '), { out: ps.some(x => x.usage !== 'Input'), bits, ctl: 0, aoi: true, disp: a.name, extra, desc: a.desc || '',
+        bvx: o => { const r = {}; bits.forEach(b => { r[b] = o ? o[b] : 0; }); return r; } });
+      OPN[u] = [a.name].concat(req.map(x => x.name));
+      XEL[u] = aoiRun; XPRE[u] = aoiPre;
+      now.add(u); AOIREG.add(u);
+    }
+    if (full) for (const u of [...AOIREG]) if (!now.has(u)) { delete INSTR[u]; delete OPN[u]; AOIREG.delete(u); }
+  }
 
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path
@@ -2621,7 +3087,7 @@
       const kind = type === CPU ? 'cpu' : MODULES[type].kind;
       const m = { slot, type, kind, name: name || '', fault: false, field: kind === 'di' ? 0 : kind === 'ai' ? [0, 0, 0, 0] : null };
       if (kind !== 'cpu') m.rev = REV0;
-      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ip = ''; m.desc = ''; m.mem = 3072; }
+      if (kind === 'cpu') { m.ctl = new Controller(); m.ctl.slot = slot; m.ctl.chassis = this; m.ip = ''; m.desc = ''; m.mem = 3072; }
       this.mods.set(slot, m);
       this.emit('insert');
       return { ok: true, module: m };
@@ -2794,6 +3260,8 @@
   MTPS.core = { ref, Fault, parseNumber, store, validName, dot, U };
   // for the other languages (fbd.js): tag references, a number into a type, the controller's faults, a constant
   MTPS.X = { ref, store, Fault, Const, isInt, isReal, dot };
+  MTPS.MSG = { ERR: MSGERR, BIT: MSGB, text: msgText, path: msgPath };
+  MTPS.syncAOIs = syncAOIs; MTPS.AOI_IO = AOI_IO;
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);
