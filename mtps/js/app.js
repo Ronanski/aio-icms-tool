@@ -880,7 +880,7 @@
     edit: { l: 'Edit Instruction', k: 'Enter', i: 'edit', run: () => S.sel && S.sel.path && !S.sel.br && !S.sel.leg && openEditor(S.sel.ri, S.sel.path, selOpIdx()), on: () => editable() && !!curEl() },
     rtext: { l: 'Edit Rung', i: 'text', run: () => rungText(curSelRung()), on: () => editable() && curSelRung() != null },
     comment: { l: 'Edit Rung Comment', i: 'text', run: () => rungComment(curSelRung()), on: () => editable() && curSelRung() != null },
-    desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => isTagText(selOperand()) },
+    desc: { l: 'Edit Main Operand Description', k: 'Ctrl+D', i: 'tag', run: editDesc, on: () => isTagText(selOperand()) || isIOText(selOperand()) },
     sdef: { l: 'Save Instruction Defaults', i: 'save', run: () => {}, on: () => false },
     cdef: { l: 'Clear Instruction Defaults', i: 'close', run: () => {}, on: () => false },
     rimp: { l: 'Import Rungs…', i: 'upload', run: () => importRungs(), on: editable },
@@ -2568,6 +2568,8 @@
   const opDesc = op => { const k = U(String(op || '')); const c = S.p.comments && S.p.comments[k]; if (c) return c; const t = tagFor(op); return t ? t.desc || '' : ''; };
   const selOpIdx = () => (S.sel && S.sel.op != null ? S.sel.op : 0);
   const selOperand = () => { const e = curEl(); return e && e.a ? e.a[selOpIdx()] : undefined; };
+  // an I/O point of a module (Local:1:I.Data.0) takes a description too, as in the reference
+  const isIOText = a => /^Local:\d+:[ICO]\b/i.test(String(a || ''));
   const isTagText = a => !!a && a !== '?' && /^[A-Za-z_]\w*$/.test(String(a).split(/[.[]/)[0]) && !E.parseNumber(a);
   function editDesc() {
     const op = selOperand();
