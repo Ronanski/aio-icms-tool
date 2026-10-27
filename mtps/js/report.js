@@ -195,6 +195,82 @@
     return { count: secs.length, titles: secs.map(s => s.title), html: `<header class="rpth"><b>${esc(c.name)}</b><span>${esc(h.ctlType ? h.ctlType(p) : c.type || '')}</span><span>${esc(when)}</span></header>${secs.map(s => `<section class="rpts" data-rpt="${esc(s.id)}"><h3>${esc(s.title)}</h3>${s.body}${foot}</section>`).join('')}${toc}` };
   }
 
-  MTPS.Report = { compare, rungDiff, report, REPORTS };
+  /* ---------- sample projects ----------
+     Ready projects that use the app's features: aliases to the I/O, timers, counters, compares and math, a UDT and a
+     string type, an analog module, program tags, a subroutine (JSR), a shift register (BSL) and a trend. */
+  function base(name, desc, mods) {
+    return { format: 'mt-plc-studio', version: 1, controller: { name, type: 'PLC-CPU', rev: '1.0', desc }, info: { created: 0 },
+      rack: { size: 8, modules: mods || [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }] },
+      dataTypes: [], tags: [], tasks: [{ name: 'MainTask', type: 'continuous', programs: [{ name: 'MainProgram', main: 'MainRoutine', tags: [], routines: [{ name: 'MainRoutine', rungs: [] }] }] }] };
+  }
+  const B = (name, desc, alias) => (alias ? { name, alias, desc } : { name, type: 'BOOL', desc });
+  const SAMPLES = [
+    { name: 'Motor_Demo', title: 'Motor start / stop', desc: 'A seal-in circuit on aliased I/O, a run lamp delay (TON) and a start counter (ONS, CTU).', make() {
+      const p = base('Motor_Demo', 'Motor start / stop with seal-in');
+      p.tags = [B('Start_PB', 'S1 START PB', 'Local:1:I.Data.0'), B('Stop_PB', 'S0 STOP PB (NC)', 'Local:1:I.Data.1'), B('OL_OK', 'F1 OVERLOAD OK (NC)', 'Local:1:I.Data.2'),
+        B('Motor_Run', 'Motor running (seal-in)'), { name: 'Run_Timer', type: 'TIMER', desc: 'Run lamp delay' }, B('Motor_Cmd', 'KM1 MOTOR CONTACTOR', 'Local:2:O.Data.0'),
+        B('Run_Lamp', 'H1 RUN LAMP', 'Local:2:O.Data.1'), B('Start_ONS', 'Start one-shot'), { name: 'Start_Count', type: 'COUNTER', desc: 'Motor starts' }];
+      p.tasks[0].programs[0].routines[0].rungs = [
+        { c: 'Motor start / stop with seal-in. S0 STOP and F1 OVERLOAD are wired N.C., so XIC is true while they are healthy.', t: '[XIC(Start_PB),XIC(Motor_Run)]XIC(Stop_PB)XIC(OL_OK)OTE(Motor_Run);' },
+        { t: 'XIC(Motor_Run)OTE(Motor_Cmd);' },
+        { c: 'Run lamp 5 s after the motor starts.', t: 'XIC(Motor_Run)TON(Run_Timer,5000,0);' },
+        { t: 'XIC(Run_Timer.DN)OTE(Run_Lamp);' },
+        { c: 'Count motor starts.', t: 'XIC(Motor_Run)ONS(Start_ONS)CTU(Start_Count,9999,0);' }];
+      return p;
+    } },
+    { name: 'Traffic_Light', title: 'Traffic light', desc: 'A timed sequence: one TON in a subroutine (JSR), DIV, compares (LIM, GEQ) and a lamp test.', make() {
+      const p = base('Traffic_Light', 'Two-way traffic light sequence'), g = p.tasks[0].programs[0];
+      p.tags = [B('Run_SW', 'S1 RUN SWITCH', 'Local:1:I.Data.0'), B('Test_PB', 'S2 LAMP TEST PB', 'Local:1:I.Data.1'),
+        B('NS_Red', 'NORTH-SOUTH RED', 'Local:2:O.Data.0'), B('NS_Amber', 'NORTH-SOUTH AMBER', 'Local:2:O.Data.1'), B('NS_Green', 'NORTH-SOUTH GREEN', 'Local:2:O.Data.2'),
+        B('EW_Red', 'EAST-WEST RED', 'Local:2:O.Data.3'), B('EW_Amber', 'EAST-WEST AMBER', 'Local:2:O.Data.4'), B('EW_Green', 'EAST-WEST GREEN', 'Local:2:O.Data.5')];
+      g.tags = [{ name: 'Cycle', type: 'TIMER', desc: 'One full cycle, 20 s' }, { name: 'T_s', type: 'DINT', desc: 'Seconds into the cycle' }];
+      g.routines[0].rungs = [
+        { c: 'The cycle timer and the seconds into the cycle are worked out in the Cycle subroutine.', t: 'JSR(Cycle,0);' },
+        { c: 'North-south: green 0-7 s, amber 8-9 s, red 10-19 s. S2 LAMP TEST turns every lamp on.', t: '[LIM(0,T_s,7),XIC(Test_PB)]OTE(NS_Green);' },
+        { t: '[LIM(8,T_s,9),XIC(Test_PB)]OTE(NS_Amber);' },
+        { t: '[GEQ(T_s,10),XIC(Test_PB)]OTE(NS_Red);' },
+        { c: 'East-west: red 0-9 s, green 10-17 s, amber 18-19 s.', t: '[LIM(0,T_s,9),XIC(Test_PB)]OTE(EW_Red);' },
+        { t: '[LIM(10,T_s,17),XIC(Test_PB)]OTE(EW_Green);' },
+        { t: '[GEQ(T_s,18),XIC(Test_PB)]OTE(EW_Amber);' }];
+      g.routines.push({ name: 'Cycle', rungs: [{ c: 'The cycle timer runs while the RUN switch is on and starts again at the end of the cycle.', t: 'XIC(Run_SW)XIO(Cycle.DN)TON(Cycle,20000,0);' }, { t: 'DIV(Cycle.ACC,1000,T_s);' }] });
+      return p;
+    } },
+    { name: 'Tank_Level', title: 'Tank level', desc: 'An analog input scaled with CPT, a Tank UDT, high / low alarms latched with OTL / OTU, a pump in hand / auto, and a trend.', make() {
+      const p = base('Tank_Level', 'Tank level with alarms and a fill pump', [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI_1' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO_1' }, { slot: 3, type: 'PLC-AI4', name: 'AI_1' }]);
+      p.dataTypes = [{ name: 'Tank', desc: 'One tank: level and alarm limits', members: [{ name: 'Level', type: 'REAL', desc: 'Level in %' }, { name: 'HiLimit', type: 'REAL' }, { name: 'LoLimit', type: 'REAL' }, { name: 'HiAlarm', type: 'BOOL' }, { name: 'LoAlarm', type: 'BOOL' }] },
+        { name: 'STRING_20', family: 'string', len: 20, desc: 'A short message' }];
+      p.tags = [{ name: 'Level_Raw', alias: 'Local:3:I.Ch0Data', desc: 'LT1 LEVEL TRANSMITTER 0-10 V' }, B('Reset_PB', 'S1 ALARM RESET PB', 'Local:1:I.Data.0'), B('Auto_SW', 'S2 HAND / AUTO', 'Local:1:I.Data.1'),
+        B('Pump', 'M1 FILL PUMP', 'Local:2:O.Data.0'), B('Alarm_Horn', 'H1 ALARM HORN', 'Local:2:O.Data.1'),
+        { name: 'T1', type: 'Tank', desc: 'Tank 1', value: { HiLimit: 90, LoLimit: 10 } }, { name: 'Msg', type: 'STRING_20', desc: 'Alarm text' }];
+      p.tasks[0].programs[0].routines[0].rungs = [
+        { c: 'Scale 0-10 V to 0-100 %.', t: 'CPT(T1.Level,Level_Raw*10.0);' },
+        { c: 'High and low level alarms stay on until reset.', t: 'GRT(T1.Level,T1.HiLimit)OTL(T1.HiAlarm);' },
+        { t: 'LES(T1.Level,T1.LoLimit)OTL(T1.LoAlarm);' },
+        { t: 'XIC(Reset_PB)[OTU(T1.HiAlarm),OTU(T1.LoAlarm)];' },
+        { c: 'Fill in auto below 50 %, stop at the high alarm.', t: 'XIC(Auto_SW)[LES(T1.Level,50.0),XIC(Pump)]XIO(T1.HiAlarm)OTE(Pump);' },
+        { t: '[XIC(T1.HiAlarm),XIC(T1.LoAlarm)]OTE(Alarm_Horn);' }];
+      p.trends = [{ name: 'Tank_Trend', period: 200, pens: [{ name: 'T1.Level', scope: '' }, { name: 'Pump', scope: '' }] }];
+      return p;
+    } },
+    { name: 'Conveyor_Sort', title: 'Conveyor sorter', desc: 'A shift register (BSL) tracks rejected parts down a belt; counters for good and rejected parts; MOV and ADD for the totals.', make() {
+      const p = base('Conveyor_Sort', 'Reject sorter on a conveyor');
+      p.tags = [B('Part_Eye', 'PE1 PART AT THE INFEED', 'Local:1:I.Data.0'), B('Bad_Part', 'SENSOR: PART IS BAD', 'Local:1:I.Data.1'), B('Belt_Pulse', 'PULSE: BELT MOVED ONE PITCH', 'Local:1:I.Data.2'),
+        B('Reset_PB', 'S1 RESET COUNTS', 'Local:1:I.Data.3'), B('Belt_Run', 'M1 CONVEYOR', 'Local:2:O.Data.0'), B('Reject_Sol', 'Y1 REJECT GATE', 'Local:2:O.Data.1'),
+        { name: 'Track', type: 'DINT', dim: 1, desc: 'One bit per belt pitch: 1 = bad part' }, { name: 'Track_Ctl', type: 'CONTROL' }, B('Bad_Bit', 'Bad part latched at the infeed'),
+        B('Pulse_ONS', 'Belt pulse one-shot'), B('Eye_ONS', 'Part eye one-shot'), { name: 'Good_Cnt', type: 'COUNTER' }, { name: 'Bad_Cnt', type: 'COUNTER' }, { name: 'Total', type: 'DINT', desc: 'Parts seen' }];
+      p.tasks[0].programs[0].routines[0].rungs = [
+        { t: 'OTE(Belt_Run);' },
+        { c: 'Remember a bad part at the infeed.', t: 'XIC(Part_Eye)XIC(Bad_Part)OTL(Bad_Bit);' },
+        { c: 'Each belt pitch shifts the tracking bits one place; the bad bit goes in at bit 0.', t: 'XIC(Belt_Pulse)ONS(Pulse_ONS)BSL(Track[0],Track_Ctl,Bad_Bit,8);' },
+        { t: 'XIC(Track_Ctl.EN)OTU(Bad_Bit);' },
+        { c: 'The reject gate is 5 pitches down the belt.', t: 'XIC(Track[0].5)OTE(Reject_Sol);' },
+        { c: 'Counts.', t: 'XIC(Part_Eye)ONS(Eye_ONS)[XIC(Bad_Part)CTU(Bad_Cnt,99999,0),XIO(Bad_Part)CTU(Good_Cnt,99999,0)];' },
+        { t: 'ADD(Good_Cnt.ACC,Bad_Cnt.ACC,Total);' },
+        { t: 'XIC(Reset_PB)[RES(Good_Cnt),RES(Bad_Cnt),MOV(0,Total)];' }];
+      return p;
+    } },
+  ];
+
+  MTPS.Report = { compare, rungDiff, report, REPORTS, SAMPLES };
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS.Report;
 })(typeof window !== 'undefined' ? window : globalThis);

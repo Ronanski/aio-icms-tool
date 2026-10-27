@@ -46,3 +46,10 @@ body.phone .grep, body.phone .pogrid { grid-template-columns: 1fr; }
   #printout caption { text-align: left; font-weight: 700; padding-top: 4px; }
   #printout tr, #printout svg g[data-rg] { break-inside: avoid; }
 }
+
+/* sample projects */
+.startpg .spx { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.startpg .spx .spc { padding: 10px 12px; }
+.startpg .spx .spc svg { width: 22px; height: 22px; }
+#spl .row { align-items: flex-start; padding: 8px; cursor: pointer; }
+#spl .row.on { background: var(--accent-soft); }

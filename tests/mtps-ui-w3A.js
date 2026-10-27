@@ -145,5 +145,39 @@ module.exports = async function w3a({ browser, URL, check }) {
     check(`${n}: no JS errors (Print)`, !T.errs.length, T.errs.join(' | '));
   }
 
+  /* ---------- 3. sample projects: the start page, Help > Vendor Sample Projects, the Examples of Open ---------- */
+  const proj = T => T.ev(() => ({ name: MTPS.App.state.p.controller.name, noProj: MTPS.App.state.noProj, errs: MTPS.App.state.verify.errors.length, file: MTPS.App.state.file }));
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    const cards = await T.pg.$$eval('.startpg [data-sample]', b => b.map(x => x.dataset.sample));
+    check(`${n}: the start page lists the sample projects`, JSON.stringify(cards) === '["Motor_Demo","Traffic_Light","Tank_Level","Conveyor_Sort"]', JSON.stringify(cards));
+    if (n === 'desktop') await T.shot('startpage');
+    await T.hit('.startpg [data-sample="Tank_Level"]'); await T.wait(200);
+    let p = await proj(T);
+    check(`${n}: a sample opens from the start page, with no errors and no file`, p.name === 'Tank_Level' && !p.noProj && p.errs === 0 && !p.file, JSON.stringify(p));
+    await T.cmd('Help', n === 'phone' ? 'Sample Projects…' : 'Vendor Sample Projects…');
+    check(`${n}: Help > Vendor Sample Projects lists them`, (await T.title()) === 'Sample Projects' && (await T.pg.$$('#layer [data-spl]')).length === 4);
+    await T.hit('#layer [data-spl="Conveyor_Sort"]'); await T.btn('Open'); await T.wait(250);
+    p = await proj(T);
+    check(`${n}: Open opens the picked sample`, p.name === 'Conveyor_Sort' && p.errs === 0, JSON.stringify(p));
+    // the Examples place of File > Open
+    if (n !== 'phone') { await T.cmd('File', 'Open… (.mtp, .L5X)'); await T.hit('#layer [data-fbex="Traffic_Light"]'); await T.wait(250); }
+    else { await T.ev(() => MTPS.App.run('open')); await T.wait(200); await T.hit('#layer [data-fbex="Traffic_Light"]'); await T.wait(250); }
+    p = await proj(T);
+    check(`${n}: File > Open > Examples opens a sample`, p.name === 'Traffic_Light' && p.errs === 0, JSON.stringify(p));
+    check(`${n}: no JS errors (samples)`, !T.errs.length, T.errs.join(' | '));
+  }
+  // a sample runs: Traffic_Light online in Run turns the north-south green lamp on
+  {
+    const T = await open('desktop');
+    await T.hit('.startpg [data-sample="Traffic_Light"]'); await T.wait(200);
+    await T.ev(() => MTPS.App.run('online'));
+    for (let k = 0; k < 10 && !(await T.ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) { await T.wait(150); const b = await T.pg.$('#layer .dlg .btn.pri'); if (b && !(await T.pg.$('#layer .dlg .prog'))) await b.click(); else await T.wait(400); }
+    await T.ev(() => { const S = MTPS.App.state; S.p && MTPS.App.run('runm'); });
+    await T.wait(300);
+    const v = await T.ev(() => { const c = MTPS.racks[0].controllers()[0].ctl; c.write('Run_SW', 1); return new Promise(r => setTimeout(() => r({ g: c.read('NS_Green'), r: c.read('EW_Red'), mode: c.mode }), 400)); });
+    check('desktop: the Traffic_Light sample runs (north-south green, east-west red)', v.g === 1 && v.r === 1, JSON.stringify(v));
+  }
+
   for (const T of opened) await T.cx.close();
 };

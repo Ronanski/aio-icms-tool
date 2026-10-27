@@ -231,7 +231,7 @@
     try { places = await FS.places(); } catch (e) { toast('The files of this device cannot be reached: ' + (e.message || e), 'err'); return; }
     const st = { dir: store.get('lastDir', null) || places[0].path, data: null, sel: null, type: types[0] };
     const el = dialog({ title: o.title, size: 'lg', flush: true, focus: o.mode === 'save',
-      body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div><div class="row" data-fbex="1">${ic('ladder')}<span class="ell">Motor_Demo</span></div>` : ''}</aside>
+      body: `<div class="fb"><aside class="fbp"><div class="lbl">Places</div>${places.map(p => `<div class="row" data-fbp="${esc(p.path)}">${ic('folder')}<span class="ell">${esc(p.label)}</span></div>`).join('')}${o.examples ? `<div class="lbl">Examples</div>${E.Report.SAMPLES.map(x => `<div class="row" data-fbex="${esc(x.name)}" title="${esc(x.desc)}">${ic('ladder')}<span class="ell">${esc(x.name)}</span></div>`).join('')}` : ''}</aside>
         <div class="fbm"><div class="fbbar"><button class="ib" data-fbup="1" title="Up one folder" aria-label="Up one folder">${ic('back')}</button><span class="fbpath mono" id="fbpath"></span><button class="btn" data-fbnew="1">${ic('folder')}New Folder</button></div>
           <div class="fbl" id="fbl"><div class="empty">Loading…</div></div>
           <div class="fbf">${o.mode === 'save' ? `<label for="fbn">File name</label><input class="inp mono" id="fbn" value="${esc(o.name || '')}" autocomplete="off" spellcheck="false">` : '<span class="grow"></span>'}${o.descField ? '<label for="fbd">File description</label><input class="inp" id="fbd" autocomplete="off">' : ''}
@@ -266,7 +266,7 @@
     };
     el.addEventListener('click', ev => {
       const p = ev.target.closest('[data-fbp]'); if (p) { show(p.dataset.fbp); return; }
-      if (ev.target.closest('[data-fbex]')) { closeLayer(); o.onExample && o.onExample(); return; }
+      const ex = ev.target.closest('[data-fbex]'); if (ex) { closeLayer(); if (o.onExample) o.onExample(ex.dataset.fbex); return; }
       if (ev.target.closest('[data-fbup]')) { if (st.data && st.data.parent != null) show(st.data.parent); return; }
       if (ev.target.closest('[data-fbnew]')) {
         const n = prompt1Inline(el, 'New folder name', 'New Folder', async v => { if (!v || /[\\/:*?"<>|]/.test(v)) return 'Type a folder name.'; await FS.mkdir(FS.join(st.dir, v)); show(st.dir); });
@@ -319,7 +319,7 @@
   }
   function rememberFile(path) { if (!/\.mtp$/i.test(path)) return; S.prefs.files = [path].concat((S.prefs.files || []).filter(x => x !== path)).slice(0, 8); savePrefs(); }
   function cmdOpen() {
-    const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: () => { openProject(example()); } });
+    const go = () => fileDialog({ mode: 'open', title: 'Open Project', types: ['mtp', 'l5x'], examples: true, onPick: f => loadFile(f), onExample: n => openSample(n) });
     saveChanges(go);
   }
   /* File > Close: the project closes (offline first) and the Start Page shows, as at the first start */
@@ -957,6 +957,7 @@
     prtall: { l: 'Entire Project…', i: 'file', run: () => printDlg('all'), on: () => !S.noProj },
     prtopts: { l: 'Print Options…', i: 'gear', run: () => printOptions() },
     helpc: { l: 'Contents', i: 'help', run: () => helpContents() },
+    samples: { l: 'Vendor Sample Projects…', i: 'ladder', run: () => samplesDlg() },
     help: { l: 'Instruction Help', k: 'F1', i: 'help', run: () => instrHelp() },
     tips: { l: 'Getting Started', i: 'info', run: () => tipsDlg() },
     about: { l: 'About MT PLC Studio', i: 'info', run: about },
@@ -969,7 +970,7 @@
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', '-', 'cmptool', '-', 'updates']],
-    ['Help', ['helpc', 'help', 'tips', 'about']],
+    ['Help', ['helpc', 'help', 'tips', '-', 'samples', '-', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
   const ONLINE_ONLY = ['toggle', 'fon', 'foff', 'frem', 'prog', 'runm', 'clear', 'fen', 'fdis', 'fall'];
@@ -1023,6 +1024,7 @@
     return `<div class="startpg"><div class="sph"><b>MT PLC Studio</b><span class="muted">v${VERSION}</span></div>
       <div class="spb"><button class="spc" data-cmd="new">${ic('file')}<span><b>New Project</b><small>Pick the controller, the chassis and the I/O, then save it as a .mtp file</small></span></button>
       <button class="spc" data-cmd="open">${ic('open')}<span><b>Open Project</b><small>Open a .mtp or .L5X file from this device's storage</small></span></button></div>
+      <div class="grp">Sample projects</div><div class="spb spx">${E.Report.SAMPLES.map(x => `<button class="spc" data-sample="${esc(x.name)}">${ic('ladder')}<span><b>${esc(x.title)}</b><small>${esc(x.desc)}</small></span></button>`).join('')}</div>
       ${rec.length ? `<div class="grp">Recent projects</div>${rec.map(p => `<div class="row" data-recent="${esc(p)}">${ic('file')}<span class="grow ell"><b>${esc(baseName(p))}</b><small class="muted"> ${esc(p)}</small></span></div>`).join('')}` : ''}
       <p class="help">Projects are not kept inside the app: save your work with Save or Save As.</p></div>`;
   }
@@ -1185,7 +1187,7 @@
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
-      <div class="card">${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
+      <div class="card">${b('samples', 'Sample Projects…')}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -3342,6 +3344,25 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const redraw = () => { el.querySelector('#cmpb').innerHTML = body(); };
     el.addEventListener('click', ev => { const r = ev.target.closest('[data-cmpr]'); if (!r) return; const i = +r.dataset.cmpr; if (st.open.has(i)) st.open.delete(i); else st.open.add(i); redraw(); });
     el.addEventListener('change', ev => { if (ev.target.id === 'cmpv') { st.values = ev.target.checked; st.open.clear(); redraw(); } });
+  }
+  /* ---------- sample projects (help v37: Help > Vendor Sample Projects opens the list of sample projects; here they
+     are part of the app, MTPS.Report.SAMPLES): from the Help menu, the start page and the Examples of Open ---------- */
+  function openSample(n) {
+    const x = E.Report.SAMPLES.find(s => s.name === n) || E.Report.SAMPLES[0];
+    closeLayer(); openProject(x.make(), true); S.dirty = false; render();
+    toast(`Opened the sample project ${x.name}: Save As keeps a copy of it.`);
+  }
+  function samplesDlg() {
+    let on = E.Report.SAMPLES[0].name;
+    const el = dialog({ title: 'Sample Projects', size: 'md',
+      body: `<p class="help" style="margin-top:0">Ready projects that use the features of the app. Open one, then Save As to keep your own copy.</p><div class="gwl" id="spl">${E.Report.SAMPLES.map(x => `<div class="row${x.name === on ? ' on' : ''}" data-spl="${esc(x.name)}">${ic('ladder')}<span class="grow"><b>${esc(x.title)}</b> <span class="mono muted">${esc(x.name)}</span><br><small class="muted">${esc(x.desc)}</small></span></div>`).join('')}</div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'Open', pri: true, run: () => { const n = on; setTimeout(() => saveChanges(() => openSample(n)), 0); } }] });
+    el.addEventListener('click', ev => {
+      const r = ev.target.closest('[data-spl]'); if (!r) return;
+      if (r.dataset.spl === on && r.dataset.clicked) { const n = on; closeLayer(); saveChanges(() => openSample(n)); return; }
+      on = r.dataset.spl; el.querySelectorAll('[data-spl]').forEach(x => x.classList.toggle('on', x === r));
+      r.dataset.clicked = '1'; setTimeout(() => { delete r.dataset.clicked; }, 450);
+    });
   }
   /* ---------- File > Generate Report, File > Print, File > Print Options (help v37: Reports, Print a report, Generate
      Report dialog box settings, Print dialog box settings, Print Options dialog box settings, Change General / Ladder
@@ -7414,6 +7435,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
       }
       if ((el = t.closest('[data-go]'))) { S.area = el.dataset.go; render(); return; }
       if ((el = t.closest('[data-drawer]'))) { if (el.dataset.drawer === '0' && innerWidth >= 1024) { S.prefs.org = false; savePrefs(); } else S.drawer = el.dataset.drawer === '1'; if (el.dataset.drawer === '1') S.prefs.org = true; render(); return; }
+      if ((el = t.closest('[data-sample]'))) { const n = el.dataset.sample; saveChanges(() => openSample(n)); return; }
       if ((el = t.closest('[data-recent]'))) { const f = el.dataset.recent; saveChanges(() => loadFile(f)); return; }
       if ((el = t.closest('[data-errh]'))) { S.errOpen = true; errSheet(); return; }
       if ((el = t.closest('[data-msgt]')) && !t.closest('[data-cmd]')) { S.errOpen = !S.errOpen; render(); return; }

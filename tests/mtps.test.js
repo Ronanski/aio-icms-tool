@@ -1546,5 +1546,22 @@ console.log('Wave 3 (A): the printed report (Generate Report, Print), js/report.
   check('a routine scope limits the routines', R.report(p, { routines: true }, {}, {}, { routines: ['Other/X'] }).count === 0);
 }
 
+console.log('Wave 3 (A): the sample projects (Help > Vendor Sample Projects), js/report.js');
+{
+  const R = require('../mtps/js/report.js');
+  eq('four samples', R.SAMPLES.map(x => x.name), ['Motor_Demo', 'Traffic_Light', 'Tank_Level', 'Conveyor_Sort']);
+  R.SAMPLES.forEach(x => { const p = x.make(), v = MTPS.verify(p); check(`${x.name}: verifies with no errors and no warnings`, v.errors.length === 0 && v.warnings.length === 0, JSON.stringify(v.errors.concat(v.warnings).slice(0, 2).map(e => e.text))); });
+  check('each make() gives a new copy', R.SAMPLES[0].make() !== R.SAMPLES[0].make());
+  const tl = R.SAMPLES[1].make(), c = run({ tags: tl.tags, ptags: tl.tasks[0].programs[0].tags, rungs: tl.tasks[0].programs[0].routines[0].rungs.map(r => r.t), routines: [{ name: 'Cycle', rungs: tl.tasks[0].programs[0].routines[1].rungs.map(r => r.t) }] });
+  c.setInputs(1, 0b01); c.scan(10);
+  check('Traffic_Light runs: at 0 s north-south green and east-west red', c.read('NS_Green') === 1 && c.read('EW_Red') === 1 && c.read('NS_Red') === 0);
+  scans(c, 900);
+  check('… at 9 s north-south amber, east-west still red', c.read('NS_Amber') === 1 && c.read('NS_Green') === 0 && c.read('EW_Red') === 1);
+  scans(c, 200);
+  check('… at 11 s north-south red, east-west green', c.read('NS_Red') === 1 && c.read('EW_Green') === 1);
+  c.setInputs(1, 0b11); c.scan(10);
+  check('… the lamp test turns every lamp on', ['NS_Red', 'NS_Amber', 'NS_Green', 'EW_Red', 'EW_Amber', 'EW_Green'].every(t => c.read(t) === 1));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
