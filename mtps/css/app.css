@@ -1300,3 +1300,7 @@ i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inlin
 .phone .tpsch { grid-template-columns: 1fr; }
 .phone .tpsch .tpbtn { flex-direction: row; padding-top: 0; }
 .phone .tpsch .tpbtn .btn { flex: 1; }
+/* Task Properties: the priority hint under its field, the read-only Monitor values */
+.tphint { margin: -4px 0 8px 128px; }
+.phone .tphint { margin-left: 0; }
+.tpmon { width: 120px; display: inline-block; text-align: right; }

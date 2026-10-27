@@ -103,27 +103,31 @@
     const TMAX = 2000000;
     // the input tags of the input modules (Module Input Data State Change)
     const inTags = () => ((S.p.rack || {}).modules || []).filter(m => { const d = (E.MODULES || {})[m.type]; return d && (d.kind === 'di' || d.kind === 'ai'); }).map(m => `Local:${m.slot}:I`);
-    function cfgHTML(T, p, dis) {
-      const type = T.type || 'periodic', cont = S.p.tasks.some(t => t !== T && t.type === 'continuous');
-      const sel = (v, w) => (v === w ? ' selected' : ''), tags = inTags(), tag = T.tag || tags[0] || '';
+    // dis: the fields that can change online (Watchdog, the two check boxes); dt: the type and its timing (offline)
+    function cfgHTML(T, p, dis, dt) {
+      const type = T.type || 'continuous', cont = S.p.tasks.some(t => t !== T && t.type === 'continuous'), trig = T.trigger || 'event';
+      const sel = (v, w) => (v === w ? ' selected' : ''), tags = inTags(), tag = trig === 'input' ? T.tag || tags[0] || '' : '';
       const vis = (types, html) => `<div class="tpf" data-tpf="${types}"${types.split(' ').includes(type) ? '' : ' style="display:none"'}>${html}</div>`;
-      return `<div class="frow"><label for="${p}-t">Type</label><select class="inp" id="${p}-t"${dis}>${TYPES.map(([v, l]) => `<option value="${v}"${sel(v, type)}${v === 'continuous' && cont ? ' disabled' : ''}>${l}</option>`).join('')}</select></div>
-        ${vis('event', `<div class="frow"><label for="${p}-tr">Trigger</label><select class="inp" id="${p}-tr"${dis}>${TRIGGERS.map(([v, l]) => `<option value="${v}"${sel(v, T.trigger || 'event')}${TRIG_ON.has(v) ? '' : ' disabled'}>${l}</option>`).join('')}</select></div>
-        <div class="frow"><label for="${p}-tg">Tag</label><select class="inp" id="${p}-tg"${dis}${(T.trigger || 'event') === 'input' ? '' : ' disabled'}>${tags.length ? tags.map(t => `<option${sel(t, tag)}>${t}</option>`).join('') : '<option value="">&lt;none&gt;</option>'}</select></div>
-        <label class="ck"><input type="checkbox" id="${p}-to"${T.timeoutOn ? ' checked' : ''}${dis}> Execute Task If No Event Occurs Within</label>
-        <div class="frow"><label for="${p}-tv">Timeout (ms)</label><input class="inp" id="${p}-tv" type="number" min="0.1" max="${TMAX}" step="any" value="${T.timeout || 10}"${dis || (T.timeoutOn ? '' : ' disabled')}></div>`)}
-        ${vis('periodic', `<div class="frow"><label for="${p}-p">Period (ms)</label><input class="inp" id="${p}-p" type="number" min="0.1" max="${TMAX}" step="any" value="${T.period || 10}"${dis}></div>`)}
-        ${vis('periodic event', `<div class="frow"><label for="${p}-pr">Priority</label><input class="inp" id="${p}-pr" type="number" min="1" max="15" step="1" value="${T.priority == null ? 10 : T.priority}"${dis}></div>`)}
+      return `<div class="frow"><label for="${p}-t">Type</label><select class="inp" id="${p}-t"${dt}>${TYPES.map(([v, l]) => `<option value="${v}"${sel(v, type)}${v === 'continuous' && cont ? ' disabled' : ''}>${l}</option>`).join('')}</select></div>
+        ${vis('event', `<div class="frow"><label for="${p}-tr">Trigger</label><select class="inp" id="${p}-tr"${dt}>${TRIGGERS.map(([v, l]) => `<option value="${v}"${sel(v, trig)}${TRIG_ON.has(v) ? '' : ' disabled'}>${l}</option>`).join('')}</select></div>
+        <div class="frow"><label for="${p}-tg">Tag</label><select class="inp" id="${p}-tg"${dt || (trig === 'input' ? '' : ' disabled')}><option value=""${sel('', tag)}>&lt;none&gt;</option>${tags.map(t => `<option${sel(t, tag)}>${t}</option>`).join('')}</select></div>
+        <label class="ck"><input type="checkbox" id="${p}-to"${T.timeoutOn ? ' checked' : ''}${dt}> Execute Task If No Event Occurs Within</label>
+        <div class="frow"><label for="${p}-tv">Timeout (ms)</label><input class="inp" id="${p}-tv" type="number" min="0.1" max="${TMAX}" step="any" value="${T.timeout || 10}"${dt || (T.timeoutOn ? '' : ' disabled')}></div>`)}
+        ${vis('periodic', `<div class="frow"><label for="${p}-p">Period (ms)</label><input class="inp" id="${p}-p" type="number" min="0.1" max="${TMAX}" step="any" value="${T.period || 10}"${dt}></div>`)}
+        ${vis('periodic event', `<div class="frow"><label for="${p}-pr">Priority</label><input class="inp" id="${p}-pr" type="number" min="1" max="15" step="1" value="${T.priority == null ? 10 : T.priority}"${dt}></div><p class="help tphint">(Lower Number Yields Higher Priority)</p>`)}
         <div class="frow"><label for="${p}-w">Watchdog (ms)</label><input class="inp" id="${p}-w" type="number" min="1" max="${TMAX}" value="${T.watchdog || 500}"${dis}></div>
-        <label class="ck"><input type="checkbox" id="${p}-o"${T.noOutputs ? ' checked' : ''}${dis}> Disable automatic output processing to reduce task overhead</label>
-        <label class="ck"><input type="checkbox" id="${p}-i"${T.inhibit ? ' checked' : ''}${dis}> Inhibit task</label>`;
+        <label class="ck"><input type="checkbox" id="${p}-o"${T.noOutputs ? ' checked' : ''}${dis}> Disable Automatic Output Processing To Reduce Task Overhead</label>
+        <label class="ck"><input type="checkbox" id="${p}-i"${T.inhibit ? ' checked' : ''}${dis}> Inhibit Task</label>`;
     }
     // the fields follow the type and the trigger
     function cfgBind(el, p) {
       const t = el.querySelector(`#${p}-t`), tr = el.querySelector(`#${p}-tr`), tg = el.querySelector(`#${p}-tg`), to = el.querySelector(`#${p}-to`), tv = el.querySelector(`#${p}-tv`);
       const sync = () => {
         el.querySelectorAll('[data-tpf]').forEach(x => { x.style.display = x.dataset.tpf.split(' ').includes(t.value) ? '' : 'none'; });
-        if (!t.disabled) { tg.disabled = tr.value !== 'input'; tv.disabled = !to.checked; }
+        if (t.disabled) return;
+        tg.disabled = tr.value !== 'input'; tv.disabled = !to.checked;
+        // EVENT Instruction Only has no tag (<none>); Module Input Data State Change takes the first input module
+        if (tg.disabled) tg.value = ''; else if (!tg.value && tg.options.length > 1) tg.selectedIndex = 1;
       };
       [t, tr, to].forEach(x => x.addEventListener('change', sync));
     }
@@ -163,7 +167,7 @@
         if (v.timeout >= 0.1) T.timeout = v.timeout;
       }
     }
-    const sameCfg = (T, v) => { const t = Object.assign({}, T); cfgApply(t, v); return ['type', 'watchdog', 'period', 'priority', 'trigger', 'tag', 'timeout', 'timeoutOn', 'noOutputs', 'inhibit'].every(k => t[k] === T[k]); };
+    const sameCfg = (T, v) => { const b = Object.assign({ type: 'continuous', watchdog: 500 }, T), t = Object.assign({}, b); cfgApply(t, v); return ['type', 'watchdog', 'period', 'priority', 'trigger', 'tag', 'timeout', 'timeoutOn', 'noOutputs', 'inhibit'].every(k => t[k] === b[k]); };
 
     /* New Task (1756-PM005, Create a Task: right-click the Tasks folder > New Task): Name, Description and the task
        settings. A controller has at most 32 tasks. */
@@ -177,7 +181,7 @@
       dialog({ title: 'New Task', size: 'md', focus: true,
         body: `<div class="frow"><label for="nt-n">Name</label><input class="inp" id="nt-n" value="${esc(n)}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
           <div class="frow"><label for="nt-d">Description</label><textarea class="inp" id="nt-d" rows="2" maxlength="512"></textarea></div>
-          ${cfgHTML({ type: 'periodic' }, 'nt', '')}
+          ${cfgHTML({ type: 'periodic' }, 'nt', '', '')}
           <p class="help">A periodic task runs its programs every Period; an event task runs when its trigger happens. A task of a higher priority (a lower number) interrupts one of a lower priority; the continuous task has the lowest. Schedule programs in it with New Program or Task Properties &gt; Program Schedule.</p><div class="errtx" id="nt-e"></div>`,
         buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
           const v = el.querySelector('#nt-n').value.trim(), d = el.querySelector('#nt-d').value.trim();
@@ -217,10 +221,7 @@
       const ctl = A.ctl, can = editable() && offline(), dis = editable() ? '' : ' disabled', on = S.online && ctl.M;
       const general = `<div class="frow"><label>Name</label><input class="inp" id="tp-n" value="${esc(T.name)}" maxlength="40"${offline() ? '' : ' disabled'}></div>
         <div class="frow"><label>Description</label><textarea class="inp" id="tp-d" rows="3" maxlength="512"${dis}>${esc(T.desc || '')}</textarea></div>`;
-      const conf = `<div class="frow"><label>Type</label><select class="inp" id="tp-t" disabled><option>Continuous</option></select></div>
-        <div class="frow"><label>Watchdog (ms)</label><input class="inp" id="tp-w" type="number" min="1" max="2000000" value="${T.watchdog || 500}"${dis}></div>
-        <label class="ck"><input type="checkbox" id="tp-o"${T.noOutputs ? ' checked' : ''}${dis}> Disable automatic output processing to reduce task overhead</label>
-        <label class="ck"><input type="checkbox" id="tp-i"${T.inhibit ? ' checked' : ''}${dis}> Inhibit task</label>`;
+      const conf = cfgHTML(T, 'tp', dis, can ? '' : ' disabled') + (can ? '' : '<p class="help">Go offline to change the type, the period, the priority or the trigger.</p>');
       // the schedule being edited: program names, Scheduled in order
       const st = { s: T.programs.map(g => g.name), u: ((unsTask() || {}).programs || []).map(g => g.name), pick: null };
       const list = (k, arr) => arr.map(n => `<div class="row${st.pick && st.pick[0] === k && st.pick[1] === n ? ' on' : ''}" data-tps="${k}:${esc(n)}"><span class="nm">${esc(n)}</span></div>`).join('') || '<div class="empty">None</div>';
@@ -229,20 +230,32 @@
         <div><div class="grp">Scheduled</div><div class="tplist" id="tp-sl">${list('s', st.s)}</div>
         <div class="brow"><button class="btn" id="tp-up" title="Move up" aria-label="Move up"${can ? '' : ' disabled'}>&uarr;</button><button class="btn" id="tp-dn" title="Move down" aria-label="Move down"${can ? '' : ' disabled'}>&darr;</button></div></div></div>
         <p class="help">The programs run in the order of the Scheduled list. A program in Unscheduled does not run.${can ? '' : ' Go offline to change the schedule.'}</p>`;
-      const mon = on ? `${kv('Last scan time', ((ctl.scanUs || 0) / 1000).toFixed(3) + ' ms')}${kv('Maximum scan time', ((ctl.maxScanUs || 0) / 1000).toFixed(3) + ' ms')}${kv('Scan period', ctl.period + ' ms')}${kv('Scans', ctl.scans)}<div class="brow"><button class="btn" id="tp-r">Reset</button></div>`
-        : '<p class="help">Offline. Go online to see the scan times.</p>';
+      /* Monitor (1756-PM005, Manually Check for Overlaps): Scan Times (Elapsed Time) Max and Last, Interval Times
+         (Elapsed Time Between Triggers) Max and Min, Task Overlap Count, Reset. Online only; the fields are empty offline. */
+      const RT = on && ctl.M.tasks.find(t => t.name === T.name), ms = us => (RT && us != null ? (us / 1000).toFixed(3) : '');
+      const iv = x => (RT && x != null ? (+x).toFixed(3) : ''), out = (id, v) => `<input class="inp tpmon" id="${id}" value="${v}" readonly tabindex="-1"> ms`;
+      const mon = `<div class="grp">Scan Times (Elapsed Time):</div>
+        <div class="frow"><label for="tp-mx">Max</label><span>${out('tp-mx', ms(RT && RT.maxUs))}</span></div>
+        <div class="frow"><label for="tp-ls">Last</label><span>${out('tp-ls', ms(RT && RT.us))}</span></div>
+        <div class="brow"><button class="btn" id="tp-r"${RT ? '' : ' disabled'}>Reset</button></div>
+        <div class="grp">Interval Times (Elapsed Time Between Triggers):</div>
+        <div class="frow"><label for="tp-ix">Max</label><span>${out('tp-ix', iv(RT && RT.ivMax))}</span></div>
+        <div class="frow"><label for="tp-in">Min</label><span>${out('tp-in', iv(RT && RT.ivMin))}</span></div>
+        <div class="frow"><label for="tp-ov">Task Overlap Count</label><input class="inp tpmon" id="tp-ov" value="${RT ? RT.overlap || 0 : ''}" readonly tabindex="-1"></div>
+        <p class="help">${RT ? 'The values when this tab opened. Reset clears the maximum scan time, the interval times and the overlap count.' : 'Go online to see the scan times, the interval times and the overlap count.'}</p>`;
       dialog({ title: 'Task Properties - ' + T.name, size: 'md',
-        body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['sch', 'Program Schedule', `<div id="tp-sch">${schedHTML()}</div>`], ['mon', 'Monitor', mon]], tab || 'gen'),
+        body: tabbed([['gen', 'General', general], ['cfg', 'Configuration', conf], ['sch', 'Program / Phase Schedule', `<div id="tp-sch">${schedHTML()}</div>`], ['mon', 'Monitor', mon]], tab || 'gen'),
         buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
           if (!editable()) return;
-          const n = el.querySelector('#tp-n').value.trim(), d = el.querySelector('#tp-d').value.trim(), w = Math.max(1, +el.querySelector('#tp-w').value || 500);
+          const n = el.querySelector('#tp-n').value.trim(), d = el.querySelector('#tp-d').value.trim();
           if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
           if (U(n) !== U(T.name) && S.p.tasks.some(t => t !== T && U(t.name) === U(n))) { toast(`A task named ${n} already exists.`, 'err'); return false; }
-          const no = el.querySelector('#tp-o').checked, inh = el.querySelector('#tp-i').checked;
+          const c = cfgRead(el, 'tp', T); if (c.err) { toast(c.err, 'err'); return false; }
           const sched = st.s.join('\n') !== T.programs.map(g => g.name).join('\n');
-          if (n === T.name && d === (T.desc || '') && w === (T.watchdog || 500) && no === !!T.noOutputs && inh === !!T.inhibit && !sched) return;
+          if (n === T.name && d === (T.desc || '') && sameCfg(T, c.v) && !sched) return;
           edit(() => {
-            T.name = n; if (d) T.desc = d; else delete T.desc; T.watchdog = w; if (no) T.noOutputs = true; else delete T.noOutputs; if (inh) T.inhibit = true; else delete T.inhibit;
+            T.name = n; if (d) T.desc = d; else delete T.desc;
+            cfgApply(T, c.v);
             if (sched && can) {
               const all = T.programs.concat((unsTask() || { programs: [] }).programs), byName = x => all.find(g => g.name === x);
               const keep = st.s.map(byName).filter(Boolean), out = st.u.map(byName).filter(g => g && !keep.includes(g));
@@ -254,7 +267,9 @@
         } }],
         mount: el => {
           bindTabs(el);
-          const r = el.querySelector('#tp-r'); if (r) r.onclick = () => { A.ctl.maxScanUs = 0; taskProps(T.name, 'mon'); };
+          cfgBind(el, 'tp');
+          const r = el.querySelector('#tp-r');
+          if (r) r.onclick = () => { const t = A.ctl.M && A.ctl.M.tasks.find(x => x.name === T.name); A.ctl.maxScanUs = 0; if (t) { t.maxUs = 0; t.ivMax = t.ivMin = null; t.overlap = 0; } taskProps(T.name, 'mon'); };
           const box = el.querySelector('#tp-sch');
           box.addEventListener('click', ev => {
             const row = ev.target.closest('[data-tps]');
@@ -282,7 +297,7 @@
       else if (key.startsWith('task:')) {
         items.unshift({ l: 'New Program…', run: () => newProgram(key.slice(5)), dis: off });
         const i = items.findIndex(x => x !== '-' && x.l === 'Properties…');
-        items.splice(i < 0 ? items.length : i, 0, { l: 'Delete', i: 'trash', run: () => deleteTask(key.slice(5)), dis: off }, '-');
+        items.splice(i < 0 ? items.length : i, 0, { l: 'Delete', i: 'trash', run: () => deleteTask(key.slice(5)), dis: off || !!((S.p.tasks.find(t => t.name === key.slice(5)) || {}).programs || []).length }, '-');
       }
       else if (key.startsWith('prog:')) { const i = items.findIndex(x => x !== '-' && x.l === 'Properties…'); items.splice(i < 0 ? items.length : i, 0, { l: 'Delete', i: 'trash', run: () => deleteProgram(key.slice(5)), dis: off }, '-'); }
     }

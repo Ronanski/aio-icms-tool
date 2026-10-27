@@ -138,8 +138,9 @@ module.exports = async function w3B({ browser, page, URL, check }) {
     check('the 5 ms task runs 20 times in 100 ms of the engine', ran === 20, String(ran));
     // Delete Task: refused while it schedules a program
     await page.click('.nd[data-org="task:Fast"]', { button: 'right' }); await wait(120);
-    check('right-click a task: Delete', (await items()).some(([l, d]) => l === 'Delete' && !d));
-    await pick('Delete');
+    check('right-click a task that schedules a program: Delete is off (1756-PM005, Manually Check for Overlaps picture)', (await items()).some(([l, d]) => l === 'Delete' && d));
+    await page.keyboard.press('Escape'); await wait(60);
+    await ev(() => MTPS.App.tasks.deleteTask('Fast'));
     check('Delete a task that schedules a program: Failed to delete task', /Failed to delete task Fast/.test(await toastTx()) && (await tasksOf()).includes('periodic:Fast='));
     await page.click('.dmenu [data-menu="File"]'); await wait(120);
     check('File > New Component > New Task… is on', (await items()).some(([l, d]) => l === 'New Task…' && !d));
@@ -152,6 +153,40 @@ module.exports = async function w3B({ browser, page, URL, check }) {
     check('the empty task is deleted', !(await tasksOf()).includes('Spare_Task') && !(await treeKeys()).includes('task:Spare_Task'));
     const verr = await ev(() => MTPS.verify(MTPS.App.state.p).errors.map(e => e.text).join(' | '));
     check('Verify Controller: 0 errors with a periodic task', verr === '', verr);
+    console.log('Wave 3 B: Task Properties, Configuration and Monitor (1756-PM005, Create a Periodic Task; Manually Check for Overlaps)');
+    await page.dblclick('.nd[data-org="task:Fast"]'); await wait(200);
+    check('Task Properties tabs: General, Configuration, Program / Phase Schedule, Monitor', (await page.$$eval('#layer [data-dt]', t => t.map(x => x.textContent).join('|'))) === 'General|Configuration|Program / Phase Schedule|Monitor');
+    await page.click('#layer [data-dt="cfg"]'); await wait(80);
+    check('Configuration of Fast: Periodic, Period 5, Priority 5, Watchdog 500; Continuous is off', (await page.$eval('#tp-t', e => e.value)) === 'periodic' && (await page.$eval('#tp-p', e => e.value)) === '5' && (await page.$eval('#tp-pr', e => e.value)) === '5' && (await page.$eval('#tp-w', e => e.value)) === '500' && (await page.$eval('#tp-t option[value="continuous"]', o => o.disabled)));
+    check('Priority shows (Lower Number Yields Higher Priority)', /Lower Number Yields Higher Priority/.test(await dlgText()));
+    await shot('after-taskprops-cfg-periodic');
+    await page.fill('#tp-p', '20'); await page.fill('#tp-pr', '16'); await clickBtn('OK');
+    check('Priority 16 is refused', (await dlgTitle()) === 'Task Properties - Fast');
+    await page.fill('#tp-pr', '3'); await page.check('#tp-o'); await clickBtn('OK');
+    check('OK: Period 20 ms, Priority 3, Disable Automatic Output Processing saved', await ev(() => { const t = MTPS.App.state.p.tasks.find(x => x.name === 'Fast'); return t.period === 20 && t.priority === 3 && t.noOutputs === true; }));
+    // MainTask: the Type can become Event; then Continuous is free for another task
+    await page.dblclick('.nd[data-org="task:MainTask"]'); await wait(200);
+    await page.click('#layer [data-dt="cfg"]'); await wait(80);
+    check('MainTask: Type Continuous, no Period or Priority shown', (await page.$eval('#tp-t', e => e.value)) === 'continuous' && !(await page.$eval('#tp-p', e => e.closest('.tpf').style.display !== 'none')));
+    await page.selectOption('#tp-t', 'event'); await wait(60);
+    check('changing the type to Event shows Trigger and Priority', await page.$eval('#tp-tr', e => e.closest('.tpf').style.display !== 'none'));
+    await clickBtn('Cancel');
+    // Monitor online: scan times, intervals, overlap count, Reset
+    await ev(() => MTPS.App.run('online'));
+    for (let k = 0; k < 10 && !(await ev(() => MTPS.App.state.online && !document.querySelector('#layer .dlg'))); k++) { await wait(150); const b = await page.$('#layer .dlg .btn.pri'); if (b && !(await page.$('#layer .dlg .prog'))) await b.click(); else await wait(400); }
+    await ev(() => MTPS.App.run('runm')); await wait(600);
+    await page.dblclick('.nd[data-org="task:Fast"]'); await wait(200);
+    await page.click('#layer [data-dt="mon"]'); await wait(80);
+    const monv = await page.$$eval('#tp-mx, #tp-ls, #tp-ix, #tp-in, #tp-ov', e => e.map(x => x.value));
+    check('online in Run, Monitor: Scan Times Max / Last, Interval Times Max / Min about 20 ms, Task Overlap Count', monv.length === 5 && monv.every(v => v !== '') && Math.abs(+monv[2] - 20) < 0.5 && Math.abs(+monv[3] - 20) < 0.5, monv.join(','));
+    check('online: the type and the period are off (offline only), the watchdog is on', (await page.$eval('#tp-t', e => e.disabled)) && (await page.$eval('#tp-p', e => e.disabled)) && !(await page.$eval('#tp-w', e => e.disabled)));
+    await shot('after-taskprops-monitor-online');
+    await hit('#tp-r');
+    check('Reset: the interval times and the overlap count start again', (await page.$eval('#tp-ov', e => e.value)) === '0' && (await page.$eval('#tp-ix', e => e.value)) === '');
+    await clickBtn('Cancel');
+    await page.click('.nd[data-org="task:Fast"]'); await wait(100);
+    check('Quick View of Fast: Periodic task, Period 20 ms, Priority 3', await page.$eval('body', b => /Periodic task/.test(b.textContent) && /20 ms/.test(b.textContent)));
+    await ev(() => MTPS.App.run('offline')); await wait(150);
     await shot('after-new-task-tree');
   }
   {
