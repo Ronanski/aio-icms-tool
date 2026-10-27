@@ -115,7 +115,12 @@ console.log('Tags and types');
   eq('TIMER members', c.read('Run_Timer'), { PRE: 0, ACC: 0, EN: 0, TT: 0, DN: 0 });
   eq('module input tag', c.read('Local:1:I'), { Fault: 0, Data: 0 });
   eq('analog channel is REAL', c.read('Local:3:I.Ch0Data'), 0);
-  eq('a digital input module has its configuration tag Local:1:C (filters, change of state)', Object.keys(c.read('Local:1:C')), ['FilterOffOn_0_7', 'FilterOnOff_0_7', 'FilterOffOn_8_15', 'FilterOnOff_8_15', 'COSOnOffEn', 'COSOffOnEn']);
+  eq('a digital input module has its configuration tag Local:1:C (AB:1756_DI:C:0: filters of 4 groups, change of state)', Object.keys(c.read('Local:1:C')), ['FilterOffOn_0_7', 'FilterOffOn_8_15', 'FilterOffOn_16_23', 'FilterOffOn_24_31', 'FilterOnOff_0_7', 'FilterOnOff_8_15', 'FilterOnOff_16_23', 'FilterOnOff_24_31', 'COSOnOffEn', 'COSOffOnEn']);
+  check('the analog input card Local:3:C: RealTimeSample and Ch0Config … Ch3Config (AB:1756_NII_Struct:C:0) with the scaling members', Object.keys(c.read('Local:3:C')).join() === 'RealTimeSample,Ch0Config,Ch1Config,Ch2Config,Ch3Config' && c.read('Local:3:C.Ch2Config.LowEngineering') === 0 && c.write('Local:3:C.Ch2Config.HighEngineering', 100) && c.read('Local:3:C.Ch2Config.HighEngineering') === 100);
+  {
+    const a = run({ modules: [{ slot: 4, type: 'PLC-AO4', name: 'AO_1' }] });
+    check('the analog output card Local:4:C: ProgToFaultEn and Ch<n>Config (AB:1756_NIO_Struct:C:0) with FaultValue, ProgValue, limits', Object.keys(a.read('Local:4:C')).join() === 'ProgToFaultEn,Ch0Config,Ch1Config,Ch2Config,Ch3Config' && a.read('Local:4:C.Ch3Config.FaultValue') === 0 && a.read('Local:4:C.Ch0Config.HighLimit') === 0);
+  }
   check('a digital output module has Local:2:C with its fault and program mode states', c.read('Local:2:C.ProgToFaultEn') === 0 && c.read('Local:2:C.FaultValue') === 0);
   check('the configuration tag can be written (it is not an input image)', c.write('Local:2:C.FaultValue', 5) === true && c.read('Local:2:C.FaultValue') === 5);
   eq('program tag', c.read('Local_Val', 'MainProgram'), 0);
@@ -127,8 +132,18 @@ console.log('Tags and types');
   check('writing an input image is refused', c.write('Local:1:I.Data.0', 1) === false && c.write('Start_PB', 1) === false && c.read('Start_PB') === 0);
   check('writing an output image is allowed', c.write('Motor_Cmd', 1) === true && c.read('Local:2:O.Data.0') === 1);
   check('S:FS is read-only, S:V can be set (as with OTE / OTL in the reference)', c.write('S:FS', 1) === false && c.write('S:V', 1) === true && c.read('S:V') === 1);
+  // module-defined data types as Studio 5000 names them (help: 1756 discrete / analog module-defined data types)
+  eq('module tag types: AB:1756_DI / AB:1756_DO / AB:1756_IF4_Float', [MTPS.MODULES['PLC-DI16-24V'].I, MTPS.MODULES['PLC-DI16-24V'].C, MTPS.MODULES['PLC-DO16-24V'].I, MTPS.MODULES['PLC-DO16-24V'].O, MTPS.MODULES['PLC-DO16-24V'].C, MTPS.MODULES['PLC-AI4'].I, MTPS.MODULES['PLC-AO4'].O],
+    ['AB:1756_DI:I:0', 'AB:1756_DI:C:0', 'AB:1756_DO:I:0', 'AB:1756_DO:O:0', 'AB:1756_DO:C:0', 'AB:1756_IF4_Float:I:0', 'AB:1756_OF4_Float:O:0']);
+  check('the 1756 discrete and analog modules have no status tag Local:<slot>:S (none in their module profile)', c.read('Local:1:S') === undefined && c.read('Local:2:S') === undefined);
+  check('a tag of an old module type name (PLC:DI16:I, 0.4.0) still verifies', MTPS.verify(proj({ tags: [T('Old_In', 'PLC:DI16:I')], rungs: ['XIC(Old_In.Data.0)NOP();'] })).errors.length === 0);
+  {
+    const d = run({ tags: [T('Q', 'BOOL', { alias: 'Local:2:O.Data.3' })], rungs: ['OTE(Q);'] });
+    scans(d, 2);
+    check('a digital output module echoes its applied outputs in Local:2:I.Data (AB:1756_DO:I:0)', d.read('Local:2:I.Data') === 8 && d.read('Local:2:I.Fault') === 0);
+  }
   const dt = MTPS.dataTypes(proj({ dataTypes: [{ name: 'Pump', members: [{ name: 'Running', type: 'BOOL' }] }] }));
-  check('data types list: predefined, module-defined, user-defined', dt.predefined.includes('TIMER') && dt.moduleDefined.includes('PLC:DI16:I') && dt.userDefined.includes('Pump'));
+  check('data types list: predefined, module-defined, user-defined', dt.predefined.includes('TIMER') && dt.moduleDefined.includes('AB:1756_DI:I:0') && dt.userDefined.includes('Pump'));
   check('tag name rule', MTPS.validName('Motor_1') && MTPS.validName('_x') && !MTPS.validName('1abc') && !MTPS.validName('a-b') && !MTPS.validName('a'.repeat(41)));
 }
 
@@ -155,6 +170,48 @@ console.log('Verify');
   check('JMP to a label that does not exist',/Undefined label 'L9'/.test(v({ rungs: ['JMP(L9);'] }).errors[0].text));
   check('LBL that is not the first instruction', /LBL must be the first instruction/.test(v({ tags: [T('A', 'BOOL')], rungs: ['XIC(A)LBL(L1)NOP();', 'JMP(L1);'] }).errors[0].text));
   check('label used twice', /Label 'L1' is defined more than once/.test(v({ rungs: ['LBL(L1)NOP();', 'LBL(L1)NOP();'] }).errors.map(e => e.text).join()));
+  {
+    // Constant (help: New Parameter or Tag dialog box, Tag Editor columns): logic that writes it does not verify;
+    // the Data Monitor (Monitor Tags) can still write it
+    const K = [T('Limit', 'DINT', { constant: true, value: 7 }), T('Arr', 'DINT', { dim: 3, constant: true }), T('K_Alias', 'BOOL', { alias: 'Limit.2' }), T('D', 'DINT')];
+    const ke = (r) => v({ tags: K, rungs: [r] }).errors.map(e => e.text).join(' | ');
+    check('Constant: MOV into a constant tag does not verify', /Tag 'Limit' is a constant: logic cannot write to it/.test(ke('MOV(1,Limit);')));
+    check('Constant: an element of a constant array, a bit, and an alias of a constant are refused too', /constant/.test(ke('MOV(1,Arr[1]);')) && /constant/.test(ke('OTE(Limit.0);')) && /constant/.test(ke('OTL(K_Alias);')));
+    check('Constant: reading it is fine (source operand, XIC)', ke('XIC(Limit.1)MOV(Limit,D);') === '');
+    const kc = run({ tags: K, rungs: ['MOV(Limit,D);'] });
+    kc.scan(10);
+    check('Constant: the logic reads its value', kc.read('D') === 7);
+    check('Constant: Toggle Bit / a write from the ladder is refused, Monitor Tags may write it', kc.write('Limit', 9) === false && kc.toggle('Limit.0') === false && kc.write('Limit', 9, undefined, true) === true && kc.read('Limit') === 9);
+    const kp = proj({ tags: K, rungs: ['MOV(Limit,D);'] }); kp.tasks[0].programs[0].routines[0].rungs = [{ t: 'MOV(D,Limit);' }];
+    check('Constant: an online edit that writes a constant is not accepted', kc.edit(kp).ok === false);
+    const sp = proj({ tags: K, rungs: ['MOV(Limit,D);'] });
+    const sc = new MTPS.Controller(); sc.download(sp); sp.tags[3].style = 'Hex';
+    check('a changed Style is not a logic change (no new download needed); a changed External Access is', sc.holds(sp) && (() => { sp.tags[3].access = 'Read Only'; return !sc.holds(sp); })());
+  }
+  {
+    // arrays of 2 and 3 dimensions (1756-PM004: Data_type[x,y,z], one subscript per dimension, the rightmost varies fastest)
+    const G = [T('Grid', 'DINT', { dim: [3, 4] }), T('Cube', 'INT', { dim: [2, 3, 4] }), T('I', 'DINT', { value: 2 }), T('J', 'DINT', { value: 3 }), T('D', 'DINT'),
+      T('North_Tank', 'DINT', { alias: 'Grid[0,1]' })];
+    const ge = r => v({ tags: G, rungs: [r] }).errors.map(e => e.text).join(' | ');
+    check('Grid[2,3] and Cube[1,2,3] verify', ge('MOV(5,Grid[2,3])MOV(6,Cube[1,2,3]);') === '');
+    check('a subscript past its own dimension is an error (Grid[3,0], Grid[0,4])', /out of range.*0 to 2/.test(ge('MOV(1,Grid[3,0]);')) && /out of range.*0 to 3/.test(ge('MOV(1,Grid[0,4]);')));
+    check('the wrong number of subscripts is an error (Grid[1], Cube[1,2])', /Wrong number of subscripts.*2 dimensions/.test(ge('MOV(1,Grid[1]);')) && /3 dimensions/.test(ge('MOV(1,Cube[1,2]);')));
+    check('a member or bit of a 2-dimension array needs its subscripts first, e.g. Grid[0,0]', /Grid\[0,0\]/.test(ge('XIC(Grid.0)NOP();')));
+    const gc = run({ tags: G, rungs: ['MOV(7,Grid[I,J])MOV(9,Cube[1,2,3])MOV(4,North_Tank);', 'MOV(Grid[2,3],D);'] });
+    gc.scan(10);
+    check('indirect subscripts Grid[I,J]; the element is stored row by row (Grid[2,3] is element 11)', gc.read('Grid[2,3]') === 7 && gc.read('D') === 7 && gc.read('Grid')[11] === 7);
+    check('Cube[1,2,3] is element 23 of 24; an alias of Grid[0,1] (as "north_tank" of 1756-PM004) shares its value', gc.read('Cube')[23] === 9 && gc.read('Cube').length === 24 && gc.read('Grid[0,1]') === 4 && gc.read('North_Tank') === 4);
+    check('Monitor Tags can write Grid[1,2]', gc.write('Grid[1,2]', 3) && gc.read('Grid')[6] === 3);
+    const gf = run({ tags: G.concat([T('Ix', 'DINT', { value: 5 })]), rungs: ['MOV(1,Grid[Ix,0]);'] });
+    gf.scan(10);
+    check('an indirect subscript out of range at run time is major fault 4/20', gf.fault && gf.fault.type === 4 && gf.fault.code === 20);
+    const gp = proj({ tags: G, rungs: ['MOV(7,Grid[I,J]);'] }), gx = new MTPS.Controller(); gx.download(gp); gx.setMode('remrun'); gx.scan(10);
+    gp.tasks[0].programs[0].routines[0].rungs.push({ t: 'NOP();' });
+    check('an online edit keeps the values of a 2-dimension array', gx.edit(gp).ok && gx.read('Grid[2,3]') === 7);
+    check('COP across rows of a 2-dimension array (the elements are contiguous)', (() => { const c = run({ tags: G, rungs: ['FLL(8,Grid[0,2],4);'] }); c.scan(10); return c.read('Grid').slice(0, 7).join() === '0,0,8,8,8,8,0'; })());
+    check('more than 3 dimensions, or a dimension of 0, is refused', /invalid array dimensions/.test(MTPS.verify(proj({ tags: [T('Q', 'DINT', { dim: [2, 2, 2, 2] })] })).errors.map(e => e.text).join()) && /invalid array dimensions/.test(MTPS.verify(proj({ tags: [T('Q', 'DINT', { dim: [2, 0] })] })).errors.map(e => e.text).join()));
+    eq('dimText / dimN', [MTPS.dimText([2, 3, 4]), MTPS.dimN([2, 3, 4]), MTPS.dimText(10), MTPS.dimN(0)], ['2,3,4', 24, '10', 0]);
+  }
   check('constant subscript out of range', /out of range/.test(v({ tags: [T('A', 'DINT', { dim: 3 })], rungs: ['MOV(1,A[3]);'] }).errors[0].text));
   check('writing a REAL to an AND dest is a type error', /Invalid data type/.test(v({ tags: [T('R', 'REAL')], rungs: ['AND(1,2,R);'] }).errors[0].text));
   check('a negative timer preset is an error', /Preset/.test(v({ tags: [T('T1', 'TIMER')], rungs: ['TON(T1,-5,0);'] }).errors[0].text));
@@ -406,6 +463,23 @@ console.log('Math');
   const zr = one('SUB(A,B,D);', { A: 4, B: 4 });
   check('S:Z on a zero result', zr.read('S:Z') === 1 && zr.read('S:N') === 0 && zr.read('S:V') === 0);
   check('S:N on a negative result', one('SUB(A,B,D);', { A: 1, B: 4 }).read('S:N') === 1);
+  // 1756-RM003 / Studio 5000 help (Math Status Flags, Monitor Status Flags)
+  const sv = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT')], rungs: ['ADD(A,1,D);'] });
+  scans(sv, 3);
+  check('S:V that stays set makes one minor fault, not one per scan (only "from cleared to set")', sv.minors.length === 1 && sv.minors[0].count === 1 && sv.read('S:V') === 1);
+  const mv = run({ tags: [T('A', 'DINT', { value: -5 }), T('D', 'DINT'), T('Z', 'DINT')], rungs: ['SUB(A,A,Z);', 'MVM(A,16#FF,D);'] });
+  mv.scan(10);
+  check('MVM does not change the math status flags (5580): S:Z of the SUB before it stays', mv.read('S:Z') === 1 && mv.read('S:N') === 0 && mv.read('D') === 251);
+  const sa = MTPS.verify(proj({ tags: [T('First', 'BOOL', { alias: 'S:FS' })], rungs: ['XIC(First)NOP();'] }));
+  check('an alias to a status flag is refused: S:FS is a keyword, not a tag', sa.errors.some(e => /status flag keyword/.test(e.text)));
+  {
+    const pj = proj({ tags: [T('N', 'DINT')], rungs: ['NOP();'] });
+    pj.tasks[0].programs.push({ name: 'P2', main: 'R', inhibit: true, tags: [], routines: [{ name: 'R', rungs: [{ t: 'XIC(S:FS)ADD(N,1,N);' }] }] });
+    const c = new MTPS.Controller(); c.download(pj); c.setMode('remrun'); scans(c, 3);
+    check('an inhibited program does not run', c.read('N') === 0);
+    pj.tasks[0].programs[1].inhibit = false; c.edit(pj); scans(c, 3);
+    check('S:FS is set on the first scan of a program after it is uninhibited (once)', c.read('N') === 1);
+  }
   eq('CPT with precedence', one('CPT(D,A+B*2);', { A: 1, B: 3 }).read('D'), 7);
   eq('CPT with ( )', one('CPT(D,(A+B)*2);', { A: 1, B: 3 }).read('D'), 8);
   eq('CPT: / is the divide, integers truncate', one('CPT(D,A/B);', { A: 7, B: 2 }).read('D'), 3);
@@ -559,7 +633,8 @@ console.log('Modules: inhibit, fault, Upload, fault logs');
   check('"Major fault on controller if the connection fails": type 3 code 16', c.fault && c.fault.type === 3 && c.fault.code === 16);
   check('outputs of a faulted card are off', c.ioImage(2).out === 0);
   check('the major fault is logged', c.majors.length === 1 && c.majors[0].code === 16);
-  const m = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT')], rungs: ['ADD(A,1,D);'] });
+  // MOV clears S:V again, so each scan S:V goes from cleared to set: one minor fault per scan
+  const m = run({ tags: [T('A', 'DINT', { value: 2147483647 }), T('D', 'DINT'), T('E', 'DINT')], rungs: ['ADD(A,1,D);', 'MOV(0,E);'] });
   scans(m, 3);
   check('an overflow is logged as a minor fault, repeats counted', m.minors.length === 1 && m.minors[0].type === 4 && m.minors[0].count === 3);
   m.clearMinors();

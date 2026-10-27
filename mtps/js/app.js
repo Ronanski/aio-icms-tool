@@ -1677,7 +1677,7 @@
   function addrType(addr, seen) {
     const a = String(addr || '').trim();
     let ty, dim = 0, rest;
-    const io = /^Local:(\d+):([ICO])(.*)$/i.exec(a);
+    const io = /^Local:(\d+):([ICOS])(.*)$/i.exec(a);
     if (io) {
       const m = S.p.rack.modules.find(x => x.slot === +io[1]), d = m && E.MODULES[m.type], k = U(io[2]);
       if (!d || !d[k]) return null;
@@ -1691,19 +1691,29 @@
       if (t.alias) { seen = seen || new Set(); if (seen.has(U(t.name))) return null; seen.add(U(t.name)); return addrType(t.alias + rest, seen); }
       ty = t.type || 'BOOL'; dim = t.dim || 0;
     }
-    const re = /^(?:\[(\d+)\]|\.([A-Za-z_]\w*)|\.(\d+))/;
+    // Tag[i], Tag[i,j], Tag[i,j,k]: one subscript per dimension, each inside its own dimension
+    const re = /^(?:\[\s*(\d+(?:\s*,\s*\d+){0,2})\s*\]|\.([A-Za-z_]\w*)|\.(\d+))/;
     while (rest) {
       const m = re.exec(rest);
       if (!m) return null;
       rest = rest.slice(m[0].length);
-      if (m[1] != null) { if (!dim || +m[1] >= dim) return null; dim = 0; continue; }
+      if (m[1] != null) { const ds = E.dimsOf(dim) || [], ix = m[1].split(',').map(Number); if (!ds.length || ix.length !== ds.length || ix.some((x, n) => x >= ds[n])) return null; dim = 0; continue; }
       if (dim) return null;
       if (m[2] != null) { const mem = (membersOf(ty) || []).find(x => U(x.name) === U(m[2])); if (!mem) return null; ty = mem.type; dim = mem.dim || 0; continue; }
       if (!NBITS[ty] || +m[3] >= NBITS[ty]) return null;
       ty = 'BOOL';
     }
-    return dim ? ty + '[' + dim + ']' : ty;
+    return dim ? ty + '[' + E.dimText(dim) + ']' : ty;
   }
+  /* the subscripts of the elements of an array, row by row (the rightmost varies fastest): [2,3] → 0,0 0,1 0,2 1,0 …;
+     at most cap of them */
+  const subsOf = (dims, cap) => {
+    const ds = E.dimsOf(dims) || [], n = Math.min(E.dimN(dims), cap || 64), out = [];
+    for (let k = 0; k < n; k++) { let r = k; const ix = []; for (let d = ds.length - 1; d >= 0; d--) { ix.unshift(r % ds[d]); r = Math.floor(r / ds[d]); } out.push(ix.join(',')); }
+    return out;
+  };
+  // a data type with its dimensions: DINT, DINT[10], DINT[4,5]
+  const tyDims = (ty, dim) => ty + (E.dimN(dim) ? '[' + E.dimText(dim) + ']' : '');
   /* the tag browser of Alias For (as in the reference): the I/O tags of the modules, the controller tags, the program
      tags; a structure opens to its members, an integer to its bits (+) */
   function aliasBrowser(box, inp, o) {
@@ -1712,15 +1722,15 @@
     const build = () => {
       const groups = [];
       const tree = (path, ty, depth) => {
-        const n = node(path, ty, depth, null), dm = /^(.*)\[(\d+)\]$/.exec(ty);
-        if (dm) n.kids = Array.from({ length: Math.min(+dm[2], 64) }, (_, i) => tree(`${path}[${i}]`, dm[1], depth + 1));
+        const n = node(path, ty, depth, null), dm = /^(.*)\[([\d,]+)\]$/.exec(ty);
+        if (dm) n.kids = subsOf(dm[2].split(',').map(Number)).map(i => tree(`${path}[${i}]`, dm[1], depth + 1));
         else { const mem = membersOf(ty); if (mem) n.kids = mem.map(m => tree(`${path}.${m.name}`, m.type + (m.dim ? '[' + m.dim + ']' : ''), depth + 1)); }
         return n;
       };
       const ioRows = [];
-      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
+      S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (!d) return; ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) { const n = tree(`Local:${m.slot}:${k}`, d[k], 0); n.desc = `[${m.slot}] ${m.name} · ${MODNAMES[m.type] || m.type}`; ioRows.push(n); } }); });
       groups.push({ name: 'I/O tags (Local)', rows: ioRows, empty: 'No modules in the I/O Configuration: add one with New Module.' });
-      const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = typeOf(t) + (t.dim ? '[' + t.dim + ']' : ''); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
+      const tagRowsOf = list => list.filter(t => !o.self || U(t.name) !== U(o.self)).map(t => { const ty = tyDims(typeOf(t), t.dim); const n = t.alias ? node(t.name, ty, 0, null) : tree(t.name, ty, 0); n.desc = (t.alias ? '<' + t.alias + '> ' : '') + (t.desc || ''); return n; });
       groups.push({ name: `Controller Tags · ${S.p.controller.name}`, rows: tagRowsOf(S.p.tags), empty: 'No controller tags' });
       const P = o.scope && o.scope() ? allProgs().find(g => g.name === o.scope()) : null;
       if (P) groups.push({ name: `Program Tags · ${P.name}`, rows: tagRowsOf(P.tags), empty: 'No program tags' });
@@ -1772,7 +1782,7 @@
       const M = E.PREDEF[ty], g = t.alias ? io(t.alias) : 'tag', nb = { SINT: 8, INT: 16, DINT: 32 }[ty];
       if (M && !t.dim) M.forEach(m => add(`${t.name}.${m.name}`, m.type, '', scope, 0, g));
       if (nb && !t.dim) for (let b = 0; b < nb; b++) add(`${t.name}.${b}`, 'BOOL', '', scope, 0, g);
-      if (t.dim && E.ATOMIC.includes(ty)) for (let i = 0; i < Math.min(t.dim, 64); i++) add(`${t.name}[${i}]`, ty, '', scope, 0, g);
+      if (t.dim && E.ATOMIC.includes(ty)) subsOf(t.dim).forEach(i => add(`${t.name}[${i}]`, ty, '', scope, 0, g));
     });
     tags(P.tags, P.name);
     tags(S.p.tags, 'Controller');
@@ -2070,6 +2080,45 @@
   const inlineOpen = () => !!$('#inled');
 
   /* ---------- tags ---------- */
+  /* External Access and Style (radix), as in the New Tag dialog and the Tag Editor of the reference (help: New Parameter
+     or Tag dialog box, Tag Editor columns; L5X attributes ExternalAccess and Radix, 1756-RM014). A structure has no
+     style; a REAL shows Float or Exponential; an integer or BOOL Binary, Octal, Decimal, Hex (integers also ASCII). */
+  const ACCESS = ['Read/Write', 'Read Only', 'None'];
+  const baseTy = ty => String(ty || 'BOOL').replace(/\[.*$/, '');
+  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : []; };
+  const defStyle = ty => (U(baseTy(ty)) === 'REAL' ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
+  const styleOfTag = (t, ty) => { const l = stylesOf(ty || (t && t.type)); return t && l.includes(t.style) ? t.style : defStyle(ty || (t && t.type)); };
+  const accessOf = t => (t && ACCESS.includes(t.access) ? t.access : 'Read/Write');
+  /* a value as its Style shows it (1756-RM014, Data display style: 15 in an INT is 2#0000_0000_0000_1111, 8#000_017,
+     16#000F, '$00$0F', 1.5000000e+01); null for Decimal and Float, which show the number as it is */
+  const BITW = { SINT: 8, INT: 16, DINT: 32 };
+  const grp_ = (x, n) => x.replace(new RegExp(`\\B(?=(\\w{${n}})+$)`, 'g'), '_');
+  function styled(v, ty, st) {
+    if (typeof v !== 'number' || !st || st === 'Decimal' || st === 'Float') return null;
+    if (st === 'Exponential') { const [m, e] = v.toExponential(7).split('e'); return m + 'e' + (e[0] === '-' ? '-' : '+') + e.replace(/^[+-]/, '').padStart(2, '0'); }
+    const w = BITW[U(ty)];
+    if (!w || !Number.isInteger(v)) return null;
+    const u = BigInt.asUintN(w, BigInt(v));
+    if (st === 'Hex') return '16#' + grp_(u.toString(16).toUpperCase().padStart(w / 4, '0'), 4);
+    if (st === 'Binary') return '2#' + grp_(u.toString(2).padStart(w, '0'), 4);
+    if (st === 'Octal') return '8#' + grp_(u.toString(8).padStart(Math.ceil(w / 3), '0'), 3);
+    if (st === 'ASCII') { let x = ''; for (let k = w / 8 - 1; k >= 0; k--) { const c = Number((u >> BigInt(8 * k)) & 255n); x += c === 36 ? '$$' : c === 39 ? "$'" : c > 31 && c < 127 ? String.fromCharCode(c) : '$' + c.toString(16).toUpperCase().padStart(2, '0'); } return `'${x}'`; }
+    return null;
+  }
+  const fmtSt = (v, ty, t) => (t && !t.alias && !t.dim && styled(v, ty, styleOfTag(t, ty))) || fmtVal(v);
+  // the base tag of an alias (the last link of the chain), whose External Access and Constant the alias shows
+  const aliasBase = a => { const x = baseTagOf(a) || '', b = /^([A-Za-z_]\w*)/.exec(x), t = b && !/^Local:/i.test(x) ? tagFor(b[1]) : null; return t && !t.alias ? t : null; };
+  /* the L5X attributes of a base tag, and back; Dimensions="10" or "4 5" (also read with commas or brackets) */
+  const l5xDims = t => (E.dimN(t.dim) ? ` Dimensions="${E.dimText(t.dim).replace(/,/g, ' ')}"` : '');
+  const l5xDimsIn = g => { const a = String(g.getAttribute('Dimensions') || '').replace(/[[\]]/g, '').split(/[\s,]+/).filter(Boolean).map(Number), d = E.dimsOf(a); return !d || !d.length ? 0 : d.length === 1 ? d[0] : d; };
+  const l5xAttrs = (t, x) => { const st = styleOfTag(t); return `${st ? ` Radix="${st}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="${x(accessOf(t))}"`; };
+  function l5xTagIn(g, o) {
+    const ra = g.getAttribute('Radix'), ea = g.getAttribute('ExternalAccess');
+    if (ra && stylesOf(o.type).includes(ra) && ra !== defStyle(o.type)) o.style = ra;
+    if (ea && ACCESS.includes(ea) && ea !== 'Read/Write') o.access = ea;
+    if (g.getAttribute('Constant') === 'true' && !o.alias) o.constant = true;
+    return o;
+  }
   function newTag(o) {
     const P = curProg();
     const types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
@@ -2083,18 +2132,34 @@
         <div class="frow" id="ra"${t0.alias ? '' : ' hidden'}><label>Alias For</label><span class="afor"><input class="inp mono" id="ta" value="${esc(t0.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="btn" id="tab" type="button" title="Browse tags">${ic('down')}</button></span></div>
         <div class="asg abrw" id="asg" hidden></div>
         <div class="frow" id="rat"${t0.alias ? '' : ' hidden'}><label>Data Type</label><span class="mono" id="tat"></span></div>
-        <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label>Data Type</label><select class="inp" id="tt">${types.map(t => `<option${t === (t0.type || 'BOOL') ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
-        <div class="frow" id="rd"${t0.alias ? ' hidden' : ''}><label>Array size</label><input class="inp" id="tdim" type="number" min="0" max="10000" value="${t0.dim || ''}" placeholder="0 = not an array"></div>
+        <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label for="tt">Data Type</label><span class="afor"><input class="inp mono" id="tt" value="${esc(tyDims(t0.type || 'BOOL', t0.dim))}" list="ttl" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Data Type"><button class="btn" id="ttb" type="button" title="Select Data Type (with the array dimensions)" aria-label="Select Data Type">…</button></span><datalist id="ttl">${types.map(t => `<option value="${t}">`).join('')}</datalist></div>
         <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
+        <div class="frow"><label>External Access</label><select class="inp" id="tea">${ACCESS.map(a => `<option${a === accessOf(t0) ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+        <div class="frow"><label>Style</label><select class="inp" id="tsty"></select></div>
+        <div class="frow ckrow"><label for="tcon">Constant</label><input type="checkbox" id="tcon"${t0.constant ? ' checked' : ''}></div>
+        ${edit0 ? '' : '<div class="frow ckrow"><label for="tocf">Open Configuration</label><input type="checkbox" id="tocf" disabled title="Opens the configuration of a data type that has one (MESSAGE, PID, AXIS…) after Create. No data type of this app has one."></div>'}
         <div class="errtx" id="te"></div>`,
       mount: el => {
         const ta = el.querySelector('#ta'), asg = el.querySelector('#asg'), tat = el.querySelector('#tat');
         const br = aliasBrowser(asg, ta, { self: edit0 && edit0.name, scope: () => el.querySelector('#ts').value || (edit0 && o.list !== S.p.tags ? (allProgs().find(g => g.tags === o.list) || {}).name : '') });
         const showType = () => { const v = ta.value.trim(), ty = v ? addrType(v) : null; tat.textContent = !v ? '-' : ty || 'not a tag, member or bit of this project'; tat.classList.toggle('bad', !!v && !ty); };
-        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; el.querySelector('#rd').hidden = a; if (a) { br.show(); ta.focus(); } else br.hide(); };
-        ta.addEventListener('input', showType); ta.addEventListener('focus', () => br.show());
+        // Style lists the display formats of the data type; an alias takes External Access, Constant and its data type
+        // from its base tag, so those boxes are greyed (help: Tag Editor columns, Alias For)
+        const sty = el.querySelector('#tsty'), ea = el.querySelector('#tea'), con = el.querySelector('#tcon');
+        let styWant = t0.alias ? '' : styleOfTag(t0);
+        const sync = () => {
+          const a = el.querySelector('#tk').value === 'alias', ty = a ? addrType(ta.value.trim()) || '' : el.querySelector('#tt').value.trim(), l = stylesOf(ty), b = a ? aliasBase(ta.value.trim()) : null;
+          if (sty.value) styWant = sty.value;
+          sty.innerHTML = l.map(x => `<option${x === (l.includes(styWant) ? styWant : defStyle(ty)) ? ' selected' : ''}>${x}</option>`).join('');
+          sty.disabled = a || !l.length; ea.disabled = a; con.disabled = a;
+          if (a) { ea.value = accessOf(b); con.checked = !!(b && b.constant); }
+        };
+        el.querySelector('#tk').onchange = ev => { const a = ev.target.value === 'alias'; el.querySelector('#ra').hidden = !a; el.querySelector('#rat').hidden = !a; el.querySelector('#rt').hidden = a; if (a) { br.show(); ta.focus(); } else { br.hide(); ea.value = accessOf(t0.alias ? null : t0); con.checked = !t0.alias && !!t0.constant; } sync(); };
+        ta.addEventListener('input', () => { showType(); sync(); }); ta.addEventListener('focus', () => br.show());
+        el.querySelector('#tt').addEventListener('input', sync);
+        el.querySelector('#ttb').onclick = () => selectDataType(el.querySelector('#tt').value, v => { el.querySelector('#tt').value = v; sync(); });
         el.querySelector('#tab').onclick = () => br.toggle();
-        showType();
+        showType(); sync();
       },
       buttons: [{ l: 'Cancel' }, { l: edit0 ? 'OK' : 'Create', pri: true, run: el => {
         const name = el.querySelector('#tn').value.trim(), scope = el.querySelector('#ts').value, alias = el.querySelector('#tk').value === 'alias';
@@ -2104,19 +2169,97 @@
         if (!edit0 && list.some(t => U(t.name) === U(name))) return err(`A tag named ${name} already exists in this scope.`);
         const t = { name, desc: el.querySelector('#td').value.trim() };
         if (alias) {
-          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([ico])/, (m, a, b) => a + b.toUpperCase());
+          t.alias = el.querySelector('#ta').value.trim().replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([icos])/, (m, a, b) => a + b.toUpperCase());
           if (!t.alias) return err('Alias For: pick the tag, member or bit this alias points to (Browse).');
           if (U(t.alias.split(/[.[]/)[0]) === U(name)) return err('A tag cannot be an alias for itself.');
           if (!addrType(t.alias)) return err(/^Local:/i.test(t.alias) ? `Alias For: ${t.alias} is not an I/O point of this project. I/O tags are Local:<slot>:I or O, then .Data.<bit> (digital) or .Ch<n>Data (analog), for a module in the I/O Configuration.` : `Alias For: ${t.alias} is not a tag, member or bit of this project.`);
         }
-        else { t.type = el.querySelector('#tt').value; const d = +el.querySelector('#tdim').value; if (d > 0) t.dim = Math.floor(d); }
-        if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type) t.value = edit0.value;
+        else {
+          const dt = parseDataType(el.querySelector('#tt').value);
+          if (typeof dt === 'string') return err(dt);
+          t.type = dt.type; if (dt.dim) t.dim = dt.dim;
+          const acc = el.querySelector('#tea').value, st = el.querySelector('#tsty').value;
+          if (acc !== 'Read/Write') t.access = acc;
+          if (st && st !== defStyle(t.type)) t.style = st;
+          if (el.querySelector('#tcon').checked) t.constant = true;
+        }
+        if (!t.desc) delete t.desc;
+        if (edit0 && edit0.value !== undefined && !alias && t.type === edit0.type && E.dimText(t.dim) === E.dimText(edit0.dim)) t.value = edit0.value;
         const ok = edit(() => { if (edit0) list.splice(list.indexOf(edit0), 1, t); else list.push(t); });
         if (!ok) return false;
         toast(edit0 ? `Tag ${name} changed` : `Tag ${name} created`);
         if (o.after) setTimeout(o.after, 0);
       } }],
     });
+  }
+  /* the data types a tag can have (atomic, predefined, user-defined), and the Data Type text of the reference:
+     DINT, DINT[10], DINT[4,5], DINT[2,3,4] → { type, dim } or the reason it is not one */
+  const tagTypes = () => E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
+  function parseDataType(txt) {
+    const m = /^\s*([A-Za-z_]\w*)\s*(?:\[\s*([^\]]*)\])?\s*$/.exec(String(txt || ''));
+    if (!m) return 'Data Type: type a data type, e.g. DINT, DINT[10] or DINT[4,5] (or use … to select it).';
+    const ty = tagTypes().find(x => U(x) === U(m[1]));
+    if (!ty) return `Data Type: '${m[1]}' is not a data type of this project.`;
+    if (m[2] == null) return { type: ty, dim: 0 };
+    const a = m[2].split(',').map(x => x.trim()), d = E.dimsOf(a.map(Number));
+    if (!d || !d.length || a.some(x => !/^\d+$/.test(x))) return 'Data Type: an array has 1, 2 or 3 dimensions, each a whole number of 1 or more, e.g. DINT[4,5].';
+    return { type: ty, dim: d.length === 1 ? d[0] : d };
+  }
+  /* Select Data Type (the … beside Data Type), as in the reference: the list of data types with the box above it that
+     filters it, Show Data Types by Groups, and the Array Dimensions Dim 2, Dim 1, Dim 0 (Dim 1 is open when Dim 0 is
+     more than 0, Dim 2 when Dim 1 is). The data type shows them as [Dim 2, Dim 1, Dim 0]. It opens over the dialog
+     that asked for it and gives the text back to done(). */
+  function selectDataType(cur, done, cancel) {
+    const l = $('#layer'), was = { key: layerKey, click: l.onclick };
+    const pd = parseDataType(cur), d0 = typeof pd === 'string' ? { type: String(cur || '').replace(/\[.*$/, '').trim(), dim: 0 } : pd;
+    const ds = (E.dimsOf(d0.dim) || []).slice().reverse();   // [Dim 0, Dim 1, Dim 2]
+    const user = (S.p.dataTypes || []).map(x => x.name);
+    const scrim = document.createElement('div'), el = document.createElement('div');
+    scrim.className = 'scrim sdtscrim';
+    el.className = 'dlg sdt'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Select Data Type');
+    const dimIn = n => `<label class="sdim"><span>Dim ${n}</span><input class="inp" type="number" min="0" inputmode="numeric" id="sdd${n}" value="${ds[n] || 0}" aria-label="Dim ${n}"></label>`;
+    el.innerHTML = `<div class="dh"><b>Select Data Type</b><button class="ib" data-sdc="1" title="Close" aria-label="Close">${ic('close')}</button></div>
+      <div class="db"><label class="sdlab" for="sdq">Data Types:</label><input class="inp mono" id="sdq" value="${esc(d0.type)}" autocomplete="off" spellcheck="false" autocapitalize="off">
+        <div class="list sdtl" id="sdl" role="listbox" aria-label="Data Types"></div>
+        <label class="ck"><input type="checkbox" id="sdg"> Show Data Types by Groups</label>
+        <fieldset class="sdd"><legend>Array Dimensions</legend>${dimIn(2)}${dimIn(1)}${dimIn(0)}</fieldset><div class="errtx" id="sde"></div></div>
+      <div class="df"><button class="btn" data-sdc="1">Cancel</button><button class="btn pri" data-sdo="1">OK</button></div>`;
+    l.appendChild(scrim); l.appendChild(el);
+    const q = el.querySelector('#sdq'), list = el.querySelector('#sdl'), D = n => el.querySelector('#sdd' + n);
+    const draw = () => {
+      const f = U(q.value.trim()), all = tagTypes(), exact = all.some(x => U(x) === f), hit = x => !f || exact || U(x).includes(f);
+      const row = x => `<div class="row${U(x) === f ? ' on' : ''}" data-sdt="${esc(x)}" role="option"><span class="nm grow">${esc(x)}</span></div>`;
+      const groups = [['Predefined', all.filter(x => !user.includes(x))], ['User-Defined', user]];
+      list.innerHTML = el.querySelector('#sdg').checked ? groups.map(([g, xs]) => (xs.filter(hit).length ? `<div class="grp">${g}</div>` + xs.filter(hit).map(row).join('') : '')).join('')
+        : all.filter(hit).slice().sort((a, b) => a.localeCompare(b)).map(row).join('') || '<div class="empty">No data type matches</div>';
+      const on = list.querySelector('.row.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+    };
+    const dims = () => {
+      D(1).disabled = !(+D(0).value > 0); if (D(1).disabled) D(1).value = 0;
+      D(2).disabled = !(+D(1).value > 0); if (D(2).disabled) D(2).value = 0;
+    };
+    const close = () => { scrim.remove(); el.remove(); layerKey = was.key; l.onclick = was.click; };
+    const ok = () => {
+      const ty = tagTypes().find(x => U(x) === U(q.value.trim()));
+      if (!ty) { el.querySelector('#sde').textContent = `'${q.value.trim()}' is not a data type of this project.`; return; }
+      const v = [2, 1, 0].map(n => Math.floor(+D(n).value) || 0);
+      if (v.some(x => x < 0)) { el.querySelector('#sde').textContent = 'A dimension is a whole number, 0 or more.'; return; }
+      const used = v.filter(x => x > 0);
+      close(); done(ty + (used.length ? '[' + used.join(',') + ']' : ''));
+    };
+    l.onclick = ev => {
+      if (!el.contains(ev.target)) return;
+      if (ev.target.closest('[data-sdc]')) { close(); if (cancel) cancel(); return; }
+      if (ev.target.closest('[data-sdo]')) { ok(); return; }
+      const r = ev.target.closest('[data-sdt]'); if (r) { q.value = r.dataset.sdt; draw(); }
+    };
+    list.addEventListener('dblclick', ev => { const r = ev.target.closest('[data-sdt]'); if (r) { q.value = r.dataset.sdt; ok(); } });
+    q.addEventListener('input', draw);
+    el.querySelector('#sdg').addEventListener('change', draw);
+    [0, 1, 2].forEach(n => D(n).addEventListener('input', dims));
+    layerKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); close(); if (cancel) cancel(); } else if (ev.key === 'Enter') { ev.preventDefault(); ok(); } };
+    dims(); draw();
+    setTimeout(() => { q.focus(); q.select(); }, 0);
   }
   /* the description of an operand: the tag's own description when the operand is the tag; otherwise (an I/O address,
      a member such as Timer.DN, a bit) an operand description kept with the project, as the reference allows */
@@ -2166,7 +2309,7 @@
      the I/O Configuration come first (Local:<slot>:C, :I and :O, made with the module, read-only, gone with it), then
      the project's tags. A structure opens to its members, an array to its elements, an integer to its bits. */
   function tagKids(path, ty, dim) {
-    if (dim) return Array.from({ length: Math.min(dim, 64) }, (_, i) => ({ path: `${path}[${i}]`, ty, dim: 0 }));
+    if (E.dimN(dim)) return subsOf(dim).map(i => ({ path: `${path}[${i}]`, ty, dim: 0 }));
     const mem = membersOf(ty);
     if (mem) return mem.map(m => ({ path: `${path}.${m.name}`, ty: m.type, dim: m.dim || 0 }));
     if (NBITS[ty]) return Array.from({ length: NBITS[ty] }, (_, b) => ({ path: `${path}.${b}`, ty: 'BOOL', dim: 0 }));
@@ -2174,7 +2317,7 @@
   }
   function moduleTags() {
     const out = [];
-    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
+    S.p.rack.modules.slice().sort((a, b) => a.slot - b.slot).forEach(m => { const d = E.MODULES[m.type]; if (d) ['C', 'I', 'O', 'S'].forEach(k => { if (d[k]) out.push({ path: `Local:${m.slot}:${k}`, ty: d[k], dim: 0, mod: m }); }); });
     return out;
   }
   const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
@@ -2190,8 +2333,8 @@
     };
     top.forEach(e => go(e, 0));
   }
-  const tyText = e => (e.t ? (e.t.alias || !e.t.type ? e.ty : e.t.type) + (e.t.dim ? '[' + e.t.dim + ']' : '') : e.ty + (e.dim ? '[' + e.dim + ']' : ''));
-  const aggr = e => !!e.dim || !!membersOf(e.ty) || /\[\d+\]$/.test(e.ty);
+  const tyText = e => (e.t ? tyDims(e.t.alias || !e.t.type ? e.ty : e.t.type, e.t.dim) : tyDims(e.ty, e.dim));
+  const aggr = e => !!E.dimN(e.dim) || !!membersOf(e.ty) || /\[[\d,]+\]$/.test(e.ty);
   function tagRows(mode, scope, q) {
     const rows = [];
     tagWalk(scope || '', q, (e, depth, kids, open) => {
@@ -2205,11 +2348,11 @@
   function rowVal(path, ty, scope, t) {
     if (S.online && ctl.M) {
       const v = ctl.read(path, scope || undefined), f = ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null;
-      return { t: fmtVal(v), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
+      return { t: fmtSt(v, ty, t), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
     }
-    if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtVal(t.value), cls: '' };
+    if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtSt(t.value, ty, t), cls: '' };
     // an atomic tag without a start value starts at 0
-    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
+    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
   }
   function tagEditorBody(inline, mode0, scope0) {
     S.tagMode = mode0 || S.tagMode || 'mon';
@@ -2247,7 +2390,7 @@
   const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
   // the tag an alias ends at (an alias of an alias goes on to the base tag)
   const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
-  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'Usage', 'Constant'] };
+  const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'External Access', 'Usage', 'Constant'] };
   function tagTableRows() {
     const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
     tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
@@ -2258,16 +2401,19 @@
       if (mon) {
         const v = ag ? { t: '{…}', cls: '' } : rowVal(e.path, e.ty, scope, t);
         const fm = S.online && ctl.M && e.ty === 'BOOL' ? ctl.forced(e.path, scope || undefined) : null;
-        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
+        rows.push(head + `<td class="val${v.cls}"${ag ? '' : ` data-tv="${esc(e.path)}"`}>${esc(v.t)}</td><td class="mono">${fm === 1 ? '1' : fm === 0 ? '0' : ''}</td><td>${t ? styleOfTag(t.alias ? null : t, e.ty) : styleOf(e.ty)}</td><td class="mono">${esc(tyText(e))}</td><td class="ds">${esc(t ? t.desc || '' : '')}</td></tr>`);
         return;
       }
-      const base = !!t && !t.alias;
-      rows.push(head + `<td class="mono">${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
-        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td>${styleOf(e.ty)}</td>`
-        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
+      const base = !!t && !t.alias, sty = base && stylesOf(t.type).length;
+      // an alias takes External Access from its base tag (greyed); a module-defined tag has none (help: Tag Editor)
+      const acc = base ? accessOf(t) : t && aliasBase(t.alias) ? accessOf(aliasBase(t.alias)) : '';
+      rows.push(head + `<td class="mono${t ? ' ced' : ''}"${t ? ' data-tcell="alias"' : ''}>${esc((t && t.alias) || '')}</td><td class="mono">${esc(t && t.alias ? baseTagOf(t.alias) : '')}</td>`
+        + `<td class="mono${base ? ' ced' : ''}"${base ? ' data-tcell="type"' : ''}>${esc(tyText(e))}</td><td${sty ? ' class="ced" data-tcell="style"' : ''}>${t ? styleOfTag(base ? t : null, e.ty) : styleOf(e.ty)}</td>`
+        + `<td class="ds${t ? ' ced' : ''}"${t ? ' data-tcell="desc"' : ''}>${esc(t ? t.desc || '' : '')}</td>`
+        + `<td class="${base ? 'ced' : 'dim'}"${base ? ' data-tcell="access"' : ''}>${acc}</td><td>${depth ? '' : scope ? 'Local Tag' : '&lt;controller&gt;'}</td>`
         + `<td class="ck">${depth ? '' : `<input type="checkbox" data-tconst="${esc(e.path)}"${t && t.constant ? ' checked' : ''}${base ? '' : ' disabled'} aria-label="Constant">`}</td></tr>`);
     });
-    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="7" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
+    if (!mon) rows.push(`<tr class="newrow" data-newrow="1"><td class="ex" title="New tag">${ic('edit')}</td><td class="nm"><input class="nrin mono" id="tnew" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Type a new tag name, then Enter" aria-label="New tag name"></td><td colspan="8" class="help">New tags are DINT; or use <button type="button" class="lnk" data-cmd="newtag">New Tag…</button></td></tr>`);
     return rows.join('') || `<tr><td colspan="${TCOLS.mon.length + 1}" class="empty">No tags.</td></tr>`;
   }
   function tagWsHTML() {
@@ -2292,10 +2438,10 @@
       if (slot != null) toast(`${name.split(/[.[]/)[0]} is a module-defined tag: it comes with the module in slot ${slot}. Change the module in the I/O Configuration.`);
       return;
     }
-    if (membersOf(ty) || /\[\d+\]$/.test(ty) || (t && t.dim)) return;
+    if (membersOf(ty) || /\[[\d,]+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
-      if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
-      prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined)) return 'This tag cannot be written (an input or read-only).'; live(true); });
+      if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined, true)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
+      prompt1('Write value', name, fmtVal(ctl.read(name, scope || undefined)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(name, n.v, scope || undefined, true)) return 'This tag cannot be written (an input or read-only).'; live(true); });
       return;
     }
     if (slot != null) { toast('A module-defined tag has no start value: its values come from the module when online.'); return; }
@@ -2303,24 +2449,70 @@
     if (ty === 'BOOL') { edit(() => { t.value = t.value ? 0 : 1; }); refreshTags(); return; }
     prompt1('Start value', name, fmtVal(t.value || 0), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; edit(() => { t.value = n.v; }); });
   }
-  // Edit Tags: the Data Type or Description cell of a tag, edited in place (Enter or another cell keeps it, Esc does not)
+  /* Edit Tags: the Alias For, Data Type, Style, Description or External Access cell of a tag, edited in place (Enter
+     or another cell keeps it, Esc does not). Alias For has the button of the reference that opens the tag browser. */
   function tagCellEdit(td, t, list) {
     if (td.querySelector('input, select')) return;
     const k = td.dataset.tcell, types = E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name));
-    td.innerHTML = k === 'type' ? `<select class="cin" aria-label="Data Type">${types.map(x => `<option${x === (t.type || 'BOOL') ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
-    const f = td.firstChild;
-    let done = false;
+    td.innerHTML = k === 'type' ? `<span class="cdt"><input class="cin mono" aria-label="Data Type" value="${esc(tyDims(t.type || 'BOOL', t.dim))}" list="cdtl" autocomplete="off" spellcheck="false" autocapitalize="off"><button class="cdtb" type="button" data-cdtb="1" title="Select Data Type" aria-label="Select Data Type">…</button><datalist id="cdtl">${types.map(x => `<option value="${esc(x)}">`).join('')}</datalist></span>`
+      : k === 'style' ? cellSel(stylesOf(t.type), styleOfTag(t), 'Style') : k === 'access' ? cellSel(ACCESS, accessOf(t), 'External Access')
+      : k === 'alias' ? `<span class="cdt"><input class="cin mono" aria-label="Alias For" value="${esc(t.alias || '')}" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Local:1:I.Data.0"><button class="cdtb" type="button" data-cabb="1" title="Browse tags" aria-label="Browse tags">${ic('down')}</button></span>`
+      : `<input class="cin" aria-label="Description" value="${esc(t.desc || '')}">`;
+    const f = td.querySelector('input, select');
+    let done = false, picking = false, box = null;
     const commit = keep => {
       if (done) return; done = true;
-      const v = f.value.trim(), was = k === 'type' ? t.type || 'BOOL' : t.desc || '';
+      if (box) { box.remove(); box = null; }
+      const v = f.value.trim(), was = k === 'type' ? tyDims(t.type || 'BOOL', t.dim) : k === 'style' ? styleOfTag(t) : k === 'access' ? accessOf(t) : k === 'alias' ? t.alias || '' : t.desc || '';
       if (!keep || v === was) { refreshTags(); return; }
-      edit(() => { const n = { ...t }; if (k === 'type') { n.type = v; delete n.value; } else if (v) n.desc = v; else delete n.desc; list[list.indexOf(t)] = n; });
+      if (k === 'style' || k === 'access') {
+        edit(() => { const n = { ...t }; if (k === 'style') { if (v === defStyle(t.type)) delete n.style; else n.style = v; } else if (v === 'Read/Write') delete n.access; else n.access = v; list[list.indexOf(t)] = n; });
+        return;
+      }
+      if (k === 'alias') {
+        // a tag typed in Alias For makes the tag an alias of it (it then takes its data type from there)
+        const a = v.replace(/^local:/i, 'Local:').replace(/^(Local:\d+:)([icos])/, (m, x, y) => x + y.toUpperCase());
+        const bad = !a ? 'Alias For: type or browse the tag, member or bit this alias points to. To make it a base tag, open its Tag Properties.'
+          : U(a.split(/[.[]/)[0]) === U(t.name) ? 'A tag cannot be an alias for itself.'
+          : !addrType(a) ? (/^Local:/i.test(a) ? `Alias For: ${a} is not an I/O point of this project.` : `Alias For: ${a} is not a tag, member or bit of this project.`) : '';
+        if (bad) { toast(bad, 'err'); refreshTags(); return; }
+        edit(() => { const n = { name: t.name, alias: a }; if (t.desc) n.desc = t.desc; list[list.indexOf(t)] = n; });
+        return;
+      }
+      if (k === 'type') {
+        const dt = parseDataType(v);
+        if (typeof dt === 'string') { toast(dt, 'err'); refreshTags(); return; }
+        if (dt.type === (t.type || 'BOOL') && E.dimText(dt.dim) === E.dimText(t.dim)) { refreshTags(); return; }
+        edit(() => { const n = { ...t, type: dt.type }; if (dt.dim) n.dim = dt.dim; else delete n.dim; delete n.value; if (n.style && !stylesOf(baseTy(dt.type)).includes(n.style)) delete n.style; list[list.indexOf(t)] = n; });
+        return;
+      }
+      edit(() => { const n = { ...t }; if (v) n.desc = v; else delete n.desc; list[list.indexOf(t)] = n; });
     };
     f.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(true); } else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); commit(false); } });
-    f.addEventListener('blur', () => commit(true));
-    if (k === 'type') f.addEventListener('change', () => commit(true));
+    f.addEventListener('blur', () => { if (!picking) commit(true); });
+    if (f.tagName === 'SELECT') f.addEventListener('change', () => commit(true));
+    const ab = td.querySelector('[data-cabb]');
+    if (ab) {
+      // the tag browser of Alias For, under the cell (over the grid); picking a row writes it in the cell
+      box = document.createElement('div'); box.className = 'asg abrw tabr'; box.hidden = true; document.body.appendChild(box);
+      const place = () => { const r = td.getBoundingClientRect(), w = Math.min(Math.max(r.width, 380), innerWidth - 16); box.style.width = w + 'px'; box.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; box.style.top = (r.bottom + 270 < innerHeight ? r.bottom + 2 : Math.max(8, r.top - 264)) + 'px'; };
+      const br = aliasBrowser(box, f, { self: t.name, scope: () => S.tagScope || '', picked: () => { picking = false; commit(true); } });
+      box.addEventListener('pointerdown', () => { picking = true; setTimeout(() => { picking = false; }, 600); });
+      box.addEventListener('mousedown', ev => ev.preventDefault());
+      ab.addEventListener('pointerdown', () => { picking = true; });
+      ab.addEventListener('mousedown', ev => { picking = true; ev.preventDefault(); });
+      ab.addEventListener('click', ev => { ev.stopPropagation(); picking = false; place(); br.toggle(); f.focus(); });
+    }
+    const b = td.querySelector('[data-cdtb]');
+    if (b) {
+      // the … opens Select Data Type; the cell waits for it (OK writes the type, Cancel goes back to the cell)
+      b.addEventListener('pointerdown', () => { picking = true; });
+      b.addEventListener('mousedown', ev => { picking = true; ev.preventDefault(); });
+      b.addEventListener('click', ev => { ev.stopPropagation(); picking = true; selectDataType(f.value, v => { picking = false; f.value = v; commit(true); }, () => { picking = false; f.focus(); }); });
+    }
     f.focus(); if (f.select) f.select();
   }
+  const cellSel = (l, cur, lab) => `<select class="cin" aria-label="${lab}">${l.map(x => `<option${x === cur ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
   // Edit Tags: the blank row at the end (the pencil): a name typed there makes a DINT tag in this scope
   function newTagInline(inp) {
     const name = inp.value.trim(), list = scopeTags(S.tagScope || '');
@@ -2547,7 +2739,7 @@
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`, P = curProg(), names = new Set();
     list.forEach(r => { const pr = E.parseRung(r.t); if (pr.err) return; const walk = arr => arr.forEach(e => { if (e.t === 'BR') e.legs.forEach(walk); else (e.a || []).forEach(x => { if (isTagText(x)) names.add(U(String(x).split(/[.[]/)[0])); }); }); walk(pr.elems); });
     const tags = [...P.tags, ...S.p.tags].filter(tg => names.has(U(tg.name)));
-    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${tg.dim ? ` Dimensions="${tg.dim}"` : ''}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
+    const tagX = tg => `<Tag Name="${esc(tg.name)}" TagType="${tg.alias ? 'Alias' : 'Base'}"${tg.alias ? ` AliasFor="${esc(tg.alias)}"` : ` DataType="${esc(tg.type)}"${l5xDims(tg)}${l5xAttrs(tg, esc)}`}>${tg.desc ? `<Description>${cd(tg.desc)}</Description>` : ''}</Tag>`;
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="33.00" TargetType="Rung" TargetCount="${list.length}" ContainsContext="true" ExportDate="${new Date().toUTCString()}" ExportOptions="References NoRawData L5KData DecoratedData Context RoutineLabels AliasExtras IOTags NoStringData ForceProtectedEncoding AllProjDocTrans">
 <Controller Use="Context" Name="${esc(S.p.controller.name)}">${desc ? `<Description>${cd(desc)}</Description>` : ''}
@@ -2573,7 +2765,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
       const bad = rs.map(r => E.parseRung(r.t.trim())).findIndex(pr => pr.err);
       if (bad >= 0) { toast(`Rung ${bad} of the file cannot be read.`, 'err'); return; }
       const have = n => !!tagFor(n);
-      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: +(tg.getAttribute('Dimensions') || 0), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
+      const tags = [...doc.querySelectorAll('Tag')].map(tg => ({ el: tg, name: tg.getAttribute('Name'), type: tg.getAttribute('DataType') || 'BOOL', alias: tg.getAttribute('AliasFor') || '', dim: l5xDimsIn(tg), desc: ((tg.querySelector('Description') || {}).textContent || '').trim(), prog: tg.parentElement && tg.parentElement.parentElement && tg.parentElement.parentElement.tagName === 'Program' }));
       // Import Configuration, as in the reference: each tag of the file is created, or the project's tag of that name is used
       dialog({ title: 'Import Configuration', size: 'md',
         body: `<p>${rs.length} rung(s) from <b class="mono">${esc(baseName(f))}</b> go after ${curSelRung() == null ? 'the last rung' : `rung ${curSelRung()}`} of ${esc(curRoutine().name)}.</p>
@@ -2582,7 +2774,7 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
           edit(() => {
             const at = curSelRung() == null ? rungs().length : curSelRung() + 1;
             rungs().splice(at, 0, ...rs.map(r => (r.c ? { t: r.t.trim(), c: r.c } : { t: r.t.trim() })));
-            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; (tg.prog ? curProg().tags : S.p.tags).push(o); });
+            tags.filter(tg => !have(tg.name)).forEach(tg => { const o = { name: tg.name, type: tg.alias ? undefined : tg.type }; if (tg.alias) o.alias = tg.alias; if (tg.dim) o.dim = tg.dim; if (tg.desc) o.desc = tg.desc; if (!o.type) delete o.type; else l5xTagIn(tg.el, o); (tg.prog ? curProg().tags : S.p.tags).push(o); });
             S.sel = null; S.selRung = at;
           });
           toast(`Imported ${rs.length} rung(s).`, 'ok');
@@ -3151,9 +3343,9 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
   function toL5X(p) {
     const x = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const cd = v => `<![CDATA[${String(v).replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
-    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF4FXOF2F', 'PLC-AO4': '1756-OF4' };
+    const CAT = { 'PLC-DI16-24V': '1756-IB16', 'PLC-DI16-120V': '1756-IA16', 'PLC-DO16-24V': '1756-OB16E', 'PLC-DO16-RLY': '1756-OW16I', 'PLC-AI4': '1756-IF8', 'PLC-AO4': '1756-OF4' };
     const tag = t => t.alias ? `<Tag Name="${x(t.name)}" TagType="Alias" AliasFor="${x(t.alias)}">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`
-      : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${t.dim ? ` Dimensions="${t.dim}"` : ''} Constant="${t.constant ? 'true' : 'false'}" ExternalAccess="Read/Write">${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
+      : `<Tag Name="${x(t.name)}" TagType="Base" DataType="${x(t.type || 'BOOL')}"${l5xDims(t)}${l5xAttrs(t, x)}>${t.desc ? `<Description>${cd(t.desc)}</Description>` : ''}</Tag>`;
     const progs = p.tasks.flatMap(t => t.programs);
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
@@ -3199,8 +3391,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       const n = g.getAttribute('Name'), desc = txt(kids(g, 'Description')[0]).trim();
       if (g.getAttribute('TagType') === 'Alias') return { name: n, alias: g.getAttribute('AliasFor'), desc };
       const o = { name: n, type: g.getAttribute('DataType') || 'BOOL', desc };
-      const dim = parseInt(g.getAttribute('Dimensions') || '', 10); if (dim > 0) o.dim = dim;
-      if (g.getAttribute('Constant') === 'true') o.constant = true;
+      const dim = l5xDimsIn(g); if (dim) o.dim = dim;
+      l5xTagIn(g, o);
       if (!o.desc) delete o.desc;
       return o;
     });
@@ -3995,6 +4187,20 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
      field devices will be wired); its points are worked in the Module I/O window (right-click or long-press, or I/O),
      as in the reference emulator */
   const rtbOpen = new Set();   // the I/O cards ('rack:slot') whose RTB door is open: UI state only
+  /* the 20-pin RTB of a 1756 digital module, as its wiring diagram has it (1756-UM058): pin 1 at the top right, the
+     even pins in the left column and the odd ones in the right. On the card the two halves (pins 1-10 and 11-20) stand
+     side by side, each as on the RTB (even left, odd right), so the card keeps its size. A screw shows its pin
+     number; its signal (IN-0, GND-0, …) is in its title. 1756-OW16I has a 36-pin RTB and is not one of these. */
+  const rtbPins = (a, g) => { const p = {}; for (let i = 0; i < 8; i++) { p[i + 1] = a + '-' + i; p[i + 11] = a + '-' + (i + 8); } return Object.assign(p, g); };
+  const RTBPINS = {
+    'PLC-DI16-24V': rtbPins('IN', { 9: 'GND-0', 10: 'GND-0', 19: 'GND-1', 20: 'GND-1' }),             // 1756-IB16
+    'PLC-DI16-120V': rtbPins('IN', { 9: 'L2-0', 10: 'L2-0', 19: 'L2-1', 20: 'L2-1' }),                // 1756-IA16
+    'PLC-DO16-24V': rtbPins('OUT', { 9: 'RTN OUT-0', 10: 'DC-0(+)', 19: 'RTN OUT-1', 20: 'DC-1(+)' }), // 1756-OB16E
+  };
+  const rtb20 = pins => `<div class="mterm rtb20" aria-label="Terminal block, 20 pins">${[0, 1, 2, 3, 4].map(r => [2 * r + 2, 2 * r + 1, 2 * r + 12, 2 * r + 11].map(n => {
+    const l = pins[n], com = !/^(IN|OUT)-/.test(l);
+    return `<span class="scr${com ? ' com' : ''}" data-pin="${n}" title="Pin ${n}: ${esc(l)}" aria-label="Pin ${n}, ${esc(l)}"><i></i><b>${n}</b></span>`;
+  }).join('')).join('')}</div>`;
   function cardHTML(ri, s) {
     const r = racks[ri], m = r.module(s), id = ri + ':' + s;
     if (!m) return `<div class="ccard empty" data-cins="${id}" title="Plug a module into slot ${s}"><span class="bpc" aria-hidden="true"></span><span class="cplus">${ic('plus')}</span><small>Empty</small></div>`;
@@ -4017,7 +4223,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const com = m.kind === 'di' ? ['GND', 'GND'] : m.kind === 'do' ? ['DC+', 'RTN'] : ['RTN', 'RTN'];
     const lab = i => (m.kind === 'ai' || m.kind === 'ao' ? (i % 2 ? '-' : '+') + Math.floor(i / 2) : String(i));
     const pts = m.kind === 'ai' || m.kind === 'ao' ? 8 : n;
-    const term = `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
+    const term = RTBPINS[m.type] ? rtb20(RTBPINS[m.type]) : `<div class="mterm" aria-label="Terminal block">${Array.from({ length: pts }, (_, i) => `<span class="scr" title="Terminal ${lab(i)}"><i></i><b>${lab(i)}</b></span>`).join('')}${com.map(c => `<span class="scr com"><i></i><b>${c}</b></span>`).join('')}</div>`;
     /* the RTB (removable terminal block) housing: its door is closed over the terminals, as on a 1756 module; a click
        or tap opens it on its side hinge and shows the terminals, another one closes it (kept per card, not in the project) */
     const open = rtbOpen.has(id);

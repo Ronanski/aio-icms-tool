@@ -203,7 +203,8 @@
           if (o.lifted && o.lifted.ri === ri && same(o.lifted.path, it.path)) out += `<rect class="lift" x="${x + 1.5}" y="${cy - h.h - 7.5}" width="${w - 3}" height="${h.h + (isBox(e) ? boxH(e) + 6 : 28)}" rx="4"/>`;
           if (o.press && o.press.ri === ri && same(o.press.path, it.path)) out += `<circle class="press" cx="${cx}" cy="${cy}" r="${CW * .4}"/>`;
           h.lines.forEach(([k, t], i) => { out += `<text class="${k}" x="${cx}" y="${cy - h.h + LH - 4 + i * LH}" text-anchor="middle">${esc(t)}</text>`; });
-          const on = o.live && !!e.v;
+          // a status flag (S:FS, S:Z …) changes too fast to show: its instruction is never highlighted (reference help)
+          const on = o.live && !!e.v && !(e.a && /^S:/i.test(e.a[0] || ''));
           if (isBox(e)) out += box(e, x, cy, w, on, o, opsOf(e), LH);
           else out += glyph(e, x, cy, w, on, S);
           // a dirty instruction (changed since the last verify): '*' right of the mnemonic

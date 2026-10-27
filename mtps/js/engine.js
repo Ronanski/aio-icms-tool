@@ -9,33 +9,47 @@
   const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT';
   const isNum = t => isInt(t) || t === 'REAL';
   const U = s => String(s).toUpperCase();
-  const members = s => s.split(' ').map(x => { const [name, type] = x.split(':'); return { name, type }; });
+  const members = s => s.split(' ').map(x => { const k = x.indexOf(':'); return { name: x.slice(0, k), type: x.slice(k + 1) }; });
   const CH4 = t => [0, 1, 2, 3].map(k => `Ch${k}Data:${t}`).join(' ');
   const PREDEF = {
     TIMER: members('PRE:DINT ACC:DINT EN:BOOL TT:BOOL DN:BOOL'),
     COUNTER: members('PRE:DINT ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL'),
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
   };
+  /* the module-defined data types, named as Studio 5000 names them (help: 1756 discrete / analog module-defined data
+     types): the digital cards are 1756-IB16 / -IA16 (AB:1756_DI) and 1756-OB16E / -OW16I (AB:1756_DO); the analog input
+     card is a 1756-IF8 in differential float mode (4 channels: AB:1756_IF4_Float), the analog output card a 1756-OF4
+     (AB:1756_OF4_Float). Status tags (Local:<slot>:S) are made for a module type that has an S type; these 1756 modules
+     have none. */
   const MODTYPES = {
-    'PLC:DI16:I': members('Fault:DINT Data:DINT'),
-    'PLC:DO16:I': members('Fault:DINT'), 'PLC:DO16:O': members('Data:DINT'),
-    'PLC:AI4:I': members('Fault:DINT ' + CH4('REAL')),
-    'PLC:AO4:I': members('Fault:DINT'), 'PLC:AO4:O': members(CH4('REAL')),
-    // the configuration tags (Local:<slot>:C), laid out like those of the 1756 I/O modules: input filters and
-    // change of state (digital in), the fault and program mode states (digital out), scaling and states (analog)
-    'PLC:DI16:C': members('FilterOffOn_0_7:SINT FilterOnOff_0_7:SINT FilterOffOn_8_15:SINT FilterOnOff_8_15:SINT COSOnOffEn:DINT COSOffOnEn:DINT'),
-    'PLC:DO16:C': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
-    'PLC:AI4:C': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}LowEngineering:REAL Ch${k}HighEngineering:REAL`).join(' ')),
-    'PLC:AO4:C': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}FaultValue:REAL Ch${k}ProgValue:REAL`).join(' ')),
+    'AB:1756_DI:I:0': members('Fault:DINT Data:DINT'),
+    // the output card echoes the outputs it applies in its input tag (Data)
+    'AB:1756_DO:I:0': members('Fault:DINT Data:DINT'), 'AB:1756_DO:O:0': members('Data:DINT'),
+    'AB:1756_IF4_Float:I:0': members('Fault:DINT ' + CH4('REAL')),
+    'AB:1756_OF4_Float:I:0': members('Fault:DINT'), 'AB:1756_OF4_Float:O:0': members(CH4('REAL')),
+    // the configuration tags (Local:<slot>:C), as in the module profiles: AB:1756_DI:C:0 (help 1756-IB16: the filter
+    // times of four groups of 8 points, as the type is shared with the 32-point modules, and change of state),
+    // AB:1756_DO:C:0 (help 1756-OB16I / -OW16I), and the floating point analog ones (1756-UM009, Floating Point
+    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel
+    'AB:1756_DI:C:0': members(['OffOn', 'OnOff'].map(d => ['0_7', '8_15', '16_23', '24_31'].map(g => `Filter${d}_${g}:SINT`).join(' ')).join(' ') + ' COSOnOffEn:DINT COSOffOnEn:DINT'),
+    'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
+    'AB:1756_NII_Struct:C:0': members('AlarmDisable:BOOL ProcessAlarmLatch:BOOL RateAlarmLatch:BOOL DigitalFilter:INT RateAlarmLimit:INT LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL LAlarmLimit:REAL HAlarmLimit:REAL LLAlarmLimit:REAL HHAlarmLimit:REAL AlarmDeadband:REAL CalBias:REAL'),
+    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
+    'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NII_Struct:C:0`).join(' ')),
+    'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NIO_Struct:C:0`).join(' ')),
   };
-  const DO = { kind: 'do', I: 'PLC:DO16:I', O: 'PLC:DO16:O', C: 'PLC:DO16:C' };
-  const DI = { kind: 'di', I: 'PLC:DI16:I', C: 'PLC:DI16:C' };
+  // the names of 0.4.0 and older (PLC:DI16:I …): a project that uses one still reads
+  const OLDTYPES = { 'PLC:DI16:I': 'AB:1756_DI:I:0', 'PLC:DI16:C': 'AB:1756_DI:C:0', 'PLC:DO16:I': 'AB:1756_DO:I:0', 'PLC:DO16:O': 'AB:1756_DO:O:0', 'PLC:DO16:C': 'AB:1756_DO:C:0',
+    'PLC:AI4:I': 'AB:1756_IF4_Float:I:0', 'PLC:AI4:C': 'AB:1756_IF4_Float:C:0', 'PLC:AO4:I': 'AB:1756_OF4_Float:I:0', 'PLC:AO4:O': 'AB:1756_OF4_Float:O:0', 'PLC:AO4:C': 'AB:1756_OF4_Float:C:0' };
+  const DO = { kind: 'do', I: 'AB:1756_DO:I:0', O: 'AB:1756_DO:O:0', C: 'AB:1756_DO:C:0' };
+  const DI = { kind: 'di', I: 'AB:1756_DI:I:0', C: 'AB:1756_DI:C:0' };
   const MODULES = {
     'PLC-DI16-24V': DI, 'PLC-DI16-120V': DI,
     'PLC-DO16-24V': DO, 'PLC-DO16-RLY': DO,
-    'PLC-AI4': { kind: 'ai', I: 'PLC:AI4:I', C: 'PLC:AI4:C' }, 'PLC-AO4': { kind: 'ao', I: 'PLC:AO4:I', O: 'PLC:AO4:O', C: 'PLC:AO4:C' },
+    'PLC-AI4': { kind: 'ai', I: 'AB:1756_IF4_Float:I:0', C: 'AB:1756_IF4_Float:C:0' }, 'PLC-AO4': { kind: 'ao', I: 'AB:1756_OF4_Float:I:0', O: 'AB:1756_OF4_Float:O:0', C: 'AB:1756_OF4_Float:C:0' },
     'PLC-ENET': { kind: 'enet' },
   };
+  const IODIRS = ['I', 'O', 'C', 'S'];
   const RACKS = [4, 8];            // chassis sizes offered: 4 or 8 slots, drawn as one row (as the Logix Emulate Chassis Monitor)
   const OLDRACKS = [7, 10, 12];    // sizes of 0.4.0-beta.3 and older: still read, so no module of an old project is lost
   /* the size an old chassis or project gets: 4 and 8 stay; 7, 10 and 12 become 8 when every used slot (0 to 7) fits,
@@ -51,6 +65,16 @@
   // the reference's name rules: letters, digits and _, starting with a letter or _, up to 40, no __ and no _ at the end
   const validName = n => { const s = String(n == null ? '' : n); return /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(s) && !/__/.test(s) && !/_$/.test(s); };
   const dot = m => (/[.!?]$/.test(m) ? m : m + '.');
+  /* array dimensions of a tag, as written in its data type: DINT[10] → 10, DINT[4,5] → [4, 5], DINT[2,3,4] → [2, 3, 4]
+     (1, 2 or 3 dimensions; the last one varies fastest, 1756-PM004). dimsOf gives the list, or null when it is not
+     valid; dimN the number of elements; dimText '4,5' */
+  const dimsOf = d => {
+    if (d == null || d === 0 || d === '') return [];
+    const a = Array.isArray(d) ? d : [d];
+    return a.length <= 3 && a.every(n => Number.isInteger(+n) && +n > 0) ? a.map(Number) : null;
+  };
+  const dimN = d => { const a = dimsOf(d); return a && a.length ? a.reduce((x, y) => x * y, 1) : 0; };
+  const dimText = d => (dimsOf(d) || []).join(',');
   const clone = v => (typeof v === 'object' && v !== null ? JSON.parse(JSON.stringify(v)) : v);
   const i32 = v => Math.trunc(v) | 0;
 
@@ -89,7 +113,7 @@
     return t;
   }
   function canon(types, name) {
-    const u = U(name || '');
+    const u = U(OLDTYPES[name] || OLDTYPES[U(name || '')] || name || '');
     if (ATOMIC[u]) return u;
     const d = types.get(u);
     return d ? d.name : null;
@@ -244,7 +268,16 @@
       let p = this.root, k = this.key;
       for (const s of this.steps) {
         p = p[k];
-        if (s.len) {
+        if (s.lens) {
+          // Tag[i,j,k]: each subscript is checked against its own dimension, then the element is found row by row
+          let i = 0;
+          for (let n = 0; n < s.lens.length; n++) {
+            const x = typeof s.ixs[n] === 'number' ? s.ixs[n] : s.ixs[n].get();
+            if (!(x >= 0 && x < s.lens[n])) throw new Fault(4, 20, 'Array subscript too large, or less than 0');
+            i = i * s.lens[n] + x;
+          }
+          k = i;
+        } else if (s.len) {
           const i = typeof s.ix === 'number' ? s.ix : s.ix.get();
           if (!(i >= 0 && i < s.len)) throw new Fault(4, 20, 'Array subscript too large, or less than 0');
           k = i;
@@ -287,31 +320,38 @@
     if (!rec) return `Undefined tag '${text}'`;
     if (rec.alias) {
       if (depth > 8) return `Alias '${rec.name}' points back to itself`;
+      // the status flags are keywords, not tags: no alias can point at one (reference help, Monitor Status Flags)
+      if (/^S:/i.test(rec.alias)) return `'${rec.alias}' is a status flag keyword, not a tag: an alias cannot point to it`;
       return ref(M, scope, rec.alias + p.rest, depth + 1);
     }
-    let type = rec.type, dim = rec.dim, bit = -1, ptype = null, norm = (scope ? scope.name + '/' : '') + rec.name;
+    let type = rec.type, dim = rec.dim, dims = rec.dims || (rec.dim ? [rec.dim] : []), bit = -1, ptype = null, norm = (scope ? scope.name + '/' : '') + rec.name;
     const steps = [];
     for (const s of p.segs) {
       if (bit >= 0) return `Undefined tag '${text}'`;
       if (s.i !== undefined) {
         if (!dim) return `Tag '${rec.name}' is not an array here: '${text}'`;
-        const c = parseNumber(s.i);
-        let ix;
-        if (c) {
-          if (c.real || c.v < 0 || c.v >= dim) return `Array subscript out of range in '${text}' (0 to ${dim - 1})`;
-          ix = c.v;
-          if (norm) norm += `[${ix}]`;
-        } else {
-          const r = ref(M, prog, s.i, depth);
-          if (typeof r === 'string') return r;
-          if (!isInt(r.type) || r.dim) return `Array subscript must be an integer: '${s.i}'`;
-          ix = r; norm = null;
+        // one subscript for each dimension of the array: [5], [2,8], [3,2,7] (1756-PM004)
+        const parts = s.i.split(',').map(x => x.trim());
+        if (parts.length !== dims.length) return `Wrong number of subscripts in '${text}': '${rec.name}' has ${dims.length} dimension${dims.length > 1 ? 's' : ''} (e.g. ${rec.name}[${dims.map(() => 0).join(',')}])`;
+        const ixs = [];
+        for (let n = 0; n < parts.length; n++) {
+          const c = parseNumber(parts[n]);
+          if (c) {
+            if (c.real || c.v < 0 || c.v >= dims[n]) return `Array subscript out of range in '${text}' (0 to ${dims[n] - 1})`;
+            ixs.push(c.v);
+          } else {
+            const r = ref(M, prog, parts[n], depth);
+            if (typeof r === 'string') return r;
+            if (!isInt(r.type) || r.dim) return `Array subscript must be an integer: '${parts[n]}'`;
+            ixs.push(r); norm = null;
+          }
         }
-        steps.push({ ix, len: dim });
-        dim = 0;
+        if (norm) norm += `[${ixs.join(',')}]`;
+        steps.push(dims.length === 1 ? { ix: ixs[0], len: dim } : { ixs, lens: dims, len: dim });
+        dim = 0; dims = [];
         continue;
       }
-      if (dim) return `Tag '${rec.name}' is an array: give a subscript, e.g. ${rec.name}[0]`;
+      if (dim) return `Tag '${rec.name}' is an array: give a subscript, e.g. ${rec.name}[${dims.map(() => 0).join(',')}]`;
       if (s.b !== undefined) {
         if (!isInt(type) || s.b >= ATOMIC[type]) return `Undefined tag '${text}'`;
         bit = s.b; ptype = type; type = 'BOOL';
@@ -321,12 +361,13 @@
       const d = M.types.get(U(type)), mm = d && d.map.get(U(s.m));
       if (!mm) return `Undefined tag '${text}'`;
       steps.push({ m: mm.name });
-      type = mm.type; dim = mm.dim || 0;
+      type = mm.type; dim = mm.dim || 0; dims = dim ? [dim] : [];
       if (norm) norm += '.' + mm.name;
     }
     const io = rec.io || null;
     const force = io && steps.length === 1 && steps[0].m === 'Data' && bit >= 0 ? `${io.slot}:${io.dir}:${bit}` : null;
-    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, bit, ptype, ro: !!rec.constant,
+    // a constant tag (and its members, elements, bits and aliases) cannot be written by logic (help: Constant)
+    return new Ref({ root: scope ? scope.vals : M.vals, key: rec.name, steps, type, dim, dims, bit, ptype, ro: false, konst: rec.constant ? rec.name : null,
       input: !!(io && io.dir === 'I'), io, force, norm: norm && U(norm) });
   }
 
@@ -501,7 +542,8 @@
     const r = ref(M, P, s);
     if (typeof r === 'string') return r;
     const one = !r.dim;
-    const writable = () => (r.ro ? 'Tag is read-only' : r);
+    // "If a logic routine tries to write to a constant tag, the routine does not verify" (help: Tag Editor columns)
+    const writable = () => (r.ro ? 'Tag is read-only' : r.konst ? `Tag '${r.konst}' is a constant: logic cannot write to it` : r);
     switch (kind) {
       case 'bit': return r.type === 'BOOL' && one ? r : BAD_TYPE;
       case 'bitw': return r.type === 'BOOL' && one ? writable() : BAD_TYPE;
@@ -605,7 +647,7 @@
       if (M.mods.has(m.slot)) { ctlErr(`Slot ${m.slot} has more than one module`); continue; }
       if (m.name != null && m.name !== '' && !validName(m.name)) ctlErr(`Invalid module name '${m.name}'`);
       const mod = { slot: m.slot, type: m.type, name: m.name || '', kind: d.kind, inhibit: !!m.inhibit, majorOnFail: !!m.majorOnFail, rpi: m.rpi > 0 ? +m.rpi : 20 };
-      for (const dir of ['I', 'O', 'C']) {
+      for (const dir of IODIRS) {
         if (!d[dir]) continue;
         const name = `Local:${m.slot}:${dir}`;
         mod[dir] = name;
@@ -623,8 +665,10 @@
         if (t.alias != null && t.alias !== '') { map.set(U(t.name), { name: t.name, alias: String(t.alias).trim(), desc: t.desc || '' }); continue; }
         const type = canon(types, t.type);
         if (!type) { ctlErr(`Tag '${t.name}': Undefined data type '${t.type}'`); continue; }
-        const dim = t.dim > 0 ? Math.floor(t.dim) : 0;
-        map.set(U(t.name), { name: t.name, type, dim, constant: !!t.constant, desc: t.desc || '' });
+        const dims = dimsOf(Array.isArray(t.dim) ? t.dim : t.dim > 0 ? Math.floor(t.dim) : 0);
+        if (!dims) { ctlErr(`Tag '${t.name}': invalid array dimensions [${String(t.dim)}] (1 to 3 dimensions, each 1 or more)`); continue; }
+        const dim = dims.reduce((x, y) => x * y, dims.length ? 1 : 0);
+        map.set(U(t.name), { name: t.name, type, dim, dims, constant: !!t.constant, desc: t.desc || '' });
         vals[t.name] = conform(types, type, dim, t.value);
       }
     };
@@ -651,8 +695,8 @@
         if (!rec.alias) continue;
         const r = ref(M, P, rec.name);
         if (typeof r === 'string') { ctlErr(`Tag '${rec.name}': Alias for '${rec.alias}' is not a valid tag (${r})`); continue; }
-        if (r.steps.some(s => s.len && typeof s.ix !== 'number')) { ctlErr(`Tag '${rec.name}': an alias cannot use a tag as a subscript`); continue; }
-        rec.type = r.type; rec.dim = r.dim;
+        if (r.steps.some(s => (s.lens ? s.ixs.some(x => typeof x !== 'number') : s.len && typeof s.ix !== 'number'))) { ctlErr(`Tag '${rec.name}': an alias cannot use a tag as a subscript`); continue; }
+        rec.type = r.type; rec.dim = r.dim; rec.dims = r.dims;
       }
     };
     aliases(M.tags, null);
@@ -697,9 +741,10 @@
     return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
   }
 
-  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits */
+  /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
+     nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
@@ -830,7 +875,7 @@
       const keep = (list, prog) => (list || []).forEach(t => {
         if (t.alias) return;
         const r = this.refOf(t.name, prog);
-        if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || (r.dim || 0) !== (t.dim || 0)) return;
+        if (typeof r === 'string' || U(r.type) !== U(t.type || 'BOOL') || dimText(r.dims) !== dimText(t.dim)) return;
         const v = this.read(t.name, prog);
         if (v !== undefined) { t.value = v; if (r.type === 'TIMER' || r.type === 'COUNTER') kept.push([t.name, prog, v]); }
       });
@@ -840,6 +885,8 @@
       const res = { ok: !r.errors.length, errors: r.errors, warnings: r.warnings, lines: r.lines };
       if (!res.ok) return res;
       Object.assign(r.model.S, this.S);
+      // a program that was inhibited and is not any more gets S:FS on its next scan
+      r.model.programs.forEach(P => { const o = this.M.programs.find(x => U(x.name) === U(P.name)); if (o && o.inhibit && !P.inhibit) P.fs = true; });
       this.M = r.model; this.S = this.M.S; this.name = this.M.name;
       this.copy = JSON.stringify(project);
       this.refs.clear();
@@ -867,7 +914,8 @@
       this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false;
       const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
       try {
-        for (const P of this.M.programs) if (P.main && !P.inhibit) this.routine(P.main);
+        // S:FS: the first scan after Run, or the first scan of a program after it is uninhibited (P.fs)
+      for (const P of this.M.programs) if (P.main && !P.inhibit) { this.S.FS = this.first || P.fs ? 1 : 0; P.fs = false; this.routine(P.main); }
       } catch (e) {
         if (!(e instanceof Fault)) throw e;
         this.majorFault(e.type, e.code, e.message);
@@ -900,6 +948,7 @@
         }
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
         if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
+        else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
       }
     }
@@ -985,7 +1034,8 @@
         }
         case 'CPT': if (p) { DIV0 = false; const v = x[1].get(); this.put(x[0], v, DIV0); } e.v = p; return p;
         case 'MOV': if (p) this.put(x[1], x[0].get()); e.v = p; return p;
-        case 'MVM': if (p) { const m = i32(x[1].get()); this.put(x[2], (i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
+        // MVM does not affect the math status flags on a 5580 controller (reference manual 1756-RM003)
+        case 'MVM': if (p) { const m = i32(x[1].get()); x[2].set((i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
         case 'CLR': if (p) this.put(x[0], 0); e.v = p; return p;
         case 'AND': if (p) this.put(x[2], i32(x[0].get()) & i32(x[1].get())); e.v = p; return p;
         case 'OR': if (p) this.put(x[2], i32(x[0].get()) | i32(x[1].get())); e.v = p; return p;
@@ -1062,10 +1112,11 @@
        S:N negative; S:C carry only from ADD and SUB */
     put(dest, v, ov, carry) {
       dest.set(v);
-      const r = dest.get(), S = this.S;
+      const r = dest.get(), S = this.S, was = S.V;
       S.V = OV || ov ? 1 : 0; S.Z = r === 0 ? 1 : 0; S.N = r < 0 ? 1 : 0;
       if (carry !== undefined) S.C = carry ? 1 : 0;
-      if (S.V) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
+      // each time S:V goes from cleared to set it makes a minor fault (type 4, code 4)
+      if (S.V && !was) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
     }
     arith(op, A, B, D) {
       const a = A.get(), b = B.get(), real = A.type === 'REAL' || B.type === 'REAL' || D.type === 'REAL';
@@ -1133,17 +1184,18 @@
     /* an input image that its card updates (connected, not inhibited); the others can be written */
     inputLive(r) { const m = r.io && this.M.mods.get(r.io.slot); return !!m && !m.inhibit && !this.pulled.has(m.slot); }
     /* writing an input image of a working card is refused: the next input update would overwrite it */
-    write(path, v, program) {
+    /* monitor: written from Monitor Tags (the Data Monitor), which may change a constant tag; other editors may not */
+    write(path, v, program, monitor) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro) return false;
+      if (typeof r === 'string' || (r.input && this.inputLive(r)) || r.ro || (r.konst && !monitor)) return false;
       try {
         if (r.dim || !ATOMIC[r.type]) { r.at(); PP[PK] = conform(this.M.types, r.type, r.dim, v); } else r.set(Number(v));
         return true;
       } catch (e) { if (e instanceof Fault) return false; throw e; }
     }
-    toggle(path, program) {
+    toggle(path, program, monitor) {
       const r = this.refOf(path, program);
-      if (typeof r === 'string' || r.type !== 'BOOL' || r.dim || r.ro) return false;
+      if (typeof r === 'string' || r.type !== 'BOOL' || r.dim || r.ro || (r.konst && !monitor)) return false;
       try { r.set(r.get() ? 0 : 1); return true; } catch (e) { if (e instanceof Fault) return false; throw e; }
     }
 
@@ -1342,7 +1394,7 @@
   }
 
   const MTPS = root.MTPS || (root.MTPS = {});
-  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, MODULES, RACKS, fitRack, INSTR,
+  Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
     parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
