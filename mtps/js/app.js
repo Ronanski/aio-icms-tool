@@ -1764,7 +1764,7 @@
     else if (key === 'bp' || key === 'io') items.push({ l: 'New Module…', run: newModule, dis: !offline() });
     else if (key.startsWith('mod:') && key !== 'mod:0') items.push({ l: 'Properties', run: () => moduleProps(+key.slice(4)) }, { l: 'Delete', run: () => deleteModule(+key.slice(4)), dis: !offline() });
     else if (key.startsWith('pcm:')) items.push({ l: 'Properties', run: () => PCX.peerProps(+key.slice(4)) }, { l: 'Delete', run: () => PCX.peerDelete(+key.slice(4)), dis: !offline() });
-    else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({}) });
+    else if (key === 'ctags') items.push({ l: 'Monitor Tags', run: () => tagEditor('mon') }, { l: 'Edit Tags', run: () => tagEditor('edit') }, { l: 'New Tag…', run: () => newTag({ scope: '' }) });
     else if (key === 'ctl') items.push({ l: 'Verify', run: () => verifyCmd(false) }, '-', { l: 'Properties…', run: () => controllerProps() });
     else if (key === 'cfh' || key === 'puh') items.push({ l: 'New Program…', run: () => newHandlerProgram(key === 'cfh' ? 'fault' : 'powerup'), dis: !editable() || !!handlerProg(key === 'cfh' ? 'fault' : 'powerup') });
     TK.orgMore(key, items);
@@ -2380,6 +2380,8 @@
     const types = tagTypes();
     const edit0 = o.tag;
     const t0 = edit0 || { name: o.name || '', type: defaultType(o.kind), desc: '' };
+    // the Scope: the one asked for; from the tag editor its scope (Controller Tags: the controller); else the program
+    const sc0 = o.scope != null ? o.scope : S.view === 'tags' || (S.layout === 'phone' && S.area === 'tags') ? S.tagScope || '' : P.name;
     let pch = null;   // the Produced / Consumed part (pc.js)
     dialog({
       title: edit0 ? `Tag Properties - ${edit0.name}` : 'New Tag', focus: true,
@@ -2391,7 +2393,7 @@
         <div class="frow" id="rat"${t0.alias ? '' : ' hidden'}><label>Data Type</label><span class="mono" id="tat"></span></div>
         <div class="frow" id="rt"${t0.alias ? ' hidden' : ''}><label for="tt">Data Type</label><span class="afor"><input class="inp mono" id="tt" value="${esc(tyDims(t0.type || 'BOOL', t0.dim))}" list="ttl" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Data Type"><button class="btn" id="ttb" type="button" title="Select Data Type (with the array dimensions)" aria-label="Select Data Type">…</button></span><datalist id="ttl">${types.map(t => `<option value="${t}">`).join('')}</datalist></div>
         ${PCX.tagRows()}
-        <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${(o.scope || P.name) === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
+        <div class="frow"><label>Scope</label><select class="inp" id="ts"${edit0 ? ' disabled' : ''}><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc0 === g.name ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></div>
         <div class="frow"><label>External Access</label><select class="inp" id="tea">${ACCESS.map(a => `<option${a === accessOf(t0) ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
         <div class="frow"><label>Style</label><select class="inp" id="tsty"></select></div>
         <div class="frow ckrow"><label for="tcon">Constant</label><input type="checkbox" id="tcon"${t0.constant ? ' checked' : ''}></div>
@@ -2451,7 +2453,7 @@
         if (ocf && ocf.checked && t.type === 'MESSAGE' && !t.dim && E.App.msgConfig) setTimeout(() => E.App.msgConfig(name, scope), 0);
         const ok = edit(() => { if (edit0) list.splice(list.indexOf(edit0), 1, t); else list.push(t); });
         if (!ok) return false;
-        toast(edit0 ? `Tag ${name} changed` : `Tag ${name} created`);
+        toast(edit0 ? `Tag ${name} changed` : `Tag ${name} created in ${scope ? scope + ' (program)' : 'Controller Tags'}`);
         if (o.after) setTimeout(o.after, 0);
       } }],
     });
