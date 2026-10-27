@@ -457,4 +457,520 @@
 
   MTPS.SFC = { QUAL, TIMED, STORED, PULSE, CFG0, CFGV, cfgOf, blank, tagsOf, outs, ins, compile, run, prescan, carry, liveOf, compileST };
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS.SFC;
+  if (typeof document === 'undefined') return;
+
+  /* ====================================================================================================================
+     The SFC editor (PM006 chapter 2, Program a sequential function chart; v37 help: Sequential Function Chart Editor,
+     Language Element toolbar). The toolbar adds an element; with an element selected the new one is added after it
+     and wired to it (Add and automatically connect elements). A wire: click the pin under an element, then the
+     element (or its top pin) to go to; a green dot shows a valid connection point. Drag an element to move it.
+     Double-click a transition or an action to type its structured text (Ctrl+Enter closes the text entry), a step for
+     Step Properties. Right-click (touch: hold) for the element's menu. Online, the active steps are highlighted and
+     their timers (.T) count. The app binds its helpers with bind().
+     ==================================================================================================================== */
+  let A = null;                       // the app's helpers: S, dialog, openMenu, toast, esc, ic, edit, render, run, curProg, curRoutine, ctl, confirmDlg
+  const ui = { sel: [], wire: null, act: null, lastLive: 0, sig: '' };
+  const G = { sw: 50, sh: 16, tw: 16, pw: 40, ph: 13, aw: 230, ah: 22, ax: 24, gap: 10 };
+  const chart = () => { const r = A.curRoutine(); return r && r.type === 'SFC' ? r.sfc || (r.sfc = blank()) : null; };
+  const on = () => !!A && !A.S.noProj && A.S.view === 'ladder' && !!chart();
+  const z = () => A.S.prefs.sfcZoom || 1;
+  const byId = (ch, id) => ch.els.find(e => e.id === id);
+  const E = s => A.esc(s);
+  const css = `
+.sfced{display:flex;flex-direction:column;flex:1;min-height:0;background:var(--lad-bg)}
+.sfctb{display:flex;flex-wrap:wrap;gap:2px;align-items:center;padding:3px 6px;border-bottom:1px solid var(--border);background:var(--surface)}
+.sfctb .ib.on{background:var(--accent-soft);color:var(--accent-text)}
+.sfctb .sfcl{font-size:11px;margin-left:2px}
+.sfcwrap{flex:1;overflow:auto;position:relative;outline:none;touch-action:pan-x pan-y;overscroll-behavior:contain}
+.sfcwrap svg{display:block;font-family:var(--ui);user-select:none;-webkit-user-select:none}
+.sfcwrap .w{fill:none;stroke:var(--lad-wire);stroke-width:1.4}
+.sfcwrap .w2{fill:none;stroke:var(--lad-wire);stroke-width:1.4}
+.sfcwrap .hitw{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
+.sfcwrap .bx{fill:var(--surface);stroke:var(--lad-wire);stroke-width:1.4}
+.sfcwrap .nm{fill:var(--text);font-size:12px}
+.sfcwrap .ct{fill:var(--lad-desc);font-size:11px;font-family:var(--mono)}
+.sfcwrap .tb{fill:var(--lad-wire)}
+.sfcwrap .hit{fill:transparent;cursor:pointer;touch-action:none}
+.sfcwrap .sel .bx,.sfcwrap .sel .tb{stroke:var(--accent);stroke-width:2.4}
+.sfcwrap .lsel{stroke:var(--accent);stroke-width:2.4}
+.sfcwrap .on .bx{fill:var(--lad-on);stroke:var(--lad-on)}
+.sfcwrap .on .nm,.sfcwrap .on .tm{fill:var(--on-ok)}
+.sfcwrap .tm{fill:var(--lad-online);font-size:10px;font-family:var(--mono)}
+.sfcwrap .tt .tb{fill:var(--lad-on)}
+.sfcwrap .ar .bx{fill:var(--surface)}
+.sfcwrap .ar.aon .bx{stroke:var(--lad-on);stroke-width:2.4}
+.sfcwrap .ar .q{fill:var(--accent-text);font-size:11px;font-weight:600}
+.sfcwrap .pin{fill:var(--surface);stroke:var(--accent);stroke-width:1.4;cursor:crosshair;touch-action:none}
+.sfcwrap .ok{fill:var(--lad-on);stroke:var(--lad-on)}
+.sfcwrap .txt .bx{fill:var(--surface-2);stroke-dasharray:3 2}
+.sfcwrap .err .bx{stroke:var(--danger)}
+.sfcbar{display:flex;align-items:center;gap:6px;padding:3px 8px;border-top:1px solid var(--border);background:var(--surface);min-height:34px}
+.sfcbar .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sfcst{width:100%;min-height:120px;font-family:var(--mono)}
+.sfcpri{min-height:90px;width:100%}`;
+  function addCss() { if (document.getElementById('sfc-css')) return; const s = document.createElement('style'); s.id = 'sfc-css'; s.textContent = css; document.head.appendChild(s); }
+
+  /* ---------- geometry ---------- */
+  const pinTop = e => (e.k === 'step' ? [e.x, e.y - G.sh] : e.k === 'tran' ? [e.x, e.y - 6] : [e.x, e.y - G.ph]);
+  const pinBot = e => (e.k === 'step' ? [e.x, e.y + G.sh] : [e.x, e.y + 6]);
+  const boxOf = e => (e.k === 'step' ? [e.x - G.sw, e.y - G.sh, G.sw * 2, G.sh * 2] : e.k === 'tran' ? [e.x - 22, e.y - 11, 44, 22] : e.k === 'stop' ? [e.x - G.pw, e.y - G.ph, G.pw * 2, G.ph * 2] : [e.x, e.y, 150, 14 * Math.max(1, String(e.t || '').split('\n').length) + 10]);
+  const short = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  function draw(ch, live) {
+    const k = z(), sel = new Set(ui.sel), errs = new Set(((A.S.verify && A.S.verify.errors) || []).filter(e => e.routine === A.curRoutine().name && e.program === A.curProg().name).map(e => U(e.el || '')));
+    const els = ch.els, xs = els.map(e => e.x), minX = Math.min(60, ...xs), out = [], wires = [], bars = new Map();
+    let W = 300, H = 200;
+    for (const e of els) { const b = boxOf(e); W = Math.max(W, b[0] + b[2] + (e.k === 'step' && (e.acts || []).length ? G.ax + G.aw + 10 : 160)); H = Math.max(H, b[1] + b[3] + 20 + (e.k === 'step' ? (e.acts || []).length * G.ah : 0)); }
+    const loopX = Math.max(8, minX - G.sw - 30);
+    // the wires: a diverge gets a bar under its element, a converge a bar over its element (double for a simultaneous branch)
+    ch.ln.forEach((l, i) => {
+      const a = byId(ch, l[0]), b = byId(ch, l[1]);
+      if (!a || !b) return;
+      const no = outs(ch, a.id).length, ni = ins(ch, b.id).length, [x0, y0] = pinBot(a), [x1, y1] = pinTop(b);
+      const yb = y0 + G.gap, yc = y1 - G.gap, pts = [[x0, y0]];
+      if (no > 1) { pts.push([x0, yb]); const bk = 'd' + a.id; const bb = bars.get(bk) || { y: yb, x0: x0, x1: x0, sim: a.k === 'tran' }; bb.x0 = Math.min(bb.x0, x1); bb.x1 = Math.max(bb.x1, x1); bars.set(bk, bb); }
+      if (y1 > y0 + 2 * G.gap - 1 || (y1 > y0 && no < 2 && ni < 2)) {
+        const conv = ni > 1 && ins(ch, b.id).every(p => { const s = byId(ch, p); return s && pinBot(s)[1] < y1; });
+        if (conv) { const bk = 'c' + b.id; const bb = bars.get(bk) || { y: yc, x0: x1, x1: x1, sim: b.k === 'tran' }; const sx = no > 1 ? x1 : x0; bb.x0 = Math.min(bb.x0, sx); bb.x1 = Math.max(bb.x1, sx); bars.set(bk, bb); pts.push([no > 1 ? x1 : x0, no > 1 ? yb : y0], [no > 1 ? x1 : x0, yc], [x1, yc], [x1, y1]); }
+        else { const ym = no > 1 ? yb : Math.round((y0 + y1) / 2); pts.push([no > 1 ? x1 : x0, ym], [x1, ym], [x1, y1]); }
+      } else {
+        // a wire back up (a loop): out to the left of the chart and down into the step from above
+        const ys = no > 1 ? yb : y0 + G.gap;
+        pts.push([no > 1 ? x1 : x0, ys], [loopX, ys], [loopX, yc], [x1, yc], [x1, y1]);
+      }
+      const d = 'M' + pts.map(p => `${p[0] * k},${p[1] * k}`).join('L');
+      wires.push(`<path class="w${ui.lsel === i ? ' lsel' : ''}" d="${d}"/>${y1 <= y0 ? `<path class="tb" d="M${x1 * k - 4},${(y1 - 7) * k}L${x1 * k + 4},${(y1 - 7) * k}L${x1 * k},${(y1 - 1) * k}z"/>` : ''}<path class="hitw" data-ln="${i}" d="${d}"/>`);
+    });
+    bars.forEach(b => { const y = b.y * k, a = b.x0 * k, c = b.x1 * k; wires.push(b.sim ? `<path class="w2" d="M${a - 6},${y - 2}H${c + 6}M${a - 6},${y + 2}H${c + 6}"/>` : `<path class="w2" d="M${a},${y}H${c}"/>`); });
+    for (const e of els) {
+      const b = boxOf(e), cls = (sel.has(e.id) ? ' sel' : '') + (errs.has(U(e.n || '')) ? ' err' : '');
+      const X = v => v * k, act = live && live.act.has(e.id);
+      if (e.k === 'step') {
+        const t = live && live.t[e.id] != null ? live.t[e.id] : null;
+        out.push(`<g class="el step${cls}${act ? ' on' : ''}" data-step="${e.id}"><rect class="bx" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2])}" height="${X(b[3])}"/>${e.init ? `<rect class="bx" x="${X(b[0] + 3)}" y="${X(b[1] + 3)}" width="${X(b[2] - 6)}" height="${X(b[3] - 6)}" style="fill:none"/>` : ''}
+          <text class="nm" x="${X(e.x)}" y="${X(e.y + (live ? -2 : 4))}" text-anchor="middle" style="font-size:${12 * k}px">${E(e.n)}</text>${live ? `<text class="tm" x="${X(e.x)}" y="${X(e.y + 11)}" text-anchor="middle" style="font-size:${10 * k}px" data-tm="${e.id}">${t == null ? '' : 'T ' + t}</text>` : ''}
+          <rect class="hit" data-el="${e.id}" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2])}" height="${X(b[3])}"/></g>`);
+        (e.acts || []).forEach((a, i) => {
+          const ax = e.x + G.sw + G.ax, ay = e.y - G.sh + i * G.ah, asel = ui.act && ui.act[0] === e.id && ui.act[1] === i, aon = live && live.acts.has(U(a.n || ''));
+          out.push(`<g class="ar${asel ? ' sel' : ''}${aon ? ' aon' : ''}${errs.has(U(a.n || '')) ? ' err' : ''}">${i === 0 ? `<path class="w" d="M${X(e.x + G.sw)},${X(e.y)}H${X(ax)}"/>` : ''}<rect class="bx" x="${X(ax)}" y="${X(ay)}" width="${X(G.aw)}" height="${X(G.ah)}"/><path class="w" d="M${X(ax + 26)},${X(ay)}V${X(ay + G.ah)}"/>
+            <text class="q" x="${X(ax + 13)}" y="${X(ay + 15)}" text-anchor="middle" style="font-size:${11 * k}px">${E(a.q || 'N')}</text><text class="nm" x="${X(ax + 31)}" y="${X(ay + 15)}" style="font-size:${11 * k}px">${E(a.n)}${a.bool ? ' (BOOL)' : ''}</text>
+            <text class="ct" x="${X(ax + 128)}" y="${X(ay + 15)}" style="font-size:${10 * k}px">${E(short(a.q === 'R' ? '' : a.bool ? '' : a.b, 17))}</text><rect class="hit" data-act="${e.id}:${i}" x="${X(ax)}" y="${X(ay)}" width="${X(G.aw)}" height="${X(G.ah)}"/></g>`);
+        });
+      } else if (e.k === 'tran') {
+        const tv = live && live.tt && live.tt[e.id];
+        out.push(`<g class="el tran${cls}${tv ? ' tt' : ''}"><path class="w" d="M${X(e.x)},${X(e.y - 6)}V${X(e.y + 6)}"/><rect class="tb" x="${X(e.x - G.tw)}" y="${X(e.y - 1.5)}" width="${X(G.tw * 2)}" height="${Math.max(2, X(3))}"/>
+          <text class="nm" x="${X(e.x + G.tw + 6)}" y="${X(e.y - 1)}" style="font-size:${11 * k}px">${E(e.n)}</text><text class="ct" x="${X(e.x + G.tw + 6)}" y="${X(e.y + 11)}" style="font-size:${10 * k}px">${E(short(e.c || '', 34)) || '?'}</text>
+          <rect class="hit" data-el="${e.id}" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2] + 110)}" height="${X(b[3])}"/></g>`);
+      } else if (e.k === 'stop') {
+        out.push(`<g class="el stop${cls}${act ? ' on' : ''}"><rect class="bx" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2])}" height="${X(b[3])}" rx="${X(6)}"/><text class="nm" x="${X(e.x)}" y="${X(e.y + 4)}" text-anchor="middle" style="font-size:${11 * k}px">${E(e.n)}</text>
+          <rect class="hit" data-el="${e.id}" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2])}" height="${X(b[3])}"/></g>`);
+      } else if (e.k === 'text') {
+        out.push(`<g class="el txt${cls}"><rect class="bx" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2])}" height="${X(b[3])}"/>${String(e.t || 'Text').split('\n').map((l, i) => `<text class="ct" x="${X(b[0] + 5)}" y="${X(b[1] + 16 + i * 14)}" style="font-size:${10 * k}px">${E(short(l, 26))}</text>`).join('')}
+          <rect class="hit" data-el="${e.id}" x="${X(b[0])}" y="${X(b[1])}" width="${X(b[2])}" height="${X(b[3])}"/></g>`);
+      }
+    }
+    // pins: the bottom pin of the selected element starts a wire; in wire mode the valid ends show a green dot
+    const pins = [];
+    if (ui.wire) {
+      const f = byId(ch, ui.wire.from);
+      for (const e of els) if (f && okWire(ch, f, e)) { const [px, py] = pinTop(e); pins.push(`<circle class="pin ok" data-pin="${e.id}:t" cx="${px * k}" cy="${py * k}" r="${Math.max(5, 6 * k)}"/>`); }
+    } else for (const id of ui.sel) { const e = byId(ch, id); if (e && (e.k === 'step' || e.k === 'tran')) { const [px, py] = pinBot(e); pins.push(`<circle class="pin" data-pin="${e.id}:b" cx="${px * k}" cy="${py * k}" r="${Math.max(5, 6 * k)}"/>`); } }
+    return `<svg width="${Math.ceil(W * k)}" height="${Math.ceil(H * k)}" data-k="${k}">${wires.join('')}${out.join('')}${pins.join('')}</svg>`;
+  }
+  const okWire = (ch, f, e) => f.id !== e.id && !ch.ln.some(l => l[0] === f.id && l[1] === e.id) && ((f.k === 'step' && e.k === 'tran') || (f.k === 'tran' && (e.k === 'step' || e.k === 'stop')));
+
+  /* ---------- the routine window ---------- */
+  const TB = [['steptran', 'Step and Transition', 'M7 3h10v6H7zM12 9v5M8 16h8'], ['step', 'Step', 'M6 7h12v10H6z'], ['tran', 'Transition', 'M12 4v16M7 12h10'],
+    ['act', 'Add Action', 'M4 8h7v8H4zM11 12h3M14 8h6v8h-6z'], ['sel', 'Selection Branch', 'M12 3v5M5 8h14M5 8v6M19 8v6M3 14h4M17 14h4'], ['sim', 'Simultaneous Branch', 'M12 3v4M4 7h16M4 10h16M6 10v8M18 10v8'],
+    ['conv', 'Converge (the selected path ends)', 'M6 4v8M18 4v8M5 12h14M12 12v8'], ['stop', 'Stop', 'M6 8h12v8H6zM9 12h6'], ['text', 'Text Box', 'M5 5h14v14H5zM8 9h8M8 13h6'], ['wire', 'Wire: tap the element to wire from, then the element to go to', 'M4 18c6 0 4-12 16-12M18 4l2 2-2 2']];
+  const tbI = d => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>`;
+  // the bar under the chart: the selected element and its Edit / More buttons (touch has no double-click or right-click)
+  function barHTML() {
+    const ed = A.editable(), one = ui.sel.length === 1 ? byId(chart(), ui.sel[0]) : null, a = ui.act ? actOf(ui.act) : null;
+    const info = a ? `<b>${E(a.n)}</b> <span class="muted">${E(a.q || 'N')} ${E(QUAL[a.q || 'N'])}</span> <span class="mono">${E(short(a.bool ? '(Boolean action)' : a.b, 50))}</span>`
+      : one ? `<b>${E(one.n || 'Text Box')}</b> <span class="muted">${one.k === 'step' ? (one.init ? 'Initial step' : 'Step') : one.k === 'tran' ? 'Transition' : one.k === 'stop' ? 'Stop' : ''}</span> <span class="mono">${E(short(one.k === 'tran' ? one.c : one.k === 'text' ? one.t : '', 50))}</span>`
+        : ui.wire ? '<span class="muted">Wire: tap the element to go to (green dot), or Esc</span>' : ui.lsel != null ? '<span class="muted">Wire selected: Delete removes it</span>'
+          : `<span class="muted">${ui.sel.length > 1 ? ui.sel.length + ' elements selected' : 'Tap an element to select it'}</span>`;
+    return `<span class="grow">${info}</span><button class="ib" data-sfc="edit" title="Edit"${(one || a) && ed ? '' : ' disabled'}>${A.ic('edit')}</button><button class="ib" data-sfc="more" title="More">${A.ic('moreh')}</button>`;
+  }
+  // another chart: its own selection and scroll
+  function sync() {
+    const key = A.curProg().name + '/' + A.curRoutine().name;
+    if (ui.key !== key) { ui.key = key; ui.sel = []; ui.act = null; ui.lsel = null; ui.wire = null; ui.scroll = null; ui.tap = null; }
+  }
+  function html() {
+    sync();
+    const ed = A.editable(), w = A.S.layout !== 'desktop';
+    const b = ([id, t, d]) => `<button class="ib${id === 'wire' && ui.wire ? ' on' : ''}" data-sfc="${id}" title="${E(t)}" aria-label="${E(t)}"${ed ? '' : ' disabled'}>${tbI(d)}</button>`;
+    return `<div class="sfced" id="sfced"><div class="sfctb">${TB.map(b).join('')}<span class="vsep"></span><button class="ib" data-sfc="del" title="Delete (Del)"${ed ? '' : ' disabled'}>${A.ic('trash')}</button><button class="ib" data-sfc="props" title="Properties">${A.ic('gear')}</button><button class="ib" data-sfc="verify" title="Verify Routine">${A.ic('check')}</button>${w ? '' : '<span class="vsep"></span>'}<button class="ib" data-sfc="zout" title="Zoom out">${A.ic('zout')}</button><button class="ib" data-sfc="zin" title="Zoom in">${A.ic('zin')}</button></div>
+      <div class="sfcwrap" id="sfcwrap" tabindex="0"></div>
+      <div class="sfcbar" id="sfcbar">${barHTML()}</div></div>`;
+  }
+  // a new selection: the chart and the bar only (the rest of the window stays as it is)
+  function refresh() {
+    paint();
+    const b = document.getElementById('sfcbar'); if (b) b.innerHTML = barHTML();
+    const wb = document.querySelector('.sfctb [data-sfc="wire"]'); if (wb) wb.classList.toggle('on', !!ui.wire);
+  }
+  let live0 = null;
+  function liveState() {
+    const S = A.S, c = A.ctl();
+    if (!S.online || !c || !c.M) return null;
+    const l = MTPS.SFC.liveOf(c, A.curProg().name, A.curRoutine().name);
+    if (!l) return null;
+    l.tt = {};
+    for (const e of chart().els) if (e.k === 'tran') { try { l.tt[e.id] = c.read(e.n, A.curProg().name) || c.read(e.n); } catch (x) { /* ignore */ } }
+    return l;
+  }
+  function paint() { const w = document.getElementById('sfcwrap'); if (!w) return; live0 = liveState(); w.innerHTML = draw(chart(), live0); ui.sig = sigOf(live0); }
+  const sigOf = l => (l ? [...l.act].join(',') + '|' + [...l.acts].join(',') + '|' + Object.values(l.tt).join('') : '');
+  /* online: the active steps, the stored actions and the timers, at most 10 times a second; nothing while offline */
+  function liveUpd() {
+    if (!on() || !A.S.online) return;
+    const now = performance.now();
+    if (now - ui.lastLive < 100 || ui.drag) return;
+    ui.lastLive = now;
+    const l = liveState();
+    if (!l) return;
+    if (sigOf(l) !== ui.sig || !live0) { paint(); return; }
+    const w = document.getElementById('sfcwrap');
+    for (const id in l.t) { const t = w && w.querySelector(`[data-tm="${id}"]`); if (t && l.act.has(+id)) { const s = 'T ' + l.t[id]; if (t.textContent !== s) t.textContent = s; } }
+  }
+  function mount() {
+    addCss();
+    const w = document.getElementById('sfcwrap'), ed = document.getElementById('sfced');
+    if (!w) return;
+    sync();
+    ui.sel = ui.sel.filter(id => byId(chart(), id));
+    if (ui.act && !actOf(ui.act)) ui.act = null;
+    paint();
+    if (ui.scroll) { w.scrollLeft = ui.scroll[0]; w.scrollTop = ui.scroll[1]; }
+    w.addEventListener('scroll', () => { ui.scroll = [w.scrollLeft, w.scrollTop]; }, { passive: true });
+    ed.addEventListener('click', ev => { const b = ev.target.closest('[data-sfc]'); if (b && !b.disabled) cmd(b.dataset.sfc, b); });
+    w.addEventListener('pointerdown', down);
+    w.addEventListener('contextmenu', ev => { ev.preventDefault(); if (ui.hold) return; const t = target(document.elementFromPoint(ev.clientX, ev.clientY) || ev.target); if (t) pick(t, false); menu(t, { x: ev.clientX, y: ev.clientY }); });
+  }
+  // what a pointer is on: { el } an element, { act: [step id, index] } an action, { ln } a wire, { pin } a pin
+  function target(n) {
+    if (!n || !n.closest) return null;
+    const p = n.closest('[data-pin]'); if (p) { const [id, s] = p.dataset.pin.split(':'); return { pin: +id, side: s }; }
+    const a = n.closest('[data-act]'); if (a) { const [s, i] = a.dataset.act.split(':'); return { act: [+s, +i] }; }
+    const e = n.closest('[data-el]'); if (e) return { el: +e.dataset.el };
+    const l = n.closest('[data-ln]'); if (l) return { ln: +l.dataset.ln };
+    return null;
+  }
+  const actOf = ([s, i]) => { const e = byId(chart(), s); return e && e.acts && e.acts[i]; };
+  function pick(t, add) {
+    ui.lsel = null;
+    if (!t) { ui.sel = []; ui.act = null; return; }
+    if (t.act) { ui.act = t.act; ui.sel = []; return; }
+    ui.act = null;
+    if (t.ln != null) { ui.sel = []; ui.lsel = t.ln; return; }
+    const id = t.el != null ? t.el : t.pin;
+    if (add) ui.sel = ui.sel.includes(id) ? ui.sel.filter(x => x !== id) : ui.sel.concat(id); else if (!ui.sel.includes(id) || ui.sel.length < 2) ui.sel = [id];
+  }
+  function down(ev) {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    const t = target(ev.target), w = ev.currentTarget, k = z();
+    if (ui.wire) {
+      const ch = chart(), id = t ? (t.el != null ? t.el : t.pin) : null, f = byId(ch, ui.wire.from), e = id != null ? byId(ch, id) : null;
+      if (e && f && okWire(ch, f, e)) { ui.wire = null; A.edit(() => { ch.ln.push([f.id, e.id]); }); ui.sel = [e.id]; return; }
+      if (!t || (e && e.id !== f.id)) { ui.wire = null; A.toast(e ? `A wire cannot go from ${f.n} to ${e.n || 'a text box'}.` : 'Wire cancelled.'); refresh(); }
+      return;
+    }
+    if (t && t.pin != null && t.side === 'b' && A.editable()) { ev.preventDefault(); ui.wire = { from: t.pin }; refresh(); return; }
+    if (!t) { if (ui.sel.length || ui.act || ui.lsel != null) { pick(null); refresh(); } return; }
+    const before = JSON.stringify([ui.sel, ui.act, ui.lsel]);
+    pick(t, ev.shiftKey || ev.ctrlKey);
+    const same = before === JSON.stringify([ui.sel, ui.act, ui.lsel]);
+    const ch = chart(), ids = t.el != null ? ui.sel.slice() : [], from = ids.map(id => { const e = byId(ch, id); return e ? [e.x, e.y] : null; });
+    const d = { x: ev.clientX, y: ev.clientY, moved: false, id: ev.pointerId, touch: ev.pointerType !== 'mouse' };
+    ui.drag = d;
+    try { w.setPointerCapture(ev.pointerId); } catch (x) { /* ignore */ }
+    if (!same) refresh();
+    if (d.touch) d.timer = setTimeout(() => { if (ui.drag === d && !d.moved) { ui.hold = true; ui.drag = null; if (navigator.vibrate) navigator.vibrate(12); menu(t, { x: d.x, y: d.y }); setTimeout(() => { ui.hold = false; }, 600); } }, 450);
+    const mv = e2 => {
+      if (e2.pointerId !== d.id || ui.drag !== d) return;
+      const dx = (e2.clientX - d.x) / k, dy = (e2.clientY - d.y) / k;
+      if (!d.moved && Math.hypot(dx * k, dy * k) < 6) return;
+      if (!A.editable() || !ids.length) return;
+      d.moved = true; clearTimeout(d.timer);
+      ids.forEach((id, i) => { const e = byId(ch, id); if (e && from[i]) { e.x = Math.max(20, Math.round((from[i][0] + dx) / 10) * 10); e.y = Math.max(20, Math.round((from[i][1] + dy) / 10) * 10); } });
+      w.innerHTML = draw(ch, live0);
+    };
+    const up = e2 => {
+      if (e2.pointerId !== d.id) return;
+      w.removeEventListener('pointermove', mv); w.removeEventListener('pointerup', up); w.removeEventListener('pointercancel', up);
+      clearTimeout(d.timer);
+      if (ui.drag !== d) return;
+      ui.drag = null;
+      if (d.moved) {
+        // the move is one edit (undo puts the elements back)
+        const to = ids.map(id => { const e = byId(ch, id); return [e.x, e.y]; });
+        ids.forEach((id, i) => { const e = byId(ch, id); [e.x, e.y] = from[i]; });
+        A.edit(() => { const c2 = chart(); ids.forEach((id, i) => { const e = byId(c2, id); [e.x, e.y] = to[i]; }); });
+        return;
+      }
+      // a second click or tap on the same element soon after opens it (double-click, double tap)
+      const nt = performance.now(), key = JSON.stringify(t);
+      if (ui.tap && ui.tap.k === key && nt - ui.tap.t < 450 && !e2.shiftKey && !e2.ctrlKey) { ui.tap = null; open(t); return; }
+      ui.tap = { k: key, t: nt };
+    };
+    w.addEventListener('pointermove', mv); w.addEventListener('pointerup', up); w.addEventListener('pointercancel', up);
+  }
+
+  /* ---------- editing ---------- */
+  const tagList = () => A.curProg().tags;
+  const hasTag = n => tagList().some(t => U(t.name) === U(n)) || A.S.p.tags.some(t => U(t.name) === U(n));
+  // the next free name Prefix_NNN (Step_000, Tran_000, Action_000, Stop_000 as the reference names them)
+  function nextName(pre, ch) {
+    const used = new Set(tagList().map(t => U(t.name)).concat(A.S.p.tags.map(t => U(t.name))));
+    for (const g of [A.curProg()]) for (const r of g.routines) if (r.sfc) for (const e of r.sfc.els) { if (e.n) used.add(U(e.n)); (e.acts || []).forEach(a => used.add(U(a.n))); }
+    (ch.els || []).forEach(e => { if (e.n) used.add(U(e.n)); (e.acts || []).forEach(a => used.add(U(a.n))); });
+    for (let i = 0; ; i++) { const n = pre + '_' + String(i).padStart(3, '0'); if (!used.has(U(n))) return n; }
+  }
+  // the element's tag in the program (the reference creates it with the element)
+  const mkTag = (n, type) => { if (!hasTag(n)) tagList().push({ name: n, type }); };
+  const TYPE = { step: 'SFC_STEP', tran: 'BOOL', stop: 'SFC_STOP' };
+  const nextId = ch => Math.max(0, ...ch.els.map(e => e.id)) + 1;
+  // a free place below (x, y): an element already there moves the new one to the right
+  function spot(ch, x, y) { while (ch.els.some(e => Math.abs(e.x - x) < 90 && Math.abs(e.y - y) < 30)) x += 140; return [x, y]; }
+  function addEl(ch, k, x, y, more) {
+    const pre = { step: 'Step', tran: 'Tran', stop: 'Stop' }[k], e = Object.assign({ id: nextId(ch), k, x, y }, more || {});
+    if (pre) { e.n = nextName(pre, ch); mkTag(e.n, TYPE[k]); }
+    if (k === 'step') e.acts = e.acts || [];
+    if (k === 'tran') e.c = e.c || '';
+    ch.els.push(e);
+    return e;
+  }
+  const lowest = ch => ch.els.reduce((m, e) => Math.max(m, e.y + (e.k === 'step' ? (e.acts || []).length * G.ah : 0)), 0);
+  function add(kind) {
+    const ch0 = chart(), s0 = ui.sel.length === 1 ? byId(ch0, ui.sel[0]) : null, sid = s0 ? s0.id : null;
+    let made = [];
+    A.edit(() => {
+      const ch = chart(), s = sid != null ? byId(ch, sid) : null, below = e => spot(ch, e.x, e.y + 70), free = () => spot(ch, s ? s.x + 160 : 160, lowest(ch) + 70);
+      const link = (a, b) => { if (a && b) ch.ln.push([a.id, b.id]); };
+      if (kind === 'text') { const [x, y] = free(); made = [addEl(ch, 'text', x - 70, y, { t: 'Text' })]; return; }
+      if (kind === 'steptran' || kind === 'step' || kind === 'tran' || kind === 'stop') {
+        const seq = kind === 'steptran' ? (s && s.k === 'step' ? ['tran', 'step'] : ['step', 'tran']) : [kind];
+        let prev = s && ((s.k === 'step' && seq[0] === 'tran') || (s.k === 'tran' && seq[0] !== 'tran')) ? s : null, at = prev ? below(prev) : free();
+        for (const k of seq) { const e = addEl(ch, k, at[0], at[1]); link(prev, e); made.push(e); prev = e; at = below(e); }
+        return;
+      }
+      if (kind === 'sel' || kind === 'sim') {
+        // a selection branch after a step (two or more transitions), a simultaneous branch after a transition (two or
+        // more steps); on a branch already there it adds a path on the right (Extend Branch)
+        const want = kind === 'sel' ? 'step' : 'tran', nk = kind === 'sel' ? 'tran' : 'step';
+        if (!s || s.k !== want) { A.toast(kind === 'sel' ? 'Select the step the selection branch starts from.' : 'Select the transition the simultaneous branch starts from.'); return false; }
+        const o = outs(ch, s.id).map(id => byId(ch, id)).filter(Boolean), y = o.length ? o[0].y : s.y + 70;
+        const n = o.length ? 1 : 2, x0 = o.length ? Math.max(...o.map(e => e.x)) + 150 : s.x;
+        for (let i = 0; i < n; i++) { const e = addEl(ch, nk, x0 + i * 150, y); link(s, e); made.push(e); }
+        return;
+      }
+      if (kind === 'conv') {
+        // the selected last transitions of a selection branch go to one new step; the selected last steps of a
+        // simultaneous branch to one new transition (Converge SFC Elements)
+        const list = ui.sel.map(id => byId(ch, id)).filter(Boolean), k0 = list[0] && list[0].k;
+        if (list.length < 2 || !list.every(e => e.k === k0) || !(k0 === 'tran' || k0 === 'step')) { A.toast('Select the last transitions (selection branch) or the last steps (simultaneous branch) of two or more paths, then Converge.'); return false; }
+        const x = Math.round(list.reduce((m, e) => m + e.x, 0) / list.length / 10) * 10, y = Math.max(...list.map(e => e.y)) + 70;
+        const e = addEl(ch, k0 === 'tran' ? 'step' : 'tran', x, y);
+        list.forEach(p => link(p, e)); made = [e];
+      }
+    });
+    if (made.length) { ui.sel = [made[made.length - 1].id]; ui.act = null; A.render(); }
+  }
+  function addAction(stepId) {
+    let ok = false;
+    A.edit(() => { const ch = chart(), s = byId(ch, stepId); if (!s || s.k !== 'step') return false; const n = nextName('Action', ch); mkTag(n, 'SFC_ACTION'); s.acts = s.acts || []; s.acts.push({ n, q: 'N', b: '' }); ui.act = [s.id, s.acts.length - 1]; ui.sel = []; ok = true; });
+    return ok;
+  }
+  // delete the selection with the tags of its elements (Delete SFC Element(s) but not Tag keeps them)
+  function del(keepTags) {
+    const ch0 = chart();
+    if (ui.lsel != null) { const i = ui.lsel; ui.lsel = null; A.edit(() => { chart().ln.splice(i, 1); }); return; }
+    if (ui.act) { const [s, i] = ui.act; ui.act = null; A.edit(() => { const e = byId(chart(), s); const a = e.acts.splice(i, 1)[0]; if (!keepTags && a && a.q !== 'R') dropTag(a.n); }); return; }
+    if (!ui.sel.length) return;
+    if (ui.sel.some(id => { const e = byId(ch0, id); return e && e.init; }) && ch0.els.filter(e => e.k === 'step').length > 1 && !ui.sel.every(id => byId(ch0, id) && byId(ch0, id).k === 'step')) { /* deleting the initial step is allowed; Verify then asks for another */ }
+    const ids = new Set(ui.sel); ui.sel = [];
+    A.edit(() => {
+      const ch = chart();
+      ch.els.filter(e => ids.has(e.id)).forEach(e => { if (!keepTags && e.n) dropTag(e.n); if (!keepTags) (e.acts || []).forEach(a => { if (a.q !== 'R') dropTag(a.n); }); });
+      ch.els = ch.els.filter(e => !ids.has(e.id)); ch.ln = ch.ln.filter(l => !ids.has(l[0]) && !ids.has(l[1]));
+    });
+  }
+  const dropTag = n => { const g = A.curProg(), i = g.tags.findIndex(t => U(t.name) === U(n) && /^(SFC_STEP|SFC_STOP|SFC_ACTION|BOOL)$/.test(U(t.type || 'BOOL'))); if (i >= 0) g.tags.splice(i, 1); };
+  function rename(ch, e, v) {
+    const old = e.n, t = tagList().find(x => U(x.name) === U(old));
+    if (t) t.name = v; else mkTag(v, TYPE[e.k] || 'SFC_ACTION');
+    e.n = v;
+    // a Reset action names the stored action it resets
+    if (!e.k) ch.els.forEach(s => (s.acts || []).forEach(a => { if (a.q === 'R' && U(a.n) === U(old)) a.n = v; }));
+  }
+  const nameErr = (ch, e, v) => (!MTPS.validName(v) ? 'Name must be a valid IEC-1131 identifier (letters, digits and _, up to 40).' : U(v) !== U(e.n) && (hasTag(v) || ch.els.some(x => U(x.n || '') === U(v))) ? `A tag named ${v} exists.` : '');
+
+  /* ---------- dialogs ---------- */
+  // structured text entry (Ctrl+Enter accepts, as the text entry window of the reference)
+  function stText(title, label, val, fn, check) {
+    const el = A.dialog({ title, size: 'md', focus: true, noEnter: () => true,
+      body: `<div class="frow"><label>${E(label)}</label><textarea class="inp sfcst" id="sfc-st" spellcheck="false" autocapitalize="off" autocomplete="off">${E(val || '')}</textarea></div><p class="help">Ctrl+Enter: OK. Structured text: := assigns, [:=] assigns and clears in the postscan, IF … THEN … END_IF; JSR(Routine); comments // or (* *).</p><div class="errtx" id="sfc-ste"></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => { const v = el2.querySelector('#sfc-st').value, m = check ? check(v) : ''; if (m) { el2.querySelector('#sfc-ste').textContent = m; return false; } fn(v); } }] });
+    const ta = el.querySelector('#sfc-st');
+    ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); el.querySelector('.df .btn.pri').click(); } });
+  }
+  const stCheck = v => (!String(v).trim() ? 'Type the BOOL expression of the transition.' : '');
+  function open(t) {
+    const ch = chart();
+    if (t.act) return actionProps(t.act, true);
+    const e = byId(ch, t.el != null ? t.el : t.pin);
+    if (!e) return;
+    if (!A.editable() && e.k !== 'step') return;
+    if (e.k === 'tran') stText(`Transition ${e.n}`, 'BOOL expression', e.c, v => A.edit(() => { byId(chart(), e.id).c = v.trim(); }), stCheck);
+    else if (e.k === 'step') stepProps(e.id);
+    else if (e.k === 'stop') stopProps(e.id);
+    else if (e.k === 'text') stText('Text Box', 'Text', e.t, v => A.edit(() => { byId(chart(), e.id).t = v; }));
+  }
+  const tagVal = (n, m) => { const c = A.ctl(); if (!A.S.online || !c || !c.M) return null; try { const v = c.read(n + '.' + m, A.curProg().name); return v === undefined ? c.read(n + '.' + m) : v; } catch (x) { return null; } };
+  /* Step Properties (help v37, Edit Step properties): Type (Normal / Initial), Preset, Timer, Timer Max, Count, Alarm
+     Enable, Limit High, Limit Low. Use Expression is not offered (the times are numbers here). */
+  function stepProps(id) {
+    const ch = chart(), e = byId(ch, id), ro = !A.editable(), dis = ro ? ' disabled' : '', on = A.S.online;
+    const num = (k2, l, v) => `<div class="frow"><label>${l}</label><input class="inp" id="sp-${k2}" type="number" min="0" step="1" value="${+v || 0}"${dis}></div>`;
+    const rv = (l, m) => `<div class="frow"><label>${l}</label><input class="inp" value="${on ? E(tagVal(e.n, m)) : ''}" disabled></div>`;
+    A.dialog({ title: `Step Properties - ${e.n}`, size: 'md', focus: true,
+      body: `<div class="frow"><label>Name</label><input class="inp" id="sp-n" value="${E(e.n)}" autocomplete="off" spellcheck="false" autocapitalize="off"${dis}></div>
+        <div class="frow"><label>Type</label><select class="inp" id="sp-t"${dis}><option value="0">Normal</option><option value="1"${e.init ? ' selected' : ''}>Initial</option></select></div>
+        ${num('pre', 'Preset (ms)', e.pre)}${rv('Timer (ms)', 'T')}${rv('Timer Max (ms)', 'TMax')}${rv('Count', 'Count')}
+        <div class="frow"><label>Alarming</label><label class="ockb"><input type="checkbox" id="sp-al"${e.al ? ' checked' : ''}${dis}> AlarmEnable</label></div>${num('lh', 'Limit High (ms)', e.lh)}${num('ll', 'Limit Low (ms)', e.ll)}
+        <p class="help">The step's tag (SFC_STEP) holds X, FS, SA, LS, DN, T, TMax, Count and the alarms. Changing a step to Initial makes the other initial step Normal.</p><div class="errtx" id="sp-e"></div>`,
+      buttons: ro ? [{ l: 'Close', pri: true }] : [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const v = el.querySelector('#sp-n').value.trim(), m = nameErr(ch, e, v);
+        if (m) { el.querySelector('#sp-e').textContent = m; return false; }
+        const g = k2 => Math.max(0, Math.trunc(+el.querySelector('#sp-' + k2).value || 0)), init = el.querySelector('#sp-t').value === '1', al = el.querySelector('#sp-al').checked;
+        A.edit(() => {
+          const c2 = chart(), s = byId(c2, id);
+          if (v !== s.n) rename(c2, s, v);
+          if (init) c2.els.forEach(x => { if (x.k === 'step' && x.id !== id) delete x.init; });
+          if (init) s.init = true; else delete s.init;
+          ['pre', 'lh', 'll'].forEach(k2 => { if (g(k2)) s[k2] = g(k2); else delete s[k2]; });
+          if (al) s.al = true; else delete s.al;
+        });
+      } }] });
+  }
+  function stopProps(id) {
+    const ch = chart(), e = byId(ch, id);
+    A.prompt1('Stop Properties', 'Name', e.n, v => { const m = nameErr(ch, e, v); if (m) return m; A.edit(() => { const c2 = chart(); rename(c2, byId(c2, id), v); }); });
+  }
+  /* Action Properties (help v37, Edit Action properties): the qualifier (N, R, S, L, D, P, P1, P0, SL, SD, DS),
+     Boolean, Preset for a timed qualifier; text: the action's structured text */
+  function actionProps(ix, text) {
+    const ch = chart(), s = byId(ch, ix[0]), a = s && s.acts[ix[1]];
+    if (!a) return;
+    const ro = !A.editable(), dis = ro ? ' disabled' : '';
+    if (text && !ro && !a.bool && a.q !== 'R') { stText(`Action ${a.n}`, 'Structured text', a.b, v => A.edit(() => { byId(chart(), ix[0]).acts[ix[1]].b = v; })); return; }
+    const opts = Object.keys(QUAL).map(q => `<option value="${q}"${(a.q || 'N') === q ? ' selected' : ''}>${q} - ${E(QUAL[q])}</option>`).join('');
+    const el = A.dialog({ title: `Action Properties - ${a.n}`, size: 'md', focus: true, noEnter: ev => ev.target.tagName === 'TEXTAREA',
+      body: `<div class="frow"><label>Name</label><input class="inp" id="ap-n" value="${E(a.n)}" autocomplete="off" spellcheck="false" autocapitalize="off"${dis}></div>
+        <div class="frow"><label>Qualifier</label><select class="inp" id="ap-q"${dis}>${opts}</select></div>
+        <div class="frow"><label>Preset (ms)</label><input class="inp" id="ap-p" type="number" min="0" step="1" value="${+a.pre || 0}"${dis}></div>
+        <div class="frow"><label></label><label class="ockb"><input type="checkbox" id="ap-b"${a.bool ? ' checked' : ''}${dis}> Boolean</label></div>
+        <div class="frow"><label>Structured text</label><textarea class="inp sfcst" id="ap-st" spellcheck="false" autocapitalize="off"${dis}>${E(a.b || '')}</textarea></div>
+        <p class="help">Reset (R) names the stored action it turns off (S, SL, DS, SD). A Boolean action has no logic: it only sets its Q and A bits for other logic. Preset is the time of L, SL, D, DS and SD.</p><div class="errtx" id="ap-e"></div>`,
+      buttons: ro ? [{ l: 'Close', pri: true }] : [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
+        const v = el2.querySelector('#ap-n').value.trim(), q = el2.querySelector('#ap-q').value, er = t => { el2.querySelector('#ap-e').textContent = t; return false; };
+        if (!MTPS.validName(v)) return er('Name must be a valid IEC-1131 identifier.');
+        const pre = Math.max(0, Math.trunc(+el2.querySelector('#ap-p').value || 0)), bool = el2.querySelector('#ap-b').checked, b = el2.querySelector('#ap-st').value;
+        A.edit(() => {
+          const c2 = chart(), x = byId(c2, ix[0]).acts[ix[1]], was = x.q === 'R';
+          if (q === 'R') { if (!was) dropTag(x.n); x.n = v; }
+          else if (v !== x.n || was) { const t = tagList().find(y => U(y.name) === U(x.n)); if (t && !was) t.name = v; else mkTag(v, 'SFC_ACTION'); c2.els.forEach(st2 => (st2.acts || []).forEach(y => { if (y !== x && y.q === 'R' && U(y.n) === U(x.n)) y.n = v; })); x.n = v; }
+          x.q = q; if (TIMED.includes(q) && pre) x.pre = pre; else delete x.pre;
+          if (bool) x.bool = true; else delete x.bool;
+          x.b = b;
+        });
+      } }] });
+    const sync = () => { const q = el.querySelector('#ap-q').value; el.querySelector('#ap-p').disabled = ro || !TIMED.includes(q); el.querySelector('#ap-st').disabled = ro || q === 'R' || el.querySelector('#ap-b').checked; };
+    el.querySelector('#ap-q').addEventListener('change', sync); el.querySelector('#ap-b').addEventListener('change', sync); sync();
+  }
+  // Set JSR: the action calls a routine of the program (help v37, Set JSR command)
+  function setJsr(ix) {
+    const g = A.curProg(), rs = g.routines.filter(r => r.name !== A.curRoutine().name);
+    if (!rs.length) { A.toast('The program has no other routine to call.'); return; }
+    A.dialog({ title: 'Set JSR', size: 'sm', focus: true, body: `<div class="frow"><label>Routine</label><select class="inp" id="sj-r">${rs.map(r => `<option>${E(r.name)}</option>`).join('')}</select></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { const n = el.querySelector('#sj-r').value; A.edit(() => { const x = byId(chart(), ix[0]).acts[ix[1]]; x.b = `JSR(${n});`; delete x.bool; }); } }] });
+  }
+  /* Set Sequence Priorities (PM006, Set the priorities of a selection branch): Use default priorities (left to right),
+     or the order set with Move Up / Move Down */
+  function priorities(id) {
+    const ch = chart(), s = byId(ch, id), o = outs(ch, id).map(x => byId(ch, x)).filter(Boolean);
+    const pr = ch.pri && ch.pri[id], list = pr ? pr.map(x => o.find(e => e.id === x)).filter(Boolean).concat(o.filter(e => !pr.includes(e.id))) : o.slice().sort((a, b) => a.x - b.x);
+    const el = A.dialog({ title: 'Set Sequence Priorities', size: 'sm', focus: true,
+      body: `<div class="frow"><label></label><label class="ockb"><input type="checkbox" id="pr-d"${pr ? '' : ' checked'}> Use default priorities</label></div>
+        <div class="frow"><label>Transitions</label><select class="inp sfcpri" id="pr-l" size="${Math.min(8, list.length + 1)}">${list.map((e, i) => `<option value="${e.id}"${i ? '' : ' selected'}>${i + 1}  ${E(e.n)}</option>`).join('')}</select></div>
+        <div class="brow"><button class="btn" id="pr-u">Move Up</button><button class="btn" id="pr-w">Move Down</button></div>`,
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el2 => {
+        const d = el2.querySelector('#pr-d').checked, ord = [...el2.querySelector('#pr-l').options].map(x => +x.value);
+        A.edit(() => { const c2 = chart(); if (d) { if (c2.pri) delete c2.pri[id]; } else { c2.pri = c2.pri || {}; c2.pri[id] = ord; } });
+      } }] });
+    const l = el.querySelector('#pr-l'), d = el.querySelector('#pr-d');
+    const sync = () => { l.disabled = d.checked; el.querySelector('#pr-u').disabled = el.querySelector('#pr-w').disabled = d.checked; [...l.options].forEach((x, i) => { x.textContent = `${d.checked ? '' : i + 1 + '  '}${byId(ch, +x.value).n}`; }); };
+    const mvo = k2 => { const i = l.selectedIndex; if (i < 0) return; const j = i + k2; if (j < 0 || j >= l.options.length) return; const x = l.options[i]; l.removeChild(x); l.insertBefore(x, l.options[j] || null); l.selectedIndex = j; sync(); };
+    d.addEventListener('change', sync); el.querySelector('#pr-u').addEventListener('click', () => mvo(-1)); el.querySelector('#pr-w').addEventListener('click', () => mvo(1)); sync();
+    void s;
+  }
+  function moveAct(ix, d) { A.edit(() => { const s = byId(chart(), ix[0]), j = ix[1] + d; if (j < 0 || j >= s.acts.length) return false; const [a] = s.acts.splice(ix[1], 1); s.acts.splice(j, 0, a); ui.act = [ix[0], j]; }); }
+  function menu(t, at) {
+    const ch = chart(), ed = A.editable(), items = [];
+    if (t && t.act) {
+      const ix = t.act;
+      items.push({ l: 'Edit Structured Text', run: () => actionProps(ix, true), dis: !ed }, { l: 'Action Properties…', run: () => actionProps(ix, false) }, { l: 'Set JSR…', run: () => setJsr(ix), dis: !ed },
+        '-', { l: 'Move Up', run: () => moveAct(ix, -1), dis: !ed || ix[1] === 0 }, { l: 'Move Down', run: () => moveAct(ix, 1), dis: !ed }, '-', { l: 'Delete', k: 'Del', run: () => { ui.act = ix; del(); }, dis: !ed });
+    } else if (t && t.ln != null) items.push({ l: 'Delete Wire', k: 'Del', run: () => { ui.lsel = t.ln; del(); }, dis: !ed });
+    else if (t) {
+      const e = byId(ch, t.el != null ? t.el : t.pin);
+      if (!e) return;
+      if (e.k === 'step') items.push({ l: 'Add Action', run: () => { if (addAction(e.id)) actionProps(ui.act, true); }, dis: !ed }, { l: 'Step Properties…', run: () => stepProps(e.id) }, { l: 'Initial Step', ck: !!e.init, run: () => A.edit(() => { chart().els.forEach(x => { if (x.k === 'step') { if (x.id === e.id) x.init = true; else delete x.init; } }); }), dis: !ed },
+        { l: 'Set Sequence Priorities…', run: () => priorities(e.id), dis: !ed || outs(ch, e.id).length < 2 });
+      if (e.k === 'tran') items.push({ l: 'Edit BOOL Expression', run: () => open({ el: e.id }), dis: !ed });
+      if (e.k === 'stop' || e.k === 'text') items.push({ l: e.k === 'stop' ? 'Stop Properties…' : 'Edit Text', run: () => open({ el: e.id }), dis: !ed });
+      if (e.k === 'step' || e.k === 'tran') items.push({ l: 'Wire From Here', run: () => { ui.wire = { from: e.id }; refresh(); }, dis: !ed });
+      items.push('-', { l: 'Delete', k: 'Del', run: () => del(), dis: !ed });
+      if (e.n) items.push({ l: 'Delete SFC Element(s) but not Tag', run: () => del(true), dis: !ed });
+    } else items.push({ l: 'Step and Transition', run: () => add('steptran'), dis: !ed }, { l: 'Text Box', run: () => add('text'), dis: !ed }, { l: 'Verify Routine', run: () => A.run('verifyr') });
+    A.openMenu(items, at);
+  }
+  function cmd(id, btn) {
+    const ch = chart();
+    if (id === 'zin' || id === 'zout') { A.S.prefs.sfcZoom = Math.max(0.5, Math.min(2.5, Math.round(z() * (id === 'zin' ? 1.2 : 1 / 1.2) * 100) / 100)); A.savePrefs(); A.render(); return; }
+    if (id === 'verify') { A.run('verifyr'); return; }
+    if (id === 'del') { del(); return; }
+    if (id === 'wire') { const s = ui.sel.length === 1 ? byId(ch, ui.sel[0]) : null; if (ui.wire) ui.wire = null; else if (s && (s.k === 'step' || s.k === 'tran')) ui.wire = { from: s.id }; else { A.toast('Select the step or transition to wire from, then Wire.'); return; } refresh(); return; }
+    if (id === 'act') { const s = ui.sel.length === 1 ? byId(ch, ui.sel[0]) : ui.act ? byId(ch, ui.act[0]) : null; if (!s || s.k !== 'step') { A.toast('Select the step to add the action to.'); return; } if (addAction(s.id)) actionProps(ui.act, true); return; }
+    if (id === 'props') { if (ui.act) actionProps(ui.act, false); else if (ui.sel.length === 1) { const e = byId(ch, ui.sel[0]); if (e.k === 'step') stepProps(e.id); else open({ el: e.id }); } else A.run('props'); return; }
+    if (id === 'edit') { if (ui.act) open({ act: ui.act }); else if (ui.sel.length === 1) open({ el: ui.sel[0] }); return; }
+    if (id === 'more') { const r = btn.getBoundingClientRect(); menu(ui.act ? { act: ui.act } : ui.lsel != null ? { ln: ui.lsel } : ui.sel.length === 1 ? { el: ui.sel[0] } : null, { x: r.left, y: r.top - 8 }); return; }
+    add(id);
+  }
+  // keys in the SFC window: Delete, Escape, Enter (open), arrows move the selection by 10
+  function key(ev) {
+    if (!on()) return false;
+    const k = ev.key, ctrl = ev.ctrlKey || ev.metaKey;
+    if (k === 'Delete' && A.editable()) { del(); return true; }
+    if (k === 'Escape') { ui.wire = null; pick(null); refresh(); return true; }
+    if (k === 'Enter' && !ctrl) { if (ui.act) open({ act: ui.act }); else if (ui.sel.length === 1) open({ el: ui.sel[0] }); return true; }
+    if (/^Arrow/.test(k) && ui.sel.length && A.editable()) { const d = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] }[k], ids = ui.sel.slice(); A.edit(() => { const c2 = chart(); ids.forEach(id => { const e = byId(c2, id); e.x = Math.max(20, e.x + d[0]); e.y = Math.max(20, e.y + d[1]); }); }); return true; }
+    // the ladder's rung commands do not apply to a chart
+    if ((ctrl && /^[rcxvd]$/i.test(k)) || k === 'Insert' || k === 'F2') return true;
+    return false;
+  }
+  /* a new SFC routine for program g: the initial step and its transition, with their tags (New Routine, Type
+     Sequential Function Chart); the controller's SFC Execution settings are stored with their defaults */
+  function newChart(g, p) {
+    const used = new Set(g.tags.map(t => U(t.name)).concat(p.tags.map(t => U(t.name))));
+    g.routines.forEach(r => { if (r.sfc) r.sfc.els.forEach(e => e.n && used.add(U(e.n))); });
+    const nm = pre => { for (let i = 0; ; i++) { const n = pre + '_' + String(i).padStart(3, '0'); if (!used.has(U(n))) { used.add(U(n)); return n; } } };
+    const ch = blank(); ch.els[0].n = nm('Step'); ch.els[1].n = nm('Tran');
+    g.tags.push({ name: ch.els[0].n, type: 'SFC_STEP' }, { name: ch.els[1].n, type: 'BOOL' });
+    if (!p.controller.sfc) p.controller.sfc = Object.assign({}, CFG0);
+    return ch;
+  }
+  MTPS.SFC.ui = { bind: o => { A = o; }, on, html, mount, live: liveUpd, key, newChart, state: ui, cmd };
 })(typeof window !== 'undefined' ? window : globalThis);
