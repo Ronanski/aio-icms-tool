@@ -870,6 +870,7 @@
     vorg: { l: 'Controller Organizer', i: 'tree', run: () => { S.prefs.org = !S.prefs.org; S.drawer = !S.drawer; savePrefs(); render(); }, ck: () => S.prefs.org },
     verr: { l: 'Errors', i: 'warn', run: () => { if (S.layout === 'desktop') { S.prefs.err = !S.prefs.err; savePrefs(); } else S.errOpen = !S.errOpen; render(); }, ck: () => S.prefs.err },
     vio: { l: 'Emulator Panel', i: 'rack', run: () => { if (S.layout === 'phone' && innerWidth <= innerHeight) { S.area = 'ladder'; S.phoneEmu = !S.phoneEmu; } else { S.prefs.emu = !S.prefs.emu; savePrefs(); } render(); }, ck: () => S.prefs.emu },
+    vwatch: { l: 'Watch', i: 'tags', run: () => showWatch(), on: () => !S.noProj, ck: () => S.outTab === 'watch' && (S.layout !== 'desktop' || S.prefs.err) },
     vcols: { l: 'Toggle Column…', i: 'tags', run: () => colMenu($('#tagpage .tagtbl thead') || $('#tagpage'), null), on: () => !S.noProj && S.view === 'tags' && !!$('#tagpage .tagtbl') },
     zin: { l: 'Zoom In', i: 'zin', run: () => zoom(1.12) },
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
@@ -882,7 +883,7 @@
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
-    ['View', ['vorg', 'verr', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
+    ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
@@ -1152,7 +1153,8 @@
   }
   const errLogHTML = () => errLines().map(x => `<div class="ln ${x.k}${S.errCur && S.errCur === x.t ? ' cur' : ''}"${x.ri != null ? ` data-errline="${x.ri}" data-errrt="${esc(x.rt)}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`).join('') || (S.errQ ? `<div class="ln m muted">No line contains "${esc(S.errQ)}".</div>` : '');
   function errorsHTML() {
-    const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
+    const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' && S.outTab !== 'watch' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button><button class="otab${S.outTab === 'watch' ? ' on' : ''}" data-otab="watch">Watch</button></div>`;
+    if (S.outTab === 'watch') return tabs + watchHTML();
     if (S.outTab === 'search') {
       const sv = S.search || { lines: [], found: [] };
       return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^(Found|Replaced)/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
@@ -3990,6 +3992,125 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
       return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members>${ms}</Members></DataType>`;
     }).join('\n')}\n</DataTypes>`;
   }
+  /* ---------- the Watch tab of the Output window (v37 help: About the Output Window; Create and use a Quick Watch
+     list): View > Watch. The Quick Watch menu lists the open routines (all the tags of that routine) and the saved
+     Quick Watch lists; tags are added by typing a name in the grid (Name, Scope, Value, Description, sorted by a
+     click on Name, Scope or Description). A list gets a name in the box beside the menu (Enter) and is then saved with
+     the project; an unnamed list is lost when the app closes. The Value is live online; offline it shows the last
+     online value. Online a click on a Value toggles a BOOL or writes a number. ---------- */
+  const W = { sel: '', tags: [], sort: null, last: new Map(), at: 0 };
+  const wLists = () => (S.p && Array.isArray(S.p.watch) ? S.p.watch : []);
+  // the tag of a watch row: a program tag of its scope, or a controller tag
+  const wTag = r => (r.scope ? (allProgs().find(g => g.name === r.scope) || { tags: [] }).tags : S.p.tags).find(t => U(t.name) === U(r.name.split(/[.[]/)[0])) || null;
+  function wRows() {
+    if (W.sel.startsWith('rt:')) {
+      const [g, rn] = W.sel.slice(3).split('/'), P = allProgs().find(x => x.name === g), R = P && P.routines.find(x => x.name === rn), seen = new Set(), out = [];
+      if (!R) return [];
+      const add = a => { const b = (/^[A-Za-z_]\w*/.exec(String(a)) || [])[0]; if (!b || seen.has(U(b))) return; const pt = P.tags.find(t => U(t.name) === U(b)), ct = S.p.tags.find(t => U(t.name) === U(b)); if (!pt && !ct) return; seen.add(U(b)); out.push({ name: (pt || ct).name, scope: pt ? P.name : '' }); };
+      R.rungs.forEach(x => { const pr = E.parseRung(x.t || ''); const w = a => a.forEach(e => (e.t === 'BR' ? e.legs.forEach(w) : (e.a || []).forEach(o => (String(o).match(/[A-Za-z_][\w]*(?:\[[^\]]*\])?(?:\.\w+)*/g) || []).forEach(add)))); if (!pr.err) w(pr.elems); });
+      return out;
+    }
+    if (W.sel.startsWith('list:')) { const l = wLists().find(x => x.name === W.sel.slice(5)); return l ? l.tags : []; }
+    return W.tags;
+  }
+  const wType = r => { const t = wTag(r); return t ? (r.name.includes('.') || r.name.includes('[') ? addrType(r.name) || '' : typeOf(t)) : ''; };
+  function wVal(r) {
+    const k = (r.scope || '') + '|' + U(r.name), t = wTag(r), ty = wType(r);
+    if (S.online && ctl.M) {
+      if (!t || (membersOf(ty) && !isStrTy(ty)) || (t.dim && !/\[/.test(r.name))) { W.last.set(k, '{…}'); return '{…}'; }
+      const v = rowVal(r.name, ty, r.scope, r.name.includes('.') || r.name.includes('[') ? null : t).t;
+      W.last.set(k, v); return v;
+    }
+    return W.last.has(k) ? W.last.get(k) : '';
+  }
+  function watchHTML() {
+    const rows = wRows().slice(), custom = !W.sel.startsWith('rt:');
+    if (W.sort) rows.sort((a, b) => { const f = x => (W.sort === 'Scope' ? x.scope || S.p.controller.name : W.sort === 'Description' ? (wTag(x) || {}).desc || '' : x.name); return f(a).localeCompare(f(b)); });
+    const opts = S.tabs.filter(k => k !== 'tags').map(k => `<option value="rt:${esc(k)}"${W.sel === 'rt:' + k ? ' selected' : ''}>${esc(k.replace('/', ' - '))}</option>`).join('')
+      + wLists().map(l => `<option value="list:${esc(l.name)}"${W.sel === 'list:' + l.name ? ' selected' : ''}>${esc(l.name)}</option>`).join('');
+    const names = S.p.tags.concat(curProg().tags).map(t => t.name);
+    const row = r => { const t = wTag(r), ty = wType(r); return `<tr data-wrow="${esc((r.scope || '') + '|' + r.name)}"><td class="nm" title="${esc(`${r.name}\nData Type: ${ty || '?'}${t && t.alias ? '\nAlias For: ' + t.alias : ''}\nScope: ${r.scope || S.p.controller.name}`)}">${esc(r.name)}</td><td>${esc(r.scope || S.p.controller.name)}</td><td class="val" data-wval="1">${esc(wVal(r))}</td><td class="ds">${esc(t ? t.desc || '' : 'not a tag of this project')}</td><td class="ck">${custom ? `<button class="ib" type="button" data-wdel="1" title="Remove from the list" aria-label="Remove ${esc(r.name)}">${ic('close')}</button>` : ''}</td></tr>`; };
+    return `<div class="wbar"><label for="wsel">Quick Watch:</label><select class="inp" id="wsel"><option value=""${W.sel === '' ? ' selected' : ''}>(Quick Watch list)</option>${opts}</select>
+        <input class="inp" id="wname" placeholder="Name the list to save it" value="${esc(W.sel.startsWith('list:') ? W.sel.slice(5) : '')}" maxlength="40" autocomplete="off" spellcheck="false"${custom ? '' : ' disabled'} aria-label="Quick Watch list name">
+        <button class="btn" type="button" data-wref="1">Refresh</button></div>
+      <div class="tagtbl wtbl"><table><thead><tr>${['Name', 'Scope', 'Value', 'Description'].map(c => `<th${c !== 'Value' ? ` data-wsort="${c}"` : ''}>${c}${W.sort === c ? ' ▲' : ''}</th>`).join('')}<th></th></tr></thead>
+        <tbody id="wrows">${rows.map(row).join('')}${custom ? `<tr class="newrow"><td colspan="5"><input class="nrin mono" id="wadd" list="waddl" placeholder="Type a tag name to watch, then Enter" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Add a tag to watch"><datalist id="waddl">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></td></tr>` : ''}</tbody></table></div>`;
+  }
+  function showWatch() {
+    S.outTab = 'watch';
+    if (S.layout === 'desktop') { S.prefs.err = true; savePrefs(); render(); }
+    else if (S.layout === 'phone') { S.area = 'more'; render(); }
+    else if (innerWidth > innerHeight) { render(); errSheet(); }
+    else { S.errOpen = true; render(); }
+    setTimeout(() => { const i = $('#wadd'); if (i && S.layout === 'desktop') i.focus(); }, 0);
+  }
+  // the Values while online: about 5 times a second, only the cells that changed
+  function liveWatch(force) {
+    const now = performance.now();
+    if (!force && now - W.at < 200) return false;
+    W.at = now;
+    document.querySelectorAll('#wrows tr[data-wrow]').forEach(tr => {
+      const k = tr.dataset.wrow, i = k.indexOf('|'), r = { scope: k.slice(0, i), name: k.slice(i + 1) }, c = tr.querySelector('[data-wval]'), v = wVal(r);
+      if (c && c.textContent !== v) c.textContent = v;
+    });
+    return true;
+  }
+  function wAdd(inp) {
+    const v = inp.value.trim(); if (!v) return;
+    const b = (/^[A-Za-z_]\w*/.exec(v) || [])[0], P = curProg(), pt = b && P.tags.find(t => U(t.name) === U(b)), ct = b && S.p.tags.find(t => U(t.name) === U(b));
+    if (!pt && !ct) { toast(`${v} is not a tag of ${P.name} or of the controller.`, 'err'); return; }
+    if (!addrType(v) && !(pt || ct).dim) { toast(`${v} is not a tag, member or bit of this project.`, 'err'); return; }
+    const r = { name: v.replace(/^[A-Za-z_]\w*/, (pt || ct).name), scope: pt ? P.name : '' };
+    if (W.sel.startsWith('list:')) { const l = wLists().find(x => x.name === W.sel.slice(5)); if (l && !l.tags.some(x => x.name === r.name && x.scope === r.scope)) edit(() => { l.tags.push(r); }); }
+    else if (!W.tags.some(x => x.name === r.name && x.scope === r.scope)) { W.tags.push(r); render(); }
+    setTimeout(() => { const i = $('#wadd'); if (i) i.focus(); }, 0);
+  }
+  function wName(inp) {
+    const n = inp.value.trim();
+    if (!E.validName(n)) { toast('Quick Watch list names: letters, digits and _, up to 40 characters.', 'err'); return; }
+    if (W.sel.startsWith('list:')) {
+      const l = wLists().find(x => x.name === W.sel.slice(5)); if (!l || l.name === n) return;
+      if (wLists().some(x => U(x.name) === U(n))) { toast(`A Quick Watch list named ${n} exists.`, 'err'); return; }
+      edit(() => { l.name = n; }); W.sel = 'list:' + n; render(); return;
+    }
+    if (wLists().some(x => U(x.name) === U(n))) { toast(`A Quick Watch list named ${n} exists.`, 'err'); return; }
+    const tags = W.tags.slice();
+    edit(() => { S.p.watch = wLists().concat([{ name: n, tags }]); });
+    W.tags = []; W.sel = 'list:' + n; render();
+    toast(`Quick Watch list ${n} is saved with the project`);
+  }
+  function wValClick(tr) {
+    const k = tr.dataset.wrow, i = k.indexOf('|'), r = { scope: k.slice(0, i), name: k.slice(i + 1) }, ty = wType(r), sc = r.scope || undefined;
+    if (!S.online || !ctl.M) { toast('The Watch tab writes values online: press Go Online first.'); return; }
+    if (ty === 'BOOL') { if (!ctl.toggle(r.name, sc, true)) toast(`${r.name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); liveWatch(true); return; }
+    if (isStrTy(ty)) { editString(r.name, ty, r.scope, wTag(r)); return; }
+    if (!E.ATOMIC.includes(ty)) return;
+    prompt1('Write value', r.name, fmtVal(ctl.read(r.name, sc)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(r.name, n.v, sc, true)) return 'This tag cannot be written (an input or read-only).'; live(true); liveWatch(true); });
+  }
+  document.addEventListener('click', ev => {
+    const t = ev.target; if (!t.closest || !S.p) return;
+    let el;
+    // the Output window as a sheet (tablet landscape): its tabs
+    if ((el = t.closest('#layer .sheet [data-otab]'))) { S.outTab = el.dataset.otab; errSheet(); return; }
+    if (!t.closest('.wtbl, .wbar')) return;
+    if ((el = t.closest('[data-wdel]'))) {
+      const k = el.closest('tr').dataset.wrow, i = k.indexOf('|'), sc = k.slice(0, i), n = k.slice(i + 1);
+      if (W.sel.startsWith('list:')) { const l = wLists().find(x => x.name === W.sel.slice(5)); if (l) edit(() => { l.tags = l.tags.filter(x => !(x.name === n && (x.scope || '') === sc)); }); }
+      else { W.tags = W.tags.filter(x => !(x.name === n && (x.scope || '') === sc)); render(); }
+      if ($('#layer .sheet .wtbl')) errSheet();
+      return;
+    }
+    if ((el = t.closest('[data-wsort]'))) { W.sort = W.sort === el.dataset.wsort ? null : el.dataset.wsort; render(); if ($('#layer .sheet .wtbl')) errSheet(); return; }
+    if (t.closest('[data-wref]')) { render(); if ($('#layer .sheet .wtbl')) errSheet(); liveWatch(true); return; }
+    if ((el = t.closest('[data-wval]'))) wValClick(el.closest('tr'));
+  });
+  document.addEventListener('change', ev => { if (ev.target.id === 'wsel' && S.p) { W.sel = ev.target.value; render(); if ($('#layer .sheet .wtbl')) errSheet(); } });
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' || !S.p) return;
+    if (ev.target.id === 'wadd') { ev.preventDefault(); ev.stopPropagation(); wAdd(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
+    else if (ev.target.id === 'wname') { ev.preventDefault(); ev.stopPropagation(); wName(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
+  }, true);
+
   /* ---------- the Tag Editor command bar: Show and the filter; the columns ----------
      v37 help, Tag Editor command bar settings: Scope; Show (All Tags, Configure… = the Define Tag Filter dialog,
      Filter History = the five filters used last); the Filter icon (Filter On Name, Description or Both) and the box
@@ -5324,6 +5445,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const iob = $('#iob'); if (iob && !iob.contains(document.activeElement)) setHTML(iob, iob.classList.contains('dockb') ? dockBody() : ioHTML()); chassisLive(false); ioWinsLive();
     // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
     if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
+    if (force && S.outTab === 'watch') liveWatch(true);
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
   /* the controller scans on a timer of its own, so it keeps running when the screen does not redraw
@@ -5339,6 +5461,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     // a turned tablet or a resized window may skip the resize event: check the layout a few times a second
     if (now - lastLay > 250) { lastLay = now; if (pickLayout() !== S.layout && !S.touching) render(); }
     live(false);
+    if (S.online && S.outTab === 'watch') liveWatch(false);
     requestAnimationFrame(loop);
   }
 

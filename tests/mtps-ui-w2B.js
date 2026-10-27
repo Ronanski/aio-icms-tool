@@ -339,4 +339,67 @@ module.exports = async function w2b({ browser, page, URL, check }) {
     check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
     await pp.context().close();
   }
+
+  /* ---------- 6. Watch ---------- */
+  console.log('Wave 2 B: the Watch tab (v37 help: About the Output Window; Create and use a Quick Watch list)');
+  await fresh();
+  await addTag('WBit', 'BOOL'); await addTag('WNum', 'DINT');
+  await shot('6-watch-before');
+  await page.click('.dmenu [data-menu="View"]'); await wait(120);
+  check('View menu: Watch', (await items()).some(x => x[0] === 'Watch' && !x[1]));
+  await pick('Watch');
+  check('View > Watch opens the Output window on its Watch tab', (await page.$('.derr .wbar #wsel')) !== null && (await cellText('.derr .otab.on')) === 'Watch');
+  const wadd = async (n, pg = page, tap = false) => { if (tap) await pg.tap('#wadd'); else await pg.click('#wadd'); await pg.keyboard.type(n); await pg.keyboard.press('Enter'); await wait(120, pg); };
+  const wrows = (pg = page) => pg.$$eval('#wrows tr[data-wrow]', r => r.map(x => x.children[0].textContent + '=' + x.children[2].textContent).join(','));
+  await wadd('Motor_Run'); await wadd('Run_Timer.PRE'); await wadd('WBit'); await wadd('WNum');
+  check('typing tag names adds them to the Quick Watch list; offline the Values are blank', (await wrows()) === 'Motor_Run=,Run_Timer.PRE=,WBit=,WNum=', await wrows());
+  await wadd('Nope');
+  check('a name that is not a tag is refused', (await page.$$('#wrows tr[data-wrow]')).length === 4 && /not a tag/.test(await cellText('.toast')));
+  check('online:', await online());
+  await ev(() => MTPS.App.ctl.setMode('remrun')); await wait(400);
+  check('online the Values are live (Run_Timer.PRE = 5000)', (await wrows()) === 'Motor_Run=0,Run_Timer.PRE=5000,WBit=0,WNum=0', await wrows());
+  await ev(() => MTPS.App.ctl.write('WNum', 7)); await wait(450);
+  check('a change in the controller shows in the Value without a click', (await wrows()).includes('WNum=7'), await wrows());
+  await page.click('#wrows tr[data-wrow="|WBit"] [data-wval]'); await wait(300);
+  check('a click on a BOOL Value toggles it in the controller', (await ev(() => MTPS.App.ctl.read('WBit'))) === 1 && (await wrows()).includes('WBit=1'));
+  await page.click('#wrows tr[data-wrow="|WNum"] [data-wval]'); await wait(150);
+  await page.fill('#p1', '42'); await clickBtn('OK'); await wait(300);
+  check('a click on a DINT Value writes a number', (await ev(() => MTPS.App.ctl.read('WNum'))) === 42 && (await wrows()).includes('WNum=42'));
+  await page.click('.wtbl th[data-wsort="Name"]'); await wait(120);
+  check('a click on Name sorts the list', (await wrows()) === 'Motor_Run=0,Run_Timer.PRE=5000,WBit=1,WNum=42', await wrows());
+  await page.click('#wname'); await page.keyboard.type('Pump_List'); await page.keyboard.press('Enter'); await wait(150);
+  check('naming the list saves it with the project', await ev(() => JSON.stringify(MTPS.App.state.p.watch.map(l => [l.name, l.tags.length]))) === '[["Pump_List",4]]' && (await page.$eval('#wsel', s => s.value)) === 'list:Pump_List');
+  check('a Quick Watch list is not logic: no online edits are pending', (await page.$('.editbar')) === null && (await cellText('[title="Online edits"]')) === 'No Edits');
+  await page.click('#wrows tr[data-wrow="|WNum"] [data-wdel]'); await wait(120);
+  check('the remove button takes a tag off the saved list', await ev(() => MTPS.App.state.p.watch[0].tags.length) === 3);
+  await page.selectOption('#wsel', 'rt:MainProgram/MainRoutine'); await wait(150);
+  check('the Quick Watch menu lists the open routine: its tags (still sorted by Name), a structure as {…}', (await wrows()) === 'Motor_Cmd=0,Motor_Run=0,OL_OK=0,Run_Lamp=0,Run_Timer={…},Start_Count={…},Start_ONS=0,Start_PB=0,Stop_PB=0', await wrows());
+  await shot('6-watch');
+  await ev(() => MTPS.App.run('offline')); await wait(250);
+  await page.selectOption('#wsel', 'list:Pump_List'); await wait(150);
+  check('offline the last online Values stay', (await wrows()).includes('WBit=1'), await wrows());
+  check('the list is in the saved project', JSON.parse(await ev(() => JSON.stringify(MTPS.App.state.p))).watch[0].tags.length === 3);
+  {
+    const tp = await touchPage(800, 1280);
+    await fresh(tp);
+    await tp.tap('[data-allmenu]'); await wait(150, tp); await tp.tap('[data-fold="View"]'); await wait(150, tp);
+    await pick('Watch', tp, true); await wait(150, tp);
+    check('tablet (touch): View > Watch opens the Watch tab', (await tp.$('#wadd')) !== null);
+    await wadd('Run_Timer', tp, true);
+    check('tablet (touch): a tag is added', (await wrows(tp)) === 'Run_Timer=', await wrows(tp));
+    await shot('6-watch-tablet', tp);
+    check('tablet: no JS errors', tp._errs.length === 0, tp._errs.join(' | '));
+    await tp.context().close();
+  }
+  {
+    const pp = await touchPage(390, 844);
+    await fresh(pp);
+    await pp.tap('[data-go="more"]'); await wait(200, pp);
+    await pp.tap('[data-otab="watch"]'); await wait(150, pp);
+    await wadd('Motor_Run', pp, true);
+    check('phone (touch): More > Watch, a tag is added', (await wrows(pp)) === 'Motor_Run=' && (await ev(() => document.documentElement.scrollWidth <= innerWidth + 1, null, pp)));
+    await shot('6-watch-phone', pp);
+    check('phone: no JS errors', pp._errs.length === 0, pp._errs.join(' | '));
+    await pp.context().close();
+  }
 };
