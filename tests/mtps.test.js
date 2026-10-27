@@ -2565,6 +2565,19 @@ c = run({ tags: [B('j'), B('a'), B('x')], rungs: ['XIC(j)JMP(Q1);', 'XIC(a)OTE(x
 c.write('a', 1); c.scan(10); c.write('j', 1); c.write('a', 0); c.scan(10); eq('JMP skips: x keeps its last value', r('x'), 1);
 // AFI
 c = run({ tags: [B('x')], rungs: ['AFI()OTE(x);'] }); c.scan(10); eq('AFI: always false', r('x'), 0);
+// compares (1756-RM003): EQU NEQ GRT GEQ LES LEQ, LIM with Low <= High (inside) and Low > High (outside, both ends included)
+const cmp = (ins, A, Bv) => { const k = run({ tags: [D('a'), D('b'), B('x')], rungs: [`${ins}(a,b)OTE(x);`] }); k.write('a', A); k.write('b', Bv); k.scan(10); return k.read('x'); };
+eq('EQU NEQ GRT GEQ LES LEQ at 5,5', ['EQU', 'NEQ', 'GRT', 'GEQ', 'LES', 'LEQ'].map(i => cmp(i, 5, 5)), [1, 0, 0, 1, 0, 1]);
+eq('EQU NEQ GRT GEQ LES LEQ at 6,5', ['EQU', 'NEQ', 'GRT', 'GEQ', 'LES', 'LEQ'].map(i => cmp(i, 6, 5)), [0, 1, 1, 1, 0, 0]);
+const lim = (lo, t, hi) => { const k = run({ tags: [D('t'), B('x')], rungs: [`LIM(${lo},t,${hi})OTE(x);`] }); k.write('t', t); k.scan(10); return k.read('x'); };
+eq('LIM 0..10: 0, 5, 10 in; -1, 11 out', [lim(0, 0, 10), lim(0, 5, 10), lim(0, 10, 10), lim(0, -1, 10), lim(0, 11, 10)], [1, 1, 1, 0, 0]);
+eq('LIM Low 10 > High 0: true outside (>=10 or <=0), false at 5', [lim(10, 5, 0), lim(10, 10, 0), lim(10, 0, 0), lim(10, 11, 0), lim(10, -1, 0)], [0, 1, 1, 1, 1]);
+// MOV, ADD/SUB/MUL on REAL and DINT
+c = run({ tags: [D('d'), T('f', 'REAL'), D('m')], rungs: ['MOV(7,d);', 'MUL(d,1.5,f);', 'SUB(d,10,m);'] }); c.scan(10);
+eq('MOV 7, MUL 7*1.5 = 10.5 REAL, SUB 7-10 = -3', [r('d'), r('f'), r('m')], [7, 10.5, -3]);
+// the rung after a false XIC: an output instruction is still executed (made false), not skipped
+c = run({ tags: [B('a'), B('x')], rungs: ['XIC(a)OTE(x);'] }); c.write('a', 1); c.scan(10); c.write('a', 0); c.scan(10);
+eq('OTE goes false when its rung goes false', r('x'), 0);
 // TON preset negative: major fault
 c = run({ tags: [B('a'), T('t', 'TIMER')], rungs: ['XIC(a)TON(t,100,0);'] }); c.scan(10); c.write('t.PRE', -5); c.write('a', 1); c.scan(10);
 eq('TON negative PRE: major fault type 4 code 34', c.fault ? [c.fault.type, c.fault.code] : null, [4, 34]);
