@@ -73,5 +73,39 @@ module.exports = async function w2E({ browser, page, URL, check }) {
     await tp.close();
   }
 
+  console.log('Logix Emulate: Properties of an emulated controller, General / System / Emulator / Debug');
+  {
+    await page.setViewportSize({ width: 1440, height: 900 }); await wait(150);
+    await ev(() => { document.querySelector('#layer').innerHTML = ''; document.querySelectorAll('.trwin').forEach(w => w.remove()); MTPS.App.openProject(MTPS.App.example()); MTPS.App.state.prefs.emuMin = false; MTPS.App.render(); });
+    await wait(200);
+    await page.click('#iob [data-ccpu="0:0"] .mname', { button: 'right' }); await wait(80);
+    await page.click('#layer .it:has-text("Properties")'); await wait(150);
+    const tabs = await page.$$eval('#layer .dtabs [data-dt]', t => t.map(x => x.textContent).join(','));
+    check('right-click the controller > Properties: Module Properties with General, System, Emulator and Debug', (await dlgTitle()).startsWith('Module Properties - [0] PLC-CPU') && tabs === 'General,System,Emulator,Debug', tabs);
+    check('General: Version, Startup Mode (Remote Program / Last Controller State), Memory Size, Periodic Save, Use RSLinx Classic', (await page.$$eval('#ep-st option', o => o.map(x => x.textContent).join('|'))) === 'Remote Program|Last Controller State' && (await page.$('#ep-v')) !== null && (await page.$('#ep-ps')) !== null && (await page.$eval('#ep-lx', i => i.checked)) && !(await page.$eval('#ep-pson', i => i.checked)));
+    await page.selectOption('#ep-st', 'remprog');
+    await page.click('#layer [data-dt="sys"]'); await wait(50);
+    check('System: Continuous Task Dwell Time (default 10 ms), CPU Affinity, Channel 0 Serial Port', (await page.$eval('#ep-dw', i => i.value)) === '10' && (await page.$('#ep-cpu')) !== null && (await page.$('#ep-com')) !== null && await page.$eval('#ep-dw', i => i.offsetParent !== null));
+    await page.fill('#ep-dw', '200'); await page.click('#layer .df .btn.pri'); await wait(100);
+    check('a dwell time over 100 ms is refused, the dialog stays', (await dlgTitle()).startsWith('Module Properties') && (await ev(() => MTPS.App.racks[0].controller(0).emu.dwell)) === 10);
+    await page.fill('#ep-dw', '20');
+    await page.click('#layer [data-dt="emu"]'); await wait(50);
+    check('Emulator: Speed of Time with Configure Emulation, Single Scan, IP address, power', (await page.$('#layer [data-pane="emu"] [data-ecfg]')) !== null && (await page.$('#ep-ss')) !== null && (await page.$('#ep-ip')) !== null && (await page.$eval('#ep-on', i => i.checked)));
+    await page.click('#layer [data-dt="dbg"]'); await wait(50);
+    check('Debug: the trace settings (Ignore If No Value Changed, TimeStamp, Display all new traces, Log new traces to disk)', await page.$eval('#tr-ts', i => i.offsetParent !== null) && (await page.$('#tr-ign')) !== null && (await page.$('#tr-log')) !== null);
+    await page.click('#layer .df .btn.pri'); await wait(150);
+    const e = await ev(() => { const c = MTPS.App.racks[0].controller(0); return [c.emu.startup, c.emu.dwell, c.period]; });
+    check('OK keeps the settings: Startup Mode Remote Program, dwell 20 ms (the scan period)', JSON.stringify(e) === '["remprog",20,20]' && (await dlgTitle()) === '', JSON.stringify(e));
+    await ev(() => { MTPS.App.racks[0].controller(0).setEmu({ startup: 'last', dwell: 10 }); });
+    const tp = await touchPage(800, 1280, () => { MTPS.App.state.prefs.emuMin = false; MTPS.App.render(); });
+    await tp.tap('#iob [data-ccpu="0:0"] .mname'); await tp.waitForTimeout(150);
+    await tp.tap('#dock [data-emb="dock:Slot"]'); await tp.waitForTimeout(150);
+    const pr = await tp.evaluate(() => { const it = [...document.querySelectorAll('#layer .it')].find(x => x.textContent.includes('Properties')); if (it) it.dataset.wapick = '1'; return !!it && !it.classList.contains('dis'); });
+    if (pr) await tp.tap('#layer [data-wapick]'); await tp.waitForTimeout(200);
+    await tp.tap('#layer [data-dt="sys"]'); await tp.waitForTimeout(80);
+    check('tablet (touch): tap the controller, Slot > Properties…, the System tab', pr && (await dlgTitle(tp)).startsWith('Module Properties') && await tp.$eval('#ep-dw', i => i.offsetParent !== null));
+    await tp.close();
+  }
+
   check('Wave 2 (E): no JS errors in the touch pages', errors.length === 0, errors.join(' | '));
 };

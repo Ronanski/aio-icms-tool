@@ -922,5 +922,23 @@ console.log('Logix Emulate: breakpoints and tracepoints, BPT / TPT (LGEM5K-GR016
   check('the trace settings are kept with the chassis', MTPS.Chassis.from(JSON.parse(JSON.stringify(ch))).controller(1).tcfg.ts === 'Delta');
 }
 
+console.log('Logix Emulate: the emulated controller\'s General and System settings (LGEM5K-GR016M, Create a controller)');
+{
+  const c = new MTPS.Controller();
+  eq('defaults: Last Controller State, dwell 10 ms, periodic save every 10 min (off), Use RSLinx Classic', [c.emu.startup, c.emu.dwell, c.emu.psave, c.emu.psaveOn, c.emu.linx], ['last', 10, 10, false, true]);
+  check('Continuous Task Dwell Time is 0 to 100 ms', /0 to 100/.test(c.setEmu({ dwell: 101 })) && c.emu.dwell === 10 && c.setEmu({ dwell: 25 }) === '' && c.period === 25);
+  check('Startup Mode is Remote Program or Last Controller State', !!c.setEmu({ startup: 'run' }) && c.setEmu({ startup: 'remprog' }) === '');
+  const p = proj({ rungs: ['NOP();'] });
+  c.download(p); c.setMode('remrun'); c.power(false); c.power(true);
+  check('Startup Mode Remote Program: in REM the controller starts in Remote Program after power-up', c.mode === 'remprog');
+  c.setEmu({ startup: 'last' }); c.setMode('remrun'); c.power(false); c.power(true);
+  check('Last Controller State: it starts in the mode it had (Remote Run)', c.mode === 'remrun');
+  const ch = new MTPS.Chassis(8); ch.insert(1, 'PLC-CPU', 'E'); ch.controller(1).setEmu({ dwell: 5, psaveOn: true, com0: 'COM2' });
+  const back = MTPS.Chassis.from(JSON.parse(JSON.stringify(ch))).controller(1);
+  check('the settings are kept with the chassis', back.emu.dwell === 5 && back.emu.psaveOn && back.emu.com0 === 'COM2' && back.period === 5);
+  ch.remove(1, true); ch.insert(1, 'PLC-CPU', 'X'); ch.useKept(1, true, false);
+  check('…and with a kept configuration of a removed controller', ch.controller(1).emu.dwell === 5);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

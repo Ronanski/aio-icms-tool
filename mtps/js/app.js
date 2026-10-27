@@ -4349,7 +4349,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const items = {
       File: [{ l: where === 'dock' ? 'Close the Emulator Panel' : 'Close', run: () => { if (where === 'dock') { P.emuMin = true; savePrefs(); render(); } else if (doc !== document) doc.defaultView.close(); else closeLayer(); } }],
       Slot: [{ l: 'Create Module…', i: 'plus', dis: !free.length, run: () => insertCard(ri, free[0]) }, { l: 'Remove Module…', i: 'trash', dis: !used.length, run: () => removeModuleDlg(ri, cur, was) }, '-',
-        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
+        { l: 'Properties…', i: 'gear', dis: cur == null, run: () => { emuSel = { k: 'm', ri, slot: cur }; if (r.module(cur).ctl) { emuProps(ri + ':' + cur, 'gen', was); return; } if (was || chasWin) { chassisLive(true); backToEmu(was); } else chassisMonitor(); } }],
       View: [{ l: 'Compact', ck: !!P.emuCompact, run: tog('emuCompact') }, { l: 'Hide Slots 9-16', ck: false, dis: true }],
       Options: [{ l: 'Clear Configuration on Remove', ck: !!P.clearOnRemove, run: tog('clearOnRemove') }, { l: 'Always On Top', ck: false, dis: true }, { l: 'Auto Refresh Rate', dis: true }],
       'All Modules': [{ l: 'Run…', dis: !r.controllers().length, run: () => allModes(ri, 'RUN', was) }, { l: 'Program…', dis: !r.controllers().length, run: () => allModes(ri, 'PROG', was) }],
@@ -4538,7 +4538,7 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     const c = m.ctl, key = k => () => { c.setKey(k); saveChassis(); chassisLive(true); live(true); render(); backToEmu(was); };
     openMenu([{ l: 'Program', ck: c.key === 'PROG', run: key('PROG') }, { l: 'Run', ck: c.key === 'RUN', run: key('RUN') }, { l: 'Remote', ck: c.key === 'REM', run: key('REM') },
       { l: 'Single Scan', ck: c.single, run: () => { c.singleScan(!c.single); asked.delete(c); chassisLive(true); live(true); render(); backToEmu(was); } }, '-',
-      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, '-',
+      { l: 'Configure Emulation…', i: 'gear', run: () => configEmulation(id, was) }, { l: 'Properties…', i: 'info', run: () => emuProps(id, 'gen', was) }, '-',
       { l: 'Remove', i: 'trash', run: () => { chassisClick(Object.assign(document.createElement('div'), { closest: q => (q === '[data-crem]' ? { dataset: { crem: id } } : null) })); } }], { x, y }, `[${s}] PLC-CPU ${m.name}`);
   }
   /* Single Scan: when the one scan is done, a prompt asks to run the controller continuously or to scan once more */
@@ -4722,6 +4722,52 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS"><ScheduledProgra
     else if (lg.frozen.has(o.title)) lg.frozen.delete(o.title); else lg.frozen.add(o.title);
     openTrace(o.ri, o.s, o.title);
   });
+  /* Properties of an emulated controller, on the emulator side. General and System hold the settings of the create
+     wizard (LGEM5K-GR016M, Create a Studio 5000 Logix Emulate controller, steps 6 and 8): Version, Startup Mode,
+     Memory Size, Periodic Save Interval, Use RSLinx Classic, Enable Periodic Save; Continuous Task Dwell Time, CPU
+     Affinity, Channel 0 Serial Port. Emulator: speed of time, Single Scan, IP address, power. Debug: the trace
+     settings and traces of Configure Emulation. */
+  function emuProps(id, tab, was) {
+    const [ri, s] = ids(id), r = racks[ri], m = r && r.module(s);
+    if (!m || !m.ctl) return;
+    const c = m.ctl, e = c.emu, chk = (i, on, t, dis) => `<label class="frow" style="grid-template-columns:auto 1fr"><input type="checkbox" id="${i}"${on ? ' checked' : ''}${dis ? ' disabled' : ''}><span>${t}</span></label>`;
+    const cpus = Math.max(1, Math.min(64, navigator.hardwareConcurrency || 1));
+    const gen = `${kv('Module Type', 'PLC-CPU (emulated controller)')}${kv('Slot', s)}
+      <div class="frow"><label for="ep-n">Name</label><input class="inp" id="ep-n" value="${esc(m.name)}" autocomplete="off" spellcheck="false"></div>
+      <div class="frow"><label for="ep-d">Description</label><input class="inp" id="ep-d" value="${esc(m.desc || '')}"></div>
+      <div class="frow"><label for="ep-v">Version</label><select class="inp" id="ep-v"><option>1.0</option></select></div>
+      <div class="frow"><label for="ep-st">Startup Mode</label><select class="inp" id="ep-st"><option value="remprog"${e.startup === 'remprog' ? ' selected' : ''}>Remote Program</option><option value="last"${e.startup === 'last' ? ' selected' : ''}>Last Controller State</option></select></div>
+      <div class="frow"><label for="ep-m">Memory Size (KB)</label><input class="inp num" id="ep-m" type="number" min="64" step="64" value="${m.mem || 3072}"></div>
+      <div class="frow"><label for="ep-ps">Periodic Save Interval (min)</label><input class="inp num" id="ep-ps" type="number" min="1" max="1440" step="1" value="${e.psave}"></div>
+      ${chk('ep-lx', e.linx, 'Use RSLinx Classic <span class="muted">(for internal communications)</span>')}${chk('ep-pson', e.psaveOn, 'Enable Periodic Save')}
+      <p class="help">Remote Program: with the key switch in REM the controller always starts in Remote Program. Last Controller State: it starts in the mode it had. Periodic Save keeps the program, data and configuration every interval.</p>`;
+    const sys = `<div class="frow"><label for="ep-dw">Continuous Task Dwell Time (ms)</label><input class="inp num" id="ep-dw" type="number" min="0" max="100" step="1" value="${e.dwell}"></div>
+      <div class="frow"><label for="ep-cpu">CPU Affinity</label><select class="inp" id="ep-cpu">${Array.from({ length: cpus }, (_, n) => `<option value="${n}"${n === e.cpu ? ' selected' : ''}>CPU ${n}</option>`).join('')}</select></div>
+      <div class="frow"><label for="ep-com">Channel 0 Serial Port</label><select class="inp" id="ep-com">${['', 'COM1', 'COM2', 'COM3', 'COM4'].map(p => `<option value="${p}"${p === e.com0 ? ' selected' : ''}>${p || '(none)'}</option>`).join('')}</select></div>
+      <p class="help">The dwell time is the time between the end of the continuous task and its next start (0-100 ms, default 10): the time left for the other applications. The emulated controller runs on one CPU. A serial port emulates channel 0 of the controller.</p>`;
+    const emu = `<div class="frow"><label>Speed of Time</label><span><b>${c.sot}</b> % <button class="btn" data-ecfg="${id}">Configure Emulation…</button></span></div>
+      ${chk('ep-ss', c.single, 'Single Scan')}
+      <div class="frow"><label for="ep-ip">IP Address</label><select class="inp" id="ep-ip"><option value=""${m.ip ? '' : ' selected'}>(none)</option>${EMUIPS.map(a => `<option${a === m.ip ? ' selected' : ''}>${a}</option>`).join('')}</select></div>
+      ${chk('ep-on', c.powered, 'Controller on')}${kv('Mode', c.powered ? esc(modeName(c)) : 'Off')}${kv('Key switch', esc(c.key))}${kv('Holds', c.name ? esc(c.name) + (c.dlAt ? ' <span class="muted">· downloaded ' + esc(new Date(c.dlAt).toLocaleString()) + '</span>' : '') : '(no project)')}
+      <p class="help">Speed of time and Single Scan are Logix Emulate only: a physical controller runs in real time.</p>`;
+    const el = dialog({ title: `Module Properties - [${s}] PLC-CPU ${m.name}`, size: 'md', onClose: () => backToEmu(was),
+      body: tabbed([['gen', 'General', gen], ['sys', 'System', sys], ['emu', 'Emulator', emu], ['dbg', 'Debug', traceCfgHTML(c)]], tab || 'gen'),
+      buttons: [{ l: 'Cancel', run: () => backToEmu(was) }, { l: 'OK', pri: true, run: e2 => {
+        const v = k => e2.querySelector(k).value.trim(), n = v('#ep-n');
+        if (!E.validName(n)) { toast('Name: letters, digits and _ (up to 40).', 'err'); return false; }
+        const err = c.setEmu({ startup: v('#ep-st'), psave: v('#ep-ps'), psaveOn: e2.querySelector('#ep-pson').checked, linx: e2.querySelector('#ep-lx').checked, dwell: v('#ep-dw'), cpu: +v('#ep-cpu'), com0: v('#ep-com') });
+        if (err) { toast(err, 'err'); return false; }
+        if (!(+v('#ep-m') >= 64)) { toast('Memory Size: 64 KB or more.', 'err'); return false; }
+        r.setController(s, { name: n, desc: v('#ep-d'), mem: +v('#ep-m'), ip: v('#ep-ip'), on: e2.querySelector('#ep-on').checked });
+        if (e2.querySelector('#ep-ss').checked !== c.single) c.singleScan(e2.querySelector('#ep-ss').checked);
+        saveChassis(); chassisLive(true); live(true); render(); backToEmu(was);
+      } }],
+      mount: e2 => { bindTabs(e2); e2.addEventListener('click', ev => { const b = ev.target.closest('[data-ecfg]'); if (b) { ev.stopPropagation(); setTimeout(() => configEmulation(id, was), 0); } }); } });
+    bindTraceCfg(el, ri, s, () => emuProps(id, 'dbg', was));
+  }
+  // Enable Periodic Save: the chassis (programs, data, configuration) is saved every Periodic Save Interval
+  let lastPSave = Date.now();
+  setInterval(() => { const due = racks.some(r => r.controllers().some(m => m.ctl.emu.psaveOn && Date.now() - lastPSave >= m.ctl.emu.psave * 60000)); if (due) { lastPSave = Date.now(); saveChassis(); } }, 15000);
   function devicesHTML() {
     return racks.map((r, ri) => `<div class="nd${emuSel.k === 'r' && emuSel.ri === ri ? ' on' : ''}" data-esel="r:${ri}">${ic('rack', 'i ti')}<b>${esc(r.name)}</b></div>` +
       [...r.mods.values()].sort((a, b) => a.slot - b.slot).map(m => `<div class="nd${emuSel.k === 'm' && emuSel.ri === ri && emuSel.slot === m.slot ? ' on' : ''}${m.ctl && !m.ctl.powered ? ' dim' : ''}" data-esel="m:${ri}:${m.slot}" style="padding-left:22px">${ic(m.ctl ? 'chip' : 'io', 'i ti')}[${m.slot}] ${esc(m.name)}${m.ctl ? (m.ctl.powered ? '' : ' <small class="muted">off</small>') : ` <small class="muted">${esc(m.type.replace('PLC-', ''))}</small>`}</div>`).join('')).join('');

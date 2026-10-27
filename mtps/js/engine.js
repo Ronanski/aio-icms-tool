@@ -848,6 +848,7 @@
   // a breakpoint stops the program where it is: the rest of the scan does not run until it is acknowledged
   class Halt {}
 
+  const EMU0 = { ver: '1.0', startup: 'last', psave: 10, psaveOn: false, linx: true, dwell: 10, cpu: 0, com0: '' };
   /* ---------- Controller ---------- */
   // modes where the logic executes; Remote Test executes it with the outputs held off
   const RUN = m => m === 'run' || m === 'remrun' || m === 'remtest';
@@ -873,6 +874,21 @@
       // Logix Emulate breakpoints and tracepoints: the traces (by title), the triggered breakpoint, the trace settings
       // of Configure Emulation, and the emulated time (ms) since the last change to Run (the Absolute time stamp)
       this.traces = new Map(); this.bp = null; this.tcfg = { ignore: false, ts: 'None', show: true }; this.clock = 0; this.runAt = 0;
+      // the emulated controller's own settings (Logix Emulate, Create a controller: General and System screens)
+      this.emu = Object.assign({}, EMU0);
+    }
+    /* General / System settings: Startup Mode (Remote Program or Last Controller State), Periodic Save, Use RSLinx
+       Classic, Continuous Task Dwell Time (0-100 ms between the end of the continuous task and its next start: the scan
+       period here), CPU Affinity, Channel 0 Serial Port */
+    setEmu(o) {
+      const e = Object.assign({}, this.emu, o);
+      if (!['remprog', 'last'].includes(e.startup)) return 'Startup Mode: Remote Program or Last Controller State.';
+      if (!(Number.isInteger(+e.dwell) && +e.dwell >= 0 && +e.dwell <= 100)) return 'Continuous Task Dwell Time: 0 to 100 milliseconds.';
+      if (!(Number.isInteger(+e.psave) && +e.psave >= 1 && +e.psave <= 1440)) return 'Periodic Save Interval: 1 to 1440 minutes.';
+      e.dwell = +e.dwell; e.psave = +e.psave; e.cpu = Math.max(0, Math.floor(+e.cpu || 0)); e.psaveOn = !!e.psaveOn; e.linx = e.linx !== false;
+      this.emu = e; this.period = Math.max(1, e.dwell);
+      this.emit('config');
+      return '';
     }
     on(type, fn) { const l = [type, fn]; this.ls.push(l); return () => { this.ls = this.ls.filter(x => x !== l); }; }
     emit(what) { for (const [t, f] of this.ls) if (t === 'change') f({ what, controller: this }); }
@@ -992,7 +1008,8 @@
       if (on === this.powered) return;
       if (!on) { this.wasRun = RUN(this.mode) && !this.fault; this.powered = false; this.emit('power'); return; }
       this.powered = true; this.fault = null; this.acc = 0; this.first = true; this.bp = null;
-      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M ? 'remrun' : 'remprog';
+      // Startup Mode Remote Program: in REM the controller always starts in Remote Program
+      const to = this.key === 'RUN' ? 'run' : this.key === 'PROG' ? 'prog' : this.wasRun && this.M && this.emu.startup !== 'remprog' ? 'remrun' : 'remprog';
       this.mode = to;
       if (RUN(to) && this.M) this.prescan();
       this.emit('power'); this.emit('mode');
@@ -1578,7 +1595,7 @@
        configuration): a controller created later in that slot can use it, and load the saved controller image. */
     remove(slot, keep) {
       const m = this.mods.get(slot);
-      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
+      if (m && m.ctl) { if (keep) this.kept.set(slot, { name: m.name, desc: m.desc, ip: m.ip, mem: m.mem, sot: m.ctl.sot, emu: m.ctl.emu, project: m.ctl.copy ? m.ctl.upload() : null, at: m.ctl.dlAt || null }); else this.kept.delete(slot); }
       const ok = this.mods.delete(slot); if (ok) this.emit('remove'); return ok;
     }
     /* a controller created in a slot whose configuration was kept: use it (else defaults, the name stays), and load
@@ -1588,7 +1605,7 @@
       if (!k || !m || !m.ctl) return false;
       this.kept.delete(slot);
       m.name = k.name;
-      if (useConfig) this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot });
+      if (useConfig) { this.setController(slot, { desc: k.desc || '', ip: k.ip || '', mem: k.mem, sot: k.sot }); if (k.emu) m.ctl.setEmu(k.emu); }
       if (loadImage && k.project) { const key = m.ctl.key; m.ctl.key = 'REM'; m.ctl.download(k.project); if (k.at) m.ctl.dlAt = k.at; m.ctl.key = key; if (key === 'PROG') m.ctl.go('prog'); }
       this.emit('controller');
       return true;
@@ -1651,7 +1668,7 @@
       return { name: this.name, desc: this.desc || undefined, size: this.size, mods: [...this.mods.values()].map(m => ({ slot: m.slot, type: m.type, name: m.name, fault: m.fault || undefined, field: m.field,
         ip: m.ctl ? m.ip : undefined, mem: m.ctl && m.mem !== 3072 ? m.mem : undefined, desc: m.desc || undefined, on: m.ctl ? m.ctl.powered : undefined, sot: m.ctl && m.ctl.sot !== 100 ? m.ctl.sot : undefined,
         project: m.ctl && m.ctl.copy ? m.ctl.upload() : undefined, key: m.ctl ? m.ctl.key : undefined, mode: m.ctl ? m.ctl.mode : undefined,
-        tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined })),
+        tcfg: m.ctl && JSON.stringify(m.ctl.tcfg) !== TCFG0 ? m.ctl.tcfg : undefined, emu: m.ctl && JSON.stringify(m.ctl.emu) !== JSON.stringify(EMU0) ? m.ctl.emu : undefined })),
         kept: this.kept.size ? [...this.kept].map(([slot, k]) => Object.assign({ slot }, k)) : undefined };
     }
     static from(o) {
@@ -1670,6 +1687,7 @@
           m.ip = typeof x.ip === 'string' ? x.ip : ''; m.desc = x.desc || ''; if (+x.mem > 0) m.mem = Math.floor(+x.mem);
           if (x.sot != null) m.ctl.setSpeed(x.sot);
           if (x.tcfg) Object.assign(m.ctl.tcfg, x.tcfg);
+          if (x.emu) m.ctl.setEmu(x.emu);
           if (['PROG', 'REM', 'RUN'].includes(x.key)) m.ctl.key = x.key;
           const key = m.ctl.key;
           if (x.project && key !== 'RUN') { m.ctl.download(x.project); if (x.mode === 'remrun' || x.mode === 'run') m.ctl.go(key === 'PROG' ? 'prog' : 'remrun'); }
