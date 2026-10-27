@@ -155,14 +155,16 @@ module.exports = async function sealin({ browser, URL, check }) {
   await tap('.iowin [data-iox]'); await shot('timer-counter-latch');
   await tap('[data-box="mode"]'); await tap('#layer .it:has-text("Go Offline")'); await wait(300);
 
-  // a "?" left on the rung: a tap on the instruction, a tap again opens its editor with the tag list
+  // a "?" left on the rung: one tap on it edits the operand in place with the tag list (a double-click in the
+  // reference); a tap on a row of the list sets it
   await tap(T('Rung')); await wait(200);
   await tap(T('Examine If Closed')); await tap('#layer button:has-text("Cancel")');
   const ri = await pg.evaluate(() => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs.length - 1);
   const b = await pg.evaluate(ri => { const t = document.querySelector(`#ladwrap [data-ri="${ri}"][data-p="0"]:not([data-opi])`); t.scrollIntoView({ block: 'center' }); const r = t.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, ri);
-  await pg.touchscreen.tap(b.x, b.y); await wait(450); await pg.touchscreen.tap(b.x, b.y); await wait(350);
-  check('tablet: a "?" on the rung: tap, tap again opens the operand editor with the tag list', /TAGS FOR BIT/i.test(await layer()));
-  await tap('#layer :text-is("Start_PB")'); await tap('#layer .btn.pri');
+  await pg.touchscreen.tap(b.x, b.y); await wait(400);
+  check('tablet: a "?" on the rung: one tap edits the operand in place, with the tag list and no menu', await pg.evaluate(() => !!document.querySelector('#inl')) && /Start_PB/.test(await layer()) && !/Cut Instruction/.test(await layer()));
+  await shot('question-mark-one-tap');
+  await tap('#layer :text-is("Start_PB")'); await wait(300);
   check('tablet: … the tag picked there is set on the instruction', await pg.evaluate(ri => MTPS.App.state.p.tasks[0].programs[0].routines[0].rungs[ri].t === 'XIC(Start_PB);', ri));
   // the alias browser says what the input tag of an output module holds
   await tap(T('Output Energize')); await pg.fill('#layer .dlg input >> nth=1', 'Horn'); await wait(200);

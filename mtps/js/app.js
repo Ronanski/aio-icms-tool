@@ -1439,6 +1439,16 @@
   function onTap(t, x, y, isDbl, touch) {
     const k = tkey(t), now = Date.now();
     const again = touch && t && t.path && !t.br && !t.leg && S.sel && S.sel.ri === t.ri && S.sel.path && S.sel.path.join('.') === t.path.join('.') && !S.sel.br && !S.sel.leg && (t.op == null ? S.sel.op == null : S.sel.op === t.op) && now - lastTap.t > 380;
+    // by touch one tap does what a double-click does in the reference: on an operand, or on an instruction whose
+    // operand is still "?", it edits that operand in place with the tag list (owner 2026-10-27: tapping "?" did nothing)
+    const el = touch && t && t.path && !t.br && !t.leg ? getEl(parsed(t.ri) || [], t.path) : null;
+    const unset = el && el.a && t.op == null ? el.a.findIndex(v => v == null || v === '' || v === '?') : -1;
+    if (touch && el && editable() && (t.op != null || unset >= 0)) {
+      lastTap = { k: '', t: 0 };
+      select(unset >= 0 ? { ...t, op: unset } : t); render();
+      inlineEdit(t.ri, t.path, t.op != null ? t.op : unset);
+      return;
+    }
     const dbl = isDbl || again || (k === lastTap.k && now - lastTap.t < 380);
     lastTap = dbl ? { k: '', t: 0 } : { k, t: now };
     select(t);
@@ -1626,7 +1636,7 @@
           if (movable) { pd.lift = true; S.lifted = pd.t; renderLadder(null, pd.t); return; }
           renderLadder(null, pd.t && pd.t.path ? pd.t : null);
           ctxMenu(pd.t, pd.x, pd.y);
-        }, 450);
+        }, 550);   // a held finger is the right-click; a slow tap must not open the menu
       }
     });
     const move = ev => {
