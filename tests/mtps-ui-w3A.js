@@ -320,5 +320,55 @@ module.exports = async function w3a({ browser, URL, check }) {
     }
     check(`${n}: no JS errors (View)`, !T.errs.length, T.errs.join(' | '));
   }
+  /* ---------- 7. the Window menu ---------- */
+  for (const n of ['desktop', 'tablet', 'phone']) {
+    const T = await open(n);
+    await example(T); await T.wait(150);
+    // two windows: the routine and the controller tags
+    await T.ev(() => { MTPS.App.run('tagsedit'); const S = MTPS.App.state; if (!S.tabs.includes('tags')) S.tabs.push('tags'); }); await T.wait(100);
+    await T.ev(() => { const S = MTPS.App.state; S.view = 'ladder'; S.prog = 'MainProgram'; S.routine = 'MainRoutine'; MTPS.App.render(); });
+    const st = () => T.ev(() => ({ tabs: MTPS.App.state.tabs.slice(), view: MTPS.App.state.view }));
+    check(`${n}: two windows are open`, (await st()).tabs.length === 2, JSON.stringify(await st()));
+    if (n !== 'phone') {
+      if (n === 'desktop') { await T.hit('.dmenu [data-menu="Window"]'); } else { await T.hit('[data-allmenu]'); await T.hit('[data-fold="Window"]'); }
+      const items = await T.pg.$$eval('#layer .menu .it', r => r.map(x => ({ t: x.querySelector('span:not(.ck):not(.k)') ? [...x.querySelectorAll('span')].filter(s => !s.classList.contains('ck') && !s.classList.contains('k')).map(s => s.textContent).join('') : x.textContent, dis: x.classList.contains('dis'), ck: (x.querySelector('.ck') || {}).textContent || '' })));
+      const lab = items.map(x => x.t);
+      check(`${n}: the Window menu has the reference commands`, ['New Window', 'Split', 'Reset Window Layout', 'Close', 'Close All', 'Close Routine'].every(x => lab.includes(x)), lab.join(' | '));
+      check(`${n}: New Window and Split are greyed`, items.filter(x => x.t === 'New Window' || x.t === 'Split').every(x => x.dis));
+      const w1 = items.find(x => /^1 /.test(x.t)), w2 = items.find(x => /^2 /.test(x.t));
+      check(`${n}: the open windows are listed, the active one ticked`, !!w1 && !!w2 && w1.ck === '✓' && !w2.ck, JSON.stringify([w1, w2]));
+      if (n === 'desktop') await T.shot('window-menu');
+      await T.hitText('#layer .menu .it span', w2.t); await T.wait(100);
+      check(`${n}: a window in the list comes to the front`, (await st()).view === 'tags');
+      await T.cmd('Window', 'Next Window'); await T.wait(100);
+      check(`${n}: Next Window goes to the next window`, (await st()).view === 'ladder');
+      await T.cmd('Window', 'Close Routine'); await T.wait(100);
+      const a = await st();
+      check(`${n}: Close Routine closes the routine window`, a.tabs.length === 1 && a.tabs[0] === 'tags' && a.view === 'tags', JSON.stringify(a));
+      if (n === 'desktop') {
+        await T.ev(() => { const S = MTPS.App.state; S.view = 'ladder'; S.prog = 'MainProgram'; S.routine = 'MainRoutine'; MTPS.App.render(); });
+        await T.pg.keyboard.press('Control+F6'); await T.wait(100);
+        check(`${n}: Ctrl+F6 goes to the next window`, (await st()).view === 'tags');
+        await T.pg.keyboard.press('Control+F4'); await T.wait(100);
+        check(`${n}: Ctrl+F4 closes the active window`, !(await st()).tabs.includes('tags'));
+      }
+    } else {
+      await T.cmd('Window', 'Next Window'); await T.wait(100);
+      check(`${n}: Next Window (More) goes to the next window`, (await st()).view === 'tags');
+    }
+    await T.cmd('Window', 'Close All'); await T.wait(100);
+    const b = await st();
+    check(`${n}: Close All closes every window and keeps the project`, !b.tabs.length && (await T.ev(() => !MTPS.App.state.noProj && !!MTPS.App.state.p)), JSON.stringify(b));
+    if (n === 'phone') await T.hit('[data-go="project"]');
+    if (n === 'tablet' && !(await T.pg.$('[data-org="ctl"]'))) await T.hit('[data-drawer="1"]');
+    check(`${n}: the Controller Organizer stays after Close All`, !!(await T.pg.$('[data-org="ctl"]')));
+    if (n === 'tablet') await T.pg.keyboard.press('Escape');
+    // Reset Window Layout: the panes and the toolbars come back
+    await T.ev(() => { Object.assign(MTPS.App.state.prefs, { org: false, err: false, tbOff: ['lang'], lorg: true }); MTPS.App.render(); });
+    await T.cmd('Window', 'Reset Window Layout'); await T.wait(100);
+    const pf = await T.ev(() => { const p = MTPS.App.state.prefs; return { org: p.org, err: p.err, tb: (p.tbOff || []).length, lorg: !!p.lorg }; });
+    check(`${n}: Reset Window Layout restores the default layout`, pf.org && pf.err && !pf.tb && !pf.lorg, JSON.stringify(pf));
+    check(`${n}: no JS errors (Window)`, !T.errs.length, T.errs.join(' | '));
+  }
   for (const T of opened) await T.cx.close();
 };

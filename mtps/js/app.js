@@ -947,6 +947,15 @@
     vcols: { l: 'Toggle Column…', i: 'tags', run: () => colMenu($('#tagpage .tagtbl thead') || $('#tagpage'), null), on: () => !S.noProj && S.view === 'tags' && !!$('#tagpage .tagtbl') },
     zin: { l: 'Zoom In', i: 'zin', run: () => zoom(1.12) },
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
+    // Window (help v37 Window menu): New Window, Split, Reset Window Layout, Close, Close All, Close Routine, then the open windows
+    wnew: { l: 'New Window', i: 'file', run: () => {}, on: () => false },
+    wsplit: { l: 'Split', i: 'dockr', run: () => {}, on: () => false },
+    wreset: { l: 'Reset Window Layout', i: 'dockr', run: () => winReset() },
+    wclose: { l: 'Close', k: 'Ctrl+F4', i: 'close', run: () => closeTab(winAct()), on: () => !!winAct() },
+    wcloseall: { l: 'Close All', i: 'close', run: () => winCloseAll(), on: () => !S.noProj && S.tabs.length > 0 },
+    wclosertn: { l: 'Close Routine', i: 'ladder', run: () => closeTab(winAct()), on: () => S.view === 'ladder' && !!winAct() },
+    wnext: { l: 'Next Window', k: 'Ctrl+F6', i: 'right', run: () => winStep(1), on: () => S.tabs.length > 1 },
+    wprev: { l: 'Previous Window', k: 'Ctrl+Shift+F6', i: 'back', run: () => winStep(-1), on: () => S.tabs.length > 1 },
     options: { l: 'Options…', i: 'gear', run: options },
     updates: { l: 'Updates…', i: 'download', run: () => window.MTPSUpdater && window.MTPSUpdater.dialog() },
     cmptool: { l: 'Compare Tool…', i: 'xref', run: () => compareTool(), on: () => !S.noProj },
@@ -975,6 +984,7 @@
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
     ['Tools', ['options', '-', 'cmptool', '-', 'updates']],
+    ['Window', ['wnew', 'wsplit', '-', 'wreset', '-', 'wclose', 'wcloseall', 'wclosertn', '-', 'wnext', 'wprev', 'wlist']],
     ['Help', ['helpc', 'help', 'tips', '-', 'samples', '-', 'about']],
   ];
   const can = id => { const c = C[id]; return c && (!c.on || c.on()); };
@@ -987,6 +997,7 @@
   }
   /* menu rows made when the menu opens: the recent projects of File (up to eight, as the reference's Recent Projects) */
   const DYN = {
+    wlist: () => (S.noProj || !S.tabs.length ? [] : ['-', ...S.tabs.slice(0, 9).map((k, n) => ({ l: `${n + 1} ${tabTitle(k)}`, ck: k === winAct(), run: () => openTab(k) }))]),
     recent: () => { const f = S.prefs.files || []; return f.length ? [{ hd: 'Recent Projects' }, ...f.slice(0, 8).map((p, n) => ({ l: `${n + 1} ${baseName(p)}`, i: 'file', run: () => saveChanges(() => loadFile(p)) })), '-'] : []; },
   };
   const menuItems = ids => ids.flatMap(id => (DYN[id] ? DYN[id]() : [id])).filter(id => typeof id === 'object' || id === '-' || !C[id].show || C[id].show()).map(id => (id === '-' || typeof id === 'object' ? id : { id, l: C[id].l, k: S.layout === 'desktop' ? C[id].k : '', i: C[id].i, dis: !can(id), ck: C[id].ck ? C[id].ck() : undefined }));
@@ -1193,6 +1204,7 @@
       <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}${b('newprog')}${b('newtask')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('samples', 'Sample Projects…')}${b('vlorg')}${b('vstart')}${C.vfull.on() ? b('vfull') : ''}${b('cmptool')}${b('genrep')}${b('print', 'Print…')}${b('prtopts')}</div>
+      <div class="card">${b('wnext')}${b('wcloseall')}${b('wreset')}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
 
@@ -3566,6 +3578,20 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     } catch (e) { toast('Full Screen is not available on this device.', 'err'); }
   }
   document.addEventListener('fullscreenchange', () => { if (S.p) render(); });
+  /* ---------- the Window menu: the open routine and tag windows are the workspace tabs (S.tabs). Close All closes
+     them and keeps the project and the Controller Organizer; Reset Window Layout puts back the default panes and
+     toolbars; Next / Previous Window step through the tabs. New Window and Split are greyed: one window per routine. */
+  const winAct = () => (S.noProj ? '' : S.view === 'tags' ? 'tags' : S.view === 'ladder' && S.tabs.includes(S.prog + '/' + S.routine) ? S.prog + '/' + S.routine : '');
+  function winCloseAll() { S.tabs = []; S.view = 'none'; S.sel = null; S.selAll = null; render(); }
+  function winStep(d) {
+    if (S.tabs.length < 2) return;
+    const i = S.tabs.indexOf(winAct());
+    openTab(S.tabs[((i < 0 ? 0 : i + d) + S.tabs.length) % S.tabs.length]);
+  }
+  function winReset() {
+    Object.assign(S.prefs, { org: true, err: true, emu: true, emuH: 260, emuW: 380, emuHp: 330, tbOff: [], lorg: false });
+    S.drawer = false; S.errOpen = false; savePrefs(); render(); toast('Window layout reset.');
+  }
   /* ---------- View > Logical Organizer (help v37: Logical Organizer, Use the Logical Organizer, Move items in the
      Logical Organizer): the programs in a tree of folders and parent programs, apart from the tasks that run them. The
      root is the controller; each program holds Parameters and Local Tags, its routines and its child programs. The
@@ -7776,7 +7802,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
   /* more of the keyboard table (help v37, Use the keyboard to navigate): Alt+Enter the active routine's properties;
      Alt+F, E, V, S, L, C, T, H the main menu; Ctrl+PageDown / Ctrl+PageUp, Ctrl+Tab / Shift+Ctrl+Tab and Ctrl+F6 the
      next or previous routine window (tab); Ctrl+F4 closes it; Ctrl+D on a rung edits its comment */
-  const ALTM = { KeyF: 'File', KeyE: 'Edit', KeyV: 'View', KeyS: 'Search', KeyL: 'Logic', KeyC: 'Communications', KeyT: 'Tools', KeyH: 'Help' };
+  const ALTM = { KeyF: 'File', KeyE: 'Edit', KeyV: 'View', KeyS: 'Search', KeyL: 'Logic', KeyC: 'Communications', KeyT: 'Tools', KeyW: 'Window', KeyH: 'Help' };
   function tableKey(ev, k, ctrl) {
     if (S.noProj && !ev.altKey) return false;
     if (ev.altKey && !ctrl && k === 'Enter') { if (S.view === 'ladder') routineProps('rt:' + S.prog + '/' + S.routine); return true; }
@@ -7809,6 +7835,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const map = { a: 'selall', h: 'replace', n: 'new', o: 'open', s: 'save', z: 'undo', y: 'redo', c: 'copy', x: 'cut', v: 'paste', r: 'rung', d: 'desc', w: 'newtag', e: 'xref', g: 'goto', t: 'toggle', f: 'find', i: 'insmode' };
     if (ctrl && ev.shiftKey && k.toLowerCase() === 's') { ev.preventDefault(); run('rstart'); return; }
     if (ctrl && !ev.shiftKey && k.toLowerCase() === 'p') { ev.preventDefault(); run('print'); return; }
+    if (ev.ctrlKey && (k === 'F4' || k === 'F6')) { ev.preventDefault(); run(k === 'F4' ? 'wclose' : ev.shiftKey ? 'wprev' : 'wnext'); return; }
     if (ctrl && (k === 'Home' || k === 'End')) { ev.preventDefault(); const n = rungs().length; if (n) { S.sel = null; S.selRung = k === 'Home' ? 0 : n - 1; render(); scrollToSel(); } return; }
     if (ctrl && map[k.toLowerCase()]) { ev.preventDefault(); run(map[k.toLowerCase()]); return; }
     if (k === 'Delete') { run('del'); return; }
