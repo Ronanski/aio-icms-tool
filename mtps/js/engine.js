@@ -775,7 +775,10 @@
     addTags(pj.tags, null);
 
     // the tasks, for GSV / SSV (Task object); each program knows its task
-    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit }));
+    M.tasks = (pj.tasks || []).map((t, k) => ({ name: t.name, k, type: t.type || 'continuous', watchdog: t.watchdog || 500, noOutputs: !!t.noOutputs, inhibit: !!t.inhibit,
+      // periodic: Period (ms) and Priority; event: Trigger, Tag, Priority and the timeout (1756-PM005, Create a Task)
+      period: +t.period > 0 ? +t.period : 10, pri: t.priority == null ? 10 : +t.priority, trigger: t.trigger || 'event', tag: t.tag || '', timeout: +t.timeout > 0 ? +t.timeout : 0, tmoOn: !!t.timeoutOn }));
+    taskChecks(M, ctlErr);
     const progNames = new Set();
     let tk = 0;
     for (const task of pj.tasks || []) for (const pg of (tk++, task.programs || [])) {
@@ -802,6 +805,7 @@
       P.task = M.tasks[pj.tasks.indexOf(task)];
     }
 
+    M.tasks.forEach(t => { t.progs = M.programs.filter(P => P.task === t); });
     // aliases point at a tag, a member or a bit that exists; they take its data type
     const aliases = (map, P) => {
       for (const rec of map.values()) {
@@ -1182,7 +1186,13 @@
       DisableUpdateOutputs: ['DINT', 1, false, (c, t) => [t.noOutputs ? 1 : 0]], InhibitTask: ['DINT', 1, true, (c, t) => [t.inhibit ? 1 : 0], (c, t, a) => { t.inhibit = !!a[0]; c.M.programs.forEach(P => { if (P.task === t) { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; } }); }],
       Instance: ['DINT', 1, false, (c, t) => [t.k]], LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
       OverlapCount: ['DINT', 1, true, keep('overlap', 0), store1('overlap')], StartTime: ['DINT', 2, true, (c, t) => lohi(t.start || 0), (c, t, a) => { t.start = fromLohi(a); }],
-      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }] } },
+      Status: ['DINT', 1, true, keep('status', 0), store1('status')], Watchdog: ['DINT', 1, true, (c, t) => [t.watchdog * 1000], (c, t, a) => { t.watchdog = a[0] > 0 ? a[0] / 1000 : t.type === 'periodic' ? 500 : 5000; }],
+      // Wave 3 B (1756-RM018A, TASK object): the period (an event task: its timeout), the priority, the intervals in µs
+      Rate: ['DINT', 1, true, (c, t) => [Math.round((t.type === 'periodic' ? t.period : t.type === 'event' ? t.timeout : 0) * 1000)], (c, t, a) => { if (!(a[0] >= 100 && a[0] <= 2e9)) return; if (t.type === 'periodic') t.period = a[0] / 1000; else if (t.type === 'event') t.timeout = a[0] / 1000; }],
+      EnableTimeOut: ['DINT', 1, true, (c, t) => [t.tmoOn ? 1 : 0], (c, t, a) => { if (t.type === 'event') { t.tmoOn = !!a[0]; t.tmoAt = c.clock + t.timeout; } }],
+      Priority: ['INT', 1, true, (c, t) => [t.type === 'periodic' || t.type === 'event' ? t.pri : 0], (c, t, a) => { if (a[0] >= 1 && a[0] <= 15 && t.type !== 'continuous') t.pri = a[0]; }],
+      MaxInterval: ['DINT', 2, true, (c, t) => lohi(Math.round((t.ivMax || 0) * 1000)), (c, t, a) => { t.ivMax = fromLohi(a) / 1000; }],
+      MinInterval: ['DINT', 2, true, (c, t) => lohi(Math.round((t.ivMin || 0) * 1000)), (c, t, a) => { t.ivMin = fromLohi(a) / 1000; }] } },
     Program: { inst: 'program', attrs: {
       DisableFlag: ['SINT', 1, true, (c, P) => [P.inhibit ? 1 : 0], (c, P, a) => { if (P.inhibit && !a[0]) P.fs = true; P.inhibit = !!a[0]; }],
       LastScanTime: ['DINT', 1, true, keep('us', 0), store1('us')], MaxScanTime: ['DINT', 1, true, keep('maxUs', 0), store1('maxUs')],
@@ -1427,7 +1437,7 @@
     }
     /* Program → Run: OTE bits off, TON reset, one-shot storage set so a true input does not fire at start */
     prescan() {
-      this.first = true; this.held = false;
+      this.first = true; this.held = false; this.tFresh = true;
       const walk = arr => {
         for (const e of arr) {
           if (!e) continue;
@@ -1550,6 +1560,7 @@
       this.dt = Math.round(dt);
       this.inputs();
       if (!this.running || this.bp) return;
+      if (this.M.timed) { this.scanTimed(dt); return; }
       this.clock += this.dt;
       this.S.FS = this.first ? 1 : 0;
       this.S.MINOR = 0;
@@ -1610,7 +1621,7 @@
         }
         this.ioCleared.delete(m.slot);
         if (V[m.I] && 'Fault' in V[m.I]) V[m.I].Fault = 0;
-        if (m.kind === 'di') V[m.I].Data = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF));
+        if (m.kind === 'di') { const nv = store('INT', this.applyForce(m.slot, 'I', (ph | 0) & 0xFFFF)); if (this.M.timed && this.running && V[m.I].Data !== nv) this.cos(m, V[m.I].Data, nv); V[m.I].Data = nv; }
         else if (m.kind === 'do') V[m.I].Data = this.ioImage(m.slot).out;
         else if (m.kind === 'ai') for (let k = 0; k < 4; k++) V[m.I][`Ch${k}Data`] = store('REAL', ph ? Number(ph[k]) || 0 : 0);
       }
@@ -1623,6 +1634,7 @@
       this.mcr = false;
       for (let i = 0; i < rungs.length;) {
         if ((++this.wdN & 255) === 0) this.wdCheck();
+        if (this.pre && !this.uid) this.preempt();
         this.seq(rungs[i].elems, !this.mcr);
         if (this.tnd || this.ret) { this.tnd = this.ret = false; break; }
         if (this.jmp !== null) {
@@ -2133,6 +2145,181 @@
     removeForces() { this.forces.clear(); this.fm = {}; this.emit('forces'); }
     forceState() { return !this.forces.size ? 'none' : this.forcesOn ? 'enabled' : 'disabled'; }
   }
+
+  /* ---------- Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v37 help: Tasks, Create a Task) ----------
+     Only a project with a periodic or an event task takes this path (M.timed): a project with just the continuous
+     task scans exactly as before. The controller runs one task at a time. A periodic task runs once each Period; an
+     event task once each trigger (an EVENT instruction, a change of the input data of its module, or no event within
+     its timeout). A task interrupts any task of a lower priority (1 is the highest, 15 the lowest; the continuous task
+     is below them all) between two rungs, or at once from an EVENT instruction, and control goes back to where the
+     interrupted task left off. Emulated time inside a scan follows the real time the logic takes (times the speed of
+     time), so a long continuous scan is interrupted each time a period passes. A trigger while the task is still
+     running or waiting to run is an overlap: the trigger is ignored, OverlapCount counts it, Status bit 2 and a minor
+     fault (type 6) are set. Tasks of the same priority do not share time in 1 ms slices here; they run in turn. */
+  const CPRI = 16, TMAX = 2000000, TTYPES = ['continuous', 'periodic', 'event'];
+  // at verify: one continuous task, at most 32 tasks, Period 0.1 ms to 2,000 s, Priority 1 to 15, an input module tag
+  function taskChecks(M, err) {
+    const user = M.tasks.filter(t => TTYPES.includes(t.type)), cont = user.filter(t => t.type === 'continuous');
+    M.tasks.forEach(t => { if (!TTYPES.includes(t.type) && !['fault', 'powerup', 'unscheduled'].includes(t.type)) err(`Task '${t.name}': unknown task type '${t.type}'`); });
+    if (cont.length > 1) err(`Only one task can be continuous (${cont.map(t => `'${t.name}'`).join(', ')} are)`);
+    if (user.length > 32) err(`The controller supports 32 tasks (the project has ${user.length})`);
+    const names = new Set();
+    for (const t of user) {
+      if (!validName(t.name) || names.has(U(t.name))) err(`Invalid or repeated task name '${t.name}'`);
+      names.add(U(t.name));
+      if (t.type === 'continuous') continue;
+      if (!(Number.isInteger(t.pri) && t.pri >= 1 && t.pri <= 15)) err(`Task '${t.name}': Priority ${t.pri} is not in the range 1 to 15`);
+      if (t.type === 'periodic' && !(t.period >= 0.1 && t.period <= TMAX)) err(`Task '${t.name}': Period ${t.period} ms is not in the range 0.1 to 2,000,000 ms`);
+      if (t.type === 'event') {
+        if (t.tmoOn && !(t.timeout >= 0.1 && t.timeout <= TMAX)) err(`Task '${t.name}': the timeout ${t.timeout} ms is not in the range 0.1 to 2,000,000 ms`);
+        if (t.trigger === 'input') {
+          const io = /^Local:(\d+):I$/i.exec(t.tag), m = io && M.mods.get(+io[1]);
+          if (!m || (m.kind !== 'di' && m.kind !== 'ai')) err(`Task '${t.name}': Module Input Data State Change needs the input tag of an input module (e.g. Local:1:I), not '${t.tag}'`);
+          else { t.slot = m.slot; if (m.kind === 'ai') t.ai = m.slot; }
+        } else if (t.trigger !== 'event') err(`Task '${t.name}': the trigger '${t.trigger}' is not supported by this controller`);
+      }
+    }
+    M.timed = user.some(t => t.type !== 'continuous');
+  }
+  Object.assign(Controller.prototype, {
+    // the emulated time now (ms), inside a scan
+    vnow() { return this.tBase + (now() - this.rBase) * this.sot / 100; },
+    // when a task is next due (-Infinity: triggered and waiting); never while it runs or is inhibited
+    dueOf(T) {
+      if (T.inhibit || T.running) return Infinity;
+      if (T.type === 'periodic') return T.next;
+      if (T.type !== 'event') return Infinity;
+      if (T.pend) return -Infinity;
+      return Math.min(T.tmoOn && T.timeout > 0 ? T.tmoAt : Infinity, T.ai != null ? T.aiNext : Infinity);
+    },
+    // the highest priority task that is due at v and above priority lvl (an inhibited task lets its triggers pass)
+    readyTask(v, lvl) {
+      let best = null;
+      for (const T of this.M.tasks) {
+        if (T.type !== 'periodic' && T.type !== 'event') continue;
+        if (T.inhibit) { if (T.type === 'periodic' && T.next <= v) T.next += (Math.floor((v - T.next) / T.period) + 1) * T.period; T.pend = 0; continue; }
+        if (T.pri < lvl && this.dueOf(T) <= v && (!best || T.pri < best.pri)) best = T;
+      }
+      return best;
+    },
+    // run every task that is due and above priority lvl, the highest first
+    dispatch(lvl) {
+      for (let n = 0; n < 10000 && this.running && !this.bp; n++) {
+        const v = this.vnow(), T = this.readyTask(v, lvl);
+        if (!T) return;
+        this.startTask(T, v);
+      }
+    },
+    // between two rungs of a running task: a task of a higher priority that is due interrupts it
+    preempt() { if (this.readyTask(this.vnow(), this.lvl)) this.dispatch(this.lvl); },
+    overlap(T, n) {
+      T.overlap = (T.overlap || 0) + n; T.status = (T.status | 0) | 4;
+      for (let k = 0; k < Math.min(n, 50); k++) this.minorFault(6, 2, `Task overlap: task '${T.name}' was triggered while it was still running`);
+    },
+    // a trigger of an event task (bits: Status bit 0 for an EVENT instruction)
+    trigger(T, bits) {
+      if (!T || T.type !== 'event' || T.inhibit || !this.running) return false;
+      if (T.running || T.pend) { this.overlap(T, 1); return false; }
+      T.pend = 1; T.status = (T.status | 0) | bits;
+      return true;
+    },
+    // a change of state of a digital input module (COS: by default every point, both ways; the module's
+    // COSOffOnEn / COSOnOffEn configuration when it is set)
+    cos(m, a, b) {
+      const C = this.M.vals[`Local:${m.slot}:C`], on = C && (C.COSOffOnEn | 0), off = C && (C.COSOnOffEn | 0), dflt = !on && !off;
+      const ch = (a ^ b) & 0xFFFF, hit = dflt ? ch : (ch & b & on) | (ch & a & off);
+      if (hit) for (const T of this.M.tasks) if (T.type === 'event' && T.trigger === 'input' && T.slot === m.slot) this.trigger(T, 0);
+    },
+    startTask(T, v) {
+      if (T.type === 'periodic') {
+        const miss = Math.floor((v - T.next) / T.period);
+        if (miss > 0) this.overlap(T, miss);
+        // it runs at its scheduled time (timers and intervals count whole periods)
+        v = T.next + miss * T.period; T.next = v + T.period;
+      } else {
+        const ai = T.ai != null && v >= T.aiNext;
+        if (!T.pend && !ai) T.status = (T.status | 0) | 2;   // Status bit 1: the timeout ran the task
+        if (ai) { const miss = Math.floor((v - T.aiNext) / T.aiRpi); if (miss > 0) this.overlap(T, miss); T.aiNext += (miss + 1) * T.aiRpi; }
+        T.pend = 0;
+      }
+      this.runTask(T, v);
+      const e = this.vnow();
+      if (T.type === 'periodic' && e >= T.next) { const k = Math.floor((e - T.next) / T.period) + 1; this.overlap(T, k); T.next += k * T.period; }
+      if (T.type === 'event') T.tmoAt = e + T.timeout;
+    },
+    /* one run of a task: its programs top to bottom, with its own watchdog; the state of the task it interrupted is
+       kept and given back. Timers in it count the time since its last run. An instruction fault that no fault routine
+       or Controller Fault Handler clears faults the controller and ends the scan. */
+    runTask(T, v) {
+      const keep = [this.curP, this.curT, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS, this.dt, this.lvl, this.uid, this.wdT0, this.wdMs, this.wdSet, this.wdTask, this.wdHit];
+      const r0 = now();
+      if (T.last != null) { const iv = v - T.last; T.ivMax = Math.max(T.ivMax || 0, iv); T.ivMin = T.ivMin == null ? iv : Math.min(T.ivMin, iv); }
+      const dt = (T.frac || 0) + (T.last != null ? v - T.last : T.type === 'periodic' ? T.period : this.dt);
+      this.dt = Math.max(0, Math.floor(dt)); T.frac = dt - this.dt;
+      T.last = v; T.start = wct(this); T.running = true;
+      this.curT = T; this.lvl = T.type === 'continuous' ? CPRI : T.pri; this.uid = 0;
+      this.wdT0 = r0; this.wdSet = Math.min(TMAX, Math.max(1, Math.floor(+T.watchdog) || 500)); this.wdMs = Math.min(this.wdSet, WDCAP); this.wdTask = T.name; this.wdHit = false;
+      this.jmp = null; this.ret = this.tnd = this.mcr = false; this.d = 0;
+      try {
+        for (const P of T.progs) if (P.main && !P.inhibit && !P.handler && !P.off) {
+          this.S.FS = P.fs0 || P.fs ? 1 : 0; P.fs0 = P.fs = false;
+          const p0 = progStart(this, P); this.routine(P.main); progEnd(P, p0); this.wdCheck();
+        }
+      } catch (e) {
+        if (!(e instanceof Fault)) throw e;
+        if (e.tried || !this.handle(this.M.cfh, e)) { this.majorFault(e.type, e.code, e.message); throw new Halt(); }
+      } finally {
+        T.running = false;
+        T.us = Math.round((now() - r0) * 1000); T.maxUs = Math.max(T.maxUs || 0, T.us);
+        [this.curP, this.curT, this.jmp, this.ret, this.tnd, this.mcr, this.d, this.S.FS, this.dt, this.lvl, this.uid, this.wdT0, this.wdMs, this.wdSet, this.wdTask, this.wdHit] = keep;
+      }
+    },
+    /* the state of the tasks when the controller goes to Run (prescan): each periodic task is due at once, each
+       program gets S:FS on its first run. After an online edit (no prescan) the tasks keep their timing. */
+    initTasks(t0) {
+      const old = this.tFresh ? null : this.tInit;
+      this.tFresh = false; this.tInit = this.M;
+      for (const T of this.M.tasks) {
+        const o = old && old.tasks.find(x => x.name === T.name && x.type === T.type);
+        if (o) { ['next', 'last', 'frac', 'overlap', 'status', 'ivMin', 'ivMax', 'us', 'maxUs', 'tmoAt', 'aiNext', 'pend'].forEach(k => { T[k] = o[k]; }); if (T.type === 'periodic' && o.period !== T.period) T.next = t0; }
+        else { T.next = t0; T.last = null; T.frac = 0; T.pend = 0; T.tmoAt = t0 + T.timeout; }
+        if (T.ai != null) { const m = this.M.mods.get(T.ai); T.aiRpi = m ? m.rpi : 20; if (!o || o.aiNext == null) T.aiNext = t0 + T.aiRpi; }
+      }
+      for (const P of this.M.programs) P.fs0 = !old;
+    },
+    // one scan of a project with periodic or event tasks: the tasks due now, the continuous task (interrupted as
+    // its time passes), then the tasks due in the rest of the scan time, each at its time
+    scanTimed(dt) {
+      const M = this.M, t0 = this.clock, tEnd = t0 + dt, r0 = now();
+      this.tBase = t0; this.rBase = r0; this.pre = true;
+      this.S.MINOR = 0; this.tnd = false; this.ret = false; this.jmp = null; this.d = 0; this.mcr = false; this.uid = 0; this.lvl = CPRI + 1; this.curT = null;
+      if (this.tInit !== M || this.tFresh) this.initTasks(t0);
+      try {
+        this.dispatch(CPRI + 1);
+        const C = M.tasks.find(t => t.type === 'continuous');
+        if (C && !C.inhibit && this.running && !this.bp) this.runTask(C, this.vnow());
+        for (let n = 0; n < 100000 && this.running && !this.bp; n++) {
+          let d = Infinity;
+          for (const T of M.tasks) d = Math.min(d, this.dueOf(T));
+          const v = this.vnow();
+          if (d >= tEnd && d > v) break;
+          if (d > v) { this.tBase = d; this.rBase = now(); }
+          this.dispatch(CPRI + 1);
+        }
+      } catch (e) {
+        if (e instanceof Halt) { this.d = 0; this.mcr = false; }
+        else if (!(e instanceof Fault)) throw e;
+        else if (e.tried || !this.handle(M.cfh, e)) this.majorFault(e.type, e.code, e.message);
+      }
+      const end = Math.max(tEnd, this.vnow());
+      this.pre = false; this.curP = null; this.curT = null; this.wdMs = 0; this.S.FS = 0; this.first = false; this.scans++;
+      // a scan that took longer than its time used that real time up: the next scans wait for it
+      if (end > tEnd) this.acc -= end - tEnd;
+      this.clock = end;
+      const us = Math.round((now() - r0) * 1000);
+      this.scanUs = us; this.maxScanUs = Math.max(this.maxScanUs || 0, us);
+    },
+  });
 
   /* ---------- Chassis: the emulated rack (spec section 15) ----------
      A controller is one card in a slot, next to I/O cards; the programming software reaches it through a path

@@ -90,6 +90,125 @@
       }, true);
     }
 
+    /* the task settings of New Task and of Task Properties > Configuration (1756-PM005, Create a Task / Create a
+       Periodic Task: Type, Trigger, Tag, Execute Task If No Event Occurs Within, Period, Priority, Watchdog, Disable
+       Automatic Output Processing To Reduce Task Overhead, Inhibit Task). Ranges (help v37: Task Properties -
+       Configuration): Period 0.1 to 2,000,000 ms, Priority 1 to 15, Watchdog 1 to 2,000,000 ms. A field that does not
+       belong to the type is hidden. Only one task can be continuous. */
+    const TYPES = [['continuous', 'Continuous'], ['periodic', 'Periodic'], ['event', 'Event']];
+    // the triggers of an event task; this controller has no motion axes and no consumed-tag events
+    const TRIGGERS = [['axisreg1', 'Axis Registration 1'], ['axisreg2', 'Axis Registration 2'], ['axiswatch', 'Axis Watch'], ['consumed', 'Consumed Tag'],
+      ['event', 'EVENT Instruction Only'], ['input', 'Module Input Data State Change'], ['motion', 'Motion Group Execution']];
+    const TRIG_ON = new Set(['event', 'input']);
+    const TMAX = 2000000;
+    // the input tags of the input modules (Module Input Data State Change)
+    const inTags = () => ((S.p.rack || {}).modules || []).filter(m => { const d = (E.MODULES || {})[m.type]; return d && (d.kind === 'di' || d.kind === 'ai'); }).map(m => `Local:${m.slot}:I`);
+    function cfgHTML(T, p, dis) {
+      const type = T.type || 'periodic', cont = S.p.tasks.some(t => t !== T && t.type === 'continuous');
+      const sel = (v, w) => (v === w ? ' selected' : ''), tags = inTags(), tag = T.tag || tags[0] || '';
+      const vis = (types, html) => `<div class="tpf" data-tpf="${types}"${types.split(' ').includes(type) ? '' : ' style="display:none"'}>${html}</div>`;
+      return `<div class="frow"><label for="${p}-t">Type</label><select class="inp" id="${p}-t"${dis}>${TYPES.map(([v, l]) => `<option value="${v}"${sel(v, type)}${v === 'continuous' && cont ? ' disabled' : ''}>${l}</option>`).join('')}</select></div>
+        ${vis('event', `<div class="frow"><label for="${p}-tr">Trigger</label><select class="inp" id="${p}-tr"${dis}>${TRIGGERS.map(([v, l]) => `<option value="${v}"${sel(v, T.trigger || 'event')}${TRIG_ON.has(v) ? '' : ' disabled'}>${l}</option>`).join('')}</select></div>
+        <div class="frow"><label for="${p}-tg">Tag</label><select class="inp" id="${p}-tg"${dis}${(T.trigger || 'event') === 'input' ? '' : ' disabled'}>${tags.length ? tags.map(t => `<option${sel(t, tag)}>${t}</option>`).join('') : '<option value="">&lt;none&gt;</option>'}</select></div>
+        <label class="ck"><input type="checkbox" id="${p}-to"${T.timeoutOn ? ' checked' : ''}${dis}> Execute Task If No Event Occurs Within</label>
+        <div class="frow"><label for="${p}-tv">Timeout (ms)</label><input class="inp" id="${p}-tv" type="number" min="0.1" max="${TMAX}" step="any" value="${T.timeout || 10}"${dis || (T.timeoutOn ? '' : ' disabled')}></div>`)}
+        ${vis('periodic', `<div class="frow"><label for="${p}-p">Period (ms)</label><input class="inp" id="${p}-p" type="number" min="0.1" max="${TMAX}" step="any" value="${T.period || 10}"${dis}></div>`)}
+        ${vis('periodic event', `<div class="frow"><label for="${p}-pr">Priority</label><input class="inp" id="${p}-pr" type="number" min="1" max="15" step="1" value="${T.priority == null ? 10 : T.priority}"${dis}></div>`)}
+        <div class="frow"><label for="${p}-w">Watchdog (ms)</label><input class="inp" id="${p}-w" type="number" min="1" max="${TMAX}" value="${T.watchdog || 500}"${dis}></div>
+        <label class="ck"><input type="checkbox" id="${p}-o"${T.noOutputs ? ' checked' : ''}${dis}> Disable automatic output processing to reduce task overhead</label>
+        <label class="ck"><input type="checkbox" id="${p}-i"${T.inhibit ? ' checked' : ''}${dis}> Inhibit task</label>`;
+    }
+    // the fields follow the type and the trigger
+    function cfgBind(el, p) {
+      const t = el.querySelector(`#${p}-t`), tr = el.querySelector(`#${p}-tr`), tg = el.querySelector(`#${p}-tg`), to = el.querySelector(`#${p}-to`), tv = el.querySelector(`#${p}-tv`);
+      const sync = () => {
+        el.querySelectorAll('[data-tpf]').forEach(x => { x.style.display = x.dataset.tpf.split(' ').includes(t.value) ? '' : 'none'; });
+        if (!t.disabled) { tg.disabled = tr.value !== 'input'; tv.disabled = !to.checked; }
+      };
+      [t, tr, to].forEach(x => x.addEventListener('change', sync));
+    }
+    // the settings typed in, checked: { v } or { err }
+    function cfgRead(el, p, self) {
+      const q = s => el.querySelector(`#${p}-${s}`), num = s => Number(q(s).value);
+      const v = { type: q('t').value, watchdog: num('w'), noOutputs: q('o').checked, inhibit: q('i').checked };
+      if (!(Number.isInteger(v.watchdog) && v.watchdog >= 1 && v.watchdog <= TMAX)) return { err: 'Watchdog: a whole number of ms from 1 to 2,000,000.' };
+      if (v.type === 'continuous' && S.p.tasks.some(t => t.type === 'continuous' && t !== self)) return { err: 'Only one task can be continuous.' };
+      if (v.type !== 'continuous') {
+        v.priority = num('pr');
+        if (!(Number.isInteger(v.priority) && v.priority >= 1 && v.priority <= 15)) return { err: 'Priority: a whole number from 1 (highest) to 15 (lowest).' };
+      }
+      if (v.type === 'periodic') {
+        v.period = num('p');
+        if (!(v.period >= 0.1 && v.period <= TMAX)) return { err: 'Period: 0.1 to 2,000,000 ms.' };
+      }
+      if (v.type === 'event') {
+        v.trigger = q('tr').value; v.timeoutOn = q('to').checked; v.timeout = num('tv');
+        if (!TRIG_ON.has(v.trigger)) return { err: 'This trigger is not supported by this controller.' };
+        if (v.trigger === 'input') { v.tag = q('tg').value; if (!v.tag) return { err: 'Module Input Data State Change needs an input module in the I/O Configuration.' }; }
+        if (v.timeoutOn && !(v.timeout >= 0.1 && v.timeout <= TMAX)) return { err: 'Execute Task If No Event Occurs Within: 0.1 to 2,000,000 ms.' };
+      }
+      return { v };
+    }
+    // the settings into the task object of the project (only the fields of its type)
+    function cfgApply(T, v) {
+      T.type = v.type; T.watchdog = v.watchdog;
+      ['period', 'priority', 'trigger', 'tag', 'timeout', 'timeoutOn', 'noOutputs', 'inhibit'].forEach(k => { delete T[k]; });
+      if (v.noOutputs) T.noOutputs = true;
+      if (v.inhibit) T.inhibit = true;
+      if (v.type !== 'continuous') T.priority = v.priority;
+      if (v.type === 'periodic') T.period = v.period;
+      if (v.type === 'event') {
+        T.trigger = v.trigger; if (v.tag) T.tag = v.tag;
+        if (v.timeoutOn) T.timeoutOn = true;
+        if (v.timeout >= 0.1) T.timeout = v.timeout;
+      }
+    }
+    const sameCfg = (T, v) => { const t = Object.assign({}, T); cfgApply(t, v); return ['type', 'watchdog', 'period', 'priority', 'trigger', 'tag', 'timeout', 'timeoutOn', 'noOutputs', 'inhibit'].every(k => t[k] === T[k]); };
+
+    /* New Task (1756-PM005, Create a Task: right-click the Tasks folder > New Task): Name, Description and the task
+       settings. A controller has at most 32 tasks. */
+    const MAXTASKS = 32;
+    function newTask() {
+      if (!editable() || !offlineOnly('New Task')) return;
+      if (userTasks().length >= MAXTASKS) { toast(`The controller supports ${MAXTASKS} tasks.`, 'err'); return; }
+      const names = new Set(S.p.tasks.map(t => U(t.name)));
+      let n = 'Task1';
+      for (let k = 1; names.has(U(n)); ) n = 'Task' + ++k;
+      dialog({ title: 'New Task', size: 'md', focus: true,
+        body: `<div class="frow"><label for="nt-n">Name</label><input class="inp" id="nt-n" value="${esc(n)}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"></div>
+          <div class="frow"><label for="nt-d">Description</label><textarea class="inp" id="nt-d" rows="2" maxlength="512"></textarea></div>
+          ${cfgHTML({ type: 'periodic' }, 'nt', '')}
+          <p class="help">A periodic task runs its programs every Period; an event task runs when its trigger happens. A task of a higher priority (a lower number) interrupts one of a lower priority; the continuous task has the lowest. Schedule programs in it with New Program or Task Properties &gt; Program Schedule.</p><div class="errtx" id="nt-e"></div>`,
+        buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+          const v = el.querySelector('#nt-n').value.trim(), d = el.querySelector('#nt-d').value.trim();
+          const er = t => { el.querySelector('#nt-e').textContent = t; return false; };
+          if (!E.validName(v)) return er('Name: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.');
+          if (names.has(U(v))) return er(`A task named ${v} already exists.`);
+          const c = cfgRead(el, 'nt', null); if (c.err) return er(c.err);
+          edit(() => {
+            const T = { name: v, type: c.v.type, programs: [] };
+            if (d) T.desc = d;
+            cfgApply(T, c.v);
+            // a new task goes after the last task (before the handlers and the unscheduled programs)
+            const last = S.p.tasks.reduce((k, t, i) => (HANDLERS[t.type] ? k : i), -1);
+            S.p.tasks.splice(last + 1, 0, T);
+            openFolder('tasks'); S.orgSel = 'task:' + v;
+          });
+          toast(`Task ${v} added. Schedule a program in it with New Program.`, 'ok');
+        } }],
+        mount: el => cfgBind(el, 'nt') });
+    }
+    /* Delete a task (help: Delete a task): offline; a task that still schedules programs is not deleted (Studio 5000:
+       Failed to delete task; unschedule its programs first). */
+    function deleteTask(name) {
+      const T = S.p.tasks.find(t => t.name === name);
+      if (!T || HANDLERS[T.type] || !editable() || !offlineOnly('Delete Task')) return;
+      if (T.programs.length) { toast(`Failed to delete task ${name}: it schedules ${T.programs.length} program${T.programs.length > 1 ? 's' : ''}. Unschedule them first (Task Properties > Program Schedule).`, 'err'); return; }
+      confirmDlg('Delete Task', `Delete the task <b>${esc(name)}</b>?`, 'Yes', () => {
+        edit(() => { S.p.tasks.splice(S.p.tasks.indexOf(T), 1); if (S.orgSel === 'task:' + name) S.orgSel = 'tasks'; });
+      }, true);
+    }
+
     /* Task Properties (help v37: Edit task properties): General (Name, Description), Configuration, Program Schedule
        (Unscheduled and Scheduled lists, Add -> / <- Remove, the order with the arrows: programs run top to bottom;
        help: Schedule a program/phase, Unschedule a program/phase, Change the order of program execution), Monitor. */
@@ -158,12 +277,21 @@
        Program; Unscheduled Programs > New Program; a program or a task > Delete) */
     function orgMore(key, items) {
       const off = !editable() || !offline();
-      if (key === 'unsch') items.push({ l: 'New Program…', run: () => newProgram(''), dis: off });
-      else if (key.startsWith('task:')) items.unshift({ l: 'New Program…', run: () => newProgram(key.slice(5)), dis: off });
+      if (key === 'tasks') items.push({ l: 'New Task…', run: newTask, dis: off });
+      else if (key === 'unsch') items.push({ l: 'New Program…', run: () => newProgram(''), dis: off });
+      else if (key.startsWith('task:')) {
+        items.unshift({ l: 'New Program…', run: () => newProgram(key.slice(5)), dis: off });
+        const i = items.findIndex(x => x !== '-' && x.l === 'Properties…');
+        items.splice(i < 0 ? items.length : i, 0, { l: 'Delete', i: 'trash', run: () => deleteTask(key.slice(5)), dis: off }, '-');
+      }
       else if (key.startsWith('prog:')) { const i = items.findIndex(x => x !== '-' && x.l === 'Properties…'); items.splice(i < 0 ? items.length : i, 0, { l: 'Delete', i: 'trash', run: () => deleteProgram(key.slice(5)), dis: off }, '-'); }
     }
     // the Unscheduled Programs folder of the organizer (inside Tasks, after the tasks)
     const unscheduled = () => ((unsTask() || {}).programs || []);
-    return { newProgram, deleteProgram, taskProps, orgMore, unscheduled, userTasks };
+    // Quick View of a task
+    const typeText = T => ({ continuous: 'Continuous task', periodic: 'Periodic task', event: 'Event task' })[T.type || 'continuous'] || T.type;
+    const quick = T => T.type === 'periodic' ? [['Period', (T.period || 10) + ' ms'], ['Priority', T.priority == null ? 10 : T.priority]]
+      : T.type === 'event' ? [['Trigger', (TRIGGERS.find(x => x[0] === (T.trigger || 'event')) || [0, ''])[1] + (T.trigger === 'input' ? ` (${T.tag})` : '')], ['Priority', T.priority == null ? 10 : T.priority]] : [];
+    return { typeText, quick, newProgram, deleteProgram, newTask, deleteTask, taskProps, orgMore, unscheduled, userTasks };
   };
 })();

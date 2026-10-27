@@ -93,6 +93,68 @@ module.exports = async function w3B({ browser, page, URL, check }) {
     check('a project with an empty unscheduled program opens', back === 'Mixer,Empty');
   }
   {
+    console.log('Wave 3 B: New Task, periodic and event tasks (1756-PM005, Create a Task)');
+    await fresh(); await open(page, () => MTPS.App.openProject(MTPS.App.example()));
+    const vis = id => page.$eval(id, e => !!e.closest('.tpf') ? e.closest('.tpf').style.display !== 'none' : true).catch(() => false);
+    const toastTx = () => page.$eval('.toast', t => t.textContent).catch(() => '');
+    await page.click('.nd[data-org="tasks"]', { button: 'right' }); await wait(120);
+    check('right-click Tasks: New Task… (on)', (await items()).some(([l, d]) => l === 'New Task…' && !d));
+    await shot('after-org-tasks-menu');
+    await pick('New Task…');
+    check('New Task: Name Task1, Description, Type Periodic by default (PM005: Periodic is the default)', (await dlgTitle()) === 'New Task' && (await page.$eval('#nt-n', e => e.value)) === 'Task1' && (await page.$eval('#nt-t', e => e.value)) === 'periodic' && !!(await page.$('#nt-d')));
+    check('Type lists Continuous, Periodic, Event; Continuous is off while MainTask is continuous', (await page.$$eval('#nt-t option', o => o.map(x => x.textContent + (x.disabled ? '-off' : '')).join('|'))) === 'Continuous-off|Periodic|Event');
+    check('Periodic shows Period, Priority, Watchdog, Disable automatic output processing, Inhibit task; not the trigger', (await vis('#nt-p')) && (await vis('#nt-pr')) && !(await vis('#nt-tr')) && !!(await page.$('#nt-w')) && !!(await page.$('#nt-o')) && !!(await page.$('#nt-i')));
+    check('the defaults: Period 10 ms, Priority 10, Watchdog 500 ms', (await page.$eval('#nt-p', e => e.value)) === '10' && (await page.$eval('#nt-pr', e => e.value)) === '10' && (await page.$eval('#nt-w', e => e.value)) === '500');
+    await page.selectOption('#nt-t', 'event'); await wait(60);
+    check('Event shows Trigger, Tag, Execute Task If No Event Occurs Within, Priority; not the period', (await vis('#nt-tr')) && (await vis('#nt-tg')) && (await vis('#nt-to')) && (await vis('#nt-pr')) && !(await vis('#nt-p')));
+    check('Trigger: EVENT Instruction Only and Module Input Data State Change are on; motion and consumed are off', (await page.$$eval('#nt-tr option:not([disabled])', o => o.map(x => x.textContent).join('|'))) === 'EVENT Instruction Only|Module Input Data State Change' && (await page.$$eval('#nt-tr option', o => o.length)) === 7);
+    check('the Tag is off for EVENT Instruction Only', await page.$eval('#nt-tg', e => e.disabled));
+    await page.selectOption('#nt-tr', 'input'); await wait(60);
+    check('Module Input Data State Change: the Tag lists the input modules (Local:1:I)', !(await page.$eval('#nt-tg', e => e.disabled)) && (await page.$$eval('#nt-tg option', o => o.map(x => x.textContent))).includes('Local:1:I'));
+    await shot('after-new-task-event');
+    await page.selectOption('#nt-t', 'periodic'); await page.fill('#nt-n', 'Fast'); await page.fill('#nt-p', '5'); await page.fill('#nt-pr', '0'); await clickBtn('OK');
+    check('Priority 0 is refused (1 to 15)', /Priority/.test(await page.$eval('#nt-e', e => e.textContent)));
+    await page.fill('#nt-pr', '5'); await page.fill('#nt-n', 'MainTask'); await clickBtn('OK');
+    check('a task name that is taken is refused', /already exists/.test(await page.$eval('#nt-e', e => e.textContent)));
+    await page.fill('#nt-n', 'Fast'); await clickBtn('OK');
+    check('OK: the periodic task Fast (5 ms, priority 5) is in the project and the organizer, after MainTask', (await tasksOf()).startsWith('continuous:MainTask=MainProgram | periodic:Fast=') && await ev(() => { const t = MTPS.App.state.p.tasks.find(x => x.name === 'Fast'); return t.period === 5 && t.priority === 5 && t.watchdog === 500; }) && (await treeKeys()).includes('task:Fast'));
+    await page.click('.nd[data-org="task:Fast"]'); await wait(120);
+    check('Quick View of Fast: Periodic task, Period 5 ms, Priority 5', /Periodic task/.test(await page.$eval('body', b => b.textContent)) && /5 ms/.test(await page.$eval('body', b => b.textContent)));
+    // a program in it, with logic: verify and run it in the engine
+    await page.click('.nd[data-org="task:Fast"]', { button: 'right' }); await pick('New Program…');
+    check('New Program from Fast: Schedule In = Fast', (await page.$eval('#np-s', s => s.value)) === 'Fast');
+    await page.fill('#np-n', 'FastProg'); await clickBtn('OK');
+    await page.click('.nd[data-org="prog:FastProg"]', { button: 'right' }); await pick('New Routine…');
+    await page.fill('#layer #p1', 'FastMain'); await clickBtn('OK');
+    const ran = await ev(() => {
+      const p = MTPS.App.state.p;
+      p.tags.push({ name: 'FastCnt', type: 'DINT' });
+      p.tasks.find(t => t.name === 'Fast').programs[0].routines[0].rungs = [{ t: 'ADD(FastCnt,1,FastCnt);' }];
+      MTPS.App.render();
+      const c = new MTPS.Controller(), r = c.download(JSON.parse(JSON.stringify(p))); if (!r.ok) return r.lines.join(' | ');
+      c.setMode('remrun'); for (let k = 0; k < 10; k++) c.scan(10);
+      return c.read('FastCnt');
+    });
+    check('the 5 ms task runs 20 times in 100 ms of the engine', ran === 20, String(ran));
+    // Delete Task: refused while it schedules a program
+    await page.click('.nd[data-org="task:Fast"]', { button: 'right' }); await wait(120);
+    check('right-click a task: Delete', (await items()).some(([l, d]) => l === 'Delete' && !d));
+    await pick('Delete');
+    check('Delete a task that schedules a program: Failed to delete task', /Failed to delete task Fast/.test(await toastTx()) && (await tasksOf()).includes('periodic:Fast='));
+    await page.click('.dmenu [data-menu="File"]'); await wait(120);
+    check('File > New Component > New Task… is on', (await items()).some(([l, d]) => l === 'New Task…' && !d));
+    await pick('New Task…');
+    await page.fill('#nt-n', 'Spare_Task'); await page.selectOption('#nt-t', 'event'); await page.check('#nt-to'); await page.fill('#nt-tv', '50'); await clickBtn('OK');
+    check('an event task with a timeout of 50 ms', await ev(() => { const t = MTPS.App.state.p.tasks.find(x => x.name === 'Spare_Task'); return t && t.type === 'event' && t.trigger === 'event' && t.timeoutOn === true && t.timeout === 50 && !('period' in t); }));
+    await page.click('.nd[data-org="task:Spare_Task"]', { button: 'right' }); await pick('Delete');
+    check('Delete an empty task asks Yes / No', (await dlgTitle()) === 'Delete Task');
+    await clickBtn('Yes');
+    check('the empty task is deleted', !(await tasksOf()).includes('Spare_Task') && !(await treeKeys()).includes('task:Spare_Task'));
+    const verr = await ev(() => MTPS.verify(MTPS.App.state.p).errors.map(e => e.text).join(' | '));
+    check('Verify Controller: 0 errors with a periodic task', verr === '', verr);
+    await shot('after-new-task-tree');
+  }
+  {
     // tablet portrait (the organizer is a drawer) and phone (Project tab), touch: hold MainTask, New Program
     for (const [n, vp] of [['tablet', { width: 800, height: 1280 }], ['phone', { width: 390, height: 844 }]]) {
       const tp = await browser.newPage({ viewport: vp, hasTouch: true, isMobile: true });
@@ -110,6 +172,15 @@ module.exports = async function w3B({ browser, page, URL, check }) {
       if (n === 'phone') await shot('after-program-schedule-phone', tp);
       await clickBtn('OK', tp, true);
       check(`${n} (touch): Program Schedule, Add ->: MainTask schedules Touch_Prog`, (await tasksOf(tp)).includes('continuous:MainTask=MainProgram,Touch_Prog'));
+      // New Task with touch: hold the Tasks folder
+      await org();
+      await hold(tp, '.nd[data-org="tasks"]');
+      check(`${n} (touch): hold Tasks, New Task…`, await pick('New Task…', tp, true) && (await dlgTitle(tp)) === 'New Task');
+      await tp.fill('#nt-n', 'Touch_Task'); await tp.selectOption('#nt-t', 'event'); await tp.selectOption('#nt-tr', 'input');
+      if (n === 'phone') await shot('after-new-task-phone', tp);
+      const fits = await tp.$eval('#layer .dlg', d => d.getBoundingClientRect().right <= window.innerWidth + 1 && d.scrollWidth <= d.clientWidth + 1);
+      await clickBtn('OK', tp, true);
+      check(`${n} (touch): the event task on a change of Local:1:I is added; the dialog fits the screen`, fits && await tp.evaluate(() => { const t = MTPS.App.state.p.tasks.find(x => x.name === 'Touch_Task'); return t && t.type === 'event' && t.trigger === 'input' && t.tag === 'Local:1:I'; }));
       await tp.close();
     }
   }

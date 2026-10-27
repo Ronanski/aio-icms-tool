@@ -877,7 +877,7 @@
     // File > New Component (reference order); Task is listed but not in this version yet
     newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
     newprog: { l: 'New Program…', i: 'tree', run: () => TK.newProgram((S.orgSel || '').startsWith('task:') ? S.orgSel.slice(5) : ''), on: () => editable() && offline() },
-    newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
+    newtask: { l: 'New Task…', i: 'tree', run: () => TK.newTask(), on: () => editable() && offline() },
     newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
     newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
     newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
@@ -5436,7 +5436,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     if (k === 'ctl') return [P.controller.name, [['Type', P.controller.type || 'PLC-CPU'], ['Revision', P.controller.rev || ''], ['Slot', ctlSlot()], ['Description', P.controller.desc || ''], ['Mode', modeText()]]];
     if (k === 'ctags') return ['Controller Tags', [['Type', 'Tags of the controller scope'], ['Tags', P.tags.length]]];
     if (k === 'tasks') return ['Tasks', [['Type', 'Folder'], ['Tasks', P.tasks.length]]];
-    if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', 'Continuous task'], ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
+    if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', TK.typeText(T)], ...TK.quick(T), ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
     if (k.startsWith('prog:')) { const g = prog(k.slice(5)); return g && [g.name, [['Type', 'Program'], ['Description', g.desc || ''], ['Main Routine', g.main || '<none>'], ['Routines', g.routines.length], ['Tags', g.tags.length]]]; }
     if (k.startsWith('ptags:')) { const g = prog(k.slice(6)); return g && ['Program Tags', [['Type', 'Tags of the program scope'], ['Program', g.name], ['Tags', g.tags.length]]]; }
     if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }

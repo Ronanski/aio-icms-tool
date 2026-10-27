@@ -1512,5 +1512,70 @@ console.log('Wave 3 B: Unscheduled Programs (v37 help: Create a program, Unsched
   check('an unscheduled program with no routine verifies', MTPS.verify(e2).errors.length === 0);
 }
 
+console.log('Wave 3 B: periodic and event tasks (1756-PM005 chapters 1 and 2; v37 help: Create a Task)');
+{
+  // a project with more tasks: each one a program with one routine of rung text
+  const prog = (name, rungs) => ({ name, main: 'Main', tags: [], routines: [{ name: 'Main', rungs: rungs.map(t => ({ t })) }] });
+  const multi = (tags, cont, tasks) => {
+    const p = proj({ tags, rungs: cont });
+    tasks.forEach((t, k) => { const o = Object.assign({ name: 'T' + k }, t, { programs: [prog('P' + k, t.rungs)] }); delete o.rungs; p.tasks.push(o); });
+    return p;
+  };
+  const go = p => { const c = new MTPS.Controller(), r = c.download(p); if (!r.ok) throw new Error(r.lines.join(' | ')); c.setMode('remrun'); return c; };
+  const D = (n, x) => T(n, 'DINT', x);
+  const loop = n => ['MOV(0,I);', 'LBL(Lp)ADD(I,1,I);', `LES(I,${n})JMP(Lp);`];
+  // periodic: runs every Period of emulated time, the first time at once
+  let c = go(multi([D('Cnt'), D('F'), D('S')], ['ADD(Cnt,1,Cnt);'], [{ type: 'periodic', period: 5, priority: 5, rungs: ['ADD(F,1,F);'] }, { type: 'periodic', period: 100, priority: 10, rungs: ['ADD(S,1,S);'] }]));
+  scans(c, 10);
+  eq('a 5 ms periodic task runs 20 times in 100 ms; the continuous task once a scan', [c.read('F'), c.read('Cnt')], [20, 10]);
+  eq('a 100 ms periodic task runs once in 100 ms', c.read('S'), 1);
+  scans(c, 1); eq('… and again after its period', c.read('S'), 2);
+  // priority: tasks due at the same time run the highest priority (lowest number) first
+  c = go(multi([D('Ord')], ['NOP();'], [{ type: 'periodic', period: 50, priority: 8, rungs: ['MUL(Ord,10,Ord)ADD(Ord,1,Ord);'] }, { type: 'periodic', period: 50, priority: 3, rungs: ['MUL(Ord,10,Ord)ADD(Ord,2,Ord);'] }]));
+  scans(c, 1); eq('priority 3 runs before priority 8', c.read('Ord'), 21);
+  // preemption: a periodic task interrupts a long continuous scan between two rungs
+  c = go(multi([D('I'), D('Seen'), D('Runs')], loop(400000), [{ type: 'periodic', period: 1, priority: 1, rungs: ['MOV(I,Seen)ADD(Runs,1,Runs);'] }]));
+  scans(c, 1);
+  check('a periodic task interrupts the continuous task in the middle of its scan', c.read('Seen') > 0 && c.read('Seen') < 400000 && c.read('Runs') > 2, `Seen ${c.read('Seen')} Runs ${c.read('Runs')}`);
+  // overlap: a periodic task that runs longer than its period
+  c = go(multi([D('I'), D('Ov'), D('St')], ['GSV(Task,Slow,OverlapCount,Ov)GSV(Task,Slow,Status,St);'], [{ name: 'Slow', type: 'periodic', period: 0.5, priority: 2, rungs: loop(200000) }]));
+  scans(c, 3);
+  check('a periodic task that runs past its period counts overlaps (OverlapCount, Status bit 2), the controller keeps running', c.read('Ov') > 0 && (c.read('St') & 4) === 4 && c.mode === 'remrun', `Ov ${c.read('Ov')} St ${c.read('St')}`);
+  check('… and logs the minor fault type 6 code 2 (task overlap)', c.minors.some(f => f.type === 6 && f.code === 2));
+  // inhibit
+  c = go(multi([D('F')], ['NOP();'], [{ type: 'periodic', period: 5, inhibit: true, rungs: ['ADD(F,1,F);'] }]));
+  scans(c, 5); eq('an inhibited periodic task does not run', c.read('F'), 0);
+  // timers in a periodic task count the time between its runs
+  c = go(multi([T('Tm', 'TIMER')], ['NOP();'], [{ type: 'periodic', period: 50, rungs: ['TON(Tm,1000,0);'] }]));
+  scans(c, 30); eq('a TON in a 50 ms periodic task times emulated time', c.read('Tm.ACC'), 250);
+  // event task: a change of state of a digital input module (Module Input Data State Change)
+  c = go(multi([D('E'), D('Cnt')], ['ADD(Cnt,1,Cnt);'], [{ type: 'event', trigger: 'input', tag: 'Local:1:I', priority: 4, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 3); eq('an input event task does not run while its inputs do not change', c.read('E'), 0);
+  c.setInputs(1, 1); scans(c, 3); eq('a change of an input runs it once', c.read('E'), 1);
+  c.setInputs(1, 0); scans(c, 1); c.setInputs(1, 3); scans(c, 1); eq('… each change once', c.read('E'), 3);
+  // event task timeout: Execute Task If No Event Occurs Within
+  c = go(multi([D('E'), D('St')], ['GSV(Task,T0,Status,St);'], [{ type: 'event', trigger: 'event', timeoutOn: true, timeout: 20, rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 10); check('with no event, the timeout runs an event task each timeout (Status bit 1)', c.read('E') >= 4 && c.read('E') <= 5 && (c.read('St') & 2) === 2, `E ${c.read('E')} St ${c.read('St')}`);
+  c = go(multi([D('E')], ['NOP();'], [{ type: 'event', trigger: 'event', rungs: ['ADD(E,1,E);'] }]));
+  scans(c, 10); eq('an event task with no trigger and no timeout never runs', c.read('E'), 0);
+  // GSV TASK attributes of 1756-RM018A
+  c = go(multi([D('R'), T('Pr', 'INT'), D('Mx', { dim: [2] }), D('Mn', { dim: [2] })], ['GSV(Task,T0,Rate,R)GSV(Task,T0,Priority,Pr)GSV(Task,T0,MaxInterval,Mx[0])GSV(Task,T0,MinInterval,Mn[0]);'], [{ type: 'periodic', period: 20, priority: 7, rungs: ['NOP();'] }]));
+  scans(c, 10);
+  eq('GSV TASK Rate (µs), Priority, Max/MinInterval (µs)', [c.read('R'), c.read('Pr'), c.read('Mx[0]'), c.read('Mn[0]')], [20000, 7, 20000, 20000]);
+  // after Program mode and Run again, the tasks start over
+  c = go(multi([D('S')], ['NOP();'], [{ type: 'periodic', period: 1000, rungs: ['ADD(S,1,S);'] }]));
+  scans(c, 3); c.setMode('remprog'); c.setMode('remrun'); scans(c, 1);
+  eq('Program then Run: a periodic task is due at once again', c.read('S'), 2);
+  // verify
+  const errs = p => MTPS.verify(p).errors.map(e => e.text).join(' | ');
+  check('only one task can be continuous', /Only one task can be continuous/.test(errs(multi([], ['NOP();'], [{ type: 'continuous', rungs: ['NOP();'] }]))));
+  check('a priority outside 1 to 15 is an error', /Priority 0 is not in the range 1 to 15/.test(errs(multi([], ['NOP();'], [{ type: 'periodic', priority: 0, rungs: ['NOP();'] }]))));
+  check('a period over 2,000 s is an error', /Period 3000000 ms/.test(errs(multi([], ['NOP();'], [{ type: 'periodic', period: 3000000, rungs: ['NOP();'] }]))));
+  check('an input event needs an input module tag', /needs the input tag of an input module/.test(errs(multi([], ['NOP();'], [{ type: 'event', trigger: 'input', tag: 'Local:2:I', rungs: ['NOP();'] }]))));
+  check('at most 32 tasks', /supports 32 tasks/.test(errs(multi([], ['NOP();'], Array.from({ length: 32 }, () => ({ type: 'periodic', rungs: ['NOP();'] }))))));
+  // a project without a periodic or event task keeps the plain scan
+  check('a project with only the continuous task does not take the timed path', !go(proj({ rungs: ['NOP();'] })).M.timed);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
