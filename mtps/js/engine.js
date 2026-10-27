@@ -30,11 +30,12 @@
     // the configuration tags (Local:<slot>:C), as in the module profiles: AB:1756_DI:C:0 (help 1756-IB16: the filter
     // times of four groups of 8 points, as the type is shared with the 32-point modules, and change of state),
     // AB:1756_DO:C:0 (help 1756-OB16I / -OW16I), and the floating point analog ones (1756-UM009, Floating Point
-    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel
+    // Configuration Tags): RealTimeSample or ProgToFaultEn, then one Ch<n>Config structure per channel; an output
+    // channel has ConfigBits (INT, the channel's individual configuration bits) before HoldForInit (1756-UM009G)
     'AB:1756_DI:C:0': members(['OffOn', 'OnOff'].map(d => ['0_7', '8_15', '16_23', '24_31'].map(g => `Filter${d}_${g}:SINT`).join(' ')).join(' ') + ' COSOnOffEn:DINT COSOffOnEn:DINT'),
     'AB:1756_DO:C:0': members('ProgToFaultEn:BOOL FaultMode:DINT FaultValue:DINT ProgMode:DINT ProgValue:DINT'),
     'AB:1756_NII_Struct:C:0': members('AlarmDisable:BOOL ProcessAlarmLatch:BOOL RateAlarmLatch:BOOL DigitalFilter:INT RateAlarmLimit:INT LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL LAlarmLimit:REAL HAlarmLimit:REAL LLAlarmLimit:REAL HHAlarmLimit:REAL AlarmDeadband:REAL CalBias:REAL'),
-    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
+    'AB:1756_NIO_Struct:C:0': members('AlarmDisable:BOOL ConfigBits:INT HoldForInit:BOOL RampAlarmLatch:BOOL LimitAlarmLatch:BOOL FaultMode:BOOL ProgMode:BOOL RampToRun:BOOL RampToProg:BOOL RampToFault:BOOL MaxRampRate:INT FaultValue:REAL ProgValue:REAL LowLimit:REAL HighLimit:REAL LowSignal:REAL HighSignal:REAL LowEngineering:REAL HighEngineering:REAL'),
     'AB:1756_IF4_Float:C:0': members('RealTimeSample:INT ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NII_Struct:C:0`).join(' ')),
     'AB:1756_OF4_Float:C:0': members('ProgToFaultEn:BOOL ' + [0, 1, 2, 3].map(k => `Ch${k}Config:AB:1756_NIO_Struct:C:0`).join(' ')),
   };

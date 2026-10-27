@@ -1022,5 +1022,15 @@ console.log('Wave 2 D: Electronic Keying and RPI (help: Module Properties - Gene
   check('RPI 0.1 or 751 ms: Verify error "not in the range 0.2 to 750 ms"', /RPI 0\.1 ms is not in the range 0\.2 to 750 ms/.test(v({ rpi: 0.1 })) && /RPI 751 ms/.test(v({ rpi: 751 })), v({ rpi: 0.1 }));
 }
 
+console.log('Wave 2 D: configuration member names (1756-UM009G Floating Point Configuration Tags; 1756-UM058)');
+{
+  const c = new MTPS.Controller(); c.download(proj({ modules: [{ slot: 1, type: 'PLC-DI16-24V', name: 'DI' }, { slot: 2, type: 'PLC-DO16-24V', name: 'DO' }, { slot: 3, type: 'PLC-AI4', name: 'AI' }, { slot: 4, type: 'PLC-AO4', name: 'AO' }] }));
+  const keys = n => Object.keys(c.read(n)).join(' ');
+  check('an output channel: ConfigBits (INT) before HoldForInit, then the latches, modes, ramps and values', keys('Local:4:C.Ch0Config') === 'AlarmDisable ConfigBits HoldForInit RampAlarmLatch LimitAlarmLatch FaultMode ProgMode RampToRun RampToProg RampToFault MaxRampRate FaultValue ProgValue LowLimit HighLimit LowSignal HighSignal LowEngineering HighEngineering', keys('Local:4:C.Ch0Config'));
+  check('Local:4:C.Ch0Config.ConfigBits is an INT (0)', c.read('Local:4:C.Ch0Config.ConfigBits') === 0);
+  check('an input channel: AlarmDisable, the alarm latches, DigitalFilter, RateAlarmLimit, scaling, alarm limits, AlarmDeadband, CalBias', keys('Local:3:C.Ch0Config') === 'AlarmDisable ProcessAlarmLatch RateAlarmLatch DigitalFilter RateAlarmLimit LowSignal HighSignal LowEngineering HighEngineering LAlarmLimit HAlarmLimit LLAlarmLimit HHAlarmLimit AlarmDeadband CalBias', keys('Local:3:C.Ch0Config'));
+  check('the discrete cards: DO ProgToFaultEn FaultMode FaultValue ProgMode ProgValue; DI COSOnOffEn COSOffOnEn after the filters', keys('Local:2:C') === 'ProgToFaultEn FaultMode FaultValue ProgMode ProgValue' && / COSOnOffEn COSOffOnEn$/.test(keys('Local:1:C')) && /^FilterOffOn_0_7 /.test(keys('Local:1:C')));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
