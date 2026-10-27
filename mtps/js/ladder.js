@@ -103,7 +103,7 @@
           if ((e.t === 'TON' || e.t === 'TOF' || e.t === 'RTO' || e.t === 'CTU' || e.t === 'CTD') && i > 0) { const s = e.x[0].obj(); v = i === 1 ? s.PRE : s.ACC; }
           // Length / Position of a file or sequencer instruction show the live .LEN / .POS of its CONTROL
           else if (INSTR[e.t] && INSTR[e.t].live && INSTR[e.t].live[i]) { try { v = e.x[INSTR[e.t].ctl].obj()[INSTR[e.t].live[i]]; } catch (err) { v = a; } }
-          else if (x && typeof x.get === 'function' && x.at && !x.dim && MTPS.ATOMIC.includes(x.type)) { try { val = x.get(); if (x.type === 'REAL') val = +val.toPrecision(6); } catch (err) { val = '?'; } }
+          else if (x && typeof x.get === 'function' && x.at && !x.dim && MTPS.ATOMIC.includes(x.type)) { try { val = x.get(); if (x.type === 'REAL' || x.type === 'LREAL') val = +val.toPrecision(6); } catch (err) { val = '?'; } }
         }
         return [names[i] || '', v, val];
       });

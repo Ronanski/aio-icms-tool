@@ -950,5 +950,53 @@ console.log('Logix Emulate: the emulated controller\'s General and System settin
   check('…and with a kept configuration of a removed controller', ch.controller(1).emu.dwell === 5);
 }
 
+console.log('Wave 2 B: user-defined data types, size (Data Type Editor, v37 help: Using user-defined data types)');
+{
+  const pump = { name: 'Pump', members: [{ name: 'Running', type: 'BOOL' }, { name: 'Speed', type: 'REAL', style: 'Exponential' }, { name: 'Hours', type: 'DINT', desc: 'run hours', access: 'Read Only' }] };
+  const p = proj({ dataTypes: [pump, { name: 'Line', members: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'BOOL' }, { name: 'C', type: 'SINT' }, { name: 'D', type: 'INT' }, { name: 'E', type: 'BOOL', dim: 40 }, { name: 'P', type: 'Pump', dim: 2 }] }],
+    tags: [T('P1', 'Pump'), T('L1', 'Line')], rungs: ['XIC(P1.Running)MOV(5,P1.Hours)OTE(L1.E[33]);', 'MOV(P1.Hours,L1.P[1].Hours);'] });
+  eq('BOOLs share a hidden SINT, REAL and DINT 4-byte aligned: Pump is 12 bytes', MTPS.typeSize(p, 'Pump'), 12);
+  eq('TIMER, COUNTER, CONTROL are 12 bytes; DINT 4', [MTPS.typeSize(p, 'TIMER'), MTPS.typeSize(p, 'COUNTER'), MTPS.typeSize(p, 'CONTROL'), MTPS.typeSize(p, 'DINT')], [12, 12, 12, 4]);
+  eq('two BOOLs, SINT, INT, BOOL[40] (2 DINTs) and Pump[2]: 12 + 24 = 36 bytes', MTPS.typeSize(p, 'Line'), 36);
+  check('an unknown type has no size', MTPS.typeSize(p, 'Nope') === null);
+  check('a project with UDT tags verifies (members, a member array, a nested UDT array)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); c.write('P1.Running', 1);
+  scans(c, 2);
+  check('UDT members run in logic: P1.Hours = 5, L1.E[33] on, L1.P[1].Hours = 5', c.read('P1.Hours') === 5 && c.read('L1.E[33]') === 1 && c.read('L1.P[1].Hours') === 5);
+}
+
+console.log('Wave 2 B: STRING and the string types of Data Types > Strings (1756-PM004; v37 help: Using user-defined data types)');
+{
+  const p = proj({ dataTypes: [{ name: 'STR20', family: 'string', len: 20 }], tags: [T('S1', 'STRING', { value: { LEN: 2, DATA: [72, 105] } }), T('S2', 'STRING'), T('Short', 'STR20')], rungs: ['COP(S1,S2,1);', 'MOV(S1.LEN,Short.LEN)MOV(S1.DATA[0],Short.DATA[0])MOV(S1.DATA[1],Short.DATA[1]);'] });
+  const dt = MTPS.dataTypes(p);
+  check('Strings lists STRING and the project\'s string types; Add-On-Defined is empty; Predefined no longer lists STRING', dt.strings.join() === 'STRING,STR20' && dt.addOnDefined.length === 0 && !dt.predefined.includes('STRING') && dt.predefined.includes('TIMER'));
+  eq('STRING is LEN (DINT) and DATA (SINT[82])', MTPS.PREDEF.STRING, [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }]);
+  eq('sizes: STRING 88 bytes, STR20 24 bytes', [MTPS.typeSize(p, 'STRING'), MTPS.typeSize(p, 'STR20')], [88, 24]);
+  check('a project with STRING tags verifies (COP of a string, its LEN and DATA)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); scans(c, 1);
+  check('COP copies the string; LEN and DATA move into a STR20', c.read('S2.LEN') === 2 && c.read('S2.DATA[1]') === 105 && c.read('Short.LEN') === 2 && c.read('Short.DATA[0]') === 72);
+  check('a whole string is written (as the String Browser does)', c.write('S2', { LEN: 3, DATA: [65, 66, 67] }, undefined, true) && c.read('S2.LEN') === 3 && c.read('S2.DATA[2]') === 67 && c.read('S2').DATA.length === 82);
+  check('Maximum Characters must be 1 to 65535', /Maximum Characters must be 1 to 65535/.test(MTPS.verify(proj({ dataTypes: [{ name: 'S0', family: 'string', len: 0 }] })).errors.map(e => e.text).join()));
+}
+
+console.log('Wave 2 B: LINT and LREAL (v37 help: Elementary data types, LINT data types)');
+{
+  check('LINT and LREAL are atomic types', MTPS.ATOMIC.includes('LINT') && MTPS.ATOMIC.includes('LREAL'));
+  const p = proj({ tags: [T('L1', 'LINT', { value: 2147483647 }), T('L2', 'LINT'), T('L3', 'LINT'), T('R1', 'LREAL'), T('R2', 'LREAL'), T('D1', 'DINT'), T('Big', 'LINT', { value: 9007199254740990 }), T('Arr', 'LINT', { dim: 2 }), T('Rs', 'REAL'), T('Ls', 'LINT')],
+    rungs: ['ADD(L1,1,L2);', 'MUL(L1,4,L3);', 'DIV(1,3,R1);', 'CPT(R2,R1*3);', 'MOV(L2,D1);', 'OTE(L2.40);', 'AND(Big,255,Arr[0]);', 'COP(R1,Ls,1);'] });
+  check('a project with LINT and LREAL tags verifies (math, a LINT bit 40, a LINT array)', MTPS.verify(p).errors.length === 0, JSON.stringify(MTPS.verify(p).errors));
+  const c = new MTPS.Controller(); c.download(p); c.setMode('remrun'); scans(c, 1);
+  check('LINT math is 64-bit: 2147483647 + 1 = 2147483648 (then bit 40 set), x 4 = 8589934588', c.read('L2') === 2147483648 + 2 ** 40 && c.read('L3') === 8589934588);
+  check('LREAL keeps 64-bit precision: 1/3 and 1/3*3', c.read('R1') === 1 / 3 && c.read('R2') === 1);
+  check('a LINT into a DINT wraps and sets S:V', c.read('D1') === -2147483648);
+  check('bit 40 of a LINT (OTE L2.40)', c.read('L2.40') === 1 && c.read('L2.31') === 1 && c.read('L2.0') === 0);
+  check('AND on a LINT works on 64 bits', c.read('Arr[0]') === (9007199254740990 % 256));
+  check('COP of an LREAL into a LINT copies the 8 bytes', c.read('Ls') === Number(new BigInt64Array(new Float64Array([1 / 3]).buffer)[0]));
+  eq('sizes: LINT and LREAL 8 bytes; a type with one is 8-byte aligned', [MTPS.typeSize(p, 'LINT'), MTPS.typeSize(proj({ dataTypes: [{ name: 'X', members: [{ name: 'A', type: 'BOOL' }, { name: 'B', type: 'LREAL' }] }] }), 'X')], [8, 16]);
+  const q = run({ tags: [T('W', 'LINT', { value: 2 ** 62 }), T('Y', 'LINT')], rungs: ['MUL(W,2,Y);'] });
+  scans(q, 1);
+  check('LINT overflow wraps to -2^63 and sets S:V (a minor fault)', q.read('Y') === -9223372036854775808 && q.read('S:V') === 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

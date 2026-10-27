@@ -4,10 +4,16 @@
   'use strict';
 
   /* ---------- Data types ---------- */
-  const ATOMIC = { BOOL: 1, SINT: 8, INT: 16, DINT: 32, REAL: 32 };
-  const HALF = { SINT: 128, INT: 32768, DINT: 2147483648 };
-  const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT';
-  const isNum = t => isInt(t) || t === 'REAL';
+  /* LINT (8-byte integer) and LREAL (8-byte float) as on a 5580 controller (v37 help: Elementary data types). A LINT
+     is kept as a JavaScript number: exact up to 2^53, wrapped to 64 bits past that */
+  const ATOMIC = { BOOL: 1, SINT: 8, INT: 16, DINT: 32, LINT: 64, REAL: 32, LREAL: 64 };
+  const HALF = { SINT: 128, INT: 32768, DINT: 2147483648, LINT: 9223372036854775808 };
+  const isInt = t => t === 'SINT' || t === 'INT' || t === 'DINT' || t === 'LINT';
+  const isReal = t => t === 'REAL' || t === 'LREAL';
+  const isNum = t => isInt(t) || isReal(t);
+  // 64-bit integer arithmetic for a LINT result: BigInt in, a number out
+  const B64 = v => BigInt.asIntN(64, typeof v === 'bigint' ? v : BigInt(Math.trunc(Number(v) || 0)));
+  const N64 = b => Number(BigInt.asIntN(64, b));
   const U = s => String(s).toUpperCase();
   const members = s => s.split(' ').map(x => { const k = x.indexOf(':'); return { name: x.slice(0, k), type: x.slice(k + 1) }; });
   const CH4 = t => [0, 1, 2, 3].map(k => `Ch${k}Data:${t}`).join(' ');
@@ -15,7 +21,12 @@
     TIMER: members('PRE:DINT ACC:DINT EN:BOOL TT:BOOL DN:BOOL'),
     COUNTER: members('PRE:DINT ACC:DINT CU:BOOL CD:BOOL DN:BOOL OV:BOOL UN:BOOL'),
     CONTROL: members('LEN:DINT POS:DINT EN:BOOL EU:BOOL DN:BOOL EM:BOOL ER:BOOL UL:BOOL IN:BOOL FD:BOOL'),
+    // the string type of the controller (1756-PM004): LEN, the number of characters, and DATA, 82 of them as SINTs
+    STRING: [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: 82 }],
   };
+  /* a string type of the project (Data Types > Strings > New String Type): { name, family: 'string', len } has the
+     members of STRING with DATA[len]; Maximum Characters is 1 to 65535 (v37 help: Using user-defined data types) */
+  const strMembers = n => [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: n }];
   /* the module-defined data types, named as Studio 5000 names them (help: 1756 discrete / analog module-defined data
      types): the digital cards are 1756-IB16 / -IA16 (AB:1756_DI) and 1756-OB16E / -OW16I (AB:1756_DO); the analog input
      card is a 1756-IF8 in differential float mode (4 channels: AB:1756_IF4_Float), the analog output card a 1756-OF4
@@ -82,12 +93,16 @@
   function typeTable(project, err) {
     const t = new Map(), e = err || (() => {});
     const add = (name, mem, kind) => t.set(U(name), { name, kind, members: mem.map(m => ({ ...m })), map: new Map() });
-    for (const n in PREDEF) add(n, PREDEF[n], 'predefined');
+    for (const n in PREDEF) add(n, PREDEF[n], n === 'STRING' ? 'string' : 'predefined');
     for (const n in MODTYPES) add(n, MODTYPES[n], 'module');
     for (const d of (project && project.dataTypes) || []) {
       if (!validName(d.name)) { e(`Invalid data type name '${d.name}'`); continue; }
       if (t.has(U(d.name)) || ATOMIC[U(d.name)]) { e(`Data type '${d.name}' is defined more than once`); continue; }
-      add(d.name, d.members || [], 'user');
+      if (d.family === 'string') {
+        const n = Math.floor(+d.len);
+        if (!(n >= 1 && n <= 65535)) { e(`String type '${d.name}': Maximum Characters must be 1 to 65535`); continue; }
+        add(d.name, strMembers(n), 'string');
+      } else add(d.name, d.members || [], 'user');
     }
     for (const d of t.values()) {
       d.members = d.members.filter(m => {
@@ -140,12 +155,13 @@
   function store(type, v) {
     OV = false;
     if (type === 'REAL') { const f = Math.fround(v); if (!isFinite(f) && isFinite(v)) OV = true; return f; }
+    if (type === 'LREAL') return typeof v === 'number' ? v : Number(v) || 0;
     if (type === 'BOOL') return v ? 1 : 0;
     const h = HALF[type];
     if (typeof v !== 'number' || v !== v) { OV = true; return 0; }
     if (!isFinite(v)) { OV = true; return v > 0 ? h - 1 : -h; }
     let n = Number.isInteger(v) ? v : roundEven(v);
-    if (n >= h || n < -h) { const m = h * 2; n = ((n % m) + m) % m; if (n >= h) n -= m; OV = true; }
+    if (n >= h || n < -h) { if (type === 'LINT') n = N64(BigInt(n)); else { const m = h * 2; n = ((n % m) + m) % m; if (n >= h) n -= m; } OV = true; }
     return n === 0 ? 0 : n;
   }
 
@@ -294,11 +310,12 @@
       }
       PP = p; PK = k;
     }
-    get() { this.at(); const v = PP[PK]; return this.bit < 0 ? v : (v >> this.bit) & 1; }
+    get() { this.at(); const v = PP[PK]; return this.bit < 0 ? v : this.ptype === 'LINT' ? Number((B64(v) >> BigInt(this.bit)) & 1n) : (v >> this.bit) & 1; }
     set(v) {
       this.at();
       if (this.bit < 0) { PP[PK] = store(this.type, v); return; }
       const x = PP[PK];
+      if (this.ptype === 'LINT') { const m = 1n << BigInt(this.bit); PP[PK] = N64(v ? B64(x) | m : B64(x) & ~m); OV = false; return; }
       PP[PK] = store(this.ptype, v ? x | (1 << this.bit) : x & ~(1 << this.bit));
       OV = false;
     }
@@ -309,9 +326,9 @@
     r.at(); const a = PP, k0 = PK;
     return Array.isArray(a) ? { n: a.length - k0, g: k => a[k0 + k], s: (k, v) => { a[k0 + k] = v; } } : { n: 1, g: () => a[k0], s: (k, v) => { a[k0] = v; } };
   }
-  const BYTES = { SINT: 1, INT: 2, DINT: 4, REAL: 4 };
-  const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else dv.setFloat32(o, v, true); };
-  const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : dv.getFloat32(o, true));
+  const BYTES = { SINT: 1, INT: 2, DINT: 4, LINT: 8, REAL: 4, LREAL: 8 };
+  const putBytes = (dv, o, t, v) => { if (t === 'SINT') dv.setInt8(o, v); else if (t === 'INT') dv.setInt16(o, v, true); else if (t === 'DINT') dv.setInt32(o, v, true); else if (t === 'LINT') dv.setBigInt64(o, B64(v), true); else if (t === 'LREAL') dv.setFloat64(o, v, true); else dv.setFloat32(o, v, true); };
+  const getBytes = (dv, o, t) => (t === 'SINT' ? dv.getInt8(o) : t === 'INT' ? dv.getInt16(o, true) : t === 'DINT' ? dv.getInt32(o, true) : t === 'LINT' ? Number(dv.getBigInt64(o, true)) : t === 'LREAL' ? dv.getFloat64(o, true) : dv.getFloat32(o, true));
   // an operand that names one element of an array (Bits[0], Fifo[Ix]): the instructions that walk an array need it
   const arrEl = r => r.bit < 0 && !r.dim && r.steps.length > 0 && !!r.steps[r.steps.length - 1].len;
   // a value as a FIFO / LIFO moves it: a number, or a copy of a structure; zero keeps the shape (a structure of 0s)
@@ -420,12 +437,12 @@
           p++;
           const a = expr(0), f = FUNCS[u], g = a.get;
           close();
-          return node(() => f(g()), REALF.includes(u) || a.type === 'REAL');
+          return node(() => f(g()), REALF.includes(u) || isReal(a.type));
         }
         const r = ref(M, prog, t.s);
         if (typeof r === 'string') throw r;
         if ((!isNum(r.type) && r.type !== 'BOOL') || r.dim) throw `'${t.s}' is not a number`;
-        return node(() => r.get(), r.type === 'REAL');
+        return node(() => r.get(), isReal(r.type));
       }
       throw `Invalid expression near '${t.s}'`;
     }
@@ -434,16 +451,16 @@
       if (!is(toks[p], '**')) return a;
       p++;
       const b = unary(), A = a.get, B = b.get;
-      return node(() => Math.pow(A(), B()), a.type === 'REAL' || b.type === 'REAL');
+      return node(() => Math.pow(A(), B()), isReal(a.type) || isReal(b.type));
     }
     function unary() {
-      if (is(toks[p], '-')) { p++; const a = unary(), A = a.get; return node(() => -A(), a.type === 'REAL'); }
+      if (is(toks[p], '-')) { p++; const a = unary(), A = a.get; return node(() => -A(), isReal(a.type)); }
       if (is(toks[p], '+')) { p++; return unary(); }
       if (is(toks[p], 'NOT')) { p++; const a = unary(), A = a.get; return node(() => ~i32(A()), false); }
       return power();
     }
     function bin(op, a, b) {
-      const real = a.type === 'REAL' || b.type === 'REAL', A = a.get, B = b.get;
+      const real = isReal(a.type) || isReal(b.type), A = a.get, B = b.get;
       switch (op) {
         case '+': return node(() => A() + B(), real);
         case '-': return node(() => A() - B(), real);
@@ -553,7 +570,7 @@
     TPT: I('box', 'Debug', 'Tracepoint', 'fmt trace' + ' trace?'.repeat(7), { out: true }),
   };
   const BAD_TYPE = 'Invalid data type. Argument must match parameter data type';
-  const BITS = t => (t === 'REAL' ? 0 : ATOMIC[t] || 32);
+  const BITS = t => (isReal(t) ? 0 : ATOMIC[t] || 32);
 
   function operand(M, P, kind, text) {
     const s = String(text == null ? '' : text).trim();
@@ -798,13 +815,43 @@
   function verify(project, filter) { const r = build(project, filter); delete r.model; return r; }
   function dataTypes(project) {
     const t = typeTable(project), of = k => [...t.values()].filter(d => d.kind === k).map(d => d.name);
-    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user') };
+    return { atomic: Object.keys(ATOMIC), predefined: of('predefined'), moduleDefined: of('module'), userDefined: of('user'), strings: of('string'), addOnDefined: of('addon') };
+  }
+  /* the size of a data type in bytes, as a Logix controller lays a structure out (general knowledge, not quoted): the
+     members in order, each on its own boundary (SINT 1, INT 2, DINT and REAL 4, LINT and LREAL 8 bytes); BOOL members in a row share a
+     hidden SINT, 8 to a byte; a BOOL array takes whole DINTs (32 bits); a structure is 4-byte aligned (8 with a LINT or LREAL) and its size
+     a multiple of 4. TIMER, COUNTER and CONTROL come out at 12 bytes, as on the controller. */
+  const SIZES = { SINT: 1, INT: 2, DINT: 4, REAL: 4, LINT: 8, LREAL: 8 };
+  function layout(types, name, memo) {
+    const u = U(name);
+    if (SIZES[u]) return { size: SIZES[u], align: SIZES[u] };
+    if (u === 'BOOL') return { size: 1, align: 1 };
+    if (memo.has(u)) return memo.get(u);
+    const d = types.get(u);
+    memo.set(u, { size: 0, align: 4 });
+    let off = 0, al = 4, bits = 8;
+    for (const m of d ? d.members : []) {
+      const t = U(m.type);
+      if (t === 'BOOL' && !(m.dim > 0)) { if (bits >= 8) { off += 1; bits = 0; } bits++; continue; }
+      bits = 8;
+      const e = t === 'BOOL' ? { size: 4, align: 4 } : layout(types, t, memo), n = t === 'BOOL' ? Math.ceil(m.dim / 32) : m.dim > 0 ? m.dim : 1;
+      off = Math.ceil(off / e.align) * e.align + e.size * n;
+      al = Math.max(al, e.align);
+    }
+    const r = { size: Math.ceil(off / al) * al, align: al };
+    memo.set(u, r);
+    return r;
+  }
+  function typeSize(project, name) {
+    const t = typeTable(project), u = U(name);
+    if (!ATOMIC[u] && !t.has(u)) return null;
+    return layout(t, u, new Map()).size;
   }
 
   /* the project without tag values and name: values that differ (a running controller, Upload Tag Values) are not edits;
      nor is a tag's Style, which only sets how a value is shown */
   // the project name is the file's name: an upload saved under another name still holds the same logic
-  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'style' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
+  const logicKey = p => JSON.stringify(p, (k, v) => (k === 'value' || k === 'desc' || k === 'comments' || k === 'c' || k === 'dx' || k === 'bm' || k === 'style' || k === 'watch' || k === 'trends' ? undefined : k === 'controller' && v && typeof v === 'object' ? { type: v.type, rev: v.rev } : v));
 
   /* the .EM / .DN of a FIFO or LIFO from its .POS and .LEN (RM003 flow charts, Prescan and false): .LEN <= 0 or
      .POS < 0 set both; else .EM while .POS = 0 and .DN while .POS >= .LEN */
@@ -1185,7 +1232,7 @@
         case 'ADD': case 'SUB': case 'MUL': case 'DIV': case 'MOD': if (p) this.arith(e.t, x[0], x[1], x[2]); e.v = p; return p;
         case 'SQR': case 'NEG': case 'ABS': {
           if (p) {
-            const a = x[0].get(), real = x[0].type === 'REAL' || x[1].type === 'REAL';
+            const a = x[0].get(), real = isReal(x[0].type) || isReal(x[1].type);
             const r = e.t === 'NEG' ? -a : e.t === 'ABS' ? Math.abs(a) : Math.sqrt(Math.abs(a));
             this.put(x[1], real ? r : Math.trunc(r));
           }
@@ -1196,10 +1243,8 @@
         // MVM does not affect the math status flags on a 5580 controller (reference manual 1756-RM003)
         case 'MVM': if (p) { const m = i32(x[1].get()); x[2].set((i32(x[2].get()) & ~m) | (i32(x[0].get()) & m)); } e.v = p; return p;
         case 'CLR': if (p) this.put(x[0], 0); e.v = p; return p;
-        case 'AND': if (p) this.put(x[2], i32(x[0].get()) & i32(x[1].get())); e.v = p; return p;
-        case 'OR': if (p) this.put(x[2], i32(x[0].get()) | i32(x[1].get())); e.v = p; return p;
-        case 'XOR': if (p) this.put(x[2], i32(x[0].get()) ^ i32(x[1].get())); e.v = p; return p;
-        case 'NOT': if (p) this.put(x[1], ~i32(x[0].get())); e.v = p; return p;
+        case 'AND': case 'OR': case 'XOR': if (p) { if (x.some(r => r.type === 'LINT')) { const a = B64(x[0].get()), b = B64(x[1].get()); this.put(x[2], N64(e.t === 'AND' ? a & b : e.t === 'OR' ? a | b : a ^ b)); } else { const a = i32(x[0].get()), b = i32(x[1].get()); this.put(x[2], e.t === 'AND' ? a & b : e.t === 'OR' ? a | b : a ^ b); } } e.v = p; return p;
+        case 'NOT': if (p) this.put(x[1], x.some(r => r.type === 'LINT') ? N64(~B64(x[0].get())) : ~i32(x[0].get())); e.v = p; return p;
         case 'BTD': {
           if (p) {
             const s = i32(x[0].get()), sb = x[1].c, db = x[3].c, n = x[4].c;
@@ -1284,8 +1329,18 @@
       if (S.V && !was) { S.MINOR = 1; this.minorFault(4, 4, 'Arithmetic overflow (or divide by zero): the result did not fit, S:V is set'); }
     }
     arith(op, A, B, D) {
-      const a = A.get(), b = B.get(), real = A.type === 'REAL' || B.type === 'REAL' || D.type === 'REAL';
+      const a = A.get(), b = B.get(), real = isReal(A.type) || isReal(B.type) || isReal(D.type);
       let r, ov = false, c;
+      // integer math with a LINT: 64 bits (BigInt), the overflow and the carry of a 64-bit result
+      if (!real && (A.type === 'LINT' || B.type === 'LINT' || D.type === 'LINT')) {
+        const x = B64(a), y = B64(b), M = 1n << 64n, ux = BigInt.asUintN(64, x), uy = BigInt.asUintN(64, y);
+        let w;
+        if (op === 'ADD') { w = x + y; c = ux + uy >= M; } else if (op === 'SUB') { w = x - y; c = ux < uy; } else if (op === 'MUL') w = x * y;
+        else if (y === 0n) { w = op === 'DIV' ? x : x; ov = true; } else w = op === 'DIV' ? x / y : x % y;
+        if (D.type === 'LINT') { if (BigInt.asIntN(64, w) !== w) ov = true; r = N64(w); } else r = Number(w);
+        this.put(D, r, ov, op === 'ADD' || op === 'SUB' ? c : undefined);
+        return;
+      }
       switch (op) {
         case 'ADD': r = a + b; c = !real && (a >>> 0) + (b >>> 0) > 0xFFFFFFFF; break;
         case 'SUB': r = a - b; c = !real && (a >>> 0) < (b >>> 0); break;
@@ -1702,7 +1757,7 @@
 
   const MTPS = root.MTPS || (root.MTPS = {});
   Object.assign(MTPS, { ATOMIC: Object.keys(ATOMIC), PREDEF, MODTYPES, OLDTYPES, IODIRS, MODULES, dimsOf, dimN, dimText, RACKS, fitRack, INSTR,
-    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, OPN, traceFmt });
+    parseRung, serializeRung, parseNumber, validName, verify, dataTypes, Controller, Chassis, typeSize, OPN, traceFmt });
   MTPS.controller = new Controller();
   if (typeof module !== 'undefined' && module.exports) module.exports = MTPS;
 })(typeof window !== 'undefined' ? window : globalThis);

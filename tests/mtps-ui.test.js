@@ -2323,6 +2323,7 @@ function check(name, cond, info = '') {
   }
   await require('./mtps-ui-w2A')({ browser, page, URL, check });
   await require('./mtps-ui-w2E')({ browser, page, URL, check });
+  await require('./mtps-ui-w2B')({ browser, page, URL, check });
   check('no JS errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

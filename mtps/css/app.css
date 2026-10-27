@@ -1232,3 +1232,52 @@ svg.lad .lift { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2
 .rldmb { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .tab .rldm select.inp, .phone .rldm select.inp { height: 40px; }
 .rlck2 { grid-template-columns: auto 1fr; }
+
+/* ---------- Wave 2 B: Data Type Editor, Strings, tag filter and columns, Watch, Quick View, Trends ---------- */
+.dtegrid { flex: none; max-height: 300px; border: 1px solid var(--border); margin-bottom: 8px; }
+.dtegrid td { padding: 1px 3px; }
+.dtegrid td .ib { width: 24px; height: 22px; min-width: 24px; }
+.dtegrid .cdt { display: flex; gap: 2px; }
+.tshl { color: var(--muted); }
+.btn.tshow { max-width: 220px; min-width: 90px; justify-content: space-between; gap: 4px; }
+.btn.tshow .ell { min-width: 0; }
+.ib.tfon { flex: none; }
+.dftl { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.dftl .row.ck { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; }
+.wbar { display: flex; align-items: center; gap: 6px; padding: 0 0 4px; flex: none; flex-wrap: wrap; }
+.wbar > * { flex: none; }
+.wbar .inp { width: auto; }
+.wbar #wsel { min-width: 150px; max-width: 100%; }
+.wbar #wname { width: 190px; max-width: 100%; flex: 0 1 190px; }
+.wtbl { flex: 1; min-height: 0; }
+.wtbl td.ck { width: 26px; text-align: center; }
+.wtbl th[data-wsort] { cursor: pointer; }
+.wtbl td.ds { color: var(--muted); }
+.tab .wtbl td, .phone .wtbl td { height: 40px; }
+.derr:has(.wtbl) { height: 240px; }
+.msgp.open .msgb:has(.wtbl) { height: 300px; }
+.qv { flex: none; max-height: 40%; overflow: auto; border-top: 1px solid var(--border-strong); background: var(--surface); }
+.qvh { width: 100%; height: 26px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border: 0; border-bottom: 1px solid var(--border); background: var(--surface-2); font: inherit; font-weight: 600; color: inherit; cursor: pointer; text-align: left; position: sticky; top: 0; }
+.qvh svg { width: 12px; height: 12px; }
+.qvb { padding: 4px 10px 6px; font-size: 12px; }
+.qvb .qvn { font-weight: 600; padding: 2px 0 4px; overflow-wrap: anywhere; }
+.qvb .kv { padding: 3px 0; }
+.qvb .kv .v { overflow-wrap: anywhere; min-width: 0; }
+.tab .qvh, .phone .qvh { height: 44px; }
+.phone .qv { max-height: none; }
+.twin { position: fixed; z-index: 240; width: 600px; max-width: calc(100vw - 16px); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r); box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.twh { height: 30px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-radius: var(--r) var(--r) 0 0; cursor: move; touch-action: none; flex: none; min-width: 0; }
+.tbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.tbar .inp { width: auto; }
+.tcv { display: block; width: 100%; height: 200px; }
+.tleg { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 10px 8px; border-top: 1px solid var(--border); font-size: 12px; }
+.tpen { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+i.pen { width: 12px; height: 4px; border-radius: 2px; flex: none; display: inline-block; }
+.trsp { display: flex; gap: 6px; }
+.trsp .num { width: 110px; }
+.trsp select { width: auto; }
+.trpadd { display: flex; gap: 6px; margin: 4px 0; }
+.trpadd .inp { flex: 1; min-width: 0; }
+.trpl { border: 1px solid var(--border); border-radius: var(--r-sm); max-height: 200px; overflow: auto; }
+.trpl .row { min-height: 32px; cursor: default; }
+.tab .twh, .phone .twh { height: 44px; }

@@ -861,12 +861,13 @@
     rcanc: { l: 'Cancel Rung Edit', i: 'undo', run: cancelAccepted, on: () => edPhase() === 'accepted' },
     verifyrung: { l: 'Verify Rung', i: 'checkr', run: () => verifyRung(curSelRung()), on: () => curSelRung() != null },
     newtag: { l: 'New Tag…', k: 'Ctrl+W', i: 'newtag', run: () => { const e = curEl(); newTag({ name: e && e.a[0] && e.a[0] !== '?' && !tagFor(e.a[0]) ? e.a[0] : '', kind: e ? (INSTR[e.t] || {}).args[0] : 'bit' }); } },
-    // File > New Component (reference order); Program, Task, Data Type and Trend are listed but not in this version yet
+    // File > New Component (reference order); Program and Task are listed but not in this version yet
     newrtn: { l: 'New Routine…', i: 'ladder', run: () => newRoutine(orgProg()), on: editable },
     newprog: { l: 'New Program…', i: 'tree', run: () => {}, on: () => false },
     newtask: { l: 'New Task…', i: 'tree', run: () => {}, on: () => false },
-    newdt: { l: 'New Data Type…', i: 'tags', run: () => {}, on: () => false },
-    newtrend: { l: 'New Trend…', i: 'xref', run: () => {}, on: () => false },
+    newdt: { l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), on: editable },
+    newstr: { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), on: editable },
+    newtrend: { l: 'New Trend…', i: 'xref', run: () => trendDialog(), on: () => !S.noProj },
     // File > Import Component (help v37 File menu): Add-On Instructions, Data Type, Equipment Phase, Program, Routine,
     // String Type, Trend; this app has data types, programs and routines
     impaoi: { l: 'Add-On Instructions…', i: 'upload', run: () => {}, on: () => false },
@@ -925,6 +926,8 @@
     vorg: { l: 'Controller Organizer', i: 'tree', run: () => { S.prefs.org = !S.prefs.org; S.drawer = !S.drawer; savePrefs(); render(); }, ck: () => S.prefs.org },
     verr: { l: 'Errors', i: 'warn', run: () => { if (S.layout === 'desktop') { S.prefs.err = !S.prefs.err; savePrefs(); } else S.errOpen = !S.errOpen; render(); }, ck: () => S.prefs.err },
     vio: { l: 'Emulator Panel', i: 'rack', run: () => { if (S.layout === 'phone' && innerWidth <= innerHeight) { S.area = 'ladder'; S.phoneEmu = !S.phoneEmu; } else { S.prefs.emu = !S.prefs.emu; savePrefs(); } render(); }, ck: () => S.prefs.emu },
+    vwatch: { l: 'Watch', i: 'tags', run: () => showWatch(), on: () => !S.noProj, ck: () => S.outTab === 'watch' && (S.layout !== 'desktop' || S.prefs.err) },
+    vcols: { l: 'Toggle Column…', i: 'tags', run: () => colMenu($('#tagpage .tagtbl thead') || $('#tagpage'), null), on: () => !S.noProj && S.view === 'tags' && !!$('#tagpage .tagtbl') },
     zin: { l: 'Zoom In', i: 'zin', run: () => zoom(1.12) },
     zout: { l: 'Zoom Out', i: 'zout', run: () => zoom(1 / 1.12) },
     options: { l: 'Options…', i: 'gear', run: options },
@@ -937,7 +940,7 @@
   const MENUS = [
     ['File', ['new', 'setup', '-', 'open', 'close', 'save', 'saveas', '-', { hd: 'New Component' }, 'newdt', 'newmod', 'newprog', 'newrtn', 'newtag', 'newtask', 'newtrend', '-', { hd: 'Import Component' }, 'impaoi', 'impdt', 'impep', 'impprog', 'imprtn', 'impstr', 'imptrend', '-', 'import', 'export', '-', 'recent', 'exit']],
     ['Edit', ['undo', 'redo', '-', 'cut', 'copy', 'paste', 'del', '-', 'ins', 'rung', 'branch', 'level', '-', 'edit', 'rtext', 'comment', 'desc', '-', 'props', 'ctlprops', '-', 'selall']],
-    ['View', ['vorg', 'verr', 'vio', '-', 'zin', 'zout']],
+    ['View', ['vorg', 'verr', 'vwatch', 'vio', '-', 'vcols', '-', 'zin', 'zout']],
     ['Search', ['find', 'replace', 'goto', 'browse', 'xref', '-', 'findnext', 'findprev', 'nextres', 'prevres', '-', { hd: 'Bookmarks' }, 'bmtog', 'bmnext', 'bmprev', 'bmall', 'bmclear']],
     ['Logic', ['verifyr', 'verifyc', '-', 'accept', 'cancele', 'tested', 'cancelacc', 'untest', 'assemble', '-', 'tagsmon', 'tagsedit', 'newtag', '-', 'newmod']],
     ['Communications', ['rswho', 'drivers', 'who', 'recentpath', 'chassis', '-', 'online', 'offline', 'upload', 'download', '-', 'prog', 'runm', 'testm', 'clear', 'gofaults', '-', 'uptags', '-', 'fen', 'fdis', 'fall']],
@@ -1078,7 +1081,7 @@
         <span class="grow"></span>${tbtT('rswho', 'RSLinx')}${tbtT('who', 'Who Active')}<span class="pathbar" title="Communications path of the project"><span class="muted">Path:</span><span class="mono pv">${esc(curPath())}</span>${commHTML(true)}</span>${S.online ? tbtT('offline', 'Go Offline') : tbtT('online', 'Go Online')}${tbtT('download', 'Download')}${tbtT('upload', 'Upload')}</div>
       <div class="dbar2"><div class="donline" id="olbar">${onlineBarHTML()}</div>
         <div class="dinstr"><div class="glyphs">${gbtns(S.prefs.tab)}</div><div class="itabs">${itabs()}</div></div></div>
-      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div></aside>` : ''}
+      <div class="dmain">${P.org ? `<aside class="org"><div class="ph">Controller Organizer</div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>` : ''}
         <section class="ed"><div class="rtabs">${rtabsHTML()}</div>
           ${S.view === 'ladder' ? `<div class="rtb">${tbtn('zout')}${tbtn('zin')}<span class="vsep"></span>${tbtn('rtext')}${tbtn('comment')}<span class="vsep"></span>${tbtn('rung')}${tbtn('del')}<span class="vsep"></span>${tbtn('bmprev')}${tbtn('bmnext')}${tbtn('bmtog')}${tbtn('bmall')}</div>
           ${descBarHTML()}<div class="ladwrap" id="ladwrap" tabindex="0"></div>` : S.view === 'tags' ? tagWsHTML() : emptyWs()}${P.emu && dockSide() === 'bottom' ? dockHTML('bottom') : ''}</section>${P.emu && dockSide() === 'side' ? dockHTML('side') : ''}</div>
@@ -1090,7 +1093,7 @@
   function tablet() {
     const land = innerWidth >= 1024 && innerWidth > innerHeight, pinned = land && S.prefs.org, port = innerWidth <= innerHeight;
     const e = curEl();
-    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div></aside>`;
+    const orgAside = c => `<aside class="org${c}"><div class="ph">Controller Organizer<span class="grow"></span><button class="ib" data-orgprops="1" title="Controller Properties">${ic('gear')}</button><button class="ib" data-drawer="0">${ic(pinned ? 'moreh' : 'close')}</button></div><div class="tree">${treeHTML()}</div>${quickViewHTML()}</aside>`;
     return `<div class="appbar"><button class="ib" data-allmenu="1" title="Menu">${ic('menu')}</button><span class="proj">${S.noProj ? 'MT PLC Studio<small>No project open</small>' : `${esc(S.p.controller.name)}<small>${esc(ctlLabel(S.p))}</small>`}</span>
 <span class="grow"></span>
         ${land ? tbtn('undo') + tbtn('redo') + tbtn('verifyc') : ''}<button class="ib${S.prefs.emu ? ' on' : ''}" data-cmd="vio" title="Emulator panel">${ic('rack')}</button>
@@ -1135,7 +1138,7 @@
       if (pland && S.prefs.emu && !emuTab) body = `<div class="pland"><div class="pleft">${body}</div>${dockHTML('side')}</div>`;
     } else if (a === 'tags') body = `<div class="pbar"><span class="rt grow"><span class="tt">Tags<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="newtag">${ic('plus')}</button></div><div class="page" id="tagpage" style="background:var(--surface);display:flex;flex-direction:column">${tagEditorBody(true)}</div>`;
     else if (a === 'controller') body = `<div class="pbar"><span class="rt grow"><span class="tt">Controller<small>PLC-CPU 1.0 · ${esc(ctl.name || 'empty')}</small></span></span></div><div class="page" id="ctlpage">${controllerPage()}</div>`;
-    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)"><div class="tree">${treeHTML()}</div></div>`;
+    else if (a === 'project') body = `<div class="pbar"><span class="rt grow"><span class="tt">Project<small>${esc(S.p.controller.name)}</small></span></span><button class="ib" data-cmd="open" title="Open">${ic('open')}</button><button class="ib" data-cmd="new" title="New">${ic('file')}</button></div><div class="page" style="background:var(--surface)"><div class="tree">${treeHTML()}</div>${quickViewHTML()}</div>`;
     else body = `<div class="pbar"><span class="rt grow"><span class="tt">More<small>MT PLC Studio v${VERSION}</small></span></span></div><div class="page">${morePage()}</div>`;
     const nav = [['ladder', 'Ladder', 'ladder'], ['tags', 'Tags', 'tag'], ['controller', 'Controller', 'chip'], ['project', 'Project', 'tree'], ['more', 'More', 'moreh']]
       .map(([k, n, i]) => `<button class="${a === k ? 'on' : ''}" data-go="${k}"><span class="pill">${ic(i)}</span>${n}${k === 'more' && nErr ? `<span class="bd">${nErr}</span>` : ''}</button>`).join('');
@@ -1156,7 +1159,7 @@
   function morePage() {
     const b = (id, t) => `<div class="row" data-cmd="${id}">${ic(C[id].i)}<span class="grow">${t || C[id].l}</span>${ic('right')}</div>`;
     return `<div class="card"><div class="ch">Errors<span class="grow"></span><button class="btn" data-cmd="verifyc">${ic('check')}Verify</button></div>${errorsHTML()}</div>
-      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}</div>
+      <div class="card">${b('find')}${b('replace')}${b('goto')}${b('browse')}${b('xref')}${b('tagsedit')}${b('newdt')}${b('newstr')}${b('newtrend')}</div>
       <div class="card">${b('save')}${b('saveas')}${b('import')}${b('export')}${b('impcomp')}${can('close') ? b('close', 'Close Project') : ''}</div>
       <div class="card">${b('options')}${b('updates')}${b('helpc')}${b('help')}${b('tips')}${b('about')}</div>`;
   }
@@ -1179,10 +1182,17 @@
     })))));
     const dt = E.dataTypes(S.p);
     add('dts', 0, 'Data Types', 'folder', {}, () => {
-      add('dt:user', 1, 'User-Defined', 'type', {}, () => dt.userDefined.forEach(n => add('dt:u:' + n, 2, n, 'type')));
+      // a folder shows the expand icon only when it has content (v37 help: Controller Organizer); Add-On-Defined
+      // holds the data types of the Add-On Instructions, so it is empty in this app
+      const sub = (k, txt, list, pre) => add(k, 1, txt, 'type', {}, list.length ? () => list.forEach(n => add(pre + n, 2, n, 'type')) : undefined);
+      sub('dt:user', 'User-Defined', dt.userDefined, 'dt:u:');
+      sub('dt:str', 'Strings', dt.strings, 'dt:s:');
+      sub('dt:aod', 'Add-On-Defined', dt.addOnDefined || [], 'dt:a:');
       add('dt:pre', 1, 'Predefined', 'type', {}, () => dt.predefined.forEach(n => add('dt:p:' + n, 2, n, 'type')));
       add('dt:mod', 1, 'Module-Defined', 'type', {}, () => dt.moduleDefined.forEach(n => add('dt:m:' + n, 2, n, 'type')));
     });
+    const trs = Array.isArray(S.p.trends) ? S.p.trends : [];
+    add('trends', 0, 'Trends', 'folder', {}, trs.length ? () => trs.forEach(t => add('trend:' + t.name, 1, t.name, 'xref')) : undefined);
     add('io', 0, 'I/O Configuration', 'folder', {}, () => add('bp', 1, `Backplane, PLC-RACK${S.p.rack.size}`, 'rack', {}, () => {
       add('mod:' + ctlSlot(), 2, `[${ctlSlot()}] ${ctype(S.p.controller.type)[0]} ${S.p.controller.name}`, 'chip');
       [...S.p.rack.modules].sort((a, b) => a.slot - b.slot).forEach(m => add('mod:' + m.slot, 2, `[${m.slot}] ${m.type} ${m.name}`, 'rack', { f: S.online && ctl.M && ctl.moduleStatus(m.slot).state === 'Faulted' ? '⚠' : m.inhibit ? 'inhibited' : '' }));
@@ -1202,7 +1212,8 @@
   }
   const errLogHTML = () => errLines().map(x => `<div class="ln ${x.k}${S.errCur && S.errCur === x.t ? ' cur' : ''}"${x.ri != null ? ` data-errline="${x.ri}" data-errrt="${esc(x.rt)}"` : ''}>${esc(x.t)}${errOp(x.t)}</div>`).join('') || (S.errQ ? `<div class="ln m muted">No line contains "${esc(S.errQ)}".</div>` : '');
   function errorsHTML() {
-    const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button></div>`;
+    const tabs = `<div class="otabs"><button class="otab${S.outTab !== 'search' && S.outTab !== 'watch' ? ' on' : ''}" data-otab="err">Errors</button><button class="otab${S.outTab === 'search' ? ' on' : ''}" data-otab="search">Search Results</button><button class="otab${S.outTab === 'watch' ? ' on' : ''}" data-otab="watch">Watch</button></div>`;
+    if (S.outTab === 'watch') return tabs + watchHTML();
     if (S.outTab === 'search') {
       const sv = S.search || { lines: [], found: [] };
       return `${tabs}<div class="log">${sv.lines.length ? sv.lines.map(t => { const m = /Rung (\d+)/.exec(t); return `<div class="ln m${t === S.searchCur ? ' cur' : ''}"${m && /^(Found|Replaced)/.test(t) ? ` data-errline="${m[1]}" data-errrt="${esc(lineRoutine(t, { errors: [], warnings: [], found: sv.found }))}"` : ''}>${esc(t)}</div>`; }).join('') : '<div class="ln m muted">No search results. Right-click a tag name and choose Find All.</div>'}</div>`;
@@ -1633,7 +1644,7 @@
     if (!onName) return [];
     return [{ l: `Edit "${tg.name}" Properties`, i: 'tag', run: () => newTag({ tag: tg }) }, { l: `Find All "${a}"`, i: 'search', run: () => findAll(a) },
       { l: `Go To Cross Reference For "${base}"`, i: 'xref', run: () => xref(base) }, { l: `Monitor "${a}"`, i: 'tags', run: () => monitorTag(base) },
-      { l: `Trend "${a}"`, dis: true }, '-'];
+      { l: `Trend "${a}"`, i: 'xref', run: () => quickTrend(a), dis: !S.online }, '-'];
   }
   function ctxMenu(t, x, y) {
     if (!t || t.end) return;
@@ -1655,6 +1666,7 @@
     openMenu(renamed(menuItems(ids), { cut: 'Cut Rung', copy: 'Copy Rung', del: 'Delete Rung' }), { x, y }, `Rung ${t.ri}`);
   }
   function orgMenu(key, x, y) {
+    const dm = dtMenu(key); if (dm) { openMenu(dm, { x, y }); return; }
     const items = [];
     const rtOf = k => { const [gn, rn] = k.slice(3).split('/'), g = allProgs().find(x => x.name === gn); return { g, r: g && g.routines.find(x => x.name === rn) }; };
     const imp = (l, kind) => ({ l, i: 'upload', run: () => { S.orgSel = key; importComponent(kind); }, dis: !editable() || !offline() });
@@ -1781,15 +1793,15 @@
   /* ---------- instruction editor (operands, mnemonic) and the tag browser in it ---------- */
   const KIND_TYPES = {
     bit: ['BOOL'], bitw: ['BOOL'], timer: ['TIMER'], counter: ['COUNTER'], struct: ['TIMER', 'COUNTER', 'CONTROL'],
-    num: ['SINT', 'INT', 'DINT', 'REAL'], dest: ['SINT', 'INT', 'DINT', 'REAL'], int: ['SINT', 'INT', 'DINT'], idest: ['SINT', 'INT', 'DINT'], expr: ['SINT', 'INT', 'DINT', 'REAL', 'BOOL'],
-    control: ['CONTROL'], darr: ['DINT'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'REAL'], farr: ['SINT', 'INT', 'DINT', 'REAL'], fdst: ['SINT', 'INT', 'DINT', 'REAL'], ddest: ['DINT'],
+    num: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], dest: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], int: ['SINT', 'INT', 'DINT', 'LINT'], idest: ['SINT', 'INT', 'DINT', 'LINT'], expr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL', 'BOOL'],
+    control: ['CONTROL'], darr: ['DINT'], trace: ['BOOL', 'SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fmt: [], fsrc: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], farr: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], fdst: ['SINT', 'INT', 'DINT', 'LINT', 'REAL', 'LREAL'], ddest: ['DINT'],
   };
   // the operand kinds that take one element of an array (Bits[0]): the tag list offers the elements
   const ARRK = ['elem', 'elemw', 'darr', 'farr'];
   function aliasType(alias) { return addrType(alias) || 'BOOL'; }
   /* the members of a structured type (predefined, module or user-defined) */
-  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || ((S.p.dataTypes || []).find(d => U(d.name) === U(ty)) || {}).members || null;
-  const NBITS = { SINT: 8, INT: 16, DINT: 32 };
+  const membersOf = ty => E.PREDEF[ty] || E.MODTYPES[ty] || (d => (d && d.family === 'string' ? strMems(d.len) : d && d.members))((S.p.dataTypes || []).find(d => U(d.name) === U(ty))) || null;
+  const NBITS = { SINT: 8, INT: 16, DINT: 32, LINT: 64 };
   /* the data type of a tag address, as the reference reads it: Name[Element].Member.Bit, or Location:Slot:Type.Member.Bit
      for the I/O tags of a module; null when the address names nothing in the project */
   function addrType(addr, seen) {
@@ -2203,16 +2215,17 @@
      style; a REAL shows Float or Exponential; an integer or BOOL Binary, Octal, Decimal, Hex (integers also ASCII). */
   const ACCESS = ['Read/Write', 'Read Only', 'None'];
   const baseTy = ty => String(ty || 'BOOL').replace(/\[.*$/, '');
-  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : []; };
-  const defStyle = ty => (U(baseTy(ty)) === 'REAL' ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
+  const stylesOf = ty => { const b = U(baseTy(ty)); return b === 'REAL' || b === 'LREAL' ? ['Float', 'Exponential'] : b === 'BOOL' ? ['Binary', 'Octal', 'Decimal', 'Hex'] : ['SINT', 'INT', 'DINT'].includes(b) ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII'] : b === 'LINT' ? ['Binary', 'Octal', 'Decimal', 'Hex', 'ASCII', 'Date/Time', 'Date/Time (ns)'] : []; };
+  const defStyle = ty => (/^L?REAL$/.test(U(baseTy(ty))) ? 'Float' : stylesOf(ty).length ? 'Decimal' : '');
   const styleOfTag = (t, ty) => { const l = stylesOf(ty || (t && t.type)); return t && l.includes(t.style) ? t.style : defStyle(ty || (t && t.type)); };
   const accessOf = t => (t && ACCESS.includes(t.access) ? t.access : 'Read/Write');
   /* a value as its Style shows it (1756-RM014, Data display style: 15 in an INT is 2#0000_0000_0000_1111, 8#000_017,
      16#000F, '$00$0F', 1.5000000e+01); null for Decimal and Float, which show the number as it is */
-  const BITW = { SINT: 8, INT: 16, DINT: 32 };
+  const BITW = { SINT: 8, INT: 16, DINT: 32, LINT: 64 };
   const grp_ = (x, n) => x.replace(new RegExp(`\\B(?=(\\w{${n}})+$)`, 'g'), '_');
   function styled(v, ty, st) {
     if (typeof v !== 'number' || !st || st === 'Decimal' || st === 'Float') return null;
+    if (/^Date\/Time/.test(st)) return dateTime(v, st !== 'Date/Time');
     if (st === 'Exponential') { const [m, e] = v.toExponential(7).split('e'); return m + 'e' + (e[0] === '-' ? '-' : '+') + e.replace(/^[+-]/, '').padStart(2, '0'); }
     const w = BITW[U(ty)];
     if (!w || !Number.isInteger(v)) return null;
@@ -2441,9 +2454,9 @@
   const scopeTags = scope => (scope ? allProgs().find(g => g.name === scope).tags : S.p.tags);
   // calls fn(entry, depth, kids, open) for each row shown: the tags, then the members of the open ones
   function tagWalk(scope, q, fn) {
-    const qq = U(q || ''), hit = (n, d) => !qq || U(n).includes(qq) || U(d || '').includes(qq);
-    const top = (scope ? [] : moduleTags().filter(x => hit(x.path)))
-      .concat(scopeTags(scope).filter(t => hit(t.name, t.desc)).map(t => ({ path: t.name, ty: typeOf(t), dim: t.dim || 0, t })));
+    const qq = U(q || ''), hit = (n, d) => tagHit(qq, n, d), sh = showFilter(scope);
+    const top = (scope ? [] : moduleTags().filter(x => hit(x.path) && sh(x)))
+      .concat(scopeTags(scope).filter(t => hit(t.name, t.desc)).map(t => ({ path: t.name, ty: typeOf(t), dim: t.dim || 0, t })).filter(sh));
     const go = (e, depth) => {
       const kids = tagKids(e.path, e.ty, e.dim), open = !!kids && S.tagOpen.has(scope + '|' + e.path);
       fn(e, depth, kids, open);
@@ -2456,7 +2469,7 @@
   function tagRows(mode, scope, q) {
     const rows = [];
     tagWalk(scope || '', q, (e, depth, kids, open) => {
-      const v = aggr(e) ? null : rowVal(e.path, e.ty, scope, e.t);
+      const v = aggr(e) && !strRow(e) ? null : rowVal(e.path, e.ty, scope, e.t);
       const sub = e.t ? (e.t.alias ? '<' + e.t.alias + '>  ' : '') + (e.t.desc || '') : !e.member && e.mod ? `[${e.mod.slot}] ${e.mod.name} (module-defined)` : '';
       rows.push(`<div class="row${depth ? ' mem' : ''}${e.mod ? ' modtag' : ''}" data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}${depth ? ` style="padding-left:${20 + depth * 18}px"` : ''}><span class="exp"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span><div class="grow"><div class="nm">${esc(e.path)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
         ${mode === 'mon' && v ? `<span class="val${v.cls}" data-tv="${esc(e.path)}">${esc(v.t)}</span>` : ''}<span class="ty">${esc(tyText(e))}</span></div>`);
@@ -2464,13 +2477,14 @@
     return rows.join('') || '<div class="empty">No tags yet. Use + to add one.</div>';
   }
   function rowVal(path, ty, scope, t) {
+    const sv = strVal(path, ty, scope, t); if (sv) return sv;
     if (S.online && ctl.M) {
       const v = ctl.read(path, scope || undefined), f = ty === 'BOOL' ? ctl.forced(path, scope || undefined) : null;
       return { t: fmtSt(v, ty, t), cls: (ty === 'BOOL' && v === 1 ? ' on' : '') + (f !== null && f !== undefined ? ' f' : '') };
     }
     if (t && t.value !== undefined && typeof t.value !== 'object') return { t: fmtSt(t.value, ty, t), cls: '' };
     // an atomic tag without a start value starts at 0
-    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (ty === 'REAL' ? '0.0' : '0') : '', cls: '' };
+    return { t: E.ATOMIC.includes(ty) && !(t && t.dim) ? (t && !t.alias && styled(0, ty, styleOfTag(t, ty))) || (/^L?REAL$/.test(ty) ? '0.0' : '0') : '', cls: '' };
   }
   function tagEditorBody(inline, mode0, scope0) {
     S.tagMode = mode0 || S.tagMode || 'mon';
@@ -2479,7 +2493,7 @@
     return `<div style="padding:8px 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:none;border-bottom:1px solid var(--border)">
         <span class="seg"><span data-tmode="mon" class="${S.tagMode === 'mon' ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${S.tagMode === 'edit' ? 'on' : ''}">Edit Tags</span></span>
         <select class="inp" id="tscope" style="width:auto;flex:1;min-width:140px"><option value="">Controller (${esc(S.p.controller.name)})</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>Program: ${esc(g.name)}</option>`).join('')}</select>
-        <input class="inp" id="tq" placeholder="Filter" style="flex:1;min-width:120px" value="${esc(S.tagQ || '')}">${inline ? '' : `<button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button>`}</div>
+        ${tagShowBar()}<input class="inp" id="tq" placeholder="Filter" style="flex:1;min-width:120px" value="${esc(S.tagQ || '')}">${inline ? '' : `<button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button>`}</div>
       <div class="list" id="tagrows" style="flex:1">${tagRows(S.tagMode, sc, S.tagQ)}</div>
       <p class="help" style="padding:0 12px">${S.tagMode === 'mon' ? (S.online ? 'Online: tap a BOOL to toggle it, a number to type a value.' : 'Offline: values are the saved start values of the project.') : 'Tap a tag to change its properties.'}</p>`;
   }
@@ -2505,14 +2519,14 @@
   function refreshTags() { const r = $('#tagrows'); if (r) r.innerHTML = r.tagName === 'TBODY' ? tagTableRows() : tagRows(S.tagMode, S.tagScope || '', S.tagQ); }
   /* the tag editor in a workspace tab: a table (Name, Value, Force Mask, Style, Data Type, Description in Monitor Tags;
      Name, Alias For, Data Type, Style, Description in Edit Tags), with the Monitor / Edit tabs at the bottom */
-  const styleOf = ty => (ty === 'REAL' ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
+  const styleOf = ty => (/^L?REAL$/.test(ty) ? 'Float' : E.PREDEF[ty] || membersOf(ty) ? '' : 'Decimal');
   // the tag an alias ends at (an alias of an alias goes on to the base tag)
   const baseTagOf = a => { let x = String(a || ''); for (let n = 0; n < 16 && !/^Local:/i.test(x); n++) { const b = /^([A-Za-z_]\w*)(.*)$/.exec(x), t = b && tagFor(b[1]); if (!t || !t.alias || U(t.name) !== U(b[1])) break; x = t.alias + b[2]; } return x; };
   const TCOLS = { mon: ['Name', 'Value', 'Force Mask', 'Style', 'Data Type', 'Description'], edit: ['Name', 'Alias For', 'Base Tag', 'Data Type', 'Style', 'Description', 'External Access', 'Usage', 'Constant'] };
   function tagTableRows() {
     const scope = S.tagScope || '', mon = S.tagMode === 'mon', rows = [];
     tagWalk(scope, S.tagQ, (e, depth, kids, open) => {
-      const t = e.t && !e.member ? e.t : null, ag = aggr(e);
+      const t = e.t && !e.member ? e.t : null, ag = aggr(e) && !strRow(e);
       const cls = [depth ? 'mem' : '', e.mod ? 'modtag' : '', t && S.tagJust === t.name ? 'just' : '', S.tagAll && !depth ? 'all' : ''].filter(Boolean).join(' ');
       const head = `<tr${cls ? ` class="${cls}"` : ''} data-tag="${esc(e.path)}" data-ty="${esc(e.ty)}"${e.mod ? ' data-mod="1"' : ''}><td class="ex"></td>`
         + `<td class="nm" style="padding-left:${4 + depth * 16}px"><span class="tx"${kids ? ` data-texp="${esc(e.path)}"` : ''}>${kids ? ic(open ? 'down' : 'right') : ''}</span>${esc(e.path)}</td>`;
@@ -2537,8 +2551,8 @@
   function tagWsHTML() {
     const sc = S.tagScope || '', mon = S.tagMode === 'mon';
     return `<div class="tagws" id="tagpage"><div class="tagbar"><label for="tscope">Scope:</label><select class="inp" id="tscope"><option value="">${esc(S.p.controller.name)} (controller)</option>${allProgs().map(g => `<option value="${esc(g.name)}"${sc === g.name ? ' selected' : ''}>${esc(g.name)} (program)</option>`).join('')}</select>
-        <input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
-      <div class="tagtbl"><table><thead><tr><th></th>${TCOLS[mon ? 'mon' : 'edit'].map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
+        ${tagShowBar()}<input class="inp" id="tq" placeholder="Enter name filter…" value="${esc(S.tagQ || '')}"><span class="grow"></span><button class="btn" data-cmd="newtag">${ic('plus')}New Tag</button></div>
+      ${tagColStyle(mon)}<div class="tagtbl"><table><thead><tr><th></th>${TCOLS[mon ? 'mon' : 'edit'].map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody id="tagrows">${tagTableRows()}</tbody></table></div>
       <div class="tagtabs"><span data-tmode="mon" class="${mon ? 'on' : ''}">Monitor Tags</span><span data-tmode="edit" class="${mon ? '' : 'on'}">Edit Tags</span><span class="grow"></span><span class="help">${mon ? (S.online ? 'Online: click a BOOL value to toggle it, a number to write it.' : 'Offline: the values are the start values of the project.') : 'Click a tag to change it. Type a name in the last row to add one.'}</span></div></div>`;
   }
   /* a click on a row of the tag editor: Edit Tags opens Tag Properties (or edits the Data Type / Description cell
@@ -2556,6 +2570,7 @@
       if (slot != null) toast(`${name.split(/[.[]/)[0]} is a module-defined tag: it comes with the module in slot ${slot}. Change the module in the I/O Configuration.`);
       return;
     }
+    if (isStrTy(ty) && !(t && t.dim)) { editString(name, ty, scope, t); return; }
     if (membersOf(ty) || /\[[\d,]+\]$/.test(ty) || (t && t.dim)) return;
     if (S.online && ctl.M) {
       if (ty === 'BOOL') { if (!ctl.toggle(name, scope || undefined, true)) toast(`${name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); return; }
@@ -3116,12 +3131,12 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
         box.addEventListener('contextmenu', ev => {
           const t = ev.target.closest('[data-x]'); if (!t) return; ev.preventDefault(); ev.stopPropagation();
           const x = rows[+t.dataset.x], b = x.ref.split(/[.[]/)[0], tg = tagFor(b); st.sel = +t.dataset.x;
-          const items = [['go', 'Go To Location', !1], ['edit', `Edit Tag "${b}"`, !tg], ['mon', `Monitor Tag "${b}"`, !tg], ['trend', `Trend Tag "${b}"`, !0]];
+          const items = [['go', 'Go To Location', !1], ['edit', `Edit Tag "${b}"`, !tg], ['mon', `Monitor Tag "${b}"`, !tg], ['trend', `Trend Tag "${b}"`, !tg || !S.online]];
           box.querySelectorAll('.xrm').forEach(m => m.remove());
           const m = document.createElement('div'); m.className = 'menu xrm'; m.style.cssText = 'position:fixed;z-index:400';
           m.innerHTML = items.map(([k, l, dis]) => `<div class="it${dis ? ' dis' : ''}" data-xm="${k}"><span>${esc(l)}</span></div>`).join('');
           box.appendChild(m); m.style.left = Math.min(ev.clientX, innerWidth - m.offsetWidth - 6) + 'px'; m.style.top = Math.min(ev.clientY, innerHeight - m.offsetHeight - 6) + 'px';
-          m.onclick = me => { const it = me.target.closest('[data-xm]'); me.stopPropagation(); m.remove(); if (!it || it.classList.contains('dis')) return; const k = it.dataset.xm; if (k === 'go') goTo(x); else if (k === 'edit') { closeLayer(); newTag({ tag: tg }); } else if (k === 'mon') { closeLayer(); monitorTag(b); } };
+          m.onclick = me => { const it = me.target.closest('[data-xm]'); me.stopPropagation(); m.remove(); if (!it || it.classList.contains('dis')) return; const k = it.dataset.xm; if (k === 'go') goTo(x); else if (k === 'edit') { closeLayer(); newTag({ tag: tg }); } else if (k === 'mon') { closeLayer(); monitorTag(b); } else if (k === 'trend') { closeLayer(); quickTrend(b); } };
         });
       } });
   }
@@ -4258,16 +4273,8 @@ ${list.map((u, i) => `<Rung Use="Target" Number="${i}" Type="N">${u.c ? `<Commen
     const done = new Set(), order = [];
     const visit = (d, seen = new Set()) => { if (done.has(d) || seen.has(d)) return; seen.add(d); (d.members || []).forEach(m => { const u = udts.find(y => U(y.name) === U(m.type)); if (u) visit(u, seen); }); done.add(d); order.push(d); };
     udts.forEach(d => visit(d));
-    const udt = d => {
-      let host = null, hn = 0, out = '';
-      (d.members || []).forEach(m => {
-        const bool = U(m.type) === 'BOOL' && !(m.dim > 0);
-        if (!bool) { host = null; out += `<Member Name="${x(m.name)}" DataType="${x(U(m.type) === 'BOOL' || atom(m.type) ? U(m.type) : m.type)}" Dimension="${m.dim > 0 ? m.dim : 0}" Radix="${atom(m.type) ? rdx(m.type) : 'NullType'}" Hidden="false" ExternalAccess="Read/Write">${dsc(m.desc)}</Member>`; return; }
-        if (!host || host.bit === 8) { host = { name: ('ZZZZZZZZZZ' + d.name).slice(0, 37) + hn++, bit: 0 }; out += `<Member Name="${x(host.name)}" DataType="SINT" Dimension="0" Radix="Decimal" Hidden="true" ExternalAccess="Read/Write"/>`; }
-        out += `<Member Name="${x(m.name)}" DataType="BIT" Dimension="0" Radix="Decimal" Hidden="false" Target="${x(host.name)}" BitNumber="${host.bit++}" ExternalAccess="Read/Write">${dsc(m.desc)}</Member>`;
-      });
-      return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${dsc(d.desc)}<Members>${out}</Members></DataType>`;
-    };
+    // a user-defined or string type, as l5xTypes writes it
+    const udt = d => l5xTypes({ dataTypes: [d] }, x, cd).replace(/^<DataTypes>\n|\n<\/DataTypes>$/g, '');
     const mod = m => {
       const k = (E.MODULES[m.type] || {}).kind, r = L5XMOD[k] || ['1', '1', 'Data', 'Input'];
       return `<Module Name="${x(m.name)}" CatalogNumber="${L5XCAT[m.type] || x(m.type)}" Vendor="1" Major="${r[0]}" Minor="${r[1]}" ParentModule="Local" ParentModPortId="1" Inhibited="${m.inhibit ? 'true' : 'false'}" MajorFault="${m.majorOnFail ? 'true' : 'false'}">${dsc(m.desc)}<EKey State="CompatibleModule"/><Ports><Port Id="1" Address="${m.slot}" Type="ICP" Upstream="true"/></Ports><Communications><Connections><Connection Name="${r[2]}" RPI="${(m.rpi || 20) * 1000}" Type="${r[3]}"/></Connections></Communications></Module>`;
@@ -4293,7 +4300,7 @@ ${only ? rtn(only.routine, 'Target') : g.routines.map(r => rtn(r)).join('\n')}
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="37.00" TargetName="${x(p.controller.name)}" TargetType="Controller" ContainsContext="false" ExportDate="${new Date().toUTCString()}" ExportOptions="NoRawData L5KData DecoratedData ForceProtectedEncoding AllProjDocTrans">
 ${emu ? '<!--MT PLC Studio: PLC-CPU 1.0-->\n' : ''}<Controller Use="Target" Name="${x(p.controller.name)}" ProcessorType="${pt}" MajorRev="${mj}" MinorRev="${mn}">
-${dsc(p.controller.desc)}<DataTypes>${order.map(udt).join('\n')}</DataTypes>
+${dsc(p.controller.desc)}${l5xTypes({ dataTypes: order }, x, cd)}
 <Modules>
 <Module Name="Local" CatalogNumber="${pt}" Vendor="1" ParentModule="Local" ParentModPortId="1"><Ports><Port Id="1" Address="${cslot}" Type="ICP" Upstream="false"><Bus Size="${p.rack.size}"/></Port></Ports></Module>
 ${p.rack.modules.map(mod).join('\n')}
@@ -4349,12 +4356,8 @@ ${p.tasks.map(t => `<Task Name="${x(t.name)}" Type="CONTINUOUS" Watchdog="${t.wa
       if (v !== undefined && nonZero(v)) o.value = v;
       return o;
     });
-    // user-defined data types: the hidden BOOL hosts leave, a BIT member is a BOOL
-    const dts = kids(c, 'DataTypes')[0];
-    p.dataTypes = (dts ? kids(dts, 'DataType') : []).filter(x => (x.getAttribute('Class') || 'User') === 'User').map(x => {
-      const ms = kids(kids(x, 'Members')[0] || x, 'Member').filter(m => !yes(m, 'Hidden')).map(m => { const o = { name: m.getAttribute('Name'), type: m.getAttribute('DataType') === 'BIT' ? 'BOOL' : m.getAttribute('DataType') }; const n = parseInt(m.getAttribute('Dimension'), 10); if (n > 0) o.dim = n; if (desc(m)) o.desc = desc(m); return o; });
-      const o = { name: x.getAttribute('Name'), members: ms }; if (desc(x)) o.desc = desc(x); return o;
-    });
+    // user-defined data types and string types: the hidden BOOL hosts leave, a BIT member is a BOOL
+    p.dataTypes = l5xTypesIn(c);
     p.tags = tagsOf(kids(c, 'Tags')[0]);
     const byCat = {}; Object.keys(L5XCAT).forEach(k => { byCat[L5XCAT[k]] = k; });
     const mods = [], kindOf = cat => byCat[U(cat)] || (/-I[ABCGMNV]\d|-IB\d|-IA\d|-IV\d/i.test(cat) ? 'PLC-DI16-24V' : /-O[ABWVX]\d|-OB\d|-OW\d/i.test(cat) ? 'PLC-DO16-24V' : /-IF\d|-IR\d|-IT\d/i.test(cat) ? 'PLC-AI4' : /-OF\d/i.test(cat) ? 'PLC-AO4' : null);
@@ -4790,6 +4793,744 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         if (cm) cm.onclick = () => { ctl.clearFault(); live(true); render(); controllerProps('maj'); };
         if (cn) cn.onclick = () => { ctl.clearMinors(); controllerProps('min'); };
       } });
+  }
+
+  /* ---------- data types: the Data Type Editor (v37 help: Using user-defined data types; Data Type Editor) ----------
+     Data Types > User-Defined > New Data Type: Name (40 characters), Description (512), the members (Name, Data Type,
+     Style, Description, External Access; a new row is added as one is typed), Size (read-only, worked out when the
+     type is saved), then Apply (save, keep editing) or OK (save and close). A member array has one dimension
+     (1756-PM004). The members are kept as { name, type, dim, desc, style, access } in project.dataTypes. */
+  const udtOf = n => (S.p.dataTypes || []).find(d => U(d.name) === U(n) && d.family !== 'string');
+  // the tags (any scope) and the user types whose members use a data type: a type in use cannot be deleted
+  function typeUsers(n) {
+    const u = U(n), out = [];
+    S.p.tags.forEach(t => { if (!t.alias && U(t.type || '') === u) out.push(t.name); });
+    allProgs().forEach(g => g.tags.forEach(t => { if (!t.alias && U(t.type || '') === u) out.push(g.name + '/' + t.name); }));
+    (S.p.dataTypes || []).forEach(d => (d.members || []).forEach(m => { if (U(m.type) === u) out.push(d.name + '.' + m.name); }));
+    return out;
+  }
+  const sizeText = n => { const b = E.typeSize(S.p, n); return b == null ? '' : `${b} byte${b === 1 ? '' : 's'}`; };
+  const memTypeText = m => m.type + (m.dim > 0 ? `[${m.dim}]` : '');
+  function dataTypeEditor(name) {
+    const d0 = name ? udtOf(name) : null;
+    if (name && !d0) return;
+    let cur = d0;   // the type as last saved (Apply / OK)
+    const ro = S.online && !!d0 && typeUsers(d0.name).length > 0;
+    const accSel = a => `<select class="cin" data-mf="access" aria-label="External Access"${ro ? ' disabled' : ''}>${ACCESS.map(x => `<option${x === (a || 'Read/Write') ? ' selected' : ''}>${x}</option>`).join('')}</select>`;
+    const stySel = (ty, st) => { const l = ty ? stylesOf(ty) : []; return `<select class="cin" data-mf="style" aria-label="Style"${!l.length || ro ? ' disabled' : ''}>${l.map(x => `<option${x === (l.includes(st) ? st : defStyle(ty)) ? ' selected' : ''}>${x}</option>`).join('')}</select>`; };
+    const rowHTML = m => `<tr data-mrow="1"><td><input class="cin mono" data-mf="name" value="${esc(m.name || '')}" placeholder="${m.name ? '' : 'Add Member…'}" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Member Name"${ro ? ' readonly' : ''}></td>
+      <td><span class="cdt"><input class="cin mono" data-mf="type" value="${esc(m.type ? memTypeText(m) : '')}" list="dtel" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Data Type"${ro ? ' readonly' : ''}><button class="cdtb" type="button" data-mdt="1" title="Select Data Type" aria-label="Select Data Type"${ro ? ' disabled' : ''}>…</button></span></td>
+      <td>${stySel(m.type || '', m.style)}</td><td><input class="cin" data-mf="desc" value="${esc(m.desc || '')}" aria-label="Description"${ro ? ' readonly' : ''}></td><td>${accSel(m.access)}</td>
+      <td class="ck"><button class="ib" type="button" data-mdel="1" title="Delete Member" aria-label="Delete Member"${ro ? ' disabled' : ''}>${ic('close')}</button></td></tr>`;
+    const body = `<div class="frow"><label for="dten">Name</label><input class="inp mono" id="dten" value="${esc(d0 ? d0.name : '')}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"${ro ? ' readonly' : ''}></div>
+      <div class="frow"><label for="dted">Description</label><textarea class="inp" id="dted" rows="2" maxlength="512"${ro ? ' readonly' : ''}>${esc(d0 ? d0.desc || '' : '')}</textarea></div>
+      <div class="frow"><label>Members</label><span class="muted" id="dtes">Data Type Size: ${d0 ? sizeText(d0.name) : '(worked out when the type is saved)'}</span></div>
+      <div class="tagtbl dtegrid"><table><thead><tr><th>Name</th><th>Data Type</th><th>Style</th><th>Description</th><th>External Access</th><th></th></tr></thead><tbody id="dterows">${(d0 ? d0.members : []).map(rowHTML).join('')}${ro ? '' : rowHTML({})}</tbody></table></div>
+      <datalist id="dtel">${tagTypes().map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+      ${ro ? '<p class="help">The controller is online and this data type is in use: change it offline.</p>' : ''}<div class="errtx" id="dtee"></div>`;
+    const grab = el => [...el.querySelectorAll('#dterows tr')].map(tr => { const f = k => tr.querySelector(`[data-mf="${k}"]`); return { name: f('name').value.trim(), type: f('type').value.trim(), style: f('style').value, desc: f('desc').value.trim(), access: f('access').value }; }).filter(m => m.name || m.type);
+    // check and save the type; the text of the first problem, or '' when it was saved
+    const save = el => {
+      const name = el.querySelector('#dten').value.trim(), desc = el.querySelector('#dted').value.trim(), rows = grab(el);
+      if (!E.validName(name)) return 'Name: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.';
+      const taken = E.ATOMIC.concat(Object.keys(E.PREDEF), Object.keys(E.MODTYPES), (S.p.dataTypes || []).filter(d => d !== cur).map(d => d.name));
+      if (taken.some(t => U(t) === U(name))) return `A data type named ${name} already exists.`;
+      const mems = [], seen = new Set();
+      for (const r of rows) {
+        if (!E.validName(r.name)) return `Member '${r.name || '?'}': letters, digits and _, starting with a letter or _, up to 40 characters.`;
+        if (seen.has(U(r.name))) return `Member ${r.name} is defined more than once.`;
+        seen.add(U(r.name));
+        const m = /^([A-Za-z_][\w:]*)\s*(?:\[\s*(\d+)\s*\])?$/.exec(r.type);
+        if (!m) return `Member ${r.name}: type a data type, e.g. DINT or DINT[10] (a member array has one dimension).`;
+        const ty = tagTypes().concat(Object.keys(E.MODTYPES)).find(x => U(x) === U(m[1]));
+        if (!ty) return `Member ${r.name}: '${m[1]}' is not a data type of this project.`;
+        if (U(ty) === U(name) || (cur && U(ty) === U(cur.name))) return `Member ${r.name}: a data type cannot contain itself.`;
+        const o = { name: r.name, type: ty };
+        if (m[2] != null) { if (!(+m[2] > 0)) return `Member ${r.name}: the array size must be 1 or more.`; o.dim = +m[2]; }
+        if (r.desc) o.desc = r.desc;
+        if (r.style && r.style !== defStyle(ty) && stylesOf(ty).includes(r.style)) o.style = r.style;
+        if (r.access && r.access !== 'Read/Write') o.access = r.access;
+        mems.push(o);
+      }
+      // a type that holds this one, directly or deeper, cannot become one of its members
+      const holds = (t, seen2 = new Set()) => { const d = udtOf(t); if (!d || seen2.has(U(t))) return false; seen2.add(U(t)); return d.members.some(x => (cur && U(x.type) === U(cur.name)) || holds(x.type, seen2)); };
+      const loop = mems.find(x => holds(x.type));
+      if (loop) return `Member ${loop.name}: ${loop.type} contains ${name}, so ${name} cannot contain it.`;
+      const nd = { name, members: mems }; if (desc) nd.desc = desc;
+      const was = cur;
+      const ok = edit(() => {
+        S.p.dataTypes = S.p.dataTypes || [];
+        if (was) {
+          S.p.dataTypes[S.p.dataTypes.indexOf(was)] = nd;
+          // a renamed type: the tags and the members that use it follow
+          if (U(was.name) !== U(name) || was.name !== name) {
+            const fix = t => { if (!t.alias && U(t.type || '') === U(was.name)) t.type = name; };
+            S.p.tags.forEach(fix); allProgs().forEach(g => g.tags.forEach(fix));
+            S.p.dataTypes.forEach(d => (d.members || []).forEach(x => { if (U(x.type) === U(was.name)) x.type = name; }));
+          }
+        } else S.p.dataTypes.push(nd);
+      });
+      if (!ok) return 'The data type could not be saved.';
+      cur = nd;
+      return '';
+    };
+    const el = dialog({
+      title: d0 ? `Data Type: ${d0.name}` : 'New Data Type', size: 'lg', body,
+      noEnter: ev => !!ev.target.closest('#dterows'),
+      mount: el => {
+        const tb = el.querySelector('#dterows');
+        const err = el.querySelector('#dtee');
+        // the last row is the new-member row: typing in it adds the next blank row
+        tb.addEventListener('input', ev => {
+          const tr = ev.target.closest('tr');
+          if (ev.target.dataset.mf === 'type') { const s = tr.querySelector('[data-mf="style"]'), ty = ev.target.value.replace(/\[.*$/, '').trim(); s.outerHTML = stySel(ty, s.value); }
+          if (tr === tb.lastElementChild && !ro && ev.target.value.trim()) { tr.querySelector('[data-mf="name"]').placeholder = ''; tb.insertAdjacentHTML('beforeend', rowHTML({})); }
+        });
+        tb.addEventListener('click', ev => {
+          const tr = ev.target.closest('tr'); if (!tr) return;
+          if (ev.target.closest('[data-mdel]')) { if (tr !== tb.lastElementChild) tr.remove(); else tr.querySelectorAll('input').forEach(i => { i.value = ''; }); return; }
+          if (ev.target.closest('[data-mdt]')) {
+            const f = tr.querySelector('[data-mf="type"]');
+            selectDataType(f.value, v => { f.value = v.replace(/\[(\d+),.*\]$/, '[$1]'); f.dispatchEvent(new Event('input', { bubbles: true })); f.focus(); }, () => f.focus());
+          }
+        });
+        tb.addEventListener('keydown', ev => {
+          if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT') return;
+          ev.preventDefault();
+          const tr = ev.target.closest('tr'), nx = tr.nextElementSibling; if (nx) nx.querySelector('[data-mf="name"]').focus();
+        });
+        el._err = err;
+      },
+      buttons: [{ l: 'Cancel' },
+        { l: 'Apply', run: el => {
+          if (ro) return false;
+          const e = save(el); el.querySelector('#dtee').textContent = e;
+          if (!e) { el.querySelector('#dtes').textContent = 'Data Type Size: ' + sizeText(cur.name); el.querySelector('.dh b').textContent = 'Data Type: ' + cur.name; toast(`Data type ${cur.name} saved`); }
+          return false;
+        } },
+        { l: 'OK', pri: true, run: el => {
+          if (ro) return;
+          const e = save(el); if (e) { el.querySelector('#dtee').textContent = e; return false; }
+          toast(`Data type ${cur.name} saved (${sizeText(cur.name)})`);
+        } }],
+    });
+    return el;
+  }
+  function deleteDataType(n) {
+    const d = (S.p.dataTypes || []).find(x => U(x.name) === U(n)); if (!d) return;
+    const users = typeUsers(d.name);
+    if (users.length) { toast(`Data type ${d.name} is used by ${users.slice(0, 3).join(', ')}${users.length > 3 ? '…' : ''}: it cannot be deleted.`, 'err'); return; }
+    confirmDlg('Delete Data Type', `Delete the data type <b>${esc(d.name)}</b>? Yes removes it from the controller; No leaves it as it is.`, 'Yes', () => { edit(() => { S.p.dataTypes.splice(S.p.dataTypes.indexOf(d), 1); }); toast(`Data type ${d.name} deleted`); }, true);
+  }
+  /* the organizer's data type nodes: double-click (or tap again) opens the editor; their right-click menus */
+  function dtOpen(k) {
+    if (k.startsWith('dt:u:')) { dataTypeEditor(k.slice(5)); return true; }
+    if (k.startsWith('dt:s:')) { stringTypeEditor(k.slice(5)); return true; }
+    if (k.startsWith('trend:')) { openTrend(k.slice(6)); return true; }
+    return false;
+  }
+  function dtMenu(k) {
+    const nst = { l: 'New String Type…', i: 'text', run: () => stringTypeEditor(), dis: !editable() };
+    if (k === 'dts') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }, nst];
+    if (k === 'dt:user') return [{ l: 'New Data Type…', i: 'tags', run: () => dataTypeEditor(), dis: !editable() }];
+    if (k === 'dt:str') return [nst];
+    if (k === 'trends') return [{ l: 'New Trend…', i: 'xref', run: () => trendDialog(), dis: S.noProj }];
+    if (k.startsWith('trend:')) { const n = k.slice(6); return [{ l: 'Open', run: () => openTrend(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteTrend(n) }, '-', { l: 'Properties…', run: () => trendDialog(n) }]; }
+    if (k.startsWith('dt:s:')) { const n = k.slice(5); return [{ l: 'Open', run: () => stringTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() || U(n) === 'STRING' }]; }
+    if (k.startsWith('dt:u:')) { const n = k.slice(5); return [{ l: 'Open', run: () => dataTypeEditor(n) }, '-', { l: 'Delete', i: 'trash', run: () => deleteDataType(n), dis: !editable() }]; }
+    return null;
+  }
+  /* L5X: the user-defined types as the L5X reference writes them (general knowledge, not checked against an export):
+     BOOL members are bits (DataType="BIT") of a hidden SINT member named ZZZZZZZZZZ<type><n> */
+  function l5xTypes(p, x, cd) {
+    const list = (p.dataTypes || []);
+    if (!list.length) return '<DataTypes/>';
+    const mem = (m, extra) => `<Member Name="${x(m.name)}" DataType="${x(m.type)}" Dimension="${m.dim > 0 ? m.dim : 0}" Radix="${x(stylesOf(m.type).length ? (stylesOf(m.type).includes(m.style) ? m.style : defStyle(m.type)) : 'NullType')}" Hidden="false"${extra || ''} ExternalAccess="${x(accessOf(m))}">${m.desc ? `<Description>${cd(m.desc)}</Description>` : ''}</Member>`;
+    return `<DataTypes>\n${list.map(d => {
+      if (d.family === 'string') return `<DataType Name="${x(d.name)}" Family="StringFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members><Member Name="LEN" DataType="DINT" Dimension="0" Radix="Decimal" Hidden="false" ExternalAccess="Read/Write"/><Member Name="DATA" DataType="SINT" Dimension="${d.len}" Radix="ASCII" Hidden="false" ExternalAccess="Read/Write"/></Members></DataType>`;
+      let host = null, bit = 8, n = 0;
+      const ms = (d.members || []).map(m => {
+        if (U(m.type) === 'BOOL' && !(m.dim > 0)) {
+          let h = '';
+          if (bit >= 8) { host = `ZZZZZZZZZZ${d.name}${n++}`; bit = 0; h = `<Member Name="${x(host)}" DataType="SINT" Dimension="0" Radix="Decimal" Hidden="true" ExternalAccess="Read/Write"/>`; }
+          return h + mem({ ...m, type: 'BIT' }, ` Target="${x(host)}" BitNumber="${bit++}"`).replace(' Radix="NullType"', ' Radix="Decimal"');
+        }
+        bit = 8; return mem(m);
+      }).join('');
+      return `<DataType Name="${x(d.name)}" Family="NoFamily" Class="User">${d.desc ? `<Description>${cd(d.desc)}</Description>` : ''}<Members>${ms}</Members></DataType>`;
+    }).join('\n')}\n</DataTypes>`;
+  }
+  /* ---------- the Watch tab of the Output window (v37 help: About the Output Window; Create and use a Quick Watch
+     list): View > Watch. The Quick Watch menu lists the open routines (all the tags of that routine) and the saved
+     Quick Watch lists; tags are added by typing a name in the grid (Name, Scope, Value, Description, sorted by a
+     click on Name, Scope or Description). A list gets a name in the box beside the menu (Enter) and is then saved with
+     the project; an unnamed list is lost when the app closes. The Value is live online; offline it shows the last
+     online value. Online a click on a Value toggles a BOOL or writes a number. ---------- */
+  const W = { sel: '', tags: [], sort: null, last: new Map(), at: 0 };
+  const wLists = () => (S.p && Array.isArray(S.p.watch) ? S.p.watch : []);
+  // the tag of a watch row: a program tag of its scope, or a controller tag
+  const wTag = r => (r.scope ? (allProgs().find(g => g.name === r.scope) || { tags: [] }).tags : S.p.tags).find(t => U(t.name) === U(r.name.split(/[.[]/)[0])) || null;
+  function wRows() {
+    if (W.sel.startsWith('rt:')) {
+      const [g, rn] = W.sel.slice(3).split('/'), P = allProgs().find(x => x.name === g), R = P && P.routines.find(x => x.name === rn), seen = new Set(), out = [];
+      if (!R) return [];
+      const add = a => { const b = (/^[A-Za-z_]\w*/.exec(String(a)) || [])[0]; if (!b || seen.has(U(b))) return; const pt = P.tags.find(t => U(t.name) === U(b)), ct = S.p.tags.find(t => U(t.name) === U(b)); if (!pt && !ct) return; seen.add(U(b)); out.push({ name: (pt || ct).name, scope: pt ? P.name : '' }); };
+      R.rungs.forEach(x => { const pr = E.parseRung(x.t || ''); const w = a => a.forEach(e => (e.t === 'BR' ? e.legs.forEach(w) : (e.a || []).forEach(o => (String(o).match(/[A-Za-z_][\w]*(?:\[[^\]]*\])?(?:\.\w+)*/g) || []).forEach(add)))); if (!pr.err) w(pr.elems); });
+      return out;
+    }
+    if (W.sel.startsWith('list:')) { const l = wLists().find(x => x.name === W.sel.slice(5)); return l ? l.tags : []; }
+    return W.tags;
+  }
+  const wType = r => { const t = wTag(r); return t ? (r.name.includes('.') || r.name.includes('[') ? addrType(r.name) || '' : typeOf(t)) : ''; };
+  function wVal(r) {
+    const k = (r.scope || '') + '|' + U(r.name), t = wTag(r), ty = wType(r);
+    if (S.online && ctl.M) {
+      if (!t || (membersOf(ty) && !isStrTy(ty)) || (t.dim && !/\[/.test(r.name))) { W.last.set(k, '{…}'); return '{…}'; }
+      const v = rowVal(r.name, ty, r.scope, r.name.includes('.') || r.name.includes('[') ? null : t).t;
+      W.last.set(k, v); return v;
+    }
+    return W.last.has(k) ? W.last.get(k) : '';
+  }
+  function watchHTML() {
+    const rows = wRows().slice(), custom = !W.sel.startsWith('rt:');
+    if (W.sort) rows.sort((a, b) => { const f = x => (W.sort === 'Scope' ? x.scope || S.p.controller.name : W.sort === 'Description' ? (wTag(x) || {}).desc || '' : x.name); return f(a).localeCompare(f(b)); });
+    const opts = S.tabs.filter(k => k !== 'tags').map(k => `<option value="rt:${esc(k)}"${W.sel === 'rt:' + k ? ' selected' : ''}>${esc(k.replace('/', ' - '))}</option>`).join('')
+      + wLists().map(l => `<option value="list:${esc(l.name)}"${W.sel === 'list:' + l.name ? ' selected' : ''}>${esc(l.name)}</option>`).join('');
+    const names = S.p.tags.concat(curProg().tags).map(t => t.name);
+    const row = r => { const t = wTag(r), ty = wType(r); return `<tr data-wrow="${esc((r.scope || '') + '|' + r.name)}"><td class="nm" title="${esc(`${r.name}\nData Type: ${ty || '?'}${t && t.alias ? '\nAlias For: ' + t.alias : ''}\nScope: ${r.scope || S.p.controller.name}`)}">${esc(r.name)}</td><td>${esc(r.scope || S.p.controller.name)}</td><td class="val" data-wval="1">${esc(wVal(r))}</td><td class="ds">${esc(t ? t.desc || '' : 'not a tag of this project')}</td><td class="ck">${custom ? `<button class="ib" type="button" data-wdel="1" title="Remove from the list" aria-label="Remove ${esc(r.name)}">${ic('close')}</button>` : ''}</td></tr>`; };
+    return `<div class="wbar"><label for="wsel">Quick Watch:</label><select class="inp" id="wsel"><option value=""${W.sel === '' ? ' selected' : ''}>(Quick Watch list)</option>${opts}</select>
+        <input class="inp" id="wname" placeholder="Name the list to save it" value="${esc(W.sel.startsWith('list:') ? W.sel.slice(5) : '')}" maxlength="40" autocomplete="off" spellcheck="false"${custom ? '' : ' disabled'} aria-label="Quick Watch list name">
+        <button class="btn" type="button" data-wref="1">Refresh</button></div>
+      <div class="tagtbl wtbl"><table><thead><tr>${['Name', 'Scope', 'Value', 'Description'].map(c => `<th${c !== 'Value' ? ` data-wsort="${c}"` : ''}>${c}${W.sort === c ? ' ▲' : ''}</th>`).join('')}<th></th></tr></thead>
+        <tbody id="wrows">${rows.map(row).join('')}${custom ? `<tr class="newrow"><td colspan="5"><input class="nrin mono" id="wadd" list="waddl" placeholder="Type a tag name to watch, then Enter" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Add a tag to watch"><datalist id="waddl">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></td></tr>` : ''}</tbody></table></div>`;
+  }
+  function showWatch() {
+    S.outTab = 'watch';
+    if (S.layout === 'desktop') { S.prefs.err = true; savePrefs(); render(); }
+    else if (S.layout === 'phone') { S.area = 'more'; render(); }
+    else if (innerWidth > innerHeight) { render(); errSheet(); }
+    else { S.errOpen = true; render(); }
+    setTimeout(() => { const i = $('#wadd'); if (i && S.layout === 'desktop') i.focus(); }, 0);
+  }
+  // the Values while online: about 5 times a second, only the cells that changed
+  function liveWatch(force) {
+    const now = performance.now();
+    if (!force && now - W.at < 200) return false;
+    W.at = now;
+    document.querySelectorAll('#wrows tr[data-wrow]').forEach(tr => {
+      const k = tr.dataset.wrow, i = k.indexOf('|'), r = { scope: k.slice(0, i), name: k.slice(i + 1) }, c = tr.querySelector('[data-wval]'), v = wVal(r);
+      if (c && c.textContent !== v) c.textContent = v;
+    });
+    return true;
+  }
+  function wAdd(inp) {
+    const v = inp.value.trim(); if (!v) return;
+    const b = (/^[A-Za-z_]\w*/.exec(v) || [])[0], P = curProg(), pt = b && P.tags.find(t => U(t.name) === U(b)), ct = b && S.p.tags.find(t => U(t.name) === U(b));
+    if (!pt && !ct) { toast(`${v} is not a tag of ${P.name} or of the controller.`, 'err'); return; }
+    if (!addrType(v) && !(pt || ct).dim) { toast(`${v} is not a tag, member or bit of this project.`, 'err'); return; }
+    const r = { name: v.replace(/^[A-Za-z_]\w*/, (pt || ct).name), scope: pt ? P.name : '' };
+    if (W.sel.startsWith('list:')) { const l = wLists().find(x => x.name === W.sel.slice(5)); if (l && !l.tags.some(x => x.name === r.name && x.scope === r.scope)) edit(() => { l.tags.push(r); }); }
+    else if (!W.tags.some(x => x.name === r.name && x.scope === r.scope)) { W.tags.push(r); render(); }
+    setTimeout(() => { const i = $('#wadd'); if (i) i.focus(); }, 0);
+  }
+  function wName(inp) {
+    const n = inp.value.trim();
+    if (!E.validName(n)) { toast('Quick Watch list names: letters, digits and _, up to 40 characters.', 'err'); return; }
+    if (W.sel.startsWith('list:')) {
+      const l = wLists().find(x => x.name === W.sel.slice(5)); if (!l || l.name === n) return;
+      if (wLists().some(x => U(x.name) === U(n))) { toast(`A Quick Watch list named ${n} exists.`, 'err'); return; }
+      edit(() => { l.name = n; }); W.sel = 'list:' + n; render(); return;
+    }
+    if (wLists().some(x => U(x.name) === U(n))) { toast(`A Quick Watch list named ${n} exists.`, 'err'); return; }
+    const tags = W.tags.slice();
+    edit(() => { S.p.watch = wLists().concat([{ name: n, tags }]); });
+    W.tags = []; W.sel = 'list:' + n; render();
+    toast(`Quick Watch list ${n} is saved with the project`);
+  }
+  function wValClick(tr) {
+    const k = tr.dataset.wrow, i = k.indexOf('|'), r = { scope: k.slice(0, i), name: k.slice(i + 1) }, ty = wType(r), sc = r.scope || undefined;
+    if (!S.online || !ctl.M) { toast('The Watch tab writes values online: press Go Online first.'); return; }
+    if (ty === 'BOOL') { if (!ctl.toggle(r.name, sc, true)) toast(`${r.name} cannot be written here (an input or a read-only tag).`, 'err'); live(true); liveWatch(true); return; }
+    if (isStrTy(ty)) { editString(r.name, ty, r.scope, wTag(r)); return; }
+    if (!E.ATOMIC.includes(ty)) return;
+    prompt1('Write value', r.name, fmtVal(ctl.read(r.name, sc)), v => { const n = E.parseNumber(v); if (!n) return 'Type a number.'; if (!ctl.write(r.name, n.v, sc, true)) return 'This tag cannot be written (an input or read-only).'; live(true); liveWatch(true); });
+  }
+  document.addEventListener('click', ev => {
+    const t = ev.target; if (!t.closest || !S.p) return;
+    let el;
+    // the Output window as a sheet (tablet landscape): its tabs
+    if ((el = t.closest('#layer .sheet [data-otab]'))) { S.outTab = el.dataset.otab; errSheet(); return; }
+    if (!t.closest('.wtbl, .wbar')) return;
+    if ((el = t.closest('[data-wdel]'))) {
+      const k = el.closest('tr').dataset.wrow, i = k.indexOf('|'), sc = k.slice(0, i), n = k.slice(i + 1);
+      if (W.sel.startsWith('list:')) { const l = wLists().find(x => x.name === W.sel.slice(5)); if (l) edit(() => { l.tags = l.tags.filter(x => !(x.name === n && (x.scope || '') === sc)); }); }
+      else { W.tags = W.tags.filter(x => !(x.name === n && (x.scope || '') === sc)); render(); }
+      if ($('#layer .sheet .wtbl')) errSheet();
+      return;
+    }
+    if ((el = t.closest('[data-wsort]'))) { W.sort = W.sort === el.dataset.wsort ? null : el.dataset.wsort; render(); if ($('#layer .sheet .wtbl')) errSheet(); return; }
+    if (t.closest('[data-wref]')) { render(); if ($('#layer .sheet .wtbl')) errSheet(); liveWatch(true); return; }
+    if ((el = t.closest('[data-wval]'))) wValClick(el.closest('tr'));
+  });
+  document.addEventListener('change', ev => { if (ev.target.id === 'wsel' && S.p) { W.sel = ev.target.value; render(); if ($('#layer .sheet .wtbl')) errSheet(); } });
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' || !S.p) return;
+    if (ev.target.id === 'wadd') { ev.preventDefault(); ev.stopPropagation(); wAdd(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
+    else if (ev.target.id === 'wname') { ev.preventDefault(); ev.stopPropagation(); wName(ev.target); if ($('#layer .sheet .wtbl')) errSheet(); }
+  }, true);
+
+  /* ---------- Trends (v37 help: About trending; Create a trend; New Trend dialog box overview; Trend chart window
+     overview; Trend control bar overview; Quick Trend command). A trend holds up to 8 tags (BOOL, SINT, INT, DINT,
+     REAL), a Sample Period of 1 ms to 30 min (10 ms by default), a Name (40) and a Description (128). The chart
+     runs online only (Run is unavailable offline or while it runs) and stops when the controller goes offline. The
+     trends are saved with the project (not logic: no online edit). Kept light: one chart window, samples at most once
+     a frame, at most 3000 samples, the chart redrawn 4 times a second. ---------- */
+  const TPENS = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf'];
+  const TTYPES = ['BOOL', 'SINT', 'INT', 'DINT', 'REAL'];
+  const TR = { win: null, cur: null, run: false, on: false, buf: null, at: 0, drawAt: 0, span: 60000, quick: null };
+  const trList = () => (S.p && Array.isArray(S.p.trends) ? S.p.trends : []);
+  const trGet = n => (TR.quick && n === TR.quick.name ? TR.quick : trList().find(t => t.name === n));
+  const perText = ms => (ms % 60000 === 0 ? ms / 60000 + ' min' : ms % 1000 === 0 ? ms / 1000 + ' s' : ms + ' ms');
+  // a trend tag: a tag, member or bit of the program in use or of the controller, of a type a trend shows
+  function penOf(txt) {
+    const v = String(txt).trim(), b = (/^[A-Za-z_]\w*/.exec(v) || [])[0], P = curProg();
+    const pt = b && P.tags.find(t => U(t.name) === U(b)), ct = b && S.p.tags.find(t => U(t.name) === U(b)), t = pt || ct;
+    if (!t) return { err: `${v || '?'} is not a tag of ${P.name} or of the controller.` };
+    const name = v.replace(/^[A-Za-z_]\w*/, t.name), ty = name === t.name ? (t.dim ? '' : typeOf(t)) : addrType(name) || '';
+    if (!TTYPES.includes(ty)) return { err: `${name}: a trend shows BOOL, SINT, INT, DINT and REAL values${ty ? ` (this is ${ty})` : ''}.` };
+    return { name, scope: pt ? P.name : '' };
+  }
+  function trendDialog(name) {
+    const T0 = name ? trList().find(t => t.name === name) : null, pens = T0 ? T0.pens.map(p => ({ ...p })) : [];
+    const per = T0 ? T0.period : 10, unit = per % 60000 === 0 ? 'min' : per % 1000 === 0 ? 's' : 'ms', pv = per / { min: 60000, s: 1000, ms: 1 }[unit];
+    const names = S.p.tags.concat(curProg().tags).filter(t => !t.dim && TTYPES.includes(typeOf(t))).map(t => t.name);
+    const list = el => {
+      el.querySelector('#trpl').innerHTML = pens.map((p, i) => `<div class="row"><i class="pen" style="background:${TPENS[i]}"></i><span class="grow mono ell">${esc(p.name)}</span><span class="muted ell">${esc(p.scope || S.p.controller.name)}</span><button class="ib" type="button" data-trdel="${i}" title="Remove" aria-label="Remove ${esc(p.name)}">${ic('close')}</button></div>`).join('') || '<p class="help">No tags yet: type a tag name, then Add.</p>';
+      el.querySelector('#trpc').textContent = `${pens.length} of 8`;
+    };
+    dialog({ title: T0 ? `Trend Properties - ${T0.name}` : 'New Trend', size: 'md',
+      body: `<div class="frow"><label for="trn">Name</label><input class="inp" id="trn" maxlength="40" value="${esc(T0 ? T0.name : '')}" autocomplete="off" spellcheck="false"></div>
+        <div class="frow"><label for="trd">Description</label><textarea class="inp" id="trd" rows="2" maxlength="128">${esc(T0 ? T0.desc || '' : '')}</textarea></div>
+        <div class="frow"><label for="trs">Sample Period</label><span class="trsp"><input class="inp num" id="trs" type="number" min="1" step="1" value="${pv}"><select class="inp" id="tru" aria-label="Sample Period unit"><option value="ms">ms</option><option value="s">s</option><option value="min">min</option></select></span></div>
+        <div class="grp">Tags to trend <span class="muted" id="trpc"></span></div>
+        <div class="trpadd"><input class="inp mono" id="trt" list="trtl" placeholder="Tag name (BOOL, SINT, INT, DINT, REAL)" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Tag to add"><datalist id="trtl">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist><button class="btn" type="button" id="tra">${ic('plus')}Add</button></div>
+        <div class="trpl" id="trpl"></div><div class="errtx" id="tre"></div>`,
+      noEnter: ev => ev.target.id === 'trt',
+      mount: el => {
+        list(el); el.querySelector('#tru').value = unit;
+        const inp = el.querySelector('#trt'), er = el.querySelector('#tre');
+        const add = () => {
+          if (!inp.value.trim()) return;
+          const p = penOf(inp.value); er.textContent = '';
+          if (p.err) { er.textContent = p.err; return; }
+          if (pens.length >= 8) { er.textContent = 'A trend holds up to 8 tags.'; return; }
+          if (pens.some(x => U(x.name) === U(p.name) && x.scope === p.scope)) { er.textContent = `${p.name} is in the trend.`; return; }
+          pens.push(p); inp.value = ''; list(el); inp.focus();
+        };
+        el.querySelector('#tra').onclick = add;
+        inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); add(); } });
+        el.querySelector('#trpl').addEventListener('click', ev => { const b = ev.target.closest('[data-trdel]'); if (b) { pens.splice(+b.dataset.trdel, 1); list(el); } });
+      },
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const er = el.querySelector('#tre'), n = el.querySelector('#trn').value.trim(), d = el.querySelector('#trd').value;
+        const pn = Number(el.querySelector('#trs').value), ms = pn * { min: 60000, s: 1000, ms: 1 }[el.querySelector('#tru').value];
+        if (!E.validName(n)) { er.textContent = 'Name: letters, digits and _ (starting with a letter or _), up to 40 characters.'; return false; }
+        if (trList().some(t => t !== T0 && U(t.name) === U(n))) { er.textContent = `A trend named ${n} exists.`; return false; }
+        if (d.length > 128) { er.textContent = 'Description: up to 128 characters.'; return false; }
+        if (!Number.isInteger(ms) || ms < 1 || ms > 1800000) { er.textContent = 'Sample Period: 1 ms to 30 min, in whole milliseconds.'; return false; }
+        const t = { name: n, period: ms, pens }; if (d.trim()) t.desc = d;
+        if (T0) { const old = T0.name; edit(() => { delete T0.desc; Object.assign(T0, t); }); if (TR.cur === old) { TR.cur = n; TR.run = false; TR.buf = null; if (TR.win) openTrend(n); } }
+        else { edit(() => { S.p.trends = trList().concat([t]); }); openTrend(n); }
+      } }] });
+  }
+  function deleteTrend(n) {
+    confirmDlg('Delete Trend', `Delete the trend ${esc(n)}?`, 'Delete', () => { if (TR.cur === n) closeTrend(); edit(() => { S.p.trends = trList().filter(t => t.name !== n); }); }, true);
+  }
+  function closeTrend() { if (TR.win) TR.win.remove(); TR.win = null; TR.run = false; TR.cur = null; TR.buf = null; TR.quick = null; }
+  function openTrend(n) {
+    const T = trGet(n); if (!T) return;
+    if (TR.cur !== n) { TR.run = false; TR.cur = n; TR.buf = null; }
+    let w = TR.win;
+    if (!w || !w.isConnected) {
+      w = document.createElement('div'); w.className = 'twin'; w.setAttribute('role', 'dialog');
+      document.body.appendChild(w); TR.win = w;
+      const ww = Math.min(600, innerWidth - 16);
+      w.style.left = Math.max(8, (innerWidth - ww) / 2) + 'px'; w.style.top = Math.max(8, Math.min(140, innerHeight - 420)) + 'px';
+    }
+    w.setAttribute('aria-label', 'Trend ' + T.name);
+    const sp = [[10000, '10 s'], [60000, '1 min'], [300000, '5 min'], [600000, '10 min']];
+    w.innerHTML = `<div class="twh" data-tdrag="1"><b class="ell">${T === TR.quick ? 'Quick Trend' : 'Trend - ' + esc(T.name)}</b><span class="grow"></span><button class="ib" type="button" data-tx="1" title="Close" aria-label="Close">${ic('close')}</button></div>
+      <div class="tbar"><button class="btn" type="button" data-trun="1">${ic('play')}Run</button><button class="btn" type="button" data-tstop="1">${ic('stop')}Stop</button>
+        <label class="muted" for="tspan">Time span</label><select class="inp" id="tspan">${sp.map(([v, l]) => `<option value="${v}"${TR.span === v ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="muted ell" id="tstat"></span></div>
+      <canvas class="tcv" height="200"></canvas>
+      <div class="tleg">${T.pens.map((p, i) => `<span class="tpen"><i class="pen" style="background:${TPENS[i]}"></i><span class="mono ell">${esc(p.name)}</span><b class="mono" data-tv="${i}"></b></span>`).join('') || '<span class="muted">No tags: right-click the trend, Properties…, to add tags.</span>'}</div>`;
+    trBar(); trDraw();
+  }
+  function trBar() {
+    const w = TR.win; if (!w) return;
+    const on = S.online && !!ctl.M, T = trGet(TR.cur), r = w.querySelector('[data-trun]'), s = w.querySelector('[data-tstop]'), st = w.querySelector('#tstat');
+    r.disabled = !on || TR.run || !T || !T.pens.length; s.disabled = !TR.run;
+    st.textContent = TR.run ? `Running · sample period ${perText(T.period)}` : on ? 'Stopped' : 'Offline: go online to run the trend';
+  }
+  function trRun() {
+    const T = trGet(TR.cur); if (!T || !S.online || !ctl.M || !T.pens.length) return;
+    if (!TR.buf || TR.buf.v.length !== T.pens.length) TR.buf = { t: [], v: T.pens.map(() => []) };
+    TR.run = true; TR.at = 0; trBar();
+  }
+  function trSample() {
+    const T = trGet(TR.cur), b = TR.buf;
+    b.t.push(Date.now());
+    T.pens.forEach((p, i) => { let v; try { v = Number(ctl.read(p.name, p.scope || undefined)); } catch (e) { v = NaN; } b.v[i].push(v); });
+    if (b.t.length > 3000) { b.t.splice(0, 500); b.v.forEach(a => a.splice(0, 500)); }
+  }
+  // from the frame loop: sample at the Sample Period (at most once a frame), redraw 4 times a second
+  function trendTick(now) {
+    const w = TR.win; if (!w) return;
+    if (!w.isConnected || !trGet(TR.cur)) { closeTrend(); return; }
+    const on = S.online && !!ctl.M;
+    if (on !== TR.on) { TR.on = on; if (!on) TR.run = false; trBar(); }
+    if (!TR.run) return;
+    if (now - TR.at >= trGet(TR.cur).period) { TR.at = now; trSample(); }
+    if (now - TR.drawAt > 250) { TR.drawAt = now; trDraw(); }
+  }
+  function trDraw() {
+    const w = TR.win, cv = w && w.querySelector('.tcv'); if (!cv) return;
+    const dpr = Math.min(2, devicePixelRatio || 1), W = cv.clientWidth || 560, H = cv.clientHeight || 200;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const g = cv.getContext('2d'), cs = getComputedStyle(w), col = n => cs.getPropertyValue(n).trim();
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = col('--surface') || '#fff'; g.fillRect(0, 0, W, H);
+    const L = 54, R = W - 8, Tp = 8, B = H - 20, b = TR.buf, n = b ? b.t.length : 0;
+    const end = n ? b.t[n - 1] : Date.now(), start = end - TR.span;
+    let i0 = 0; if (n) { let lo = 0, hi = n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (b.t[m] < start) lo = m + 1; else hi = m; } i0 = lo; }
+    let mn = Infinity, mx = -Infinity;
+    if (b) b.v.forEach(a => { for (let k = i0; k < n; k++) { const v = a[k]; if (v < mn) mn = v; if (v > mx) mx = v; } });
+    if (!(mx >= mn)) { mn = 0; mx = 1; } if (mx === mn) { mn -= 1; mx += 1; }
+    const pad = (mx - mn) * 0.05; mn -= pad; mx += pad;
+    const X = t => L + (t - start) / TR.span * (R - L), Y = v => B - (v - mn) / (mx - mn) * (B - Tp);
+    g.strokeStyle = col('--border') || '#ddd'; g.lineWidth = 1; g.fillStyle = col('--muted') || '#666'; g.font = '10px sans-serif';
+    for (let k = 0; k <= 4; k++) { const y = Math.round(Tp + k * (B - Tp) / 4) + 0.5, v = mx - k * (mx - mn) / 4; g.beginPath(); g.moveTo(L, y); g.lineTo(R, y); g.stroke(); g.fillText(+v.toPrecision(4) + '', 2, y + 3); }
+    for (let k = 0; k <= 6; k++) { const x = Math.round(L + k * (R - L) / 6) + 0.5; g.beginPath(); g.moveTo(x, Tp); g.lineTo(x, B); g.stroke(); }
+    const hms = t => new Date(t).toTimeString().slice(0, 8);
+    g.fillText(hms(start), L, H - 6); const e = hms(end); g.fillText(e, R - g.measureText(e).width, H - 6);
+    if (b && n) {
+      const step = Math.max(1, Math.floor((n - i0) / (W * 2)));
+      b.v.forEach((a, p) => {
+        g.strokeStyle = TPENS[p]; g.lineWidth = 1.5; g.beginPath(); let first = true, py = 0;
+        for (let k = i0; k < n; k += step) { const v = a[k]; if (!isFinite(v)) { first = true; continue; } const x = X(b.t[k]), y = Y(v); if (first) { g.moveTo(x, y); first = false; } else { g.lineTo(x, py); g.lineTo(x, y); } py = y; }
+        g.stroke();
+      });
+    }
+    w.querySelectorAll('[data-tv]').forEach(s => { const a = b && b.v[+s.dataset.tv], v = a && a.length ? a[a.length - 1] : null; s.textContent = v == null || !isFinite(v) ? '' : String(+v.toPrecision(7)); });
+  }
+  // Quick Trend (the ladder's and the Cross Reference's right-click menus): a trend of one tag, not saved, online
+  function quickTrend(a) {
+    if (!S.online || !ctl.M) { toast('Quick Trend runs online: press Go Online first.'); return; }
+    const p = penOf(a); if (p.err) { toast(p.err, 'err'); return; }
+    TR.quick = { name: '(Quick Trend)', period: 100, pens: [p] }; TR.cur = null;
+    openTrend(TR.quick.name); trRun();
+  }
+  document.addEventListener('click', ev => {
+    const t = ev.target; if (!t.closest || !TR.win || !TR.win.contains(t)) return;
+    if (t.closest('[data-tx]')) { closeTrend(); return; }
+    if (t.closest('[data-trun]')) { trRun(); return; }
+    if (t.closest('[data-tstop]')) { TR.run = false; trBar(); trDraw(); }
+  });
+  document.addEventListener('change', ev => { if (ev.target.id === 'tspan' && TR.win) { TR.span = +ev.target.value; trDraw(); } });
+  document.addEventListener('pointerdown', ev => {
+    const h = ev.target.closest && ev.target.closest('[data-tdrag]'); if (!h || ev.target.closest('button')) return;
+    const w = TR.win, sx = ev.clientX - w.offsetLeft, sy = ev.clientY - w.offsetTop; ev.preventDefault();
+    const mv = e => { w.style.left = Math.max(0, Math.min(innerWidth - 60, e.clientX - sx)) + 'px'; w.style.top = Math.max(0, Math.min(innerHeight - 30, e.clientY - sy)) + 'px'; };
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  });
+
+  /* ---------- the Quick View pane below the Controller Organizer (v37 help, Controller Organizer: "provides summary
+     information about the selected item"): the type, the description and a few details of the item last clicked in
+     the organizer. Its header folds it (kept in the preferences). The rows shown are this app's choice. ---------- */
+  function qvRows(k) {
+    const P = S.p, n = (a, w) => `${a} ${w}${a === 1 ? '' : 's'}`, prog = g => allProgs().find(x => x.name === g);
+    const TT = { BOOL: 'Boolean', SINT: '8-bit integer', INT: '16-bit integer', DINT: '32-bit integer', LINT: '64-bit integer', REAL: '32-bit float', LREAL: '64-bit float' };
+    if (k === 'ctl') return [P.controller.name, [['Type', P.controller.type || 'PLC-CPU'], ['Revision', P.controller.rev || ''], ['Slot', ctlSlot()], ['Description', P.controller.desc || ''], ['Mode', modeText()]]];
+    if (k === 'ctags') return ['Controller Tags', [['Type', 'Tags of the controller scope'], ['Tags', P.tags.length]]];
+    if (k === 'tasks') return ['Tasks', [['Type', 'Folder'], ['Tasks', P.tasks.length]]];
+    if (k.startsWith('task:')) { const T = P.tasks.find(x => x.name === k.slice(5)); return T && [T.name, [['Type', 'Continuous task'], ['Description', T.desc || ''], ['Watchdog', (T.watchdog || 500) + ' ms'], ['Programs', T.programs.length], ['Inhibited', T.inhibit ? 'Yes' : 'No']]]; }
+    if (k.startsWith('prog:')) { const g = prog(k.slice(5)); return g && [g.name, [['Type', 'Program'], ['Description', g.desc || ''], ['Main Routine', g.main || '<none>'], ['Routines', g.routines.length], ['Tags', g.tags.length]]]; }
+    if (k.startsWith('ptags:')) { const g = prog(k.slice(6)); return g && ['Program Tags', [['Type', 'Tags of the program scope'], ['Program', g.name], ['Tags', g.tags.length]]]; }
+    if (k.startsWith('rt:')) { const [gn, rn] = k.slice(3).split('/'), g = prog(gn), R = g && g.routines.find(x => x.name === rn); return R && [R.name, [['Type', 'Ladder Diagram routine'], ['Description', R.desc || ''], ['Program', g.name], ['Main Routine', g.main === R.name ? 'Yes' : 'No'], ['Rungs', R.rungs.length]]]; }
+    if (k === 'dts' || k === 'dt:user' || k === 'dt:str' || k === 'dt:aod' || k === 'dt:pre' || k === 'dt:mod') {
+      const d = E.dataTypes(P), L = { dts: ['Data Types', null], 'dt:user': ['User-Defined', d.userDefined], 'dt:str': ['Strings', d.strings], 'dt:aod': ['Add-On-Defined', d.addOnDefined || []], 'dt:pre': ['Predefined', d.predefined], 'dt:mod': ['Module-Defined', d.moduleDefined] }[k];
+      return [L[0], [['Type', 'Folder']].concat(L[1] ? [['Data types', L[1].length]] : [])];
+    }
+    if (/^dt:[uspam]:/.test(k)) {
+      const nm = k.slice(5), c = k[3], ud = (P.dataTypes || []).find(x => U(x.name) === U(nm)), ms = membersOf(nm) || [];
+      const kind = { u: 'User-Defined data type', s: 'String data type', a: 'Add-On-Defined data type', p: TT[nm] ? 'Predefined atomic data type' : 'Predefined data type', m: 'Module-Defined data type' }[c];
+      const r = [['Type', kind], ['Description', (ud && ud.desc) || TT[nm] || '']];
+      if (c === 's' || nm === 'STRING') r.push(['Maximum Characters', c === 's' && ud ? ud.len : 82]);
+      else if (ms.length) r.push(['Members', ms.length]);
+      r.push(['Size', sizeText(nm) || '']);
+      return [nm, r];
+    }
+    if (k === 'trends') return ['Trends', [['Type', 'Folder'], ['Trends', trList().length]]];
+    if (k.startsWith('trend:')) { const T = trList().find(x => x.name === k.slice(6)); return T && [T.name, [['Type', 'Trend'], ['Description', T.desc || ''], ['Sample Period', perText(T.period)], ['Tags', T.pens.map(x => x.name).join(', ') || '<none>']]]; }
+    if (k === 'io') return ['I/O Configuration', [['Type', 'Folder'], ['Modules', P.rack.modules.length + 1]]];
+    if (k === 'bp') return [`Backplane, PLC-RACK${P.rack.size}`, [['Type', 'Chassis'], ['Size', n(P.rack.size, 'slot')]]];
+    if (k.startsWith('mod:')) {
+      const s = +k.slice(4);
+      if (s === ctlSlot()) return [P.controller.name, [['Type', 'PLC-CPU controller'], ['Slot', s], ['Revision', P.controller.rev || '']]];
+      const m = P.rack.modules.find(x => x.slot === s);
+      return m && [m.name, [['Type', m.type], ['Description', m.desc || ''], ['Slot', s], ['Inhibited', m.inhibit ? 'Yes' : 'No']].concat(S.online && ctl.M ? [['Status', ctl.moduleStatus(s).state]] : [])];
+    }
+    return null;
+  }
+  function quickViewHTML() {
+    if (S.noProj) return '';
+    const open = S.prefs.qv !== false, q = open && qvRows(S.orgSel || '');
+    const body = !open ? '' : q ? `<div class="qvb"><div class="qvn">${esc(q[0])}</div>${q[1].filter(x => x[1] !== '' && x[1] != null).map(([a, b]) => kv(esc(a), esc(String(b)))).join('')}</div>` : '<div class="qvb muted">Select an item in the Controller Organizer.</div>';
+    return `<div class="qv" id="qview"><button class="qvh" type="button" data-qv="1" aria-expanded="${open}">${ic(open ? 'down' : 'right')}<span>Quick View</span></button>${body}</div>`;
+  }
+  const qvRefresh = () => document.querySelectorAll('#qview').forEach(x => { x.outerHTML = quickViewHTML(); });
+  document.addEventListener('click', ev => {
+    const t = ev.target; if (!t.closest || !S.p) return;
+    if (t.closest('[data-qv]')) { S.prefs.qv = S.prefs.qv === false; savePrefs(); qvRefresh(); return; }
+    if (t.closest('[data-org]')) qvRefresh();
+  });
+
+  /* ---------- the Tag Editor command bar: Show and the filter; the columns ----------
+     v37 help, Tag Editor command bar settings: Scope; Show (All Tags, Configure… = the Define Tag Filter dialog,
+     Filter History = the five filters used last); the Filter icon (Filter On Name, Description or Both) and the box
+     beside it. Filter the tag list: Filter On (<all>, Unused, Produced, Consumed, Can Be Forced, Alias; the parameter
+     kinds are left out: this app has no program parameters) and Include Data Types, Clear Filter, OK. Filtering is
+     applied to the base tags only. Hide and Show Columns: right-click a column name, Hide Column or Toggle Column, or
+     View > Toggle Column; the Tag Editor and the Data Monitor keep their own columns. */
+  const FILTER_ON = ['<all>', 'Unused', 'Produced', 'Consumed', 'Can Be Forced', 'Alias'];
+  const tagShow = () => { const f = S.prefs.tagShow; return f && FILTER_ON.includes(f.on) ? { on: f.on, types: Array.isArray(f.types) ? f.types : [] } : { on: '<all>', types: [] }; };
+  const showAll = f => f.on === '<all>' && !f.types.length;
+  const showText = f => (showAll(f) ? 'All Tags' : [f.on !== '<all>' ? f.on : '', f.types.join(', ')].filter(Boolean).join('; '));
+  const tagFilterOn = () => (['name', 'desc', 'both'].includes(S.prefs.tagFon) ? S.prefs.tagFon : 'both');
+  const tagHit = (qq, n, d) => !qq || (tagFilterOn() !== 'desc' && U(n).includes(qq)) || (tagFilterOn() !== 'name' && U(d || '').includes(qq));
+  // the base names the logic of a scope refers to (operands, expressions) and the targets of its aliases
+  function usedNames(scope) {
+    const out = new Set(), words = t => (String(t).match(/[A-Za-z_]\w*/g) || []).forEach(w => out.add(U(w)));
+    const progs = scope ? allProgs().filter(g => g.name === scope) : allProgs();
+    progs.forEach(g => g.routines.forEach(r => r.rungs.forEach(x => { const pr = E.parseRung(x.t || ''); const w = a => a.forEach(e => (e.t === 'BR' ? e.legs.forEach(w) : (e.a || []).forEach(words))); if (!pr.err) w(pr.elems); })));
+    S.p.tags.concat(...allProgs().map(g => g.tags)).forEach(t => { if (t.alias) words(t.alias.split(/[.[]/)[0]); });
+    return out;
+  }
+  function showFilter(scope) {
+    const f = tagShow();
+    if (showAll(f)) return () => true;
+    const used = f.on === 'Unused' ? usedNames(scope) : null, types = new Set(f.types.map(U));
+    return e => {
+      if (types.size && !types.has(U(baseTy(e.ty)))) return false;
+      switch (f.on) {
+        case 'Unused': return !e.mod && !!e.t && !used.has(U(e.t.name));
+        case 'Produced': case 'Consumed': return false;   // no produced or consumed tags in this app
+        case 'Can Be Forced': return e.mod ? /:[IO]$/.test(e.path) : !!(e.t && e.t.alias && /^Local:\d+:[IO]\./i.test(baseTagOf(e.t.alias)));
+        case 'Alias': return !!(e.t && e.t.alias);
+      }
+      return true;
+    };
+  }
+  const fonIcon = () => `<button class="ib tfon" type="button" data-tfon="1" title="Filter On: ${{ name: 'Name', desc: 'Description', both: 'Both' }[tagFilterOn()]}" aria-label="Filter options"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6 7.5V18l-4 2v-7.5z"/></svg></button>`;
+  const tagShowBar = () => `<label class="tshl" for="tshow">Show:</label><button class="btn tshow" type="button" id="tshow" data-tshow="1" title="Show: ${esc(showText(tagShow()))}"><span class="ell">${esc(showText(tagShow()))}</span>${ic('down')}</button>${fonIcon()}`;
+  function setShow(f) {
+    S.prefs.tagShow = f;
+    if (!showAll(f)) { const k = JSON.stringify(f); S.prefs.tagHist = [f].concat((S.prefs.tagHist || []).filter(x => JSON.stringify(x) !== k)).slice(0, 5); }
+    savePrefs(); tagsRedraw();
+  }
+  const tagsRedraw = () => { if (S.view === 'tags' && S.layout !== 'phone') render(); else { const p = $('#tagpage'); if (p) p.innerHTML = tagEditorBody(S.layout === 'phone'); } };
+  function showMenu(at) {
+    const f = tagShow(), hist = (S.prefs.tagHist || []).slice(0, 5);
+    openMenu([{ l: 'All Tags', ck: showAll(f), run: () => setShow({ on: '<all>', types: [] }) }, { l: 'Configure…', i: 'gear', run: defineTagFilter }]
+      .concat(hist.length ? ['-', { hd: 'Filter History' }, ...hist.map(h => ({ l: showText(h), ck: JSON.stringify(h) === JSON.stringify(f), run: () => setShow(h) }))] : []), at);
+  }
+  function fonMenu(at) {
+    const set = m => { S.prefs.tagFon = m; savePrefs(); refreshTags(); const b = $('[data-tfon]'); if (b) b.title = 'Filter On: ' + { name: 'Name', desc: 'Description', both: 'Both' }[m]; };
+    openMenu([['name', 'Filter On Name'], ['desc', 'Filter On Description'], ['both', 'Filter On Both']].map(([m, l]) => ({ l, ck: tagFilterOn() === m, run: () => set(m) })), at);
+  }
+  function defineTagFilter() {
+    const f = tagShow(), types = [...new Set(E.ATOMIC.concat(Object.keys(E.PREDEF), (S.p.dataTypes || []).map(d => d.name), moduleTags().map(x => x.ty)))];
+    dialog({ title: 'Define Tag Filter', size: 'md',
+      body: `<div class="frow"><label for="dfon">Filter On</label><select class="inp" id="dfon">${FILTER_ON.map(x => `<option${x === f.on ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+        <div class="frow"><label>Include Data Types</label><span class="muted">None checked: every data type</span></div>
+        <div class="list dftl" id="dftl">${types.map(t => `<label class="row ck"><input type="checkbox" value="${esc(t)}"${f.types.some(x => U(x) === U(t)) ? ' checked' : ''}> <span class="mono">${esc(t)}</span></label>`).join('')}</div>`,
+      mount: el => { el.querySelector('.df').insertAdjacentHTML('afterbegin', '<button class="btn" type="button" id="dfclr">Clear Filter</button><span class="grow"></span>'); el.querySelector('#dfclr').onclick = () => { el.querySelectorAll('#dftl input').forEach(i => { i.checked = false; }); el.querySelector('#dfon').value = '<all>'; }; },
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => { setShow({ on: el.querySelector('#dfon').value, types: [...el.querySelectorAll('#dftl input:checked')].map(i => i.value) }); } }] });
+  }
+  const tcolHidden = mode => ((S.prefs.tagCols || {})[mode] || []).filter(c => TCOLS[mode].includes(c) && c !== 'Name');
+  function tagColStyle(mon) {
+    const mode = mon ? 'mon' : 'edit', h = tcolHidden(mode);
+    return h.length ? `<style>${h.map(c => `#tagpage .tagtbl tr:not(.newrow) > :nth-child(${TCOLS[mode].indexOf(c) + 2})`).join(',')}{display:none}</style>` : '';
+  }
+  function setCol(mode, c, show) {
+    const o = Object.assign({}, S.prefs.tagCols), h = new Set(tcolHidden(mode));
+    if (show) h.delete(c); else h.add(c);
+    o[mode] = [...h]; S.prefs.tagCols = o; savePrefs(); render();
+  }
+  // the column menu: Hide Column (the one under the pointer), then Toggle Column with every column but Name
+  function colMenu(at, col) {
+    const mode = S.tagMode === 'mon' ? 'mon' : 'edit', h = tcolHidden(mode);
+    const items = col && col !== 'Name' ? [{ l: `Hide Column "${col}"`, run: () => setCol(mode, col, false) }, '-'] : [];
+    openMenu(items.concat({ hd: 'Toggle Column' }, TCOLS[mode].filter(c => c !== 'Name').map(c => ({ l: c, ck: !h.includes(c), run: () => setCol(mode, c, h.includes(c)) }))), at);
+  }
+  document.addEventListener('click', ev => {
+    const t = ev.target, b = t.closest && (t.closest('[data-tshow]') || t.closest('[data-tfon]'));
+    if (!b || !S.p) return;
+    if (b.dataset.tshow) showMenu(b); else fonMenu(b);
+  });
+  document.addEventListener('contextmenu', ev => {
+    const th = ev.target.closest && ev.target.closest('#tagpage .tagtbl th');
+    if (!th || !S.p) return;
+    ev.preventDefault(); ev.stopPropagation();
+    colMenu({ x: ev.clientX, y: ev.clientY }, th.textContent.trim());
+  }, true);
+
+  /* the Date/Time styles of a LINT (v37 help: About the Tag Editor): microseconds since 1970 as
+     DT#2014-05-28-19:00:01.200_000 (UTC-05:00), or nanoseconds as LDT#…200_000_000 (UTC-05:00), in the computer's time
+     zone; a negative value cannot be shown as a date (null: the number is shown) */
+  function dateTime(v, ns) {
+    if (!Number.isInteger(v) || v < 0) return null;
+    const b = BigInt(v), per = ns ? 1000000000n : 1000000n, sec = Number(b / per), frac = (b % per).toString().padStart(ns ? 9 : 6, '0');
+    const d = new Date(sec * 1000);
+    if (isNaN(d) || d.getFullYear() > 2250) return null;
+    const p2 = n => String(n).padStart(2, '0'), off = -d.getTimezoneOffset(), oh = Math.floor(Math.abs(off) / 60), om = Math.abs(off) % 60;
+    return `${ns ? 'LDT' : 'DT'}#${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}-${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${frac.replace(/(\d{3})(?=\d)/g, '$1_')} (UTC${off < 0 ? '-' : '+'}${p2(oh)}:${p2(om)})`;
+  }
+  /* ---------- strings: STRING (LEN, DATA[82], 1756-PM004) and the string types of Data Types > Strings ----------
+     New String Type: Name, Description, Maximum Characters (1 to 65535, v37 help: Using user-defined data types), the
+     size. A string shows its text in Monitor Tags ('Hello'), $ marks the special characters as the String Browser
+     writes them ($$ $' $L $N $P $R $T $hh; v37 help: Failed to modify the String data) */
+  const strMems = n => [{ name: 'LEN', type: 'DINT' }, { name: 'DATA', type: 'SINT', dim: n }];
+  const strTypeOf = ty => (U(ty) === 'STRING' ? { name: 'STRING', len: 82, family: 'string' } : (S.p.dataTypes || []).find(d => d.family === 'string' && U(d.name) === U(ty)) || null);
+  const isStrTy = ty => !!ty && !!strTypeOf(ty);
+  const strRow = e => isStrTy(e.ty) && !E.dimN(e.dim);
+  const SESC = { 36: '$$', 39: "$'", 10: '$L', 12: '$P', 13: '$R', 9: '$T' };
+  function strText(o) {
+    const d = (o && o.DATA) || [], n = Math.max(0, Math.min(o && o.LEN | 0, d.length));
+    let x = '';
+    for (let k = 0; k < n; k++) { const c = d[k] & 255; x += SESC[c] || (c > 31 && c < 127 ? String.fromCharCode(c) : '$' + c.toString(16).toUpperCase().padStart(2, '0')); }
+    return `'${x}'`;
+  }
+  // the text a user typed, with or without the quotes → { LEN, DATA } or the reason it is not a string
+  function parseStr(txt, max) {
+    let s = String(txt);
+    if (s.startsWith("'")) {
+      // the ending quote must be there and not written $' (an odd number of $ before it)
+      const dl = s.length >= 2 && s.endsWith("'") ? (/\$*'$/.exec(s.slice(1))[0].length - 1) : 1;
+      if (dl % 2) return 'Missing string termination character: put the ending quote on the data.';
+      s = s.slice(1, -1);
+    }
+    const out = [];
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === "'") return "String literal contains an invalid character combination: a quote inside the string is written $'.";
+      if (ch !== '$') { const c = ch.charCodeAt(0); if (c > 255) return `'${ch}' is not an ASCII character.`; out.push(c); continue; }
+      const a = s[i + 1] || '', b = s[i + 2] || '', u = a.toUpperCase();
+      if (a === '$' || a === "'") { out.push(a.charCodeAt(0)); i++; continue; }
+      if (u === 'L') { out.push(10); i++; continue; }
+      if (u === 'N') { out.push(13, 10); i++; continue; }
+      if (u === 'P') { out.push(12); i++; continue; }
+      if (u === 'R') { out.push(13); i++; continue; }
+      if (u === 'T') { out.push(9); i++; continue; }
+      if (/^[0-9A-Fa-f]{2}$/.test(a + b)) { out.push(parseInt(a + b, 16)); i += 2; continue; }
+      return `String literal contains an invalid character combination: '$${a}${b}'.`;
+    }
+    if (out.length > max) return `Too much character information provided: ${out.length} characters, at most ${max}.`;
+    const DATA = new Array(max).fill(0); out.forEach((c, k) => { DATA[k] = c > 127 ? c - 256 : c; });
+    return { LEN: out.length, DATA };
+  }
+  // the value at a member path inside a start value (Tag.DATA[3] in { LEN, DATA })
+  const valAt = (v, rest) => { let o = v; const re = /\.(\w+)|\[(\d+)\]/g; let m; while (o != null && (m = re.exec(rest))) o = m[1] != null ? o[m[1]] : o[+m[2]]; return o; };
+  /* the Value of a string row (the text), and of a DATA element (ASCII, as the reference shows a string's DATA) */
+  function strVal(path, ty, scope, t) {
+    const on = S.online && ctl.M;
+    if (isStrTy(ty)) {
+      if (t && t.dim) return null;
+      const o = on ? ctl.read(path, scope || undefined) : t && t.value && typeof t.value === 'object' ? t.value : offStart(path, scope);
+      return { t: strText(o), cls: '' };
+    }
+    const m = /^(.*)\.DATA\[(\d+)\]$/.exec(path);
+    if (U(ty) === 'SINT' && m && isStrTy(addrType(m[1]) || '')) {
+      const v = on ? ctl.read(path, scope || undefined) : valAt(offStart(m[1], scope), `.DATA[${m[2]}]`);
+      return { t: styled(Number(v) || 0, 'SINT', 'ASCII'), cls: '' };
+    }
+    const ml = /^(.*)\.LEN$/.exec(path);
+    if (!on && ml && isStrTy(addrType(ml[1]) || '')) return { t: String(Number(valAt(offStart(ml[1], scope), '.LEN')) || 0), cls: '' };
+    return null;
+  }
+  // a start value inside a base tag (offline), for a member path
+  const offStart = (path, scope) => { const b = /^([A-Za-z_]\w*)(.*)$/.exec(path); const t = b && scopeTags(scope || '').find(x => U(x.name) === U(b[1])); return t && t.value && typeof t.value === 'object' ? valAt(t.value, b[2]) : null; };
+  /* the String Browser (v37 help: String Browser Dialog Box Overview): the tag's name as the title (* once it is
+     edited), the edit field, and Count (characters typed of the maximum). Online it writes the controller, offline
+     the start value of a base tag. */
+  function editString(name, ty, scope, t) {
+    const max = strTypeOf(ty).len, on = S.online && ctl.M;
+    if (!on && !t) { toast('Start values can be set for base tags only.'); return; }
+    if (!on && t.alias) { toast('Start values can be set for base tags only.'); return; }
+    const cur = on ? ctl.read(name, scope || undefined) : t.value;
+    const txt = strText(cur).slice(1, -1);
+    dialog({ title: name, size: 'md', focus: true,
+      body: `<textarea class="inp mono" id="sbx" rows="4" spellcheck="false" autocapitalize="off" aria-label="String data">${esc(txt)}</textarea>
+        <div class="kv"><span>Count</span><span class="v" id="sbc"></span></div><p class="help">$$ is $, $' a quote, $L line feed, $N new line, $P form feed, $R return, $T tab, $hh a character in hex.</p><div class="errtx" id="sbe"></div>`,
+      mount: el => {
+        const x = el.querySelector('#sbx'), cnt = () => { const r = parseStr(x.value, 65535); el.querySelector('#sbc').textContent = `${typeof r === 'string' ? '?' : r.LEN} of ${max}`; };
+        x.addEventListener('input', () => { el.querySelector('.dh b').textContent = name + ' *'; cnt(); }); cnt();
+      },
+      buttons: [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const r = parseStr(el.querySelector('#sbx').value, max);
+        if (typeof r === 'string') { el.querySelector('#sbe').textContent = 'Failed to modify the String data. ' + r; return false; }
+        if (on) { if (!ctl.write(name, r, scope || undefined, true)) { el.querySelector('#sbe').textContent = 'This tag cannot be written (read-only).'; return false; } live(true); refreshTags(); return; }
+        edit(() => { t.value = r; });
+      } }] });
+  }
+  function stringTypeEditor(name) {
+    const pre = name && U(name) === 'STRING', d0 = name ? strTypeOf(name) : null;
+    if (name && !d0) return;
+    const ro = pre || (S.online && !!d0 && typeUsers(d0.name).length > 0);
+    const R = ro ? ' readonly' : '';
+    dialog({ title: d0 ? `String Type: ${d0.name}` : 'New String Type', size: 'md',
+      body: `<div class="frow"><label for="stn">Name</label><input class="inp mono" id="stn" value="${esc(d0 ? d0.name : '')}" maxlength="40" autocomplete="off" spellcheck="false" autocapitalize="off"${R}></div>
+        <div class="frow"><label for="std">Description</label><textarea class="inp" id="std" rows="2" maxlength="512"${R}>${esc(pre ? 'The string type of the controller: LEN and DATA[82]' : d0 ? d0.desc || '' : '')}</textarea></div>
+        <div class="frow"><label for="stl">Maximum Characters</label><input class="inp" id="stl" type="number" min="1" max="65535" inputmode="numeric" value="${d0 ? d0.len : 82}"${R}></div>
+        <div class="frow"><label>Data Type Size</label><span id="sts">${d0 ? sizeText(d0.name) : '(worked out when the type is saved)'}</span></div>
+        ${pre ? '<p class="help">STRING is the predefined string type: it cannot be changed. Make a string type of another length with New String Type.</p>' : ro ? '<p class="help">The controller is online and this string type is in use: change it offline.</p>' : ''}<div class="errtx" id="ste"></div>`,
+      buttons: ro ? [{ l: 'Close' }] : [{ l: 'Cancel' }, { l: 'OK', pri: true, run: el => {
+        const n = el.querySelector('#stn').value.trim(), desc = el.querySelector('#std').value.trim(), len = +el.querySelector('#stl').value;
+        const err = m => { el.querySelector('#ste').textContent = m; return false; };
+        if (!E.validName(n)) return err('Name: letters, digits and _, starting with a letter or _, up to 40 characters, no two _ in a row and no _ at the end.');
+        const taken = E.ATOMIC.concat(Object.keys(E.PREDEF), Object.keys(E.MODTYPES), (S.p.dataTypes || []).filter(d => d !== d0).map(d => d.name));
+        if (taken.some(t => U(t) === U(n))) return err(`A data type named ${n} already exists.`);
+        if (!(Number.isInteger(len) && len >= 1 && len <= 65535)) return err('Maximum Characters: a whole number from 1 to 65535.');
+        const nd = { name: n, family: 'string', len }; if (desc) nd.desc = desc;
+        edit(() => {
+          S.p.dataTypes = S.p.dataTypes || [];
+          if (d0) {
+            S.p.dataTypes[S.p.dataTypes.indexOf(d0)] = nd;
+            if (d0.name !== n) { const fix = t => { if (!t.alias && U(t.type || '') === U(d0.name)) t.type = n; }; S.p.tags.forEach(fix); allProgs().forEach(g => g.tags.forEach(fix)); S.p.dataTypes.forEach(d => (d.members || []).forEach(x => { if (U(x.type) === U(d0.name)) x.type = n; })); }
+          } else S.p.dataTypes.push(nd);
+        });
+        toast(`String type ${n} saved (${sizeText(n)})`);
+      } }] });
+  }
+  function l5xTypesIn(c) {
+    const dts = [...c.children].find(k => k.tagName === 'DataTypes');
+    return (dts ? [...dts.children].filter(k => k.tagName === 'DataType') : []).map(g => {
+      const o = { name: g.getAttribute('Name'), members: [] }, ds = [...g.children].find(k => k.tagName === 'Description');
+      if (ds && ds.textContent.trim()) o.desc = ds.textContent.trim();
+      if (g.getAttribute('Family') === 'StringFamily') { const dm = g.querySelector('Members > Member[Name="DATA"]'); delete o.members; o.family = 'string'; o.len = parseInt(dm && dm.getAttribute('Dimension'), 10) || 82; return o; }
+      const ms = [...g.querySelectorAll('Members > Member')].filter(m => m.getAttribute('Hidden') !== 'true');
+      ms.forEach(m => {
+        const ty = m.getAttribute('DataType') === 'BIT' ? 'BOOL' : m.getAttribute('DataType'), mo = { name: m.getAttribute('Name'), type: ty };
+        const dim = parseInt(m.getAttribute('Dimension'), 10); if (dim > 0) mo.dim = dim;
+        const md = [...m.children].find(k => k.tagName === 'Description'); if (md && md.textContent.trim()) mo.desc = md.textContent.trim();
+        const ra = m.getAttribute('Radix'), ea = m.getAttribute('ExternalAccess');
+        if (ra && stylesOf(ty).includes(ra) && ra !== defStyle(ty)) mo.style = ra;
+        if (ea && ACCESS.includes(ea) && ea !== 'Read/Write') mo.access = ea;
+        o.members.push(mo);
+      });
+      return o;
+    });
   }
 
   /* ---------- online ---------- */
@@ -6114,6 +6855,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     const est = $('#emst-dock'); if (est) setHTML(est, emuStatus(Math.max(0, racks.indexOf(chassis))));
     // Monitor Tags: about 7 times a second at most (less when the list is long), as a value display
     if (S.tagMode === 'mon') { const now = performance.now(); if (force || now - lastTags > Math.max(150, tagCost * 4)) { lastTags = now; liveTagValues(); tagCost = performance.now() - now; } else sig = ''; }
+    if (force && S.outTab === 'watch') liveWatch(true);
     const cp = $('#ctlpage'); if (cp && force) cp.innerHTML = controllerPage();
   }
   /* the controller scans on a timer of its own, so it keeps running when the screen does not redraw
@@ -6129,6 +6871,8 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
     // a turned tablet or a resized window may skip the resize event: check the layout a few times a second
     if (now - lastLay > 250) { lastLay = now; if (pickLayout() !== S.layout && !S.touching) render(); }
     live(false);
+    if (S.online && S.outTab === 'watch') liveWatch(false);
+    trendTick(now);
     requestAnimationFrame(loop);
   }
 
@@ -6270,6 +7014,7 @@ ${kind === 'Routine' ? k.prog(g, 'Context', { tags: ptags, routine: o.r }) : k.p
         const k = el.dataset.org, now = Date.now(), dbl = orgTap.k === k && now - orgTap.t < 400;
         S.orgSel = k; S.pickAt = 'org';
         orgTap = dbl ? { k: '', t: 0 } : { k, t: now };
+        if (dbl && dtOpen(k)) return;
         if (dbl && (k === 'ctl' || k.startsWith('task:') || k.startsWith('prog:') || k.startsWith('rt:'))) {
           // the first tap of the double-tap folded the node: put it back
           if (!k.startsWith('rt:')) { const c = new Set(S.prefs.collapsed); if (c.has(k)) c.delete(k); else c.add(k); S.prefs.collapsed = [...c]; savePrefs(); render(); }
